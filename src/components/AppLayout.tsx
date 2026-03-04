@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import BottomNav from "./BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranch } from "@/contexts/BranchContext";
 import { Button } from "@/components/ui/button";
 import { LogOut, RefreshCw } from "lucide-react";
 
