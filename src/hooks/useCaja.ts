@@ -35,7 +35,16 @@ export interface PayableOrder {
   table_name: string | null;
   split_code: string | null;
   total: number;
-  items: { description_snapshot: string; quantity: number; total: number }[];
+  items: { id: string; description_snapshot: string; quantity: number; total: number; paid_at: string | null }[];
+}
+
+export interface PayOrderParams {
+  orderId: string;
+  methodId: string;
+  itemIds: string[];
+  amount: number;
+  receivedDenoms: { denomination_id: string; qty: number }[];
+  changeDenoms: { denomination_id: string; qty: number }[];
 }
 
 export function useCaja() {
@@ -120,7 +129,7 @@ export function useCaja() {
       const orderIds = orders.map((o) => o.id);
       const { data: items } = await supabase
         .from("order_items")
-        .select("order_id, description_snapshot, quantity, total")
+        .select("id, order_id, description_snapshot, quantity, total, paid_at")
         .in("order_id", orderIds);
 
       return orders.map((o) => {
@@ -133,9 +142,11 @@ export function useCaja() {
           split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,
           total: orderItems.reduce((s, i) => s + Number(i.total), 0),
           items: orderItems.map((i) => ({
+            id: i.id,
             description_snapshot: i.description_snapshot,
             quantity: i.quantity,
             total: Number(i.total),
+            paid_at: i.paid_at,
           })),
         } as PayableOrder;
       });
@@ -201,33 +212,62 @@ export function useCaja() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  // Pay order
+  // Pay order (supports partial item payment + denomination tracking)
   const payOrder = useMutation({
-    mutationFn: async ({ orderId, methodId, amount }: { orderId: string; methodId: string; amount: number }) => {
+    mutationFn: async ({ orderId, methodId, itemIds, amount, receivedDenoms, changeDenoms }: PayOrderParams) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
 
+      // 1. Insert payment
       const { data: payment, error } = await supabase
         .from("payments")
-        .insert({
-          order_id: orderId,
-          payment_method_id: methodId,
-          amount,
-          created_by: user.id,
-        })
+        .insert({ order_id: orderId, payment_method_id: methodId, amount, created_by: user.id })
         .select("id")
         .single();
       if (error) throw error;
 
-      // Update order status
-      const { error: statusErr } = await supabase
-        .from("orders")
-        .update({ status: "PAID" })
-        .eq("id", orderId);
-      if (statusErr) throw statusErr;
+      // 2. Mark selected items as paid
+      const { error: itemErr } = await supabase
+        .from("order_items")
+        .update({ paid_at: new Date().toISOString() })
+        .in("id", itemIds);
+      if (itemErr) throw itemErr;
 
-      // Record payment movement
+      // 3. Check if all items are now paid → set order PAID
+      const { count } = await supabase
+        .from("order_items")
+        .select("id", { count: "exact", head: true })
+        .eq("order_id", orderId)
+        .is("paid_at", null);
+      if (count === 0) {
+        const { error: statusErr } = await supabase
+          .from("orders")
+          .update({ status: "PAID" })
+          .eq("id", orderId);
+        if (statusErr) throw statusErr;
+      }
+
+      // 4. Update cash_shift_denoms (net changes per denomination)
+      const denomChanges: Record<string, number> = {};
+      for (const rd of receivedDenoms) {
+        denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
+      }
+      for (const cd of changeDenoms) {
+        denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
+      }
+      for (const [denomId, delta] of Object.entries(denomChanges)) {
+        if (delta === 0) continue;
+        const existing = shift.denoms.find((d) => d.denomination_id === denomId);
+        if (existing) {
+          await supabase
+            .from("cash_shift_denoms")
+            .update({ qty_current: existing.qty_current + delta })
+            .eq("id", existing.id);
+        }
+      }
+
+      // 5. Record cash movements
       const { error: movErr } = await supabase.from("cash_movements").insert({
         shift_id: shift.id,
         payment_id: payment.id,
@@ -235,6 +275,18 @@ export function useCaja() {
         qty_delta: 1,
       });
       if (movErr) throw movErr;
+
+      if (changeDenoms.length > 0) {
+        await supabase.from("cash_movements").insert(
+          changeDenoms.map((cd) => ({
+            shift_id: shift.id,
+            payment_id: payment.id,
+            denomination_id: cd.denomination_id,
+            movement_type: "CHANGE_OUT" as const,
+            qty_delta: cd.qty,
+          }))
+        );
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
