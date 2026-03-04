@@ -199,16 +199,27 @@ export function useOrder(orderId: string | null) {
 
   const sendToKitchen = useMutation({
     mutationFn: async () => {
+      const order = query.data;
+      // Takeout orders skip kitchen → go directly to KITCHEN_DISPATCHED (ready for caja)
+      const newStatus: OrderStatus =
+        order?.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
+
       const { error } = await supabase
         .from("orders")
-        .update({ status: "SENT_TO_KITCHEN" as OrderStatus })
+        .update({ status: newStatus })
         .eq("id", orderId!);
       if (error) throw error;
     },
     onSuccess: () => {
+      const order = query.data;
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      toast.success("Orden enviada a cocina");
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      toast.success(
+        order?.order_type === "TAKEOUT"
+          ? "Orden lista para cobrar en caja"
+          : "Orden enviada a cocina"
+      );
     },
     onError: (err: any) => toast.error(err.message),
   });
