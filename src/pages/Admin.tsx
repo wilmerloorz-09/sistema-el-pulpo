@@ -24,14 +24,18 @@ const TABS = [
 ];
 
 const Admin = () => {
+  const { activeRole } = useAuth();
+  const visibleTabs = TABS.filter(tab => !tab.superadminOnly || activeRole === "superadmin");
+  const defaultTab = visibleTabs[0]?.value ?? "categories";
+
   return (
     <div className="p-4 space-y-4">
       <h1 className="font-display text-xl font-bold text-foreground">Administración</h1>
 
-      <Tabs defaultValue="categories" className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <div className="overflow-x-auto -mx-4 px-4 pb-2">
           <TabsList className="inline-flex h-auto gap-1 bg-muted/50 p-1 rounded-xl">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
@@ -44,7 +48,7 @@ const Admin = () => {
           </TabsList>
         </div>
 
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="mt-3">
             <tab.component />
           </TabsContent>
