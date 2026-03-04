@@ -1,5 +1,6 @@
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranch } from "@/contexts/BranchContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
