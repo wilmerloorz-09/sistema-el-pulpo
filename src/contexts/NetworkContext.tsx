@@ -35,14 +35,16 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateOnline(navigator.onLine);
         return;
       }
-      await fetch(`${url}/rest/v1/`, {
+      const res = await fetch(`${url}/rest/v1/`, {
         method: "HEAD",
         signal: controller.signal,
         cache: "no-store",
       });
       clearTimeout(timeout);
+      // Any HTTP response (even 401/403) means we have network connectivity
       updateOnline(true);
     } catch {
+      // Network error (timeout, DNS failure, no connection)
       updateOnline(false);
     }
   }, [updateOnline]);
