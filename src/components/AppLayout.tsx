@@ -2,8 +2,9 @@ import { Outlet } from "react-router-dom";
 import BottomNav from "./BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
+import { useNetwork } from "@/contexts/NetworkContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, RefreshCw } from "lucide-react";
+import { LogOut, RefreshCw, WifiOff } from "lucide-react";
 
 const AppLayout = () => {
   const { signOut, profile, activeRole, setActiveRole, roles } = useAuth();
