@@ -44,6 +44,57 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
+  return (
+    <BranchProvider>
+      <BranchGate>{children}</BranchGate>
+    </BranchProvider>
+  );
+};
+
+const BranchGate = ({ children }: { children: React.ReactNode }) => {
+  const { branches, activeBranch, setActiveBranch, loading } = useBranch();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (branches.length === 0) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4 text-center">
+        <div>
+          <p className="font-display text-lg font-bold text-foreground">Sin sucursales asignadas</p>
+          <p className="text-sm text-muted-foreground mt-1">Contacta al administrador.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (branches.length > 1 && !activeBranch) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-sm space-y-4">
+          <h1 className="font-display text-xl font-bold text-foreground text-center">Selecciona sucursal</h1>
+          <div className="grid gap-3">
+            {branches.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => setActiveBranch(b)}
+                className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm active:scale-95 transition-transform"
+              >
+                <span className="font-display text-sm font-semibold">{b.name}</span>
+                {b.address && <p className="text-xs text-muted-foreground mt-0.5">{b.address}</p>}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return <>{children}</>;
 };
 
