@@ -713,6 +713,7 @@ export type Database = {
         | "cocina"
         | "despachador_mesas"
         | "despachador_takeout"
+        | "superadmin"
       cash_movement_type: "OPENING" | "PAYMENT_IN" | "CHANGE_OUT"
       cash_shift_status: "OPEN" | "CLOSED"
       order_status: "DRAFT" | "SENT_TO_KITCHEN" | "KITCHEN_DISPATCHED" | "PAID"
@@ -852,6 +853,7 @@ export const Constants = {
         "cocina",
         "despachador_mesas",
         "despachador_takeout",
+        "superadmin",
       ],
       cash_movement_type: ["OPENING", "PAYMENT_IN", "CHANGE_OUT"],
       cash_shift_status: ["OPEN", "CLOSED"],
