@@ -40,6 +40,11 @@ const Mesas = () => {
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
     if (table.status === "free") {
+      // If there's already a draft order for this table, navigate to it
+      if (table.activeOrderId) {
+        navigate(`/ordenes?order=${table.activeOrderId}`);
+        return;
+      }
       // Create new order for this table
       if (!user) return;
       setCreating(table.id);

@@ -5,9 +5,10 @@ import { useMenuData } from "@/hooks/useMenuData";
 import ProductPicker from "@/components/order/ProductPicker";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
+import SplitTableDialog from "@/components/order/SplitTableDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ChefHat, ArrowLeft, ShoppingBag } from "lucide-react";
+import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Ordenes = () => {
@@ -20,6 +21,7 @@ const Ordenes = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showCart, setShowCart] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
 
   if (!orderId) {
     return (
@@ -87,6 +89,17 @@ const Ordenes = () => {
             <Badge className={cn("text-[10px]", statusColor[order.status])}>
               {statusLabel[order.status]}
             </Badge>
+            {order.table_id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs rounded-lg"
+                onClick={() => setShowSplit(true)}
+              >
+                <Split className="h-3.5 w-3.5" />
+                Dividir
+              </Button>
+            )}
           </div>
         </div>
 
@@ -197,6 +210,17 @@ const Ordenes = () => {
         }}
         adding={addItem.isPending}
       />
+
+      {/* Split table dialog */}
+      {order.table_id && (
+        <SplitTableDialog
+          open={showSplit}
+          onClose={() => setShowSplit(false)}
+          tableId={order.table_id}
+          tableName={order.table_name ?? "Mesa"}
+          orderId={order.id}
+        />
+      )}
     </div>
   );
 };

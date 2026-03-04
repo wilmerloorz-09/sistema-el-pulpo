@@ -27,7 +27,7 @@ export function useTablesWithStatus() {
           .order("visual_order"),
         supabase
           .from("orders")
-          .select("id, table_id, status, split_id")
+          .select("id, table_id, status, split_id, order_items(id)")
           .not("table_id", "is", null)
           .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"]),
       ]);
@@ -38,22 +38,39 @@ export function useTablesWithStatus() {
       const tables = tablesRes.data;
       const orders = ordersRes.data;
 
-      // Group orders by table
+      // Group orders by table — only include orders that have items OR are past DRAFT
       const ordersByTable = new Map<string, typeof orders>();
       for (const order of orders) {
         if (!order.table_id) continue;
+        const hasItems = Array.isArray(order.order_items) && order.order_items.length > 0;
+        const isPastDraft = order.status !== "DRAFT";
+        if (!hasItems && !isPastDraft) continue; // DRAFT without items = still free
         const arr = ordersByTable.get(order.table_id) ?? [];
         arr.push(order);
         ordersByTable.set(order.table_id, arr);
       }
 
+      // Also track draft orders without items so we can navigate to them
+      const draftByTable = new Map<string, string>();
+      for (const order of orders) {
+        if (!order.table_id) continue;
+        const hasItems = Array.isArray(order.order_items) && order.order_items.length > 0;
+        if (order.status === "DRAFT" && !hasItems) {
+          draftByTable.set(order.table_id, order.id);
+        }
+      }
+
       return tables.map((table): TableWithStatus => {
         const tableOrders = ordersByTable.get(table.id) ?? [];
         if (tableOrders.length === 0) {
-          return { ...table, status: "free", splitCount: 0 };
+          return {
+            ...table,
+            status: "free",
+            splitCount: 0,
+            activeOrderId: draftByTable.get(table.id), // link to empty draft if exists
+          };
         }
 
-        // Check if any order is KITCHEN_DISPATCHED (ready to pay)
         const hasDispatched = tableOrders.some((o) => o.status === "KITCHEN_DISPATCHED");
         const splits = new Set(tableOrders.filter(o => o.split_id).map(o => o.split_id));
 
