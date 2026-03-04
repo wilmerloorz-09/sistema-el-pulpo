@@ -16,10 +16,23 @@ const AppLayout = () => {
         <div className="flex items-center gap-2">
           <span className="text-lg">🐙</span>
           <span className="font-display text-sm font-bold text-foreground">El Pulpo</span>
+          {activeBranch && branches.length > 1 ? (
+            <button
+              onClick={() => setActiveBranch(null as any)}
+              className="ml-1 rounded-lg bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent-foreground flex items-center gap-1"
+            >
+              📍 {activeBranch.name}
+              <RefreshCw className="h-3 w-3" />
+            </button>
+          ) : activeBranch ? (
+            <span className="ml-1 rounded-lg bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent-foreground">
+              📍 {activeBranch.name}
+            </span>
+          ) : null}
           {activeRole && (
             <button
               onClick={() => setActiveRole(null as any)}
-              className="ml-1 rounded-lg bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary flex items-center gap-1"
+              className="rounded-lg bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary flex items-center gap-1"
             >
               {activeRole}
               {roles.length > 1 && <RefreshCw className="h-3 w-3" />}
