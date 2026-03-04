@@ -173,9 +173,10 @@ export function useCaja() {
   const openShift = useMutation({
     mutationFn: async (denomCounts: { denomination_id: string; qty: number }[]) => {
       if (!user) throw new Error("No user");
+      if (!activeBranchId) throw new Error("No branch selected");
       const { data: shift, error } = await supabase
         .from("cash_shifts")
-        .insert({ cashier_id: user.id })
+        .insert({ cashier_id: user.id, branch_id: activeBranchId })
         .select("id")
         .single();
       if (error) throw error;
