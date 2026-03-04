@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2, Save, X, Building2, Pencil, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, X, Building2, Pencil, Check, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { Constants } from "@/integrations/supabase/types";
+import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -419,21 +420,32 @@ const UsersCrud = () => {
                 <Switch checked={profile.is_active} onCheckedChange={(v) => toggleActive.mutate({ id: profile.id, is_active: v })} />
               </div>
 
-              {/* Edit/Save button */}
-              <div>
+              {/* Edit/Password/Actions */}
+              <div className="flex gap-1">
                 {isEditing ? (
-                  <div className="flex gap-1">
+                  <>
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => saveEditing(profile.id)} disabled={updateProfile.isPending}>
                       {updateProfile.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" onClick={cancelEditing}>
                       <X className="h-3.5 w-3.5" />
                     </Button>
-                  </div>
+                  </>
                 ) : (
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" onClick={() => startEditing(profile)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  <>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" onClick={() => startEditing(profile)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <ChangePasswordDialog
+                      targetUserId={profile.id}
+                      targetUserName={profile.full_name}
+                      trigger={
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground">
+                          <KeyRound className="h-3.5 w-3.5" />
+                        </Button>
+                      }
+                    />
+                  </>
                 )}
               </div>
             </div>

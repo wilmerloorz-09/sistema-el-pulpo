@@ -5,6 +5,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { Button } from "@/components/ui/button";
 import { LogOut, RefreshCw, WifiOff } from "lucide-react";
+import ChangePasswordDialog from "./ChangePasswordDialog";
 
 const AppLayout = () => {
   const { signOut, profile, activeRole, setActiveRole, roles } = useAuth();
@@ -50,6 +51,7 @@ const AppLayout = () => {
           <span className="text-xs text-muted-foreground hidden sm:block">
             {profile?.full_name}
           </span>
+          <ChangePasswordDialog />
           <Button variant="ghost" size="icon" onClick={signOut} className="h-8 w-8">
             <LogOut className="h-4 w-4" />
           </Button>
