@@ -21,13 +21,13 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/mesas", label: "Mesas", icon: <LayoutGrid className="h-5 w-5" />, roles: ["admin", "mesero"] },
-  { to: "/ordenes", label: "Ordenes", icon: <UtensilsCrossed className="h-5 w-5" />, roles: ["admin", "mesero"] },
-  { to: "/cocina", label: "Cocina", icon: <ChefHat className="h-5 w-5" />, roles: ["admin", "cocina"] },
-  { to: "/despacho", label: "Despacho", icon: <Truck className="h-5 w-5" />, roles: ["admin", "despachador_mesas", "despachador_takeout"] },
-  { to: "/caja", label: "Caja", icon: <CircleDollarSign className="h-5 w-5" />, roles: ["admin", "cajero"] },
-  { to: "/reportes", label: "Reportes", icon: <BarChart3 className="h-5 w-5" />, roles: ["admin"] },
-  { to: "/admin", label: "Admin", icon: <Settings className="h-5 w-5" />, roles: ["admin"] },
+  { to: "/mesas", label: "Mesas", icon: <LayoutGrid className="h-5 w-5" />, roles: ["admin", "mesero", "superadmin"] },
+  { to: "/ordenes", label: "Ordenes", icon: <UtensilsCrossed className="h-5 w-5" />, roles: ["admin", "mesero", "superadmin"] },
+  { to: "/cocina", label: "Cocina", icon: <ChefHat className="h-5 w-5" />, roles: ["admin", "cocina", "superadmin"] },
+  { to: "/despacho", label: "Despacho", icon: <Truck className="h-5 w-5" />, roles: ["admin", "despachador_mesas", "despachador_takeout", "superadmin"] },
+  { to: "/caja", label: "Caja", icon: <CircleDollarSign className="h-5 w-5" />, roles: ["admin", "cajero", "superadmin"] },
+  { to: "/reportes", label: "Reportes", icon: <BarChart3 className="h-5 w-5" />, roles: ["admin", "superadmin"] },
+  { to: "/admin", label: "Admin", icon: <Settings className="h-5 w-5" />, roles: ["admin", "superadmin"] },
 ];
 
 const BottomNav = () => {
