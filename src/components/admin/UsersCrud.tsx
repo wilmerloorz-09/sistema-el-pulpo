@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2, Save, X, Building2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, X, Building2, Pencil, Check } from "lucide-react";
 import { useState } from "react";
 import { Constants } from "@/integrations/supabase/types";
 import type { Database } from "@/integrations/supabase/types";
@@ -53,6 +53,8 @@ const UsersCrud = () => {
   const [newRole, setNewRole] = useState<AppRole>("mesero");
   const [addingBranchFor, setAddingBranchFor] = useState<string | null>(null);
   const [newBranchId, setNewBranchId] = useState<string>("");
+  const [editingProfile, setEditingProfile] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<{ full_name: string; username: string }>({ full_name: "", username: "" });
   const [showAddForm, setShowAddForm] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", password: "", full_name: "", username: "", role: "mesero" as AppRole, branch_id: "" });
 
@@ -98,6 +100,19 @@ const UsersCrud = () => {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-profiles"] }),
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const updateProfile = useMutation({
+    mutationFn: async ({ id, full_name, username }: { id: string; full_name: string; username: string }) => {
+      const { error } = await supabase.from("profiles").update({ full_name, username }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-profiles"] });
+      setEditingProfile(null);
+      toast.success("Usuario actualizado");
+    },
     onError: (err: any) => toast.error(err.message),
   });
 
@@ -181,6 +196,23 @@ const UsersCrud = () => {
     },
     onError: (err: any) => toast.error(err.message),
   });
+
+  const startEditing = (profile: Profile) => {
+    setEditingProfile(profile.id);
+    setEditValues({ full_name: profile.full_name, username: profile.username });
+  };
+
+  const cancelEditing = () => {
+    setEditingProfile(null);
+  };
+
+  const saveEditing = (id: string) => {
+    if (!editValues.full_name.trim() || !editValues.username.trim()) {
+      toast.error("Nombre y usuario son requeridos");
+      return;
+    }
+    updateProfile.mutate({ id, ...editValues });
+  };
 
   if (loadingProfiles) {
     return (
@@ -267,12 +299,13 @@ const UsersCrud = () => {
 
       <div className="rounded-xl border border-border overflow-hidden">
         <div className="hidden sm:grid bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-          style={{ gridTemplateColumns: "1fr 1fr 2fr 2fr 4rem" }}>
+          style={{ gridTemplateColumns: "1.2fr 1fr 2fr 1.8fr 3.5rem 3.5rem" }}>
           <div>Nombre</div>
           <div>Usuario</div>
           <div>Roles</div>
           <div>Sucursales</div>
           <div>Activo</div>
+          <div></div>
         </div>
 
         {profiles.map((profile) => {
@@ -280,15 +313,37 @@ const UsersCrud = () => {
           const userBranchList = userBranches.filter((ub) => ub.user_id === profile.id);
           const isAddingRole = addingRoleFor === profile.id;
           const isAddingBranch = addingBranchFor === profile.id;
+          const isEditing = editingProfile === profile.id;
           const existingRoleNames = userRoles.map((r) => r.role);
           const existingBranchIds = userBranchList.map((ub) => ub.branch_id);
           const availableBranches = branches.filter((b) => !existingBranchIds.includes(b.id));
 
           return (
             <div key={profile.id} className="grid items-center gap-2 px-3 py-3 border-t border-border text-sm"
-              style={{ gridTemplateColumns: "1fr 1fr 2fr 2fr 4rem" }}>
-              <span className="font-medium truncate">{profile.full_name}</span>
-              <span className="text-muted-foreground truncate text-xs">{profile.username}</span>
+              style={{ gridTemplateColumns: "1.2fr 1fr 2fr 1.8fr 3.5rem 3.5rem" }}>
+              
+              {/* Name */}
+              {isEditing ? (
+                <Input
+                  value={editValues.full_name}
+                  onChange={(e) => setEditValues({ ...editValues, full_name: e.target.value })}
+                  className="h-8 rounded-lg text-sm"
+                  autoFocus
+                />
+              ) : (
+                <span className="font-medium truncate">{profile.full_name}</span>
+              )}
+
+              {/* Username */}
+              {isEditing ? (
+                <Input
+                  value={editValues.username}
+                  onChange={(e) => setEditValues({ ...editValues, username: e.target.value })}
+                  className="h-8 rounded-lg text-sm"
+                />
+              ) : (
+                <span className="text-muted-foreground truncate text-xs">{profile.username}</span>
+              )}
 
               {/* Roles column */}
               <div className="flex flex-wrap gap-1 items-center">
@@ -359,8 +414,27 @@ const UsersCrud = () => {
                 )}
               </div>
 
+              {/* Active toggle */}
               <div>
                 <Switch checked={profile.is_active} onCheckedChange={(v) => toggleActive.mutate({ id: profile.id, is_active: v })} />
+              </div>
+
+              {/* Edit/Save button */}
+              <div>
+                {isEditing ? (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => saveEditing(profile.id)} disabled={updateProfile.isPending}>
+                      {updateProfile.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" onClick={cancelEditing}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" onClick={() => startEditing(profile)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </div>
           );
