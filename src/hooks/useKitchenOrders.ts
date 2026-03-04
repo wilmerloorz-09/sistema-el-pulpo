@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 
@@ -29,22 +29,36 @@ export function useKitchenOrders() {
     queryKey: ["kitchen-orders", activeBranchId],
     queryFn: async () => {
       if (!activeBranchId) return [];
-      const { data: orders, error } = await supabase
-        .from("orders")
-        .select("id, order_number, order_type, table_id, split_id, updated_at")
-        .eq("status", "SENT_TO_KITCHEN")
-        .eq("branch_id", activeBranchId)
-        .order("updated_at", { ascending: true });
-      if (error) throw error;
-      if (!orders || orders.length === 0) return [];
 
+      // Fetch orders with SENT_TO_KITCHEN status via DatabaseService
+      const orders = await dbSelect<{
+        id: string;
+        order_number: number;
+        order_type: string;
+        table_id: string | null;
+        split_id: string | null;
+        updated_at: string;
+      }>("orders", {
+        select: "id, order_number, order_type, table_id, split_id, updated_at",
+        branchId: activeBranchId,
+        filters: [{ column: "status", op: "eq", value: "SENT_TO_KITCHEN" }],
+        orderBy: { column: "updated_at", ascending: true },
+      });
+
+      if (orders.length === 0) return [];
+
+      // Fetch table names for DINE_IN orders
       const tableIds = [...new Set(orders.map((o) => o.table_id).filter(Boolean))] as string[];
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
-        const { data: tables } = await supabase.from("restaurant_tables").select("id, name").in("id", tableIds);
-        tablesMap = Object.fromEntries((tables ?? []).map((t) => [t.id, t.name]));
+        const tables = await dbSelect<{ id: string; name: string }>("restaurant_tables", {
+          select: "id, name",
+          filters: [{ column: "id", op: "in", value: tableIds }],
+        });
+        tablesMap = Object.fromEntries(tables.map((t) => [t.id, t.name]));
       }
 
+      // Fetch split codes (relational query — passthrough)
       const splitIds = [...new Set(orders.map((o) => o.split_id).filter(Boolean))] as string[];
       let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
@@ -52,14 +66,21 @@ export function useKitchenOrders() {
         splitsMap = Object.fromEntries((splits ?? []).map((s) => [s.id, s.split_code]));
       }
 
+      // Fetch order items via DatabaseService
       const orderIds = orders.map((o) => o.id);
-      const { data: items } = await supabase
-        .from("order_items")
-        .select("id, order_id, description_snapshot, quantity, dispatched_at")
-        .in("order_id", orderIds)
-        .order("created_at");
+      const items = await dbSelect<{
+        id: string;
+        order_id: string;
+        description_snapshot: string;
+        quantity: number;
+        dispatched_at: string | null;
+      }>("order_items", {
+        select: "id, order_id, description_snapshot, quantity, dispatched_at",
+        filters: [{ column: "order_id", op: "in", value: orderIds }],
+      });
 
-      const itemIds = (items ?? []).map((i) => i.id);
+      // Fetch modifiers (relational join — passthrough)
+      const itemIds = items.map((i) => i.id);
       let modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
         const { data: mods } = await supabase
@@ -79,13 +100,13 @@ export function useKitchenOrders() {
         table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
         split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,
         sent_at: o.updated_at,
-        items: (items ?? [])
+        items: items
           .filter((i) => i.order_id === o.id)
           .map((i) => ({
             id: i.id,
             description_snapshot: i.description_snapshot,
             quantity: i.quantity,
-            dispatched_at: (i as any).dispatched_at ?? null,
+            dispatched_at: i.dispatched_at ?? null,
             modifiers: modsMap[i.id] ?? [],
           })),
       })) as KitchenOrder[];
@@ -95,32 +116,22 @@ export function useKitchenOrders() {
 
   const dispatchItem = useMutation({
     mutationFn: async ({ itemId, orderId }: { itemId: string; orderId: string }) => {
-      const { error } = await supabase
-        .from("order_items")
-        .update({ dispatched_at: new Date().toISOString() } as any)
-        .eq("id", itemId);
-      if (error) throw error;
+      await dbUpdate("order_items", itemId, { dispatched_at: new Date().toISOString() });
 
       // Check if all items in the order are now dispatched
-      const { data: remaining } = await supabase
-        .from("order_items")
-        .select("id, dispatched_at")
-        .eq("order_id", orderId);
+      const remaining = await dbSelect<{ id: string; dispatched_at: string | null }>("order_items", {
+        select: "id, dispatched_at",
+        filters: [{ column: "order_id", op: "eq", value: orderId }],
+      });
 
-      const allDispatched = (remaining ?? []).every((r: any) => r.dispatched_at != null);
+      const allDispatched = remaining.every((r) => r.dispatched_at != null);
       if (allDispatched) {
-        // Takeout orders already paid → set PAID (final); Dine-in → KITCHEN_DISPATCHED (ready for caja)
-        const { data: orderData } = await supabase
-          .from("orders")
-          .select("order_type")
-          .eq("id", orderId)
-          .single();
-        const hasPaid = await supabase
+        const { count } = await supabase
           .from("payments")
           .select("id", { count: "exact", head: true })
           .eq("order_id", orderId);
-        const nextStatus = (hasPaid.count ?? 0) > 0 ? "PAID" : "KITCHEN_DISPATCHED";
-        await supabase.from("orders").update({ status: nextStatus }).eq("id", orderId);
+        const nextStatus = (count ?? 0) > 0 ? "PAID" : "KITCHEN_DISPATCHED";
+        await dbUpdate("orders", orderId, { status: nextStatus });
       }
     },
     onSuccess: () => {
@@ -133,24 +144,24 @@ export function useKitchenOrders() {
   const dispatchAll = useMutation({
     mutationFn: async (orderId: string) => {
       const now = new Date().toISOString();
-      const { error: itemsErr } = await supabase
-        .from("order_items")
-        .update({ dispatched_at: now } as any)
-        .eq("order_id", orderId)
-        .is("dispatched_at", null);
-      if (itemsErr) throw itemsErr;
+      // Get all undispatched items for this order
+      const items = await dbSelect<{ id: string; dispatched_at: string | null }>("order_items", {
+        filters: [{ column: "order_id", op: "eq", value: orderId }],
+      });
 
-      // If order was already paid (takeout), set PAID; otherwise KITCHEN_DISPATCHED
+      // Dispatch each undispatched item via DatabaseService
+      const undispatched = items.filter((i) => !i.dispatched_at);
+      await Promise.all(
+        undispatched.map((item) => dbUpdate("order_items", item.id, { dispatched_at: now }))
+      );
+
+      // Determine next status
       const { count } = await supabase
         .from("payments")
         .select("id", { count: "exact", head: true })
         .eq("order_id", orderId);
       const nextStatus = (count ?? 0) > 0 ? "PAID" : "KITCHEN_DISPATCHED";
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: nextStatus })
-        .eq("id", orderId);
-      if (error) throw error;
+      await dbUpdate("orders", orderId, { status: nextStatus });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -23,26 +23,34 @@ export function useTablesWithStatus() {
     queryKey: ["tables-with-status", activeBranchId],
     queryFn: async () => {
       if (!activeBranchId) return [];
-      const [tablesRes, ordersRes] = await Promise.all([
-        supabase
-          .from("restaurant_tables")
-          .select("*")
-          .eq("is_active", true)
-          .eq("branch_id", activeBranchId)
-          .order("visual_order"),
+
+      // Fetch tables and active orders in parallel via DatabaseService
+      const [tables, orders] = await Promise.all([
+        dbSelect<{
+          id: string;
+          name: string;
+          visual_order: number;
+          is_active: boolean;
+          branch_id: string;
+          created_at: string;
+          updated_at: string;
+        }>("restaurant_tables", {
+          branchId: activeBranchId,
+          filters: [{ column: "is_active", op: "eq", value: true }],
+          orderBy: { column: "visual_order" },
+        }),
+        // Orders need a relational sub-select (order_items count), use passthrough
         supabase
           .from("orders")
           .select("id, table_id, status, split_id, order_items(id)")
           .not("table_id", "is", null)
           .eq("branch_id", activeBranchId)
-          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"]),
+          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"])
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data ?? [];
+          }),
       ]);
-
-      if (tablesRes.error) throw tablesRes.error;
-      if (ordersRes.error) throw ordersRes.error;
-
-      const tables = tablesRes.data;
-      const orders = ordersRes.data;
 
       // Group orders by table — only include orders that have items OR are past DRAFT
       const ordersByTable = new Map<string, typeof orders>();
@@ -50,13 +58,13 @@ export function useTablesWithStatus() {
         if (!order.table_id) continue;
         const hasItems = Array.isArray(order.order_items) && order.order_items.length > 0;
         const isPastDraft = order.status !== "DRAFT";
-        if (!hasItems && !isPastDraft) continue; // DRAFT without items = still free
+        if (!hasItems && !isPastDraft) continue;
         const arr = ordersByTable.get(order.table_id) ?? [];
         arr.push(order);
         ordersByTable.set(order.table_id, arr);
       }
 
-      // Also track draft orders without items so we can navigate to them
+      // Track draft orders without items so we can navigate to them
       const draftByTable = new Map<string, string>();
       for (const order of orders) {
         if (!order.table_id) continue;
@@ -73,12 +81,12 @@ export function useTablesWithStatus() {
             ...table,
             status: "free",
             splitCount: 0,
-            activeOrderId: draftByTable.get(table.id), // link to empty draft if exists
+            activeOrderId: draftByTable.get(table.id),
           };
         }
 
         const hasDispatched = tableOrders.some((o) => o.status === "KITCHEN_DISPATCHED");
-        const splits = new Set(tableOrders.filter(o => o.split_id).map(o => o.split_id));
+        const splits = new Set(tableOrders.filter((o) => o.split_id).map((o) => o.split_id));
 
         return {
           ...table,
@@ -90,6 +98,6 @@ export function useTablesWithStatus() {
       });
     },
     enabled: !!activeBranchId,
-    refetchInterval: 5000, // Poll every 5s for realtime-like updates
+    refetchInterval: 5000,
   });
 }
