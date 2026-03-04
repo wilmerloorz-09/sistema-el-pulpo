@@ -12,7 +12,7 @@ import BranchesCrud from "@/components/admin/BranchesCrud";
 import { useAuth } from "@/contexts/AuthContext";
 
 const TABS = [
-  { value: "branches", label: "Sucursales", icon: <Building2 className="h-4 w-4" />, component: BranchesCrud, superadminOnly: true },
+  { value: "branches", label: "Sucursales", icon: <Building2 className="h-4 w-4" />, component: BranchesCrud, superadminOnly: false },
   { value: "categories", label: "Categorías", icon: <LayoutGrid className="h-4 w-4" />, component: CategoriesCrud, superadminOnly: false },
   { value: "subcategories", label: "Subcategorías", icon: <Layers className="h-4 w-4" />, component: SubcategoriesCrud, superadminOnly: false },
   { value: "products", label: "Productos", icon: <Package className="h-4 w-4" />, component: ProductsCrud, superadminOnly: false },
