@@ -50,6 +50,7 @@ const Mesas = () => {
           order_type: "TAKEOUT" as const,
           created_by: user.id,
           status: "DRAFT" as const,
+          branch_id: activeBranchId!,
         })
         .select("id")
         .single();
