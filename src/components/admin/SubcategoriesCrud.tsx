@@ -1,0 +1,76 @@
+import { useCrud } from "@/hooks/useCrud";
+import { useEditState } from "@/hooks/useEditState";
+import { AdminTable, ColumnDef } from "./AdminTable";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+interface Subcategory {
+  id: string;
+  description: string;
+  category_id: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+interface Category {
+  id: string;
+  description: string;
+}
+
+const SubcategoriesCrud = () => {
+  const crud = useCrud<Subcategory>({ table: "subcategories", queryKey: "admin-subcategories", orderBy: { column: "display_order" } });
+  const edit = useEditState<Subcategory>({ description: "", category_id: "", display_order: 0, is_active: true } as any);
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["admin-categories"],
+    queryFn: async () => {
+      const { data } = await supabase.from("categories").select("id, description").order("display_order");
+      return (data ?? []) as Category[];
+    },
+  });
+
+  const catMap = Object.fromEntries(categories.map((c) => [c.id, c.description]));
+
+  const columns: ColumnDef<Subcategory>[] = [
+    { key: "description", header: "Nombre", width: "1fr", type: "text" },
+    {
+      key: "category_id",
+      header: "Categoría",
+      width: "10rem",
+      render: (item) => <span>{catMap[item.category_id] ?? "—"}</span>,
+      editRender: (value, onChange) => (
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger className="h-8 rounded-lg text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {categories.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.description}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ),
+    },
+    { key: "display_order", header: "Orden", width: "5rem", type: "number" },
+    { key: "is_active", header: "Activo", width: "4rem", type: "switch" },
+  ];
+
+  return (
+    <AdminTable<Subcategory>
+      columns={columns}
+      data={crud.data}
+      isLoading={crud.isLoading}
+      editingId={edit.editingId}
+      editValues={edit.editValues}
+      onEdit={edit.startEdit}
+      onCancelEdit={edit.cancelEdit}
+      onSave={() => crud.save(edit.editValues as any)}
+      onDelete={crud.remove}
+      onAdd={() => edit.startAdd({ category_id: categories[0]?.id ?? "" })}
+      onFieldChange={edit.setField}
+      saving={crud.saving}
+      addLabel="Agregar subcategoría"
+    />
+  );
+};
+
+export default SubcategoriesCrud;
