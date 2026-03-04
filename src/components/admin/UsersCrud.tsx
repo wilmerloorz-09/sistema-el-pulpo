@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2, Save, X, Building2, Pencil, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, X, Building2, Pencil, Check, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { Constants } from "@/integrations/supabase/types";
+import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
