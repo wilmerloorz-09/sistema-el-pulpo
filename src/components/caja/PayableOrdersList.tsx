@@ -31,7 +31,9 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
     <>
       <div className="space-y-2">
         {orders.map((order) => {
-          const label = order.split_code ?? order.table_name ?? "Para llevar";
+          const label = order.order_type === "TAKEOUT" 
+            ? "Para llevar" 
+            : order.split_code ?? order.table_name ?? "Mesa";
           const unpaid = unpaidCount(order);
           const paid = paidCount(order);
           const unpaidTotal = order.items
@@ -56,6 +58,12 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
                   <Badge variant="secondary" className="text-[10px]">#{order.order_number}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
+                  {order.order_type === "DINE_IN" && order.table_name && !order.split_code && (
+                    <span className="font-medium">{order.table_name} · </span>
+                  )}
+                  {order.order_type === "DINE_IN" && order.split_code && order.table_name && (
+                    <span className="font-medium">{order.table_name} · </span>
+                  )}
                   {unpaid} pendiente{unpaid !== 1 ? "s" : ""}
                   {paid > 0 && ` · ${paid} pagado${paid !== 1 ? "s" : ""}`}
                 </p>
