@@ -2,18 +2,23 @@ import { useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import ProductPicker from "@/components/order/ProductPicker";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
-import SplitTableDialog from "@/components/order/SplitTableDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen } = useOrder(orderId);
@@ -21,7 +26,7 @@ const Ordenes = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showCart, setShowCart] = useState(false);
-  const [showSplit, setShowSplit] = useState(false);
+  const [splitting, setSplitting] = useState(false);
 
   if (!orderId) {
     return (
@@ -56,6 +61,8 @@ const Ordenes = () => {
   const total = order.items.reduce((s, i) => s + i.total, 0);
   const isDraft = order.status === "DRAFT";
   const isSent = order.status === "SENT_TO_KITCHEN";
+  const hasSiblings = order.siblings.length > 0;
+  const canSplit = order.table_id && isDraft && order.items.length > 0 && !hasSiblings;
 
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
@@ -71,6 +78,61 @@ const Ordenes = () => {
     PAID: "bg-accent/15 text-accent",
   };
 
+  const handleSplit = async () => {
+    if (!user || !order.table_id) return;
+    setSplitting(true);
+    try {
+      const tableName = order.table_name ?? "Mesa";
+
+      // Create split A
+      const { data: splitA, error: errA } = await supabase
+        .from("table_splits")
+        .insert({ table_id: order.table_id, split_code: `${tableName} A` })
+        .select("id")
+        .single();
+      if (errA) throw errA;
+
+      // Create split B
+      const { data: splitB, error: errB } = await supabase
+        .from("table_splits")
+        .insert({ table_id: order.table_id, split_code: `${tableName} B` })
+        .select("id")
+        .single();
+      if (errB) throw errB;
+
+      // Assign current order to split A
+      const { error: updateErr } = await supabase
+        .from("orders")
+        .update({ split_id: splitA.id })
+        .eq("id", order.id);
+      if (updateErr) throw updateErr;
+
+      // Create new empty order for split B
+      const { error: newOrderErr } = await supabase
+        .from("orders")
+        .insert({
+          table_id: order.table_id,
+          split_id: splitB.id,
+          order_type: "DINE_IN" as const,
+          created_by: user.id,
+          status: "DRAFT" as const,
+        });
+      if (newOrderErr) throw newOrderErr;
+
+      toast.success("Mesa dividida en A y B");
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSplitting(false);
+    }
+  };
+
+  const switchToSibling = (siblingOrderId: string) => {
+    navigate(`/ordenes?order=${siblingOrderId}`, { replace: true });
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)]">
       {/* Order header */}
@@ -79,7 +141,7 @@ const Ordenes = () => {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-display text-sm font-bold">
               #{order.order_number}
             </span>
@@ -94,9 +156,15 @@ const Ordenes = () => {
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1 text-xs rounded-lg"
-                onClick={() => setShowSplit(true)}
+                onClick={handleSplit}
+                disabled={!canSplit || splitting}
+                title={!canSplit && !hasSiblings ? "Agrega items antes de dividir" : undefined}
               >
-                <Split className="h-3.5 w-3.5" />
+                {splitting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Split className="h-3.5 w-3.5" />
+                )}
                 Dividir
               </Button>
             )}
@@ -118,6 +186,26 @@ const Ordenes = () => {
           )}
         </Button>
       </div>
+
+      {/* Sub-table switcher */}
+      {hasSiblings && (
+        <div className="flex gap-1 px-4 py-2 border-b border-border bg-muted/30 overflow-x-auto">
+          {order.siblings.map((sib) => (
+            <Button
+              key={sib.id}
+              variant={sib.id === order.id ? "default" : "outline"}
+              size="sm"
+              className="rounded-lg text-xs h-8 gap-1.5 shrink-0"
+              onClick={() => switchToSibling(sib.id)}
+            >
+              {sib.split_code}
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                {sib.item_count}
+              </Badge>
+            </Button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Menu side */}
@@ -210,17 +298,6 @@ const Ordenes = () => {
         }}
         adding={addItem.isPending}
       />
-
-      {/* Split table dialog */}
-      {order.table_id && (
-        <SplitTableDialog
-          open={showSplit}
-          onClose={() => setShowSplit(false)}
-          tableId={order.table_id}
-          tableName={order.table_name ?? "Mesa"}
-          orderId={order.id}
-        />
-      )}
     </div>
   );
 };
