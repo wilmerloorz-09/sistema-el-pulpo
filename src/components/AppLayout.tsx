@@ -2,12 +2,14 @@ import { Outlet } from "react-router-dom";
 import BottomNav from "./BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
+import { useNetwork } from "@/contexts/NetworkContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, RefreshCw } from "lucide-react";
+import { LogOut, RefreshCw, WifiOff } from "lucide-react";
 
 const AppLayout = () => {
   const { signOut, profile, activeRole, setActiveRole, roles } = useAuth();
   const { activeBranch, branches, setActiveBranch } = useBranch();
+  const { isOnline } = useNetwork();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -40,6 +42,11 @@ const AppLayout = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {!isOnline && (
+            <span className="flex items-center gap-1 rounded-lg bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+              <WifiOff className="h-3 w-3" /> Offline
+            </span>
+          )}
           <span className="text-xs text-muted-foreground hidden sm:block">
             {profile?.full_name}
           </span>
