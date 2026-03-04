@@ -118,6 +118,7 @@ const Ordenes = () => {
           order_type: "DINE_IN" as const,
           created_by: user.id,
           status: "DRAFT" as const,
+          branch_id: activeBranchId!,
         });
 
         toast.success("Mesa dividida en A y B");
