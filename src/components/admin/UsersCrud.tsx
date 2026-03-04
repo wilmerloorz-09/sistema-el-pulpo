@@ -33,6 +33,7 @@ const ROLE_LABELS: Record<AppRole, string> = {
   cocina: "Cocina",
   despachador_mesas: "Despacho Mesas",
   despachador_takeout: "Despacho Takeout",
+  superadmin: "Super Admin",
 };
 
 const UsersCrud = () => {
