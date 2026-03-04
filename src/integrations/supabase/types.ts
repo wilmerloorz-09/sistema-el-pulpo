@@ -175,6 +175,7 @@ export type Database = {
       }
       cash_shifts: {
         Row: {
+          branch_id: string
           cashier_id: string
           closed_at: string | null
           id: string
@@ -183,6 +184,7 @@ export type Database = {
           status: Database["public"]["Enums"]["cash_shift_status"]
         }
         Insert: {
+          branch_id: string
           cashier_id: string
           closed_at?: string | null
           id?: string
@@ -191,6 +193,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["cash_shift_status"]
         }
         Update: {
+          branch_id?: string
           cashier_id?: string
           closed_at?: string | null
           id?: string
@@ -199,6 +202,13 @@ export type Database = {
           status?: Database["public"]["Enums"]["cash_shift_status"]
         }
         Relationships: [
+          {
+            foreignKeyName: "cash_shifts_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cash_shifts_cashier_id_fkey"
             columns: ["cashier_id"]
@@ -210,6 +220,7 @@ export type Database = {
       }
       categories: {
         Row: {
+          branch_id: string
           created_at: string
           description: string
           display_order: number
@@ -218,6 +229,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          branch_id: string
           created_at?: string
           description: string
           display_order?: number
@@ -226,6 +238,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          branch_id?: string
           created_at?: string
           description?: string
           display_order?: number
@@ -233,10 +246,19 @@ export type Database = {
           is_active?: boolean
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "categories_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       denominations: {
         Row: {
+          branch_id: string
           display_order: number
           id: string
           is_active: boolean
@@ -244,6 +266,7 @@ export type Database = {
           value: number
         }
         Insert: {
+          branch_id: string
           display_order?: number
           id?: string
           is_active?: boolean
@@ -251,34 +274,54 @@ export type Database = {
           value: number
         }
         Update: {
+          branch_id?: string
           display_order?: number
           id?: string
           is_active?: boolean
           label?: string
           value?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "denominations_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       modifiers: {
         Row: {
+          branch_id: string
           created_at: string
           description: string
           id: string
           is_active: boolean
         }
         Insert: {
+          branch_id: string
           created_at?: string
           description: string
           id?: string
           is_active?: boolean
         }
         Update: {
+          branch_id?: string
           created_at?: string
           description?: string
           id?: string
           is_active?: boolean
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "modifiers_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       order_item_modifiers: {
         Row: {
@@ -369,6 +412,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          branch_id: string
           created_at: string
           created_by: string
           id: string
@@ -380,6 +424,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          branch_id: string
           created_at?: string
           created_by: string
           id?: string
@@ -391,6 +436,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          branch_id?: string
           created_at?: string
           created_by?: string
           id?: string
@@ -402,6 +448,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "orders_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "orders_created_by_fkey"
             columns: ["created_by"]
@@ -427,24 +480,35 @@ export type Database = {
       }
       payment_methods: {
         Row: {
+          branch_id: string
           created_at: string
           id: string
           is_active: boolean
           name: string
         }
         Insert: {
+          branch_id: string
           created_at?: string
           id?: string
           is_active?: boolean
           name: string
         }
         Update: {
+          branch_id?: string
           created_at?: string
           id?: string
           is_active?: boolean
           name?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       payments: {
         Row: {
@@ -568,6 +632,7 @@ export type Database = {
       }
       restaurant_tables: {
         Row: {
+          branch_id: string
           created_at: string
           id: string
           is_active: boolean
@@ -576,6 +641,7 @@ export type Database = {
           visual_order: number
         }
         Insert: {
+          branch_id: string
           created_at?: string
           id?: string
           is_active?: boolean
@@ -584,6 +650,7 @@ export type Database = {
           visual_order?: number
         }
         Update: {
+          branch_id?: string
           created_at?: string
           id?: string
           is_active?: boolean
@@ -591,7 +658,15 @@ export type Database = {
           updated_at?: string
           visual_order?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "restaurant_tables_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       subcategories: {
         Row: {
