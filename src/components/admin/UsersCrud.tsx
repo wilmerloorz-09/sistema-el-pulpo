@@ -3,9 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, X } from "lucide-react";
 import { useState } from "react";
 import { Constants } from "@/integrations/supabase/types";
 import type { Database } from "@/integrations/supabase/types";
@@ -38,6 +39,8 @@ const UsersCrud = () => {
   const qc = useQueryClient();
   const [addingRoleFor, setAddingRoleFor] = useState<string | null>(null);
   const [newRole, setNewRole] = useState<AppRole>("mesero");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newUser, setNewUser] = useState({ email: "", password: "", full_name: "", username: "", role: "mesero" as AppRole });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ["admin-profiles"],
@@ -91,6 +94,35 @@ const UsersCrud = () => {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const createUser = useMutation({
+    mutationFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("No autenticado");
+
+      const res = await supabase.functions.invoke("create-user", {
+        body: {
+          email: newUser.email,
+          password: newUser.password,
+          full_name: newUser.full_name,
+          username: newUser.username,
+          roles: [newUser.role],
+        },
+      });
+
+      if (res.error) throw new Error(res.error.message);
+      if (res.data?.error) throw new Error(res.data.error);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-profiles"] });
+      qc.invalidateQueries({ queryKey: ["admin-user-roles"] });
+      setShowAddForm(false);
+      setNewUser({ email: "", password: "", full_name: "", username: "", role: "mesero" });
+      toast.success("Usuario creado correctamente");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   if (loadingProfiles) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -101,6 +133,69 @@ const UsersCrud = () => {
 
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => setShowAddForm(true)} className="gap-1.5 rounded-xl font-display text-xs" disabled={showAddForm}>
+          <Plus className="h-4 w-4" />
+          Agregar usuario
+        </Button>
+      </div>
+
+      {showAddForm && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Nuevo usuario</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              placeholder="Nombre completo"
+              value={newUser.full_name}
+              onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+              className="h-9 rounded-lg text-sm"
+            />
+            <Input
+              placeholder="Nombre de usuario"
+              value={newUser.username}
+              onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+              className="h-9 rounded-lg text-sm"
+            />
+            <Input
+              placeholder="Email"
+              type="email"
+              value={newUser.email}
+              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              className="h-9 rounded-lg text-sm"
+            />
+            <Input
+              placeholder="Contraseña"
+              type="password"
+              value={newUser.password}
+              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              className="h-9 rounded-lg text-sm"
+            />
+            <Select value={newUser.role} onValueChange={(v) => setNewUser({ ...newUser, role: v as AppRole })}>
+              <SelectTrigger className="h-9 rounded-lg text-sm"><SelectValue placeholder="Rol" /></SelectTrigger>
+              <SelectContent>
+                {Constants.public.Enums.app_role.map((r) => (
+                  <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)} className="rounded-lg text-xs gap-1">
+              <X className="h-3.5 w-3.5" /> Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => createUser.mutate()}
+              disabled={createUser.isPending || !newUser.email || !newUser.password || !newUser.full_name || !newUser.username}
+              className="rounded-lg text-xs gap-1"
+            >
+              {createUser.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Crear usuario
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-border overflow-hidden">
         <div className="hidden sm:grid bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
           style={{ gridTemplateColumns: "1fr 1fr 2fr 4rem" }}>
