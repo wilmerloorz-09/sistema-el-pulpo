@@ -142,8 +142,11 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
         <DialogHeader>
           <DialogTitle className="font-display">
             Cobrar #{order?.order_number}{" "}
+            {order?.order_type === "DINE_IN" && order?.table_name && (
+              <span className="text-muted-foreground font-normal">— {order.table_name}</span>
+            )}
             {order?.split_code && (
-              <span className="text-muted-foreground font-normal">— {order.split_code}</span>
+              <span className="text-muted-foreground font-normal"> ({order.split_code})</span>
             )}
           </DialogTitle>
         </DialogHeader>
