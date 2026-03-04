@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2, Save, X } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, X, Building2 } from "lucide-react";
 import { useState } from "react";
 import { Constants } from "@/integrations/supabase/types";
 import type { Database } from "@/integrations/supabase/types";
@@ -26,6 +26,17 @@ interface UserRole {
   role: AppRole;
 }
 
+interface Branch {
+  id: string;
+  name: string;
+}
+
+interface UserBranch {
+  id: string;
+  user_id: string;
+  branch_id: string;
+}
+
 const ROLE_LABELS: Record<AppRole, string> = {
   admin: "Admin",
   mesero: "Mesero",
@@ -40,8 +51,10 @@ const UsersCrud = () => {
   const qc = useQueryClient();
   const [addingRoleFor, setAddingRoleFor] = useState<string | null>(null);
   const [newRole, setNewRole] = useState<AppRole>("mesero");
+  const [addingBranchFor, setAddingBranchFor] = useState<string | null>(null);
+  const [newBranchId, setNewBranchId] = useState<string>("");
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newUser, setNewUser] = useState({ email: "", password: "", full_name: "", username: "", role: "mesero" as AppRole });
+  const [newUser, setNewUser] = useState({ email: "", password: "", full_name: "", username: "", role: "mesero" as AppRole, branch_id: "" });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ["admin-profiles"],
@@ -58,6 +71,24 @@ const UsersCrud = () => {
       const { data, error } = await supabase.from("user_roles").select("*");
       if (error) throw error;
       return data as UserRole[];
+    },
+  });
+
+  const { data: branches = [] } = useQuery({
+    queryKey: ["admin-branches"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
+      if (error) throw error;
+      return data as Branch[];
+    },
+  });
+
+  const { data: userBranches = [] } = useQuery({
+    queryKey: ["admin-user-branches"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("user_branches").select("*");
+      if (error) throw error;
+      return data as UserBranch[];
     },
   });
 
@@ -95,6 +126,31 @@ const UsersCrud = () => {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const addBranch = useMutation({
+    mutationFn: async ({ user_id, branch_id }: { user_id: string; branch_id: string }) => {
+      const { error } = await supabase.from("user_branches").insert({ user_id, branch_id });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-user-branches"] });
+      setAddingBranchFor(null);
+      toast.success("Sucursal asignada");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const removeBranch = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("user_branches").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-user-branches"] });
+      toast.success("Sucursal removida");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   const createUser = useMutation({
     mutationFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -108,6 +164,7 @@ const UsersCrud = () => {
           full_name: newUser.full_name,
           username: newUser.username,
           roles: [newUser.role],
+          branch_ids: newUser.branch_id ? [newUser.branch_id] : [],
         },
       });
 
@@ -117,8 +174,9 @@ const UsersCrud = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-profiles"] });
       qc.invalidateQueries({ queryKey: ["admin-user-roles"] });
+      qc.invalidateQueries({ queryKey: ["admin-user-branches"] });
       setShowAddForm(false);
-      setNewUser({ email: "", password: "", full_name: "", username: "", role: "mesero" });
+      setNewUser({ email: "", password: "", full_name: "", username: "", role: "mesero", branch_id: "" });
       toast.success("Usuario creado correctamente");
     },
     onError: (err: any) => toast.error(err.message),
@@ -131,6 +189,8 @@ const UsersCrud = () => {
       </div>
     );
   }
+
+  const branchesMap = Object.fromEntries(branches.map((b) => [b.id, b.name]));
 
   return (
     <div className="space-y-3">
@@ -179,6 +239,14 @@ const UsersCrud = () => {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={newUser.branch_id} onValueChange={(v) => setNewUser({ ...newUser, branch_id: v })}>
+              <SelectTrigger className="h-9 rounded-lg text-sm"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex gap-2 justify-end">
             <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)} className="rounded-lg text-xs gap-1">
@@ -199,23 +267,30 @@ const UsersCrud = () => {
 
       <div className="rounded-xl border border-border overflow-hidden">
         <div className="hidden sm:grid bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-          style={{ gridTemplateColumns: "1fr 1fr 2fr 4rem" }}>
+          style={{ gridTemplateColumns: "1fr 1fr 2fr 2fr 4rem" }}>
           <div>Nombre</div>
           <div>Usuario</div>
           <div>Roles</div>
+          <div>Sucursales</div>
           <div>Activo</div>
         </div>
 
         {profiles.map((profile) => {
           const userRoles = roles.filter((r) => r.user_id === profile.id);
-          const isAdding = addingRoleFor === profile.id;
-          const existingRoleNames = userRoles.map(r => r.role);
+          const userBranchList = userBranches.filter((ub) => ub.user_id === profile.id);
+          const isAddingRole = addingRoleFor === profile.id;
+          const isAddingBranch = addingBranchFor === profile.id;
+          const existingRoleNames = userRoles.map((r) => r.role);
+          const existingBranchIds = userBranchList.map((ub) => ub.branch_id);
+          const availableBranches = branches.filter((b) => !existingBranchIds.includes(b.id));
 
           return (
             <div key={profile.id} className="grid items-center gap-2 px-3 py-3 border-t border-border text-sm"
-              style={{ gridTemplateColumns: "1fr 1fr 2fr 4rem" }}>
+              style={{ gridTemplateColumns: "1fr 1fr 2fr 2fr 4rem" }}>
               <span className="font-medium truncate">{profile.full_name}</span>
               <span className="text-muted-foreground truncate text-xs">{profile.username}</span>
+
+              {/* Roles column */}
               <div className="flex flex-wrap gap-1 items-center">
                 {userRoles.map((ur) => (
                   <Badge key={ur.id} variant="secondary" className="text-[10px] gap-1 pr-1">
@@ -225,13 +300,13 @@ const UsersCrud = () => {
                     </button>
                   </Badge>
                 ))}
-                {isAdding ? (
+                {isAddingRole ? (
                   <div className="flex items-center gap-1">
                     <Select value={newRole} onValueChange={(v) => setNewRole(v as AppRole)}>
                       <SelectTrigger className="h-7 w-32 rounded-lg text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {Constants.public.Enums.app_role
-                          .filter(r => !existingRoleNames.includes(r))
+                          .filter((r) => !existingRoleNames.includes(r))
                           .map((r) => (
                             <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                           ))}
@@ -248,6 +323,42 @@ const UsersCrud = () => {
                   </Button>
                 )}
               </div>
+
+              {/* Branches column */}
+              <div className="flex flex-wrap gap-1 items-center">
+                {userBranchList.map((ub) => (
+                  <Badge key={ub.id} variant="outline" className="text-[10px] gap-1 pr-1">
+                    <Building2 className="h-2.5 w-2.5" />
+                    {branchesMap[ub.branch_id] ?? "—"}
+                    <button onClick={() => removeBranch.mutate(ub.id)} className="hover:text-destructive">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                {isAddingBranch ? (
+                  <div className="flex items-center gap-1">
+                    <Select value={newBranchId} onValueChange={setNewBranchId}>
+                      <SelectTrigger className="h-7 w-32 rounded-lg text-xs"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+                      <SelectContent>
+                        {availableBranches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" className="h-7 text-xs rounded-lg" disabled={!newBranchId} onClick={() => addBranch.mutate({ user_id: profile.id, branch_id: newBranchId })}>
+                      OK
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddingBranchFor(null)}>✕</Button>
+                  </div>
+                ) : (
+                  availableBranches.length > 0 && (
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setAddingBranchFor(profile.id); setNewBranchId(""); }}>
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  )
+                )}
+              </div>
+
               <div>
                 <Switch checked={profile.is_active} onCheckedChange={(v) => toggleActive.mutate({ id: profile.id, is_active: v })} />
               </div>

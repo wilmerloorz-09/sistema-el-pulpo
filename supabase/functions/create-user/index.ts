@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { email, password, full_name, username, roles } = await req.json();
+    const { email, password, full_name, username, roles, branch_ids } = await req.json();
 
     if (!email || !password || !full_name || !username) {
       return new Response(JSON.stringify({ error: "Faltan campos requeridos" }), {
@@ -79,6 +79,13 @@ Deno.serve(async (req) => {
     if (roles && Array.isArray(roles) && roles.length > 0) {
       for (const role of roles) {
         await adminClient.from("user_roles").insert({ user_id: userId, role });
+      }
+    }
+
+    // Assign branches
+    if (branch_ids && Array.isArray(branch_ids) && branch_ids.length > 0) {
+      for (const branch_id of branch_ids) {
+        await adminClient.from("user_branches").insert({ user_id: userId, branch_id });
       }
     }
 
