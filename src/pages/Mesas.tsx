@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Loader2, Plus, Users, CircleDollarSign } from "lucide-react";
+import { Loader2, Plus, Users, CircleDollarSign, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -37,6 +37,30 @@ const Mesas = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
+  const [creatingTakeout, setCreatingTakeout] = useState(false);
+
+  const handleTakeout = async () => {
+    if (!user) return;
+    setCreatingTakeout(true);
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .insert({
+          order_type: "TAKEOUT" as const,
+          created_by: user.id,
+          status: "DRAFT" as const,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      toast.success("Orden para llevar creada");
+      navigate(`/ordenes?order=${data.id}`);
+    } catch (err: any) {
+      toast.error(err.message || "Error al crear orden");
+    } finally {
+      setCreatingTakeout(false);
+    }
+  };
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
     if (table.status === "free") {
@@ -110,6 +134,31 @@ const Mesas = () => {
 
       {/* Table grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {/* Takeout button */}
+        <motion.button
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0 }}
+          onClick={handleTakeout}
+          disabled={creatingTakeout}
+          className={cn(
+            "relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 transition-all active:scale-95",
+            "bg-accent/10 border-accent/40 hover:border-accent/60 hover:bg-accent/15"
+          )}
+        >
+          {creatingTakeout ? (
+            <Loader2 className="h-6 w-6 animate-spin text-accent" />
+          ) : (
+            <>
+              <ShoppingBag className="h-6 w-6 text-accent" />
+              <span className="font-display text-lg font-bold text-accent">Para llevar</span>
+              <div className="absolute top-2 right-2 rounded-full bg-accent/10 p-1">
+                <Plus className="h-3.5 w-3.5 text-accent" />
+              </div>
+            </>
+          )}
+        </motion.button>
+
         {tables?.map((table, i) => {
           const config = STATUS_CONFIG[table.status];
           const isCreating = creating === table.id;
@@ -119,7 +168,7 @@ const Mesas = () => {
               key={table.id}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.03 }}
+              transition={{ delay: (i + 1) * 0.03 }}
               onClick={() => handleTableClick(table)}
               disabled={isCreating}
               className={cn(
