@@ -82,6 +82,13 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Assign branches
+    if (branch_ids && Array.isArray(branch_ids) && branch_ids.length > 0) {
+      for (const branch_id of branch_ids) {
+        await adminClient.from("user_branches").insert({ user_id: userId, branch_id });
+      }
+    }
+
     return new Response(JSON.stringify({ id: userId, email, status: "created" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
