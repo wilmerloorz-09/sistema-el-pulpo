@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import ProductPicker from "@/components/order/ProductPicker";
@@ -19,6 +20,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeBranchId } = useBranch();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
@@ -117,6 +119,7 @@ const Ordenes = () => {
           order_type: "DINE_IN" as const,
           created_by: user.id,
           status: "DRAFT" as const,
+          branch_id: activeBranchId!,
         });
 
         toast.success("Mesa dividida en A y B");
@@ -138,6 +141,7 @@ const Ordenes = () => {
           order_type: "DINE_IN" as const,
           created_by: user.id,
           status: "DRAFT" as const,
+          branch_id: activeBranchId!,
         });
 
         toast.success(`Sub-mesa ${tableName} ${nextLetter} creada`);

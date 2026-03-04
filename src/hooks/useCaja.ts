@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranch } from "@/contexts/BranchContext";
 
 export interface Denomination {
   id: string;
@@ -49,31 +50,36 @@ export interface PayOrderParams {
 
 export function useCaja() {
   const { user } = useAuth();
+  const { activeBranchId } = useBranch();
   const qc = useQueryClient();
 
   // Fetch active denominations
   const denomsQuery = useQuery({
-    queryKey: ["denominations"],
+    queryKey: ["denominations", activeBranchId],
     queryFn: async () => {
+      if (!activeBranchId) return [];
       const { data, error } = await supabase
         .from("denominations")
         .select("id, label, value, display_order")
         .eq("is_active", true)
+        .eq("branch_id", activeBranchId)
         .order("display_order");
       if (error) throw error;
       return data as Denomination[];
     },
+    enabled: !!activeBranchId,
   });
 
   // Fetch current open shift for this user
   const shiftQuery = useQuery({
-    queryKey: ["current-shift"],
+    queryKey: ["current-shift", activeBranchId],
     queryFn: async () => {
-      if (!user) return null;
+      if (!user || !activeBranchId) return null;
       const { data, error } = await supabase
         .from("cash_shifts")
         .select("id, status, opened_at, closed_at, notes")
         .eq("cashier_id", user.id)
+        .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
         .maybeSingle();
       if (error) throw error;
@@ -172,9 +178,10 @@ export function useCaja() {
   const openShift = useMutation({
     mutationFn: async (denomCounts: { denomination_id: string; qty: number }[]) => {
       if (!user) throw new Error("No user");
+      if (!activeBranchId) throw new Error("No branch selected");
       const { data: shift, error } = await supabase
         .from("cash_shifts")
-        .insert({ cashier_id: user.id })
+        .insert({ cashier_id: user.id, branch_id: activeBranchId })
         .select("id")
         .single();
       if (error) throw error;

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useBranch } from "@/contexts/BranchContext";
 
 export interface KitchenOrderItem {
   id: string;
@@ -22,14 +23,17 @@ export interface KitchenOrder {
 
 export function useKitchenOrders() {
   const qc = useQueryClient();
+  const { activeBranchId } = useBranch();
 
   const query = useQuery({
-    queryKey: ["kitchen-orders"],
+    queryKey: ["kitchen-orders", activeBranchId],
     queryFn: async () => {
+      if (!activeBranchId) return [];
       const { data: orders, error } = await supabase
         .from("orders")
         .select("id, order_number, order_type, table_id, split_id, updated_at")
         .eq("status", "SENT_TO_KITCHEN")
+        .eq("branch_id", activeBranchId)
         .order("updated_at", { ascending: true });
       if (error) throw error;
       if (!orders || orders.length === 0) return [];

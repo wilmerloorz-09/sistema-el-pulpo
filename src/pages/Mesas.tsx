@@ -1,5 +1,6 @@
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranch } from "@/contexts/BranchContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
@@ -35,6 +36,7 @@ const STATUS_CONFIG = {
 const Mesas = () => {
   const { data: tables, isLoading } = useTablesWithStatus();
   const { user } = useAuth();
+  const { activeBranchId } = useBranch();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingTakeout, setCreatingTakeout] = useState(false);
@@ -49,6 +51,7 @@ const Mesas = () => {
           order_type: "TAKEOUT" as const,
           created_by: user.id,
           status: "DRAFT" as const,
+          branch_id: activeBranchId!,
         })
         .select("id")
         .single();
@@ -80,6 +83,7 @@ const Mesas = () => {
             order_type: "DINE_IN" as const,
             created_by: user.id,
             status: "DRAFT" as const,
+            branch_id: activeBranchId!,
           })
           .select("id")
           .single();

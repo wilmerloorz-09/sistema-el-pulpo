@@ -12,6 +12,7 @@ const ROLE_META: Record<AppRole, { label: string; icon: React.ReactNode; color: 
   cocina: { label: "Cocina", icon: <ChefHat className="h-7 w-7" />, color: "bg-destructive text-destructive-foreground" },
   despachador_mesas: { label: "Despacho Mesas", icon: <Truck className="h-7 w-7" />, color: "bg-info text-primary-foreground" },
   despachador_takeout: { label: "Despacho Takeout", icon: <Truck className="h-7 w-7" />, color: "bg-secondary text-secondary-foreground" },
+  superadmin: { label: "Super Admin", icon: <Shield className="h-7 w-7" />, color: "bg-primary text-primary-foreground" },
 };
 
 const RoleSelector = () => {

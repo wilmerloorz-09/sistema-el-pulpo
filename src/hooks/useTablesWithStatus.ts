@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"];
@@ -16,19 +17,24 @@ interface TableWithStatus {
 }
 
 export function useTablesWithStatus() {
+  const { activeBranchId } = useBranch();
+
   return useQuery({
-    queryKey: ["tables-with-status"],
+    queryKey: ["tables-with-status", activeBranchId],
     queryFn: async () => {
+      if (!activeBranchId) return [];
       const [tablesRes, ordersRes] = await Promise.all([
         supabase
           .from("restaurant_tables")
           .select("*")
           .eq("is_active", true)
+          .eq("branch_id", activeBranchId)
           .order("visual_order"),
         supabase
           .from("orders")
           .select("id, table_id, status, split_id, order_items(id)")
           .not("table_id", "is", null)
+          .eq("branch_id", activeBranchId)
           .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"]),
       ]);
 
@@ -83,6 +89,7 @@ export function useTablesWithStatus() {
         };
       });
     },
+    enabled: !!activeBranchId,
     refetchInterval: 5000, // Poll every 5s for realtime-like updates
   });
 }
