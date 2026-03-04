@@ -58,6 +58,7 @@ const Caja = () => {
         <PayableOrdersList
           orders={payableOrders}
           paymentMethods={paymentMethods}
+          shiftDenoms={shift.denoms}
           onPay={(p) => payOrder.mutate(p)}
           paying={payOrder.isPending}
         />

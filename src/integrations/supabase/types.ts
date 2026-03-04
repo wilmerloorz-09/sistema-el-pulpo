@@ -293,6 +293,7 @@ export type Database = {
           dispatched_at: string | null
           id: string
           order_id: string
+          paid_at: string | null
           product_id: string
           quantity: number
           total: number
@@ -304,6 +305,7 @@ export type Database = {
           dispatched_at?: string | null
           id?: string
           order_id: string
+          paid_at?: string | null
           product_id: string
           quantity?: number
           total: number
@@ -315,6 +317,7 @@ export type Database = {
           dispatched_at?: string | null
           id?: string
           order_id?: string
+          paid_at?: string | null
           product_id?: string
           quantity?: number
           total?: number
