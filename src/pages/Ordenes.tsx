@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
@@ -8,9 +8,10 @@ import { supabase } from "@/integrations/supabase/client";
 import ProductPicker from "@/components/order/ProductPicker";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
+import ThermalReceipt from "@/components/order/ThermalReceipt";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split } from "lucide-react";
+import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -27,6 +28,13 @@ const Ordenes = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
+  const receiptRef = useRef<HTMLDivElement>(null);
+
+  const isTakeout = order?.order_type === "TAKEOUT";
+
+  const printReceipt = useCallback(() => {
+    window.print();
+  }, []);
 
   if (!orderId) {
     return (
@@ -265,12 +273,27 @@ const Ordenes = () => {
           {/* Actions */}
           {isDraft && order.items.length > 0 && (
             <Button
-              onClick={() => sendToKitchen.mutate()}
+              onClick={() => {
+                sendToKitchen.mutate(undefined, {
+                  onSuccess: () => {
+                    if (isTakeout) {
+                      printReceipt();
+                      // Navigate to mesas after a brief delay for print dialog
+                      setTimeout(() => navigate("/mesas"), 500);
+                    }
+                  },
+                });
+              }}
               disabled={sendToKitchen.isPending}
               className="mt-4 h-12 w-full rounded-xl font-display text-base font-semibold gap-2"
             >
               {sendToKitchen.isPending ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : isTakeout ? (
+                <>
+                  <CircleDollarSign className="h-5 w-5" />
+                  Enviar a caja · ${total.toFixed(2)}
+                </>
               ) : (
                 <>
                   <ChefHat className="h-5 w-5" />
@@ -313,6 +336,28 @@ const Ordenes = () => {
         }}
         adding={addItem.isPending}
       />
+
+      {/* Thermal receipt for printing */}
+      {order && (
+        <ThermalReceipt
+          ref={receiptRef}
+          orderNumber={order.order_number}
+          orderType={order.order_type}
+          tableName={order.table_name}
+          items={order.items}
+          total={total}
+          createdAt={order.created_at}
+        />
+      )}
+
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .print\\:block, .print\\:block * { visibility: visible !important; }
+          .print\\:block { position: absolute; left: 0; top: 0; }
+        }
+      `}</style>
     </div>
   );
 };
