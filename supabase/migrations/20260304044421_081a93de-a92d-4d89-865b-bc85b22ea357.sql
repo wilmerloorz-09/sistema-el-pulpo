@@ -1,0 +1,1 @@
+ALTER TABLE public.order_items ADD COLUMN dispatched_at timestamp with time zone DEFAULT NULL;
