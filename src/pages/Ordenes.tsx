@@ -62,7 +62,7 @@ const Ordenes = () => {
   const isDraft = order.status === "DRAFT";
   const isSent = order.status === "SENT_TO_KITCHEN";
   const hasSiblings = order.siblings.length > 0;
-  const canSplit = order.table_id && isDraft && order.items.length > 0 && !hasSiblings;
+  const canSplit = order.table_id && isDraft && order.items.length > 0;
 
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
@@ -83,43 +83,58 @@ const Ordenes = () => {
     setSplitting(true);
     try {
       const tableName = order.table_name ?? "Mesa";
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-      // Create split A
-      const { data: splitA, error: errA } = await supabase
-        .from("table_splits")
-        .insert({ table_id: order.table_id, split_code: `${tableName} A` })
-        .select("id")
-        .single();
-      if (errA) throw errA;
+      if (!hasSiblings) {
+        // First split: create A and B
+        const { data: splitA, error: errA } = await supabase
+          .from("table_splits")
+          .insert({ table_id: order.table_id, split_code: `${tableName} A` })
+          .select("id")
+          .single();
+        if (errA) throw errA;
 
-      // Create split B
-      const { data: splitB, error: errB } = await supabase
-        .from("table_splits")
-        .insert({ table_id: order.table_id, split_code: `${tableName} B` })
-        .select("id")
-        .single();
-      if (errB) throw errB;
+        const { data: splitB, error: errB } = await supabase
+          .from("table_splits")
+          .insert({ table_id: order.table_id, split_code: `${tableName} B` })
+          .select("id")
+          .single();
+        if (errB) throw errB;
 
-      // Assign current order to split A
-      const { error: updateErr } = await supabase
-        .from("orders")
-        .update({ split_id: splitA.id })
-        .eq("id", order.id);
-      if (updateErr) throw updateErr;
+        await supabase.from("orders").update({ split_id: splitA.id }).eq("id", order.id);
 
-      // Create new empty order for split B
-      const { error: newOrderErr } = await supabase
-        .from("orders")
-        .insert({
+        await supabase.from("orders").insert({
           table_id: order.table_id,
           split_id: splitB.id,
           order_type: "DINE_IN" as const,
           created_by: user.id,
           status: "DRAFT" as const,
         });
-      if (newOrderErr) throw newOrderErr;
 
-      toast.success("Mesa dividida en A y B");
+        toast.success("Mesa dividida en A y B");
+      } else {
+        // Subsequent split: find next letter
+        const nextIndex = order.siblings.length;
+        const nextLetter = letters[nextIndex] ?? `${nextIndex + 1}`;
+
+        const { data: newSplit, error: splitErr } = await supabase
+          .from("table_splits")
+          .insert({ table_id: order.table_id, split_code: `${tableName} ${nextLetter}` })
+          .select("id")
+          .single();
+        if (splitErr) throw splitErr;
+
+        await supabase.from("orders").insert({
+          table_id: order.table_id,
+          split_id: newSplit.id,
+          order_type: "DINE_IN" as const,
+          created_by: user.id,
+          status: "DRAFT" as const,
+        });
+
+        toast.success(`Sub-mesa ${tableName} ${nextLetter} creada`);
+      }
+
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
     } catch (err: any) {
