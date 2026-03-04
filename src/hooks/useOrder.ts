@@ -15,15 +15,24 @@ interface OrderItem {
   modifiers: { id: string; modifier_id: string; description: string }[];
 }
 
+interface SiblingOrder {
+  id: string;
+  order_number: number;
+  split_code: string;
+  item_count: number;
+}
+
 interface Order {
   id: string;
   order_number: number;
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";
   table_id: string | null;
+  split_id: string | null;
   table_name?: string;
   created_at: string;
   items: OrderItem[];
+  siblings: SiblingOrder[];
 }
 
 export function useOrder(orderId: string | null) {
@@ -36,7 +45,7 @@ export function useOrder(orderId: string | null) {
 
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, status, order_type, table_id, created_at")
+        .select("id, order_number, status, order_type, table_id, split_id, created_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;
@@ -82,10 +91,37 @@ export function useOrder(orderId: string | null) {
           })),
       }));
 
+      // Fetch sibling split orders if this order belongs to a table
+      let siblings: SiblingOrder[] = [];
+      if (order.table_id) {
+        const { data: siblingOrders } = await supabase
+          .from("orders")
+          .select("id, order_number, split_id, order_items(id)")
+          .eq("table_id", order.table_id)
+          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"])
+          .not("split_id", "is", null);
+
+        if (siblingOrders && siblingOrders.length > 0) {
+          const splitIds = [...new Set(siblingOrders.map(o => o.split_id).filter(Boolean))] as string[];
+          const { data: splits } = await supabase
+            .from("table_splits")
+            .select("id, split_code")
+            .in("id", splitIds);
+
+          siblings = siblingOrders.map(o => ({
+            id: o.id,
+            order_number: o.order_number,
+            split_code: splits?.find(s => s.id === o.split_id)?.split_code ?? "",
+            item_count: Array.isArray(o.order_items) ? o.order_items.length : 0,
+          }));
+        }
+      }
+
       return {
         ...order,
         table_name,
         items: enrichedItems,
+        siblings,
       } as Order;
     },
     enabled: !!orderId,
