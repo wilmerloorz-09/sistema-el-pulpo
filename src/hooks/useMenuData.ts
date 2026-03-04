@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 
 interface Category {
@@ -34,66 +34,59 @@ export function useMenuData() {
 
   const categories = useQuery({
     queryKey: ["menu-categories", activeBranchId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("categories")
-        .select("id, description, display_order")
-        .eq("is_active", true)
-        .eq("branch_id", activeBranchId!)
-        .order("display_order");
-      if (error) throw error;
-      return data as Category[];
-    },
+    queryFn: () =>
+      dbSelect<Category>("categories", {
+        select: "id, description, display_order",
+        branchId: activeBranchId,
+        filters: [{ column: "is_active", op: "eq", value: true }],
+        orderBy: { column: "display_order" },
+      }),
     enabled: !!activeBranchId,
   });
 
   const subcategories = useQuery({
     queryKey: ["menu-subcategories", activeBranchId],
-    queryFn: async () => {
-      // Get category IDs for this branch first
-      const catIds = categories.data?.map(c => c.id) ?? [];
-      if (catIds.length === 0) return [];
-      const { data, error } = await supabase
-        .from("subcategories")
-        .select("id, description, category_id, display_order")
-        .eq("is_active", true)
-        .in("category_id", catIds)
-        .order("display_order");
-      if (error) throw error;
-      return data as Subcategory[];
+    queryFn: () => {
+      const catIds = categories.data?.map((c) => c.id) ?? [];
+      if (catIds.length === 0) return Promise.resolve([]);
+      return dbSelect<Subcategory>("subcategories", {
+        select: "id, description, category_id, display_order",
+        filters: [
+          { column: "is_active", op: "eq", value: true },
+          { column: "category_id", op: "in", value: catIds },
+        ],
+        orderBy: { column: "display_order" },
+      });
     },
     enabled: !!activeBranchId && !!categories.data,
   });
 
   const products = useQuery({
     queryKey: ["menu-products", activeBranchId],
-    queryFn: async () => {
-      const subIds = subcategories.data?.map(s => s.id) ?? [];
-      if (subIds.length === 0) return [];
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, description, subcategory_id, unit_price, price_mode")
-        .eq("is_active", true)
-        .in("subcategory_id", subIds)
-        .order("description");
-      if (error) throw error;
-      return data as Product[];
+    queryFn: () => {
+      const subIds = subcategories.data?.map((s) => s.id) ?? [];
+      if (subIds.length === 0) return Promise.resolve([]);
+      return dbSelect<Product>("products", {
+        select: "id, description, subcategory_id, unit_price, price_mode",
+        filters: [
+          { column: "is_active", op: "eq", value: true },
+          { column: "subcategory_id", op: "in", value: subIds },
+        ],
+        orderBy: { column: "description" },
+      });
     },
     enabled: !!activeBranchId && !!subcategories.data,
   });
 
   const modifiers = useQuery({
     queryKey: ["menu-modifiers", activeBranchId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("modifiers")
-        .select("id, description")
-        .eq("is_active", true)
-        .eq("branch_id", activeBranchId!)
-        .order("description");
-      if (error) throw error;
-      return data as Modifier[];
-    },
+    queryFn: () =>
+      dbSelect<Modifier>("modifiers", {
+        select: "id, description",
+        branchId: activeBranchId,
+        filters: [{ column: "is_active", op: "eq", value: true }],
+        orderBy: { column: "description" },
+      }),
     enabled: !!activeBranchId,
   });
 
