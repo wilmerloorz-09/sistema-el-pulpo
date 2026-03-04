@@ -105,7 +105,18 @@ export function useKitchenOrders() {
 
       const allDispatched = (remaining ?? []).every((r: any) => r.dispatched_at != null);
       if (allDispatched) {
-        await supabase.from("orders").update({ status: "KITCHEN_DISPATCHED" }).eq("id", orderId);
+        // Takeout orders already paid → set PAID (final); Dine-in → KITCHEN_DISPATCHED (ready for caja)
+        const { data: orderData } = await supabase
+          .from("orders")
+          .select("order_type")
+          .eq("id", orderId)
+          .single();
+        const hasPaid = await supabase
+          .from("payments")
+          .select("id", { count: "exact", head: true })
+          .eq("order_id", orderId);
+        const nextStatus = (hasPaid.count ?? 0) > 0 ? "PAID" : "KITCHEN_DISPATCHED";
+        await supabase.from("orders").update({ status: nextStatus }).eq("id", orderId);
       }
     },
     onSuccess: () => {
@@ -125,9 +136,15 @@ export function useKitchenOrders() {
         .is("dispatched_at", null);
       if (itemsErr) throw itemsErr;
 
+      // If order was already paid (takeout), set PAID; otherwise KITCHEN_DISPATCHED
+      const { count } = await supabase
+        .from("payments")
+        .select("id", { count: "exact", head: true })
+        .eq("order_id", orderId);
+      const nextStatus = (count ?? 0) > 0 ? "PAID" : "KITCHEN_DISPATCHED";
       const { error } = await supabase
         .from("orders")
-        .update({ status: "KITCHEN_DISPATCHED" })
+        .update({ status: nextStatus })
         .eq("id", orderId);
       if (error) throw error;
     },

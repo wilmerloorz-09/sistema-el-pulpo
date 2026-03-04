@@ -234,16 +234,23 @@ export function useCaja() {
         .in("id", itemIds);
       if (itemErr) throw itemErr;
 
-      // 3. Check if all items are now paid → set order PAID
+      // 3. Check if all items are now paid
       const { count } = await supabase
         .from("order_items")
         .select("id", { count: "exact", head: true })
         .eq("order_id", orderId)
         .is("paid_at", null);
       if (count === 0) {
+        // Takeout orders → send to kitchen after payment; Dine-in → mark as PAID (done)
+        const { data: orderData } = await supabase
+          .from("orders")
+          .select("order_type")
+          .eq("id", orderId)
+          .single();
+        const nextStatus = orderData?.order_type === "TAKEOUT" ? "SENT_TO_KITCHEN" : "PAID";
         const { error: statusErr } = await supabase
           .from("orders")
-          .update({ status: "PAID" })
+          .update({ status: nextStatus })
           .eq("id", orderId);
         if (statusErr) throw statusErr;
       }
