@@ -7,6 +7,7 @@ import { LogOut, RefreshCw } from "lucide-react";
 
 const AppLayout = () => {
   const { signOut, profile, activeRole, setActiveRole, roles } = useAuth();
+  const { activeBranch, branches, setActiveBranch } = useBranch();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
