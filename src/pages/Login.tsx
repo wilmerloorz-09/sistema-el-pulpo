@@ -94,8 +94,9 @@ const Login = () => {
         {/* Dev hint */}
         <div className="rounded-xl border border-border bg-muted/50 p-3 text-center text-xs text-muted-foreground">
           <p className="font-medium">Usuarios de prueba:</p>
-          <p>admin@elpulpo.com · mesero1@elpulpo.com</p>
-          <p>Contraseña: <span className="font-mono">Test1234!</span></p>
+          <p>admin@elpulpo.com · contraseña: <span className="font-mono">admin123</span></p>
+          <p>mesero1@elpulpo.com · contraseña: <span className="font-mono">mesero123</span></p>
+          <p>super@elpulpo.com · contraseña: <span className="font-mono">super123</span></p>
         </div>
       </motion.div>
     </div>

@@ -25,33 +25,56 @@ Deno.serve(async (req) => {
 
   const results = [];
 
+  // List all existing users
+  const { data: existingUsers } = await supabase.auth.admin.listUsers();
+  const emailToId = new Map(existingUsers?.users?.map(u => [u.email, u.id]) ?? []);
+
   for (const u of users) {
-    // Create auth user
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: u.email,
-      password: u.password,
-      email_confirm: true,
-      user_metadata: { full_name: u.full_name, username: u.username },
-    });
+    const existingId = emailToId.get(u.email);
+    
+    if (existingId) {
+      // Update existing user: confirm email and reset password
+      const { error } = await supabase.auth.admin.updateUserById(existingId, {
+        password: u.password,
+        email_confirm: true,
+        user_metadata: { full_name: u.full_name, username: u.username },
+      });
 
-    if (authError) {
-      results.push({ email: u.email, error: authError.message });
-      continue;
-    }
-
-    const userId = authData.user.id;
-
-    // Assign roles
-    for (const role of u.roles) {
-      const { error: roleError } = await supabase
-        .from("user_roles")
-        .insert({ user_id: userId, role });
-      if (roleError) {
-        results.push({ email: u.email, role, roleError: roleError.message });
+      if (error) {
+        results.push({ email: u.email, error: error.message });
+        continue;
       }
-    }
 
-    results.push({ email: u.email, id: userId, roles: u.roles, status: "created" });
+      // Ensure roles exist
+      for (const role of u.roles) {
+        await supabase.from("user_roles").upsert(
+          { user_id: existingId, role },
+          { onConflict: "user_id,role" }
+        );
+      }
+
+      results.push({ email: u.email, id: existingId, status: "updated" });
+    } else {
+      // Create new user
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: u.email,
+        password: u.password,
+        email_confirm: true,
+        user_metadata: { full_name: u.full_name, username: u.username },
+      });
+
+      if (authError) {
+        results.push({ email: u.email, error: authError.message });
+        continue;
+      }
+
+      const userId = authData.user.id;
+      for (const role of u.roles) {
+        await supabase.from("user_roles").insert({ user_id: userId, role });
+      }
+
+      results.push({ email: u.email, id: userId, status: "created" });
+    }
   }
 
   return new Response(JSON.stringify({ results }, null, 2), {
