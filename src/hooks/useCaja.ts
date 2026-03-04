@@ -72,13 +72,14 @@ export function useCaja() {
 
   // Fetch current open shift for this user
   const shiftQuery = useQuery({
-    queryKey: ["current-shift"],
+    queryKey: ["current-shift", activeBranchId],
     queryFn: async () => {
-      if (!user) return null;
+      if (!user || !activeBranchId) return null;
       const { data, error } = await supabase
         .from("cash_shifts")
         .select("id, status, opened_at, closed_at, notes")
         .eq("cashier_id", user.id)
+        .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
         .maybeSingle();
       if (error) throw error;
