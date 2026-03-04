@@ -50,6 +50,7 @@ export interface PayOrderParams {
 
 export function useCaja() {
   const { user } = useAuth();
+  const { activeBranchId } = useBranch();
   const qc = useQueryClient();
 
   // Fetch active denominations

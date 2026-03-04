@@ -20,6 +20,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeBranchId } = useBranch();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 

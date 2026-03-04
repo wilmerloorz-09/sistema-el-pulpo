@@ -36,6 +36,7 @@ const STATUS_CONFIG = {
 const Mesas = () => {
   const { data: tables, isLoading } = useTablesWithStatus();
   const { user } = useAuth();
+  const { activeBranchId } = useBranch();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingTakeout, setCreatingTakeout] = useState(false);
