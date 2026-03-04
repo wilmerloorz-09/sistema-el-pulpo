@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -43,6 +43,8 @@ export function useOrder(orderId: string | null) {
     queryFn: async () => {
       if (!orderId) return null;
 
+      // Complex relational query — use supabase passthrough for reads,
+      // but simple table reads go through dbSelect for caching
       const { data: order, error } = await supabase
         .from("orders")
         .select("id, order_number, status, order_type, table_id, split_id, created_at")
@@ -62,15 +64,14 @@ export function useOrder(orderId: string | null) {
       }
 
       // Fetch items
-      const { data: items, error: itemsErr } = await supabase
-        .from("order_items")
-        .select("id, product_id, description_snapshot, quantity, unit_price, total")
-        .eq("order_id", orderId)
-        .order("created_at");
-      if (itemsErr) throw itemsErr;
+      const items = await dbSelect<any>("order_items", {
+        select: "id, product_id, description_snapshot, quantity, unit_price, total",
+        filters: [{ column: "order_id", op: "eq", value: orderId }],
+        orderBy: { column: "created_at" },
+      });
 
-      // Fetch modifiers for items
-      const itemIds = items.map((i) => i.id);
+      // Fetch modifiers for items (complex join — supabase passthrough)
+      const itemIds = items.map((i: any) => i.id);
       let modifiersData: any[] = [];
       if (itemIds.length > 0) {
         const { data: mods } = await supabase
@@ -80,7 +81,7 @@ export function useOrder(orderId: string | null) {
         modifiersData = mods ?? [];
       }
 
-      const enrichedItems: OrderItem[] = items.map((item) => ({
+      const enrichedItems: OrderItem[] = items.map((item: any) => ({
         ...item,
         modifiers: modifiersData
           .filter((m: any) => m.order_item_id === item.id)
@@ -136,31 +137,27 @@ export function useOrder(orderId: string | null) {
       modifier_ids: string[];
     }) => {
       const total = params.unit_price * params.quantity;
-      const { data: item, error } = await supabase
-        .from("order_items")
-        .insert({
-          order_id: orderId!,
-          product_id: params.product_id,
-          description_snapshot: params.description_snapshot,
-          unit_price: params.unit_price,
-          quantity: params.quantity,
-          total,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
+      const itemId = crypto.randomUUID();
+
+      await dbInsert("order_items", {
+        id: itemId,
+        order_id: orderId!,
+        product_id: params.product_id,
+        description_snapshot: params.description_snapshot,
+        unit_price: params.unit_price,
+        quantity: params.quantity,
+        total,
+      });
 
       // Add modifiers
       if (params.modifier_ids.length > 0) {
-        const { error: modErr } = await supabase
-          .from("order_item_modifiers")
-          .insert(
-            params.modifier_ids.map((mid) => ({
-              order_item_id: item.id,
-              modifier_id: mid,
-            }))
-          );
-        if (modErr) throw modErr;
+        for (const mid of params.modifier_ids) {
+          await dbInsert("order_item_modifiers", {
+            id: crypto.randomUUID(),
+            order_item_id: itemId,
+            modifier_id: mid,
+          });
+        }
       }
     },
     onSuccess: () => {
@@ -172,10 +169,11 @@ export function useOrder(orderId: string | null) {
 
   const removeItem = useMutation({
     mutationFn: async (itemId: string) => {
-      // Delete modifiers first
-      await supabase.from("order_item_modifiers").delete().eq("order_item_id", itemId);
-      const { error } = await supabase.from("order_items").delete().eq("id", itemId);
-      if (error) throw error;
+      // Delete modifiers first — use supabase for bulk delete by non-PK
+      if (navigator.onLine) {
+        await supabase.from("order_item_modifiers").delete().eq("order_item_id", itemId);
+      }
+      await dbDelete("order_items", itemId);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["order", orderId] });
@@ -185,11 +183,7 @@ export function useOrder(orderId: string | null) {
 
   const updateQuantity = useMutation({
     mutationFn: async ({ itemId, quantity, unit_price }: { itemId: string; quantity: number; unit_price: number }) => {
-      const { error } = await supabase
-        .from("order_items")
-        .update({ quantity, total: quantity * unit_price })
-        .eq("id", itemId);
-      if (error) throw error;
+      await dbUpdate("order_items", itemId, { quantity, total: quantity * unit_price });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["order", orderId] });
@@ -200,15 +194,10 @@ export function useOrder(orderId: string | null) {
   const sendToKitchen = useMutation({
     mutationFn: async () => {
       const order = query.data;
-      // Takeout orders skip kitchen → go directly to KITCHEN_DISPATCHED (ready for caja)
       const newStatus: OrderStatus =
         order?.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
 
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: newStatus })
-        .eq("id", orderId!);
-      if (error) throw error;
+      await dbUpdate("orders", orderId!, { status: newStatus });
     },
     onSuccess: () => {
       const order = query.data;

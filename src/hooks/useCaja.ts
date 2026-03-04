@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect, dbInsert, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -53,20 +53,16 @@ export function useCaja() {
   const { activeBranchId } = useBranch();
   const qc = useQueryClient();
 
-  // Fetch active denominations
+  // Fetch active denominations via DatabaseService (cached offline)
   const denomsQuery = useQuery({
     queryKey: ["denominations", activeBranchId],
-    queryFn: async () => {
-      if (!activeBranchId) return [];
-      const { data, error } = await supabase
-        .from("denominations")
-        .select("id, label, value, display_order")
-        .eq("is_active", true)
-        .eq("branch_id", activeBranchId)
-        .order("display_order");
-      if (error) throw error;
-      return data as Denomination[];
-    },
+    queryFn: () =>
+      dbSelect<Denomination>("denominations", {
+        select: "id, label, value, display_order",
+        branchId: activeBranchId,
+        filters: [{ column: "is_active", op: "eq", value: true }],
+        orderBy: { column: "display_order" },
+      }),
     enabled: !!activeBranchId,
   });
 
@@ -75,6 +71,8 @@ export function useCaja() {
     queryKey: ["current-shift", activeBranchId],
     queryFn: async () => {
       if (!user || !activeBranchId) return null;
+
+      // Complex query with maybeSingle — supabase passthrough
       const { data, error } = await supabase
         .from("cash_shifts")
         .select("id, status, opened_at, closed_at, notes")
@@ -85,14 +83,14 @@ export function useCaja() {
       if (error) throw error;
       if (!data) return null;
 
-      // Fetch shift denoms
-      const { data: denoms } = await supabase
-        .from("cash_shift_denoms")
-        .select("id, denomination_id, qty_initial, qty_current")
-        .eq("shift_id", data.id);
+      // Fetch shift denoms via DatabaseService
+      const denoms = await dbSelect<any>("cash_shift_denoms", {
+        select: "id, denomination_id, qty_initial, qty_current",
+        filters: [{ column: "shift_id", op: "eq", value: data.id }],
+      });
 
       const allDenoms = denomsQuery.data ?? [];
-      const enriched: ShiftDenom[] = (denoms ?? []).map((d) => {
+      const enriched: ShiftDenom[] = (denoms ?? []).map((d: any) => {
         const denom = allDenoms.find((ad) => ad.id === d.denomination_id);
         return {
           ...d,
@@ -106,7 +104,7 @@ export function useCaja() {
     enabled: !!user && !!denomsQuery.data,
   });
 
-  // Fetch payable orders (KITCHEN_DISPATCHED)
+  // Fetch payable orders (KITCHEN_DISPATCHED) — complex relational query
   const ordersQuery = useQuery({
     queryKey: ["payable-orders"],
     queryFn: async () => {
@@ -160,18 +158,15 @@ export function useCaja() {
     refetchInterval: 10000,
   });
 
-  // Fetch payment methods
+  // Fetch payment methods via DatabaseService (cached offline)
   const methodsQuery = useQuery({
     queryKey: ["payment-methods"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("payment_methods")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      dbSelect<{ id: string; name: string }>("payment_methods", {
+        select: "id, name",
+        filters: [{ column: "is_active", op: "eq", value: true }],
+        orderBy: { column: "name" },
+      }),
   });
 
   // Open shift
@@ -179,37 +174,37 @@ export function useCaja() {
     mutationFn: async (denomCounts: { denomination_id: string; qty: number }[]) => {
       if (!user) throw new Error("No user");
       if (!activeBranchId) throw new Error("No branch selected");
-      const { data: shift, error } = await supabase
-        .from("cash_shifts")
-        .insert({ cashier_id: user.id, branch_id: activeBranchId })
-        .select("id")
-        .single();
-      if (error) throw error;
+
+      const shiftId = crypto.randomUUID();
+      await dbInsert("cash_shifts", {
+        id: shiftId,
+        cashier_id: user.id,
+        branch_id: activeBranchId,
+        status: "OPEN",
+        opened_at: new Date().toISOString(),
+      });
 
       // Insert shift denoms
-      if (denomCounts.length > 0) {
-        const { error: denomErr } = await supabase.from("cash_shift_denoms").insert(
-          denomCounts.map((d) => ({
-            shift_id: shift.id,
-            denomination_id: d.denomination_id,
-            qty_initial: d.qty,
-            qty_current: d.qty,
-          }))
-        );
-        if (denomErr) throw denomErr;
+      for (const d of denomCounts) {
+        await dbInsert("cash_shift_denoms", {
+          id: crypto.randomUUID(),
+          shift_id: shiftId,
+          denomination_id: d.denomination_id,
+          qty_initial: d.qty,
+          qty_current: d.qty,
+        });
+      }
 
-        // Insert opening movements
-        const { error: movErr } = await supabase.from("cash_movements").insert(
-          denomCounts
-            .filter((d) => d.qty > 0)
-            .map((d) => ({
-              shift_id: shift.id,
-              denomination_id: d.denomination_id,
-              movement_type: "OPENING" as const,
-              qty_delta: d.qty,
-            }))
-        );
-        if (movErr) throw movErr;
+      // Insert opening movements
+      for (const d of denomCounts.filter((d) => d.qty > 0)) {
+        await dbInsert("cash_movements", {
+          id: crypto.randomUUID(),
+          shift_id: shiftId,
+          denomination_id: d.denomination_id,
+          movement_type: "OPENING",
+          qty_delta: d.qty,
+          created_at: new Date().toISOString(),
+        });
       }
     },
     onSuccess: () => {
@@ -227,19 +222,20 @@ export function useCaja() {
       if (!shift) throw new Error("No hay turno abierto");
 
       // 1. Insert payment
-      const { data: payment, error } = await supabase
-        .from("payments")
-        .insert({ order_id: orderId, payment_method_id: methodId, amount, created_by: user.id })
-        .select("id")
-        .single();
-      if (error) throw error;
+      const paymentId = crypto.randomUUID();
+      await dbInsert("payments", {
+        id: paymentId,
+        order_id: orderId,
+        payment_method_id: methodId,
+        amount,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+      });
 
       // 2. Mark selected items as paid
-      const { error: itemErr } = await supabase
-        .from("order_items")
-        .update({ paid_at: new Date().toISOString() })
-        .in("id", itemIds);
-      if (itemErr) throw itemErr;
+      for (const itemId of itemIds) {
+        await dbUpdate("order_items", itemId, { paid_at: new Date().toISOString() });
+      }
 
       // 3. Check if all items are now paid
       const { count } = await supabase
@@ -248,21 +244,16 @@ export function useCaja() {
         .eq("order_id", orderId)
         .is("paid_at", null);
       if (count === 0) {
-        // Takeout orders → send to kitchen after payment; Dine-in → mark as PAID (done)
         const { data: orderData } = await supabase
           .from("orders")
           .select("order_type")
           .eq("id", orderId)
           .single();
         const nextStatus = orderData?.order_type === "TAKEOUT" ? "SENT_TO_KITCHEN" : "PAID";
-        const { error: statusErr } = await supabase
-          .from("orders")
-          .update({ status: nextStatus })
-          .eq("id", orderId);
-        if (statusErr) throw statusErr;
+        await dbUpdate("orders", orderId, { status: nextStatus });
       }
 
-      // 4. Update cash_shift_denoms (net changes per denomination)
+      // 4. Update cash_shift_denoms
       const denomChanges: Record<string, number> = {};
       for (const rd of receivedDenoms) {
         denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
@@ -274,32 +265,32 @@ export function useCaja() {
         if (delta === 0) continue;
         const existing = shift.denoms.find((d) => d.denomination_id === denomId);
         if (existing) {
-          await supabase
-            .from("cash_shift_denoms")
-            .update({ qty_current: existing.qty_current + delta })
-            .eq("id", existing.id);
+          await dbUpdate("cash_shift_denoms", existing.id, {
+            qty_current: existing.qty_current + delta,
+          });
         }
       }
 
       // 5. Record cash movements
-      const { error: movErr } = await supabase.from("cash_movements").insert({
+      await dbInsert("cash_movements", {
+        id: crypto.randomUUID(),
         shift_id: shift.id,
-        payment_id: payment.id,
-        movement_type: "PAYMENT_IN" as const,
+        payment_id: paymentId,
+        movement_type: "PAYMENT_IN",
         qty_delta: 1,
+        created_at: new Date().toISOString(),
       });
-      if (movErr) throw movErr;
 
-      if (changeDenoms.length > 0) {
-        await supabase.from("cash_movements").insert(
-          changeDenoms.map((cd) => ({
-            shift_id: shift.id,
-            payment_id: payment.id,
-            denomination_id: cd.denomination_id,
-            movement_type: "CHANGE_OUT" as const,
-            qty_delta: cd.qty,
-          }))
-        );
+      for (const cd of changeDenoms) {
+        await dbInsert("cash_movements", {
+          id: crypto.randomUUID(),
+          shift_id: shift.id,
+          payment_id: paymentId,
+          denomination_id: cd.denomination_id,
+          movement_type: "CHANGE_OUT",
+          qty_delta: cd.qty,
+          created_at: new Date().toISOString(),
+        });
       }
     },
     onSuccess: () => {
@@ -317,15 +308,11 @@ export function useCaja() {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
 
-      const { error } = await supabase
-        .from("cash_shifts")
-        .update({
-          status: "CLOSED",
-          closed_at: new Date().toISOString(),
-          notes: notes ?? null,
-        })
-        .eq("id", shift.id);
-      if (error) throw error;
+      await dbUpdate("cash_shifts", shift.id, {
+        status: "CLOSED",
+        closed_at: new Date().toISOString(),
+        notes: notes ?? null,
+      });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
