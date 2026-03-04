@@ -55,16 +55,19 @@ export function useCaja() {
 
   // Fetch active denominations
   const denomsQuery = useQuery({
-    queryKey: ["denominations"],
+    queryKey: ["denominations", activeBranchId],
     queryFn: async () => {
+      if (!activeBranchId) return [];
       const { data, error } = await supabase
         .from("denominations")
         .select("id, label, value, display_order")
         .eq("is_active", true)
+        .eq("branch_id", activeBranchId)
         .order("display_order");
       if (error) throw error;
       return data as Denomination[];
     },
+    enabled: !!activeBranchId,
   });
 
   // Fetch current open shift for this user
