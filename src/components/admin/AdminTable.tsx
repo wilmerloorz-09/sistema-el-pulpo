@@ -55,6 +55,11 @@ export function AdminTable<T extends { id: string }>({
     );
   }
 
+  const isAddingNew = !!editingId && !data.some((item) => item.id === editingId);
+  const rows = isAddingNew
+    ? ([{ ...(editValues as T), id: editingId! }, ...data] as T[])
+    : data;
+
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
@@ -73,10 +78,10 @@ export function AdminTable<T extends { id: string }>({
         </div>
 
         {/* Rows */}
-        {data.length === 0 && (
+        {rows.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">Sin registros</div>
         )}
-        {data.map((item) => {
+        {rows.map((item) => {
           const isEditing = editingId === item.id;
           return (
             <div
