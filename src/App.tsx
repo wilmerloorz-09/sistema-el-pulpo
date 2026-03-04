@@ -101,38 +101,48 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const SyncInit = () => {
+  useEffect(() => {
+    initSyncListeners();
+  }, []);
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              element={
-                <AuthGate>
-                  <ProtectedRoute>
-                    <AppLayout />
-                  </ProtectedRoute>
-                </AuthGate>
-              }
-            >
-              <Route path="/mesas" element={<Mesas />} />
-              <Route path="/ordenes" element={<Ordenes />} />
-              <Route path="/cocina" element={<Cocina />} />
-              <Route path="/despacho" element={<Despacho />} />
-              <Route path="/caja" element={<Caja />} />
-              <Route path="/reportes" element={<Reportes />} />
-              <Route path="/admin" element={<Admin />} />
-            </Route>
-            <Route path="/" element={<Navigate to="/mesas" replace />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+    <NetworkProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <SyncInit />
+        <BrowserRouter>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                element={
+                  <AuthGate>
+                    <ProtectedRoute>
+                      <AppLayout />
+                    </ProtectedRoute>
+                  </AuthGate>
+                }
+              >
+                <Route path="/mesas" element={<Mesas />} />
+                <Route path="/ordenes" element={<Ordenes />} />
+                <Route path="/cocina" element={<Cocina />} />
+                <Route path="/despacho" element={<Despacho />} />
+                <Route path="/caja" element={<Caja />} />
+                <Route path="/reportes" element={<Reportes />} />
+                <Route path="/admin" element={<Admin />} />
+              </Route>
+              <Route path="/" element={<Navigate to="/mesas" replace />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </NetworkProvider>
   </QueryClientProvider>
 );
 
