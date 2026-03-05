@@ -5,6 +5,7 @@ import { AdminTable, ColumnDef } from "./AdminTable";
 interface Branch {
   id: string;
   name: string;
+  branch_code: string;
   address: string | null;
   is_active: boolean;
 }
