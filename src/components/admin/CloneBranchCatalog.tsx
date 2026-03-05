@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Copy, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,10 +15,21 @@ interface Branch {
   branch_code: string;
 }
 
+const CATALOG_ITEMS = [
+  { key: "tables", label: "Mesas" },
+  { key: "categories", label: "Categorías, subcategorías y productos" },
+  { key: "modifiers", label: "Modificadores" },
+  { key: "payment_methods", label: "Métodos de pago" },
+  { key: "denominations", label: "Denominaciones" },
+] as const;
+
+type CatalogKey = (typeof CATALOG_ITEMS)[number]["key"];
+
 const CloneBranchCatalog = () => {
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [cloning, setCloning] = useState(false);
+  const [selected, setSelected] = useState<Set<CatalogKey>>(new Set(CATALOG_ITEMS.map(i => i.key)));
   const [result, setResult] = useState<Record<string, number> | null>(null);
 
   const { data: branches = [] } = useQuery({
@@ -28,15 +40,24 @@ const CloneBranchCatalog = () => {
     },
   });
 
+  const toggle = (key: CatalogKey) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
   const handleClone = async () => {
-    if (!sourceId || !targetId) return;
+    if (!sourceId || !targetId || selected.size === 0) return;
     if (sourceId === targetId) {
       toast.error("Las sucursales deben ser diferentes");
       return;
     }
 
+    const labels = CATALOG_ITEMS.filter(i => selected.has(i.key)).map(i => i.label).join(", ");
     const confirmed = window.confirm(
-      `¿Estás seguro de copiar TODO el catálogo de "${branches.find(b => b.id === sourceId)?.name}" a "${branches.find(b => b.id === targetId)?.name}"?\n\nEsto agregará mesas, categorías, productos, modificadores, métodos de pago y denominaciones.`
+      `¿Copiar ${labels} de "${branches.find(b => b.id === sourceId)?.name}" a "${branches.find(b => b.id === targetId)?.name}"?`
     );
     if (!confirmed) return;
 
@@ -44,9 +65,12 @@ const CloneBranchCatalog = () => {
     setResult(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("clone-branch-catalog", {
-        body: { source_branch_id: sourceId, target_branch_id: targetId },
+        body: {
+          source_branch_id: sourceId,
+          target_branch_id: targetId,
+          items: Array.from(selected),
+        },
       });
 
       if (res.error) throw new Error(res.error.message);
@@ -69,7 +93,7 @@ const CloneBranchCatalog = () => {
           Duplicar catálogo entre sucursales
         </CardTitle>
         <CardDescription>
-          Copia mesas, categorías, subcategorías, productos, modificadores, métodos de pago y denominaciones de una sucursal a otra.
+          Selecciona qué elementos copiar de una sucursal a otra.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -108,9 +132,24 @@ const CloneBranchCatalog = () => {
           </Select>
         </div>
 
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">Elementos a duplicar</label>
+          <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+            {CATALOG_ITEMS.map((item) => (
+              <label key={item.key} className="flex items-center gap-2 cursor-pointer text-sm">
+                <Checkbox
+                  checked={selected.has(item.key)}
+                  onCheckedChange={() => toggle(item.key)}
+                />
+                {item.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
         <Button
           onClick={handleClone}
-          disabled={!sourceId || !targetId || cloning}
+          disabled={!sourceId || !targetId || selected.size === 0 || cloning}
           className="w-full"
         >
           {cloning ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Duplicando…</> : "Duplicar catálogo"}
