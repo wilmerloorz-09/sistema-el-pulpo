@@ -5,14 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Fingerprint, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser";
 
 const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const supportsPasskey = browserSupportsWebAuthn();
 
   // Redirect if already logged in
   if (authLoading) {
@@ -33,6 +37,50 @@ const Login = () => {
       toast.error(err.message || "Error al iniciar sesión");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setPasskeyLoading(true);
+    try {
+      // 1. Get authentication options
+      const { data: options, error: optErr } = await supabase.functions.invoke(
+        "webauthn-authenticate",
+        { body: { action: "options" } }
+      );
+      if (optErr) throw new Error(optErr.message);
+
+      const { challengeId, ...optionsJSON } = options;
+
+      // 2. Start browser WebAuthn ceremony
+      const assertion = await startAuthentication({ optionsJSON });
+
+      // 3. Verify with server
+      const { data: result, error: verErr } = await supabase.functions.invoke(
+        "webauthn-authenticate",
+        { body: { action: "verify", assertion, challengeId } }
+      );
+      if (verErr) throw new Error(verErr.message);
+
+      if (result.verified && result.token_hash) {
+        // 4. Sign in using the magic link token
+        const { error: otpError } = await supabase.auth.verifyOtp({
+          token_hash: result.token_hash,
+          type: "magiclink",
+        });
+        if (otpError) throw otpError;
+        toast.success("Sesión iniciada con huella");
+      } else {
+        toast.error("Verificación fallida");
+      }
+    } catch (err: any) {
+      if (err.name === "NotAllowedError") {
+        toast.error("Operación cancelada");
+      } else {
+        toast.error(err.message || "Error al autenticar con huella");
+      }
+    } finally {
+      setPasskeyLoading(false);
     }
   };
 
@@ -101,6 +149,35 @@ const Login = () => {
             )}
           </Button>
         </form>
+
+        {/* Passkey / Biometric login */}
+        {supportsPasskey && (
+          <div className="space-y-3">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">o</span>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handlePasskeyLogin}
+              disabled={passkeyLoading}
+              className="h-12 w-full rounded-xl text-base gap-2"
+            >
+              {passkeyLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <Fingerprint className="h-5 w-5" />
+                  Ingresar con huella
+                </>
+              )}
+            </Button>
+          </div>
+        )}
 
         {/* Dev hint */}
         <div className="rounded-xl border border-border bg-muted/50 p-3 text-center text-xs text-muted-foreground">
