@@ -35,12 +35,13 @@ export function useKitchenOrders() {
       const orders = await dbSelect<{
         id: string;
         order_number: number;
+        order_code: string | null;
         order_type: string;
         table_id: string | null;
         split_id: string | null;
         updated_at: string;
       }>("orders", {
-        select: "id, order_number, order_type, table_id, split_id, updated_at",
+        select: "id, order_number, order_code, order_type, table_id, split_id, updated_at",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "eq", value: "SENT_TO_KITCHEN" }],
         orderBy: { column: "updated_at", ascending: true },
