@@ -170,7 +170,7 @@ const Ordenes = () => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-display text-sm font-bold">
-              #{order.order_number}
+              {order.order_code ?? `#${order.order_number}`}
             </span>
             {order.table_name && (
               <span className="text-xs text-muted-foreground">· {order.table_name}</span>
@@ -345,7 +345,7 @@ const Ordenes = () => {
       {order && (
         <ThermalReceipt
           ref={receiptRef}
-          orderNumber={order.order_number}
+          orderNumber={order.order_code ?? `#${order.order_number}`}
           orderType={order.order_type}
           tableName={order.table_name}
           items={order.items}

@@ -55,7 +55,7 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-foreground">{label}</span>
-                  <Badge variant="secondary" className="text-[10px]">#{order.order_number}</Badge>
+                  <Badge variant="secondary" className="text-[10px]">{order.order_code ?? `#${order.order_number}`}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {order.order_type === "DINE_IN" && order.table_name && !order.split_code && (

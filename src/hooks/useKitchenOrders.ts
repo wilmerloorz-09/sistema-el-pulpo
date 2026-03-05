@@ -14,6 +14,7 @@ export interface KitchenOrderItem {
 export interface KitchenOrder {
   id: string;
   order_number: number;
+  order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   table_name: string | null;
   split_code: string | null;
@@ -34,12 +35,13 @@ export function useKitchenOrders() {
       const orders = await dbSelect<{
         id: string;
         order_number: number;
+        order_code: string | null;
         order_type: string;
         table_id: string | null;
         split_id: string | null;
         updated_at: string;
       }>("orders", {
-        select: "id, order_number, order_type, table_id, split_id, updated_at",
+        select: "id, order_number, order_code, order_type, table_id, split_id, updated_at",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "eq", value: "SENT_TO_KITCHEN" }],
         orderBy: { column: "updated_at", ascending: true },
@@ -96,6 +98,7 @@ export function useKitchenOrders() {
       return orders.map((o) => ({
         id: o.id,
         order_number: o.order_number,
+        order_code: o.order_code ?? null,
         order_type: o.order_type as "DINE_IN" | "TAKEOUT",
         table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
         split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,

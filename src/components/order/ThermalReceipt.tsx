@@ -9,7 +9,7 @@ interface ReceiptItem {
 }
 
 interface ThermalReceiptProps {
-  orderNumber: number;
+  orderNumber: string | number;
   orderType: string;
   tableName?: string;
   items: ReceiptItem[];
@@ -44,7 +44,7 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         }}
       >
         <div style={{ textAlign: "center", marginBottom: "8px" }}>
-          <div style={{ fontSize: "16px", fontWeight: "bold" }}>ORDEN #{orderNumber}</div>
+          <div style={{ fontSize: "16px", fontWeight: "bold" }}>ORDEN {orderNumber}</div>
           <div style={{ fontSize: "14px", fontWeight: "bold", marginTop: "4px" }}>
             {orderType === "TAKEOUT" ? "PARA LLEVAR" : tableName ?? "MESA"}
           </div>

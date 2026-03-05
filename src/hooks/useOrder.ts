@@ -18,6 +18,7 @@ interface OrderItem {
 interface SiblingOrder {
   id: string;
   order_number: number;
+  order_code: string | null;
   split_code: string;
   item_count: number;
 }
@@ -25,6 +26,7 @@ interface SiblingOrder {
 interface Order {
   id: string;
   order_number: number;
+  order_code: string | null;
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";
   table_id: string | null;
@@ -47,7 +49,7 @@ export function useOrder(orderId: string | null) {
       // but simple table reads go through dbSelect for caching
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, status, order_type, table_id, split_id, created_at")
+        .select("id, order_number, order_code, status, order_type, table_id, split_id, created_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;
@@ -97,7 +99,7 @@ export function useOrder(orderId: string | null) {
       if (order.table_id) {
         const { data: siblingOrders } = await supabase
           .from("orders")
-          .select("id, order_number, split_id, order_items(id)")
+          .select("id, order_number, order_code, split_id, order_items(id)")
           .eq("table_id", order.table_id)
           .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"])
           .not("split_id", "is", null);
@@ -112,6 +114,7 @@ export function useOrder(orderId: string | null) {
           siblings = siblingOrders.map(o => ({
             id: o.id,
             order_number: o.order_number,
+            order_code: (o as any).order_code ?? null,
             split_code: splits?.find(s => s.id === o.split_id)?.split_code ?? "",
             item_count: Array.isArray(o.order_items) ? o.order_items.length : 0,
           }));

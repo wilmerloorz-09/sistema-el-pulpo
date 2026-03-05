@@ -32,6 +32,7 @@ export interface CashShift {
 export interface PayableOrder {
   id: string;
   order_number: number;
+  order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   table_name: string | null;
   split_code: string | null;
@@ -110,7 +111,7 @@ export function useCaja() {
     queryFn: async () => {
       const { data: orders, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_type, table_id, split_id")
+        .select("id, order_number, order_code, order_type, table_id, split_id")
         .eq("status", "KITCHEN_DISPATCHED")
         .order("updated_at");
       if (error) throw error;
@@ -141,6 +142,7 @@ export function useCaja() {
         return {
           id: o.id,
           order_number: o.order_number,
+          order_code: (o as any).order_code ?? null,
           order_type: o.order_type,
           table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
           split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,

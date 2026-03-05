@@ -83,6 +83,7 @@ export interface LocalPaymentMethod extends LocalRecord {
 export interface LocalOrder extends LocalRecord {
   id: string;
   order_number: number;
+  order_code: string | null;
   order_type: string;
   status: string;
   table_id: string | null;

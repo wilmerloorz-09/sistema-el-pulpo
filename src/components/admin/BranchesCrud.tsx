@@ -5,16 +5,18 @@ import { AdminTable, ColumnDef } from "./AdminTable";
 interface Branch {
   id: string;
   name: string;
+  branch_code: string;
   address: string | null;
   is_active: boolean;
 }
 
 const BranchesCrud = () => {
   const crud = useCrud<Branch>({ table: "branches" as any, queryKey: "admin-branches", orderBy: { column: "name" } });
-  const edit = useEditState<Branch>({ name: "", address: "", is_active: true } as any);
+  const edit = useEditState<Branch>({ name: "", branch_code: "", address: "", is_active: true } as any);
 
   const columns: ColumnDef<Branch>[] = [
     { key: "name", header: "Nombre", width: "1fr", type: "text" },
+    { key: "branch_code", header: "Código", width: "5rem", type: "text" },
     { key: "address", header: "Dirección", width: "1fr", type: "text" },
     { key: "is_active", header: "Activa", width: "4rem", type: "switch" },
   ];
