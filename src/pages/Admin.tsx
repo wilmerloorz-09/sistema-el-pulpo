@@ -1,5 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutGrid, Layers, Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2 } from "lucide-react";
+import { LayoutGrid, Layers, Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy } from "lucide-react";
 import CategoriesCrud from "@/components/admin/CategoriesCrud";
 import SubcategoriesCrud from "@/components/admin/SubcategoriesCrud";
 import ProductsCrud from "@/components/admin/ProductsCrud";
@@ -9,6 +9,7 @@ import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
+import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
 import { useAuth } from "@/contexts/AuthContext";
 
 const TABS = [
