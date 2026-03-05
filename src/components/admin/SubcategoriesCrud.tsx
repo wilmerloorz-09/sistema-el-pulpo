@@ -4,6 +4,7 @@ import { AdminTable, ColumnDef } from "./AdminTable";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface Subcategory {
   id: string;
