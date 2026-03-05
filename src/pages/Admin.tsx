@@ -1,5 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutGrid, Layers, Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2 } from "lucide-react";
+import { LayoutGrid, Layers, Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy } from "lucide-react";
 import CategoriesCrud from "@/components/admin/CategoriesCrud";
 import SubcategoriesCrud from "@/components/admin/SubcategoriesCrud";
 import ProductsCrud from "@/components/admin/ProductsCrud";
@@ -9,6 +9,7 @@ import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
+import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
 import { useAuth } from "@/contexts/AuthContext";
 
 const TABS = [
@@ -21,6 +22,7 @@ const TABS = [
   { value: "payment-methods", label: "Métodos de Pago", icon: <CreditCard className="h-4 w-4" />, component: PaymentMethodsCrud, superadminOnly: false },
   { value: "denominations", label: "Denominaciones", icon: <Coins className="h-4 w-4" />, component: DenominationsCrud, superadminOnly: false },
   { value: "users", label: "Usuarios", icon: <Users className="h-4 w-4" />, component: UsersCrud, superadminOnly: false },
+  { value: "clone", label: "Duplicar", icon: <Copy className="h-4 w-4" />, component: CloneBranchCatalog, superadminOnly: false },
 ];
 
 const Admin = () => {
