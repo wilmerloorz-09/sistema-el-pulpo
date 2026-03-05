@@ -6,6 +6,7 @@ import { useNetwork } from "@/contexts/NetworkContext";
 import { Button } from "@/components/ui/button";
 import { LogOut, RefreshCw, WifiOff } from "lucide-react";
 import ChangePasswordDialog from "./ChangePasswordDialog";
+import PasskeyRegisterButton from "./PasskeyRegisterButton";
 
 const AppLayout = () => {
   const { signOut, profile, activeRole, setActiveRole, roles } = useAuth();
