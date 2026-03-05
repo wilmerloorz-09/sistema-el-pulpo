@@ -9,7 +9,7 @@ interface ReceiptItem {
 }
 
 interface ThermalReceiptProps {
-  orderNumber: number;
+  orderNumber: string | number;
   orderType: string;
   tableName?: string;
   items: ReceiptItem[];
