@@ -99,7 +99,7 @@ export function useOrder(orderId: string | null) {
       if (order.table_id) {
         const { data: siblingOrders } = await supabase
           .from("orders")
-          .select("id, order_number, split_id, order_items(id)")
+          .select("id, order_number, order_code, split_id, order_items(id)")
           .eq("table_id", order.table_id)
           .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"])
           .not("split_id", "is", null);
