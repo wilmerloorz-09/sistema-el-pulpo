@@ -3,7 +3,8 @@ import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 
-type OrderStatus = Database["public"]["Enums"]["order_status"];
+// include CANCELLED since we'll add it to the enum via migration
+type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
 interface TableWithStatus {
   id: string;

@@ -26,7 +26,9 @@ type TableName =
   | "payments"
   | "cash_shifts"
   | "cash_shift_denoms"
-  | "cash_movements";
+  | "cash_movements"
+  | "kitchen_notifications"
+  | "operational_losses";
 
 const CATALOG_TABLES: TableName[] = [
   "categories",
@@ -390,5 +392,144 @@ export async function dbDelete(table: TableName, id: string): Promise<void> {
 }
 
 // ─── Direct Supabase passthrough (for complex queries not yet abstracted) ──
+
+/**
+ * Cancel an order item with all required metadata.
+ */
+export async function cancelOrderItem(
+  itemId: string,
+  cancellationData: {
+    status: string; // Current status before cancellation
+    reason: string;
+    notes?: string;
+    cancelledBy: string;
+    fromStatus: string; // The status it was cancelled from (DRAFT, SENT, DISPATCHED)
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  
+  const updates = {
+    status: "CANCELLED",
+    cancelled_at: now,
+    cancelled_by: cancellationData.cancelledBy,
+    cancellation_reason: cancellationData.reason,
+    cancelled_from_status: cancellationData.fromStatus,
+  };
+
+  await dbUpdate("order_items", itemId, updates);
+}
+
+/**
+ * Record an operational loss when an item is cancelled from DISPATCHED status.
+ */
+export async function recordOperationalLoss(
+  orderId: string,
+  itemId: string,
+  amount: number,
+  reason: string,
+  cancelledBy: string,
+  branchId: string
+): Promise<void> {
+  await dbInsert("operational_losses", {
+    order_id: orderId,
+    order_item_id: itemId,
+    amount,
+    reason,
+    cancelled_by: cancelledBy,
+    branch_id: branchId,
+  });
+}
+
+/**
+ * Send a real-time notification to the kitchen about a cancelled item.
+ */
+export async function notifyKitchenItemCancelled(
+  orderId: string,
+  orderNumber: number,
+  itemId: string,
+  description: string,
+  quantity: number,
+  reason: string,
+  branchId: string
+): Promise<void> {
+  const message = `🚫 Ítem cancelado: ${quantity}x ${description} - Razón: ${reason}`;
+  
+  await dbInsert("kitchen_notifications", {
+    type: "ITEM_CANCELLED",
+    order_id: orderId,
+    order_number: orderNumber,
+    order_item_id: itemId,
+    message,
+    branch_id: branchId,
+  });
+}
+
+/**
+ * Send a real-time notification to the kitchen about a cancelled order.
+ */
+export async function notifyKitchenOrderCancelled(
+  orderId: string,
+  orderNumber: number,
+  itemCount: number,
+  reason: string,
+  branchId: string
+): Promise<void> {
+  const message = `🚫 Orden CANCELADA: ${itemCount} ítem(s) - Razón: ${reason}`;
+  
+  await dbInsert("kitchen_notifications", {
+    type: "ORDER_CANCELLED",
+    order_id: orderId,
+    order_number: orderNumber,
+    message,
+    branch_id: branchId,
+  });
+}
+
+/**
+ * Update order's cancelled status and metadata after full order cancellation.
+ */
+export async function cancelOrderFull(
+  orderId: string,
+  cancellationData: {
+    reason: string;
+    notes?: string;
+    cancelledBy: string;
+    fromStatus: string;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  
+  const updates = {
+    status: "CANCELLED",
+    cancelled_at: now,
+    cancelled_by: cancellationData.cancelledBy,
+    cancellation_reason: cancellationData.reason,
+    cancelled_from_status: cancellationData.fromStatus,
+  };
+
+  await dbUpdate("orders", orderId, updates);
+}
+
+/**
+ * Recalculate order total by summing non-cancelled items.
+ */
+export async function recalculateOrderTotal(orderId: string): Promise<number> {
+  const items = await dbSelect(
+    "order_items",
+    {
+      select: "id, total, status",
+      filters: [
+        { column: "order_id", op: "eq", value: orderId },
+        { column: "status", op: "neq", value: "CANCELLED" },
+      ],
+    }
+  );
+
+  const total = items.reduce((sum: number, item: any) => sum + parseFloat(item.total || 0), 0);
+  
+  await dbUpdate("orders", orderId, { total });
+  
+  return total;
+}
 
 export { supabase } from "@/integrations/supabase/client";

@@ -3,7 +3,8 @@ import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/Dat
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
-type OrderStatus = Database["public"]["Enums"]["order_status"];
+// support CANCELLED status even if enum not yet updated locally
+type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
 interface OrderItem {
   id: string;

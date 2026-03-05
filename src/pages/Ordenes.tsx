@@ -10,11 +10,14 @@ import ProductPicker from "@/components/order/ProductPicker";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
 import ThermalReceipt from "@/components/order/ThermalReceipt";
+import OrdersList from "@/components/order/OrdersList";
+import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { OrderSummary } from "@/hooks/useOrdersByStatus";
 
 const Ordenes = () => {
   const [searchParams] = useSearchParams();
@@ -30,6 +33,7 @@ const Ordenes = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
+  const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const isTakeout = order?.order_type === "TAKEOUT";
@@ -40,13 +44,29 @@ const Ordenes = () => {
 
   if (!orderId) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-        <ShoppingBag className="h-12 w-12 text-muted-foreground/40 mb-3" />
-        <p className="font-display text-lg font-bold text-foreground">Sin orden seleccionada</p>
-        <p className="text-sm text-muted-foreground mt-1">Selecciona una mesa o crea una orden para llevar</p>
-        <Button className="mt-4 rounded-xl" onClick={() => navigate("/mesas")}>
-          Ir a Mesas
-        </Button>
+      <div className="flex flex-col h-[calc(100vh-7rem)]">
+        <div className="flex items-center gap-2 mb-4 px-4 py-3 border-b border-border bg-card/50">
+          <h1 className="font-display text-lg font-bold text-foreground">Órdenes</h1>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <OrdersList onCancelOrder={setCancelOrder} />
+        </div>
+        {cancelOrder && user && (
+          <CancelOrderDialog
+            orderId={cancelOrder.id}
+            orderNumber={cancelOrder.order_number}
+            items={cancelOrder.items.map((item) => ({
+              id: item.id,
+              description: item.description_snapshot,
+              quantity: item.quantity,
+              total: item.total,
+              status: item.status as any,
+            }))}
+            userId={user.id}
+            open={!!cancelOrder}
+            onOpenChange={(open) => !open && setCancelOrder(null)}
+          />
+        )}
       </div>
     );
   }
