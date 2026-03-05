@@ -14,6 +14,7 @@ export interface KitchenOrderItem {
 export interface KitchenOrder {
   id: string;
   order_number: number;
+  order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   table_name: string | null;
   split_code: string | null;
