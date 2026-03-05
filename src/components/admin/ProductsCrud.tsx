@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface Product {
   id: string;
@@ -18,16 +19,38 @@ interface Product {
 interface Sub { id: string; description: string; }
 
 const ProductsCrud = () => {
-  const crud = useCrud<Product>({ table: "products", queryKey: "admin-products", orderBy: { column: "description" } });
-  const edit = useEditState<Product>({ description: "", subcategory_id: "", unit_price: 0, price_mode: "FIXED", is_active: true } as any);
+  const { activeBranchId } = useBranch();
+
+  // Get categories for this branch, then subcategories for those categories
+  const { data: branchCats = [] } = useQuery({
+    queryKey: ["admin-categories-ids", activeBranchId],
+    queryFn: async () => {
+      const { data } = await supabase.from("categories").select("id").eq("branch_id", activeBranchId!);
+      return (data ?? []).map((c: any) => c.id as string);
+    },
+    enabled: !!activeBranchId,
+  });
 
   const { data: subs = [] } = useQuery({
-    queryKey: ["admin-subcategories-list"],
+    queryKey: ["admin-subcategories-list", activeBranchId, branchCats],
     queryFn: async () => {
-      const { data } = await supabase.from("subcategories").select("id, description").order("display_order");
+      if (branchCats.length === 0) return [];
+      const { data } = await supabase.from("subcategories").select("id, description").in("category_id", branchCats).order("display_order");
       return (data ?? []) as Sub[];
     },
+    enabled: !!activeBranchId && branchCats.length > 0,
   });
+
+  const subIds = subs.map((s) => s.id);
+
+  const crud = useCrud<Product>({
+    table: "products",
+    queryKey: "admin-products",
+    orderBy: { column: "description" },
+    branchScoped: false,
+    filters: subIds.length > 0 ? [{ column: "subcategory_id", op: "in", value: subIds }] : undefined,
+  });
+  const edit = useEditState<Product>({ description: "", subcategory_id: "", unit_price: 0, price_mode: "FIXED", is_active: true } as any);
 
   const subMap = Object.fromEntries(subs.map((s) => [s.id, s.description]));
 
