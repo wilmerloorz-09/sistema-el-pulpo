@@ -40,6 +40,50 @@ const Login = () => {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    setPasskeyLoading(true);
+    try {
+      // 1. Get authentication options
+      const { data: options, error: optErr } = await supabase.functions.invoke(
+        "webauthn-authenticate",
+        { body: { action: "options" } }
+      );
+      if (optErr) throw new Error(optErr.message);
+
+      const { challengeId, ...optionsJSON } = options;
+
+      // 2. Start browser WebAuthn ceremony
+      const assertion = await startAuthentication({ optionsJSON });
+
+      // 3. Verify with server
+      const { data: result, error: verErr } = await supabase.functions.invoke(
+        "webauthn-authenticate",
+        { body: { action: "verify", assertion, challengeId } }
+      );
+      if (verErr) throw new Error(verErr.message);
+
+      if (result.verified && result.token_hash) {
+        // 4. Sign in using the magic link token
+        const { error: otpError } = await supabase.auth.verifyOtp({
+          token_hash: result.token_hash,
+          type: "magiclink",
+        });
+        if (otpError) throw otpError;
+        toast.success("Sesión iniciada con huella");
+      } else {
+        toast.error("Verificación fallida");
+      }
+    } catch (err: any) {
+      if (err.name === "NotAllowedError") {
+        toast.error("Operación cancelada");
+      } else {
+        toast.error(err.message || "Error al autenticar con huella");
+      }
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <motion.div
