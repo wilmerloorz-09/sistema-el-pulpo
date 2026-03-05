@@ -98,6 +98,7 @@ export function useKitchenOrders() {
       return orders.map((o) => ({
         id: o.id,
         order_number: o.order_number,
+        order_code: o.order_code ?? null,
         order_type: o.order_type as "DINE_IN" | "TAKEOUT",
         table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
         split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,

@@ -114,6 +114,7 @@ export function useOrder(orderId: string | null) {
           siblings = siblingOrders.map(o => ({
             id: o.id,
             order_number: o.order_number,
+            order_code: (o as any).order_code ?? null,
             split_code: splits?.find(s => s.id === o.split_id)?.split_code ?? "",
             item_count: Array.isArray(o.order_items) ? o.order_items.length : 0,
           }));
