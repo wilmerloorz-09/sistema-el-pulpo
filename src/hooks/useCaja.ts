@@ -111,7 +111,7 @@ export function useCaja() {
     queryFn: async () => {
       const { data: orders, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_type, table_id, split_id")
+        .select("id, order_number, order_code, order_type, table_id, split_id")
         .eq("status", "KITCHEN_DISPATCHED")
         .order("updated_at");
       if (error) throw error;
