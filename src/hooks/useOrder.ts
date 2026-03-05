@@ -18,6 +18,7 @@ interface OrderItem {
 interface SiblingOrder {
   id: string;
   order_number: number;
+  order_code: string | null;
   split_code: string;
   item_count: number;
 }
@@ -25,6 +26,7 @@ interface SiblingOrder {
 interface Order {
   id: string;
   order_number: number;
+  order_code: string | null;
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";
   table_id: string | null;
