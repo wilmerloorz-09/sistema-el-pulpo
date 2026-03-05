@@ -49,7 +49,7 @@ export function useOrder(orderId: string | null) {
       // but simple table reads go through dbSelect for caching
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, status, order_type, table_id, split_id, created_at")
+        .select("id, order_number, order_code, status, order_type, table_id, split_id, created_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;
