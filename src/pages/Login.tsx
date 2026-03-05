@@ -150,6 +150,35 @@ const Login = () => {
           </Button>
         </form>
 
+        {/* Passkey / Biometric login */}
+        {supportsPasskey && (
+          <div className="space-y-3">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">o</span>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handlePasskeyLogin}
+              disabled={passkeyLoading}
+              className="h-12 w-full rounded-xl text-base gap-2"
+            >
+              {passkeyLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <Fingerprint className="h-5 w-5" />
+                  Ingresar con huella
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
         {/* Dev hint */}
         <div className="rounded-xl border border-border bg-muted/50 p-3 text-center text-xs text-muted-foreground">
           <p className="font-medium">Usuarios de prueba:</p>
