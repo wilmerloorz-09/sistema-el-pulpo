@@ -52,6 +52,7 @@ const AppLayout = () => {
           <span className="text-xs text-muted-foreground hidden sm:block">
             {profile?.full_name}
           </span>
+          <PasskeyRegisterButton />
           <ChangePasswordDialog />
           <Button variant="ghost" size="icon" onClick={signOut} className="h-8 w-8">
             <LogOut className="h-4 w-4" />
