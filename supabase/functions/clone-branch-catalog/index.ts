@@ -23,14 +23,46 @@ Deno.serve(async (req) => {
     const { data: superCheck } = await supabase.rpc("has_role", { _user_id: user.id, _role: "superadmin" });
     if (!roleCheck && !superCheck) throw new Error("Se requiere rol admin");
 
-    const { source_branch_id, target_branch_id, items } = await req.json();
+    const { source_branch_id, target_branch_id, items, clean_first } = await req.json();
     if (!source_branch_id || !target_branch_id) throw new Error("Faltan IDs de sucursal");
     if (source_branch_id === target_branch_id) throw new Error("Las sucursales deben ser diferentes");
 
     const selectedItems: Set<string> = new Set(items ?? ["tables", "categories", "modifiers", "payment_methods", "denominations"]);
     const stats: Record<string, number> = {};
 
-    // 1. Clone restaurant_tables
+    // --- CLEAN TARGET FIRST ---
+    if (clean_first) {
+      // Order matters: products → subcategories → categories (due to FK constraints)
+      if (selectedItems.has("categories")) {
+        // Get category IDs for this branch
+        const { data: targetCats } = await supabase.from("categories").select("id").eq("branch_id", target_branch_id);
+        if (targetCats?.length) {
+          const catIds = targetCats.map((c: any) => c.id);
+          // Get subcategory IDs
+          const { data: targetSubs } = await supabase.from("subcategories").select("id").in("category_id", catIds);
+          if (targetSubs?.length) {
+            const subIds = targetSubs.map((s: any) => s.id);
+            await supabase.from("products").delete().in("subcategory_id", subIds);
+            await supabase.from("subcategories").delete().in("category_id", catIds);
+          }
+          await supabase.from("categories").delete().eq("branch_id", target_branch_id);
+        }
+      }
+      if (selectedItems.has("tables")) {
+        await supabase.from("restaurant_tables").delete().eq("branch_id", target_branch_id);
+      }
+      if (selectedItems.has("modifiers")) {
+        await supabase.from("modifiers").delete().eq("branch_id", target_branch_id);
+      }
+      if (selectedItems.has("payment_methods")) {
+        await supabase.from("payment_methods").delete().eq("branch_id", target_branch_id);
+      }
+      if (selectedItems.has("denominations")) {
+        await supabase.from("denominations").delete().eq("branch_id", target_branch_id);
+      }
+    }
+
+    // --- CLONE ---
     if (selectedItems.has("tables")) {
       const { data: tables } = await supabase.from("restaurant_tables").select("name, visual_order, is_active").eq("branch_id", source_branch_id);
       if (tables?.length) {
@@ -40,7 +72,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2. Clone modifiers
     if (selectedItems.has("modifiers")) {
       const { data: mods } = await supabase.from("modifiers").select("description, is_active").eq("branch_id", source_branch_id);
       if (mods?.length) {
@@ -50,7 +81,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Clone payment_methods
     if (selectedItems.has("payment_methods")) {
       const { data: pms } = await supabase.from("payment_methods").select("name, is_active").eq("branch_id", source_branch_id);
       if (pms?.length) {
@@ -60,7 +90,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4. Clone denominations
     if (selectedItems.has("denominations")) {
       const { data: denoms } = await supabase.from("denominations").select("label, value, display_order, is_active").eq("branch_id", source_branch_id);
       if (denoms?.length) {
@@ -70,7 +99,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 5. Clone categories → subcategories → products
     if (selectedItems.has("categories")) {
       const { data: cats } = await supabase.from("categories").select("id, description, display_order, is_active").eq("branch_id", source_branch_id);
       let totalSubs = 0;

@@ -5,9 +5,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Copy, Loader2, AlertTriangle } from "lucide-react";
+import { Copy, Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 
 interface Branch {
   id: string;
@@ -29,6 +30,7 @@ const CloneBranchCatalog = () => {
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [cloning, setCloning] = useState(false);
+  const [cleanFirst, setCleanFirst] = useState(false);
   const [selected, setSelected] = useState<Set<CatalogKey>>(new Set(CATALOG_ITEMS.map(i => i.key)));
   const [result, setResult] = useState<Record<string, number> | null>(null);
 
@@ -55,9 +57,13 @@ const CloneBranchCatalog = () => {
       return;
     }
 
+    const targetName = branches.find(b => b.id === targetId)?.name;
     const labels = CATALOG_ITEMS.filter(i => selected.has(i.key)).map(i => i.label).join(", ");
+    const cleanWarning = cleanFirst
+      ? `\n\n⚠️ ATENCIÓN: Se ELIMINARÁN primero los datos seleccionados de "${targetName}" antes de copiar.`
+      : "";
     const confirmed = window.confirm(
-      `¿Copiar ${labels} de "${branches.find(b => b.id === sourceId)?.name}" a "${branches.find(b => b.id === targetId)?.name}"?`
+      `¿Copiar ${labels} de "${branches.find(b => b.id === sourceId)?.name}" a "${targetName}"?${cleanWarning}`
     );
     if (!confirmed) return;
 
@@ -70,6 +76,7 @@ const CloneBranchCatalog = () => {
           source_branch_id: sourceId,
           target_branch_id: targetId,
           items: Array.from(selected),
+          clean_first: cleanFirst,
         },
       });
 
@@ -100,7 +107,7 @@ const CloneBranchCatalog = () => {
         <Alert variant="destructive" className="bg-destructive/10 border-destructive/30">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="text-xs">
-            Esta acción <strong>agrega</strong> registros a la sucursal destino. Si ya existen datos, se duplicarán.
+            Si no activas la limpieza previa, los registros se <strong>agregarán</strong> a la sucursal destino y podrían duplicarse.
           </AlertDescription>
         </Alert>
 
@@ -147,12 +154,24 @@ const CloneBranchCatalog = () => {
           </div>
         </div>
 
+        <div className="flex items-center justify-between rounded-md border p-3 bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Trash2 className="h-4 w-4 text-destructive" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Limpiar destino antes de copiar</p>
+              <p className="text-xs text-muted-foreground">Elimina los ítems seleccionados en la sucursal destino primero</p>
+            </div>
+          </div>
+          <Switch checked={cleanFirst} onCheckedChange={setCleanFirst} />
+        </div>
+
         <Button
           onClick={handleClone}
           disabled={!sourceId || !targetId || selected.size === 0 || cloning}
           className="w-full"
+          variant={cleanFirst ? "destructive" : "default"}
         >
-          {cloning ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Duplicando…</> : "Duplicar catálogo"}
+          {cloning ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Duplicando…</> : cleanFirst ? "Limpiar y duplicar catálogo" : "Duplicar catálogo"}
         </Button>
 
         {result && (
