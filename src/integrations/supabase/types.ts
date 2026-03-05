@@ -58,6 +58,7 @@ export type Database = {
       branches: {
         Row: {
           address: string | null
+          branch_code: string
           created_at: string
           id: string
           is_active: boolean
@@ -66,6 +67,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          branch_code?: string
           created_at?: string
           id?: string
           is_active?: boolean
@@ -74,6 +76,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          branch_code?: string
           created_at?: string
           id?: string
           is_active?: boolean
@@ -416,6 +419,7 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          order_code: string | null
           order_number: number
           order_type: Database["public"]["Enums"]["order_type"]
           split_id: string | null
@@ -428,6 +432,7 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          order_code?: string | null
           order_number?: number
           order_type: Database["public"]["Enums"]["order_type"]
           split_id?: string | null
@@ -440,6 +445,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          order_code?: string | null
           order_number?: number
           order_type?: Database["public"]["Enums"]["order_type"]
           split_id?: string | null
