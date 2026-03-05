@@ -19,16 +19,27 @@ interface Category {
 }
 
 const SubcategoriesCrud = () => {
-  const crud = useCrud<Subcategory>({ table: "subcategories", queryKey: "admin-subcategories", orderBy: { column: "display_order" } });
-  const edit = useEditState<Subcategory>({ description: "", category_id: "", display_order: 0, is_active: true } as any);
+  const { activeBranchId } = useBranch();
 
   const { data: categories = [] } = useQuery({
-    queryKey: ["admin-categories"],
+    queryKey: ["admin-categories-list", activeBranchId],
     queryFn: async () => {
-      const { data } = await supabase.from("categories").select("id, description").order("display_order");
+      const { data } = await supabase.from("categories").select("id, description").eq("branch_id", activeBranchId!).order("display_order");
       return (data ?? []) as Category[];
     },
+    enabled: !!activeBranchId,
   });
+
+  const catIds = categories.map((c) => c.id);
+
+  const crud = useCrud<Subcategory>({
+    table: "subcategories",
+    queryKey: "admin-subcategories",
+    orderBy: { column: "display_order" },
+    branchScoped: false,
+    filters: catIds.length > 0 ? [{ column: "category_id", op: "in", value: catIds }] : undefined,
+  });
+  const edit = useEditState<Subcategory>({ description: "", category_id: "", display_order: 0, is_active: true } as any);
 
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c.description]));
 
