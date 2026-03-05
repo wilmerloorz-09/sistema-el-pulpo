@@ -170,7 +170,7 @@ const Ordenes = () => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-display text-sm font-bold">
-              #{order.order_number}
+              {order.order_code ?? `#${order.order_number}`}
             </span>
             {order.table_name && (
               <span className="text-xs text-muted-foreground">· {order.table_name}</span>
