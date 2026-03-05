@@ -12,7 +12,7 @@ interface Branch {
 
 const BranchesCrud = () => {
   const crud = useCrud<Branch>({ table: "branches" as any, queryKey: "admin-branches", orderBy: { column: "name" } });
-  const edit = useEditState<Branch>({ name: "", address: "", is_active: true } as any);
+  const edit = useEditState<Branch>({ name: "", branch_code: "", address: "", is_active: true } as any);
 
   const columns: ColumnDef<Branch>[] = [
     { key: "name", header: "Nombre", width: "1fr", type: "text" },
