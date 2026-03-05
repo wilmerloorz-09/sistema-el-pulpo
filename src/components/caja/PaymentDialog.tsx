@@ -141,7 +141,7 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display">
-            Cobrar #{order?.order_number}{" "}
+            Cobrar {order?.order_code ?? `#${order?.order_number}`}{" "}
             {order?.order_type === "DINE_IN" && order?.table_name && (
               <span className="text-muted-foreground font-normal">— {order.table_name}</span>
             )}

@@ -58,7 +58,7 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
           )}
           <span className="font-display text-sm font-bold truncate">{label}</span>
           <Badge variant="secondary" className="text-[10px] shrink-0">
-            #{order.order_number}
+            {order.order_code ?? `#${order.order_number}`}
           </Badge>
         </div>
         <div

@@ -345,7 +345,7 @@ const Ordenes = () => {
       {order && (
         <ThermalReceipt
           ref={receiptRef}
-          orderNumber={order.order_number}
+          orderNumber={order.order_code ?? `#${order.order_number}`}
           orderType={order.order_type}
           tableName={order.table_name}
           items={order.items}
