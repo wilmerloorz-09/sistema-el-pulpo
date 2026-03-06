@@ -74,7 +74,7 @@ export function OrderCard({ order, onCancel, showCancelButton = true }: OrderCar
 
       {/* Items list */}
       <div className="flex-1 px-4 py-2 space-y-1">
-        {order.items.map((item) => (
+        {order.items.filter((item) => item.status !== "DRAFT").map((item) => (
           <div
             key={item.id}
             className="flex items-center gap-2 rounded-xl px-2 py-2 bg-background"
@@ -87,9 +87,16 @@ export function OrderCard({ order, onCancel, showCancelButton = true }: OrderCar
               {item.quantity}×
             </span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">
-                {item.description_snapshot}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-foreground">
+                  {item.description_snapshot}
+                </p>
+                {item.status === "DRAFT" && (
+                  <Badge className="text-[10px] font-medium" variant="secondary">
+                    Pendiente
+                  </Badge>
+                )}
+              </div>
               {item.modifiers.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {item.modifiers.map((m) => m.description).join(", ")}

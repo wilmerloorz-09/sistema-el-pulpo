@@ -88,7 +88,11 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       });
 
       const ordersWithDetails = orders.map((order) => {
-        const related = items.filter((i) => i.order_id === order.id);
+        // Only show items that were already sent (no drafts) in the Orders module.
+        const related = items
+          .filter((i) => i.order_id === order.id)
+          .filter((i) => i.status !== "DRAFT");
+
         const formattedItems: OrderItemSummary[] = related.map((i) => ({
           id: i.id,
           description_snapshot: i.description_snapshot,

@@ -89,10 +89,13 @@ const Ordenes = () => {
 
   const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
   const total = order.items.reduce((s, i) => s + i.total, 0);
+  const hasDraftItems = order.items.some((i) => i.status === "DRAFT");
+  const hasSentItems = order.items.some((i) => i.status !== "DRAFT");
   const isDraft = order.status === "DRAFT";
   const isSent = order.status === "SENT_TO_KITCHEN";
   const hasSiblings = order.siblings.length > 0;
   const canSplit = order.table_id && isDraft && order.items.length > 0;
+  const canEditItems = order.status !== "PAID" && order.status !== "CANCELLED";
 
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
@@ -294,12 +297,12 @@ const Ordenes = () => {
               items={order.items}
               onRemove={(id) => removeItem.mutate(id)}
               onUpdateQty={(id, qty, price) => updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price })}
-              disabled={!isDraft}
+              disabled={!canEditItems}
             />
           </div>
 
           {/* Actions */}
-          {isDraft && order.items.length > 0 && (
+          {hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
             <Button
               onClick={() => {
                 sendToKitchen.mutate(undefined, {
@@ -317,6 +320,11 @@ const Ordenes = () => {
             >
               {sendToKitchen.isPending ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : hasSentItems ? (
+                <>
+                  <ChefHat className="h-5 w-5" />
+                  Enviar nuevos ítems · ${total.toFixed(2)}
+                </>
               ) : isTakeout ? (
                 <>
                   <CircleDollarSign className="h-5 w-5" />

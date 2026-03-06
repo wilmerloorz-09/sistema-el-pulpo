@@ -14,6 +14,7 @@ interface OrderItem {
   quantity: number;
   unit_price: number;
   total: number;
+  status: string;
   modifiers: { id: string; modifier_id: string; description: string }[];
 }
 
@@ -69,7 +70,7 @@ export function useOrder(orderId: string | null) {
 
       // Fetch items
       const items = await dbSelect<any>("order_items", {
-        select: "id, product_id, description_snapshot, quantity, unit_price, total",
+        select: "id, product_id, description_snapshot, quantity, unit_price, total, status",
         filters: [{ column: "order_id", op: "eq", value: orderId }],
         orderBy: { column: "created_at" },
       });
@@ -87,6 +88,7 @@ export function useOrder(orderId: string | null) {
 
       const enrichedItems: OrderItem[] = items.map((item: any) => ({
         ...item,
+        status: item.status ?? "DRAFT",
         modifiers: modifiersData
           .filter((m: any) => m.order_item_id === item.id)
           .map((m: any) => ({
@@ -152,6 +154,7 @@ export function useOrder(orderId: string | null) {
         unit_price: params.unit_price,
         quantity: params.quantity,
         total,
+        status: "DRAFT",
       });
 
       // Add modifiers
@@ -199,21 +202,46 @@ export function useOrder(orderId: string | null) {
   const sendToKitchen = useMutation({
     mutationFn: async () => {
       const order = query.data;
-      const newStatus: OrderStatus =
-        order?.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
+      if (!order) return;
 
-      await dbUpdate("orders", orderId!, { status: newStatus });
+      // Only update items that are still draft.
+      const draftItems = order.items.filter((item) => item.status === "DRAFT");
+      if (draftItems.length === 0) return;
+
+      // Mark draft items as sent.
+      await Promise.all(
+        draftItems.map((item) =>
+          dbUpdate("order_items", item.id, {
+            status: "SENT",
+          })
+        )
+      );
+
+      // Only change order status on the first send (when it was still DRAFT).
+      if (order.status === "DRAFT") {
+        const newStatus: OrderStatus =
+          order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
+        await dbUpdate("orders", orderId!, { status: newStatus });
+      }
     },
     onSuccess: () => {
       const order = query.data;
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      toast.success(
-        order?.order_type === "TAKEOUT"
-          ? "Orden lista para cobrar en caja"
-          : "Orden enviada a cocina"
-      );
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+
+      // Show a different toast when sending new items vs first send
+      const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
+      const message = order?.order_type === "TAKEOUT"
+        ? hasSentAlready
+          ? "Nuevos ítems listos para cobrar"
+          : "Orden lista para cobrar en caja"
+        : hasSentAlready
+          ? "Nuevos ítems enviados a cocina"
+          : "Orden enviada a cocina";
+
+      toast.success(message);
     },
     onError: (err: any) => toast.error(err.message),
   });
