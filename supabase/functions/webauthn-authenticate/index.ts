@@ -7,6 +7,23 @@ import type {
   AuthenticatorTransportFuture,
 } from "https://esm.sh/@simplewebauthn/types@13.1.0";
 
+/**
+ * Generate a UUID v4 compatible fallback function
+ * For Deno/Supabase Edge Functions
+ */
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && 
+      typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+    .replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -36,7 +53,7 @@ Deno.serve(async (req) => {
       });
 
       // Store challenge with no user_id (we don't know who yet)
-      const challengeId = crypto.randomUUID();
+      const challengeId = generateUUID();
       await adminClient.from("webauthn_challenges").insert({
         id: challengeId,
         challenge: options.challenge,

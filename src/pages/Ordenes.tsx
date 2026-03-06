@@ -97,15 +97,19 @@ const Ordenes = () => {
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
     SENT_TO_KITCHEN: "En cocina",
+    READY: "Lista para despachar",
     KITCHEN_DISPATCHED: "Despachada",
     PAID: "Pagada",
+    CANCELLED: "Cancelada",
   };
 
   const statusColor: Record<string, string> = {
     DRAFT: "bg-muted text-muted-foreground",
     SENT_TO_KITCHEN: "bg-primary/15 text-primary",
+    READY: "bg-green-500/15 text-green-600",
     KITCHEN_DISPATCHED: "bg-warning/15 text-foreground",
     PAID: "bg-accent/15 text-accent",
+    CANCELLED: "bg-destructive/15 text-destructive",
   };
 
   const handleSplit = async () => {

@@ -23,8 +23,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/mesas", label: "Mesas", icon: <LayoutGrid className="h-5 w-5" />, roles: ["admin", "mesero", "superadmin"] },
   { to: "/ordenes", label: "Ordenes", icon: <UtensilsCrossed className="h-5 w-5" />, roles: ["admin", "mesero", "superadmin"] },
-  { to: "/cocina", label: "Cocina", icon: <ChefHat className="h-5 w-5" />, roles: ["admin", "cocina", "superadmin"] },
-  { to: "/despacho", label: "Despacho", icon: <Truck className="h-5 w-5" />, roles: ["admin", "despachador_mesas", "despachador_takeout", "superadmin"] },
+  { to: "/despacho", label: "Despacho", icon: <ChefHat className="h-5 w-5" />, roles: ["admin", "cocina", "despachador_mesas", "despachador_takeout", "superadmin"] },
   { to: "/caja", label: "Caja", icon: <CircleDollarSign className="h-5 w-5" />, roles: ["admin", "cajero", "superadmin"] },
   { to: "/reportes", label: "Reportes", icon: <BarChart3 className="h-5 w-5" />, roles: ["admin", "superadmin"] },
   { to: "/admin", label: "Admin", icon: <Settings className="h-5 w-5" />, roles: ["admin", "superadmin"] },
@@ -38,7 +37,7 @@ const BottomNav = () => {
   );
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-bottom md:bottom-0">
       <div className="flex items-center justify-around px-1 py-1.5">
         {visibleItems.map((item) => (
           <NavLink

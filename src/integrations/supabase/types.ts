@@ -930,7 +930,7 @@ export type Database = {
         | "superadmin"
       cash_movement_type: "OPENING" | "PAYMENT_IN" | "CHANGE_OUT"
       cash_shift_status: "OPEN" | "CLOSED"
-      order_status: "DRAFT" | "SENT_TO_KITCHEN" | "KITCHEN_DISPATCHED" | "PAID"
+      order_status: "DRAFT" | "SENT_TO_KITCHEN" | "READY" | "KITCHEN_DISPATCHED" | "PAID" | "CANCELLED"
       order_type: "DINE_IN" | "TAKEOUT"
       price_mode: "FIXED" | "MANUAL"
     }
@@ -1071,7 +1071,7 @@ export const Constants = {
       ],
       cash_movement_type: ["OPENING", "PAYMENT_IN", "CHANGE_OUT"],
       cash_shift_status: ["OPEN", "CLOSED"],
-      order_status: ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED", "PAID"],
+      order_status: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID", "CANCELLED"],
       order_type: ["DINE_IN", "TAKEOUT"],
       price_mode: ["FIXED", "MANUAL"],
     },

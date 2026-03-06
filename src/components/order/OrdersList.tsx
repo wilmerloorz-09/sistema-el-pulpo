@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type TabType = "sent" | "dispatched" | "cancelled" | "paid";
+type TabType = "sent" | "ready" | "dispatched" | "cancelled" | "paid";
 
 interface TabInfo {
   key: TabType;
@@ -17,6 +17,7 @@ interface TabInfo {
 
 const tabs: TabInfo[] = [
   { key: "sent", label: "Enviadas", status: "SENT_TO_KITCHEN", showCancel: true },
+  { key: "ready", label: "Listas", status: "READY", showCancel: true },
   { key: "dispatched", label: "Despachadas", status: "KITCHEN_DISPATCHED", showCancel: true },
   { key: "cancelled", label: "Canceladas", status: "CANCELLED", showCancel: false },
   { key: "paid", label: "Pagadas", status: "PAID", showCancel: false },
@@ -31,6 +32,7 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
   const { activeBranchId } = useBranch();
 
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
+  const readyOrders = useOrdersByStatus("READY");
   const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED");
   const cancelledOrders = useOrdersByStatus("CANCELLED");
   const paidOrders = useOrdersByStatus("PAID");
@@ -39,6 +41,8 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
     switch (tab) {
       case "sent":
         return sentOrders;
+      case "ready":
+        return readyOrders;
       case "dispatched":
         return dispatchedOrders;
       case "cancelled":

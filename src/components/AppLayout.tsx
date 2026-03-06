@@ -61,7 +61,7 @@ const AppLayout = () => {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 pb-20">
+      <main className="flex-1 pb-20 md:pb-20 mb-safe">
         <Outlet />
       </main>
 

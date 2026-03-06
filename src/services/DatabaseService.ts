@@ -11,6 +11,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { localDb, type SyncQueueEntry } from "./localDb";
 import type { Table as DexieTable } from "dexie";
+import { generateUUID } from "@/lib/uuid";
 
 type TableName =
   | "categories"
@@ -232,7 +233,7 @@ export async function dbInsert<T = any>(
   }
 
   // Offline: save locally with pending status
-  const id = (record as any).id || crypto.randomUUID();
+  const id = (record as any).id || generateUUID();
   const localRecord = {
     ...record,
     id,
@@ -336,7 +337,7 @@ export async function dbUpsert<T = any>(
   }
 
   // Offline upsert
-  const id = record.id || crypto.randomUUID();
+  const id = record.id || generateUUID();
   const dexieTable = getDexieTable(table);
   const existing = await dexieTable.get(id);
 

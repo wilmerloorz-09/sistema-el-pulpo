@@ -46,7 +46,7 @@ export function useTablesWithStatus() {
           .select("id, table_id, status, split_id, order_items(id)")
           .not("table_id", "is", null)
           .eq("branch_id", activeBranchId)
-          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"])
+          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
           .then(({ data, error }) => {
             if (error) throw error;
             return data ?? [];

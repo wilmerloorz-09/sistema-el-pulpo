@@ -14,7 +14,6 @@ import RoleSelector from "@/components/RoleSelector";
 import Login from "./pages/Login";
 import Mesas from "./pages/Mesas";
 import Ordenes from "./pages/Ordenes";
-import Cocina from "./pages/Cocina";
 import Despacho from "./pages/Despacho";
 import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
@@ -130,7 +129,6 @@ const App = () => (
               >
                 <Route path="/mesas" element={<Mesas />} />
                 <Route path="/ordenes" element={<Ordenes />} />
-                <Route path="/cocina" element={<Cocina />} />
                 <Route path="/despacho" element={<Despacho />} />
                 <Route path="/caja" element={<Caja />} />
                 <Route path="/reportes" element={<Reportes />} />

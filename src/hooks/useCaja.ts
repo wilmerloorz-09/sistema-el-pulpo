@@ -3,6 +3,7 @@ import { dbSelect, dbInsert, dbUpdate, supabase } from "@/services/DatabaseServi
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
+import { generateUUID } from "@/lib/uuid";
 
 export interface Denomination {
   id: string;
@@ -177,7 +178,7 @@ export function useCaja() {
       if (!user) throw new Error("No user");
       if (!activeBranchId) throw new Error("No branch selected");
 
-      const shiftId = crypto.randomUUID();
+      const shiftId = generateUUID();
       await dbInsert("cash_shifts", {
         id: shiftId,
         cashier_id: user.id,
@@ -189,7 +190,7 @@ export function useCaja() {
       // Insert shift denoms
       for (const d of denomCounts) {
         await dbInsert("cash_shift_denoms", {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           shift_id: shiftId,
           denomination_id: d.denomination_id,
           qty_initial: d.qty,
@@ -200,7 +201,7 @@ export function useCaja() {
       // Insert opening movements
       for (const d of denomCounts.filter((d) => d.qty > 0)) {
         await dbInsert("cash_movements", {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           shift_id: shiftId,
           denomination_id: d.denomination_id,
           movement_type: "OPENING",
@@ -224,7 +225,7 @@ export function useCaja() {
       if (!shift) throw new Error("No hay turno abierto");
 
       // 1. Insert payment
-      const paymentId = crypto.randomUUID();
+      const paymentId = generateUUID();
       await dbInsert("payments", {
         id: paymentId,
         order_id: orderId,
@@ -275,7 +276,7 @@ export function useCaja() {
 
       // 5. Record cash movements
       await dbInsert("cash_movements", {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         shift_id: shift.id,
         payment_id: paymentId,
         movement_type: "PAYMENT_IN",
@@ -285,7 +286,7 @@ export function useCaja() {
 
       for (const cd of changeDenoms) {
         await dbInsert("cash_movements", {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           shift_id: shift.id,
           payment_id: paymentId,
           denomination_id: cd.denomination_id,

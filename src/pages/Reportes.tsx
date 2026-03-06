@@ -28,6 +28,7 @@ const Reportes = () => {
     const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
       DRAFT: 'secondary',
       SENT_TO_KITCHEN: 'outline',
+      READY: 'outline',
       KITCHEN_DISPATCHED: 'outline',
       PAID: 'default',
       CANCELLED: 'destructive',

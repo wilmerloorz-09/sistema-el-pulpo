@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { generateUUID } from "@/lib/uuid";
 
 export function useEditState<T extends { id: string }>(defaults: Partial<T> = {}) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -10,7 +11,7 @@ export function useEditState<T extends { id: string }>(defaults: Partial<T> = {}
   }, []);
 
   const startAdd = useCallback((extraDefaults: Record<string, any> = {}) => {
-    const newId = crypto.randomUUID();
+    const newId = generateUUID();
     setEditingId(newId);
     setEditValues({ id: newId, ...defaults, ...extraDefaults });
   }, [defaults]);

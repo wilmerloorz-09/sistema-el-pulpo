@@ -3,7 +3,9 @@
  */
 
 export type OrderItemStatus = 'DRAFT' | 'SENT' | 'DISPATCHED' | 'PAID' | 'CANCELLED';
-export type OrderStatus = 'DRAFT' | 'SENT_TO_KITCHEN' | 'KITCHEN_DISPATCHED' | 'PAID' | 'CANCELLED';
+export type OrderStatus = 'DRAFT' | 'SENT_TO_KITCHEN' | 'READY' | 'KITCHEN_DISPATCHED' | 'PAID' | 'CANCELLED';
+export type DispatchMode = 'SINGLE' | 'SPLIT';
+export type DispatchType = 'ALL' | 'TABLE' | 'TAKEOUT';
 export type CancellationReason = 
   | 'error_mesero'
   | 'cliente_cambio_opinion'

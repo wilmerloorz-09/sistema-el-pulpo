@@ -36,6 +36,8 @@ export function OrderCard({ order, onCancel, showCancelButton = true }: OrderCar
     switch (status) {
       case "SENT_TO_KITCHEN":
         return "Enviada";
+      case "READY":
+        return "Lista para despachar";
       case "KITCHEN_DISPATCHED":
         return "Despachada";
       case "CANCELLED":

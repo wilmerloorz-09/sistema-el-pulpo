@@ -109,4 +109,22 @@
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Asegurar que la barra inferior esté siempre visible en móviles */
+  @supports (padding: max(0px)) {
+    .safe-bottom {
+      padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+    }
+  }
+
+  /* Prevenir que el teclado virtual tape el contenido */
+  @media (max-height: 500px) {
+    .mb-safe {
+      padding-bottom: 5rem;
+    }
+  }
 }

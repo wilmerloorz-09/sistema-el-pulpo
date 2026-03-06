@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
+import { generateUUID } from "@/lib/uuid";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -102,7 +103,7 @@ export function useOrder(orderId: string | null) {
           .from("orders")
           .select("id, order_number, order_code, split_id, order_items(id)")
           .eq("table_id", order.table_id)
-          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "KITCHEN_DISPATCHED"])
+          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
           .not("split_id", "is", null);
 
         if (siblingOrders && siblingOrders.length > 0) {
@@ -141,7 +142,7 @@ export function useOrder(orderId: string | null) {
       modifier_ids: string[];
     }) => {
       const total = params.unit_price * params.quantity;
-      const itemId = crypto.randomUUID();
+      const itemId = generateUUID();
 
       await dbInsert("order_items", {
         id: itemId,
@@ -157,7 +158,7 @@ export function useOrder(orderId: string | null) {
       if (params.modifier_ids.length > 0) {
         for (const mid of params.modifier_ids) {
           await dbInsert("order_item_modifiers", {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             order_item_id: itemId,
             modifier_id: mid,
           });
