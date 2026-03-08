@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 
 const Ordenes = () => {
+  console.log("🔍 Ordenes: Component rendering");
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -27,8 +28,19 @@ const Ordenes = () => {
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
+  console.log("🔍 Ordenes: URL params", { orderId, searchParams: Object.fromEntries(searchParams) });
+
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen } = useOrder(orderId);
   const menu = useMenuData();
+
+  console.log("🔍 Ordenes: States", { 
+    orderId, 
+    isLoading, 
+    menuIsLoading: menu.isLoading, 
+    hasOrder: !!order,
+    hasUser: !!user,
+    activeBranchId
+  });
 
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showCart, setShowCart] = useState(false);
@@ -43,6 +55,7 @@ const Ordenes = () => {
   }, []);
 
   if (!orderId) {
+    console.log("📋 Ordenes: Rendering OrdersList mode (no orderId)");
     return (
       <div className="flex flex-col h-[calc(100vh-7rem)]">
         <div className="flex items-center gap-2 mb-4 px-4 py-3 border-b border-border bg-card/50">
@@ -71,7 +84,10 @@ const Ordenes = () => {
     );
   }
 
+  console.log("📝 Ordenes: Rendering Order detail mode (orderId exists)");
+
   if (isLoading || menu.isLoading) {
+    console.log("⏳ Ordenes: Showing loading spinner");
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -80,12 +96,15 @@ const Ordenes = () => {
   }
 
   if (!order) {
+    console.log("❌ Ordenes: Order not found");
     return (
       <div className="p-4 text-center">
         <p className="text-sm text-destructive">Orden no encontrada</p>
       </div>
     );
   }
+
+  console.log("✅ Ordenes: About to render order detail for order:", order.id);
 
   const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
   const total = order.items.reduce((s, i) => s + i.total, 0);

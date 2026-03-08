@@ -3,7 +3,7 @@ import type { KitchenOrder } from "@/hooks/useKitchenOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check, CheckCircle2, Clock, UtensilsCrossed, ShoppingBag, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 function useElapsed(since: string) {
   const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - new Date(since).getTime()) / 1000));
@@ -15,9 +15,7 @@ function useElapsed(since: string) {
     return () => clearInterval(interval);
   }, [since]);
 
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  return { mins, secs, elapsed };
+  return { elapsed };
 }
 
 interface Props {
@@ -29,7 +27,7 @@ interface Props {
 }
 
 export default function KitchenCard({ order, onDispatchItem, onDispatchAll, dispatchingItemId, dispatchingAll }: Props) {
-  const { mins, secs, elapsed } = useElapsed(order.sent_at);
+  const { elapsed } = useElapsed(order.sent_at);
   const isUrgent = elapsed > 15 * 60;
   const isWarning = elapsed > 8 * 60;
 
@@ -68,7 +66,7 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
           )}
         >
           <Clock className="h-3.5 w-3.5" />
-          {mins}:{secs.toString().padStart(2, "0")}
+          {formatElapsedHHMMSS(elapsed)}
         </div>
       </div>
 

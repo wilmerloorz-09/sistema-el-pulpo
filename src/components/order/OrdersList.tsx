@@ -28,8 +28,11 @@ interface OrdersListProps {
 }
 
 export default function OrdersList({ onCancelOrder }: OrdersListProps) {
+  console.log(" OrdersList: Component rendering");
   const [activeTab, setActiveTab] = useState<TabType>("sent");
   const { activeBranchId } = useBranch();
+
+  console.log(" OrdersList: Branch ID:", activeBranchId);
 
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
   const readyOrders = useOrdersByStatus("READY");
@@ -37,7 +40,16 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
   const cancelledOrders = useOrdersByStatus("CANCELLED");
   const paidOrders = useOrdersByStatus("PAID");
 
+  console.log(" OrdersList: Queries status:", {
+    sentOrders: { isLoading: sentOrders.isLoading, isError: sentOrders.isError, dataLength: sentOrders.data?.length },
+    readyOrders: { isLoading: readyOrders.isLoading, isError: readyOrders.isError, dataLength: readyOrders.data?.length },
+    dispatchedOrders: { isLoading: dispatchedOrders.isLoading, isError: dispatchedOrders.isError, dataLength: dispatchedOrders.data?.length },
+    cancelledOrders: { isLoading: cancelledOrders.isLoading, isError: cancelledOrders.isError, dataLength: cancelledOrders.data?.length },
+    paidOrders: { isLoading: paidOrders.isLoading, isError: paidOrders.isError, dataLength: paidOrders.data?.length },
+  });
+
   const getOrdersForTab = (tab: TabType) => {
+    console.log(" OrdersList: Getting orders for tab:", tab);
     switch (tab) {
       case "sent":
         return sentOrders;
@@ -119,14 +131,14 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
             No hay órdenes {currentTab.label.toLowerCase()}
           </div>
         ) : (
-          currentOrders.data.map((order) => (
+          currentOrders.data?.map((order) => (
             <OrderCard
-              key={order.id}
+              key={order?.id || Math.random()}
               order={order}
               onCancel={onCancelOrder}
               showCancelButton={currentTab.showCancel}
             />
-          ))
+          )) || []
         )}
       </div>
     </div>

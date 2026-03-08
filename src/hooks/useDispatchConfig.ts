@@ -26,38 +26,59 @@ export function useDispatchConfig() {
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
 
-  // Helper to fetch dispatch config
-  const fetchConfig = async () => {
+  // Helper to fetch dispatch config (lee dispatch_mode desde la BD; por defecto SINGLE)
+  const fetchConfig = async (): Promise<DispatchConfig | null> => {
     if (!activeBranchId) return null;
 
     const result = await (supabase
       .from("dispatch_config" as any)
-      .select("*")
+      .select("id, branch_id, dispatch_mode, created_at, updated_at")
       .eq("branch_id", activeBranchId)
-      .single() as any);
-
-    // Handle "no rows found" error - return null, don't create automatically
-    // This allows the component to show a loading state or default UI
-    if (result.error && result.error.code === "PGRST116") {
-      console.log("No dispatch config found for branch, will be created on first update");
-      return null;
-    }
+      .maybeSingle() as any);
 
     if (result.error) {
-      console.error("Error fetching dispatch config:", result.error);
-      throw result.error;
+      console.warn("[useDispatchConfig] Error loading config (using default SINGLE):", result.error.message);
+      return {
+        id: "",
+        branch_id: activeBranchId,
+        dispatch_mode: "SINGLE",
+        created_at: "",
+        updated_at: "",
+      };
     }
 
-    return (result.data as DispatchConfig) || null;
+    // Sin registro en BD → retornar objeto por defecto con dispatch_mode = 'SINGLE'
+    if (!result.data) {
+      console.log("[useDispatchConfig] No row in dispatch_config for branch, using default dispatch_mode = SINGLE");
+      return {
+        id: "",
+        branch_id: activeBranchId,
+        dispatch_mode: "SINGLE",
+        created_at: "",
+        updated_at: "",
+      };
+    }
+
+    const row = result.data as { id: string; branch_id: string; dispatch_mode: string; created_at: string; updated_at: string };
+    const config: DispatchConfig = {
+      id: row.id,
+      branch_id: row.branch_id,
+      dispatch_mode: row.dispatch_mode === "SPLIT" ? "SPLIT" : "SINGLE",
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+    console.log("[useDispatchConfig] Value from DB:", { dispatch_mode: config.dispatch_mode, branch_id: config.branch_id });
+    return config;
   };
 
-  // Get dispatch configuration for the branch
+  // Get dispatch configuration for the branch (staleTime 0 para evitar caché con valor incorrecto)
   const configQuery = useQuery({
     queryKey: ["dispatch-config", activeBranchId],
     queryFn: fetchConfig,
     enabled: !!activeBranchId,
-    retry: 1, // Only retry once to avoid infinite loops
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+    retry: 1,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // Helper to fetch dispatch assignments

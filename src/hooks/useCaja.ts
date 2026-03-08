@@ -253,7 +253,11 @@ export function useCaja() {
           .eq("id", orderId)
           .single();
         const nextStatus = orderData?.order_type === "TAKEOUT" ? "SENT_TO_KITCHEN" : "PAID";
-        await dbUpdate("orders", orderId, { status: nextStatus });
+        const orderUpdate: Record<string, unknown> = { status: nextStatus };
+        if (nextStatus === "PAID") {
+          orderUpdate.paid_at = new Date().toISOString();
+        }
+        await dbUpdate("orders", orderId, orderUpdate);
       }
 
       // 4. Update cash_shift_denoms

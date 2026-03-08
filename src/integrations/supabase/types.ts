@@ -369,6 +369,10 @@ export type Database = {
           paid_at: string | null
           product_id: string
           quantity: number
+          ready_at: string | null
+          sent_to_kitchen_at: string | null
+          status: string | null
+          cancelled_at: string | null
           total: number
           unit_price: number
         }
@@ -381,6 +385,10 @@ export type Database = {
           paid_at?: string | null
           product_id: string
           quantity?: number
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
+          status?: string | null
+          cancelled_at?: string | null
           total: number
           unit_price: number
         }
@@ -393,6 +401,10 @@ export type Database = {
           paid_at?: string | null
           product_id?: string
           quantity?: number
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
+          status?: string | null
+          cancelled_at?: string | null
           total?: number
           unit_price?: number
         }
@@ -416,12 +428,17 @@ export type Database = {
       orders: {
         Row: {
           branch_id: string
+          cancelled_at: string | null
           created_at: string
           created_by: string
+          dispatched_at: string | null
           id: string
           order_code: string | null
           order_number: number
           order_type: Database["public"]["Enums"]["order_type"]
+          paid_at: string | null
+          ready_at: string | null
+          sent_to_kitchen_at: string | null
           split_id: string | null
           status: Database["public"]["Enums"]["order_status"]
           table_id: string | null
@@ -429,12 +446,17 @@ export type Database = {
         }
         Insert: {
           branch_id: string
+          cancelled_at?: string | null
           created_at?: string
           created_by: string
+          dispatched_at?: string | null
           id?: string
           order_code?: string | null
           order_number?: number
           order_type: Database["public"]["Enums"]["order_type"]
+          paid_at?: string | null
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           table_id?: string | null
@@ -442,12 +464,17 @@ export type Database = {
         }
         Update: {
           branch_id?: string
+          cancelled_at?: string | null
           created_at?: string
           created_by?: string
+          dispatched_at?: string | null
           id?: string
           order_code?: string | null
           order_number?: number
           order_type?: Database["public"]["Enums"]["order_type"]
+          paid_at?: string | null
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           table_id?: string | null

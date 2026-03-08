@@ -10,8 +10,10 @@ export interface DispatchOrderItem {
   id: string;
   description_snapshot: string;
   quantity: number;
+  status: string;
   dispatched_at: string | null;
   modifiers: { description: string }[];
+  total?: number;
 }
 
 export interface DispatchOrder {
@@ -23,6 +25,11 @@ export interface DispatchOrder {
   split_code: string | null;
   status: OrderStatus;
   updated_at: string;
+  sent_to_kitchen_at: string | null;
+  ready_at: string | null;
+  dispatched_at: string | null;
+  paid_at: string | null;
+  cancelled_at: string | null;
   items: DispatchOrderItem[];
 }
 
@@ -40,8 +47,8 @@ export function useDispatchOrders() {
         return [];
       }
 
-      // Use default SINGLE mode if config doesn't exist yet
-      const dispatchMode = config?.dispatch_mode || "SINGLE";
+      // SINGLE si config no existe, está cargando o viene de la BD como SINGLE
+      const dispatchMode = configLoading ? "SINGLE" : (config?.dispatch_mode || "SINGLE");
 
       try {
         console.log("🔍 Starting dispatch orders fetch:", {
@@ -50,24 +57,21 @@ export function useDispatchOrders() {
           userId: user.id,
         });
 
-        // Step 1: Fetch basic orders data WITHOUT complex joins
+        // Step 1: Fetch basic orders data (solo columnas base por si no está aplicada la migración de timestamps)
         console.log("📍 Step 1: Fetching basic orders data...");
-        console.log("   Filter: branch_id =", activeBranchId, "| status IN [SENT_TO_KITCHEN, READY]");
-        
+        const ordersSelect = [
+          "id",
+          "order_number",
+          "order_code",
+          "order_type",
+          "table_id",
+          "split_id",
+          "status",
+          "updated_at",
+        ];
         const { data: orders, error: ordersError } = await supabase
           .from("orders")
-          .select(
-            `
-            id,
-            order_number,
-            order_code,
-            order_type,
-            table_id,
-            split_id,
-            status,
-            updated_at
-          `
-          )
+          .select(ordersSelect.join(", "))
           .eq("branch_id", activeBranchId)
           .in("status", ["SENT_TO_KITCHEN", "READY"])
           .order("updated_at", { ascending: true });
@@ -78,6 +82,8 @@ export function useDispatchOrders() {
             message: ordersError.message,
             details: ordersError.details,
             hint: ordersError.hint,
+            branchId: activeBranchId,
+            dispatchMode: dispatchMode
           });
           throw new Error(`Failed to fetch orders: ${ordersError.message}`);
         }
@@ -85,6 +91,8 @@ export function useDispatchOrders() {
         console.log("📊 Step 1 Response:", {
           ordersCount: orders?.length || 0,
           rawData: orders,
+          branchId: activeBranchId,
+          dispatchMode: dispatchMode
         });
 
         if (!orders || orders.length === 0) {
@@ -121,19 +129,19 @@ export function useDispatchOrders() {
         
         if (splitIds.length > 0) {
           const { data: splits, error: splitsError } = await supabase
-            .from("order_splits")
-            .select("id, code")
-            .in("id", splitIds);
+  .from("table_splits")
+  .select("id, split_code")
+  .in("id", splitIds);
 
           if (splitsError) {
             console.error("⚠️ Warning - Error fetching splits:", splitsError.message);
           } else if (splits) {
-            splitsMap = Object.fromEntries(splits.map((s: any) => [s.id, s.code]));
+            splitsMap = Object.fromEntries(splits.map((s: any) => [s.id, s.split_code]));
             console.log(`✓ Step 3 Success: Fetched ${splits.length} split codes`);
           }
         }
 
-        // Step 4: Fetch order items
+        // Step 4: Fetch order items - EXACTAMENTE como useOrdersByStatus.ts
         console.log("📍 Step 4: Fetching order items...");
         const orderIds = (orders as any[]).map((o: any) => o.id);
         let itemsMap: Record<string, any[]> = {};
@@ -141,26 +149,48 @@ export function useDispatchOrders() {
         if (orderIds.length > 0) {
           const { data: items, error: itemsError } = await supabase
             .from("order_items")
-            .select(
-              `
-              id,
-              order_id,
-              description_snapshot,
-              quantity,
-              dispatched_at
-            `
-            )
+            .select("id, order_id, description_snapshot, quantity, total, status")
             .in("order_id", orderIds);
 
           if (itemsError) {
             console.error("⚠️ Warning - Error fetching items:", itemsError.message);
           } else if (items) {
-            itemsMap = items.reduce((acc: any, item: any) => {
+            console.log("🔍 useDispatchOrders: Items fetched from DB:", items.length, "items");
+            console.log("🔍 useDispatchOrders: Sample item:", items[0]);
+            
+            // Check if any items have total values
+            const itemsWithTotal = items.filter((i: any) => i.total != null && i.total > 0);
+            console.log("🔍 useDispatchOrders: Items with total > 0:", itemsWithTotal.length, "of", items.length);
+            
+            if (itemsWithTotal.length === 0) {
+              console.log("⚠️ No items have total > 0, checking all total values:");
+              items.forEach((item, index) => {
+                console.log(`Item ${index}: total = ${item.total}, quantity = ${item.quantity}`);
+              });
+            }
+            
+            // Filter out DRAFT items
+            const withStatus = (items as any[]).map((item: any) => ({ ...item, status: item.status ?? "SENT" }));
+            const visibleItems = withStatus.filter((item: any) => item.status !== "DRAFT");
+            
+            console.log("🔍 useDispatchOrders: Items after filtering DRAFT:", visibleItems.length, "visible items from", items.length, "total");
+            console.log("🔍 useDispatchOrders: Filtered out DRAFT items:", items.length - visibleItems.length);
+            
+            itemsMap = visibleItems.reduce((acc: any, item: any) => {
               if (!acc[item.order_id]) acc[item.order_id] = [];
               acc[item.order_id].push(item);
               return acc;
             }, {});
-            console.log(`✓ Step 4 Success: Fetched ${items.length} order items`);
+            
+            // Log itemsMap to check if totals are preserved
+            console.log("🔍 useDispatchOrders: itemsMap sample:");
+            Object.keys(itemsMap).forEach(orderId => {
+              itemsMap[orderId].forEach((item, index) => {
+                console.log(`  Order ${orderId} Item ${index}: total = ${item.total}, type = ${typeof item.total}`);
+              });
+            });
+            
+            console.log(`✓ Step 4 Success: Fetched ${visibleItems.length} order items (excluding DRAFT)`);
           }
         }
 
@@ -192,7 +222,7 @@ export function useDispatchOrders() {
           console.log(`✓ SINGLE mode: showing all ${filteredOrders.length} orders`);
         }
 
-        const dispatchOrders = (filteredOrders as any[]).map((o: any) => ({
+        const mapped = (filteredOrders as any[]).map((o: any) => ({
           id: o.id,
           order_number: o.order_number,
           order_code: o.order_code,
@@ -201,15 +231,38 @@ export function useDispatchOrders() {
           split_code: splitsMap[o.split_id] || null,
           status: o.status,
           updated_at: o.updated_at,
+          sent_to_kitchen_at: o.sent_to_kitchen_at ?? null,
+          ready_at: o.ready_at ?? null,
+          dispatched_at: o.dispatched_at ?? null,
+          paid_at: o.paid_at ?? null,
+          cancelled_at: o.cancelled_at ?? null,
           items: (itemsMap[o.id] || []).map((item: any) => ({
             id: item.id,
             description_snapshot: item.description_snapshot,
             quantity: item.quantity,
+            status: item.status ?? "SENT",
             dispatched_at: item.dispatched_at,
+            total: item.total,
             modifiers: [], // Simplified for now - can add later if needed
           })),
         }));
 
+        // Solo órdenes con al menos un ítem no DRAFT (visible en despacho)
+        const dispatchOrders = mapped.filter((o) => o.items.length > 0);
+
+        console.log("🔍 useDispatchOrders: Final orders with items:", dispatchOrders.map((o: any) => ({
+          id: o.id,
+          order_code: o.order_code,
+          status: o.status,
+          items_count: o.items.length,
+          items: o.items.map((i: any) => ({
+            id: i.id,
+            description: i.description_snapshot?.substring(0, 20),
+            status: i.status,
+            quantity: i.quantity
+          }))
+        })));
+        
         console.log(`✅ Successfully loaded ${dispatchOrders.length} orders for dispatch`);
         return dispatchOrders;
       } catch (error: any) {
@@ -232,12 +285,20 @@ export function useDispatchOrders() {
   // Mark order as READY
   const markReadyMutation = useMutation({
     mutationFn: async (orderId: string) => {
+      const now = new Date().toISOString();
       const { error: updateError } = await supabase
         .from("orders")
-        .update({ status: "READY" })
+        .update({ status: "READY", ready_at: now })
         .eq("id", orderId);
 
       if (updateError) throw updateError;
+
+      // Register ready_at on all non-cancelled items of this order
+      await supabase
+        .from("order_items")
+        .update({ ready_at: now })
+        .eq("order_id", orderId)
+        .neq("status", "CANCELLED");
 
       // Create notification for meseros
       try {
@@ -261,37 +322,77 @@ export function useDispatchOrders() {
       toast.success("Orden lista para despachar");
     },
     onError: (error: any) => {
-      console.error("Error marking order ready:", error);
-      toast.error("Error al marcar orden lista");
+      console.error("❌ Error marking order ready - Full Details:", {
+        errorMessage: error?.message,
+        errorCode: error?.code,
+        errorDetails: error?.details,
+        errorHint: error?.hint,
+        stack: error?.stack,
+        timestamp: new Date().toISOString(),
+      });
+      toast.error(`Error al marcar orden lista: ${error?.message || 'Error desconocido'}`);
     },
   });
 
   // Mark order as KITCHEN_DISPATCHED
   const markDispatchedMutation = useMutation({
     mutationFn: async (orderId: string) => {
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({ status: "KITCHEN_DISPATCHED" })
-        .eq("id", orderId);
-
-      if (updateError) throw updateError;
-
-      // Mark all items as dispatched
+      console.log("🚀 Starting mark dispatched mutation for order:", orderId);
       const now = new Date().toISOString();
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .update({ dispatched_at: now })
-        .eq("order_id", orderId);
+      
+      try {
+        // Step 1: Update order status and timestamp
+        console.log("📍 Step 1: Updating order status to KITCHEN_DISPATCHED...");
+        const { data: orderData, error: updateError } = await supabase
+          .from("orders")
+          .update({ status: "KITCHEN_DISPATCHED", dispatched_at: now })
+          .eq("id", orderId)
+          .select("id, status, dispatched_at")
+          .single();
 
-      if (itemsError) throw itemsError;
+        if (updateError) {
+          console.error("❌ Step 1 Failed - Order update error:", updateError);
+          throw updateError;
+        }
+        
+        console.log("✅ Step 1 Success - Order updated:", orderData);
+
+        // Step 2: Update all items timestamp
+        console.log("📍 Step 2: Updating order items dispatched_at...");
+        const { data: itemsData, error: itemsError } = await supabase
+          .from("order_items")
+          .update({ dispatched_at: now })
+          .eq("order_id", orderId)
+          .select("id, dispatched_at");
+
+        if (itemsError) {
+          console.error("❌ Step 2 Failed - Items update error:", itemsError);
+          throw itemsError;
+        }
+        
+        console.log("✅ Step 2 Success - Items updated:", itemsData);
+        console.log("🎉 Order successfully marked as dispatched");
+        
+        return { orderData, itemsData };
+      } catch (error: any) {
+        console.error("💥 Mutation failed with error:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       toast.success("Orden despachada");
     },
     onError: (error: any) => {
-      console.error("Error marking order dispatched:", error);
-      toast.error("Error al despachar orden");
+      console.error("❌ Error marking order dispatched - Full Details:", {
+        errorMessage: error?.message,
+        errorCode: error?.code,
+        errorDetails: error?.details,
+        errorHint: error?.hint,
+        stack: error?.stack,
+        timestamp: new Date().toISOString(),
+      });
+      toast.error(`Error al despachar orden: ${error?.message || 'Error desconocido'}`);
     },
   });
 

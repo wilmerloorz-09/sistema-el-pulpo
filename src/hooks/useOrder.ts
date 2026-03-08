@@ -208,11 +208,14 @@ export function useOrder(orderId: string | null) {
       const draftItems = order.items.filter((item) => item.status === "DRAFT");
       if (draftItems.length === 0) return;
 
-      // Mark draft items as sent.
+      const now = new Date().toISOString();
+
+      // Mark draft items as sent and register sent_to_kitchen_at.
       await Promise.all(
         draftItems.map((item) =>
           dbUpdate("order_items", item.id, {
             status: "SENT",
+            sent_to_kitchen_at: now,
           })
         )
       );
@@ -221,7 +224,14 @@ export function useOrder(orderId: string | null) {
       if (order.status === "DRAFT") {
         const newStatus: OrderStatus =
           order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
-        await dbUpdate("orders", orderId!, { status: newStatus });
+        const orderUpdate: Record<string, unknown> = { status: newStatus };
+        if (newStatus === "SENT_TO_KITCHEN") {
+          orderUpdate.sent_to_kitchen_at = now;
+        }
+        if (newStatus === "KITCHEN_DISPATCHED") {
+          orderUpdate.dispatched_at = now;
+        }
+        await dbUpdate("orders", orderId!, orderUpdate);
       }
     },
     onSuccess: () => {
