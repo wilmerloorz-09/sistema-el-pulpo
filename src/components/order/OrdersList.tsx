@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
-import { OrderCard } from "./OrderCard";
+import OrderCard from "./OrderCard";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";

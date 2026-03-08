@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
+import { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, Check, X } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
@@ -43,9 +44,9 @@ interface Order {
 }
 
 interface OrderDetailPanelProps {
-  order: Order | null;
+  order: Order | OrderSummary | null;
   onClose?: () => void;
-  onCancel?: (order: Order) => void;
+  onCancel?: (order: Order | OrderSummary) => void;
   onMarkReady?: (orderId: string) => void;
   onMarkDispatched?: (orderId: string) => void;
   showCancelButton?: boolean;
@@ -154,29 +155,17 @@ export default function OrderDetailPanel({
         </div>
       </div>
 
-      {/* Status Badge - Listo para despachar */}
-      {order.status === "READY" && (
-        <div className="px-4 pt-3 pb-0">
-          <Badge className="bg-green-600 text-white w-full justify-center text-center">
-            ✓ Listo para despachar
-          </Badge>
-        </div>
-      )}
-
-      {/* Items list - SIMPLE */}
+      {/* Items list */}
       <div className="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div
             key={item?.id || Math.random()}
             className="flex items-center gap-2 rounded-xl px-2 py-2 bg-background"
           >
-            <div className="flex items-center justify-center shrink-0 h-7 w-7 rounded-lg border-2 border-muted-foreground/30 bg-muted-foreground/10">
-              <Check className="h-3.5 w-3.5 text-muted-foreground" />
-            </div>
+            <Badge className="text-[10px] font-medium bg-primary/10 text-primary border-primary/20 shrink-0">
+              {item?.quantity || 1}x
+            </Badge>
 
-            <span className="text-sm font-bold w-6 text-right shrink-0">
-              {item?.quantity || 0}×
-            </span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium text-foreground">
@@ -209,16 +198,9 @@ export default function OrderDetailPanel({
           </div>
           <div className="flex items-center gap-1 font-semibold text-primary">
             <DollarSign className="h-4 w-4" />
-            <span>${order.items?.reduce((sum, item) => sum + (item.total || 0), 0).toFixed(2)}</span>
+            <span>${(order.total || 0).toFixed(2)}</span>
           </div>
         </div>
-
-        <div className="flex items-center justify-center">
-          <Badge variant="outline" className="text-xs">
-            {getStatusText(order.status)}
-          </Badge>
-        </div>
-      </div>
 
       {/* Actions - Botones según módulo */}
       <div className="px-4 py-3 border-t border-border bg-muted/30 space-y-2">
@@ -252,5 +234,6 @@ export default function OrderDetailPanel({
         )}
       </div>
     </div>
+  </div>
   );
 }
