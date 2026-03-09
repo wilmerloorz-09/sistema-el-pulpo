@@ -20,6 +20,7 @@ export interface OrderSummary {
   id: string;
   order_number: number;
   order_code: string | null;
+  split_code?: string | null;
   status: OrderStatus;
   order_type: string;
   table_id: string | null;
@@ -65,8 +66,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           dispatched_at: string | null;
           paid_at: string | null;
           cancelled_at: string | null;
+          total: number;
         }>("orders", {
-          select: "id, order_number, order_code, status, order_type, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at",
+          select: "id, order_number, order_code, status, order_type, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, total",
           branchId: activeBranchId,
           filters,
           orderBy: { column: "created_at", ascending: false },
@@ -140,11 +142,12 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             modifiers: modsMap[i.id] || [],
           }));
 
-          const total = related.reduce((sum, item) => sum + parseFloat(item.total?.toString() || "0"), 0);
+          const total = Number(order.total ?? 0) || related.reduce((sum, item) => sum + parseFloat(item.total?.toString() || "0"), 0);
           const item_count = related.reduce((count, it) => count + it.quantity, 0);
 
           return {
             ...order,
+            split_code: null,
             table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
             total,
             item_count,
@@ -162,3 +165,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
     enabled: !!activeBranchId,
   });
 }
+
+
+

@@ -166,7 +166,7 @@ export function useDispatchConfig() {
       const updatedConfig = upsertResult.data as DispatchConfig;
 
       // If switching from SPLIT to SINGLE, clean up assignments
-      if (mode === "SINGLE" && qc.getQueryData(["dispatch-config", activeBranchId])?.dispatch_mode === "SPLIT") {
+      if (mode === "SINGLE" && (qc.getQueryData<DispatchConfig | null>(["dispatch-config", activeBranchId])?.dispatch_mode) === "SPLIT") {
         const assignments = assignmentsQuery.data || [];
         if (assignments.length > 0) {
           for (const a of assignments) {
@@ -253,3 +253,4 @@ export function useDispatchConfig() {
     getUserDispatchType,
   };
 }
+

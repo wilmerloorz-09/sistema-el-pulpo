@@ -13,7 +13,7 @@ interface BranchContextType {
   branches: Branch[];
   activeBranch: Branch | null;
   activeBranchId: string | null;
-  setActiveBranch: (branch: Branch) => void;
+  setActiveBranch: (branch: Branch | null) => void;
   loading: boolean;
 }
 
@@ -76,9 +76,13 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [branches]);
 
-  const setActiveBranch = (branch: Branch) => {
+  const setActiveBranch = (branch: Branch | null) => {
     setActiveBranchState(branch);
-    localStorage.setItem("activeBranchId", branch.id);
+    if (branch) {
+      localStorage.setItem("activeBranchId", branch.id);
+    } else {
+      localStorage.removeItem("activeBranchId");
+    }
   };
 
   return (
@@ -101,3 +105,5 @@ export const useBranch = () => {
   if (!ctx) throw new Error("useBranch must be used within BranchProvider");
   return ctx;
 };
+
+

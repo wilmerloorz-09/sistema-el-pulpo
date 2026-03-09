@@ -68,13 +68,6 @@ const Ordenes = () => {
           <CancelOrderDialog
             orderId={cancelOrder.id}
             orderNumber={cancelOrder.order_number}
-            items={cancelOrder.items.map((item) => ({
-              id: item.id,
-              description: item.description_snapshot,
-              quantity: item.quantity,
-              total: item.total,
-              status: item.status as any,
-            }))}
             userId={user.id}
             open={!!cancelOrder}
             onOpenChange={(open) => !open && setCancelOrder(null)}
@@ -418,3 +411,6 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
+
+
+

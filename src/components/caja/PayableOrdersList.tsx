@@ -19,26 +19,26 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
     return (
       <div className="text-center py-10">
         <CreditCard className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
-        <p className="text-sm font-medium text-muted-foreground">Sin órdenes por cobrar</p>
+        <p className="text-sm font-medium text-muted-foreground">Sin ordenes por cobrar</p>
       </div>
     );
   }
 
-  const unpaidCount = (order: PayableOrder) => order.items.filter((i) => !i.paid_at).length;
-  const paidCount = (order: PayableOrder) => order.items.filter((i) => !!i.paid_at).length;
+  const pendingUnits = (order: PayableOrder) =>
+    order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
+
+  const paidUnits = (order: PayableOrder) =>
+    order.items.reduce((sum, item) => sum + item.quantity_paid, 0);
 
   return (
     <>
       <div className="space-y-2">
         {orders.map((order) => {
-          const label = order.order_type === "TAKEOUT" 
-            ? "Para llevar" 
-            : order.split_code ?? order.table_name ?? "Mesa";
-          const unpaid = unpaidCount(order);
-          const paid = paidCount(order);
-          const unpaidTotal = order.items
-            .filter((i) => !i.paid_at)
-            .reduce((s, i) => s + i.total, 0);
+          const label = order.order_type === "TAKEOUT" ? "Para llevar" : order.split_code ?? order.table_name ?? "Mesa";
+          const pending = pendingUnits(order);
+          const paid = paidUnits(order);
+          const pendingTotal = order.items.reduce((sum, item) => sum + item.pending_total, 0);
+
           return (
             <button
               key={order.id}
@@ -55,22 +55,16 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-foreground">{label}</span>
-                  <Badge variant="secondary" className="text-[10px]">{order.order_code ?? `#${order.order_number}`}</Badge>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {order.order_code ?? `#${order.order_number}`}
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {order.order_type === "DINE_IN" && order.table_name && !order.split_code && (
-                    <span className="font-medium">{order.table_name} · </span>
-                  )}
-                  {order.order_type === "DINE_IN" && order.split_code && order.table_name && (
-                    <span className="font-medium">{order.table_name} · </span>
-                  )}
-                  {unpaid} pendiente{unpaid !== 1 ? "s" : ""}
-                  {paid > 0 && ` · ${paid} pagado${paid !== 1 ? "s" : ""}`}
+                  {pending} unidad(es) pendiente(s)
+                  {paid > 0 && ` � ${paid} unidad(es) pagada(s)`}
                 </p>
               </div>
-              <span className="font-display text-base font-bold text-foreground">
-                ${unpaidTotal.toFixed(2)}
-              </span>
+              <span className="font-display text-base font-bold text-foreground">${pendingTotal.toFixed(2)}</span>
             </button>
           );
         })}
@@ -80,8 +74,8 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
         order={selectedOrder}
         paymentMethods={paymentMethods}
         shiftDenoms={shiftDenoms}
-        onPay={(p) => {
-          onPay(p);
+        onPay={(params) => {
+          onPay(params);
           setSelectedOrder(null);
         }}
         paying={paying}

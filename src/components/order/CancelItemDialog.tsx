@@ -64,7 +64,7 @@ export function CancelItemDialog({
         orderId,
         currentStatus: status,
         quantity,
-        itemTotal: total,
+        unitPrice: quantity > 0 ? total / quantity : 0,
         userId,
         cancellationData: {
           reason: reason as CancellationReason,
@@ -172,3 +172,6 @@ export function CancelItemDialog({
     </Dialog>
   );
 }
+
+
+

@@ -38,7 +38,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
   const query = useQuery({
     queryKey: [queryKey, isBranchScoped ? activeBranchId : null],
     queryFn: async () => {
-      let q = supabase.from(table).select(select);
+      let q = supabase.from(table as any).select(select);
 
       // Filter by branch
       if (isBranchScoped && activeBranchId) {
@@ -70,7 +70,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
       if (isBranchScoped && activeBranchId && !payload.branch_id) {
         payload.branch_id = activeBranchId;
       }
-      const { error } = await supabase.from(table).upsert(payload);
+      const { error } = await supabase.from(table as any).upsert(payload);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -84,7 +84,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from(table).delete().eq("id", id);
+      const { error } = await supabase.from(table as any).delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -106,3 +106,4 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
     refetch: query.refetch,
   };
 }
+

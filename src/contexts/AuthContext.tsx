@@ -24,7 +24,7 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  setActiveRole: (role: AppRole) => void;
+  setActiveRole: (role: AppRole | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -92,8 +92,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
   };
 
-  const setActiveRole = (role: AppRole) => {
-    localStorage.setItem("activeRole", role);
+  const setActiveRole = (role: AppRole | null) => {
+    if (role) {
+      localStorage.setItem("activeRole", role);
+    } else {
+      localStorage.removeItem("activeRole");
+    }
     setState((prev) => ({ ...prev, activeRole: role }));
   };
 
@@ -109,3 +113,5 @@ export const useAuth = () => {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 };
+
+

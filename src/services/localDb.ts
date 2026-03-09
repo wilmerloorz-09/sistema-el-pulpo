@@ -12,7 +12,7 @@ export interface LocalRecord {
   _local_updated_at: string;
 }
 
-// ─── Catalog tables (read-only cache) ───────────────────────────
+// Catalog tables (read-only cache)
 export interface LocalCategory extends LocalRecord {
   id: string;
   description: string;
@@ -79,7 +79,7 @@ export interface LocalPaymentMethod extends LocalRecord {
   created_at: string;
 }
 
-// ─── Operational tables (read + write offline) ──────────────────
+// Operational tables (read + write offline)
 export interface LocalOrder extends LocalRecord {
   id: string;
   order_number: number;
@@ -117,6 +117,16 @@ export interface LocalPayment extends LocalRecord {
   created_at: string;
 }
 
+export interface LocalPaymentItem extends LocalRecord {
+  id: string;
+  payment_id: string;
+  order_item_id: string;
+  quantity_paid: number;
+  unit_price: number;
+  total_amount: number;
+  created_at: string;
+}
+
 export interface LocalOrderItemModifier extends LocalRecord {
   id: string;
   order_item_id: string;
@@ -151,7 +161,7 @@ export interface LocalCashMovement extends LocalRecord {
   created_at: string;
 }
 
-// ─── Sync queue for tracking pending operations ─────────────────
+// Sync queue for tracking pending operations
 export interface SyncQueueEntry {
   _local_id?: number;
   table_name: string;
@@ -163,7 +173,6 @@ export interface SyncQueueEntry {
   last_error: string | null;
 }
 
-// ─── Database class ─────────────────────────────────────────────
 class PosLocalDB extends Dexie {
   categories!: Table<LocalCategory>;
   subcategories!: Table<LocalSubcategory>;
@@ -176,6 +185,7 @@ class PosLocalDB extends Dexie {
   order_items!: Table<LocalOrderItem>;
   order_item_modifiers!: Table<LocalOrderItemModifier>;
   payments!: Table<LocalPayment>;
+  payment_items!: Table<LocalPaymentItem>;
   cash_shifts!: Table<LocalCashShift>;
   cash_shift_denoms!: Table<LocalCashShiftDenom>;
   cash_movements!: Table<LocalCashMovement>;
@@ -185,7 +195,6 @@ class PosLocalDB extends Dexie {
     super("pos_local_db");
 
     this.version(1).stores({
-      // Catalog (cached, indexed by id and branch_id)
       categories: "id, branch_id, _sync_status",
       subcategories: "id, category_id, _sync_status",
       products: "id, subcategory_id, _sync_status",
@@ -193,8 +202,6 @@ class PosLocalDB extends Dexie {
       restaurant_tables: "id, branch_id, _sync_status",
       denominations: "id, branch_id, _sync_status",
       payment_methods: "id, branch_id, _sync_status",
-
-      // Operational (full CRUD offline)
       orders: "id, branch_id, status, _sync_status",
       order_items: "id, order_id, _sync_status",
       order_item_modifiers: "id, order_item_id, _sync_status",
@@ -202,8 +209,25 @@ class PosLocalDB extends Dexie {
       cash_shifts: "id, branch_id, status, _sync_status",
       cash_shift_denoms: "id, shift_id, _sync_status",
       cash_movements: "id, shift_id, _sync_status",
+      sync_queue: "++_local_id, table_name, record_id, operation",
+    });
 
-      // Sync queue
+    this.version(2).stores({
+      categories: "id, branch_id, _sync_status",
+      subcategories: "id, category_id, _sync_status",
+      products: "id, subcategory_id, _sync_status",
+      modifiers: "id, branch_id, _sync_status",
+      restaurant_tables: "id, branch_id, _sync_status",
+      denominations: "id, branch_id, _sync_status",
+      payment_methods: "id, branch_id, _sync_status",
+      orders: "id, branch_id, status, _sync_status",
+      order_items: "id, order_id, _sync_status",
+      order_item_modifiers: "id, order_item_id, _sync_status",
+      payments: "id, order_id, _sync_status",
+      payment_items: "id, payment_id, order_item_id, _sync_status",
+      cash_shifts: "id, branch_id, status, _sync_status",
+      cash_shift_denoms: "id, shift_id, _sync_status",
+      cash_movements: "id, shift_id, _sync_status",
       sync_queue: "++_local_id, table_name, record_id, operation",
     });
   }

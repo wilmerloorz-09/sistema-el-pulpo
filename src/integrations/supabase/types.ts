@@ -511,6 +511,109 @@ export type Database = {
           },
         ]
       }
+      order_cancellations: {
+        Row: {
+          cancellation_type: string
+          created_at: string
+          created_by: string
+          id: string
+          notes: string | null
+          order_id: string
+          reason: string
+          status: string
+        }
+        Insert: {
+          cancellation_type: string
+          created_at?: string
+          created_by: string
+          id?: string
+          notes?: string | null
+          order_id: string
+          reason: string
+          status?: string
+        }
+        Update: {
+          cancellation_type?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          notes?: string | null
+          order_id?: string
+          reason?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_cancellations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_cancellations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_item_cancellations: {
+        Row: {
+          created_at: string
+          id: string
+          order_cancellation_id: string
+          order_id: string
+          order_item_id: string
+          quantity_cancelled: number
+          total_amount: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          order_cancellation_id: string
+          order_id: string
+          order_item_id: string
+          quantity_cancelled: number
+          total_amount: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          order_cancellation_id?: string
+          order_id?: string
+          order_item_id?: string
+          quantity_cancelled?: number
+          total_amount?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_item_cancellations_order_cancellation_id_fkey"
+            columns: ["order_cancellation_id"]
+            isOneToOne: false
+            referencedRelation: "order_cancellations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_item_cancellations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_item_cancellations_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_methods: {
         Row: {
           branch_id: string
@@ -539,6 +642,51 @@ export type Database = {
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_items: {
+        Row: {
+          created_at: string
+          id: string
+          order_item_id: string
+          payment_id: string
+          quantity_paid: number
+          total_amount: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          order_item_id: string
+          payment_id: string
+          quantity_paid: number
+          total_amount: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          order_item_id?: string
+          payment_id?: string
+          quantity_paid?: number
+          total_amount?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_items_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_items_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
             referencedColumns: ["id"]
           },
         ]
@@ -937,6 +1085,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cancel_order_quantities: {
+        Args: {
+          p_order_id: string
+          p_cancelled_by: string
+          p_reason: string
+          p_notes?: string | null
+          p_items?: Json
+          p_cancellation_type?: string
+        }
+        Returns: string
+      }
       has_any_role: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
@@ -1104,3 +1263,8 @@ export const Constants = {
     },
   },
 } as const
+
+
+
+
+

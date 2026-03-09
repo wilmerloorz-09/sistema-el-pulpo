@@ -25,6 +25,7 @@ type TableName =
   | "order_items"
   | "order_item_modifiers"
   | "payments"
+  | "payment_items"
   | "cash_shifts"
   | "cash_shift_denoms"
   | "cash_movements"
@@ -85,7 +86,7 @@ export async function dbSelect<T = any>(
 }
 
 async function fetchFromSupabase<T>(table: TableName, options: QueryOptions): Promise<T[]> {
-  let query = supabase.from(table).select(options.select ?? "*");
+  let query = supabase.from(table as any).select(options.select ?? "*");
 
   if (options.branchId) {
     query = query.eq("branch_id", options.branchId);
@@ -214,7 +215,7 @@ export async function dbInsert<T = any>(
 
   if (isOnline) {
     const { data, error } = await supabase
-      .from(table)
+      .from(table as any)
       .insert(record as any)
       .select()
       .single();
@@ -223,7 +224,7 @@ export async function dbInsert<T = any>(
     // Cache locally
     const dexieTable = getDexieTable(table);
     await dexieTable.put({
-      ...data,
+      ...(data as unknown as Record<string, unknown>),
       _sync_status: "synced",
       _synced_at: nowISO(),
       _local_updated_at: nowISO(),
@@ -271,7 +272,7 @@ export async function dbUpdate<T = any>(
 
   if (isOnline) {
     const { error } = await supabase
-      .from(table)
+      .from(table as any)
       .update(updates as any)
       .eq("id", id);
     if (error) throw error;
@@ -321,7 +322,7 @@ export async function dbUpsert<T = any>(
   const isOnline = navigator.onLine;
 
   if (isOnline) {
-    const { error } = await supabase.from(table).upsert(record as any);
+    const { error } = await supabase.from(table as any).upsert(record as any);
     if (error) throw error;
 
     if (record.id) {
@@ -355,7 +356,7 @@ export async function dbDelete(table: TableName, id: string): Promise<void> {
   const isOnline = navigator.onLine;
 
   if (isOnline) {
-    const { error } = await supabase.from(table).delete().eq("id", id);
+    const { error } = await supabase.from(table as any).delete().eq("id", id);
     if (error) throw error;
 
     const dexieTable = getDexieTable(table);
@@ -534,3 +535,9 @@ export async function recalculateOrderTotal(orderId: string): Promise<number> {
 }
 
 export { supabase } from "@/integrations/supabase/client";
+
+
+
+
+
+

@@ -83,7 +83,7 @@ export function useKitchenOrders() {
 
       // Fetch modifiers (relational join — passthrough)
       const itemIds = items.map((i) => i.id);
-      let modsMap: Record<string, { description: string }[]> = {};
+      const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
         const { data: mods } = await supabase
           .from("order_item_modifiers")
@@ -181,3 +181,4 @@ export function useKitchenOrders() {
     dispatchAll,
   };
 }
+
