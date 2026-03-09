@@ -1,0 +1,8 @@
+Lee primero los archivos:
+
+docs/system_context.md
+docs/PROJECT_ARCHITECTURE.md
+docs/database_architecture.md
+docs/codex_rules.md
+
+y analiza el sistema antes de continuar.

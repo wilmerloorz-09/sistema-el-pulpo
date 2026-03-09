@@ -5,3 +5,12 @@ verify_jwt = false
 
 [functions.webauthn-authenticate]
 verify_jwt = false
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.login-with-identifier]
+verify_jwt = false
+
+[functions.reset-users]
+verify_jwt = false

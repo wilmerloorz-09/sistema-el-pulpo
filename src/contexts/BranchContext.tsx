@@ -13,7 +13,9 @@ interface BranchContextType {
   branches: Branch[];
   activeBranch: Branch | null;
   activeBranchId: string | null;
-  setActiveBranch: (branch: Branch | null) => void;
+  allowedModules: string[];
+  setActiveBranch: (branch: Branch | null) => Promise<void>;
+  refreshAccess: () => Promise<void>;
   loading: boolean;
 }
 
@@ -23,32 +25,99 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const { user, activeRole } = useAuth();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [activeBranch, setActiveBranchState] = useState<Branch | null>(null);
+  const [allowedModules, setAllowedModules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const fetchAllowedModules = useCallback(async (userId: string, branchId: string, role: string | null) => {
+    try {
+      if (role === "superadmin") {
+        const { data: allModules } = await supabase
+          .from("modules")
+          .select("code")
+          .eq("is_active", true);
+        setAllowedModules((allModules ?? []).map((m: any) => m.code));
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("user_branch_modules")
+        .select("module_id, modules(code)")
+        .eq("user_id", userId)
+        .eq("branch_id", branchId)
+        .eq("is_active", true);
+
+      if (error) throw error;
+
+      const modules = (data ?? [])
+        .map((row: any) => row.modules?.code)
+        .filter((code: string | null | undefined): code is string => Boolean(code));
+
+      setAllowedModules(modules);
+    } catch {
+      setAllowedModules([]);
+    }
+  }, []);
 
   const fetchBranches = useCallback(async (userId: string, role: string | null) => {
     setLoading(true);
     try {
+      let branchList: Branch[] = [];
+
       if (role === "superadmin") {
-        // Superadmin sees all branches
         const { data } = await supabase.from("branches").select("*").eq("is_active", true).order("name");
-        setBranches((data as Branch[]) ?? []);
+        branchList = (data as Branch[]) ?? [];
       } else {
-        // Other roles see only assigned branches
         const { data: ub } = await supabase
           .from("user_branches")
           .select("branch_id, branches(id, name, address, is_active)")
           .eq("user_id", userId);
-        const list = (ub ?? [])
+
+        branchList = (ub ?? [])
           .map((r: any) => r.branches as Branch)
           .filter((b: Branch) => b && b.is_active);
-        setBranches(list);
+      }
+
+      setBranches(branchList);
+
+      if (branchList.length === 0) {
+        setActiveBranchState(null);
+        setAllowedModules([]);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("active_branch_id")
+        .eq("id", userId)
+        .single();
+
+      const dbActiveBranchId = (profile as any)?.active_branch_id as string | null;
+      const savedId = localStorage.getItem("activeBranchId");
+
+      const selected =
+        branchList.find((b) => b.id === dbActiveBranchId) ||
+        branchList.find((b) => b.id === savedId) ||
+        branchList[0];
+
+      setActiveBranchState(selected);
+      localStorage.setItem("activeBranchId", selected.id);
+      await fetchAllowedModules(userId, selected.id, role);
+
+      if (dbActiveBranchId !== selected.id) {
+        await supabase.rpc("set_user_active_branch", {
+          p_target_user_id: userId,
+          p_new_branch_id: selected.id,
+          p_reason: "Sincronizacion de sucursal activa",
+        });
       }
     } catch {
       setBranches([]);
+      setActiveBranchState(null);
+      setAllowedModules([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchAllowedModules]);
 
   useEffect(() => {
     if (user && activeRole) {
@@ -56,34 +125,38 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } else {
       setBranches([]);
       setActiveBranchState(null);
+      setAllowedModules([]);
       setLoading(false);
     }
   }, [user, activeRole, fetchBranches]);
 
-  // Auto-select branch
-  useEffect(() => {
-    if (branches.length === 0) {
+  const setActiveBranch = async (branch: Branch | null) => {
+    if (!user) return;
+
+    if (!branch) {
       setActiveBranchState(null);
+      setAllowedModules([]);
+      localStorage.removeItem("activeBranchId");
       return;
     }
-    const savedId = localStorage.getItem("activeBranchId");
-    const saved = branches.find((b) => b.id === savedId);
-    if (saved) {
-      setActiveBranchState(saved);
-    } else {
-      setActiveBranchState(branches[0]);
-      localStorage.setItem("activeBranchId", branches[0].id);
-    }
-  }, [branches]);
 
-  const setActiveBranch = (branch: Branch | null) => {
+    const { error } = await supabase.rpc("set_user_active_branch", {
+      p_target_user_id: user.id,
+      p_new_branch_id: branch.id,
+      p_reason: "Cambio de sucursal activa desde app",
+    });
+
+    if (error) return;
+
     setActiveBranchState(branch);
-    if (branch) {
-      localStorage.setItem("activeBranchId", branch.id);
-    } else {
-      localStorage.removeItem("activeBranchId");
-    }
+    localStorage.setItem("activeBranchId", branch.id);
+    await fetchAllowedModules(user.id, branch.id, activeRole);
   };
+
+  const refreshAccess = useCallback(async () => {
+    if (!user || !activeRole || !activeBranch) return;
+    await fetchAllowedModules(user.id, activeBranch.id, activeRole);
+  }, [user, activeRole, activeBranch, fetchAllowedModules]);
 
   return (
     <BranchContext.Provider
@@ -91,7 +164,9 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         branches,
         activeBranch,
         activeBranchId: activeBranch?.id ?? null,
+        allowedModules,
         setActiveBranch,
+        refreshAccess,
         loading,
       }}
     >
@@ -105,5 +180,3 @@ export const useBranch = () => {
   if (!ctx) throw new Error("useBranch must be used within BranchProvider");
   return ctx;
 };
-
-

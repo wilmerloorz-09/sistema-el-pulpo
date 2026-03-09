@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       audit_log: {
@@ -294,6 +319,77 @@ export type Database = {
           },
         ]
       }
+      dispatch_assignments: {
+        Row: {
+          created_at: string | null
+          dispatch_config_id: string | null
+          dispatch_type: string
+          id: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          dispatch_config_id?: string | null
+          dispatch_type?: string
+          id?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          dispatch_config_id?: string | null
+          dispatch_type?: string
+          id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_assignments_dispatch_config_id_fkey"
+            columns: ["dispatch_config_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_config"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatch_config: {
+        Row: {
+          branch_id: string | null
+          created_at: string | null
+          dispatch_mode: string
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string | null
+          dispatch_mode?: string
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string | null
+          dispatch_mode?: string
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_config_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: true
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modifiers: {
         Row: {
           branch_id: string
@@ -326,187 +422,54 @@ export type Database = {
           },
         ]
       }
-      order_item_modifiers: {
+      operational_losses: {
         Row: {
+          amount: number
+          cancelled_by: string | null
+          created_at: string | null
           id: string
-          modifier_id: string
-          order_item_id: string
+          order_id: string | null
+          order_item_id: string | null
+          reason: string
         }
         Insert: {
+          amount: number
+          cancelled_by?: string | null
+          created_at?: string | null
           id?: string
-          modifier_id: string
-          order_item_id: string
+          order_id?: string | null
+          order_item_id?: string | null
+          reason: string
         }
         Update: {
+          amount?: number
+          cancelled_by?: string | null
+          created_at?: string | null
           id?: string
-          modifier_id?: string
-          order_item_id?: string
+          order_id?: string | null
+          order_item_id?: string | null
+          reason?: string
         }
         Relationships: [
           {
-            foreignKeyName: "order_item_modifiers_modifier_id_fkey"
-            columns: ["modifier_id"]
+            foreignKeyName: "operational_losses_cancelled_by_fkey"
+            columns: ["cancelled_by"]
             isOneToOne: false
-            referencedRelation: "modifiers"
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "order_item_modifiers_order_item_id_fkey"
-            columns: ["order_item_id"]
-            isOneToOne: false
-            referencedRelation: "order_items"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      order_items: {
-        Row: {
-          created_at: string
-          description_snapshot: string
-          dispatched_at: string | null
-          id: string
-          order_id: string
-          paid_at: string | null
-          product_id: string
-          quantity: number
-          ready_at: string | null
-          sent_to_kitchen_at: string | null
-          status: string | null
-          cancelled_at: string | null
-          total: number
-          unit_price: number
-        }
-        Insert: {
-          created_at?: string
-          description_snapshot: string
-          dispatched_at?: string | null
-          id?: string
-          order_id: string
-          paid_at?: string | null
-          product_id: string
-          quantity?: number
-          ready_at?: string | null
-          sent_to_kitchen_at?: string | null
-          status?: string | null
-          cancelled_at?: string | null
-          total: number
-          unit_price: number
-        }
-        Update: {
-          created_at?: string
-          description_snapshot?: string
-          dispatched_at?: string | null
-          id?: string
-          order_id?: string
-          paid_at?: string | null
-          product_id?: string
-          quantity?: number
-          ready_at?: string | null
-          sent_to_kitchen_at?: string | null
-          status?: string | null
-          cancelled_at?: string | null
-          total?: number
-          unit_price?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "order_items_order_id_fkey"
+            foreignKeyName: "operational_losses_order_id_fkey"
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "order_items_product_id_fkey"
-            columns: ["product_id"]
+            foreignKeyName: "operational_losses_order_item_id_fkey"
+            columns: ["order_item_id"]
             isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      orders: {
-        Row: {
-          branch_id: string
-          cancelled_at: string | null
-          created_at: string
-          created_by: string
-          dispatched_at: string | null
-          id: string
-          order_code: string | null
-          order_number: number
-          order_type: Database["public"]["Enums"]["order_type"]
-          paid_at: string | null
-          ready_at: string | null
-          sent_to_kitchen_at: string | null
-          split_id: string | null
-          status: Database["public"]["Enums"]["order_status"]
-          table_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          branch_id: string
-          cancelled_at?: string | null
-          created_at?: string
-          created_by: string
-          dispatched_at?: string | null
-          id?: string
-          order_code?: string | null
-          order_number?: number
-          order_type: Database["public"]["Enums"]["order_type"]
-          paid_at?: string | null
-          ready_at?: string | null
-          sent_to_kitchen_at?: string | null
-          split_id?: string | null
-          status?: Database["public"]["Enums"]["order_status"]
-          table_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          branch_id?: string
-          cancelled_at?: string | null
-          created_at?: string
-          created_by?: string
-          dispatched_at?: string | null
-          id?: string
-          order_code?: string | null
-          order_number?: number
-          order_type?: Database["public"]["Enums"]["order_type"]
-          paid_at?: string | null
-          ready_at?: string | null
-          sent_to_kitchen_at?: string | null
-          split_id?: string | null
-          status?: Database["public"]["Enums"]["order_status"]
-          table_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "orders_branch_id_fkey"
-            columns: ["branch_id"]
-            isOneToOne: false
-            referencedRelation: "branches"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "orders_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "orders_split_id_fkey"
-            columns: ["split_id"]
-            isOneToOne: false
-            referencedRelation: "table_splits"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "orders_table_id_fkey"
-            columns: ["table_id"]
-            isOneToOne: false
-            referencedRelation: "restaurant_tables"
+            referencedRelation: "order_items"
             referencedColumns: ["id"]
           },
         ]
@@ -614,34 +577,231 @@ export type Database = {
           },
         ]
       }
-      payment_methods: {
+      order_item_modifiers: {
         Row: {
-          branch_id: string
-          created_at: string
           id: string
-          is_active: boolean
-          name: string
+          modifier_id: string
+          order_item_id: string
         }
         Insert: {
-          branch_id: string
-          created_at?: string
           id?: string
-          is_active?: boolean
-          name: string
+          modifier_id: string
+          order_item_id: string
         }
         Update: {
-          branch_id?: string
-          created_at?: string
           id?: string
-          is_active?: boolean
-          name?: string
+          modifier_id?: string
+          order_item_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "payment_methods_branch_id_fkey"
+            foreignKeyName: "order_item_modifiers_modifier_id_fkey"
+            columns: ["modifier_id"]
+            isOneToOne: false
+            referencedRelation: "modifiers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_item_modifiers_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_items: {
+        Row: {
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cancelled_from_status:
+            | Database["public"]["Enums"]["order_item_status"]
+            | null
+          created_at: string
+          description_snapshot: string
+          dispatched_at: string | null
+          id: string
+          order_id: string
+          paid_at: string | null
+          product_id: string
+          quantity: number
+          ready_at: string | null
+          sent_to_kitchen_at: string | null
+          status: Database["public"]["Enums"]["order_item_status"]
+          total: number
+          unit_price: number
+        }
+        Insert: {
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_from_status?:
+            | Database["public"]["Enums"]["order_item_status"]
+            | null
+          created_at?: string
+          description_snapshot: string
+          dispatched_at?: string | null
+          id?: string
+          order_id: string
+          paid_at?: string | null
+          product_id: string
+          quantity?: number
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
+          status?: Database["public"]["Enums"]["order_item_status"]
+          total: number
+          unit_price: number
+        }
+        Update: {
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_from_status?:
+            | Database["public"]["Enums"]["order_item_status"]
+            | null
+          created_at?: string
+          description_snapshot?: string
+          dispatched_at?: string | null
+          id?: string
+          order_id?: string
+          paid_at?: string | null
+          product_id?: string
+          quantity?: number
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
+          status?: Database["public"]["Enums"]["order_item_status"]
+          total?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          branch_id: string
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cancelled_from_status: string | null
+          closed_at: string | null
+          created_at: string
+          created_by: string
+          dispatched_at: string | null
+          id: string
+          order_code: string | null
+          order_number: number
+          order_type: Database["public"]["Enums"]["order_type"]
+          paid_at: string | null
+          ready_at: string | null
+          sent_to_kitchen_at: string | null
+          split_id: string | null
+          status: Database["public"]["Enums"]["order_status"]
+          table_id: string | null
+          total: number | null
+          updated_at: string
+        }
+        Insert: {
+          branch_id: string
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_from_status?: string | null
+          closed_at?: string | null
+          created_at?: string
+          created_by: string
+          dispatched_at?: string | null
+          id?: string
+          order_code?: string | null
+          order_number?: number
+          order_type: Database["public"]["Enums"]["order_type"]
+          paid_at?: string | null
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
+          split_id?: string | null
+          status?: Database["public"]["Enums"]["order_status"]
+          table_id?: string | null
+          total?: number | null
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_from_status?: string | null
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string
+          dispatched_at?: string | null
+          id?: string
+          order_code?: string | null
+          order_number?: number
+          order_type?: Database["public"]["Enums"]["order_type"]
+          paid_at?: string | null
+          ready_at?: string | null
+          sent_to_kitchen_at?: string | null
+          split_id?: string | null
+          status?: Database["public"]["Enums"]["order_status"]
+          table_id?: string | null
+          total?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_branch_id_fkey"
             columns: ["branch_id"]
             isOneToOne: false
             referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_split_id_fkey"
+            columns: ["split_id"]
+            isOneToOne: false
+            referencedRelation: "table_splits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_table_id_fkey"
+            columns: ["table_id"]
+            isOneToOne: false
+            referencedRelation: "restaurant_tables"
             referencedColumns: ["id"]
           },
         ]
@@ -691,33 +851,80 @@ export type Database = {
           },
         ]
       }
+      payment_methods: {
+        Row: {
+          branch_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          branch_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          branch_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number
+          change_amount: number | null
           created_at: string
           created_by: string
           id: string
           notes: string | null
           order_id: string
           payment_method_id: string
+          shift_id: string | null
+          status: string
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount: number
+          change_amount?: number | null
           created_at?: string
           created_by: string
           id?: string
           notes?: string | null
           order_id: string
           payment_method_id: string
+          shift_id?: string | null
+          status?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount?: number
+          change_amount?: number | null
           created_at?: string
           created_by?: string
           id?: string
           notes?: string | null
           order_id?: string
           payment_method_id?: string
+          shift_id?: string | null
+          status?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -739,6 +946,20 @@ export type Database = {
             columns: ["payment_method_id"]
             isOneToOne: false
             referencedRelation: "payment_methods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "cash_shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -786,30 +1007,44 @@ export type Database = {
       }
       profiles: {
         Row: {
+          branch_id: string | null
           created_at: string
           full_name: string
           id: string
           is_active: boolean
+          role: string | null
           updated_at: string
           username: string
         }
         Insert: {
+          branch_id?: string | null
           created_at?: string
           full_name: string
           id: string
           is_active?: boolean
+          role?: string | null
           updated_at?: string
           username: string
         }
         Update: {
+          branch_id?: string | null
           created_at?: string
           full_name?: string
           id?: string
           is_active?: boolean
+          role?: string | null
           updated_at?: string
           username?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       restaurant_tables: {
         Row: {
@@ -1087,12 +1322,12 @@ export type Database = {
     Functions: {
       cancel_order_quantities: {
         Args: {
-          p_order_id: string
-          p_cancelled_by: string
-          p_reason: string
-          p_notes?: string | null
-          p_items?: Json
           p_cancellation_type?: string
+          p_cancelled_by: string
+          p_items?: Json
+          p_notes?: string
+          p_order_id: string
+          p_reason: string
         }
         Returns: string
       }
@@ -1115,7 +1350,14 @@ export type Database = {
         | "despachador_takeout" | "supervisor" | "superadmin"
       cash_movement_type: "OPENING" | "PAYMENT_IN" | "CHANGE_OUT"
       cash_shift_status: "OPEN" | "CLOSED"
-      order_status: "DRAFT" | "SENT_TO_KITCHEN" | "READY" | "KITCHEN_DISPATCHED" | "PAID" | "CANCELLED"
+      order_item_status: "DRAFT" | "SENT" | "DISPATCHED" | "PAID" | "CANCELLED"
+      order_status:
+        | "DRAFT"
+        | "SENT_TO_KITCHEN"
+        | "READY"
+        | "KITCHEN_DISPATCHED"
+        | "PAID"
+        | "CANCELLED"
       order_type: "DINE_IN" | "TAKEOUT"
       price_mode: "FIXED" | "MANUAL"
     }
@@ -1243,6 +1485,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: [
@@ -1255,15 +1500,18 @@ export const Constants = {
       ],
       cash_movement_type: ["OPENING", "PAYMENT_IN", "CHANGE_OUT"],
       cash_shift_status: ["OPEN", "CLOSED"],
-      order_status: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID", "CANCELLED"],
+      order_item_status: ["DRAFT", "SENT", "DISPATCHED", "PAID", "CANCELLED"],
+      order_status: [
+        "DRAFT",
+        "SENT_TO_KITCHEN",
+        "READY",
+        "KITCHEN_DISPATCHED",
+        "PAID",
+        "CANCELLED",
+      ],
       order_type: ["DINE_IN", "TAKEOUT"],
       price_mode: ["FIXED", "MANUAL"],
     },
   },
 } as const
-
-
-
-
-
 

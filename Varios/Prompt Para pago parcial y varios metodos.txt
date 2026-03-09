@@ -1,0 +1,98 @@
+Actúa como un Desarrollador Senior Full-stack experto en POS, pagos parciales, pagos mixtos, React/TypeScript y Supabase/PostgreSQL.
+
+Necesito que analices e implementes correctamente la lógica de pago para soportar pagos parciales y pagos por ítem usando múltiples métodos de pago dentro de una misma transacción.
+
+Contexto funcional:
+El sistema ya contempla o debe contemplar:
+- pago parcial por persona
+- pago por ítem
+- pago por cantidad dentro de un ítem
+
+Ahora necesito que además soporte pago mixto dentro de ese pago parcial.
+
+Casos que deben quedar soportados:
+
+Caso 1: Pago parcial por persona con múltiples métodos
+Cuenta total: 30
+
+Una persona paga 20, pero lo hace así:
+- 15 transferencia
+- 5 efectivo
+
+Otra persona paga el resto.
+
+Caso 2: Pago por ítem con múltiples métodos
+Una persona selecciona ciertos ítems o cantidades de ítems para pagar.
+El total de su parte, por ejemplo, es 12.
+Debe poder pagar:
+- 10 transferencia
+- 2 efectivo
+
+Objetivo:
+Permitir que cualquier pago parcial, ya sea por persona o por ítem/cantidad, pueda dividirse en varios métodos de pago dentro de la misma transacción.
+
+Requisitos funcionales:
+1. El sistema debe permitir seleccionar qué parte de la orden se va a pagar:
+   - monto parcial
+   - ítems específicos
+   - cantidades específicas de ítems
+2. Una vez calculado el total de esa transacción parcial, el usuario debe poder distribuir ese total entre varios métodos de pago.
+3. Ejemplos de métodos:
+   - efectivo
+   - transferencia
+   - tarjeta
+4. Debe poder agregarse una o varias líneas de método de pago en una misma transacción.
+5. La suma de los métodos de pago debe ser exactamente igual al total de la transacción.
+6. No debe permitirse confirmar si la suma no coincide.
+7. Debe mantenerse compatibilidad con:
+   - historial de pagos
+   - pago parcial por cantidad
+   - pago por ítem
+   - reversos
+8. Debe quedar registrado qué ítems/cantidades cubrió ese pago y cómo se distribuyó por método.
+
+Requisitos técnicos:
+1. Analiza primero la arquitectura actual del proyecto.
+2. Revisa cómo están modelados actualmente:
+   - payments
+   - payment items / payment lines
+   - payment methods
+3. Verifica si ya existe soporte parcial para múltiples métodos dentro de un pago.
+4. Si no existe, implementa la estructura correcta reutilizando las tablas actuales si es posible.
+5. No dupliques entidades si ya hay una estructura equivalente.
+6. Si se requieren cambios de esquema, usa migraciones seguras.
+
+Modelo lógico esperado:
+Cada transacción de pago debe tener:
+A. Un encabezado de pago
+B. Un detalle de qué ítems/cantidades cubre
+C. Un detalle de qué métodos de pago la financian
+
+En términos conceptuales:
+- payment
+- payment_covered_items
+- payment_method_lines
+
+Validaciones obligatorias:
+1. No permitir que la suma de métodos sea menor o mayor que el total del pago.
+2. No permitir montos negativos o cero en líneas inválidas.
+3. No permitir pagar más cantidad de la pendiente.
+4. No romper el flujo actual.
+5. Mantener consistencia con reversos e historial.
+
+Criterios de aceptación:
+1. Un pago parcial por persona puede dividirse en varios métodos.
+2. Un pago por ítem puede dividirse en varios métodos.
+3. La UI permite ingresar varios métodos para una misma transacción.
+4. La suma de métodos debe coincidir exactamente con el total de la transacción.
+5. El historial refleja correctamente los métodos usados.
+6. La implementación no rompe pagos parciales ni pagos por cantidad ya existentes.
+
+Entrega esperada:
+1. Diagnóstico de la estructura actual.
+2. Explicación de si esto ya estaba soportado o no.
+3. Archivos/tablas a modificar.
+4. Implementación completa.
+5. Resumen final de cómo probar:
+   - pago parcial por persona con varios métodos
+   - pago por ítem con varios métodos

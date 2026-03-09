@@ -84,7 +84,7 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
             {branches.map((b) => (
               <button
                 key={b.id}
-                onClick={() => setActiveBranch(b)}
+                onClick={() => void setActiveBranch(b)}
                 className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm active:scale-95 transition-transform"
               >
                 <span className="font-display text-sm font-semibold">{b.name}</span>
@@ -127,12 +127,54 @@ const App = () => (
                   </AuthGate>
                 }
               >
-                <Route path="/mesas" element={<Mesas />} />
-                <Route path="/ordenes" element={<Ordenes />} />
-                <Route path="/despacho" element={<Despacho />} />
-                <Route path="/caja" element={<Caja />} />
-                <Route path="/reportes" element={<Reportes />} />
-                <Route path="/admin" element={<Admin />} />
+                <Route
+                  path="/mesas"
+                  element={
+                    <ProtectedRoute allowedModules={["mesas"]}>
+                      <Mesas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/ordenes"
+                  element={
+                    <ProtectedRoute allowedModules={["ordenes"]}>
+                      <Ordenes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/despacho"
+                  element={
+                    <ProtectedRoute allowedModules={["despacho"]}>
+                      <Despacho />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/caja"
+                  element={
+                    <ProtectedRoute allowedModules={["caja", "pagos"]}>
+                      <Caja />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reportes"
+                  element={
+                    <ProtectedRoute allowedModules={["reportes"]}>
+                      <Reportes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin"
+                  element={
+                    <ProtectedRoute allowedModules={["usuarios", "configuracion", "sucursales"]}>
+                      <Admin />
+                    </ProtectedRoute>
+                  }
+                />
               </Route>
               <Route path="/" element={<Navigate to="/mesas" replace />} />
               <Route path="*" element={<NotFound />} />
@@ -145,3 +187,4 @@ const App = () => (
 );
 
 export default App;
+

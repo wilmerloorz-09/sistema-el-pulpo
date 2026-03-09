@@ -12,13 +12,12 @@ import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/br
 
 const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const supportsPasskey = browserSupportsWebAuthn();
 
-  // Redirect if already logged in
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -32,9 +31,9 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await signIn(email, password);
+      await signIn(identifier, password);
     } catch (err: any) {
-      toast.error(err.message || "Error al iniciar sesiÃ³n");
+      toast.error(err.message || "Error al iniciar sesion");
     } finally {
       setLoading(false);
     }
@@ -43,39 +42,30 @@ const Login = () => {
   const handlePasskeyLogin = async () => {
     setPasskeyLoading(true);
     try {
-      // 1. Get authentication options
-      const { data: options, error: optErr } = await supabase.functions.invoke(
-        "webauthn-authenticate",
-        { body: { action: "options" } }
-      );
+      const { data: options, error: optErr } = await supabase.functions.invoke("webauthn-authenticate", { body: { action: "options" } });
       if (optErr) throw new Error(optErr.message);
 
       const { challengeId, ...optionsJSON } = options;
-
-      // 2. Start browser WebAuthn ceremony
       const assertion = await startAuthentication({ optionsJSON });
 
-      // 3. Verify with server
-      const { data: result, error: verErr } = await supabase.functions.invoke(
-        "webauthn-authenticate",
-        { body: { action: "verify", assertion, challengeId } }
-      );
+      const { data: result, error: verErr } = await supabase.functions.invoke("webauthn-authenticate", {
+        body: { action: "verify", assertion, challengeId },
+      });
       if (verErr) throw new Error(verErr.message);
 
       if (result.verified && result.token_hash) {
-        // 4. Sign in using the magic link token
         const { error: otpError } = await supabase.auth.verifyOtp({
           token_hash: result.token_hash,
           type: "magiclink",
         });
         if (otpError) throw otpError;
-        toast.success("SesiÃ³n iniciada con huella");
+        toast.success("Sesion iniciada con huella");
       } else {
-        toast.error("VerificaciÃ³n fallida");
+        toast.error("Verificacion fallida");
       }
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
-        toast.error("OperaciÃ³n cancelada");
+        toast.error("Operacion cancelada");
       } else {
         toast.error(err.message || "Error al autenticar con huella");
       }
@@ -92,65 +82,52 @@ const Login = () => {
         transition={{ duration: 0.4 }}
         className="w-full max-w-sm space-y-8"
       >
-        {/* Logo / Brand */}
         <div className="text-center space-y-2">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-            <span className="text-3xl">ğŸ™</span>
+            <span className="text-3xl">??</span>
           </div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            El Pulpo
-          </h1>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">El Pulpo</h1>
           <p className="text-sm text-muted-foreground">Sistema POS</p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-sm font-medium">
-              Correo electrÃ³nico
+            <Label htmlFor="identifier" className="text-sm font-medium">
+              Correo o usuario
             </Label>
             <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="usuario@elpulpo.com"
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="usuario@elpulpo.com o admin"
               required
-              autoComplete="email"
+              autoComplete="username"
               className="h-12 rounded-xl bg-card text-base"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="password" className="text-sm font-medium">
-              ContraseÃ±a
+              Contraseña
             </Label>
             <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              placeholder="••••••••"
               required
               autoComplete="current-password"
               className="h-12 rounded-xl bg-card text-base"
             />
           </div>
 
-          <Button
-            type="submit"
-            disabled={loading}
-            className="h-12 w-full rounded-xl font-display text-base font-semibold"
-          >
-            {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              "Iniciar sesiÃ³n"
-            )}
+          <Button type="submit" disabled={loading} className="h-12 w-full rounded-xl font-display text-base font-semibold">
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Iniciar sesion"}
           </Button>
         </form>
 
-        {/* Passkey / Biometric login */}
         {supportsPasskey && (
           <div className="space-y-3">
             <div className="relative">
@@ -161,12 +138,7 @@ const Login = () => {
                 <span className="bg-background px-2 text-muted-foreground">o</span>
               </div>
             </div>
-            <Button
-              variant="outline"
-              onClick={handlePasskeyLogin}
-              disabled={passkeyLoading}
-              className="h-12 w-full rounded-xl text-base gap-2"
-            >
+            <Button variant="outline" onClick={handlePasskeyLogin} disabled={passkeyLoading} className="h-12 w-full rounded-xl text-base gap-2">
               {passkeyLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
@@ -179,12 +151,11 @@ const Login = () => {
           </div>
         )}
 
-        {/* Dev hint */}
         <div className="rounded-xl border border-border bg-muted/50 p-3 text-center text-xs text-muted-foreground">
           <p className="font-medium">Usuarios de prueba:</p>
-          <p>admin@elpulpo.com Â· contraseÃ±a: <span className="font-mono">admin123</span></p>
-          <p>mesero1@elpulpo.com Â· contraseÃ±a: <span className="font-mono">mesero123</span></p>
-          <p>super@elpulpo.com Â· contraseÃ±a: <span className="font-mono">super123</span></p>
+          <p>admin@elpulpo.com · contraseña: <span className="font-mono">admin123</span></p>
+          <p>mesero1@elpulpo.com · contraseña: <span className="font-mono">mesero123</span></p>
+          <p>super@elpulpo.com · contraseña: <span className="font-mono">super123</span></p>
         </div>
       </motion.div>
     </div>

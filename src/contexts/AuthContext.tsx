@@ -9,7 +9,9 @@ interface Profile {
   id: string;
   full_name: string;
   username: string;
+  email?: string | null;
   is_active: boolean;
+  is_protected_superadmin?: boolean;
 }
 
 interface AuthState {
@@ -22,12 +24,36 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   setActiveRole: (role: AppRole | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const resolveEdgeError = async (err: any): Promise<string> => {
+  if (!err) return "Error de autenticacion";
+
+  const context = err.context;
+  if (context && typeof context.text === "function") {
+    try {
+      const raw = await context.text();
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed?.error) return parsed.error;
+          return raw;
+        } catch {
+          return raw;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return err.message || "Error de autenticacion";
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AuthState>({
@@ -55,7 +81,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setState((prev) => ({ ...prev, session, user: session?.user ?? null }));
       if (session?.user) {
         setTimeout(() => fetchUserData(session.user.id), 0);
@@ -82,9 +110,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, [fetchUserData]);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+  const signIn = async (identifier: string, password: string) => {
+    const normalized = identifier.trim();
+
+    const res = await supabase.functions.invoke("login-with-identifier", {
+      body: {
+        identifier: normalized,
+        password,
+      },
+    });
+
+    if (res.error) {
+      throw new Error(await resolveEdgeError(res.error));
+    }
+
+    if (res.data?.error) {
+      throw new Error(res.data.error);
+    }
+
+    const accessToken = res.data?.access_token;
+    const refreshToken = res.data?.refresh_token;
+
+    if (!accessToken || !refreshToken) {
+      throw new Error("No se recibio sesion valida del servidor");
+    }
+
+    const { error: setSessionError } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (setSessionError) throw setSessionError;
   };
 
   const signOut = async () => {
@@ -101,11 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState((prev) => ({ ...prev, activeRole: role }));
   };
 
-  return (
-    <AuthContext.Provider value={{ ...state, signIn, signOut, setActiveRole }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ ...state, signIn, signOut, setActiveRole }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
@@ -113,5 +165,4 @@ export const useAuth = () => {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 };
-
 

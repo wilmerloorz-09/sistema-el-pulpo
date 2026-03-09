@@ -1,6 +1,5 @@
 import { NavLink } from "@/components/NavLink";
-import { useAuth } from "@/contexts/AuthContext";
-import type { Database } from "@/integrations/supabase/types";
+import { useBranch } from "@/contexts/BranchContext";
 import {
   LayoutGrid,
   UtensilsCrossed,
@@ -8,32 +7,29 @@ import {
   CircleDollarSign,
   BarChart3,
   Settings,
-  Truck,
 } from "lucide-react";
-
-type AppRole = Database["public"]["Enums"]["app_role"];
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
-  roles: AppRole[];
+  moduleCodes: string[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/mesas", label: "Mesas", icon: <LayoutGrid className="h-5 w-5" />, roles: ["admin", "mesero", "superadmin"] },
-  { to: "/ordenes", label: "Ordenes", icon: <UtensilsCrossed className="h-5 w-5" />, roles: ["admin", "mesero", "superadmin"] },
-  { to: "/despacho", label: "Despacho", icon: <ChefHat className="h-5 w-5" />, roles: ["admin", "cocina", "despachador_mesas", "despachador_takeout", "superadmin"] },
-  { to: "/caja", label: "Caja", icon: <CircleDollarSign className="h-5 w-5" />, roles: ["admin", "cajero", "superadmin"] },
-  { to: "/reportes", label: "Reportes", icon: <BarChart3 className="h-5 w-5" />, roles: ["admin", "superadmin"] },
-  { to: "/admin", label: "Admin", icon: <Settings className="h-5 w-5" />, roles: ["admin", "superadmin"] },
+  { to: "/mesas", label: "Mesas", icon: <LayoutGrid className="h-5 w-5" />, moduleCodes: ["mesas"] },
+  { to: "/ordenes", label: "Ordenes", icon: <UtensilsCrossed className="h-5 w-5" />, moduleCodes: ["ordenes"] },
+  { to: "/despacho", label: "Despacho", icon: <ChefHat className="h-5 w-5" />, moduleCodes: ["despacho"] },
+  { to: "/caja", label: "Caja", icon: <CircleDollarSign className="h-5 w-5" />, moduleCodes: ["caja", "pagos"] },
+  { to: "/reportes", label: "Reportes", icon: <BarChart3 className="h-5 w-5" />, moduleCodes: ["reportes"] },
+  { to: "/admin", label: "Admin", icon: <Settings className="h-5 w-5" />, moduleCodes: ["usuarios", "configuracion"] },
 ];
 
 const BottomNav = () => {
-  const { activeRole } = useAuth();
+  const { allowedModules } = useBranch();
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => activeRole && item.roles.includes(activeRole)
+  const visibleItems = NAV_ITEMS.filter((item) =>
+    item.moduleCodes.some((code) => allowedModules.includes(code))
   );
 
   return (
