@@ -4,6 +4,7 @@ import CategoriesCrud from "@/components/admin/CategoriesCrud";
 import SubcategoriesCrud from "@/components/admin/SubcategoriesCrud";
 import ProductsCrud from "@/components/admin/ProductsCrud";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
+import SubcategoryModifiersCrud from "@/components/admin/SubcategoryModifiersCrud";
 import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -145,3 +146,5 @@ const Admin = () => {
 };
 
 export default Admin;
+
+

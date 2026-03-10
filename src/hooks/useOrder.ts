@@ -1,4 +1,4 @@
-﻿import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
@@ -12,6 +12,7 @@ interface OrderItem {
   id: string;
   product_id: string;
   description_snapshot: string;
+  item_note?: string | null;
   quantity: number;
   original_quantity?: number;
   cancelled_quantity?: number;
@@ -104,7 +105,7 @@ export function useOrder(orderId: string | null) {
       }
 
       const items = await dbSelect<any>("order_items", {
-        select: "id, product_id, description_snapshot, quantity, unit_price, total, status",
+        select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status",
         filters: [{ column: "order_id", op: "eq", value: orderId }],
         orderBy: { column: "created_at" },
       });
@@ -140,7 +141,7 @@ export function useOrder(orderId: string | null) {
               .map((modifier: any) => ({
                 id: modifier.id,
                 modifier_id: modifier.modifier_id,
-                description: modifier.modifiers?.description ?? "",
+                description: String(Array.isArray((modifier as any).modifiers) ? (modifier as any).modifiers[0]?.description : (modifier as any).modifiers?.description ?? "").trim(),
               })),
           };
         })
@@ -186,6 +187,7 @@ export function useOrder(orderId: string | null) {
     mutationFn: async (params: {
       product_id: string;
       description_snapshot: string;
+  item_note?: string | null;
       unit_price: number;
       quantity: number;
       modifier_ids: string[];
@@ -198,6 +200,7 @@ export function useOrder(orderId: string | null) {
         order_id: orderId!,
         product_id: params.product_id,
         description_snapshot: params.description_snapshot,
+        item_note: params.item_note ?? null,
         unit_price: params.unit_price,
         quantity: params.quantity,
         total,
@@ -305,3 +308,6 @@ export function useOrder(orderId: string | null) {
     sendToKitchen,
   };
 }
+
+
+

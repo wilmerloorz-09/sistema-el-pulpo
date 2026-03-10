@@ -1,4 +1,4 @@
-﻿import { useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
@@ -13,6 +13,7 @@ export interface OrderItemSummary {
   total: number;
   status: string;
   modifiers: { description: string }[];
+  item_note?: string | null;
 }
 
 export interface OrderSummary {
@@ -136,27 +137,31 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         total: number;
         status: string;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, quantity, unit_price, total, status",
+        select: "id, order_id, description_snapshot, item_note, quantity, unit_price, total, status",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
       const itemIds = items.map((item) => item.id);
       const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
 
-      const mods = await dbSelect<{
-        order_item_id: string;
-        description: string;
-      }>("order_item_modifiers", {
-        select: "order_item_id, description",
-        filters: [{ column: "order_item_id", op: "in", value: itemIds }],
-      });
-
       const modsMap: Record<string, { description: string }[]> = {};
-      mods.forEach((modifier) => {
-        if (!modsMap[modifier.order_item_id]) modsMap[modifier.order_item_id] = [];
-        modsMap[modifier.order_item_id].push({ description: modifier.description });
-      });
+      if (itemIds.length > 0) {
+        const { data: mods, error: modsError } = await supabase
+          .from("order_item_modifiers")
+          .select("order_item_id, modifiers(description)")
+          .in("order_item_id", itemIds);
+        if (modsError) throw modsError;
 
+        for (const modifier of mods ?? []) {
+          const rawDescription = Array.isArray((modifier as any).modifiers)
+            ? (modifier as any).modifiers[0]?.description
+            : (modifier as any).modifiers?.description;
+          const description = String(rawDescription ?? "").trim();
+          if (!description) continue;
+          if (!modsMap[modifier.order_item_id]) modsMap[modifier.order_item_id] = [];
+          modsMap[modifier.order_item_id].push({ description });
+        }
+      }
       const tableIds = [...new Set(orders.map((order) => order.table_id).filter(Boolean))] as string[];
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
@@ -192,6 +197,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           total: Number(item.total ?? 0),
           status: item.status,
           modifiers: modsMap[item.id] || [],
+          item_note: item.item_note ?? null,
         }));
 
         const total = related.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
@@ -212,3 +218,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
     enabled: !!activeBranchId,
   });
 }
+
+
+

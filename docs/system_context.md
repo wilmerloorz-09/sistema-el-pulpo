@@ -1,105 +1,71 @@
 # System Context
 
 ## Resumen Ejecutivo
-- Sistema POS multi-sucursal para restaurante.
-- La autorizacion vigente ya no se basa en `if role === ...`; ahora se evalua por `usuario + sucursal activa + permisos efectivos por modulo`.
-- Un usuario puede tener multiples roles en la misma sucursal y en multiples sucursales.
-- El usuario solo opera una sucursal activa por sesion.
-- El backend sigue siendo la fuente real de autorizacion; el frontend solo refleja permisos.
-- El superadmin/administrador inicial sigue protegido en el flujo normal.
+- Sistema POS multi-sucursal para restaurante en estado de refactor incremental (no greenfield).
+- El acceso operativo sigue basado en permisos efectivos por modulo y sucursal activa.
+- Roles existen como estructura administrativa y de plantilla; la operacion diaria se valida por permisos efectivos.
+- `profiles.active_branch_id` sigue siendo pivote de sesion.
 
-## Estado Funcional Vigente
-### Acceso y autorizacion
-- El modelo actual usa permisos por modulo con niveles:
-  - `NONE`
-  - `VIEW`
-  - `OPERATE`
-  - `MANAGE`
-- Roles base sembrados:
-  - `administrador`
-  - `supervisor`
-  - `mesero`
-  - `despachador`
-  - `despachador_mesas`
-  - `despachador_para_llevar`
-  - `cajero`
-- `administrador` es global.
-- Los demas roles son por sucursal.
-- Los permisos se resuelven desde la sucursal activa.
+## Cambios Aplicados Hoy (2026-03-10)
 
-### Reglas operativas clave
-- Un usuario puede tener varias asignaciones `usuario + sucursal + rol`.
-- Se permite multirol en la misma sucursal.
-- La sucursal activa vive en `profiles.active_branch_id`.
-- Todas las consultas operativas deben filtrar por sucursal activa.
-- `despacho_total` se trata como vista consolidada; no debe duplicar logica de escritura.
+### 1) Modificadores por subcategoria (BD + App)
+- Se implemento el modelo de modificadores por subcategoria.
+- Ya no se trata el modificador como texto concatenado al nombre del producto.
+- Se agrega soporte de nota por item a nivel BD (`order_items.item_note`) para uso opcional.
+- Migracion creada:
+  - `supabase/migrations/20260310213000_subcategory_modifiers_and_item_notes.sql`
 
-### Modo consulta por modulo
-- El frontend ya diferencia `VIEW` vs `OPERATE`.
-- `mesero` puede entrar a despacho, pero en modo consulta.
-- `VIEW` ya fue endurecido en:
-  - `despacho`
-  - `ordenes`
-  - `mesas`
-  - `caja`
+### 2) Flujo de ordenes con detalle estructurado
+- Al agregar item, se guardan `modifier_ids` en `order_item_modifiers`.
+- En UI, item y modificadores se muestran separados:
+  - linea del producto
+  - debajo, una linea por modificador
+- Se aplico en:
+  - Ordenes
+  - Cocina
+  - Despacho
+  - Ticket/impresion
 
-### Cancelaciones
-- Las cancelaciones parciales ya descuentan cantidades visibles en:
-  - `Ordenes`
-  - `Despacho`
-- La pestana `Canceladas` del modulo ordenes ya incluye:
-  - cancelaciones totales
-  - cancelaciones parciales aplicadas
+### 3) UX del popup de agregar item
+- Modificaciones se seleccionan por checks (multi-seleccion), no por ingreso manual.
+- La cantidad ahora permite:
+  - boton `-`
+  - boton `+`
+  - ingreso manual numerico en el mismo popup
+- Se removio la nota manual del popup en esta iteracion para evitar ingreso libre en ese punto.
 
-### Caja
-- La apertura de caja sigue solicitando desglose por denominacion.
-- Si no existen denominaciones en la sucursal activa, el formulario avisa y bloquea apertura.
-- El resumen de caja muestra:
-  - `Apertura`
-  - `Actual`
+### 4) Correcciones de datos de modificadores en vistas
+- Se corrigio carga de descripciones de modificadores para evitar items con `-` vacio.
+- Se estandarizo lectura desde relacion `order_item_modifiers -> modifiers(description)`.
+- Se filtro cualquier descripcion vacia antes de renderizar.
 
-## Cambios Relevantes Ya Realizados
-### Refactor de usuarios, roles y permisos
-- Se reemplazo el modelo hibrido viejo por un modelo centralizado de roles y permisos.
-- Se dejo de depender operativamente de `user_roles` legacy para navegacion diaria.
-- Se incorporo multirol por sucursal.
+### 5) Subcategorias: eliminacion segura
+- En Admin > Subcategorias, la accion de eliminar pasa a desactivacion logica (`is_active=false`).
+- Motivo: evitar romper historial y FKs con ordenes historicas.
 
-### Frontend
-- `AuthContext` y `BranchContext` ya trabajan con permisos efectivos.
-- `ProtectedRoute` y `BottomNav` ya usan permisos por modulo.
-- `UsersCrud` ya administra asignaciones `usuario + sucursal + rol`.
-- `ChangePasswordDialog` ya usa el flujo nuevo de cambio de contrasena.
+### 6) Modulo Modificadores (Admin)
+- Alta/edicion exige categoria + subcategoria.
+- Si categoria no tiene subcategorias activas, se bloquea guardado.
+- Se corrigio carga para que categoria/subcategoria aparezcan correctamente al editar.
+- Se mantiene bloque "Asociacion por subcategoria" para asociaciones adicionales y orden visual.
 
-### Edge Functions
-- `create-user` ya usa el modelo nuevo.
-- `login-with-identifier` se conserva para login por email o username.
-- `update-password` ya funciona con el modelo nuevo y validacion manual de token.
-- `clone-branch-catalog` fue alineada al modelo nuevo de admin global.
+### 7) Ordenes: colision de `order_code`
+- Se detecto colision por contador desincronizado (`uq_orders_order_code`).
+- Se creo fix para:
+  - resincronizar contadores diarios por sucursal
+  - endurecer generador para evitar colision en insercion
+- Migracion creada:
+  - `supabase/migrations/20260310223000_fix_order_code_generator_collision.sql`
 
-## Deploy y Operacion Remota
-### Proyecto remoto realmente usado
-- Los despliegues se estan haciendo contra el proyecto Supabase:
-  - `apmsuigcveqtjzbpfihb`
-- No confiar ciegamente en `project_id` de `supabase/config.toml` para despliegue; usar `--project-ref` en CLI cuando haga falta.
+## Proyecto Supabase remoto
+- `apmsuigcveqtjzbpfihb`
 
-### Edge Functions con `verify_jwt = false`
-- `create-user`
-- `login-with-identifier`
-- `reset-users`
-- `update-password`
-- `clone-branch-catalog`
-- `webauthn-register`
-- `webauthn-authenticate`
-
-### Importante
-- Cuando se cambie una Edge Function, hay que redeployarla manualmente.
-- Cuando se cambie `supabase/config.toml`, tambien hay que redeployar la funcion afectada para que tome la configuracion nueva.
-
-## Checklist de Continuidad
-1. Aplicar migraciones pendientes en Supabase antes de probar frontend.
-2. Redeploy de Edge Functions tocadas.
-3. Validar login.
-4. Validar cambio de sucursal activa.
-5. Validar cambio de contrasena.
-6. Validar crear usuario y asignar multiples roles en la misma sucursal.
-7. Validar `VIEW` vs `OPERATE` en ordenes, despacho, mesas y caja.
+## Checklist rapido para continuar en otro equipo
+1. Verificar migraciones aplicadas en remoto (especialmente las dos de hoy).
+2. Levantar app y validar:
+   - crear orden desde mesas
+   - agregar item con multiples modificadores
+   - ver modificadores en Ordenes/Cocina/Despacho/Ticket
+3. Validar Admin > Modificadores (alta/edicion con categoria+subcategoria).
+4. Validar Admin > Subcategorias (baja logica, sin delete fisico).
+5. Si aparece error de `order_code`, aplicar/confirmar migracion `20260310223000`.

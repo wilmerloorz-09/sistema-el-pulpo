@@ -6,6 +6,7 @@ interface ReceiptItem {
   unit_price: number;
   total: number;
   modifiers: { description: string }[];
+  item_note?: string | null;
 }
 
 interface ThermalReceiptProps {
@@ -55,21 +56,32 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
 
         <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
 
-        {items.map((item, idx) => (
-          <div key={idx} style={{ marginBottom: "6px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>
-                {item.quantity}x {item.description_snapshot}
-              </span>
-              <span>${item.total.toFixed(2)}</span>
-            </div>
-            {item.modifiers.map((mod, midx) => (
-              <div key={midx} style={{ paddingLeft: "12px", fontSize: "11px" }}>
-                + {mod.description}
+        {items.map((item, idx) => {
+          const indentCh = `${String(item.quantity).length + 2}ch`;
+
+          return (
+            <div key={idx} style={{ marginBottom: "6px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>
+                  {item.quantity}x {item.description_snapshot}
+                </span>
+                <span>${item.total.toFixed(2)}</span>
               </div>
-            ))}
-          </div>
-        ))}
+              {item.modifiers
+                .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
+                .map((mod, midx) => (
+                  <div key={midx} style={{ paddingLeft: indentCh, fontSize: "11px" }}>
+                    - {mod.description}
+                  </div>
+                ))}
+              {item.item_note && (
+                <div style={{ paddingLeft: indentCh, fontSize: "11px", fontStyle: "italic" }}>
+                  Nota: {item.item_note}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
 
@@ -86,7 +98,7 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         </div>
 
         <div style={{ textAlign: "center", marginTop: "12px", fontSize: "11px" }}>
-          ¡Gracias por su compra!
+          Gracias por su compra
         </div>
       </div>
     );
@@ -96,3 +108,5 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
 ThermalReceipt.displayName = "ThermalReceipt";
 
 export default ThermalReceipt;
+
+

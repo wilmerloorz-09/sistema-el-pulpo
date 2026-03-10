@@ -1,111 +1,61 @@
 # Database Architecture
 
-## Resumen Ejecutivo
-- PostgreSQL en Supabase con modelo multi-sucursal.
-- El modelo vigente de acceso ya no es `user_branch_modules` como fuente primaria.
-- La autorizacion principal ahora se resuelve con:
-  - `roles`
-  - `role_permissions`
-  - `user_branch_roles`
-  - `user_global_roles`
-- `profiles.active_branch_id` sigue siendo el pivote operativo de la sesion.
+## Resumen
+- BD en PostgreSQL (Supabase).
+- UUID se mantiene como PK tecnica.
+- Se usan codigos legibles para operacion donde aplica (`order_code`, etc.).
 
-## Modelo Vigente de Acceso
-### Tablas principales
-- `profiles`
-- `branches`
-- `modules`
-- `roles`
-- `role_permissions`
-- `user_branch_roles`
-- `user_global_roles`
+## Estructura relevante para cambios de hoy
 
-### Legacy que aun puede existir
-- `user_roles`
-- `user_branches`
-- `user_branch_modules`
+### Modificadores
+- `modifiers`
+  - catalogo de modificadores por sucursal.
+- `subcategory_modifiers` (nuevo uso activo)
+  - relacion subcategoria <-> modificador
+  - soporta `is_active` y `display_order`
+- `order_item_modifiers`
+  - seleccion real de modificadores por item de orden
+- `order_items.item_note`
+  - nota opcional por item (columna agregada para soporte de detalle)
 
-Importante:
-- Esas tablas legacy pueden seguir existiendo por compatibilidad o migraciones previas.
-- No deben usarse como fuente primaria de autorizacion nueva.
+### Catalogo de menu
+- `categories` (por sucursal)
+- `subcategories` (relacionadas a categoria)
+- `products` (relacionados a subcategoria)
 
-## Reglas de Integridad
-### Asignaciones
-- Una asignacion de sucursal vincula:
-  - `user_id`
-  - `branch_id`
-  - `role_id`
-- Ya se permite multirol en la misma sucursal.
-- La unicidad vigente esperada es `user + sucursal + rol`, no `user + sucursal`.
+## Migraciones creadas hoy
 
-### Sucursal activa
-- `profiles.active_branch_id` debe ser una sucursal accesible para el usuario.
-- No se debe permitir sucursal activa inactiva.
+### 1) Modificadores por subcategoria + item_note
+- `supabase/migrations/20260310213000_subcategory_modifiers_and_item_notes.sql`
+- Incluye:
+  - creacion/normalizacion de `subcategory_modifiers`
+  - RLS/policies para esta tabla
+  - `ALTER TABLE order_items ADD COLUMN item_note`
+  - backfill base de asociaciones
 
-### Permisos efectivos
-- Los permisos efectivos se calculan desde la matriz de `role_permissions`.
-- El admin global puede operar transversalmente.
-- El resto de usuarios se evalua por la sucursal activa.
+### 2) Fix colisiones de `order_code`
+- `supabase/migrations/20260310223000_fix_order_code_generator_collision.sql`
+- Incluye:
+  - resincronizacion de `entity_counters` para `orders_daily`
+  - `generate_order_code()` robusto con reintento ante colision
 
-## Funciones y vistas relevantes
-### RPC / funciones
-- `is_global_admin(uuid)`
-- `has_branch_permission(user_id, branch_id, module_code, access_level)`
-- `assign_user_branch_role(...)`
-- `remove_user_branch_role(...)`
-- `assign_user_global_role(...)`
-- `remove_user_global_role(...)`
-- `set_user_active_branch(...)`
-- `admin_list_users_access()`
-- `admin_list_access_catalog()`
+## Regla de integridad aplicada
+- No eliminar fisicamente subcategorias que pueden tener historial de ordenes asociado.
+- En app se implemento desactivacion logica para subcategorias.
 
-### Vistas
-- `v_user_effective_permissions`
-- posibles vistas legacy de compatibilidad si siguen presentes
+## Consultas/joins recomendados para modificadores
+- No consultar `order_item_modifiers.description` (no es fuente valida en el modelo actual).
+- Consultar descripcion desde `modifiers` via join relacional:
+  - `order_item_modifiers(order_item_id, modifier_id)` + `modifiers(description)`
 
-## Migraciones clave ya aplicadas o creadas
-- `20260310100000_refactor_branch_roles_permissions_v1.sql`
-- `20260310130000_allow_multi_roles_same_branch.sql`
-- `20260310143000_fix_admin_crud_rls_for_new_permissions.sql`
-- `20260310170000_fix_cash_rls_for_new_permissions.sql`
-- `20260310183000_replace_cash_rls_policies.sql`
+## RLS y seguridad
+- Mantener validaciones por sucursal activa y permisos efectivos.
+- No confiar en filtro solo frontend.
+- Para nuevas tablas o cambios de acceso, agregar policies explicitas y probar con usuario no admin.
 
-## RLS y Politicas
-### Administracion
-- Los CRUD administrativos importantes ya fueron migrados para usar el modelo nuevo.
-- No asumir que `has_role('admin')` sigue siendo suficiente.
-
-### Caja
-- `cash_shifts`
-- `cash_shift_denoms`
-- `cash_movements`
-
-Estas tablas ya fueron revisadas para operar con permisos efectivos de caja o administracion.
-
-### Recomendacion obligatoria
-- Si un CRUD sensible da error RLS, revisar primero si la policy sigue en modelo viejo.
-
-## Cancelaciones y ordenes
-### Estado actual
-- La representacion visual de cantidades activas ya descuenta cancelaciones parciales.
-- Eso se reflejo en frontend, pero depende de que la BD siga registrando bien:
-  - `order_cancellations`
-  - `order_item_cancellations`
-
-### Pestana Canceladas
-- Debe incluir ordenes con cancelaciones aplicadas aunque el estado global no sea `CANCELLED`.
-
-## Caja y denominaciones
-### Reglas vigentes
-- Si no hay denominaciones activas en la sucursal, no se puede abrir turno con desglose.
-- El formulario de apertura depende de datos reales en `denominations`.
-
-## Reset y bootstrap
-- `reset-users` sigue siendo excepcional.
-- No usarlo como flujo normal administrativo.
-
-## Checklist BD
-1. Antes de tocar permisos, revisar migraciones de marzo 2026.
-2. Antes de tocar RLS, validar si la tabla sigue en modelo viejo o nuevo.
-3. Antes de tocar caja, revisar `cash_shifts`, `cash_shift_denoms`, `cash_movements`, `denominations`.
-4. Antes de tocar usuarios, revisar `user_branch_roles`, `user_global_roles`, `profiles.active_branch_id`.
+## Verificaciones recomendadas post-migracion
+1. Crear orden y agregar item con multiples modificadores.
+2. Confirmar persistencia en `order_item_modifiers`.
+3. Confirmar visualizacion en Ordenes/Cocina/Despacho/Ticket.
+4. Crear orden desde mesas y validar ausencia de colision `uq_orders_order_code`.
+5. Desactivar subcategoria desde Admin y verificar que no haya error FK por historial.

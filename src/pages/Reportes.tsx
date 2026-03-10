@@ -16,6 +16,11 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const Reportes = () => {
+  const getOrderRef = (orderCode: string | null | undefined, orderNumber: number | null | undefined) => {
+    if (orderCode && orderCode.trim().length > 0) return orderCode;
+    if (typeof orderNumber === "number") return String(orderNumber);
+    return "SIN-CODIGO";
+  };
   const {
     localOrders,
     remoteOrders,
@@ -149,7 +154,7 @@ const Reportes = () => {
                   {localOrders.data?.map((order) => (
                     <TableRow key={order.id} className="hover:bg-muted/50">
                       <TableCell className="font-mono font-semibold">
-                        {order.order_number}
+                        {getOrderRef(order.order_code, order.order_number)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadge(order.status)}>
@@ -214,7 +219,7 @@ const Reportes = () => {
                   {remoteOrders.data?.map((order) => (
                     <TableRow key={order.id} className="hover:bg-muted/50">
                       <TableCell className="font-mono font-semibold">
-                        {order.order_number}
+                        {getOrderRef(order.order_code, order.order_number)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadge(order.status)}>
@@ -270,3 +275,5 @@ const Reportes = () => {
 };
 
 export default Reportes;
+
+

@@ -97,7 +97,7 @@ export function DispatchCardBase({
             <UtensilsCrossed className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate font-display text-sm font-bold">{label}</span>
-          <span className="shrink-0 font-display text-xs text-muted-foreground">{order.order_code ?? order.order_number}</span>
+          <span className="shrink-0 font-display text-xs text-muted-foreground">{order.order_code ?? String(order.order_number)}</span>
         </div>
         <div className="flex items-center gap-2">
           <div
@@ -138,22 +138,27 @@ export function DispatchCardBase({
           .map((item) => (
             <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="shrink-0 bg-muted-50">
+                <div className="flex items-start gap-2">
+                  <Badge variant="outline" className="w-9 shrink-0 justify-center bg-muted-50">
                     {item.quantity}x
                   </Badge>
-                  <p className="truncate font-medium text-foreground">{item.description_snapshot}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-foreground">{item.description_snapshot}</p>
+                    {item.modifiers.length > 0 && (
+                      <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                        {item.modifiers.filter((mod) => String(mod.description ?? "").trim().length > 0).map((mod, idx) => (
+                          <p key={idx} className="text-muted-foreground">
+                            - {mod.description}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {item.item_note && (
+                      <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
+                    )}
+                  </div>
                   <span className="ml-auto font-semibold text-primary">${item.total ? item.total.toFixed(2) : "0.00"}</span>
                 </div>
-                {item.modifiers.length > 0 && (
-                  <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
-                    {item.modifiers.map((mod, idx) => (
-                      <p key={idx} className="text-muted-foreground">
-                        - {mod.description}
-                      </p>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           ))}
@@ -202,3 +207,5 @@ export function DispatchCardBase({
 }
 
 export default DispatchCardBase;
+
+

@@ -1,4 +1,4 @@
-﻿import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
@@ -14,6 +14,7 @@ export interface DispatchOrderItem {
   status: string;
   dispatched_at: string | null;
   modifiers: { description: string }[];
+  item_note?: string | null;
   total?: number;
 }
 
@@ -109,11 +110,26 @@ export function useDispatchOrders() {
       const orderIds = orders.map((order) => order.id);
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
-        .select("id, order_id, description_snapshot, quantity, unit_price, total, status, dispatched_at")
+        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, total, status, dispatched_at")
         .in("order_id", orderIds);
       if (itemsError) throw itemsError;
 
       const itemIds = (items ?? []).map((item) => item.id);
+      const modifiersMap: Record<string, { description: string }[]> = {};
+      if (itemIds.length > 0) {
+        const { data: modifierRows } = await supabase
+          .from("order_item_modifiers")
+          .select("order_item_id, modifiers(description)")
+          .in("order_item_id", itemIds);
+
+        for (const row of modifierRows ?? []) {
+          if (!modifiersMap[row.order_item_id]) modifiersMap[row.order_item_id] = [];
+          const rawDescription = Array.isArray((row as any).modifiers) ? (row as any).modifiers[0]?.description : (row as any).modifiers?.description;
+          const description = String(rawDescription ?? "").trim();
+          if (!description) continue;
+          modifiersMap[row.order_item_id].push({ description });
+        }
+      }
       const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
 
       let filteredOrders = orders;
@@ -171,7 +187,8 @@ export function useDispatchOrders() {
             status: item.status,
             dispatched_at: item.dispatched_at ?? null,
             total: item.total,
-            modifiers: [],
+            modifiers: modifiersMap[item.id] ?? [],
+            item_note: item.item_note ?? null,
           })),
         }))
         .filter((order) => order.items.length > 0) as DispatchOrder[];
@@ -235,3 +252,7 @@ export function useDispatchOrders() {
     markDispatched: markDispatchedMutation,
   };
 }
+
+
+
+

@@ -46,7 +46,6 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
             : "border-border"
       )}
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2 min-w-0">
           {order.order_type === "TAKEOUT" ? (
@@ -56,7 +55,7 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
           )}
           <span className="font-display text-sm font-bold truncate">{label}</span>
           <Badge variant="secondary" className="text-[10px] shrink-0">
-            {order.order_code ?? `#${order.order_number}`}
+            {order.order_code ?? String(order.order_number)}
           </Badge>
         </div>
         <div
@@ -70,7 +69,6 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
         </div>
       </div>
 
-      {/* Items */}
       <div className="flex-1 px-3 py-2 space-y-1">
         {order.items.map((item) => {
           const isDispatched = !!item.dispatched_at;
@@ -80,7 +78,7 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
             <div
               key={item.id}
               className={cn(
-                "flex items-center gap-2 rounded-xl px-2 py-2 transition-colors",
+                "flex items-start gap-2 rounded-xl px-2 py-2 transition-colors",
                 isDispatched ? "bg-accent/10 opacity-60" : "bg-background"
               )}
             >
@@ -102,16 +100,21 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
               </button>
 
               <span className={cn("text-sm font-bold w-6 text-right shrink-0", isDispatched ? "text-muted-foreground" : "text-primary")}>
-                {item.quantity}×
+                {item.quantity}x
               </span>
               <div className="flex-1 min-w-0">
                 <p className={cn("text-sm font-medium", isDispatched ? "line-through text-muted-foreground" : "text-foreground")}>
                   {item.description_snapshot}
                 </p>
                 {item.modifiers.length > 0 && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {item.modifiers.map((m) => m.description).join(", ")}
-                  </p>
+                  <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
+                    {item.modifiers.filter((m) => String(m.description ?? "").trim().length > 0).map((m) => (
+                      <span key={m.description}>- {m.description}</span>
+                    ))}
+                  </div>
+                )}
+                {item.item_note && (
+                  <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
                 )}
               </div>
             </div>
@@ -119,7 +122,6 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
         })}
       </div>
 
-      {/* Action */}
       {!allDispatched && (
         <div className="px-4 py-3 border-t border-border">
           <Button
@@ -141,3 +143,4 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
     </div>
   );
 }
+

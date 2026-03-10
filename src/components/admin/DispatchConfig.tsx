@@ -11,7 +11,7 @@ import type { DispatchType } from "@/types/cancellation";
 export default function DispatchConfig() {
   const { activeBranchId } = useBranch();
   const { config, assignments, isLoading, updateConfig, updateAssignment, removeAssignment } = useDispatchConfig();
-  const [dispatchUsers, setDispatchUsers] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
+  const [dispatchUsers, setDispatchUsers] = useState<Array<{ id: string; username: string; full_name: string }>>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [selectedType, setSelectedType] = useState<DispatchType>("TABLE");
@@ -32,7 +32,7 @@ export default function DispatchConfig() {
           const users = branchUsers
             .map((bu: any) => ({
               id: bu.user_id,
-              email: bu.profiles?.username || bu.user_id,
+              username: bu.profiles?.username || "",
               full_name: bu.profiles?.full_name || bu.profiles?.username || "Usuario",
             }))
             .filter((u, idx, arr) => arr.findIndex(x => x.id === u.id) === idx);
@@ -205,7 +205,7 @@ export default function DispatchConfig() {
                 <option value="">Selecciona despachador...</option>
                 {dispatchUsers.map((user) => (
                   <option key={user.id} value={user.id}>
-                    {user.full_name || user.email}
+                    {user.full_name}{user.username ? ` (@${user.username})` : ""}
                   </option>
                 ))}
               </select>
@@ -245,7 +245,7 @@ export default function DispatchConfig() {
                     >
                       <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">
-                          {user?.full_name || assignment.user_id}
+                          {user?.full_name || "Usuario"}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {getTypeLabel(assignment.dispatch_type)}
@@ -285,3 +285,4 @@ export default function DispatchConfig() {
     </div>
   );
 }
+

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { dbSelect } from "@/services/DatabaseService";
+import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 
 interface Category {
@@ -27,6 +27,8 @@ interface Product {
 interface Modifier {
   id: string;
   description: string;
+  subcategory_id: string;
+  display_order: number;
 }
 
 export function useMenuData() {
@@ -80,14 +82,50 @@ export function useMenuData() {
 
   const modifiers = useQuery({
     queryKey: ["menu-modifiers", activeBranchId],
-    queryFn: () =>
-      dbSelect<Modifier>("modifiers", {
+    queryFn: async () => {
+      if (!activeBranchId) return [];
+
+      const subIds = subcategories.data?.map((s) => s.id) ?? [];
+      if (subIds.length === 0) return [];
+
+      const { data: links, error: linksError } = await supabase
+        .from("subcategory_modifiers" as never)
+        .select("subcategory_id, modifier_id, display_order, is_active")
+        .in("subcategory_id", subIds)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (linksError) throw linksError;
+
+      const modifierIds = [...new Set((links ?? []).map((link: any) => link.modifier_id).filter(Boolean))] as string[];
+      if (modifierIds.length === 0) return [];
+
+      const mods = await dbSelect<{ id: string; description: string }>("modifiers", {
         select: "id, description",
         branchId: activeBranchId,
-        filters: [{ column: "is_active", op: "eq", value: true }],
+        filters: [
+          { column: "is_active", op: "eq", value: true },
+          { column: "id", op: "in", value: modifierIds },
+        ],
         orderBy: { column: "description" },
-      }),
-    enabled: !!activeBranchId,
+      });
+
+      const modsById = Object.fromEntries(mods.map((mod) => [mod.id, mod]));
+
+      return (links ?? [])
+        .map((link: any) => {
+          const mod = modsById[link.modifier_id];
+          if (!mod) return null;
+          return {
+            id: mod.id,
+            description: mod.description,
+            subcategory_id: String(link.subcategory_id),
+            display_order: Number(link.display_order ?? 0),
+          } as Modifier;
+        })
+        .filter(Boolean) as Modifier[];
+    },
+    enabled: !!activeBranchId && !!subcategories.data,
   });
 
   return {

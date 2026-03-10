@@ -329,7 +329,7 @@ const Ordenes = () => {
 
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
-        modifiers={menu.modifiers}
+        modifiers={selectedProduct ? menu.modifiers.filter((mod: any) => mod.subcategory_id === selectedProduct.subcategory_id) : []}
         open={canEditItems && !!selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onConfirm={(data) => {
@@ -364,3 +364,4 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
+

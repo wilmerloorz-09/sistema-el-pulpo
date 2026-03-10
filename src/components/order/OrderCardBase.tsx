@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,7 +72,7 @@ export function OrderCardBase({
             {order.split_code ?? order.table_name ?? "Para llevar"}
           </span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">
-            {order.order_code ?? `#${order.order_number}`}
+            {order.order_code ?? String(order.order_number)}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -102,13 +102,27 @@ export function OrderCardBase({
       <div className="flex-1 space-y-2 px-4 py-3">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Badge className="border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
-                {item.quantity || 1}x
-              </Badge>
-              <p className="truncate text-sm font-medium text-foreground">
-                {item.description_snapshot || "Item sin nombre"}
-              </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start gap-2">
+                <Badge className="w-9 justify-center border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
+                  {item.quantity || 1}x
+                </Badge>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {item.description_snapshot || "Item sin nombre"}
+                  </p>
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
+                      {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
+                        <span key={modifier.description}>- {modifier.description}</span>
+                      ))}
+                    </div>
+                  )}
+                  {item.item_note && (
+                    <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
+                  )}
+                </div>
+              </div>
             </div>
             <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
               ${item.total ? item.total.toFixed(2) : "0.00"}
@@ -150,3 +164,5 @@ export function OrderCardBase({
 }
 
 export default OrderCardBase;
+
+

@@ -1,96 +1,60 @@
 # Codex Rules
 
 ## Objetivo
-Estas reglas dejan continuidad practica para futuras sesiones y para trabajar desde otra computadora sin perder el estado real del proyecto.
+Mantener continuidad tecnica y funcional del POS entre sesiones/equipos sin perder decisiones de arquitectura.
 
-## Reglas Obligatorias
-### 1. No volver al modelo viejo de permisos
-- No introducir logica tipo `if role === 'MESERO'`.
-- No usar `user_branch_modules` como fuente primaria nueva.
-- No asumir que `user_roles` legacy define autorizacion operativa.
+## Reglas vigentes obligatorias
 
-### 2. Toda autorizacion sensible va por backend/BD
-- Usar `is_global_admin(...)`.
-- Usar `has_branch_permission(...)`.
-- Si se crea una nueva RPC o Edge Function, debe validar permisos reales.
+### 1) Refactor incremental, no rediseno total
+- Reutilizar estructura existente antes de crear tablas o flujos nuevos.
+- Evitar duplicidades funcionales (especialmente en permisos y catalogos).
 
-### 3. Si se toca una Edge Function, revisar tambien `supabase/config.toml`
-- Ya paso un caso real con `update-password`: la funcion estaba bien, pero faltaba `verify_jwt = false`.
-- Si una funcion usa validacion manual del bearer token, documentarlo y desplegarla otra vez.
+### 2) Seguridad en backend/BD primero
+- UI no define seguridad.
+- Toda accion sensible debe respetar permisos efectivos en backend/BD.
 
-### 4. Si se toca frontend operativo, respetar `VIEW`
-- `VIEW` no es ocultar por completo si el modulo debe ser visible.
-- `VIEW` significa entrar y ver, pero no ejecutar acciones operativas.
-- Esto ya esta aplicado en `mesas`, `ordenes`, `despacho` y `caja`.
+### 3) Modificadores: estandar obligatorio
+- Modificador es entidad estructurada, no texto concatenado.
+- Asociacion por subcategoria en `subcategory_modifiers`.
+- Seleccion por item en `order_item_modifiers`.
+- Render por lineas debajo del producto en todos los modulos.
 
-### 5. Si se toca cancelaciones, probar ambas vistas
-- `Ordenes`
-- `Despacho`
+### 4) No borrar historico operativo por UI
+- En entidades con posible historial, preferir baja logica (`is_active=false`).
+- Caso aplicado: subcategorias.
 
-Tambien probar:
-- cancelacion parcial
-- cancelacion total
-- pestana `Canceladas`
+### 5) `order_code` y codigos legibles
+- Si hay error de duplicado por `uq_orders_order_code`, revisar/sincronizar contadores.
+- Usar migracion de fix vigente antes de tocar app.
 
-### 6. Si se toca caja, probar denominaciones y apertura de turno
-- La ausencia de denominaciones debe mostrarse claro.
-- El desglose de apertura no debe perderse.
-- Validar tambien RLS de caja.
+## Convenciones de implementacion para este proyecto
 
-## Criterios de Trabajo
-### Antes de empezar una tarea
-1. Leer estos cuatro docs.
-2. Identificar si el cambio impacta:
-   - migraciones
-   - RLS
-   - RPC
-   - Edge Functions
-   - frontend
-3. No hacer cambios solo en UI cuando el problema es de backend o policy.
+### Frontend
+- Si cambia detalle de item (producto/modificadores/nota), actualizar de forma consistente:
+  - ordenes
+  - cocina
+  - despacho
+  - ticket
+- Mantener alineacion visual coherente (modificadores debajo del nombre del producto).
 
-### Al terminar una tarea
-1. Si cambiaste frontend, correr `npm run build`.
-2. Si cambiaste una Edge Function, recordar deploy manual.
-3. Si cambiaste config de funciones, recordar redeploy.
-4. Si cambiaste BD, dejar migracion incremental si el usuario ya aplico la anterior.
+### Backend/consultas
+- Para descripciones de modificadores, leer via relacion a `modifiers(description)`.
+- Filtrar descripciones vacias antes de renderizar.
 
-## Estado que debe preservarse
-- Multirol por misma sucursal ya soportado.
-- Cambio de contrasena por admin ya funcionando.
-- Duplicacion de catalogo alineada al modelo nuevo.
-- Login por email o username funcionando.
-- Contexto por sucursal activa vigente.
-- Historial y auditoria no deben perderse.
+### Admin
+- En Modificadores, alta/edicion requiere categoria + subcategoria validas.
+- Si categoria no tiene subcategorias activas, bloquear guardado con mensaje claro.
 
-## Deploy Manual Relevante
-Cuando se toquen estas funciones, normalmente hay que redeployarlas:
-- `create-user`
-- `clone-branch-catalog`
-- `update-password`
-- `login-with-identifier`
-- `webauthn-register`
-- `webauthn-authenticate`
+## Checklist corto antes de cerrar una tarea
+1. `npx.cmd tsc --noEmit`
+2. Probar flujo de orden end-to-end (mesa -> agregar item -> ver en vistas)
+3. Verificar que no se rompa historial por deletes fisicos
+4. Documentar migraciones nuevas en `docs/database_architecture.md`
+5. Documentar impacto funcional en `docs/system_context.md`
 
-Comando de referencia:
-```powershell
-npx supabase functions deploy <function-name> --project-ref apmsuigcveqtjzbpfihb
-```
-
-## Senales de diagnostico rapidas
-### Si aparece `401` en Edge Function
-- Revisar `verify_jwt = false` si la funcion usa validacion manual.
-- Revisar bearer token.
-- Revisar redeploy de la funcion.
-
-### Si aparece error RLS
-- Revisar si esa tabla sigue con policies legacy.
-- Revisar sucursal activa.
-- Revisar permisos efectivos del usuario.
-
-### Si la UI no refleja cambios de cancelacion
-- Revisar hooks de ordenes y despacho.
-- Revisar si la vista usa cantidad activa o cantidad original.
-
-## Regla final
-- El sistema ya no esta en etapa de inventar arquitectura base.
-- A partir de aqui, los cambios deben ser refactor incremental, compatible y orientado a produccion.
+## Estado base que debe preservarse
+- Login con email o username funcional.
+- Sucursal activa como contexto operativo.
+- Permisos efectivos por modulo/sucursal.
+- Modificadores por subcategoria con persistencia estructurada.
+- Codigos legibles sin colisiones en creacion de ordenes.

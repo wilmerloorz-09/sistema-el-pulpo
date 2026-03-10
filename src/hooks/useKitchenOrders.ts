@@ -9,6 +9,7 @@ export interface KitchenOrderItem {
   quantity: number;
   dispatched_at: string | null;
   modifiers: { description: string }[];
+  item_note?: string | null;
 }
 
 export interface KitchenOrder {
@@ -77,7 +78,7 @@ export function useKitchenOrders() {
         quantity: number;
         dispatched_at: string | null;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, quantity, dispatched_at",
+        select: "id, order_id, description_snapshot, item_note, quantity, dispatched_at",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
@@ -91,7 +92,10 @@ export function useKitchenOrders() {
           .in("order_item_id", itemIds);
         for (const m of mods ?? []) {
           if (!modsMap[m.order_item_id]) modsMap[m.order_item_id] = [];
-          modsMap[m.order_item_id].push({ description: (m.modifiers as any)?.description ?? "" });
+          const rawDescription = Array.isArray((m as any).modifiers) ? (m as any).modifiers[0]?.description : (m as any).modifiers?.description;
+          const description = String(rawDescription ?? "").trim();
+          if (!description) continue;
+          modsMap[m.order_item_id].push({ description });
         }
       }
 
@@ -109,6 +113,7 @@ export function useKitchenOrders() {
             id: i.id,
             description_snapshot: i.description_snapshot,
             quantity: i.quantity,
+            item_note: i.item_note ?? null,
             dispatched_at: i.dispatched_at ?? null,
             modifiers: modsMap[i.id] ?? [],
           })),
@@ -181,4 +186,8 @@ export function useKitchenOrders() {
     dispatchAll,
   };
 }
+
+
+
+
 

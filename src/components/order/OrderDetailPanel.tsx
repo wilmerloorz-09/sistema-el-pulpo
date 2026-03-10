@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
@@ -12,6 +12,7 @@ interface OrderItem {
   status: string;
   total?: number;
   modifiers?: Array<{ description: string }>;
+  item_note?: string | null;
 }
 
 interface Order {
@@ -103,7 +104,7 @@ export default function OrderDetailPanel({
           )}
           <span className="min-w-fit shrink-0 font-display text-sm font-bold">{label}</span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">
-            {order.order_code ?? `#${order.order_number}`}
+            {order.order_code ?? String(order.order_number ?? "")}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -130,8 +131,8 @@ export default function OrderDetailPanel({
 
       <div className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
-          <div key={item.id} className="flex items-center gap-2 rounded-xl bg-background px-2 py-2">
-            <Badge className="shrink-0 border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
+          <div key={item.id} className="flex items-start gap-2 rounded-xl bg-background px-2 py-2">
+            <Badge className="w-9 shrink-0 justify-center border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
               {item.quantity || 1}x
             </Badge>
 
@@ -145,9 +146,14 @@ export default function OrderDetailPanel({
                 )}
               </div>
               {item.modifiers && item.modifiers.length > 0 && (
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {item.modifiers.map((modifier) => modifier.description || "").join(", ")}
-                </p>
+                <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
+                  {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
+                    <span key={modifier.description}>- {modifier.description}</span>
+                  ))}
+                </div>
+              )}
+              {item.item_note && (
+                <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
               )}
             </div>
             <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
@@ -206,3 +212,5 @@ export default function OrderDetailPanel({
     </div>
   );
 }
+
+

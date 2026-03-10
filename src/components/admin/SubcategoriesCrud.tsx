@@ -1,10 +1,11 @@
 import { useCrud } from "@/hooks/useCrud";
 import { useEditState } from "@/hooks/useEditState";
 import { AdminTable, ColumnDef } from "./AdminTable";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBranch } from "@/contexts/BranchContext";
+import { toast } from "sonner";
 
 interface Subcategory {
   id: string;
@@ -21,11 +22,16 @@ interface Category {
 
 const SubcategoriesCrud = () => {
   const { activeBranchId } = useBranch();
+  const queryClient = useQueryClient();
 
   const { data: categories = [] } = useQuery({
     queryKey: ["admin-categories-list", activeBranchId],
     queryFn: async () => {
-      const { data } = await supabase.from("categories").select("id, description").eq("branch_id", activeBranchId!).order("display_order");
+      const { data } = await supabase
+        .from("categories")
+        .select("id, description")
+        .eq("branch_id", activeBranchId!)
+        .order("display_order");
       return (data ?? []) as Category[];
     },
     enabled: !!activeBranchId,
@@ -40,7 +46,29 @@ const SubcategoriesCrud = () => {
     branchScoped: false,
     filters: catIds.length > 0 ? [{ column: "category_id", op: "in", value: catIds }] : undefined,
   });
-  const edit = useEditState<Subcategory>({ description: "", category_id: "", display_order: 0, is_active: true } as any);
+
+  const edit = useEditState<Subcategory>({
+    description: "",
+    category_id: "",
+    display_order: 0,
+    is_active: true,
+  } as any);
+
+  const deactivateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("subcategories")
+        .update({ is_active: false })
+        .eq("id", id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-subcategories"] });
+      toast.success("Subcategoria desactivada");
+    },
+    onError: (err: any) => toast.error(err.message || "No se pudo desactivar la subcategoria"),
+  });
 
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c.description]));
 
@@ -48,9 +76,9 @@ const SubcategoriesCrud = () => {
     { key: "description", header: "Nombre", width: "1fr", type: "text" },
     {
       key: "category_id",
-      header: "Categoría",
+      header: "Categoria",
       width: "10rem",
-      render: (item) => <span>{catMap[item.category_id] ?? "—"}</span>,
+      render: (item) => <span>{catMap[item.category_id] ?? "-"}</span>,
       editRender: (value, onChange) => (
         <Select value={value} onValueChange={onChange}>
           <SelectTrigger className="h-8 rounded-lg text-sm"><SelectValue /></SelectTrigger>
@@ -76,11 +104,11 @@ const SubcategoriesCrud = () => {
       onEdit={edit.startEdit}
       onCancelEdit={edit.cancelEdit}
       onSave={() => crud.save(edit.editValues as any)}
-      onDelete={crud.remove}
+      onDelete={(id) => deactivateMutation.mutate(id)}
       onAdd={() => edit.startAdd({ category_id: categories[0]?.id ?? "" })}
       onFieldChange={edit.setField}
-      saving={crud.saving}
-      addLabel="Agregar subcategoría"
+      saving={crud.saving || deactivateMutation.isPending}
+      addLabel="Agregar subcategoria"
     />
   );
 };

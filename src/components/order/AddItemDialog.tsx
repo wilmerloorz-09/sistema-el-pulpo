@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Minus, Plus } from "lucide-react";
 
 interface Modifier {
@@ -29,6 +29,7 @@ interface Props {
     unit_price: number;
     quantity: number;
     modifier_ids: string[];
+    item_note?: string | null;
   }) => void;
   adding?: boolean;
 }
@@ -38,6 +39,11 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
   const [manualPrice, setManualPrice] = useState("");
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
 
+  const sortedModifiers = useMemo(
+    () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),
+    [modifiers],
+  );
+
   if (!product) return null;
 
   const isManual = product.price_mode === "MANUAL";
@@ -46,43 +52,44 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
   const handleConfirm = () => {
     if (isManual && price <= 0) return;
 
-    const modDescriptions = selectedMods
-      .map((id) => modifiers.find((m) => m.id === id)?.description)
-      .filter(Boolean);
-
-    const desc = modDescriptions.length > 0
-      ? `${product.description} (${modDescriptions.join(", ")})`
-      : product.description;
-
     onConfirm({
       product_id: product.id,
-      description_snapshot: desc,
+      description_snapshot: product.description,
       unit_price: price,
       quantity,
       modifier_ids: selectedMods,
+      item_note: null,
     });
 
-    // Reset
     setQuantity(1);
     setManualPrice("");
     setSelectedMods([]);
   };
 
   const toggleMod = (id: string) => {
-    setSelectedMods((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
-    );
+    setSelectedMods((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  };
+
+  const handleManualQuantityChange = (value: string) => {
+    if (!value) {
+      setQuantity(1);
+      return;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed)) return;
+
+    setQuantity(Math.max(1, parsed));
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="max-w-sm rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">{product.description}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Manual price */}
           {isManual && (
             <div className="space-y-1.5">
               <Label className="text-sm">Precio</Label>
@@ -91,7 +98,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
                 step="0.01"
                 min="0"
                 value={manualPrice}
-                onChange={(e) => setManualPrice(e.target.value)}
+                onChange={(event) => setManualPrice(event.target.value)}
                 placeholder="0.00"
                 className="h-11 rounded-xl text-lg font-display"
                 autoFocus
@@ -99,7 +106,6 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
             </div>
           )}
 
-          {/* Quantity */}
           <div className="space-y-1.5">
             <Label className="text-sm">Cantidad</Label>
             <div className="flex items-center gap-3">
@@ -107,53 +113,55 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
                 variant="outline"
                 size="icon"
                 className="h-10 w-10 rounded-xl"
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                onClick={() => setQuantity((current) => Math.max(1, current - 1))}
               >
                 <Minus className="h-4 w-4" />
               </Button>
-              <span className="font-display text-xl font-bold w-10 text-center">{quantity}</span>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={quantity}
+                onChange={(event) => handleManualQuantityChange(event.target.value)}
+                onBlur={(event) => handleManualQuantityChange(event.target.value)}
+                className="h-10 w-20 rounded-xl text-center font-display text-lg font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
               <Button
                 variant="outline"
                 size="icon"
                 className="h-10 w-10 rounded-xl"
-                onClick={() => setQuantity((q) => q + 1)}
+                onClick={() => setQuantity((current) => current + 1)}
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          {/* Modifiers */}
-          {modifiers.length > 0 && (
+          {sortedModifiers.length > 0 && (
             <div className="space-y-2">
-              <Label className="text-sm">Modificadores</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {modifiers.map((mod) => (
+              <Label className="text-sm">Modificaciones</Label>
+              <div className="grid grid-cols-1 gap-2">
+                {sortedModifiers.map((modifier) => (
                   <label
-                    key={mod.id}
+                    key={modifier.id}
                     className="flex items-center gap-2 rounded-lg border border-border p-2.5 cursor-pointer hover:bg-muted/50"
                   >
                     <Checkbox
-                      checked={selectedMods.includes(mod.id)}
-                      onCheckedChange={() => toggleMod(mod.id)}
+                      checked={selectedMods.includes(modifier.id)}
+                      onCheckedChange={() => toggleMod(modifier.id)}
                     />
-                    <span className="text-xs font-medium">{mod.description}</span>
+                    <span className="text-sm">{modifier.description}</span>
                   </label>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Total & Confirm */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="flex items-center justify-between border-t border-border pt-2">
             <span className="text-sm text-muted-foreground">
-              Total: <span className="font-display font-bold text-foreground text-lg">${(price * quantity).toFixed(2)}</span>
+              Total: <span className="font-display text-lg font-bold text-foreground">${(price * quantity).toFixed(2)}</span>
             </span>
-            <Button
-              onClick={handleConfirm}
-              disabled={adding || (isManual && price <= 0)}
-              className="rounded-xl font-display"
-            >
+            <Button onClick={handleConfirm} disabled={adding || (isManual && price <= 0)} className="rounded-xl font-display">
               Agregar
             </Button>
           </div>
