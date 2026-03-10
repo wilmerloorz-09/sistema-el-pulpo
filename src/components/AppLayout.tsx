@@ -9,38 +9,33 @@ import ChangePasswordDialog from "./ChangePasswordDialog";
 import PasskeyRegisterButton from "./PasskeyRegisterButton";
 
 const AppLayout = () => {
-  const { signOut, profile, activeRole, setActiveRole, roles } = useAuth();
-  const { activeBranch, branches, setActiveBranch } = useBranch();
+  const { signOut, profile } = useAuth();
+  const { activeBranch, branches, setActiveBranch, isGlobalAdmin } = useBranch();
   const { isOnline } = useNetwork();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Top bar */}
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-card/95 backdrop-blur-md px-4 py-2.5">
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-card/95 px-4 py-2.5 backdrop-blur-md">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🐙</span>
+          <span className="text-lg">Pulpo</span>
           <span className="font-display text-sm font-bold text-foreground">El Pulpo</span>
           {activeBranch && branches.length > 1 ? (
             <button
               onClick={() => setActiveBranch(null)}
-              className="ml-1 rounded-lg bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent-foreground flex items-center gap-1"
+              className="ml-1 flex items-center gap-1 rounded-lg bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent-foreground"
             >
-              📍 {activeBranch.name}
+              {activeBranch.name}
               <RefreshCw className="h-3 w-3" />
             </button>
           ) : activeBranch ? (
             <span className="ml-1 rounded-lg bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent-foreground">
-              📍 {activeBranch.name}
+              {activeBranch.name}
             </span>
           ) : null}
-          {activeRole && (
-            <button
-              onClick={() => setActiveRole(null)}
-              className="rounded-lg bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary flex items-center gap-1"
-            >
-              {activeRole}
-              {roles.length > 1 && <RefreshCw className="h-3 w-3" />}
-            </button>
+          {isGlobalAdmin && (
+            <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              Admin global
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -49,9 +44,7 @@ const AppLayout = () => {
               <WifiOff className="h-3 w-3" /> Offline
             </span>
           )}
-          <span className="text-xs text-muted-foreground hidden sm:block">
-            {profile?.full_name}
-          </span>
+          <span className="hidden text-xs text-muted-foreground sm:block">{profile?.full_name}</span>
           <PasskeyRegisterButton />
           <ChangePasswordDialog />
           <Button variant="ghost" size="icon" onClick={signOut} className="h-8 w-8">
@@ -60,8 +53,7 @@ const AppLayout = () => {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 pb-20 md:pb-20 mb-safe">
+      <main className="mb-safe flex-1 pb-20 md:pb-20">
         <Outlet />
       </main>
 
@@ -71,5 +63,3 @@ const AppLayout = () => {
 };
 
 export default AppLayout;
-
-

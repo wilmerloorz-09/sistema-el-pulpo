@@ -9,6 +9,7 @@ interface DispatchCardProps {
   onMarkDispatched: (orderId: string) => void;
   isMarkingReady: boolean;
   isMarkingDispatched: boolean;
+  readOnly?: boolean;
 }
 
 export default function DispatchCard({
@@ -17,13 +18,9 @@ export default function DispatchCard({
   onMarkDispatched,
   isMarkingReady,
   isMarkingDispatched,
+  readOnly = false,
 }: DispatchCardProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  
-  const handleEyeClick = () => {
-    console.log("🔍 DispatchCard: Eye icon clicked for order:", order.id);
-    setIsDrawerOpen(true);
-  };
 
   return (
     <>
@@ -34,9 +31,10 @@ export default function DispatchCard({
         isMarkingReady={isMarkingReady}
         isMarkingDispatched={isMarkingDispatched}
         showEyeIcon={true}
-        onEyeClick={handleEyeClick}
+        onEyeClick={() => setIsDrawerOpen(true)}
+        readOnly={readOnly}
       />
-      
+
       <DispatchOrderDrawer
         order={order}
         onMarkReady={onMarkReady}
@@ -45,6 +43,7 @@ export default function DispatchCard({
         isMarkingDispatched={isMarkingDispatched}
         open={isDrawerOpen}
         onOpenChange={setIsDrawerOpen}
+        readOnly={readOnly}
       />
     </>
   );

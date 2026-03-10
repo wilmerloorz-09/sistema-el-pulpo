@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
 import OrderCard from "./OrderCard";
@@ -25,14 +25,12 @@ const tabs: TabInfo[] = [
 
 interface OrdersListProps {
   onCancelOrder?: (order: OrderSummary) => void;
+  readOnly?: boolean;
 }
 
-export default function OrdersList({ onCancelOrder }: OrdersListProps) {
-  console.log(" OrdersList: Component rendering");
+export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersListProps) {
   const [activeTab, setActiveTab] = useState<TabType>("sent");
   const { activeBranchId } = useBranch();
-
-  console.log(" OrdersList: Branch ID:", activeBranchId);
 
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
   const readyOrders = useOrdersByStatus("READY");
@@ -40,16 +38,7 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
   const cancelledOrders = useOrdersByStatus("CANCELLED");
   const paidOrders = useOrdersByStatus("PAID");
 
-  console.log(" OrdersList: Queries status:", {
-    sentOrders: { isLoading: sentOrders.isLoading, isError: sentOrders.isError, dataLength: sentOrders.data?.length },
-    readyOrders: { isLoading: readyOrders.isLoading, isError: readyOrders.isError, dataLength: readyOrders.data?.length },
-    dispatchedOrders: { isLoading: dispatchedOrders.isLoading, isError: dispatchedOrders.isError, dataLength: dispatchedOrders.data?.length },
-    cancelledOrders: { isLoading: cancelledOrders.isLoading, isError: cancelledOrders.isError, dataLength: cancelledOrders.data?.length },
-    paidOrders: { isLoading: paidOrders.isLoading, isError: paidOrders.isError, dataLength: paidOrders.data?.length },
-  });
-
   const getOrdersForTab = (tab: TabType) => {
-    console.log(" OrdersList: Getting orders for tab:", tab);
     switch (tab) {
       case "sent":
         return sentOrders;
@@ -70,27 +59,26 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
   };
 
   if (!activeBranchId) {
-    return (
-      <div className="text-center py-8 text-muted-foreground">
-        Selecciona una sucursal para ver las órdenes
-      </div>
-    );
+    return <div className="py-8 text-center text-muted-foreground">Selecciona una sucursal para ver las ordenes</div>;
   }
 
   const currentOrders = getOrdersForTab(activeTab);
-  const currentTab = tabs.find(t => t.key === activeTab)!;
-
-  const totalOrders = getTabCount("sent") + getTabCount("dispatched") + getTabCount("cancelled") + getTabCount("paid");
+  const currentTab = tabs.find((tab) => tab.key === activeTab)!;
+  const totalOrders = tabs.reduce((sum, tab) => sum + getTabCount(tab.key), 0);
 
   return (
     <div className="w-full">
-      {/* Header with total count */}
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="font-display text-lg font-bold text-foreground">Todas las órdenes</h2>
+      <div className="mb-4 flex items-center gap-2">
+        <h2 className="font-display text-lg font-bold text-foreground">Todas las ordenes</h2>
         <span className="text-xs text-muted-foreground">({totalOrders} total)</span>
+        {readOnly && (
+          <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+            Solo consulta
+          </span>
+        )}
       </div>
-      {/* Improved Tabs */}
-      <div className="flex gap-1 mb-6 p-1 bg-muted/30 rounded-xl">
+
+      <div className="mb-6 flex gap-1 rounded-xl bg-muted/30 p-1">
         {tabs.map((tab) => {
           const count = getTabCount(tab.key);
           const isActive = activeTab === tab.key;
@@ -100,18 +88,15 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
+                "flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all",
                 isActive
-                  ? "bg-background shadow-sm text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
               )}
             >
               {tab.label}
               {count > 0 && (
-                <Badge
-                  variant={isActive ? "default" : "secondary"}
-                  className="h-5 px-1.5 text-xs"
-                >
+                <Badge variant={isActive ? "default" : "secondary"} className="h-5 px-1.5 text-xs">
                   {count}
                 </Badge>
               )}
@@ -120,25 +105,25 @@ export default function OrdersList({ onCancelOrder }: OrdersListProps) {
         })}
       </div>
 
-      {/* Orders Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {currentOrders.isLoading ? (
           <div className="col-span-full flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
         ) : !currentOrders.data || currentOrders.data.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-muted-foreground">
-            No hay órdenes {currentTab.label.toLowerCase()}
+          <div className="col-span-full py-12 text-center text-muted-foreground">
+            No hay ordenes {currentTab.label.toLowerCase()}
           </div>
         ) : (
-          currentOrders.data?.map((order) => (
+          currentOrders.data.map((order) => (
             <OrderCard
-              key={order?.id || Math.random()}
+              key={order.id}
               order={order}
               onCancel={onCancelOrder}
-              showCancelButton={currentTab.showCancel}
+              showCancelButton={currentTab.showCancel && !readOnly}
+              readOnly={readOnly}
             />
-          )) || []
+          ))
         )}
       </div>
     </div>

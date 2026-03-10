@@ -1,26 +1,24 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
-import type { CompletedPayment, CompletedPaymentsFilters, PaymentMethod } from "@/hooks/useCaja";
-import type { Database } from "@/integrations/supabase/types";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
+import type { CompletedPayment, CompletedPaymentsFilters, PaymentMethod } from "@/hooks/useCaja";
+import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import {
-  CreditCard,
-  ShoppingBag,
-  UtensilsCrossed,
-  Clock3,
-  Download,
   ChevronDown,
   ChevronUp,
-  RotateCcw,
-  ShieldCheck,
+  Clock3,
+  CreditCard,
+  Download,
   History,
   Loader2,
+  RotateCcw,
+  ShieldCheck,
+  ShoppingBag,
+  UtensilsCrossed,
 } from "lucide-react";
-
-type AppRole = Database["public"]["Enums"]["app_role"];
 
 type ActionType = "approve" | "reject";
 
@@ -62,7 +60,7 @@ interface Props {
   paymentMethods: PaymentMethod[];
   loading?: boolean;
   filters: CompletedPaymentsFilters;
-  activeRole: AppRole | null;
+  permissions: PermissionMap;
   actionLoading?: boolean;
   cashierReverseWindowMinutes: number;
   onFiltersChange: (next: CompletedPaymentsFilters) => void;
@@ -113,21 +111,21 @@ function exportCsv(rows: CompletedPayment[]) {
   URL.revokeObjectURL(url);
 }
 
-function getRolePermissions(role: AppRole | null) {
-  const isCashier = role === "cajero";
-  const isSupervisor = role === "admin" || role === "superadmin";
-
-  return {
-    isCashier,
-    isSupervisor,
-    canRequestReversal: isCashier || isSupervisor,
-    canApproveReversal: isSupervisor,
-  };
-}
-
 function canCashierReverseDirectly(createdAt: string, windowMinutes: number): boolean {
   const minutes = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60);
   return minutes <= windowMinutes;
+}
+
+function getPermissionFlags(permissions: PermissionMap) {
+  const canOperateCaja = canOperate(permissions, "caja");
+  const canManageAdmin = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
+
+  return {
+    canOperateCaja,
+    canManageAdmin,
+    canRequestReversal: canOperateCaja || canManageAdmin,
+    canApproveReversal: canManageAdmin,
+  };
 }
 
 export default function CompletedPaymentsList({
@@ -136,7 +134,7 @@ export default function CompletedPaymentsList({
   paymentMethods,
   loading = false,
   filters,
-  activeRole,
+  permissions,
   cashierReverseWindowMinutes,
   actionLoading = false,
   onFiltersChange,
@@ -146,22 +144,20 @@ export default function CompletedPaymentsList({
 }: Props) {
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-
-  const [modalState, setModalState] = useState<{
-    open: boolean;
-    mode: "request" | "execute";
-    payment: ReversalPaymentData | null;
-  }>({ open: false, mode: "request", payment: null });
-
-  const [actionDialog, setActionDialog] = useState<{
-    open: boolean;
-    type: ActionType;
-    paymentId: string | null;
-    paymentEntryIds: string[];
-  }>({ open: false, type: "approve", paymentId: null, paymentEntryIds: [] });
+  const [modalState, setModalState] = useState<{ open: boolean; mode: "request" | "execute"; payment: ReversalPaymentData | null }>({
+    open: false,
+    mode: "request",
+    payment: null,
+  });
+  const [actionDialog, setActionDialog] = useState<{ open: boolean; type: ActionType; paymentId: string | null; paymentEntryIds: string[] }>({
+    open: false,
+    type: "approve",
+    paymentId: null,
+    paymentEntryIds: [],
+  });
   const [actionReason, setActionReason] = useState("");
 
-  const permissions = getRolePermissions(activeRole);
+  const permissionFlags = getPermissionFlags(permissions);
 
   const groupedPayments = useMemo<PaymentGroup[]>(() => {
     const map = new Map<string, PaymentGroup>();
@@ -194,8 +190,7 @@ export default function CompletedPaymentsList({
         });
       }
 
-      const target = map.get(row.id)!;
-      target.items.push({
+      map.get(row.id)!.items.push({
         id: row.item_id ?? row.id,
         paymentEntryId: row.payment_item_id ?? row.id,
         product_name: row.item_description ?? "Item no especificado",
@@ -208,7 +203,6 @@ export default function CompletedPaymentsList({
 
     return Array.from(map.values());
   }, [payments]);
-
 
   const orderSummaries = useMemo(() => {
     const map = new Map<string, PaymentGroup["order"]>();
@@ -244,10 +238,7 @@ export default function CompletedPaymentsList({
 
   const openModalForPayment = (payment: PaymentGroup, mode: "request" | "execute") => {
     const methods = [...new Set(payment.items.map((item) => item.method_name))].join(", ");
-    const tableLabel =
-      payment.order.type === "TAKEOUT"
-        ? "Para llevar"
-        : payment.order.split_code ?? payment.order.table_name ?? "Mesa";
+    const tableLabel = payment.order.type === "TAKEOUT" ? "Para llevar" : payment.order.split_code ?? payment.order.table_name ?? "Mesa";
 
     setModalState({
       open: true,
@@ -277,11 +268,6 @@ export default function CompletedPaymentsList({
     });
   };
 
-  const openActionDialog = (type: ActionType, paymentId: string, paymentEntryIds: string[]) => {
-    setActionReason("");
-    setActionDialog({ open: true, type, paymentId, paymentEntryIds });
-  };
-
   const closeAction = () => {
     setActionDialog({ open: false, type: "approve", paymentId: null, paymentEntryIds: [] });
     setActionReason("");
@@ -289,167 +275,78 @@ export default function CompletedPaymentsList({
 
   const executeAction = async () => {
     if (!actionDialog.paymentId || !actionReason.trim()) return;
-
-    if (actionDialog.type === "approve") {
-      await onApproveReversal(actionDialog.paymentId, true, actionReason, actionDialog.paymentEntryIds);
-    }
-    if (actionDialog.type === "reject") {
-      await onApproveReversal(actionDialog.paymentId, false, actionReason, actionDialog.paymentEntryIds);
-    }
-
+    await onApproveReversal(actionDialog.paymentId, actionDialog.type === "approve", actionReason, actionDialog.paymentEntryIds);
     closeAction();
-  };
-
-  const actionTitleMap: Record<ActionType, string> = {
-    approve: "Aprobar solicitud de reverso",
-    reject: "Rechazar solicitud de reverso",
-  };
-
-  const handleModalSubmit = async (params: {
-    paymentId: string;
-    reason: string;
-    paymentEntryIds: string[];
-  }) => {
-    if (modalState.mode === "request") {
-      await onRequestReversal(params.paymentId, params.reason, params.paymentEntryIds);
-      return;
-    }
-    await onReversePayment(params.paymentId, params.reason, params.paymentEntryIds);
   };
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-border p-3 space-y-2">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <input
-            value={filters.orderQuery}
-            onChange={(e) => setFilter({ orderQuery: e.target.value })}
-            placeholder="Buscar por orden o mesa"
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          />
-
-          <select
-            value={filters.methodId}
-            onChange={(e) => setFilter({ methodId: e.target.value })}
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          >
+      <div className="space-y-2 rounded-xl border border-border p-3">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+          <input value={filters.orderQuery} onChange={(e) => setFilter({ orderQuery: e.target.value })} placeholder="Buscar por orden o mesa" className="h-9 rounded-lg border border-border bg-background px-3 text-sm" />
+          <select value={filters.methodId} onChange={(e) => setFilter({ methodId: e.target.value })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
             <option value="ALL">Todos los metodos</option>
             {paymentMethods.map((method) => (
-              <option key={method.id} value={method.id}>
-                {method.name}
-              </option>
+              <option key={method.id} value={method.id}>{method.name}</option>
             ))}
           </select>
-
-          <input
-            type="datetime-local"
-            value={filters.fromDateTime}
-            onChange={(e) => setFilter({ fromDateTime: e.target.value })}
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          />
-
-          <input
-            type="datetime-local"
-            value={filters.toDateTime}
-            onChange={(e) => setFilter({ toDateTime: e.target.value })}
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          />
+          <input type="datetime-local" value={filters.fromDateTime} onChange={(e) => setFilter({ fromDateTime: e.target.value })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm" />
+          <input type="datetime-local" value={filters.toDateTime} onChange={(e) => setFilter({ toDateTime: e.target.value })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <select
-            value={filters.sortBy}
-            onChange={(e) => setFilter({ sortBy: e.target.value as CompletedPaymentsFilters["sortBy"] })}
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          >
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          <select value={filters.sortBy} onChange={(e) => setFilter({ sortBy: e.target.value as CompletedPaymentsFilters["sortBy"] })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
             <option value="created_at">Ordenar por fecha</option>
             <option value="amount">Ordenar por monto</option>
           </select>
-
-          <select
-            value={filters.sortDir}
-            onChange={(e) => setFilter({ sortDir: e.target.value as CompletedPaymentsFilters["sortDir"] })}
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          >
+          <select value={filters.sortDir} onChange={(e) => setFilter({ sortDir: e.target.value as CompletedPaymentsFilters["sortDir"] })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
             <option value="desc">Descendente</option>
             <option value="asc">Ascendente</option>
           </select>
-
-          <select
-            value={String(filters.pageSize)}
-            onChange={(e) => setFilter({ pageSize: Number(e.target.value) })}
-            className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-          >
+          <select value={String(filters.pageSize)} onChange={(e) => setFilter({ pageSize: Number(e.target.value) })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
             <option value="10">10 por pagina</option>
             <option value="20">20 por pagina</option>
             <option value="50">50 por pagina</option>
           </select>
         </div>
 
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <p className="text-xs text-muted-foreground">
-            Total DB: {total} pago(s) - Pagina {currentPage} de {totalPages}
-          </p>
-          <button
-            onClick={() => exportCsv(payments)}
-            disabled={payments.length === 0}
-            className="h-8 px-3 rounded-lg border border-border text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
-          >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">Total DB: {total} pago(s) - Pagina {currentPage} de {totalPages}</p>
+          <button onClick={() => exportCsv(payments)} disabled={payments.length === 0} className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium disabled:opacity-50">
             <Download className="h-3.5 w-3.5" /> Exportar CSV (pagina)
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-10">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto mb-2" />
+        <div className="py-10 text-center">
+          <Loader2 className="mx-auto mb-2 h-8 w-8 animate-spin text-muted-foreground" />
           <p className="text-sm text-muted-foreground">Consultando pagos realizados...</p>
         </div>
       ) : groupedPayments.length === 0 ? (
-        <div className="text-center py-10">
-          <CreditCard className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
+        <div className="py-10 text-center">
+          <CreditCard className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm font-medium text-muted-foreground">Sin pagos para los filtros consultados</p>
         </div>
       ) : (
         <>
           {selectedOrder && (
-            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-display text-sm font-bold text-foreground">Resumen de cuenta</h3>
-                <select
-                  value={selectedOrder.id}
-                  onChange={(e) => setSelectedOrderId(e.target.value)}
-                  className="h-8 rounded-lg border border-border bg-background px-2 text-xs"
-                >
+                <select value={selectedOrder.id} onChange={(e) => setSelectedOrderId(e.target.value)} className="h-8 rounded-lg border border-border bg-background px-2 text-xs">
                   {orderSummaries.map((order) => (
-                    <option key={order.id} value={order.id}>
-                      {order.code ?? `#${order.number}`} - {order.split_code ?? order.table_name ?? "Para llevar"}
-                    </option>
+                    <option key={order.id} value={order.id}>{order.code ?? `#${order.number}`} - {order.split_code ?? order.table_name ?? "Para llevar"}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-sm">
-                <div className="rounded-lg bg-muted/50 p-2">
-                  <p className="text-xs text-muted-foreground">Orden</p>
-                  <p className="font-semibold">{selectedOrder.code ?? `#${selectedOrder.number}`}</p>
-                </div>
-                <div className="rounded-lg bg-muted/50 p-2">
-                  <p className="text-xs text-muted-foreground">Mesa</p>
-                  <p className="font-semibold">{selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"}</p>
-                </div>
-                <div className="rounded-lg bg-muted/50 p-2">
-                  <p className="text-xs text-muted-foreground">Total cuenta</p>
-                  <p className="font-semibold">${selectedOrder.total.toFixed(2)}</p>
-                </div>
-                <div className="rounded-lg bg-green-50 p-2">
-                  <p className="text-xs text-muted-foreground">Total pagado</p>
-                  <p className="font-semibold text-green-700">${selectedOrder.paid.toFixed(2)}</p>
-                </div>
-                <div className="rounded-lg bg-amber-50 p-2">
-                  <p className="text-xs text-muted-foreground">Saldo pendiente</p>
-                  <p className="font-semibold text-amber-700">${selectedOrder.pending.toFixed(2)}</p>
-                </div>
+              <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-5">
+                <div className="rounded-lg bg-muted/50 p-2"><p className="text-xs text-muted-foreground">Orden</p><p className="font-semibold">{selectedOrder.code ?? `#${selectedOrder.number}`}</p></div>
+                <div className="rounded-lg bg-muted/50 p-2"><p className="text-xs text-muted-foreground">Mesa</p><p className="font-semibold">{selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"}</p></div>
+                <div className="rounded-lg bg-muted/50 p-2"><p className="text-xs text-muted-foreground">Total cuenta</p><p className="font-semibold">${selectedOrder.total.toFixed(2)}</p></div>
+                <div className="rounded-lg bg-green-50 p-2"><p className="text-xs text-muted-foreground">Total pagado</p><p className="font-semibold text-green-700">${selectedOrder.paid.toFixed(2)}</p></div>
+                <div className="rounded-lg bg-amber-50 p-2"><p className="text-xs text-muted-foreground">Saldo pendiente</p><p className="font-semibold text-amber-700">${selectedOrder.pending.toFixed(2)}</p></div>
               </div>
             </div>
           )}
@@ -457,101 +354,72 @@ export default function CompletedPaymentsList({
           <div className="space-y-2">
             {filteredGroups.map((payment) => {
               const expanded = expandedPaymentId === payment.paymentId;
-              const label =
-                payment.order.type === "TAKEOUT"
-                  ? "Para llevar"
-                  : payment.order.split_code ?? payment.order.table_name ?? "Mesa";
-
+              const label = payment.order.type === "TAKEOUT" ? "Para llevar" : payment.order.split_code ?? payment.order.table_name ?? "Mesa";
               const blockedByState = payment.status === "REVERSED" || payment.status === "VOIDED";
               const withinWindow = canCashierReverseDirectly(payment.created_at, cashierReverseWindowMinutes);
-              const canExecuteByRole = permissions.isSupervisor || (permissions.isCashier && withinWindow);
-              const canRequestByRole = permissions.canRequestReversal && !canExecuteByRole;
+              const canExecute = permissionFlags.canManageAdmin || (permissionFlags.canOperateCaja && withinWindow);
+              const canRequest = permissionFlags.canRequestReversal && !canExecute;
               const entryIds = payment.items.map((item) => item.paymentEntryId);
 
               return (
-                <div key={payment.paymentId} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                <div key={payment.paymentId} className="space-y-2 rounded-xl border border-border bg-card p-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      {payment.order.type === "TAKEOUT" ? (
-                        <ShoppingBag className="h-4 w-4 text-primary" />
-                      ) : (
-                        <UtensilsCrossed className="h-4 w-4 text-primary" />
-                      )}
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                      {payment.order.type === "TAKEOUT" ? <ShoppingBag className="h-4 w-4 text-primary" /> : <UtensilsCrossed className="h-4 w-4 text-primary" />}
                     </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-bold text-foreground">{label}</span>
-                        <Badge variant="secondary" className="text-[10px]">
-                          {payment.order.code ?? `#${payment.order.number}`}
-                        </Badge>
+                        <Badge variant="secondary" className="text-[10px]">{payment.order.code ?? `#${payment.order.number}`}</Badge>
                         <PaymentStatusBadge status={payment.status} />
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                         <Clock3 className="h-3 w-3" /> {formatDateTime(payment.created_at)}
                         <span>- Cajero: {payment.cashier_name}</span>
                         <span>- Metodo: {payment.method_name}</span>
                       </p>
                     </div>
-
                     <span className="font-display text-base font-bold text-foreground">${payment.amount.toFixed(2)}</span>
-
-                    <button
-                      onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)}
-                      className="h-8 w-8 rounded-lg border border-border flex items-center justify-center"
-                      title="Ver detalle"
-                    >
+                    <button onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border" title="Ver detalle">
                       {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                   </div>
 
                   {expanded && (
-                    <div className="rounded-lg bg-muted/40 p-3 space-y-2">
+                    <div className="space-y-2 rounded-lg bg-muted/40 p-3">
                       <p className="text-xs font-medium text-muted-foreground">Items cubiertos</p>
                       <div className="space-y-1">
                         {payment.items.map((item) => (
-                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 md:grid-cols-5 gap-2 text-sm rounded-md bg-background p-2 border border-border">
+                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-md border border-border bg-background p-2 text-sm md:grid-cols-5">
                             <span className="font-medium text-foreground">{item.product_name}</span>
                             <span className="text-muted-foreground">Cant: {item.quantity}</span>
                             <span className="text-muted-foreground">Metodo: {item.method_name}</span>
                             <span className="text-muted-foreground">Estado: {item.status}</span>
-                            <span className="font-semibold text-right">${item.amount.toFixed(2)}</span>
+                            <span className="text-right font-semibold">${item.amount.toFixed(2)}</span>
                           </div>
                         ))}
                       </div>
 
-                      <div className="flex items-center gap-2 flex-wrap pt-1">
-                        {!blockedByState && canExecuteByRole && (
-                          <button
-                            className="h-8 px-3 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs font-medium flex items-center gap-1"
-                            onClick={() => openModalForPayment(payment, "execute")}
-                          >
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {!blockedByState && canExecute && (
+                          <button className="flex h-8 items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-3 text-xs font-medium text-red-700" onClick={() => openModalForPayment(payment, "execute")}>
                             <RotateCcw className="h-3.5 w-3.5" />
-                            {permissions.isSupervisor ? "Ejecutar reverso" : "Reversar pago"}
+                            {permissionFlags.canManageAdmin ? "Ejecutar reverso" : "Reversar pago"}
                           </button>
                         )}
 
-                        {!blockedByState && canRequestByRole && (
-                          <button
-                            className="h-8 px-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-xs font-medium flex items-center gap-1"
-                            onClick={() => openModalForPayment(payment, "request")}
-                          >
+                        {!blockedByState && canRequest && (
+                          <button className="flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700" onClick={() => openModalForPayment(payment, "request")}>
                             <RotateCcw className="h-3.5 w-3.5" /> Solicitar reverso
                           </button>
                         )}
 
-                        {permissions.canApproveReversal && payment.reversal_requested && payment.status !== "REVERSED" && (
+                        {permissionFlags.canApproveReversal && payment.reversal_requested && payment.status !== "REVERSED" && (
                           <>
-                            <button
-                              className="h-8 px-3 rounded-lg border border-green-300 bg-green-50 text-green-700 text-xs font-medium flex items-center gap-1"
-                              onClick={() => openActionDialog("approve", payment.paymentId, entryIds)}
-                            >
+                            <button className="flex h-8 items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 text-xs font-medium text-green-700" onClick={() => setActionDialog({ open: true, type: "approve", paymentId: payment.paymentId, paymentEntryIds: entryIds })}>
                               <ShieldCheck className="h-3.5 w-3.5" /> Aprobar reverso
                             </button>
-                            <button
-                              className="h-8 px-3 rounded-lg border border-gray-300 bg-gray-50 text-gray-700 text-xs font-medium flex items-center gap-1"
-                              onClick={() => openActionDialog("reject", payment.paymentId, entryIds)}
-                            >
+                            <button className="flex h-8 items-center gap-1 rounded-lg border border-gray-300 bg-gray-50 px-3 text-xs font-medium text-gray-700" onClick={() => setActionDialog({ open: true, type: "reject", paymentId: payment.paymentId, paymentEntryIds: entryIds })}>
                               <History className="h-3.5 w-3.5" /> Rechazar solicitud
                             </button>
                           </>
@@ -565,20 +433,8 @@ export default function CompletedPaymentsList({
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => setPage(currentPage - 1)}
-              disabled={currentPage <= 1}
-              className="h-8 px-3 rounded-lg border border-border text-xs disabled:opacity-50"
-            >
-              Anterior
-            </button>
-            <button
-              onClick={() => setPage(currentPage + 1)}
-              disabled={currentPage >= totalPages}
-              className="h-8 px-3 rounded-lg border border-border text-xs disabled:opacity-50"
-            >
-              Siguiente
-            </button>
+            <button onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} className="h-8 rounded-lg border border-border px-3 text-xs disabled:opacity-50">Anterior</button>
+            <button onClick={() => setPage(currentPage + 1)} disabled={currentPage >= totalPages} className="h-8 rounded-lg border border-border px-3 text-xs disabled:opacity-50">Siguiente</button>
           </div>
         </>
       )}
@@ -591,38 +447,27 @@ export default function CompletedPaymentsList({
         loading={actionLoading}
         allowPartial={true}
         titleOverride={modalState.mode === "request" ? "Solicitar reverso" : undefined}
-        onSubmit={handleModalSubmit}
+        onSubmit={async ({ paymentId, reason, paymentEntryIds }) => {
+          if (modalState.mode === "request") {
+            await onRequestReversal(paymentId, reason, paymentEntryIds);
+            return;
+          }
+          await onReversePayment(paymentId, reason, paymentEntryIds);
+        }}
       />
 
       <Dialog open={actionDialog.open} onOpenChange={(open) => !open && closeAction()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{actionTitleMap[actionDialog.type]}</DialogTitle>
+            <DialogTitle>{actionDialog.type === "approve" ? "Aprobar solicitud de reverso" : "Rechazar solicitud de reverso"}</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">Ingresa una observacion obligatoria para continuar.</p>
-            <Textarea
-              value={actionReason}
-              onChange={(e) => setActionReason(e.target.value)}
-              placeholder="Motivo..."
-              rows={4}
-            />
+            <Textarea value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Motivo..." rows={4} />
           </div>
-
           <DialogFooter>
-            <button
-              onClick={closeAction}
-              className="h-9 px-3 rounded-lg border border-border text-sm"
-              disabled={actionLoading}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={executeAction}
-              disabled={actionLoading || !actionReason.trim()}
-              className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm flex items-center gap-2 disabled:opacity-50"
-            >
+            <button onClick={closeAction} className="h-9 rounded-lg border border-border px-3 text-sm" disabled={actionLoading}>Cancelar</button>
+            <button onClick={executeAction} disabled={actionLoading || !actionReason.trim()} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50">
               {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Confirmar
             </button>
@@ -632,11 +477,3 @@ export default function CompletedPaymentsList({
     </div>
   );
 }
-
-
-
-
-
-
-
-

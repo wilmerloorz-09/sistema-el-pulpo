@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
+import { allowedModulesFromPermissions, type PermissionMap } from "@/lib/permissions";
 
 interface Branch {
   id: string;
@@ -9,11 +10,20 @@ interface Branch {
   is_active: boolean;
 }
 
+interface AccessContextPayload {
+  active_branch_id: string | null;
+  branches: Branch[];
+  permissions: PermissionMap;
+  is_global_admin: boolean;
+}
+
 interface BranchContextType {
   branches: Branch[];
   activeBranch: Branch | null;
   activeBranchId: string | null;
   allowedModules: string[];
+  permissions: PermissionMap;
+  isGlobalAdmin: boolean;
   setActiveBranch: (branch: Branch | null) => Promise<void>;
   refreshAccess: () => Promise<void>;
   loading: boolean;
@@ -21,152 +31,84 @@ interface BranchContextType {
 
 const BranchContext = createContext<BranchContextType | undefined>(undefined);
 
+const emptyAccess: AccessContextPayload = {
+  active_branch_id: null,
+  branches: [],
+  permissions: {},
+  is_global_admin: false,
+};
+
 export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, activeRole } = useAuth();
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [activeBranch, setActiveBranchState] = useState<Branch | null>(null);
-  const [allowedModules, setAllowedModules] = useState<string[]>([]);
+  const { user } = useAuth();
+  const [access, setAccess] = useState<AccessContextPayload>(emptyAccess);
   const [loading, setLoading] = useState(true);
 
-  const fetchAllowedModules = useCallback(async (userId: string, branchId: string, role: string | null) => {
-    try {
-      if (role === "superadmin") {
-        const { data: allModules } = await supabase
-          .from("modules")
-          .select("code")
-          .eq("is_active", true);
-        setAllowedModules((allModules ?? []).map((m: any) => m.code));
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("user_branch_modules")
-        .select("module_id, modules(code)")
-        .eq("user_id", userId)
-        .eq("branch_id", branchId)
-        .eq("is_active", true);
-
-      if (error) throw error;
-
-      const modules = (data ?? [])
-        .map((row: any) => row.modules?.code)
-        .filter((code: string | null | undefined): code is string => Boolean(code));
-
-      setAllowedModules(modules);
-    } catch {
-      setAllowedModules([]);
+  const fetchAccess = useCallback(async () => {
+    if (!user) {
+      setAccess(emptyAccess);
+      setLoading(false);
+      return;
     }
-  }, []);
 
-  const fetchBranches = useCallback(async (userId: string, role: string | null) => {
     setLoading(true);
     try {
-      let branchList: Branch[] = [];
+      const { data, error } = await supabase.rpc("get_my_access_context" as never);
+      if (error) throw error;
 
-      if (role === "superadmin") {
-        const { data } = await supabase.from("branches").select("*").eq("is_active", true).order("name");
-        branchList = (data as Branch[]) ?? [];
+      const next = (data ?? emptyAccess) as unknown as AccessContextPayload;
+      setAccess({
+        active_branch_id: next.active_branch_id,
+        branches: next.branches ?? [],
+        permissions: next.permissions ?? {},
+        is_global_admin: Boolean(next.is_global_admin),
+      });
+
+      if (next.active_branch_id) {
+        localStorage.setItem("activeBranchId", next.active_branch_id);
       } else {
-        const { data: ub } = await supabase
-          .from("user_branches")
-          .select("branch_id, branches(id, name, address, is_active)")
-          .eq("user_id", userId);
-
-        branchList = (ub ?? [])
-          .map((r: any) => r.branches as Branch)
-          .filter((b: Branch) => b && b.is_active);
-      }
-
-      setBranches(branchList);
-
-      if (branchList.length === 0) {
-        setActiveBranchState(null);
-        setAllowedModules([]);
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("active_branch_id")
-        .eq("id", userId)
-        .single();
-
-      const dbActiveBranchId = (profile as any)?.active_branch_id as string | null;
-      const savedId = localStorage.getItem("activeBranchId");
-
-      const selected =
-        branchList.find((b) => b.id === dbActiveBranchId) ||
-        branchList.find((b) => b.id === savedId) ||
-        branchList[0];
-
-      setActiveBranchState(selected);
-      localStorage.setItem("activeBranchId", selected.id);
-      await fetchAllowedModules(userId, selected.id, role);
-
-      if (dbActiveBranchId !== selected.id) {
-        await supabase.rpc("set_user_active_branch", {
-          p_target_user_id: userId,
-          p_new_branch_id: selected.id,
-          p_reason: "Sincronizacion de sucursal activa",
-        });
+        localStorage.removeItem("activeBranchId");
       }
     } catch {
-      setBranches([]);
-      setActiveBranchState(null);
-      setAllowedModules([]);
+      setAccess(emptyAccess);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllowedModules]);
+  }, [user]);
 
   useEffect(() => {
-    if (user && activeRole) {
-      fetchBranches(user.id, activeRole);
-    } else {
-      setBranches([]);
-      setActiveBranchState(null);
-      setAllowedModules([]);
-      setLoading(false);
-    }
-  }, [user, activeRole, fetchBranches]);
+    void fetchAccess();
+  }, [fetchAccess]);
 
   const setActiveBranch = async (branch: Branch | null) => {
     if (!user) return;
 
     if (!branch) {
-      setActiveBranchState(null);
-      setAllowedModules([]);
+      setAccess((prev) => ({ ...prev, active_branch_id: null, permissions: {} }));
       localStorage.removeItem("activeBranchId");
       return;
     }
 
-    const { error } = await supabase.rpc("set_user_active_branch", {
-      p_target_user_id: user.id,
-      p_new_branch_id: branch.id,
-      p_reason: "Cambio de sucursal activa desde app",
-    });
+    const { error } = await supabase.rpc("set_my_active_branch" as never, {
+      p_branch_id: branch.id,
+    } as never);
 
     if (error) return;
-
-    setActiveBranchState(branch);
-    localStorage.setItem("activeBranchId", branch.id);
-    await fetchAllowedModules(user.id, branch.id, activeRole);
+    await fetchAccess();
   };
 
-  const refreshAccess = useCallback(async () => {
-    if (!user || !activeRole || !activeBranch) return;
-    await fetchAllowedModules(user.id, activeBranch.id, activeRole);
-  }, [user, activeRole, activeBranch, fetchAllowedModules]);
+  const activeBranch = access.branches.find((branch) => branch.id === access.active_branch_id) ?? null;
 
   return (
     <BranchContext.Provider
       value={{
-        branches,
+        branches: access.branches,
         activeBranch,
-        activeBranchId: activeBranch?.id ?? null,
-        allowedModules,
+        activeBranchId: access.active_branch_id,
+        allowedModules: allowedModulesFromPermissions(access.permissions),
+        permissions: access.permissions,
+        isGlobalAdmin: access.is_global_admin,
         setActiveBranch,
-        refreshAccess,
+        refreshAccess: fetchAccess,
         loading,
       }}
     >

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,7 @@ interface OrderCardBaseProps {
   showCancelButton?: boolean;
   showEyeIcon?: boolean;
   onEyeClick?: () => void;
+  readOnly?: boolean;
 }
 
 export function OrderCardBase({
@@ -42,6 +43,7 @@ export function OrderCardBase({
   showCancelButton = true,
   showEyeIcon = false,
   onEyeClick,
+  readOnly = false,
 }: OrderCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
@@ -49,38 +51,35 @@ export function OrderCardBase({
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
 
-  const eventTime =
-    order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
-  const timeDisplay = isSentToKitchen
-    ? formatElapsedHHMMSS(elapsed)
-    : formatEventTimeWithLabel(eventTime);
+  const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
+  const timeDisplay = isSentToKitchen ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime);
 
   return (
     <div
       className={cn(
-        "flex flex-col rounded-2xl border-2 bg-card overflow-hidden transition-colors",
-        isWarning ? "border-warning/50 shadow-md shadow-warning/10" : "border-border"
+        "flex flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
+        isWarning ? "border-warning/50 shadow-md shadow-warning/10" : "border-border",
       )}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+        <div className="min-w-0 flex items-center gap-2">
           {order.order_type === "TAKEOUT" ? (
-            <ShoppingBag className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ShoppingBag className="h-4 w-4 shrink-0 text-muted-foreground" />
           ) : (
-            <UtensilsCrossed className="h-4 w-4 text-muted-foreground shrink-0" />
+            <UtensilsCrossed className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
-          <span className="font-display text-sm font-bold truncate">
+          <span className="truncate font-display text-sm font-bold">
             {order.split_code ?? order.table_name ?? "Para llevar"}
           </span>
-          <span className="font-display text-xs text-muted-foreground shrink-0">
+          <span className="shrink-0 font-display text-xs text-muted-foreground">
             {order.order_code ?? `#${order.order_number}`}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <div
             className={cn(
-              "flex items-center gap-1 text-xs font-mono font-semibold shrink-0",
-              isWarning ? "text-amber-600" : "text-muted-foreground"
+              "flex shrink-0 items-center gap-1 text-xs font-mono font-semibold",
+              isWarning ? "text-amber-600" : "text-muted-foreground",
             )}
           >
             <Clock className="h-3.5 w-3.5" />
@@ -100,27 +99,25 @@ export function OrderCardBase({
         </div>
       </div>
 
-      <div className="flex-1 px-4 py-3 space-y-2">
+      <div className="flex-1 space-y-2 px-4 py-3">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <Badge className="text-[10px] font-medium bg-primary/10 text-primary border-primary/20">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Badge className="border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
                 {item.quantity || 1}x
               </Badge>
-              <p className="text-sm font-medium text-foreground truncate">
+              <p className="truncate text-sm font-medium text-foreground">
                 {item.description_snapshot || "Item sin nombre"}
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="font-semibold text-primary text-sm ml-auto">
-                ${item.total ? item.total.toFixed(2) : "0.00"}
-              </span>
-            </div>
+            <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
+              ${item.total ? item.total.toFixed(2) : "0.00"}
+            </span>
           </div>
         )) || []}
       </div>
 
-      <div className="flex items-center justify-between text-sm mt-2 px-4 py-3 border-t border-border">
+      <div className="mt-2 flex items-center justify-between border-t border-border px-4 py-3 text-sm">
         <div className="flex items-center gap-1 text-muted-foreground">
           <Package className="h-4 w-4" />
           <span>{order.item_count || 0} item{(order.item_count || 0) !== 1 ? "s" : ""}</span>
@@ -131,12 +128,18 @@ export function OrderCardBase({
         </div>
       </div>
 
-      {showCancelButton && order.status !== "PAID" && onCancel && (
-        <div className="px-4 py-3 border-t border-border">
+      {readOnly && (
+        <div className="border-t border-border px-4 py-2 text-center text-xs text-muted-foreground">
+          Modo consulta
+        </div>
+      )}
+
+      {!readOnly && showCancelButton && order.status !== "PAID" && onCancel && (
+        <div className="border-t border-border px-4 py-3">
           <Button
             onClick={() => onCancel(order)}
             variant="destructive"
-            className="w-full h-10 rounded-xl font-display font-semibold"
+            className="h-10 w-full rounded-xl font-display font-semibold"
           >
             Cancelar pedido
           </Button>

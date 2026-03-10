@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.reset-users]
 verify_jwt = false
+
+[functions.update-password]
+verify_jwt = false
+
+[functions.clone-branch-catalog]
+verify_jwt = false

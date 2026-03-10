@@ -10,7 +10,6 @@ import { useEffect } from "react";
 import { initSyncListeners } from "@/services/SyncService";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
-import RoleSelector from "@/components/RoleSelector";
 import Login from "./pages/Login";
 import Mesas from "./pages/Mesas";
 import Ordenes from "./pages/Ordenes";
@@ -23,7 +22,7 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const AuthGate = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading, activeRole, roles } = useAuth();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -34,17 +33,6 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  if (roles.length > 1 && !activeRole) return <RoleSelector />;
-  if (roles.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4 text-center">
-        <div>
-          <p className="font-display text-lg font-bold text-foreground">Sin roles asignados</p>
-          <p className="text-sm text-muted-foreground mt-1">Contacta al administrador.</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <BranchProvider>
@@ -130,7 +118,7 @@ const App = () => (
                 <Route
                   path="/mesas"
                   element={
-                    <ProtectedRoute allowedModules={["mesas"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }}>
                       <Mesas />
                     </ProtectedRoute>
                   }
@@ -138,7 +126,7 @@ const App = () => (
                 <Route
                   path="/ordenes"
                   element={
-                    <ProtectedRoute allowedModules={["ordenes"]}>
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }}>
                       <Ordenes />
                     </ProtectedRoute>
                   }
@@ -146,7 +134,7 @@ const App = () => (
                 <Route
                   path="/despacho"
                   element={
-                    <ProtectedRoute allowedModules={["despacho"]}>
+                    <ProtectedRoute requiredPermission={{ module: "despacho_total", level: "VIEW" }}>
                       <Despacho />
                     </ProtectedRoute>
                   }
@@ -154,7 +142,7 @@ const App = () => (
                 <Route
                   path="/caja"
                   element={
-                    <ProtectedRoute allowedModules={["caja", "pagos"]}>
+                    <ProtectedRoute requiredPermission={{ module: "caja", level: "VIEW" }}>
                       <Caja />
                     </ProtectedRoute>
                   }
@@ -162,7 +150,7 @@ const App = () => (
                 <Route
                   path="/reportes"
                   element={
-                    <ProtectedRoute allowedModules={["reportes"]}>
+                    <ProtectedRoute requiredPermission={{ module: "reportes_sucursal", level: "VIEW" }}>
                       <Reportes />
                     </ProtectedRoute>
                   }
@@ -170,7 +158,7 @@ const App = () => (
                 <Route
                   path="/admin"
                   element={
-                    <ProtectedRoute allowedModules={["usuarios", "configuracion", "sucursales"]}>
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
                       <Admin />
                     </ProtectedRoute>
                   }
@@ -187,4 +175,3 @@ const App = () => (
 );
 
 export default App;
-

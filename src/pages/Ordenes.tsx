@@ -18,35 +18,28 @@ import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign } fro
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
+import { canManage, canOperate } from "@/lib/permissions";
 
 const Ordenes = () => {
-  console.log("🔍 Ordenes: Component rendering");
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, permissions } = useBranch();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
-  console.log("🔍 Ordenes: URL params", { orderId, searchParams: Object.fromEntries(searchParams) });
-
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen } = useOrder(orderId);
   const menu = useMenuData();
-
-  console.log("🔍 Ordenes: States", { 
-    orderId, 
-    isLoading, 
-    menuIsLoading: menu.isLoading, 
-    hasOrder: !!order,
-    hasUser: !!user,
-    activeBranchId
-  });
 
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+
+  const canOperateOrders = canOperate(permissions, "ordenes");
+  const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
+  const canCancelOrders = canOperateOrders || canManageOrders;
 
   const isTakeout = order?.order_type === "TAKEOUT";
 
@@ -55,16 +48,20 @@ const Ordenes = () => {
   }, []);
 
   if (!orderId) {
-    console.log("📋 Ordenes: Rendering OrdersList mode (no orderId)");
     return (
-      <div className="flex flex-col h-[calc(100vh-7rem)]">
-        <div className="flex items-center gap-2 mb-4 px-4 py-3 border-b border-border bg-card/50">
-          <h1 className="font-display text-lg font-bold text-foreground">Órdenes</h1>
+      <div className="flex h-[calc(100vh-7rem)] flex-col">
+        <div className="mb-4 flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
+          <h1 className="font-display text-lg font-bold text-foreground">Ordenes</h1>
+          {!canOperateOrders && (
+            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+              Solo consulta
+            </span>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto px-4 pb-4">
-          <OrdersList onCancelOrder={setCancelOrder} />
+          <OrdersList onCancelOrder={canCancelOrders ? setCancelOrder : undefined} readOnly={!canCancelOrders} />
         </div>
-        {cancelOrder && user && (
+        {cancelOrder && user && canCancelOrders && (
           <CancelOrderDialog
             orderId={cancelOrder.id}
             orderNumber={cancelOrder.order_number}
@@ -77,10 +74,7 @@ const Ordenes = () => {
     );
   }
 
-  console.log("📝 Ordenes: Rendering Order detail mode (orderId exists)");
-
   if (isLoading || menu.isLoading) {
-    console.log("⏳ Ordenes: Showing loading spinner");
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -89,15 +83,12 @@ const Ordenes = () => {
   }
 
   if (!order) {
-    console.log("❌ Ordenes: Order not found");
     return (
       <div className="p-4 text-center">
         <p className="text-sm text-destructive">Orden no encontrada</p>
       </div>
     );
   }
-
-  console.log("✅ Ordenes: About to render order detail for order:", order.id);
 
   const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
   const total = order.items.reduce((s, i) => s + i.total, 0);
@@ -106,8 +97,8 @@ const Ordenes = () => {
   const isDraft = order.status === "DRAFT";
   const isSent = order.status === "SENT_TO_KITCHEN";
   const hasSiblings = order.siblings.length > 0;
-  const canSplit = order.table_id && isDraft && order.items.length > 0;
-  const canEditItems = order.status !== "PAID" && order.status !== "CANCELLED";
+  const canSplit = canOperateOrders && !!order.table_id && isDraft && order.items.length > 0;
+  const canEditItems = canOperateOrders && order.status !== "PAID" && order.status !== "CANCELLED";
 
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
@@ -128,14 +119,13 @@ const Ordenes = () => {
   };
 
   const handleSplit = async () => {
-    if (!user || !order.table_id) return;
+    if (!user || !order.table_id || !canOperateOrders) return;
     setSplitting(true);
     try {
       const tableName = order.table_name ?? "Mesa";
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
       if (!hasSiblings) {
-        // First split: create A and B
         const { data: splitA, error: errA } = await supabase
           .from("table_splits")
           .insert({ table_id: order.table_id, split_code: `${tableName} A` })
@@ -163,7 +153,6 @@ const Ordenes = () => {
 
         toast.success("Mesa dividida en A y B");
       } else {
-        // Subsequent split: find next letter
         const nextIndex = order.siblings.length;
         const nextLetter = letters[nextIndex] ?? `${nextIndex + 1}`;
 
@@ -195,112 +184,79 @@ const Ordenes = () => {
     }
   };
 
-  const switchToSibling = (siblingOrderId: string) => {
-    navigate(`/ordenes?order=${siblingOrderId}`, { replace: true });
-  };
-
   return (
-    <div className="flex flex-col h-[calc(100vh-7rem)]">
-      {/* Order header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/50">
+    <div className="flex h-[calc(100vh-7rem)] flex-col">
+      <div className="flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("/mesas")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-display text-sm font-bold">
-              {order.order_code ?? `#${order.order_number}`}
-            </span>
-            {order.table_name && (
-              <span className="text-xs text-muted-foreground">· {order.table_name}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-display text-sm font-bold">{order.order_code ?? `#${order.order_number}`}</span>
+            {order.table_name && <span className="text-xs text-muted-foreground">� {order.table_name}</span>}
+            <Badge className={cn("text-[10px]", statusColor[order.status])}>{statusLabel[order.status]}</Badge>
+            {!canOperateOrders && (
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                Solo consulta
+              </span>
             )}
-            <Badge className={cn("text-[10px]", statusColor[order.status])}>
-              {statusLabel[order.status]}
-            </Badge>
             {order.table_id && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 text-xs rounded-lg"
+                className="h-7 gap-1 rounded-lg text-xs"
                 onClick={handleSplit}
                 disabled={!canSplit || splitting}
-                title={!canSplit && !hasSiblings ? "Agrega items antes de dividir" : undefined}
+                title={!canSplit && canOperateOrders && !hasSiblings ? "Agrega items antes de dividir" : undefined}
               >
-                {splitting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Split className="h-3.5 w-3.5" />
-                )}
+                {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Split className="h-3.5 w-3.5" />}
                 Dividir
               </Button>
             )}
           </div>
         </div>
-
-        {/* Cart toggle (mobile) */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="rounded-xl gap-1.5 sm:hidden relative"
-          onClick={() => setShowCart(!showCart)}
-        >
+        <Button variant="outline" size="sm" className="relative rounded-xl gap-1.5 sm:hidden" onClick={() => setShowCart(!showCart)}>
           <ShoppingBag className="h-4 w-4" />
           {itemCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+            <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
               {itemCount}
             </span>
           )}
         </Button>
       </div>
 
-      {/* Sub-table switcher */}
       {hasSiblings && (
-        <div className="flex gap-1 px-4 py-2 border-b border-border bg-muted/30 overflow-x-auto">
+        <div className="flex overflow-x-auto border-b border-border bg-muted/30 px-4 py-2 gap-1">
           {order.siblings.map((sib) => (
-            <Button
-              key={sib.id}
-              variant={sib.id === order.id ? "default" : "outline"}
-              size="sm"
-              className="rounded-lg text-xs h-8 gap-1.5 shrink-0"
-              onClick={() => switchToSibling(sib.id)}
-            >
+            <Button key={sib.id} variant={sib.id === order.id ? "default" : "outline"} size="sm" className="h-8 shrink-0 gap-1.5 rounded-lg text-xs" onClick={() => navigate(`/ordenes?order=${sib.id}`, { replace: true })}>
               {sib.split_code}
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {sib.item_count}
-              </Badge>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{sib.item_count}</Badge>
             </Button>
           ))}
         </div>
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Menu side */}
-        <div className={cn(
-          "flex-1 overflow-y-auto p-4",
-          showCart && "hidden sm:block"
-        )}>
-          <ProductPicker
-            categories={menu.categories}
-            subcategories={menu.subcategories}
-            products={menu.products}
-            onSelectProduct={(p) => setSelectedProduct(p)}
-          />
+        <div className={cn("flex-1 overflow-y-auto p-4", showCart && "hidden sm:block")}>
+          {canEditItems ? (
+            <ProductPicker
+              categories={menu.categories}
+              subcategories={menu.subcategories}
+              products={menu.products}
+              onSelectProduct={(p) => setSelectedProduct(p)}
+            />
+          ) : (
+            <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+              Modo consulta: puedes ver la orden, pero no agregar ni editar items.
+            </div>
+          )}
         </div>
 
-        {/* Cart side */}
-        <div className={cn(
-          "w-full sm:w-80 sm:border-l border-border overflow-y-auto p-4 flex flex-col",
-          !showCart && "hidden sm:flex"
-        )}>
-          <div className="flex items-center justify-between mb-3">
+        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-4 sm:w-80 sm:border-l", !showCart && "hidden sm:flex")}>
+          <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display text-sm font-bold">Orden</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="sm:hidden text-xs"
-              onClick={() => setShowCart(false)}
-            >
-              Ver menú
+            <Button variant="ghost" size="sm" className="text-xs sm:hidden" onClick={() => setShowCart(false)}>
+              Ver menu
             </Button>
           </div>
 
@@ -313,69 +269,68 @@ const Ordenes = () => {
             />
           </div>
 
-          {/* Actions */}
-          {hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+          {canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
             <Button
               onClick={() => {
                 sendToKitchen.mutate(undefined, {
                   onSuccess: () => {
                     if (isTakeout) {
                       printReceipt();
-                      // Navigate to mesas after a brief delay for print dialog
                       setTimeout(() => navigate("/mesas"), 500);
                     }
                   },
                 });
               }}
               disabled={sendToKitchen.isPending}
-              className="mt-4 h-12 w-full rounded-xl font-display text-base font-semibold gap-2"
+              className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
             >
               {sendToKitchen.isPending ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : hasSentItems ? (
                 <>
                   <ChefHat className="h-5 w-5" />
-                  Enviar nuevos ítems · ${total.toFixed(2)}
+                  Enviar nuevos items � ${total.toFixed(2)}
                 </>
               ) : isTakeout ? (
                 <>
                   <CircleDollarSign className="h-5 w-5" />
-                  Enviar a caja · ${total.toFixed(2)}
+                  Enviar a caja � ${total.toFixed(2)}
                 </>
               ) : (
                 <>
                   <ChefHat className="h-5 w-5" />
-                  Enviar a cocina · ${total.toFixed(2)}
+                  Enviar a cocina � ${total.toFixed(2)}
                 </>
               )}
             </Button>
           )}
 
+          {!canOperateOrders && (
+            <div className="mt-4 rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground">
+              Modo consulta: sin acciones operativas sobre la orden.
+            </div>
+          )}
+
           {isSent && (
             <div className="mt-4 rounded-xl bg-primary/10 p-3 text-center">
               <p className="text-sm font-medium text-primary">Orden en cocina</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Esperando despacho</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Esperando despacho</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Floating cart button (mobile) */}
       {!showCart && itemCount > 0 && (
-        <button
-          onClick={() => setShowCart(true)}
-          className="sm:hidden fixed bottom-20 right-4 flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg active:scale-95 transition-transform z-30"
-        >
+        <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 sm:hidden">
           <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">{itemCount} items · ${total.toFixed(2)}</span>
+          <span className="font-display text-sm font-bold">{itemCount} items � ${total.toFixed(2)}</span>
         </button>
       )}
 
-      {/* Add item dialog */}
       <AddItemDialog
-        product={selectedProduct}
+        product={canEditItems ? selectedProduct : null}
         modifiers={menu.modifiers}
-        open={!!selectedProduct}
+        open={canEditItems && !!selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onConfirm={(data) => {
           addItem.mutate(data, {
@@ -385,7 +340,6 @@ const Ordenes = () => {
         adding={addItem.isPending}
       />
 
-      {/* Thermal receipt for printing */}
       {order && (
         <ThermalReceipt
           ref={receiptRef}
@@ -398,7 +352,6 @@ const Ordenes = () => {
         />
       )}
 
-      {/* Print styles */}
       <style>{`
         @media print {
           body * { visibility: hidden !important; }
@@ -411,6 +364,3 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
-
-
-

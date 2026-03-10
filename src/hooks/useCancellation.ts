@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+﻿import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   recordOperationalLoss,
   notifyKitchenItemCancelled as notifyKitchenItemCancelledDB,
@@ -36,6 +36,51 @@ interface CancelOrderParams {
   cancellationData?: CancellationData;
 }
 
+function isMissingRelationError(error: unknown, relationName: string) {
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: string }).code) : "";
+  const message = typeof error === "object" && error !== null && "message" in error ? String((error as { message?: string }).message) : "";
+
+  return code === "PGRST205" || message.includes(`Could not find the table 'public.${relationName}'`);
+}
+
+function applyCancellationToOrderCache(
+  current: any,
+  selections: Array<{ order_item_id: string; quantity_cancelled: number }>,
+  cancellationType: "partial" | "total"
+) {
+  if (!current) return current;
+
+  const cancelledMap = Object.fromEntries(
+    selections.map((selection) => [selection.order_item_id, Number(selection.quantity_cancelled) || 0])
+  );
+
+  const nextItems = (current.items ?? [])
+    .map((item: any) => {
+      const cancelled = cancelledMap[item.id] ?? 0;
+      if (!cancelled) return item;
+
+      const originalQuantity = Number(item.original_quantity ?? item.quantity ?? 0);
+      const previousCancelled = Number(item.cancelled_quantity ?? 0);
+      const totalCancelled = Math.min(originalQuantity, previousCancelled + cancelled);
+      const activeQuantity = Math.max(0, originalQuantity - totalCancelled);
+
+      return {
+        ...item,
+        quantity: activeQuantity,
+        cancelled_quantity: totalCancelled,
+        total: Math.round(activeQuantity * Number(item.unit_price ?? 0) * 100) / 100,
+        status: activeQuantity <= 0 ? "CANCELLED" : item.status,
+      };
+    })
+    .filter((item: any) => item.quantity > 0);
+
+  return {
+    ...current,
+    status: cancellationType === "total" || nextItems.length === 0 ? "CANCELLED" : current.status,
+    items: nextItems,
+  };
+}
+
 export function useCancellation() {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
@@ -53,7 +98,14 @@ export function useCancellation() {
 
     for (const item of dispatchedSelections) {
       const amount = Math.round(item.quantity_cancelled * item.unit_price * 100) / 100;
-      await recordOperationalLoss(orderId, item.order_item_id, amount, reason, userId, activeBranchId);
+      try {
+        await recordOperationalLoss(orderId, item.order_item_id, amount, reason, userId, activeBranchId);
+      } catch (error) {
+        if (!isMissingRelationError(error, "operational_losses")) {
+          throw error;
+        }
+        console.warn("operational_losses no disponible; se omite el registro de merma", error);
+      }
     }
 
     if (sentSelections.length > 0) {
@@ -64,18 +116,25 @@ export function useCancellation() {
 
       const order = orders[0] as { order_number?: number } | undefined;
       if (order?.order_number) {
-        await notifyKitchenOrderCancelledDB(orderId, order.order_number, sentSelections.length, reason, activeBranchId);
+        try {
+          await notifyKitchenOrderCancelledDB(orderId, order.order_number, sentSelections.length, reason, activeBranchId);
 
-        for (const item of sentSelections) {
-          await notifyKitchenItemCancelledDB(
-            orderId,
-            order.order_number,
-            item.order_item_id,
-            item.description_snapshot,
-            item.quantity_cancelled,
-            reason,
-            activeBranchId
-          );
+          for (const item of sentSelections) {
+            await notifyKitchenItemCancelledDB(
+              orderId,
+              order.order_number,
+              item.order_item_id,
+              item.description_snapshot,
+              item.quantity_cancelled,
+              reason,
+              activeBranchId
+            );
+          }
+        } catch (error) {
+          if (!isMissingRelationError(error, "kitchen_notifications")) {
+            throw error;
+          }
+          console.warn("kitchen_notifications no disponible; se omiten notificaciones de cocina", error);
         }
       }
     }
@@ -107,13 +166,24 @@ export function useCancellation() {
         },
       ]);
 
-      return { itemId, orderId };
+      return {
+        itemId,
+        orderId,
+        selections: [{ order_item_id: itemId, quantity_cancelled: quantity }],
+        cancellationType: "partial" as const,
+      };
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      qc.setQueryData(["order", data.orderId], (current: any) =>
+        applyCancellationToOrderCache(current, data.selections, data.cancellationType)
+      );
       toast.success("Item cancelado");
       qc.invalidateQueries({ queryKey: ["order", data.orderId] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      await qc.refetchQueries({ queryKey: ["orders"] });
     },
     onError: (error: any) => {
       console.error("Error cancelando item:", error);
@@ -148,15 +218,28 @@ export function useCancellation() {
 
       await runKitchenAndLossSideEffects(orderId, userId, reason, cancellationType === "total" ? items : selectedItems);
 
-      return { orderId, cancellationId: data as string | null };
+      return {
+        orderId,
+        cancellationId: data as string | null,
+        selections: (cancellationType === "total" ? items : selectedItems).map((item) => ({
+          order_item_id: item.order_item_id,
+          quantity_cancelled: item.quantity_cancelled,
+        })),
+        cancellationType,
+      };
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      qc.setQueryData(["order", data.orderId], (current: any) =>
+        applyCancellationToOrderCache(current, data.selections, data.cancellationType)
+      );
       toast.success("Cancelacion aplicada");
       qc.invalidateQueries({ queryKey: ["order", data.orderId] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      await qc.refetchQueries({ queryKey: ["orders"] });
     },
     onError: (error: any) => {
       console.error("Error cancelando orden:", error);
@@ -171,4 +254,3 @@ export function useCancellation() {
 }
 
 export type { CancelOrderItemSelection, CancelOrderParams };
-

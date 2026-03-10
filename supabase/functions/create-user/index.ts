@@ -11,17 +11,6 @@ const toJson = (payload: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const ROLE_DEFAULT_MODULES: Record<string, string[]> = {
-  admin: ["mesas", "ordenes", "despacho", "caja", "pagos", "reportes", "usuarios", "configuracion", "sucursales"],
-  superadmin: ["mesas", "ordenes", "despacho", "caja", "pagos", "reportes", "usuarios", "configuracion", "sucursales"],
-  supervisor: ["mesas", "ordenes", "despacho", "caja", "pagos", "reportes", "usuarios"],
-  mesero: ["mesas", "ordenes"],
-  cajero: ["caja", "pagos"],
-  cocina: ["despacho"],
-  despachador_mesas: ["despacho"],
-  despachador_takeout: ["despacho"],
-};
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -54,51 +43,53 @@ Deno.serve(async (req) => {
       return toJson({ error: "No autorizado" }, 401);
     }
 
-    const [{ data: isAdmin }, { data: isSuperadmin }] = await Promise.all([
-      adminClient.rpc("has_role", { _user_id: caller.id, _role: "admin" }),
-      adminClient.rpc("has_role", { _user_id: caller.id, _role: "superadmin" }),
-    ]);
-
-    if (!isAdmin && !isSuperadmin) {
-      return toJson({ error: "Solo admin/superadmin pueden crear usuarios" }, 403);
+    const { data: isGlobalAdmin } = await adminClient.rpc("is_global_admin", { _user_id: caller.id });
+    if (!isGlobalAdmin) {
+      return toJson({ error: "Solo administradores globales pueden crear usuarios" }, 403);
     }
 
-    const { email, password, full_name, username, roles, branch_ids } = await req.json();
+    const { email, password, full_name, username, branch_roles, global_roles } = await req.json();
 
     if (!email || !password || !full_name || !username) {
       return toJson({ error: "Faltan campos requeridos" }, 400);
     }
 
-    const roleList = Array.isArray(roles)
-      ? [...new Set(roles.map((r: unknown) => String(r).trim()).filter(Boolean))]
+    const branchRoleList = Array.isArray(branch_roles)
+      ? branch_roles
+          .map((entry: any) => ({
+            branch_id: String(entry?.branch_id ?? "").trim(),
+            role_code: String(entry?.role_code ?? "").trim(),
+          }))
+          .filter((entry) => entry.branch_id && entry.role_code)
       : [];
-    const branchList = Array.isArray(branch_ids)
-      ? [...new Set(branch_ids.map((b: unknown) => String(b).trim()).filter(Boolean))]
+
+    const globalRoleList = Array.isArray(global_roles)
+      ? [...new Set(global_roles.map((role: unknown) => String(role).trim()).filter(Boolean))]
       : [];
 
-    if (roleList.length === 0) {
-      return toJson({ error: "Debes asignar al menos un rol" }, 400);
+    if (branchRoleList.length === 0 && globalRoleList.length === 0) {
+      return toJson({ error: "Debes asignar al menos un rol global o una sucursal con rol" }, 400);
     }
 
-    if (branchList.length === 0) {
-      return toJson({ error: "Debes asignar al menos una sucursal" }, 400);
-    }
+    const branchIds = [...new Set(branchRoleList.map((entry) => entry.branch_id))];
 
-    const { data: validBranches, error: validBranchesError } = await adminClient
-      .from("branches")
-      .select("id, is_active")
-      .in("id", branchList);
+    if (branchIds.length > 0) {
+      const { data: validBranches, error: validBranchesError } = await adminClient
+        .from("branches")
+        .select("id, is_active")
+        .in("id", branchIds);
 
-    if (validBranchesError) {
-      return toJson({ error: "No se pudo validar sucursales" }, 500);
-    }
+      if (validBranchesError) {
+        return toJson({ error: "No se pudo validar sucursales" }, 500);
+      }
 
-    if (!validBranches || validBranches.length !== branchList.length) {
-      return toJson({ error: "Una o mas sucursales no existen" }, 400);
-    }
+      if (!validBranches || validBranches.length !== branchIds.length) {
+        return toJson({ error: "Una o mas sucursales no existen" }, 400);
+      }
 
-    if (validBranches.some((b) => b.is_active === false)) {
-      return toJson({ error: "No puedes asignar sucursales inactivas" }, 400);
+      if (validBranches.some((branch) => branch.is_active === false)) {
+        return toJson({ error: "No puedes asignar sucursales inactivas" }, 400);
+      }
     }
 
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
@@ -114,49 +105,49 @@ Deno.serve(async (req) => {
 
     const userId = authData.user.id;
 
-    for (const role of roleList) {
-      const { error } = await adminClient.from("user_roles").insert({ user_id: userId, role });
-      if (error) return toJson({ error: `No se pudo asignar rol '${role}': ${error.message}` }, 400);
-    }
-
-    for (const branch_id of branchList) {
-      const { error } = await callerClient.rpc("assign_user_branch", {
+    for (const roleCode of globalRoleList) {
+      const { error } = await callerClient.rpc("assign_user_global_role", {
         p_target_user_id: userId,
-        p_branch_id: branch_id,
-        p_reason: "Asignacion inicial al crear usuario",
+        p_role_code: roleCode,
       });
       if (error) {
-        return toJson({ error: `No se pudo asignar sucursal '${branch_id}': ${error.message}` }, 400);
+        return toJson({ error: `No se pudo asignar rol global '${roleCode}': ${error.message}` }, 400);
       }
     }
 
-    const { error: activeError } = await callerClient.rpc("set_user_active_branch", {
-      p_target_user_id: userId,
-      p_new_branch_id: branchList[0],
-      p_reason: "Sucursal activa inicial",
-    });
-
-    if (activeError) {
-      return toJson({ error: `No se pudo definir sucursal activa: ${activeError.message}` }, 400);
+    for (const assignment of branchRoleList) {
+      const { error } = await callerClient.rpc("assign_user_branch_role", {
+        p_target_user_id: userId,
+        p_branch_id: assignment.branch_id,
+        p_role_code: assignment.role_code,
+        p_reason: "Asignacion inicial al crear usuario",
+      });
+      if (error) {
+        return toJson({ error: `No se pudo asignar sucursal '${assignment.branch_id}': ${error.message}` }, 400);
+      }
     }
 
-    const defaultModules = [...new Set(roleList.flatMap((role) => ROLE_DEFAULT_MODULES[role] ?? []))];
+    if (branchRoleList.length > 0) {
+      const { error: activeError } = await callerClient.rpc("set_user_active_branch", {
+        p_target_user_id: userId,
+        p_new_branch_id: branchRoleList[0].branch_id,
+        p_reason: "Sucursal activa inicial",
+      });
 
-    for (const branch_id of branchList) {
-      for (const moduleCode of defaultModules) {
-        const { error } = await callerClient.rpc("upsert_user_branch_module", {
-          p_target_user_id: userId,
-          p_branch_id: branch_id,
-          p_module_code: moduleCode,
-          p_is_active: true,
-          p_reason: "Asignacion automatica inicial por rol",
-        });
+      if (activeError) {
+        return toJson({ error: `No se pudo definir sucursal activa: ${activeError.message}` }, 400);
+      }
+    } else {
+      const { data: firstBranch } = await adminClient
+        .from("branches")
+        .select("id")
+        .eq("is_active", true)
+        .order("name")
+        .limit(1)
+        .maybeSingle();
 
-        if (error) {
-          return toJson({
-            error: `No se pudo asignar modulo '${moduleCode}' para sucursal '${branch_id}': ${error.message}`,
-          }, 400);
-        }
+      if (firstBranch?.id) {
+        await adminClient.from("profiles").update({ active_branch_id: firstBranch.id }).eq("id", userId);
       }
     }
 

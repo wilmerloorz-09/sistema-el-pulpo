@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+﻿import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 import { generateUUID } from "@/lib/uuid";
+import { computeLineAmount } from "@/lib/paymentQuantity";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -12,6 +13,8 @@ interface OrderItem {
   product_id: string;
   description_snapshot: string;
   quantity: number;
+  original_quantity?: number;
+  cancelled_quantity?: number;
   unit_price: number;
   total: number;
   status: string;
@@ -40,6 +43,41 @@ interface Order {
   siblings: SiblingOrder[];
 }
 
+async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]): Promise<Record<string, number>> {
+  if (orderItemIds.length === 0) return {};
+
+  try {
+    const { data: itemCancellations, error: itemCancellationsError } = await supabase
+      .from("order_item_cancellations")
+      .select("order_item_id, quantity_cancelled, order_cancellation_id")
+      .in("order_item_id", orderItemIds);
+    if (itemCancellationsError) throw itemCancellationsError;
+
+    const cancellationIds = [...new Set((itemCancellations ?? []).map((row) => row.order_cancellation_id))];
+    if (cancellationIds.length === 0) return {};
+
+    const { data: cancellationHeaders, error: headersError } = await supabase
+      .from("order_cancellations")
+      .select("id, status")
+      .in("id", cancellationIds);
+    if (headersError) throw headersError;
+
+    const activeCancellationIds = new Set(
+      (cancellationHeaders ?? []).filter((header) => header.status === "APPLIED").map((header) => header.id)
+    );
+
+    const map: Record<string, number> = {};
+    for (const row of itemCancellations ?? []) {
+      if (!activeCancellationIds.has(row.order_cancellation_id)) continue;
+      map[row.order_item_id] = (map[row.order_item_id] ?? 0) + Number(row.quantity_cancelled);
+    }
+
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 export function useOrder(orderId: string | null) {
   const qc = useQueryClient();
 
@@ -48,8 +86,6 @@ export function useOrder(orderId: string | null) {
     queryFn: async () => {
       if (!orderId) return null;
 
-      // Complex relational query — use supabase passthrough for reads,
-      // but simple table reads go through dbSelect for caching
       const { data: order, error } = await supabase
         .from("orders")
         .select("id, order_number, order_code, status, order_type, table_id, split_id, created_at")
@@ -57,26 +93,25 @@ export function useOrder(orderId: string | null) {
         .single();
       if (error) throw error;
 
-      // Fetch table name
       let table_name: string | undefined;
       if (order.table_id) {
-        const { data: t } = await supabase
+        const { data: table } = await supabase
           .from("restaurant_tables")
           .select("name")
           .eq("id", order.table_id)
           .single();
-        table_name = t?.name;
+        table_name = table?.name;
       }
 
-      // Fetch items
       const items = await dbSelect<any>("order_items", {
         select: "id, product_id, description_snapshot, quantity, unit_price, total, status",
         filters: [{ column: "order_id", op: "eq", value: orderId }],
         orderBy: { column: "created_at" },
       });
 
-      // Fetch modifiers for items (complex join — supabase passthrough)
-      const itemIds = items.map((i: any) => i.id);
+      const itemIds = items.map((item: any) => item.id);
+      const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
+
       let modifiersData: any[] = [];
       if (itemIds.length > 0) {
         const { data: mods } = await supabase
@@ -86,19 +121,31 @@ export function useOrder(orderId: string | null) {
         modifiersData = mods ?? [];
       }
 
-      const enrichedItems: OrderItem[] = items.map((item: any) => ({
-        ...item,
-        status: item.status ?? "DRAFT",
-        modifiers: modifiersData
-          .filter((m: any) => m.order_item_id === item.id)
-          .map((m: any) => ({
-            id: m.id,
-            modifier_id: m.modifier_id,
-            description: m.modifiers?.description ?? "",
-          })),
-      }));
+      const enrichedItems: OrderItem[] = items
+        .map((item: any) => {
+          const originalQuantity = Number(item.quantity ?? 0);
+          const cancelledQuantity = Math.min(originalQuantity, cancelledQtyMap[item.id] ?? 0);
+          const activeQuantity = Math.max(0, originalQuantity - cancelledQuantity);
+          const effectiveStatus = activeQuantity <= 0 ? "CANCELLED" : (item.status ?? "DRAFT");
 
-      // Fetch sibling split orders if this order belongs to a table
+          return {
+            ...item,
+            quantity: activeQuantity,
+            original_quantity: originalQuantity,
+            cancelled_quantity: cancelledQuantity,
+            total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+            status: effectiveStatus,
+            modifiers: modifiersData
+              .filter((modifier: any) => modifier.order_item_id === item.id)
+              .map((modifier: any) => ({
+                id: modifier.id,
+                modifier_id: modifier.modifier_id,
+                description: modifier.modifiers?.description ?? "",
+              })),
+          };
+        })
+        .filter((item) => item.quantity > 0 || item.status === "DRAFT");
+
       let siblings: SiblingOrder[] = [];
       if (order.table_id) {
         const { data: siblingOrders } = await supabase
@@ -109,18 +156,18 @@ export function useOrder(orderId: string | null) {
           .not("split_id", "is", null);
 
         if (siblingOrders && siblingOrders.length > 0) {
-          const splitIds = [...new Set(siblingOrders.map(o => o.split_id).filter(Boolean))] as string[];
+          const splitIds = [...new Set(siblingOrders.map((sibling) => sibling.split_id).filter(Boolean))] as string[];
           const { data: splits } = await supabase
             .from("table_splits")
             .select("id, split_code")
             .in("id", splitIds);
 
-          siblings = siblingOrders.map(o => ({
-            id: o.id,
-            order_number: o.order_number,
-            order_code: (o as any).order_code ?? null,
-            split_code: splits?.find(s => s.id === o.split_id)?.split_code ?? "",
-            item_count: Array.isArray(o.order_items) ? o.order_items.length : 0,
+          siblings = siblingOrders.map((sibling) => ({
+            id: sibling.id,
+            order_number: sibling.order_number,
+            order_code: (sibling as any).order_code ?? null,
+            split_code: splits?.find((split) => split.id === sibling.split_id)?.split_code ?? "",
+            item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
           }));
         }
       }
@@ -157,13 +204,12 @@ export function useOrder(orderId: string | null) {
         status: "DRAFT",
       });
 
-      // Add modifiers
       if (params.modifier_ids.length > 0) {
-        for (const mid of params.modifier_ids) {
+        for (const modifierId of params.modifier_ids) {
           await dbInsert("order_item_modifiers", {
             id: generateUUID(),
             order_item_id: itemId,
-            modifier_id: mid,
+            modifier_id: modifierId,
           });
         }
       }
@@ -177,7 +223,6 @@ export function useOrder(orderId: string | null) {
 
   const removeItem = useMutation({
     mutationFn: async (itemId: string) => {
-      // Delete modifiers first — use supabase for bulk delete by non-PK
       if (navigator.onLine) {
         await supabase.from("order_item_modifiers").delete().eq("order_item_id", itemId);
       }
@@ -204,13 +249,11 @@ export function useOrder(orderId: string | null) {
       const order = query.data;
       if (!order) return;
 
-      // Only update items that are still draft.
       const draftItems = order.items.filter((item) => item.status === "DRAFT");
       if (draftItems.length === 0) return;
 
       const now = new Date().toISOString();
 
-      // Mark draft items as sent and register sent_to_kitchen_at.
       await Promise.all(
         draftItems.map((item) =>
           dbUpdate("order_items", item.id, {
@@ -220,10 +263,8 @@ export function useOrder(orderId: string | null) {
         )
       );
 
-      // Only change order status on the first send (when it was still DRAFT).
       if (order.status === "DRAFT") {
-        const newStatus: OrderStatus =
-          order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
+        const newStatus: OrderStatus = order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
         const orderUpdate: Record<string, unknown> = { status: newStatus };
         if (newStatus === "SENT_TO_KITCHEN") {
           orderUpdate.sent_to_kitchen_at = now;
@@ -241,14 +282,13 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
 
-      // Show a different toast when sending new items vs first send
       const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
       const message = order?.order_type === "TAKEOUT"
         ? hasSentAlready
-          ? "Nuevos ítems listos para cobrar"
+          ? "Nuevos items listos para cobrar"
           : "Orden lista para cobrar en caja"
         : hasSentAlready
-          ? "Nuevos ítems enviados a cocina"
+          ? "Nuevos items enviados a cocina"
           : "Orden enviada a cocina";
 
       toast.success(message);

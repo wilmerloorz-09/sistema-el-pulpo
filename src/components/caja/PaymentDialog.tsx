@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+ï»¿import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,22 +18,24 @@ interface Props {
   onPay: (params: PayOrderParams) => void;
   paying: boolean;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
 function clampQty(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPay, paying, onClose }: Props) {
-  const unpaidItems = useMemo(
-    () => order?.items.filter((item) => item.quantity_pending > 0) ?? [],
-    [order]
-  );
-  const paidItems = useMemo(
-    () => order?.items.filter((item) => item.quantity_pending <= 0) ?? [],
-    [order]
-  );
-
+export default function PaymentDialog({
+  order,
+  paymentMethods,
+  shiftDenoms,
+  onPay,
+  paying,
+  onClose,
+  readOnly = false,
+}: Props) {
+  const unpaidItems = useMemo(() => order?.items.filter((item) => item.quantity_pending > 0) ?? [], [order]);
+  const paidItems = useMemo(() => order?.items.filter((item) => item.quantity_pending <= 0) ?? [], [order]);
   const defaultMethodId = useMemo(() => getDefaultPaymentMethodId(paymentMethods), [paymentMethods]);
 
   const [payQuantities, setPayQuantities] = useState<Record<string, number>>({});
@@ -59,59 +61,55 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
   }, [order?.id, order?.items, defaultMethodId]);
 
   const selectedItems = useMemo(
-    () =>
-      unpaidItems.filter((item) => {
-        const qty = payQuantities[item.id] ?? 0;
-        return qty > 0;
-      }),
-    [unpaidItems, payQuantities]
+    () => unpaidItems.filter((item) => (payQuantities[item.id] ?? 0) > 0),
+    [unpaidItems, payQuantities],
   );
 
   const selectedTotal = useMemo(
-    () =>
-      selectedItems.reduce((sum, item) => {
-        const qty = payQuantities[item.id] ?? 0;
-        return sum + computeLineAmount(qty, item.unit_price);
-      }, 0),
-    [selectedItems, payQuantities]
+    () => selectedItems.reduce((sum, item) => sum + computeLineAmount(payQuantities[item.id] ?? 0, item.unit_price), 0),
+    [selectedItems, payQuantities],
   );
 
   const totalReceived = useMemo(
-    () => shiftDenoms.reduce((sum, d) => sum + (received[d.denomination_id] || 0) * d.value, 0),
-    [received, shiftDenoms]
+    () => shiftDenoms.reduce((sum, denomination) => sum + (received[denomination.denomination_id] || 0) * denomination.value, 0),
+    [received, shiftDenoms],
   );
 
-  const hasReceivedDenoms = Object.values(received).some((q) => q > 0);
+  const hasReceivedDenoms = Object.values(received).some((quantity) => quantity > 0);
   const changeAmount = hasReceivedDenoms ? Math.round(Math.max(0, totalReceived - selectedTotal) * 100) / 100 : 0;
 
   const changeDenomBreakdown = useMemo(() => {
     if (changeAmount <= 0) return [];
 
-    const sorted = [...shiftDenoms].filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
+    const sorted = [...shiftDenoms].filter((denomination) => denomination.value > 0).sort((a, b) => b.value - a.value);
     const result: { denomination_id: string; qty: number; value: number; label: string }[] = [];
     let remaining = changeAmount;
 
-    for (const d of sorted) {
+    for (const denomination of sorted) {
       if (remaining <= 0.001) break;
-      const maxQty = Math.floor(remaining / d.value);
-      const available = d.qty_current + (received[d.denomination_id] || 0);
+      const maxQty = Math.floor(remaining / denomination.value);
+      const available = denomination.qty_current + (received[denomination.denomination_id] || 0);
       const qty = Math.min(maxQty, available);
 
       if (qty > 0) {
-        result.push({ denomination_id: d.denomination_id, qty, value: d.value, label: d.label });
-        remaining = Math.round((remaining - qty * d.value) * 100) / 100;
+        result.push({
+          denomination_id: denomination.denomination_id,
+          qty,
+          value: denomination.value,
+          label: denomination.label,
+        });
+        remaining = Math.round((remaining - qty * denomination.value) * 100) / 100;
       }
     }
 
     return result;
   }, [changeAmount, shiftDenoms, received]);
 
-  const changeGiven = changeDenomBreakdown.reduce((sum, d) => sum + d.qty * d.value, 0);
+  const changeGiven = changeDenomBreakdown.reduce((sum, denomination) => sum + denomination.qty * denomination.value, 0);
   const cannotMakeChange = changeAmount > 0 && Math.abs(changeGiven - changeAmount) > 0.001;
-
   const missingMethodCount = useMemo(
     () => selectedItems.filter((item) => !itemMethodIds[item.id]).length,
-    [selectedItems, itemMethodIds]
+    [selectedItems, itemMethodIds],
   );
 
   const setItemQty = (itemId: string, qty: number, maxQty: number) => {
@@ -147,24 +145,24 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
     setPayQuantities(next);
   };
 
-  const addDenom = (denomId: string) => {
-    setReceived((prev) => ({ ...prev, [denomId]: (prev[denomId] || 0) + 1 }));
+  const addDenom = (denominationId: string) => {
+    setReceived((prev) => ({ ...prev, [denominationId]: (prev[denominationId] || 0) + 1 }));
   };
 
-  const removeDenom = (denomId: string) => {
+  const removeDenom = (denominationId: string) => {
     setReceived((prev) => {
-      const val = (prev[denomId] || 0) - 1;
-      if (val <= 0) {
+      const value = (prev[denominationId] || 0) - 1;
+      if (value <= 0) {
         const next = { ...prev };
-        delete next[denomId];
+        delete next[denominationId];
         return next;
       }
-      return { ...prev, [denomId]: val };
+      return { ...prev, [denominationId]: value };
     });
   };
 
   const handlePay = () => {
-    if (!order) return;
+    if (!order || readOnly) return;
     if (selectedItems.length === 0) return;
     if (paymentMethods.length === 0) {
       toast.error("No hay metodos de pago activos configurados");
@@ -172,12 +170,12 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
     }
 
     const itemPayments = selectedItems.map((item) => {
-      const qty = payQuantities[item.id] ?? 0;
-      const amount = computeLineAmount(qty, item.unit_price);
+      const quantity = payQuantities[item.id] ?? 0;
+      const amount = computeLineAmount(quantity, item.unit_price);
       return {
         itemId: item.id,
         methodId: itemMethodIds[item.id] || defaultMethodId,
-        quantity: qty,
+        quantity,
         unitPrice: item.unit_price,
         amount,
       };
@@ -194,12 +192,12 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
     }
 
     const receivedDenoms = Object.entries(received)
-      .filter(([, qty]) => qty > 0)
+      .filter(([, quantity]) => quantity > 0)
       .map(([denomination_id, qty]) => ({ denomination_id, qty }));
 
-    const changeDenoms = changeDenomBreakdown.map((d) => ({
-      denomination_id: d.denomination_id,
-      qty: d.qty,
+    const changeDenoms = changeDenomBreakdown.map((denomination) => ({
+      denomination_id: denomination.denomination_id,
+      qty: denomination.qty,
     }));
 
     onPay({
@@ -212,6 +210,7 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
   };
 
   const canPay =
+    !readOnly &&
     selectedItems.length > 0 &&
     paymentMethods.length > 0 &&
     missingMethodCount === 0 &&
@@ -222,33 +221,41 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
 
   return (
     <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] sm:max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display">
-            Cobrar {order?.order_code ?? `#${order?.order_number}`}{" "}
+            {readOnly ? "Consulta de cobro" : "Cobrar"} {order?.order_code ?? `#${order?.order_number}`}{" "}
             {order?.order_type === "DINE_IN" && order?.table_name && (
-              <span className="text-muted-foreground font-normal">- {order.table_name}</span>
+              <span className="font-normal text-muted-foreground">- {order.table_name}</span>
             )}
-            {order?.split_code && <span className="text-muted-foreground font-normal"> ({order.split_code})</span>}
+            {order?.split_code && <span className="font-normal text-muted-foreground"> ({order.split_code})</span>}
           </DialogTitle>
         </DialogHeader>
 
         {order && (
           <div className="space-y-4">
+            {readOnly && (
+              <div className="rounded-xl border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                Modo consulta: puedes revisar los montos pendientes, pero no registrar pagos.
+              </div>
+            )}
+
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="mb-2 flex items-center justify-between">
                 <p className="text-sm font-medium text-foreground">Cobro parcial por cantidad</p>
-                <div className="flex items-center gap-3">
-                  <button onClick={fillAllPending} className="text-xs text-primary hover:underline">
-                    Todo pendiente
-                  </button>
-                  <button onClick={clearAllSelection} className="text-xs text-muted-foreground hover:underline">
-                    Limpiar
-                  </button>
-                </div>
+                {!readOnly && (
+                  <div className="flex items-center gap-3">
+                    <button onClick={fillAllPending} className="text-xs text-primary hover:underline">
+                      Todo pendiente
+                    </button>
+                    <button onClick={clearAllSelection} className="text-xs text-muted-foreground hover:underline">
+                      Limpiar
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="rounded-xl border border-border p-2 space-y-2 max-h-80 overflow-y-auto">
+              <div className="max-h-80 space-y-2 overflow-y-auto rounded-xl border border-border p-2">
                 {unpaidItems.map((item) => {
                   const qtyToPay = payQuantities[item.id] ?? 0;
                   const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
@@ -257,14 +264,14 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
                     <div
                       key={item.id}
                       className={cn(
-                        "grid grid-cols-1 lg:grid-cols-[1.7fr,120px,120px,120px,120px,180px] gap-2 p-2 rounded-lg border",
-                        qtyToPay > 0 ? "border-primary/40 bg-primary/5" : "border-border"
+                        "grid grid-cols-1 gap-2 rounded-lg border p-2 lg:grid-cols-[1.7fr,120px,120px,120px,120px,180px]",
+                        qtyToPay > 0 ? "border-primary/40 bg-primary/5" : "border-border",
                       )}
                     >
                       <div>
-                        <p className="text-sm font-medium text-foreground truncate">{item.description_snapshot}</p>
+                        <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
                         <p className="text-xs text-muted-foreground">
-                          Total: {item.quantity} · Pagado: {item.quantity_paid} · Pendiente: {item.quantity_pending}
+                          Total: {item.quantity} Â· Pagado: {item.quantity_paid} Â· Pendiente: {item.quantity_pending}
                         </p>
                       </div>
 
@@ -288,6 +295,7 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
                           value={qtyToPay}
                           onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
                           className="h-8"
+                          disabled={readOnly}
                         />
                       </div>
 
@@ -299,7 +307,7 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
                       <Select
                         value={itemMethodIds[item.id] || defaultMethodId}
                         onValueChange={(value) => setItemMethod(item.id, value)}
-                        disabled={qtyToPay <= 0 || paymentMethods.length === 0}
+                        disabled={readOnly || qtyToPay <= 0 || paymentMethods.length === 0}
                       >
                         <SelectTrigger className="h-8">
                           <SelectValue placeholder="Metodo" />
@@ -317,9 +325,9 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
                 })}
 
                 {paidItems.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2 p-1.5 rounded-lg opacity-50 border border-border">
-                    <span className="flex-1 text-sm text-foreground line-through truncate">
-                      {item.description_snapshot} · {item.quantity} unidad(es)
+                  <div key={item.id} className="flex items-center gap-2 rounded-lg border border-border p-1.5 opacity-50">
+                    <span className="flex-1 truncate text-sm text-foreground line-through">
+                      {item.description_snapshot} Â· {item.quantity} unidad(es)
                     </span>
                     <Badge variant="outline" className="text-[10px]">
                       Pagado completo
@@ -330,7 +338,7 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
             </div>
 
             {paymentMethods.length === 0 && (
-              <p className="text-xs text-destructive font-medium">No hay metodos de pago activos para esta sucursal.</p>
+              <p className="text-xs font-medium text-destructive">No hay metodos de pago activos para esta sucursal.</p>
             )}
 
             <div className="rounded-xl bg-primary/10 p-3 text-center">
@@ -339,60 +347,65 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="mb-2 flex items-center justify-between">
                 <p className="text-sm font-medium text-foreground">
-                  Monto recibido <span className="text-muted-foreground font-normal">(opcional)</span>
+                  Monto recibido <span className="font-normal text-muted-foreground">(opcional)</span>
                 </p>
-                {hasReceivedDenoms && (
+                {!readOnly && hasReceivedDenoms && (
                   <button
                     onClick={() => setReceived({})}
-                    className="text-xs text-destructive hover:underline flex items-center gap-1"
+                    className="flex items-center gap-1 text-xs text-destructive hover:underline"
                   >
                     <RotateCcw className="h-3 w-3" /> Limpiar
                   </button>
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {sortedDenoms.map((d) => (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {sortedDenoms.map((denomination) => (
                   <button
-                    key={d.denomination_id}
-                    onClick={() => addDenom(d.denomination_id)}
-                    className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors"
+                    key={denomination.denomination_id}
+                    onClick={() => addDenom(denomination.denomination_id)}
+                    className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
+                    disabled={readOnly}
                   >
-                    {d.label}
+                    {denomination.label}
                   </button>
                 ))}
               </div>
 
               {hasReceivedDenoms && (
-                <div className="rounded-xl border border-border p-2 space-y-1">
+                <div className="space-y-1 rounded-xl border border-border p-2">
                   {sortedDenoms
-                    .filter((d) => (received[d.denomination_id] || 0) > 0)
-                    .map((d) => (
-                      <div key={d.denomination_id} className="flex items-center gap-2 text-sm">
-                        <button
-                          onClick={() => removeDenom(d.denomination_id)}
-                          className="h-5 w-5 rounded bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
-                        >
-                          -
-                        </button>
+                    .filter((denomination) => (received[denomination.denomination_id] || 0) > 0)
+                    .map((denomination) => (
+                      <div key={denomination.denomination_id} className="flex items-center gap-2 text-sm">
+                        {!readOnly && (
+                          <button
+                            onClick={() => removeDenom(denomination.denomination_id)}
+                            className="flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground hover:text-foreground"
+                          >
+                            -
+                          </button>
+                        )}
                         <span className="flex-1 text-foreground">
-                          {received[d.denomination_id]}x {d.label}
+                          {received[denomination.denomination_id]}x {denomination.label}
                         </span>
                         <span className="font-medium text-foreground">
-                          ${(received[d.denomination_id]! * d.value).toFixed(2)}
+                          ${(received[denomination.denomination_id]! * denomination.value).toFixed(2)}
                         </span>
-                        <button
-                          onClick={() => addDenom(d.denomination_id)}
-                          className="h-5 w-5 rounded bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
-                        >
-                          +
-                        </button>
+                        {!readOnly && (
+                          <button
+                            onClick={() => addDenom(denomination.denomination_id)}
+                            className="flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground hover:text-foreground"
+                          >
+                            +
+                          </button>
+                        )}
                       </div>
                     ))}
 
-                  <div className="flex justify-between pt-1 border-t border-border text-sm font-bold">
+                  <div className="flex justify-between border-t border-border pt-1 text-sm font-bold">
                     <span className="flex items-center gap-1 text-foreground">
                       <ArrowDown className="h-3 w-3 text-green-500" /> Recibido
                     </span>
@@ -403,9 +416,9 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
             </div>
 
             {hasReceivedDenoms && changeAmount > 0 && (
-              <div className="rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-bold text-foreground flex items-center gap-1">
+              <div className="space-y-2 rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1 text-sm font-bold text-foreground">
                     <ArrowUp className="h-3.5 w-3.5 text-amber-600" /> Cambio
                   </span>
                   <span className="font-display text-lg font-bold text-amber-600">${changeAmount.toFixed(2)}</span>
@@ -414,19 +427,19 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
                 {changeDenomBreakdown.length > 0 && (
                   <div className="space-y-0.5">
                     <p className="text-xs text-muted-foreground">Entregar:</p>
-                    {changeDenomBreakdown.map((d) => (
-                      <div key={d.denomination_id} className="flex justify-between text-sm">
+                    {changeDenomBreakdown.map((denomination) => (
+                      <div key={denomination.denomination_id} className="flex justify-between text-sm">
                         <span className="text-foreground">
-                          {d.qty}x {d.label}
+                          {denomination.qty}x {denomination.label}
                         </span>
-                        <span className="font-medium text-foreground">${(d.qty * d.value).toFixed(2)}</span>
+                        <span className="font-medium text-foreground">${(denomination.qty * denomination.value).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
                 )}
 
                 {cannotMakeChange && (
-                  <p className="text-xs text-destructive font-medium">
+                  <p className="text-xs font-medium text-destructive">
                     No hay suficientes denominaciones en caja para dar el cambio exacto.
                   </p>
                 )}
@@ -434,30 +447,30 @@ export default function PaymentDialog({ order, paymentMethods, shiftDenoms, onPa
             )}
 
             {hasReceivedDenoms && totalReceived < selectedTotal && (
-              <p className="text-xs text-destructive font-medium text-center">
+              <p className="text-center text-xs font-medium text-destructive">
                 El monto recibido (${totalReceived.toFixed(2)}) es menor al total (${selectedTotal.toFixed(2)}).
               </p>
             )}
 
-            <Button
-              onClick={handlePay}
-              disabled={!canPay}
-              className="w-full h-12 rounded-xl font-display text-base font-semibold gap-2"
-            >
-              {paying ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <>
-                  <CreditCard className="h-5 w-5" />
-                  Cobrar ${selectedTotal.toFixed(2)}
-                </>
-              )}
-            </Button>
+            {!readOnly ? (
+              <Button onClick={handlePay} disabled={!canPay} className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold">
+                {paying ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    <CreditCard className="h-5 w-5" />
+                    Cobrar ${selectedTotal.toFixed(2)}
+                  </>
+                )}
+              </Button>
+            ) : (
+              <div className="rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground">
+                Esta cuenta no puede registrar cobros.
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
     </Dialog>
   );
 }
-
-

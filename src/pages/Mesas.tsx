@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Loader2, Plus, Users, CircleDollarSign, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { canOperate } from "@/lib/permissions";
 
 const STATUS_CONFIG = {
   free: {
@@ -36,13 +37,14 @@ const STATUS_CONFIG = {
 const Mesas = () => {
   const { data: tables, isLoading } = useTablesWithStatus();
   const { user } = useAuth();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, permissions } = useBranch();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingTakeout, setCreatingTakeout] = useState(false);
+  const canOperateMesas = canOperate(permissions, "mesas");
 
   const handleTakeout = async () => {
-    if (!user) return;
+    if (!user || !canOperateMesas) return;
     setCreatingTakeout(true);
     try {
       const { data, error } = await supabase
@@ -67,12 +69,11 @@ const Mesas = () => {
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
     if (table.status === "free") {
-      // If there's already a draft order for this table, navigate to it
+      if (!canOperateMesas) return;
       if (table.activeOrderId) {
         navigate(`/ordenes?order=${table.activeOrderId}`);
         return;
       }
-      // Create new order for this table
       if (!user) return;
       setCreating(table.id);
       try {
@@ -114,10 +115,16 @@ const Mesas = () => {
   const toPayCount = tables?.filter((t) => t.status === "to_pay").length ?? 0;
 
   return (
-    <div className="p-4 space-y-5">
-      {/* Header with stats */}
+    <div className="space-y-5 p-4">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
+          {!canOperateMesas && (
+            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+              Solo consulta
+            </span>
+          )}
+        </div>
         <div className="flex gap-3 text-xs font-medium">
           <span className="flex items-center gap-1 text-muted-foreground">
             <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
@@ -136,18 +143,17 @@ const Mesas = () => {
         </div>
       </div>
 
-      {/* Table grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {/* Takeout button */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         <motion.button
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0 }}
           onClick={handleTakeout}
-          disabled={creatingTakeout}
+          disabled={creatingTakeout || !canOperateMesas}
           className={cn(
             "relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 transition-all active:scale-95",
-            "bg-accent/10 border-accent/40 hover:border-accent/60 hover:bg-accent/15"
+            "bg-accent/10 border-accent/40",
+            canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
           )}
         >
           {creatingTakeout ? (
@@ -156,9 +162,11 @@ const Mesas = () => {
             <>
               <ShoppingBag className="h-6 w-6 text-accent" />
               <span className="font-display text-lg font-bold text-accent">Para llevar</span>
-              <div className="absolute top-2 right-2 rounded-full bg-accent/10 p-1">
-                <Plus className="h-3.5 w-3.5 text-accent" />
-              </div>
+              {canOperateMesas && (
+                <div className="absolute right-2 top-2 rounded-full bg-accent/10 p-1">
+                  <Plus className="h-3.5 w-3.5 text-accent" />
+                </div>
+              )}
             </>
           )}
         </motion.button>
@@ -166,6 +174,7 @@ const Mesas = () => {
         {tables?.map((table, i) => {
           const config = STATUS_CONFIG[table.status];
           const isCreating = creating === table.id;
+          const isFreeAndReadonly = table.status === "free" && !canOperateMesas;
 
           return (
             <motion.button
@@ -179,27 +188,26 @@ const Mesas = () => {
                 "relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 transition-all active:scale-95",
                 config.bg,
                 config.border,
-                table.status === "free" && "hover:border-primary/30 hover:bg-primary/5"
+                table.status === "free" && canOperateMesas && "hover:border-primary/30 hover:bg-primary/5",
+                isFreeAndReadonly && "cursor-default opacity-70",
               )}
             >
               {isCreating ? (
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               ) : (
                 <>
-                  <span className={cn("font-display text-lg font-bold", config.text)}>
-                    {table.name}
-                  </span>
+                  <span className={cn("font-display text-lg font-bold", config.text)}>{table.name}</span>
                   <div className={cn("flex items-center gap-1 text-xs font-medium", config.text)}>
                     {config.icon}
                     <span>{config.label}</span>
                   </div>
-                  {table.status === "free" && (
-                    <div className="absolute top-2 right-2 rounded-full bg-primary/10 p-1">
+                  {table.status === "free" && canOperateMesas && (
+                    <div className="absolute right-2 top-2 rounded-full bg-primary/10 p-1">
                       <Plus className="h-3.5 w-3.5 text-primary" />
                     </div>
                   )}
                   {table.splitCount > 0 && (
-                    <span className="absolute top-2 left-2 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-secondary-foreground">
+                    <span className="absolute left-2 top-2 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-secondary-foreground">
                       {table.splitCount} splits
                     </span>
                   )}

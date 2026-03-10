@@ -1,7 +1,8 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import { Badge } from "@/components/ui/badge";
 import { CreditCard, ShoppingBag, UtensilsCrossed } from "lucide-react";
+import { cn } from "@/lib/utils";
 import PaymentDialog from "./PaymentDialog";
 
 interface Props {
@@ -10,28 +11,41 @@ interface Props {
   shiftDenoms: ShiftDenom[];
   onPay: (params: PayOrderParams) => void;
   paying: boolean;
+  readOnly?: boolean;
 }
 
-export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms, onPay, paying }: Props) {
+export default function PayableOrdersList({
+  orders,
+  paymentMethods,
+  shiftDenoms,
+  onPay,
+  paying,
+  readOnly = false,
+}: Props) {
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
 
   if (orders.length === 0) {
     return (
-      <div className="text-center py-10">
-        <CreditCard className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
+      <div className="py-10 text-center">
+        <CreditCard className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
         <p className="text-sm font-medium text-muted-foreground">Sin ordenes por cobrar</p>
       </div>
     );
   }
 
-  const pendingUnits = (order: PayableOrder) =>
-    order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
-
-  const paidUnits = (order: PayableOrder) =>
-    order.items.reduce((sum, item) => sum + item.quantity_paid, 0);
+  const pendingUnits = (order: PayableOrder) => order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
+  const paidUnits = (order: PayableOrder) => order.items.reduce((sum, item) => sum + item.quantity_paid, 0);
 
   return (
     <>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        {readOnly && (
+          <div className="rounded-xl border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+            Modo consulta: puedes revisar las ordenes pendientes, pero no cobrar.
+          </div>
+        )}
+      </div>
+
       <div className="space-y-2">
         {orders.map((order) => {
           const label = order.order_type === "TAKEOUT" ? "Para llevar" : order.split_code ?? order.table_name ?? "Mesa";
@@ -43,25 +57,33 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
             <button
               key={order.id}
               onClick={() => setSelectedOrder(order)}
-              className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:bg-muted/50 transition-colors text-left"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors",
+                readOnly ? "hover:bg-card" : "hover:bg-muted/50",
+              )}
             >
-              <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                 {order.order_type === "TAKEOUT" ? (
                   <ShoppingBag className="h-4 w-4 text-primary" />
                 ) : (
                   <UtensilsCrossed className="h-4 w-4 text-primary" />
                 )}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-foreground">{label}</span>
                   <Badge variant="secondary" className="text-[10px]">
                     {order.order_code ?? `#${order.order_number}`}
                   </Badge>
+                  {readOnly && (
+                    <Badge variant="outline" className="text-[10px]">
+                      Consulta
+                    </Badge>
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {pending} unidad(es) pendiente(s)
-                  {paid > 0 && ` � ${paid} unidad(es) pagada(s)`}
+                  {paid > 0 && ` · ${paid} unidad(es) pagada(s)`}
                 </p>
               </div>
               <span className="font-display text-base font-bold text-foreground">${pendingTotal.toFixed(2)}</span>
@@ -80,6 +102,7 @@ export default function PayableOrdersList({ orders, paymentMethods, shiftDenoms,
         }}
         paying={paying}
         onClose={() => setSelectedOrder(null)}
+        readOnly={readOnly}
       />
     </>
   );

@@ -1,5 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useBranch } from "@/contexts/BranchContext";
+import { canView } from "@/lib/permissions";
 import {
   LayoutGrid,
   UtensilsCrossed,
@@ -13,24 +14,52 @@ interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
-  moduleCodes: string[];
+  visible: (permissions: Record<string, any>) => boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/mesas", label: "Mesas", icon: <LayoutGrid className="h-5 w-5" />, moduleCodes: ["mesas"] },
-  { to: "/ordenes", label: "Ordenes", icon: <UtensilsCrossed className="h-5 w-5" />, moduleCodes: ["ordenes"] },
-  { to: "/despacho", label: "Despacho", icon: <ChefHat className="h-5 w-5" />, moduleCodes: ["despacho"] },
-  { to: "/caja", label: "Caja", icon: <CircleDollarSign className="h-5 w-5" />, moduleCodes: ["caja", "pagos"] },
-  { to: "/reportes", label: "Reportes", icon: <BarChart3 className="h-5 w-5" />, moduleCodes: ["reportes"] },
-  { to: "/admin", label: "Admin", icon: <Settings className="h-5 w-5" />, moduleCodes: ["usuarios", "configuracion"] },
+  {
+    to: "/mesas",
+    label: "Mesas",
+    icon: <LayoutGrid className="h-5 w-5" />,
+    visible: (permissions) => canView(permissions, "mesas"),
+  },
+  {
+    to: "/ordenes",
+    label: "Ordenes",
+    icon: <UtensilsCrossed className="h-5 w-5" />,
+    visible: (permissions) => canView(permissions, "ordenes"),
+  },
+  {
+    to: "/despacho",
+    label: "Despacho",
+    icon: <ChefHat className="h-5 w-5" />,
+    visible: (permissions) => canView(permissions, "despacho_total"),
+  },
+  {
+    to: "/caja",
+    label: "Caja",
+    icon: <CircleDollarSign className="h-5 w-5" />,
+    visible: (permissions) => canView(permissions, "caja"),
+  },
+  {
+    to: "/reportes",
+    label: "Reportes",
+    icon: <BarChart3 className="h-5 w-5" />,
+    visible: (permissions) => canView(permissions, "reportes_sucursal") || canView(permissions, "reportes_globales"),
+  },
+  {
+    to: "/admin",
+    label: "Admin",
+    icon: <Settings className="h-5 w-5" />,
+    visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
+  },
 ];
 
 const BottomNav = () => {
-  const { allowedModules } = useBranch();
+  const { permissions } = useBranch();
 
-  const visibleItems = NAV_ITEMS.filter((item) =>
-    item.moduleCodes.some((code) => allowedModules.includes(code))
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => item.visible(permissions));
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-bottom md:bottom-0">
@@ -39,8 +68,8 @@ const BottomNav = () => {
           <NavLink
             key={item.to}
             to={item.to}
-            className="flex flex-col items-center gap-0.5 px-2 py-1.5 text-muted-foreground transition-colors rounded-xl min-w-[3.5rem]"
-            activeClassName="text-primary bg-primary/10"
+            className="flex min-w-[3.5rem] flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-muted-foreground transition-colors"
+            activeClassName="bg-primary/10 text-primary"
           >
             {item.icon}
             <span className="text-[10px] font-medium leading-tight">{item.label}</span>
