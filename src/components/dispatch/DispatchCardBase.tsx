@@ -2,15 +2,13 @@ import { useEffect, useState } from "react";
 import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle2, Loader2, UtensilsCrossed, ShoppingBag, Eye } from "lucide-react";
+import { Clock, CheckCircle2, UtensilsCrossed, ShoppingBag, Eye, Truck } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 interface DispatchCardBaseProps {
   order: DispatchOrder;
-  onMarkReady: (orderId: string) => void;
-  onMarkDispatched: (orderId: string) => void;
-  isMarkingReady: boolean;
-  isMarkingDispatched: boolean;
+  onOpenReadyDialog: (order: DispatchOrder) => void;
+  onOpenDispatchDialog: (order: DispatchOrder) => void;
   showEyeIcon?: boolean;
   onEyeClick?: () => void;
   readOnly?: boolean;
@@ -51,12 +49,25 @@ function formatEventTimeWithLabel(iso: string | null | undefined, status: string
   }
 }
 
+function StageChip({ label, quantity, tone }: { label: string; quantity: number; tone: "pending" | "ready" | "dispatched" }) {
+  const toneClass =
+    tone === "pending"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : tone === "ready"
+        ? "border-blue-200 bg-blue-50 text-blue-700"
+        : "border-green-200 bg-green-50 text-green-700";
+
+  return (
+    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", toneClass)}>
+      {label} {quantity}
+    </span>
+  );
+}
+
 export function DispatchCardBase({
   order,
-  onMarkReady,
-  onMarkDispatched,
-  isMarkingReady,
-  isMarkingDispatched,
+  onOpenReadyDialog,
+  onOpenDispatchDialog,
   showEyeIcon = false,
   onEyeClick,
   readOnly = false,
@@ -72,19 +83,30 @@ export function DispatchCardBase({
   const timeDisplay = shouldShowTimer ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime, order.status);
 
   const label = order.split_code ?? order.table_name ?? "Para llevar";
-  const isReady = order.status === "READY";
-  const isSent = order.status === "SENT_TO_KITCHEN";
-  const showActions = !readOnly && (isSent || isReady);
+  const canMarkReady = order.pending_prepare_count > 0;
+  const canDispatch = order.ready_available_count > 0;
+  const previewableItems = order.items.filter(
+    (item) => item.quantity_pending_prepare > 0 || item.quantity_ready_available > 0 || item.quantity_dispatched > 0,
+  );
+  const previewItems = previewableItems.slice(0, 3);
+  const hiddenCount = Math.max(0, previewableItems.length - previewItems.length);
+  const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
+
+  const summaryParts: string[] = [];
+  if (order.pending_prepare_count > 0) summaryParts.push(`${order.pending_prepare_count} pendientes`);
+  if (order.ready_available_count > 0) summaryParts.push(`${order.ready_available_count} listos`);
+  if (dispatchedCount > 0) summaryParts.push(`${dispatchedCount} despachados`);
+  const summaryText = summaryParts.length > 0 ? summaryParts.join(" · ") : "Sin acciones pendientes";
 
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
+        "flex self-start flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
             ? "border-warning/50 shadow-md shadow-warning/10"
-            : isReady
+            : canDispatch
               ? "border-green-500/50 shadow-md shadow-green-500/10"
               : "border-border",
       )}
@@ -123,81 +145,65 @@ export function DispatchCardBase({
         </div>
       </div>
 
-      {isReady && (
-        <div className="px-4 pb-0 pt-3">
-          <Badge className="w-full justify-center bg-green-600 text-center text-white">
-            <CheckCircle2 className="mr-1 h-3 w-3" />
-            Listo para despachar
-          </Badge>
-        </div>
-      )}
+      <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">{summaryText}</div>
 
-      <div className="flex-1 space-y-2 px-4 py-3">
-        {order.items
-          .filter((item) => item.status !== "DRAFT")
-          .map((item) => (
-            <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
+      <div className="space-y-2 px-4 py-3">
+        {previewItems.map((item) => (
+          <div key={item.id} className="rounded-xl border border-border px-3 py-2 text-sm">
+            <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
-                  <Badge variant="outline" className="w-9 shrink-0 justify-center bg-muted-50">
-                    {item.quantity}x
-                  </Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">{item.description_snapshot}</p>
-                    {item.modifiers.length > 0 && (
-                      <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
-                        {item.modifiers.filter((mod) => String(mod.description ?? "").trim().length > 0).map((mod, idx) => (
-                          <p key={idx} className="text-muted-foreground">
-                            - {mod.description}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                    {item.item_note && (
-                      <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
-                    )}
+                  <span className="mt-0.5 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
+                  <p className="truncate font-medium text-foreground">{item.description_snapshot}</p>
+                </div>
+                {item.modifiers.length > 0 && (
+                  <div className="mt-1 space-y-0.5 pl-[18px] text-xs text-muted-foreground">
+                    {item.modifiers.filter((mod) => String(mod.description ?? "").trim().length > 0).map((mod, idx) => (
+                      <p key={idx}>- {mod.description}</p>
+                    ))}
                   </div>
-                  <span className="ml-auto font-semibold text-primary">${item.total ? item.total.toFixed(2) : "0.00"}</span>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px]">
+                  {item.quantity_pending_prepare > 0 ? (
+                    <StageChip label="Pend" quantity={item.quantity_pending_prepare} tone="pending" />
+                  ) : null}
+                  {item.quantity_ready_available > 0 ? (
+                    <StageChip label="Listo" quantity={item.quantity_ready_available} tone="ready" />
+                  ) : null}
+                  {item.quantity_dispatched > 0 ? (
+                    <StageChip label="Desp" quantity={item.quantity_dispatched} tone="dispatched" />
+                  ) : null}
                 </div>
               </div>
+              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                {item.quantity_ordered}x
+              </span>
             </div>
-          ))}
+          </div>
+        ))}
+
+        {hiddenCount > 0 && (
+          <div className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
+            +{hiddenCount} item{hiddenCount !== 1 ? "s" : ""} mas
+          </div>
+        )}
       </div>
 
-      <div className="border-t border-border px-4 py-3">
-        <div className="flex items-center justify-between font-semibold">
-          <span className="text-muted-foreground">Total</span>
-          <span className="text-lg text-primary">${order.items?.reduce((sum, item) => sum + (item.total || 0), 0).toFixed(2)}</span>
-        </div>
-      </div>
-
-      {(showActions || readOnly) && (
+      {(canMarkReady || canDispatch || readOnly) && (
         <div className="space-y-2 border-t border-border bg-muted/30 px-4 py-3">
-          {readOnly ? (
-            <div className="text-center text-xs text-muted-foreground">Modo consulta: no puedes ejecutar acciones de despacho.</div>
-          ) : null}
+          {readOnly ? <div className="text-center text-xs text-muted-foreground">Modo consulta: no puedes ejecutar acciones de despacho.</div> : null}
 
-          {showActions && isSent && (
-            <Button
-              onClick={() => onMarkReady(order.id)}
-              disabled={isMarkingReady || isMarkingDispatched}
-              className="w-full gap-2 bg-blue-600 text-white hover:bg-blue-700"
-              size="sm"
-            >
-              {isMarkingReady ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Listo para despachar
+          {!readOnly && canMarkReady && (
+            <Button onClick={() => onOpenReadyDialog(order)} className="w-full gap-2 bg-blue-600 text-white hover:bg-blue-700" size="sm">
+              <CheckCircle2 className="h-4 w-4" />
+              Marcar listo
             </Button>
           )}
 
-          {showActions && isReady && (
-            <Button
-              onClick={() => onMarkDispatched(order.id)}
-              disabled={isMarkingReady || isMarkingDispatched}
-              className="w-full gap-2 bg-green-600 text-white hover:bg-green-700"
-              size="sm"
-            >
-              {isMarkingDispatched ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Marcar como despachado
+          {!readOnly && canDispatch && (
+            <Button onClick={() => onOpenDispatchDialog(order)} className="w-full gap-2 bg-green-600 text-white hover:bg-green-700" size="sm">
+              <Truck className="h-4 w-4" />
+              Despachar
             </Button>
           )}
         </div>
@@ -207,5 +213,3 @@ export function DispatchCardBase({
 }
 
 export default DispatchCardBase;
-
-

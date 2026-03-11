@@ -1,10 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+﻿import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { generateUUID } from "@/lib/uuid";
-import { dedupePaymentMethods } from "@/lib/paymentMethods";
+import { dedupePaymentMethods, isCashPaymentMethodName } from "@/lib/paymentMethods";
+import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
+import { computeOperationalQuantities, sumRowsByItem } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 
 export interface Denomination {
@@ -60,24 +62,32 @@ export interface PaymentMethod {
 
 export interface ItemPaymentInput {
   itemId: string;
-  methodId: string;
   quantity: number;
   unitPrice: number;
   amount: number;
 }
 
+export interface PaymentSplitInput {
+  methodId: string;
+  amount: number;
+}
+
 export interface PayOrderParams {
   orderId: string;
-  itemPayments: ItemPaymentInput[];
+  itemSelections: ItemPaymentInput[];
+  paymentSplits: PaymentSplitInput[];
+  tenderedSplits: PaymentSplitInput[];
+  receivedTotal: number;
   totalAmount: number;
-  receivedDenoms: { denomination_id: string; qty: number }[];
-  changeDenoms: { denomination_id: string; qty: number }[];
+  cashReceivedDenoms: { denomination_id: string; qty: number }[];
+  cashChangeDenoms: { denomination_id: string; qty: number }[];
 }
 
 export type CompletedPaymentStatus = "APPLIED" | "PARTIAL" | "REVERSED" | "VOIDED";
 
 export interface CompletedPayment {
   id: string;
+  payment_group_id: string | null;
   created_at: string;
   cashier_name: string;
   amount: number;
@@ -120,6 +130,15 @@ export interface CompletedPaymentsFilters {
 interface CompletedPaymentsResult {
   rows: CompletedPayment[];
   total: number;
+  methodSummary: CompletedPaymentsMethodSummary[];
+  collectedTotal: number;
+}
+
+export interface CompletedPaymentsMethodSummary {
+  methodId: string;
+  methodName: string;
+  amount: number;
+  paymentCount: number;
 }
 
 const DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES = 15;
@@ -154,6 +173,8 @@ function sanitizeForIlike(value: string): string {
 
 type PaymentNoteMeta = {
   itemId: string | null;
+  paymentGroupId: string | null;
+  itemsAnchor: boolean;
   reversalRequested: boolean;
   reversed: boolean;
   voided: boolean;
@@ -164,6 +185,8 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   if (!notes) {
     return {
       itemId: null,
+      paymentGroupId: null,
+      itemsAnchor: false,
       reversalRequested: false,
       reversed: false,
       voided: false,
@@ -174,6 +197,8 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   const segments = notes.split("|").map((s) => s.trim());
 
   let itemId: string | null = null;
+  let paymentGroupId: string | null = null;
+  let itemsAnchor = false;
   let reversalRequested = false;
   let reversed = false;
   let voided = false;
@@ -182,6 +207,12 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   for (const segment of segments) {
     if (segment.startsWith("ITEM:")) {
       itemId = segment.replace("ITEM:", "").trim() || null;
+    }
+    if (segment.startsWith("GROUP:")) {
+      paymentGroupId = segment.replace("GROUP:", "").trim() || null;
+    }
+    if (segment.startsWith("ITEMS_ANCHOR:")) {
+      itemsAnchor = segment.replace("ITEMS_ANCHOR:", "").trim() === "1";
     }
     if (segment.startsWith("REVERSAL_REQUESTED:")) {
       reversalRequested = true;
@@ -198,7 +229,7 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
     }
   }
 
-  return { itemId, reversalRequested, reversed, voided, quantity };
+  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, quantity };
 }
 
 function appendNoteMarker(existingNotes: string | null, marker: string): string {
@@ -302,6 +333,186 @@ async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]):
     return {};
   }
 }
+
+
+type OrderStatus = Database["public"]["Enums"]["order_status"];
+
+type OperationalRow = {
+  order_item_id: string;
+  quantity_ready?: number;
+  quantity_dispatched?: number;
+  quantity_cancelled?: number;
+  source_stage?: string | null;
+  order_ready_event_id?: string | null;
+  order_dispatch_event_id?: string | null;
+  order_cancellation_id?: string | null;
+};
+
+type OperationalMaps = {
+  readyMap: Record<string, number>;
+  dispatchedMap: Record<string, number>;
+  cancelledPendingMap: Record<string, number>;
+  cancelledReadyMap: Record<string, number>;
+  cancelledTotalMap: Record<string, number>;
+};
+
+function resolvePaidQuantity(params: {
+  payableQuantity: number;
+  orderedQuantity: number;
+  paidQuantityFromPayments: number;
+  paidAt?: string | null;
+}) {
+  const fallbackPaidQuantity = params.paidQuantityFromPayments > 0
+    ? params.paidQuantityFromPayments
+    : params.paidAt
+      ? params.orderedQuantity
+      : 0;
+
+  return Math.min(params.payableQuantity, fallbackPaidQuantity);
+}
+
+async function fetchOperationalMaps(orderItemIds: string[]): Promise<OperationalMaps> {
+  if (orderItemIds.length === 0) {
+    return {
+      readyMap: {},
+      dispatchedMap: {},
+      cancelledPendingMap: {},
+      cancelledReadyMap: {},
+      cancelledTotalMap: {},
+    };
+  }
+
+  try {
+    const [readyResponse, dispatchResponse, cancellationResponse] = await Promise.all([
+      (supabase as any)
+        .from("order_item_ready_events")
+        .select("order_item_id, quantity_ready, order_ready_event_id")
+        .in("order_item_id", orderItemIds),
+      (supabase as any)
+        .from("order_item_dispatch_events")
+        .select("order_item_id, quantity_dispatched, order_dispatch_event_id")
+        .in("order_item_id", orderItemIds),
+      (supabase as any)
+        .from("order_item_cancellations")
+        .select("order_item_id, quantity_cancelled, source_stage, order_cancellation_id")
+        .in("order_item_id", orderItemIds),
+    ]);
+
+    if (readyResponse.error) throw readyResponse.error;
+    if (dispatchResponse.error) throw dispatchResponse.error;
+    if (cancellationResponse.error) throw cancellationResponse.error;
+
+    const readyRowsRaw = (readyResponse.data ?? []) as OperationalRow[];
+    const dispatchRowsRaw = (dispatchResponse.data ?? []) as OperationalRow[];
+    const cancellationRowsRaw = (cancellationResponse.data ?? []) as OperationalRow[];
+
+    const readyEventIds = [...new Set(readyRowsRaw.map((row) => row.order_ready_event_id).filter(Boolean))] as string[];
+    const dispatchEventIds = [...new Set(dispatchRowsRaw.map((row) => row.order_dispatch_event_id).filter(Boolean))] as string[];
+    const cancellationIds = [...new Set(cancellationRowsRaw.map((row) => row.order_cancellation_id).filter(Boolean))] as string[];
+
+    let activeReadyIds = new Set<string>();
+    let activeDispatchIds = new Set<string>();
+    let activeCancellationIds = new Set<string>();
+
+    if (readyEventIds.length > 0) {
+      const { data, error } = await (supabase as any)
+        .from("order_ready_events")
+        .select("id, status")
+        .in("id", readyEventIds);
+      if (error) throw error;
+      activeReadyIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
+    }
+
+    if (dispatchEventIds.length > 0) {
+      const { data, error } = await (supabase as any)
+        .from("order_dispatch_events")
+        .select("id, status")
+        .in("id", dispatchEventIds);
+      if (error) throw error;
+      activeDispatchIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
+    }
+
+    if (cancellationIds.length > 0) {
+      const { data, error } = await supabase
+        .from("order_cancellations")
+        .select("id, status")
+        .in("id", cancellationIds);
+      if (error) throw error;
+      activeCancellationIds = new Set((data ?? []).filter((row) => row.status === "APPLIED").map((row) => row.id));
+    }
+
+    const readyRows = readyRowsRaw.filter((row) => row.order_ready_event_id && activeReadyIds.has(row.order_ready_event_id));
+    const dispatchRows = dispatchRowsRaw.filter((row) => row.order_dispatch_event_id && activeDispatchIds.has(row.order_dispatch_event_id));
+    const cancellationRows = cancellationRowsRaw.filter((row) => row.order_cancellation_id && activeCancellationIds.has(row.order_cancellation_id));
+
+    return {
+      readyMap: sumRowsByItem(readyRows, "order_item_id", "quantity_ready"),
+      dispatchedMap: sumRowsByItem(dispatchRows, "order_item_id", "quantity_dispatched"),
+      cancelledPendingMap: sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "PENDING"),
+      cancelledReadyMap: sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "READY"),
+      cancelledTotalMap: sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled"),
+    };
+  } catch {
+    return {
+      readyMap: {},
+      dispatchedMap: {},
+      cancelledPendingMap: {},
+      cancelledReadyMap: {},
+      cancelledTotalMap: {},
+    };
+  }
+}
+
+function deriveOrderOperationalStatus(
+  items: Array<{
+    quantity: number;
+    readyQuantity?: number;
+    dispatchedQuantity?: number;
+    cancelledPendingQuantity?: number;
+    cancelledReadyQuantity?: number;
+  }>,
+  fallbackStatus: OrderStatus,
+): OrderStatus {
+  let pendingPrepare = 0;
+  let readyAvailable = 0;
+  let dispatched = 0;
+  let cancelledTotal = 0;
+  let activeNotCancelled = 0;
+
+  for (const item of items) {
+    const quantities = computeOperationalQuantities({
+      quantityOrdered: Number(item.quantity ?? 0),
+      quantityReadyTotal: item.readyQuantity ?? 0,
+      quantityDispatched: item.dispatchedQuantity ?? 0,
+      quantityCancelledPending: item.cancelledPendingQuantity ?? 0,
+      quantityCancelledReady: item.cancelledReadyQuantity ?? 0,
+    });
+
+    pendingPrepare += quantities.quantityPendingPrepare;
+    readyAvailable += quantities.quantityReadyAvailable;
+    dispatched += quantities.quantityDispatched;
+    cancelledTotal += quantities.quantityCancelledTotal;
+    activeNotCancelled += Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+  }
+
+  if (activeNotCancelled <= 0 && cancelledTotal > 0) return "CANCELLED";
+  if (pendingPrepare === 0 && readyAvailable === 0 && dispatched > 0) return "KITCHEN_DISPATCHED";
+  if (pendingPrepare === 0 && readyAvailable > 0) return "READY";
+  if (pendingPrepare > 0) return "SENT_TO_KITCHEN";
+  return fallbackStatus;
+}
+
+function getPayableQuantityForOrderType(
+  orderType: "DINE_IN" | "TAKEOUT",
+  quantities: ReturnType<typeof computeOperationalQuantities>,
+) {
+  if (orderType === "TAKEOUT") {
+    return Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+  }
+
+  return quantities.quantityDispatched;
+}
+
 export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   const { user } = useAuth();
   const { activeBranchId } = useBranch();
@@ -361,9 +572,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const { data: orders, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, order_type, table_id, split_id")
+        .select("id, order_number, order_code, order_type, table_id, split_id, status")
         .eq("branch_id", activeBranchId)
-        .eq("status", "KITCHEN_DISPATCHED")
+        .in("status", ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
         .order("updated_at");
       if (error) throw error;
       if (!orders || orders.length === 0) return [];
@@ -392,41 +603,56 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const orderItemIds = (items ?? []).map((item) => item.id);
       const activePaymentItems = await fetchActivePaymentItemsForOrderItems(orderItemIds);
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
-      const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(orderItemIds);
+      const operationalMaps = await fetchOperationalMaps(orderItemIds);
 
-      return orders.map((o) => {
-        const orderItems = (items ?? []).filter((i) => i.order_id === o.id);
-        const mappedItems = orderItems.map((i) => {
-          const paidQtyFromPayments = paidQtyMap[i.id] ?? 0;
-          const paidQty = Math.min(i.quantity, paidQtyFromPayments > 0 ? paidQtyFromPayments : i.paid_at ? i.quantity : 0);
-          const cancelledQty = Math.min(Math.max(0, i.quantity - paidQty), cancelledQtyMap[i.id] ?? 0);
-          const pendingQty = Math.max(0, i.quantity - paidQty - cancelledQty);
-          const pendingTotal = Math.round(pendingQty * Number(i.unit_price) * 100) / 100;
+      return orders
+        .map((o) => {
+          const orderItems = (items ?? []).filter((i) => i.order_id === o.id);
+          const mappedItems = orderItems
+            .map((i) => {
+              const quantities = computeOperationalQuantities({
+                quantityOrdered: Number(i.quantity ?? 0),
+                quantityReadyTotal: operationalMaps.readyMap[i.id] ?? 0,
+                quantityDispatched: operationalMaps.dispatchedMap[i.id] ?? 0,
+                quantityCancelledPending: operationalMaps.cancelledPendingMap[i.id] ?? 0,
+                quantityCancelledReady: operationalMaps.cancelledReadyMap[i.id] ?? 0,
+              });
+
+              const payableQty = getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT", quantities);
+              const paidQty = resolvePaidQuantity({
+                payableQuantity: payableQty,
+                orderedQuantity: Number(i.quantity ?? 0),
+                paidQuantityFromPayments: paidQtyMap[i.id] ?? 0,
+                paidAt: i.paid_at,
+              });
+              const pendingQty = Math.max(0, payableQty - paidQty);
+
+              return {
+                id: i.id,
+                description_snapshot: i.description_snapshot,
+                quantity: payableQty,
+                unit_price: Number(i.unit_price),
+                total: computeLineAmount(payableQty, Number(i.unit_price)),
+                paid_at: i.paid_at,
+                quantity_paid: paidQty,
+                quantity_pending: pendingQty,
+                pending_total: computeLineAmount(pendingQty, Number(i.unit_price)),
+              };
+            })
+            .filter((item) => item.quantity > 0 || item.quantity_paid > 0 || item.quantity_pending > 0);
 
           return {
-            id: i.id,
-            description_snapshot: i.description_snapshot,
-            quantity: i.quantity,
-            unit_price: Number(i.unit_price),
-            total: Number(i.total),
-            paid_at: i.paid_at,
-            quantity_paid: paidQty,
-            quantity_pending: pendingQty,
-            pending_total: pendingTotal,
-          };
-        });
-
-        return {
-          id: o.id,
-          order_number: o.order_number,
-          order_code: (o as any).order_code ?? null,
-          order_type: o.order_type,
-          table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
-          split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,
-          total: mappedItems.reduce((s, i) => s + Number(i.total), 0),
-          items: mappedItems,
-        } as PayableOrder;
-      });
+            id: o.id,
+            order_number: o.order_number,
+            order_code: (o as any).order_code ?? null,
+            order_type: o.order_type,
+            table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
+            split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,
+            total: mappedItems.reduce((sum, item) => sum + Number(item.total), 0),
+            items: mappedItems,
+          } as PayableOrder;
+        })
+        .filter((order) => order.items.some((item) => item.quantity_pending > 0));
     },
     refetchInterval: 10000,
     enabled: !!activeBranchId,
@@ -436,12 +662,32 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     queryKey: ["payment-methods", activeBranchId],
     queryFn: async () => {
       if (!activeBranchId) return [];
-      const methods = await dbSelect<PaymentMethod>("payment_methods", {
+
+      let methods = await dbSelect<PaymentMethod>("payment_methods", {
         select: "id, name",
         branchId: activeBranchId,
         filters: [{ column: "is_active", op: "eq", value: true }],
         orderBy: { column: "name" },
       });
+
+      if (!methods.some((method) => isCashPaymentMethodName(method.name))) {
+        const cashMethodId = generateUUID();
+        const { error } = await supabase.from("payment_methods").insert({
+          id: cashMethodId,
+          branch_id: activeBranchId,
+          name: "Efectivo",
+          is_active: true,
+        });
+        if (error) throw error;
+
+        methods = await dbSelect<PaymentMethod>("payment_methods", {
+          select: "id, name",
+          branchId: activeBranchId,
+          filters: [{ column: "is_active", op: "eq", value: true }],
+          orderBy: { column: "name" },
+        });
+      }
+
       return dedupePaymentMethods(methods);
     },
     enabled: !!activeBranchId,
@@ -485,7 +731,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       completedPaymentsFilters?.pageSize ?? 20,
     ],
     queryFn: async (): Promise<CompletedPaymentsResult> => {
-      if (!activeBranchId || !shiftQuery.data?.id) return { rows: [], total: 0 };
+      if (!activeBranchId || !shiftQuery.data?.id) {
+        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
+      }
 
       const fromIso = toIsoFromDateTimeLocal(completedPaymentsFilters?.fromDateTime ?? "");
       const toIso = toIsoFromDateTimeLocal(completedPaymentsFilters?.toDateTime ?? "");
@@ -504,19 +752,28 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (movementError) throw movementError;
 
       const paymentIds = [...new Set((paymentMovements ?? []).map((m) => m.payment_id).filter(Boolean))] as string[];
-      if (paymentIds.length === 0) return { rows: [], total: 0 };
-
-      let paymentsQuery = supabase
-        .from("payments")
-        .select("id, created_at, amount, notes, order_id, payment_method_id, created_by", { count: "exact" })
-        .in("id", paymentIds);
-
-      if (fromIso) paymentsQuery = paymentsQuery.gte("created_at", fromIso);
-      if (toIso) paymentsQuery = paymentsQuery.lte("created_at", toIso);
-
-      if (completedPaymentsFilters?.methodId && completedPaymentsFilters.methodId !== "ALL") {
-        paymentsQuery = paymentsQuery.eq("payment_method_id", completedPaymentsFilters.methodId);
+      if (paymentIds.length === 0) {
+        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
+
+      const buildPaymentsQuery = (withCount = false) => {
+        let query = supabase
+          .from("payments")
+          .select("id, created_at, amount, notes, order_id, payment_method_id, created_by", withCount ? { count: "exact" } : undefined)
+          .in("id", paymentIds);
+
+        if (fromIso) query = query.gte("created_at", fromIso);
+        if (toIso) query = query.lte("created_at", toIso);
+
+        if (completedPaymentsFilters?.methodId && completedPaymentsFilters.methodId !== "ALL") {
+          query = query.eq("payment_method_id", completedPaymentsFilters.methodId);
+        }
+
+        return query;
+      };
+
+      let summaryPaymentsQuery = buildPaymentsQuery(false);
+      let paymentsQuery = buildPaymentsQuery(true);
 
       const orderSearch = sanitizeForIlike(completedPaymentsFilters?.orderQuery ?? "");
       if (orderSearch) {
@@ -556,8 +813,18 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           ...new Set([...(ordersByCodeOrNumber.data ?? []).map((o) => o.id), ...ordersByTable.map((o) => o.id)]),
         ];
 
-        if (matchingOrderIds.length === 0) return { rows: [], total: 0 };
+        if (matchingOrderIds.length === 0) {
+          return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
+        }
+        summaryPaymentsQuery = summaryPaymentsQuery.in("order_id", matchingOrderIds);
         paymentsQuery = paymentsQuery.in("order_id", matchingOrderIds);
+      }
+
+      const { data: summaryPayments, error: summaryPaymentsError } = await summaryPaymentsQuery;
+      if (summaryPaymentsError) throw summaryPaymentsError;
+
+      if (!summaryPayments || summaryPayments.length === 0) {
+        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
       const sortBy = completedPaymentsFilters?.sortBy ?? "created_at";
@@ -571,10 +838,44 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const { data: payments, error: paymentsError, count } = await paymentsQuery;
       if (paymentsError) throw paymentsError;
-      if (!payments || payments.length === 0) return { rows: [], total: count ?? 0 };
+      if (!payments || payments.length === 0) {
+        const summaryMethodIds = [...new Set(summaryPayments.map((payment) => payment.payment_method_id))];
+        let methodsMap: Record<string, string> = {};
+        if (summaryMethodIds.length > 0) {
+          const { data: methods, error: methodsError } = await supabase
+            .from("payment_methods")
+            .select("id, name")
+            .in("id", summaryMethodIds);
+          if (methodsError) throw methodsError;
+          methodsMap = Object.fromEntries((methods ?? []).map((method) => [method.id, method.name]));
+        }
+
+        const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
+        for (const payment of summaryPayments) {
+          const meta = parsePaymentNotes(payment.notes);
+          if (meta.reversed || meta.voided) continue;
+          const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
+          current.amount += Number(payment.amount);
+          current.paymentCount += 1;
+          summaryMap.set(payment.payment_method_id, current);
+        }
+
+        const methodSummary = Array.from(summaryMap.entries())
+          .map(([methodId, totals]) => ({
+            methodId,
+            methodName: methodsMap[methodId] ?? "Metodo",
+            amount: roundMoney(totals.amount),
+            paymentCount: totals.paymentCount,
+          }))
+          .sort((a, b) => b.amount - a.amount || a.methodName.localeCompare(b.methodName));
+
+        const collectedTotal = roundMoney(methodSummary.reduce((sum, row) => sum + row.amount, 0));
+
+        return { rows: [], total: count ?? 0, methodSummary, collectedTotal };
+      }
 
       const orderIds = [...new Set(payments.map((p) => p.order_id))];
-      const methodIds = [...new Set(payments.map((p) => p.payment_method_id))];
+      const methodIds = [...new Set([...payments.map((p) => p.payment_method_id), ...summaryPayments.map((p) => p.payment_method_id)])];
       const createdByIds = [...new Set(payments.map((p) => p.created_by))];
       const { data: selectedPaymentItems, error: selectedPaymentItemsError } = await supabase
         .from("payment_items")
@@ -689,6 +990,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             const item = itemsMap[paymentItem.order_item_id];
             rows.push({
               id: payment.id,
+              payment_group_id: parsePaymentNotes(payment.notes).paymentGroupId ?? payment.id,
               created_at: payment.created_at,
               cashier_name: profilesMap[payment.created_by] ?? "Usuario",
               amount: Number(payment.amount),
@@ -718,6 +1020,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           const legacyItem = meta.itemId ? itemsMap[meta.itemId] : undefined;
           rows.push({
             id: payment.id,
+            payment_group_id: parsePaymentNotes(payment.notes).paymentGroupId ?? payment.id,
             created_at: payment.created_at,
             cashier_name: profilesMap[payment.created_by] ?? "Usuario",
             amount: Number(payment.amount),
@@ -745,7 +1048,28 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-      return { rows, total: count ?? rows.length };
+      const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
+      for (const payment of summaryPayments) {
+        const meta = parsePaymentNotes(payment.notes);
+        if (meta.reversed || meta.voided) continue;
+        const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
+        current.amount += Number(payment.amount);
+        current.paymentCount += 1;
+        summaryMap.set(payment.payment_method_id, current);
+      }
+
+      const methodSummary = Array.from(summaryMap.entries())
+        .map(([methodId, totals]) => ({
+          methodId,
+          methodName: methodsMap[methodId] ?? "Metodo",
+          amount: roundMoney(totals.amount),
+          paymentCount: totals.paymentCount,
+        }))
+        .sort((a, b) => b.amount - a.amount || a.methodName.localeCompare(b.methodName));
+
+      const collectedTotal = roundMoney(methodSummary.reduce((sum, row) => sum + row.amount, 0));
+
+      return { rows, total: count ?? rows.length, methodSummary, collectedTotal };
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
     refetchInterval: 10000,
@@ -794,21 +1118,98 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   });
 
   const payOrder = useMutation({
-    mutationFn: async ({ orderId, itemPayments, totalAmount, receivedDenoms, changeDenoms }: PayOrderParams) => {
+    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms }: PayOrderParams) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
-      if (itemPayments.length === 0) throw new Error("Selecciona al menos un item para cobrar");
+      if (itemSelections.length === 0) throw new Error("Selecciona al menos un item para cobrar");
+      if (paymentSplits.length === 0) throw new Error("Selecciona al menos un metodo de pago");
 
-      const itemIds = itemPayments.map((item) => item.itemId);
-      const invalid = itemPayments.find(
-        (item) => !item.methodId || item.amount <= 0 || item.quantity <= 0 || !Number.isInteger(item.quantity)
+      const itemIds = itemSelections.map((item) => item.itemId);
+      const invalidSelection = itemSelections.find((item) => item.amount <= 0 || item.quantity <= 0 || !Number.isInteger(item.quantity));
+      if (invalidSelection) throw new Error("Todos los items seleccionados deben tener cantidad valida");
+
+      const invalidSplit = paymentSplits.find((split) => !split.methodId || Number(split.amount) <= 0);
+      if (invalidSplit) throw new Error("Todos los metodos aplicados deben tener un monto valido");
+
+      const invalidTenderedSplit = tenderedSplits.find((split) => !split.methodId || Number(split.amount) <= 0);
+      if (invalidTenderedSplit) throw new Error("Todos los metodos recibidos deben tener un monto valido");
+
+      const methodIds = [...new Set([...paymentSplits.map((split) => split.methodId), ...tenderedSplits.map((split) => split.methodId)])];
+      const { data: selectedMethods, error: selectedMethodsError } = await supabase
+        .from("payment_methods")
+        .select("id, name")
+        .in("id", methodIds);
+      if (selectedMethodsError) throw selectedMethodsError;
+      if ((selectedMethods ?? []).length !== methodIds.length) {
+        throw new Error("Hay metodos de pago invalidos en la operacion");
+      }
+
+      const cashMethods = (selectedMethods ?? []).filter((method) => isCashPaymentMethodName(method.name));
+      if (cashMethods.length > 1) throw new Error("Solo puede existir un pago en efectivo por cobro");
+      const cashMethodId = cashMethods[0]?.id ?? null;
+      const cashSplit = cashMethodId ? paymentSplits.find((split) => split.methodId === cashMethodId) ?? null : null;
+      const cashSplitAmount = roundMoney(cashSplit?.amount ?? 0);
+
+      const appliedTotal = roundMoney(paymentSplits.reduce((sum, split) => sum + Number(split.amount), 0));
+      if (Math.abs(appliedTotal - totalAmount) > 0.01) {
+        throw new Error("La suma aplicada no coincide con el total del cobro");
+      }
+
+      const tenderedTotal = roundMoney(tenderedSplits.reduce((sum, split) => sum + Number(split.amount), 0));
+      if (Math.abs(tenderedTotal - receivedTotal) > 0.01) {
+        throw new Error("Inconsistencia detectada en el total recibido");
+      }
+      if (receivedTotal + 0.001 < totalAmount) {
+        throw new Error("El total recibido es menor al total del cobro");
+      }
+
+      const totalReceivedCash = roundMoney(
+        cashReceivedDenoms.reduce((sum, entry) => {
+          const denom = shift.denoms.find((item) => item.denomination_id === entry.denomination_id);
+          return sum + (denom ? denom.value * entry.qty : 0);
+        }, 0),
       );
-      if (invalid) throw new Error("Todos los items seleccionados deben tener cantidad y metodo de pago validos");
+
+      if (cashSplitAmount > 0 && totalReceivedCash + 0.001 < cashSplitAmount) {
+        throw new Error("El efectivo recibido es menor al monto aplicado en efectivo");
+      }
+
+      const expectedChangeTotal = roundMoney(Math.max(0, receivedTotal - totalAmount));
+      const providedChangeTotal = roundMoney(
+        cashChangeDenoms.reduce((sum, entry) => {
+          const denom = shift.denoms.find((item) => item.denomination_id === entry.denomination_id);
+          return sum + (denom ? denom.value * entry.qty : 0);
+        }, 0),
+      );
+      if (Math.abs(providedChangeTotal - expectedChangeTotal) > 0.01) {
+        throw new Error("El detalle del cambio no coincide con el excedente recibido");
+      }
+
+      const availableCashByDenom: Record<string, number> = {};
+      for (const denom of shift.denoms) {
+        availableCashByDenom[denom.denomination_id] = denom.qty_current;
+      }
+      for (const receivedDenom of cashReceivedDenoms) {
+        availableCashByDenom[receivedDenom.denomination_id] = (availableCashByDenom[receivedDenom.denomination_id] ?? 0) + receivedDenom.qty;
+      }
+      for (const changeDenom of cashChangeDenoms) {
+        availableCashByDenom[changeDenom.denomination_id] = (availableCashByDenom[changeDenom.denomination_id] ?? 0) - changeDenom.qty;
+        if (availableCashByDenom[changeDenom.denomination_id] < 0) {
+          throw new Error("No hay suficientes denominaciones en caja para entregar el cambio");
+        }
+      }
+
+      const { data: orderData, error: orderDataError } = await supabase
+        .from("orders")
+        .select("order_type, status")
+        .eq("id", orderId)
+        .single();
+      if (orderDataError) throw orderDataError;
 
       const { data: dbItems, error: dbItemsError } = await supabase
         .from("order_items")
-        .select("id, quantity, unit_price, total")
+        .select("id, quantity, unit_price, total, paid_at")
         .eq("order_id", orderId)
         .in("id", itemIds);
       if (dbItemsError) throw dbItemsError;
@@ -818,58 +1219,65 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const paidRows = await fetchActivePaymentItemsForOrderItems(itemIds);
       const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRows);
-      const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
+      const operationalMaps = await fetchOperationalMaps(itemIds);
       const dbItemMap = Object.fromEntries((dbItems ?? []).map((item) => [item.id, item]));
 
-      for (const itemPayment of itemPayments) {
-        const dbItem = dbItemMap[itemPayment.itemId];
+      for (const itemSelection of itemSelections) {
+        const dbItem = dbItemMap[itemSelection.itemId];
         if (!dbItem) throw new Error("Item no encontrado en la orden");
 
-        const alreadyPaidQty = paidQtyMap[itemPayment.itemId] ?? 0;
-        const alreadyCancelledQty = cancelledQtyMap[itemPayment.itemId] ?? 0;
-        const pendingQty = Math.max(0, Number(dbItem.quantity) - alreadyPaidQty - alreadyCancelledQty);
-        if (itemPayment.quantity > pendingQty) {
-          throw new Error("No puedes pagar mas cantidad de la pendiente activa");
+        const quantities = computeOperationalQuantities({
+          quantityOrdered: Number(dbItem.quantity ?? 0),
+          quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,
+          quantityDispatched: operationalMaps.dispatchedMap[itemSelection.itemId] ?? 0,
+          quantityCancelledPending: operationalMaps.cancelledPendingMap[itemSelection.itemId] ?? 0,
+          quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
+        });
+        const payableQty = getPayableQuantityForOrderType(orderData.order_type as "DINE_IN" | "TAKEOUT", quantities);
+        const alreadyPaidQty = resolvePaidQuantity({
+          payableQuantity: payableQty,
+          orderedQuantity: Number(dbItem.quantity ?? 0),
+          paidQuantityFromPayments: paidQtyMap[itemSelection.itemId] ?? 0,
+          paidAt: dbItem.paid_at,
+        });
+        const pendingPayableQty = Math.max(0, payableQty - alreadyPaidQty);
+
+        if (itemSelection.quantity > pendingPayableQty) {
+          throw new Error("No puedes pagar mas cantidad de la despachada pendiente");
         }
 
         const unitPrice = Number(dbItem.unit_price);
-        if (Math.abs(unitPrice - itemPayment.unitPrice) > 0.01) {
+        if (Math.abs(unitPrice - itemSelection.unitPrice) > 0.01) {
           throw new Error("Inconsistencia detectada en el precio unitario del item");
         }
 
-        const expectedAmount = Math.round(itemPayment.quantity * unitPrice * 100) / 100;
-        if (Math.abs(expectedAmount - itemPayment.amount) > 0.01) {
+        const expectedAmount = Math.round(itemSelection.quantity * unitPrice * 100) / 100;
+        if (Math.abs(expectedAmount - itemSelection.amount) > 0.01) {
           throw new Error("Inconsistencia detectada entre cantidad, precio unitario y total");
         }
       }
 
-      const expectedTotal = Math.round(itemPayments.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
+      const expectedTotal = Math.round(itemSelections.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
       if (Math.abs(expectedTotal - totalAmount) > 0.01) {
         throw new Error("Inconsistencia detectada en el total del cobro");
       }
 
       const now = new Date().toISOString();
+      const paymentGroupId = generateUUID();
+      const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
+      let anchorPaymentId = null;
 
-      for (const itemPayment of itemPayments) {
+      for (const [index, paymentSplit] of paymentSplits.entries()) {
         const paymentId = generateUUID();
+        if (index === 0) anchorPaymentId = paymentId;
 
         await dbInsert("payments", {
           id: paymentId,
           order_id: orderId,
-          payment_method_id: itemPayment.methodId,
-          amount: itemPayment.amount,
-          notes: `ITEM:${itemPayment.itemId}|QTY:${itemPayment.quantity}`,
+          payment_method_id: paymentSplit.methodId,
+          amount: paymentSplit.amount,
+          notes: `GROUP:${paymentGroupId}|ITEMS_ANCHOR:${index === 0 ? 1 : 0}|TENDERED:${(tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount).toFixed(2)}|APPLIED:${Number(paymentSplit.amount).toFixed(2)}`,
           created_by: user.id,
-          created_at: now,
-        });
-
-        await dbInsert("payment_items", {
-          id: generateUUID(),
-          payment_id: paymentId,
-          order_item_id: itemPayment.itemId,
-          quantity_paid: itemPayment.quantity,
-          unit_price: itemPayment.unitPrice,
-          total_amount: itemPayment.amount,
           created_at: now,
         });
 
@@ -883,50 +1291,25 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         });
       }
 
-      const { data: orderItemsAfter, error: orderItemsAfterError } = await supabase
-        .from("order_items")
-        .select("id, quantity")
-        .eq("order_id", orderId);
-      if (orderItemsAfterError) throw orderItemsAfterError;
+      if (!anchorPaymentId) throw new Error("No se pudo registrar el pago");
 
-      const orderItemIdsAfter = (orderItemsAfter ?? []).map((item) => item.id);
-      const paidRowsAfter = await fetchActivePaymentItemsForOrderItems(orderItemIdsAfter);
-      const paidQtyMapAfter = aggregatePaidQuantityByOrderItem(paidRowsAfter);
-      const cancelledQtyMapAfter = await fetchAppliedCancelledQuantityByOrderItem(orderItemIdsAfter);
-
-      for (const orderItem of orderItemsAfter ?? []) {
-        const paidQty = paidQtyMapAfter[orderItem.id] ?? 0;
-        const isFullyPaid = paidQty >= Number(orderItem.quantity);
-        await dbUpdate("order_items", orderItem.id, { paid_at: isFullyPaid ? now : null });
+      for (const itemSelection of itemSelections) {
+        await dbInsert("payment_items", {
+          id: generateUUID(),
+          payment_id: anchorPaymentId,
+          order_item_id: itemSelection.itemId,
+          quantity_paid: itemSelection.quantity,
+          unit_price: itemSelection.unitPrice,
+          total_amount: itemSelection.amount,
+          created_at: now,
+        });
       }
 
-      const allFullyPaid = (orderItemsAfter ?? []).every(
-        (orderItem) => (paidQtyMapAfter[orderItem.id] ?? 0) + (cancelledQtyMapAfter[orderItem.id] ?? 0) >= Number(orderItem.quantity)
-      );
-
-      const { data: orderData, error: orderDataError } = await supabase
-        .from("orders")
-        .select("order_type")
-        .eq("id", orderId)
-        .single();
-      if (orderDataError) throw orderDataError;
-
-      if (allFullyPaid) {
-        const nextStatus = orderData?.order_type === "TAKEOUT" ? "SENT_TO_KITCHEN" : "PAID";
-        const orderUpdate: Record<string, unknown> = { status: nextStatus };
-        if (nextStatus === "PAID") {
-          orderUpdate.paid_at = now;
-        }
-        await dbUpdate("orders", orderId, orderUpdate);
-      } else {
-        await dbUpdate("orders", orderId, { status: "KITCHEN_DISPATCHED", paid_at: null });
-      }
-
-      const denomChanges: Record<string, number> = {};
-      for (const rd of receivedDenoms) {
+      const denomChanges = {};
+      for (const rd of cashReceivedDenoms) {
         denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
       }
-      for (const cd of changeDenoms) {
+      for (const cd of cashChangeDenoms) {
         denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
       }
       for (const [denomId, delta] of Object.entries(denomChanges)) {
@@ -939,7 +1322,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-      for (const cd of changeDenoms) {
+      for (const cd of cashChangeDenoms) {
         await dbInsert("cash_movements", {
           id: generateUUID(),
           shift_id: shift.id,
@@ -949,11 +1332,79 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           created_at: now,
         });
       }
+
+      const { data: orderItemsAfter, error: orderItemsAfterError } = await supabase
+        .from("order_items")
+        .select("id, quantity")
+        .eq("order_id", orderId);
+      if (orderItemsAfterError) throw orderItemsAfterError;
+
+      const orderItemIdsAfter = (orderItemsAfter ?? []).map((item) => item.id);
+      const paidRowsAfter = await fetchActivePaymentItemsForOrderItems(orderItemIdsAfter);
+      const paidQtyMapAfter = aggregatePaidQuantityByOrderItem(paidRowsAfter);
+      const operationalMapsAfter = await fetchOperationalMaps(orderItemIdsAfter);
+
+      for (const orderItem of orderItemsAfter ?? []) {
+        const quantities = computeOperationalQuantities({
+          quantityOrdered: Number(orderItem.quantity ?? 0),
+          quantityReadyTotal: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
+          quantityDispatched: operationalMapsAfter.dispatchedMap[orderItem.id] ?? 0,
+          quantityCancelledPending: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
+          quantityCancelledReady: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
+        });
+        const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+        const paidQty = paidQtyMapAfter[orderItem.id] ?? 0;
+        const isFullyPaid = activeQty <= 0 || paidQty >= activeQty;
+        await dbUpdate("order_items", orderItem.id, { paid_at: isFullyPaid ? now : null });
+      }
+
+      const allFullyPaid = (orderItemsAfter ?? []).every((orderItem) => {
+        const quantities = computeOperationalQuantities({
+          quantityOrdered: Number(orderItem.quantity ?? 0),
+          quantityReadyTotal: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
+          quantityDispatched: operationalMapsAfter.dispatchedMap[orderItem.id] ?? 0,
+          quantityCancelledPending: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
+          quantityCancelledReady: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
+        });
+        const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+        return activeQty <= 0 || (paidQtyMapAfter[orderItem.id] ?? 0) >= activeQty;
+      });
+
+      const operationalStatusAfterPayment = deriveOrderOperationalStatus(
+        (orderItemsAfter ?? []).map((orderItem) => ({
+          quantity: Number(orderItem.quantity ?? 0),
+          readyQuantity: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
+          dispatchedQuantity: operationalMapsAfter.dispatchedMap[orderItem.id] ?? 0,
+          cancelledPendingQuantity: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
+          cancelledReadyQuantity: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
+        })),
+        (orderData?.status ?? "SENT_TO_KITCHEN") as OrderStatus,
+      );
+
+      if (allFullyPaid) {
+        if (orderData?.order_type === "TAKEOUT") {
+          await dbUpdate("orders", orderId, {
+            status: operationalStatusAfterPayment,
+            paid_at: now,
+          });
+        } else {
+          await dbUpdate("orders", orderId, {
+            status: "PAID",
+            paid_at: now,
+          });
+        }
+      } else {
+        const nextStatus = orderData?.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : operationalStatusAfterPayment;
+        await dbUpdate("orders", orderId, { status: nextStatus, paid_at: null });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       toast.success("Pago registrado");
     },
@@ -983,6 +1434,33 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     return [...new Set(ids)];
   };
 
+  const expandPaymentIdsByGroup = async (paymentIds: string[]) => {
+    const uniqueIds = [...new Set(paymentIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return [];
+
+    const { data: selectedPayments, error: selectedPaymentsError } = await supabase
+      .from("payments")
+      .select("id, notes")
+      .in("id", uniqueIds);
+    if (selectedPaymentsError) throw selectedPaymentsError;
+
+    const groupIds = [...new Set((selectedPayments ?? []).map((payment) => parsePaymentNotes(payment.notes).paymentGroupId).filter(Boolean))] as string[];
+    if (groupIds.length === 0) return uniqueIds;
+
+    const groupedResults = await Promise.all(
+      groupIds.map(async (groupId) => {
+        const { data, error } = await supabase
+          .from("payments")
+          .select("id, notes")
+          .ilike("notes", "%GROUP:" + groupId + "%");
+        if (error) throw error;
+        return (data ?? []).map((row) => row.id);
+      }),
+    );
+
+    return [...new Set([...uniqueIds, ...groupedResults.flat()])];
+  };
+
   const requestPaymentReversal = useMutation({
     mutationFn: async ({
       paymentId,
@@ -995,7 +1473,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     }) => {
       if (!user) throw new Error("No user");
       if (!reason.trim()) throw new Error("Debes ingresar un motivo");
-      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
+      const targetIds = await expandPaymentIdsByGroup(resolvePaymentIds(paymentId, paymentEntryIds));
       const marker = buildMarker("REVERSAL_REQUESTED", user.id, reason);
 
       const { data: payments, error: paymentsError } = await supabase
@@ -1032,7 +1510,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     }) => {
       if (!user) throw new Error("No user");
       if (!reason.trim()) throw new Error("Debes ingresar un motivo");
-      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
+      const targetIds = await expandPaymentIdsByGroup(resolvePaymentIds(paymentId, paymentEntryIds));
 
       const { data: payments, error: paymentsError } = await supabase
         .from("payments")
@@ -1056,6 +1534,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       if (affectedOrderIds.size > 0) {
         const orderIds = [...affectedOrderIds];
+        const now = new Date().toISOString();
 
         const { data: orderItems, error: orderItemsError } = await supabase
           .from("order_items")
@@ -1066,12 +1545,19 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const orderItemIds = (orderItems ?? []).map((item) => item.id);
         const paidRows = await fetchActivePaymentItemsForOrderItems(orderItemIds);
         const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRows);
-        const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(orderItemIds);
+        const operationalMaps = await fetchOperationalMaps(orderItemIds);
 
         for (const orderItem of orderItems ?? []) {
-          const paidQty = paidQtyMap[orderItem.id] ?? 0;
-          const isFullyPaid = paidQty >= Number(orderItem.quantity);
-          await dbUpdate("order_items", orderItem.id, { paid_at: isFullyPaid ? new Date().toISOString() : null });
+          const quantities = computeOperationalQuantities({
+            quantityOrdered: Number(orderItem.quantity ?? 0),
+            quantityReadyTotal: operationalMaps.readyMap[orderItem.id] ?? 0,
+            quantityDispatched: operationalMaps.dispatchedMap[orderItem.id] ?? 0,
+            quantityCancelledPending: operationalMaps.cancelledPendingMap[orderItem.id] ?? 0,
+            quantityCancelledReady: operationalMaps.cancelledReadyMap[orderItem.id] ?? 0,
+          });
+          const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+          const isFullyPaid = activeQty <= 0 || (paidQtyMap[orderItem.id] ?? 0) >= activeQty;
+          await dbUpdate("order_items", orderItem.id, { paid_at: isFullyPaid ? now : null });
         }
 
         const itemsByOrder: Record<string, { id: string; quantity: number }[]> = {};
@@ -1082,25 +1568,50 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
         const { data: affectedOrders, error: affectedOrdersError } = await supabase
           .from("orders")
-          .select("id, order_type")
+          .select("id, order_type, status")
           .in("id", orderIds);
         if (affectedOrdersError) throw affectedOrdersError;
 
         for (const order of affectedOrders ?? []) {
-          const allFullyPaid = (itemsByOrder[order.id] ?? []).every(
-            (item) => (paidQtyMap[item.id] ?? 0) + (cancelledQtyMap[item.id] ?? 0) >= item.quantity
+          const allFullyPaid = (itemsByOrder[order.id] ?? []).every((item) => {
+            const quantities = computeOperationalQuantities({
+              quantityOrdered: item.quantity,
+              quantityReadyTotal: operationalMaps.readyMap[item.id] ?? 0,
+              quantityDispatched: operationalMaps.dispatchedMap[item.id] ?? 0,
+              quantityCancelledPending: operationalMaps.cancelledPendingMap[item.id] ?? 0,
+              quantityCancelledReady: operationalMaps.cancelledReadyMap[item.id] ?? 0,
+            });
+            const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+            return activeQty <= 0 || (paidQtyMap[item.id] ?? 0) >= activeQty;
+          });
+
+          const operationalStatus = deriveOrderOperationalStatus(
+            (itemsByOrder[order.id] ?? []).map((item) => ({
+              quantity: item.quantity,
+              readyQuantity: operationalMaps.readyMap[item.id] ?? 0,
+              dispatchedQuantity: operationalMaps.dispatchedMap[item.id] ?? 0,
+              cancelledPendingQuantity: operationalMaps.cancelledPendingMap[item.id] ?? 0,
+              cancelledReadyQuantity: operationalMaps.cancelledReadyMap[item.id] ?? 0,
+            })),
+            order.status as OrderStatus,
           );
 
           if (allFullyPaid) {
-            const nextStatus = order.order_type === "TAKEOUT" ? "SENT_TO_KITCHEN" : "PAID";
-            const nextUpdate: Record<string, unknown> = { status: nextStatus };
-            if (nextStatus === "PAID") {
-              nextUpdate.paid_at = new Date().toISOString();
+            if (order.order_type === "TAKEOUT") {
+              await dbUpdate("orders", order.id, {
+                status: operationalStatus,
+                paid_at: now,
+              });
+            } else {
+              await dbUpdate("orders", order.id, {
+                status: "PAID",
+                paid_at: now,
+              });
             }
-            await dbUpdate("orders", order.id, nextUpdate);
           } else {
+            const nextStatus = order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : operationalStatus;
             await dbUpdate("orders", order.id, {
-              status: "KITCHEN_DISPATCHED",
+              status: nextStatus,
               paid_at: null,
             });
           }
@@ -1110,6 +1621,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       toast.success("Pago reversado correctamente");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1130,7 +1645,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (!user) throw new Error("No user");
       const prefix = approved ? "REVERSAL_APPROVED" : "REVERSAL_REJECTED";
       const marker = buildMarker(prefix, user.id, reason || "Sin observacion");
-      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
+      const targetIds = await expandPaymentIdsByGroup(resolvePaymentIds(paymentId, paymentEntryIds));
       for (const targetId of targetIds) {
         await updatePaymentNotes(targetId, marker);
       }
@@ -1167,6 +1682,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     paymentMethods: methodsQuery.data ?? [],
     completedPayments: completedPaymentsQuery.data?.rows ?? [],
     completedPaymentsTotal: completedPaymentsQuery.data?.total ?? 0,
+    completedPaymentsMethodSummary: completedPaymentsQuery.data?.methodSummary ?? [],
+    completedPaymentsCollectedTotal: completedPaymentsQuery.data?.collectedTotal ?? 0,
     isLoadingCompletedPayments: completedPaymentsQuery.isLoading,
     cashierReverseWindowMinutes: cashierReverseWindowQuery.data ?? DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES,
     openShift,
@@ -1177,6 +1694,13 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     closeShift,
   };
 }
+
+
+
+
+
+
+
 
 
 

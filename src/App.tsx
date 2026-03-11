@@ -1,4 +1,4 @@
-import { Toaster } from "@/components/ui/toaster";
+﻿import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -21,15 +21,17 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+const LoadingScreen = () => (
+  <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+  </div>
+);
+
 const AuthGate = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) return <Navigate to="/login" replace />;
@@ -42,22 +44,22 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
 };
 
 const BranchGate = ({ children }: { children: React.ReactNode }) => {
-  const { branches, activeBranch, setActiveBranch, loading } = useBranch();
+  const { branches, activeBranch, setActiveBranch, loading, isGlobalAdmin } = useBranch();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (branches.length === 0) {
+    if (isGlobalAdmin) {
+      return <>{children}</>;
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4 text-center">
         <div>
           <p className="font-display text-lg font-bold text-foreground">Sin sucursales asignadas</p>
-          <p className="text-sm text-muted-foreground mt-1">Contacta al administrador.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Contacta al administrador.</p>
         </div>
       </div>
     );
@@ -67,16 +69,16 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <div className="w-full max-w-sm space-y-4">
-          <h1 className="font-display text-xl font-bold text-foreground text-center">Selecciona sucursal</h1>
+          <h1 className="text-center font-display text-xl font-bold text-foreground">Selecciona sucursal</h1>
           <div className="grid gap-3">
             {branches.map((b) => (
               <button
                 key={b.id}
                 onClick={() => void setActiveBranch(b)}
-                className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm active:scale-95 transition-transform"
+                className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-transform active:scale-95"
               >
                 <span className="font-display text-sm font-semibold">{b.name}</span>
-                {b.address && <p className="text-xs text-muted-foreground mt-0.5">{b.address}</p>}
+                {b.address && <p className="mt-0.5 text-xs text-muted-foreground">{b.address}</p>}
               </button>
             ))}
           </div>
@@ -86,6 +88,20 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
   }
 
   return <>{children}</>;
+};
+
+const HomeRedirect = () => {
+  const { branches, isGlobalAdmin, loading } = useBranch();
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  if (isGlobalAdmin && branches.length === 0) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  return <Navigate to="/mesas" replace />;
 };
 
 const SyncInit = () => {
@@ -134,7 +150,7 @@ const App = () => (
                 <Route
                   path="/despacho"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "despacho_total", level: "VIEW" }}>
+                    <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]}>
                       <Despacho />
                     </ProtectedRoute>
                   }
@@ -163,8 +179,8 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
+                <Route path="/" element={<HomeRedirect />} />
               </Route>
-              <Route path="/" element={<Navigate to="/mesas" replace />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

@@ -1,9 +1,21 @@
 import { useState, useEffect } from "react";
-import { OrderSummary } from "@/hooks/useOrdersByStatus";
+import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
+
+const CARD_SUMMARY_LIMITS = {
+  maxItems: 3,
+  maxModifiersPerItem: 2,
+  maxModifiersTotal: 4,
+} as const;
+
+type CardItemSummary = OrderItemSummary & {
+  visibleModifiers: { description: string }[];
+  hiddenModifiersCount: number;
+  hasNote: boolean;
+};
 
 function useElapsed(since: string | null | undefined) {
   const [elapsed, setElapsed] = useState(() => {
@@ -28,6 +40,40 @@ function formatEventTimeWithLabel(iso: string | null | undefined): string {
   return d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 }
 
+function buildCardSummary(items: OrderItemSummary[]) {
+  const activeItems = items.filter((item) => item.status !== "DRAFT");
+  const visibleItems: CardItemSummary[] = [];
+  let hiddenItemsCount = 0;
+  let remainingModifierBudget = CARD_SUMMARY_LIMITS.maxModifiersTotal;
+
+  for (const item of activeItems) {
+    if (visibleItems.length >= CARD_SUMMARY_LIMITS.maxItems) {
+      hiddenItemsCount += 1;
+      continue;
+    }
+
+    const validModifiers = (item.modifiers ?? []).filter(
+      (modifier) => String(modifier.description ?? "").trim().length > 0,
+    );
+    const visibleModifierCount = Math.max(
+      0,
+      Math.min(CARD_SUMMARY_LIMITS.maxModifiersPerItem, remainingModifierBudget, validModifiers.length),
+    );
+    const visibleModifiers = validModifiers.slice(0, visibleModifierCount);
+
+    remainingModifierBudget = Math.max(0, remainingModifierBudget - visibleModifiers.length);
+
+    visibleItems.push({
+      ...item,
+      visibleModifiers,
+      hiddenModifiersCount: Math.max(0, validModifiers.length - visibleModifiers.length),
+      hasNote: String(item.item_note ?? "").trim().length > 0,
+    });
+  }
+
+  return { visibleItems, hiddenItemsCount };
+}
+
 interface OrderCardBaseProps {
   order: OrderSummary;
   onCancel?: (order: OrderSummary) => void;
@@ -47,6 +93,7 @@ export function OrderCardBase({
 }: OrderCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
+  const { visibleItems, hiddenItemsCount } = buildCardSummary(order.items ?? []);
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
@@ -57,7 +104,7 @@ export function OrderCardBase({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
+        "flex self-start flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
         isWarning ? "border-warning/50 shadow-md shadow-warning/10" : "border-border",
       )}
     >
@@ -99,36 +146,55 @@ export function OrderCardBase({
         </div>
       </div>
 
-      <div className="flex-1 space-y-2 px-4 py-3">
-        {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
-          <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start gap-2">
-                <Badge className="w-9 justify-center border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
-                  {item.quantity || 1}x
-                </Badge>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {item.description_snapshot || "Item sin nombre"}
-                  </p>
-                  {item.modifiers && item.modifiers.length > 0 && (
-                    <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
-                      {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
-                        <span key={modifier.description}>- {modifier.description}</span>
-                      ))}
-                    </div>
-                  )}
-                  {item.item_note && (
-                    <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
-                  )}
+      <div className="px-4 py-3">
+        <div className="space-y-3">
+          {visibleItems.map((item) => (
+            <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-2">
+                  <Badge className="w-9 justify-center border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
+                    {item.quantity || 1}x
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {item.description_snapshot || "Item sin nombre"}
+                    </p>
+
+                    {item.visibleModifiers.length > 0 && (
+                      <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                        {item.visibleModifiers.map((modifier, index) => (
+                          <p key={`${item.id}-modifier-${index}-${modifier.description}`} className="truncate pl-2">
+                            - {modifier.description}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
+                    {item.hiddenModifiersCount > 0 && (
+                      <p className="mt-1 pl-2 text-xs font-medium text-muted-foreground">
+                        +{item.hiddenModifiersCount} modificacion
+                        {item.hiddenModifiersCount !== 1 ? "es" : ""} mas
+                      </p>
+                    )}
+
+                    {item.hasNote && (
+                      <p className="mt-1 pl-2 text-xs italic text-muted-foreground">Nota adicional</p>
+                    )}
+                  </div>
                 </div>
               </div>
+              <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
+                ${item.total ? item.total.toFixed(2) : "0.00"}
+              </span>
             </div>
-            <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
-              ${item.total ? item.total.toFixed(2) : "0.00"}
-            </span>
-          </div>
-        )) || []}
+          ))}
+
+          {hiddenItemsCount > 0 && (
+            <div className="rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+              +{hiddenItemsCount} item{hiddenItemsCount !== 1 ? "s" : ""} mas
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-2 flex items-center justify-between border-t border-border px-4 py-3 text-sm">
@@ -164,5 +230,3 @@ export function OrderCardBase({
 }
 
 export default OrderCardBase;
-
-

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
 import OrderCard from "./OrderCard";
@@ -13,14 +13,45 @@ interface TabInfo {
   label: string;
   status: string | null;
   showCancel: boolean;
+  helperText: string;
 }
 
 const tabs: TabInfo[] = [
-  { key: "sent", label: "Enviadas", status: "SENT_TO_KITCHEN", showCancel: true },
-  { key: "ready", label: "Listas", status: "READY", showCancel: true },
-  { key: "dispatched", label: "Despachadas", status: "KITCHEN_DISPATCHED", showCancel: true },
-  { key: "cancelled", label: "Canceladas", status: "CANCELLED", showCancel: false },
-  { key: "paid", label: "Pagadas", status: "PAID", showCancel: false },
+  {
+    key: "sent",
+    label: "Enviadas",
+    status: "SENT_TO_KITCHEN",
+    showCancel: true,
+    helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
+  },
+  {
+    key: "ready",
+    label: "Listas",
+    status: "READY",
+    showCancel: true,
+    helperText: "Aqui ves solo las cantidades que ya estan listas para entregar o despachar.",
+  },
+  {
+    key: "dispatched",
+    label: "Despachadas",
+    status: "KITCHEN_DISPATCHED",
+    showCancel: true,
+    helperText: "Aqui ves solo las cantidades de mesa que ya fueron despachadas, aunque la linea original haya sido mayor.",
+  },
+  {
+    key: "cancelled",
+    label: "Canceladas",
+    status: "CANCELLED",
+    showCancel: false,
+    helperText: "Aqui ves las cantidades anuladas y tambien las ordenes para llevar ya despachadas.",
+  },
+  {
+    key: "paid",
+    label: "Pagadas",
+    status: "PAID",
+    showCancel: false,
+    helperText: "Aqui ves las ordenes ya cerradas para cobro.",
+  },
 ];
 
 interface OrdersListProps {
@@ -105,7 +136,11 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
         })}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="mb-4 rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+        {currentTab.helperText}
+      </div>
+
+      <div className="grid auto-rows-max grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {currentOrders.isLoading ? (
           <div className="col-span-full flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin" />

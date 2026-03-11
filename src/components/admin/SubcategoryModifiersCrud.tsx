@@ -1,11 +1,10 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface CategoryRow {
@@ -110,13 +109,14 @@ const SubcategoryModifiersCrud = () => {
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["admin-subcategory-modifiers-assignments", selectedSubcategory] });
+    qc.invalidateQueries({ queryKey: ["menu-modifiers"] });
   };
 
   const addAssignment = useMutation({
     mutationFn: async () => {
       if (!selectedSubcategory) throw new Error("Selecciona una subcategoria");
       if (!selectedModifier) throw new Error("Selecciona un modificador");
-      const nextOrder = assignments.length > 0 ? Math.max(...assignments.map((a) => Number(a.display_order ?? 0))) + 1 : 0;
+      const nextOrder = assignments.length > 0 ? Math.max(...assignments.map((a) => Number(a.display_order ?? 0))) + 1 : 1;
       const { error } = await supabase.from("subcategory_modifiers" as never).insert({
         subcategory_id: selectedSubcategory,
         modifier_id: selectedModifier,
@@ -143,6 +143,25 @@ const SubcategoryModifiersCrud = () => {
       toast.success("Asociacion actualizada");
     },
     onError: (err: any) => toast.error(err.message || "No se pudo actualizar"),
+  });
+
+  const moveAssignment = useMutation({
+    mutationFn: async ({ current, target }: { current: AssignmentRow; target: AssignmentRow }) => {
+      const tempOrder = -1000000 - Number(current.display_order || 0);
+
+      let error = (await supabase.from("subcategory_modifiers" as never).update({ display_order: tempOrder } as never).eq("id", current.id)).error;
+      if (error) throw error;
+
+      error = (await supabase.from("subcategory_modifiers" as never).update({ display_order: current.display_order } as never).eq("id", target.id)).error;
+      if (error) throw error;
+
+      error = (await supabase.from("subcategory_modifiers" as never).update({ display_order: target.display_order } as never).eq("id", current.id)).error;
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refresh();
+    },
+    onError: (err: any) => toast.error(err.message || "No se pudo mover la asociacion"),
   });
 
   const removeAssignment = useMutation({
@@ -207,8 +226,8 @@ const SubcategoryModifiersCrud = () => {
 
       {selectedSubcategory && (
         <>
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border p-3">
-            <div className="flex-1 min-w-[220px]">
+          <div className="flex min-w-0 flex-wrap items-end gap-2 rounded-lg border border-border p-3">
+            <div className="min-w-[220px] flex-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Agregar modificacion</label>
               <select
                 value={selectedModifier}
@@ -237,30 +256,49 @@ const SubcategoryModifiersCrud = () => {
             </div>
           ) : (
             <div className="space-y-2">
-              {assignments.map((assignment) => (
-                <div key={assignment.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2">
-                  <div className="min-w-[220px] flex-1 text-sm">{assignment.modifiers?.description ?? "Modificador"}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Activo</span>
-                    <Switch
-                      checked={assignment.is_active}
-                      onCheckedChange={(checked) => updateAssignment.mutate({ id: assignment.id, patch: { is_active: checked } })}
-                    />
+              {assignments.map((assignment) => {
+                const index = assignments.findIndex((item) => item.id === assignment.id);
+                const prev = index > 0 ? assignments[index - 1] : null;
+                const next = index >= 0 && index < assignments.length - 1 ? assignments[index + 1] : null;
+
+                return (
+                  <div key={assignment.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2">
+                    <div className="min-w-[220px] flex-1 text-sm">{assignment.modifiers?.description ?? "Modificador"}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Activo</span>
+                      <Switch
+                        checked={assignment.is_active}
+                        onCheckedChange={(checked) => updateAssignment.mutate({ id: assignment.id, patch: { is_active: checked } })}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Orden</span>
+                      <span className="min-w-[2rem] text-sm text-foreground">{assignment.display_order}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      disabled={!prev || moveAssignment.isPending}
+                      onClick={() => prev && moveAssignment.mutate({ current: assignment, target: prev })}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      disabled={!next || moveAssignment.isPending}
+                      onClick={() => next && moveAssignment.mutate({ current: assignment, target: next })}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => removeAssignment.mutate(assignment.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Orden</span>
-                    <Input
-                      type="number"
-                      className="h-8 w-20"
-                      value={assignment.display_order}
-                      onChange={(e) => updateAssignment.mutate({ id: assignment.id, patch: { display_order: Number(e.target.value || 0) } })}
-                    />
-                  </div>
-                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => removeAssignment.mutate(assignment.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>

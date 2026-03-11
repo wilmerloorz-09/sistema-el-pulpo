@@ -129,6 +129,10 @@ export default function OrderDetailPanel({
         </div>
       </div>
 
+      <div className="border-b border-border bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
+        Las cantidades mostradas aqui corresponden solo a la etapa operativa de esta pestaña.
+      </div>
+
       <div className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div key={item.id} className="flex items-start gap-2 rounded-xl bg-background px-2 py-2">
@@ -137,13 +141,8 @@ export default function OrderDetailPanel({
             </Badge>
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium text-foreground">{item.description_snapshot || "Item sin nombre"}</p>
-                {item.status === "DRAFT" && (
-                  <Badge className="text-[10px] font-medium" variant="secondary">
-                    Pendiente
-                  </Badge>
-                )}
               </div>
               {item.modifiers && item.modifiers.length > 0 && (
                 <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
@@ -212,5 +211,3 @@ export default function OrderDetailPanel({
     </div>
   );
 }
-
-

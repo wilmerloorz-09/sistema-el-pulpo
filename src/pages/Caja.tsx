@@ -34,6 +34,8 @@ const Caja = () => {
     paymentMethods,
     completedPayments,
     completedPaymentsTotal,
+    completedPaymentsMethodSummary,
+    completedPaymentsCollectedTotal,
     isLoadingCompletedPayments,
     cashierReverseWindowMinutes,
     openShift,
@@ -123,6 +125,8 @@ const Caja = () => {
           <CompletedPaymentsList
             payments={completedPayments}
             total={completedPaymentsTotal}
+            methodSummary={completedPaymentsMethodSummary}
+            collectedTotal={completedPaymentsCollectedTotal}
             paymentMethods={paymentMethods}
             loading={isLoadingCompletedPayments}
             filters={completedFilters}

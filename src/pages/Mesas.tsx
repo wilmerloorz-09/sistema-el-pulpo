@@ -44,16 +44,61 @@ const Mesas = () => {
   const canOperateMesas = canOperate(permissions, "mesas");
 
   const handleTakeout = async () => {
-    if (!user || !canOperateMesas) return;
+    if (!user || !activeBranchId || !canOperateMesas) return;
     setCreatingTakeout(true);
     try {
+      const { data: draftCandidates, error: existingDraftError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("branch_id", activeBranchId)
+        .eq("created_by", user.id)
+        .eq("order_type", "TAKEOUT")
+        .eq("status", "DRAFT")
+        .order("updated_at", { ascending: false })
+        .limit(10);
+
+      if (existingDraftError) throw existingDraftError;
+
+      const candidateIds = (draftCandidates ?? []).map((candidate) => candidate.id);
+      let reusableDraftId: string | null = null;
+
+      if (candidateIds.length > 0) {
+        const { data: candidateItems, error: candidateItemsError } = await supabase
+          .from("order_items")
+          .select("order_id, status")
+          .in("order_id", candidateIds);
+
+        if (candidateItemsError) throw candidateItemsError;
+
+        const itemsByOrder = new Map<string, string[]>();
+        for (const orderId of candidateIds) {
+          itemsByOrder.set(orderId, []);
+        }
+
+        for (const item of candidateItems ?? []) {
+          const bucket = itemsByOrder.get(item.order_id) ?? [];
+          bucket.push(String(item.status ?? "DRAFT"));
+          itemsByOrder.set(item.order_id, bucket);
+        }
+
+        reusableDraftId = candidateIds.find((orderId) => {
+          const statuses = itemsByOrder.get(orderId) ?? [];
+          return statuses.every((status) => status === "DRAFT");
+        }) ?? null;
+      }
+
+      if (reusableDraftId) {
+        navigate(`/ordenes?order=${reusableDraftId}`);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("orders")
         .insert({
           order_type: "TAKEOUT" as const,
           created_by: user.id,
           status: "DRAFT" as const,
-          branch_id: activeBranchId!,
+          branch_id: activeBranchId,
         })
         .select("id")
         .single();
@@ -61,7 +106,7 @@ const Mesas = () => {
       toast.success("Orden para llevar creada");
       navigate(`/ordenes?order=${data.id}`);
     } catch (err: any) {
-      toast.error(err.message || "Error al crear orden");
+      toast.error(err.message || "Error al abrir orden para llevar");
     } finally {
       setCreatingTakeout(false);
     }

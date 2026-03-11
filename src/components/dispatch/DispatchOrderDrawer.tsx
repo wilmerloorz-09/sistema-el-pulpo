@@ -4,10 +4,8 @@ import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 
 interface DispatchOrderDrawerProps {
   order: DispatchOrder;
-  onMarkReady: (orderId: string) => void;
-  onMarkDispatched: (orderId: string) => void;
-  isMarkingReady: boolean;
-  isMarkingDispatched: boolean;
+  onOpenReadyDialog: (order: DispatchOrder) => void;
+  onOpenDispatchDialog: (order: DispatchOrder) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   readOnly?: boolean;
@@ -15,10 +13,8 @@ interface DispatchOrderDrawerProps {
 
 export default function DispatchOrderDrawer({
   order,
-  onMarkReady,
-  onMarkDispatched,
-  isMarkingReady,
-  isMarkingDispatched,
+  onOpenReadyDialog,
+  onOpenDispatchDialog,
   open,
   onOpenChange,
   readOnly = false,
@@ -34,10 +30,8 @@ export default function DispatchOrderDrawer({
         <div className="mt-4">
           <DispatchCardBase
             order={order}
-            onMarkReady={onMarkReady}
-            onMarkDispatched={onMarkDispatched}
-            isMarkingReady={isMarkingReady}
-            isMarkingDispatched={isMarkingDispatched}
+            onOpenReadyDialog={onOpenReadyDialog}
+            onOpenDispatchDialog={onOpenDispatchDialog}
             showEyeIcon={false}
             readOnly={readOnly}
           />

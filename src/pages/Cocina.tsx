@@ -1,26 +1,12 @@
-import { useKitchenOrders } from "@/hooks/useKitchenOrders";
+import { useKitchenOrders, type KitchenOrder } from "@/hooks/useKitchenOrders";
 import KitchenCard from "@/components/kitchen/KitchenCard";
+import OperationDialog from "@/components/order/OperationDialog";
 import { Loader2, ChefHat } from "lucide-react";
 import { useState } from "react";
 
 const Cocina = () => {
-  const { orders, isLoading, dispatchItem, dispatchAll } = useKitchenOrders();
-  const [dispatchingItemId, setDispatchingItemId] = useState<string | null>(null);
-  const [dispatchingOrderId, setDispatchingOrderId] = useState<string | null>(null);
-
-  const handleDispatchItem = (itemId: string, orderId: string) => {
-    setDispatchingItemId(itemId);
-    dispatchItem.mutate({ itemId, orderId }, {
-      onSettled: () => setDispatchingItemId(null),
-    });
-  };
-
-  const handleDispatchAll = (orderId: string) => {
-    setDispatchingOrderId(orderId);
-    dispatchAll.mutate(orderId, {
-      onSettled: () => setDispatchingOrderId(null),
-    });
-  };
+  const { orders, isLoading, applyReadyOperation } = useKitchenOrders();
+  const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
 
   if (isLoading) {
     return (
@@ -32,35 +18,44 @@ const Cocina = () => {
 
   if (orders.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-        <ChefHat className="h-12 w-12 text-muted-foreground/40 mb-3" />
-        <p className="font-display text-lg font-bold text-foreground">Sin órdenes pendientes</p>
-        <p className="text-sm text-muted-foreground mt-1">Las órdenes enviadas a cocina aparecerán aquí</p>
+      <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
+        <ChefHat className="mb-3 h-12 w-12 text-muted-foreground/40" />
+        <p className="font-display text-lg font-bold text-foreground">Sin ordenes pendientes</p>
+        <p className="mt-1 text-sm text-muted-foreground">Las ordenes enviadas a cocina apareceran aqui</p>
       </div>
     );
   }
 
   return (
-    <div className="p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <ChefHat className="h-5 w-5 text-primary" />
-        <h1 className="font-display text-lg font-bold text-foreground">Cocina</h1>
-        <span className="text-xs text-muted-foreground">({orders.length} pendientes)</span>
+    <>
+      <div className="p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <ChefHat className="h-5 w-5 text-primary" />
+          <h1 className="font-display text-lg font-bold text-foreground">Cocina</h1>
+          <span className="text-xs text-muted-foreground">({orders.length} pendientes)</span>
+        </div>
+        <div className="grid auto-rows-max grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {orders.map((order) => (
+            <KitchenCard key={order.card_id} order={order} onOpenReadyDialog={setSelectedOrder} />
+          ))}
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {orders.map((order) => (
-          <KitchenCard
-            key={order.id}
-            order={order}
-            onDispatchItem={handleDispatchItem}
-            onDispatchAll={handleDispatchAll}
-            dispatchingItemId={dispatchingItemId}
-            dispatchingAll={dispatchingOrderId === order.id}
-          />
-        ))}
-      </div>
-    </div>
+
+      <OperationDialog
+        open={!!selectedOrder}
+        onOpenChange={(open) => !open && setSelectedOrder(null)}
+        order={selectedOrder}
+        mode="ready"
+        processing={applyReadyOperation.isPending}
+        onConfirm={(payload) => {
+          applyReadyOperation.mutate(payload, {
+            onSuccess: () => setSelectedOrder(null),
+          });
+        }}
+      />
+    </>
   );
 };
 
 export default Cocina;
+

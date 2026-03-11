@@ -3,8 +3,20 @@ import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
+import { computeOperationalQuantities, sumRowsByItem } from "@/lib/orderOperational";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
+
+type OperationalRow = {
+  order_item_id: string;
+  quantity_ready?: number;
+  quantity_dispatched?: number;
+  quantity_cancelled?: number;
+  source_stage?: string | null;
+  order_ready_event_id?: string | null;
+  order_dispatch_event_id?: string | null;
+  order_cancellation_id?: string | null;
+};
 
 export interface OrderItemSummary {
   id: string;
@@ -36,38 +48,95 @@ export interface OrderSummary {
   items: OrderItemSummary[];
 }
 
-async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]): Promise<Record<string, number>> {
-  if (orderItemIds.length === 0) return {};
+async function fetchOperationalMaps(orderItemIds: string[]) {
+  if (orderItemIds.length === 0) {
+    return {
+      readyMap: {} as Record<string, number>,
+      dispatchedMap: {} as Record<string, number>,
+      cancelledPendingMap: {} as Record<string, number>,
+      cancelledReadyMap: {} as Record<string, number>,
+      cancelledTotalMap: {} as Record<string, number>,
+    };
+  }
 
   try {
-    const { data: itemCancellations, error: itemCancellationsError } = await supabase
-      .from("order_item_cancellations")
-      .select("order_item_id, quantity_cancelled, order_cancellation_id")
-      .in("order_item_id", orderItemIds);
-    if (itemCancellationsError) throw itemCancellationsError;
+    const [readyResponse, dispatchResponse, cancellationResponse] = await Promise.all([
+      (supabase as any)
+        .from("order_item_ready_events")
+        .select("order_item_id, quantity_ready, order_ready_event_id")
+        .in("order_item_id", orderItemIds),
+      (supabase as any)
+        .from("order_item_dispatch_events")
+        .select("order_item_id, quantity_dispatched, order_dispatch_event_id")
+        .in("order_item_id", orderItemIds),
+      (supabase as any)
+        .from("order_item_cancellations")
+        .select("order_item_id, quantity_cancelled, source_stage, order_cancellation_id")
+        .in("order_item_id", orderItemIds),
+    ]);
 
-    const cancellationIds = [...new Set((itemCancellations ?? []).map((row) => row.order_cancellation_id))];
-    if (cancellationIds.length === 0) return {};
+    if (readyResponse.error) throw readyResponse.error;
+    if (dispatchResponse.error) throw dispatchResponse.error;
+    if (cancellationResponse.error) throw cancellationResponse.error;
 
-    const { data: cancellationHeaders, error: headersError } = await supabase
-      .from("order_cancellations")
-      .select("id, status")
-      .in("id", cancellationIds);
-    if (headersError) throw headersError;
+    const readyRowsRaw = (readyResponse.data ?? []) as OperationalRow[];
+    const dispatchRowsRaw = (dispatchResponse.data ?? []) as OperationalRow[];
+    const cancellationRowsRaw = (cancellationResponse.data ?? []) as OperationalRow[];
 
-    const activeCancellationIds = new Set(
-      (cancellationHeaders ?? []).filter((header) => header.status === "APPLIED").map((header) => header.id)
-    );
+    const readyEventIds = [...new Set(readyRowsRaw.map((row) => row.order_ready_event_id).filter(Boolean))] as string[];
+    const dispatchEventIds = [...new Set(dispatchRowsRaw.map((row) => row.order_dispatch_event_id).filter(Boolean))] as string[];
+    const cancellationIds = [...new Set(cancellationRowsRaw.map((row) => row.order_cancellation_id).filter(Boolean))] as string[];
 
-    const map: Record<string, number> = {};
-    for (const row of itemCancellations ?? []) {
-      if (!activeCancellationIds.has(row.order_cancellation_id)) continue;
-      map[row.order_item_id] = (map[row.order_item_id] ?? 0) + Number(row.quantity_cancelled);
+    let activeReadyIds = new Set<string>();
+    let activeDispatchIds = new Set<string>();
+    let activeCancellationIds = new Set<string>();
+
+    if (readyEventIds.length > 0) {
+      const { data, error } = await (supabase as any)
+        .from("order_ready_events")
+        .select("id, status")
+        .in("id", readyEventIds);
+      if (error) throw error;
+      activeReadyIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
     }
 
-    return map;
+    if (dispatchEventIds.length > 0) {
+      const { data, error } = await (supabase as any)
+        .from("order_dispatch_events")
+        .select("id, status")
+        .in("id", dispatchEventIds);
+      if (error) throw error;
+      activeDispatchIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
+    }
+
+    if (cancellationIds.length > 0) {
+      const { data, error } = await supabase
+        .from("order_cancellations")
+        .select("id, status")
+        .in("id", cancellationIds);
+      if (error) throw error;
+      activeCancellationIds = new Set((data ?? []).filter((row) => row.status === "APPLIED").map((row) => row.id));
+    }
+
+    const readyRows = readyRowsRaw.filter((row) => row.order_ready_event_id && activeReadyIds.has(row.order_ready_event_id));
+    const dispatchRows = dispatchRowsRaw.filter((row) => row.order_dispatch_event_id && activeDispatchIds.has(row.order_dispatch_event_id));
+    const cancellationRows = cancellationRowsRaw.filter((row) => row.order_cancellation_id && activeCancellationIds.has(row.order_cancellation_id));
+
+    const readyMap = sumRowsByItem(readyRows, "order_item_id", "quantity_ready");
+    const dispatchedMap = sumRowsByItem(dispatchRows, "order_item_id", "quantity_dispatched");
+    const cancelledPendingMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "PENDING");
+    const cancelledReadyMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "READY");
+    const cancelledTotalMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled");
+
+    return { readyMap, dispatchedMap, cancelledPendingMap, cancelledReadyMap, cancelledTotalMap };
   } catch {
-    return {};
+    return {
+      readyMap: {} as Record<string, number>,
+      dispatchedMap: {} as Record<string, number>,
+      cancelledPendingMap: {} as Record<string, number>,
+      cancelledReadyMap: {} as Record<string, number>,
+      cancelledTotalMap: {} as Record<string, number>,
+    };
   }
 }
 
@@ -80,6 +149,18 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       if (!activeBranchId) return [];
 
       const cancelledView = status === "CANCELLED";
+      const sentView = status === "SENT_TO_KITCHEN";
+      const readyView = status === "READY";
+      const dispatchedView = status === "KITCHEN_DISPATCHED";
+      const paidView = status === "PAID";
+
+      const filters = (() => {
+        if (!status || cancelledView) return [];
+        if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
+        if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
+        if (sentView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
+        return [{ column: "status", op: "eq", value: status }];
+      })();
 
       let orders = await dbSelect<{
         id: string;
@@ -98,7 +179,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       }>("orders", {
         select: "id, order_number, order_code, status, order_type, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, total",
         branchId: activeBranchId,
-        filters: cancelledView || !status ? [] : [{ column: "status", op: "eq", value: status }],
+        filters,
         orderBy: { column: "created_at", ascending: false },
       });
 
@@ -124,14 +205,22 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           }
         }
 
-        orders = orders.filter((order) => order.status === "CANCELLED" || cancelledOrderIds.has(order.id));
+        orders = orders.filter(
+          (order) =>
+            order.status === "CANCELLED" ||
+            cancelledOrderIds.has(order.id) ||
+            (order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED")
+        );
       }
 
       const orderIds = orders.map((order) => order.id);
+      if (orderIds.length === 0) return [];
+
       const items = await dbSelect<{
         id: string;
         order_id: string;
         description_snapshot: string;
+        item_note?: string | null;
         quantity: number;
         unit_price?: number;
         total: number;
@@ -142,7 +231,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       });
 
       const itemIds = items.map((item) => item.id);
-      const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
+      const { readyMap, dispatchedMap, cancelledPendingMap, cancelledReadyMap, cancelledTotalMap } = await fetchOperationalMaps(itemIds);
 
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
@@ -162,6 +251,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           modsMap[modifier.order_item_id].push({ description });
         }
       }
+
       const tableIds = [...new Set(orders.map((order) => order.table_id).filter(Boolean))] as string[];
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
@@ -171,53 +261,111 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         }
       }
 
-      return orders.map((order) => {
-        const related = items
-          .filter((item) => item.order_id === order.id)
-          .map((item) => {
-            const originalQuantity = Number(item.quantity ?? 0);
-            const cancelledQuantity = Math.min(originalQuantity, cancelledQtyMap[item.id] ?? 0);
-            const activeQuantity = Math.max(0, originalQuantity - cancelledQuantity);
-            const displayQuantity = cancelledView ? cancelledQuantity : activeQuantity;
-            const effectiveStatus = cancelledView ? "CANCELLED" : activeQuantity <= 0 ? "CANCELLED" : item.status;
+      return orders
+        .map((order) => {
+          const related = items
+            .filter((item) => item.order_id === order.id)
+            .map((item) => {
+              const quantities = computeOperationalQuantities({
+                quantityOrdered: Number(item.quantity ?? 0),
+                quantityReadyTotal: readyMap[item.id] ?? 0,
+                quantityDispatched: dispatchedMap[item.id] ?? 0,
+                quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
+                quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+              });
 
-            return {
-              ...item,
-              quantity: displayQuantity,
-              total: computeLineAmount(displayQuantity, Number(item.unit_price ?? 0)),
-              status: effectiveStatus,
-            };
-          })
-          .filter((item) => item.status !== "DRAFT" && item.quantity > 0);
+              const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+              const cancelledQuantity = Math.min(quantities.quantityOrdered, cancelledTotalMap[item.id] ?? quantities.quantityCancelledTotal);
 
-        const formattedItems: OrderItemSummary[] = related.map((item) => ({
-          id: item.id,
-          description_snapshot: item.description_snapshot,
-          quantity: item.quantity,
-          total: Number(item.total ?? 0),
-          status: item.status,
-          modifiers: modsMap[item.id] || [],
-          item_note: item.item_note ?? null,
-        }));
+              const isTakeoutDispatchedOnCancelledTab =
+                cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
 
-        const total = related.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
-        const item_count = related.reduce((count, item) => count + Number(item.quantity ?? 0), 0);
+              const displayQuantity = cancelledView
+                ? isTakeoutDispatchedOnCancelledTab
+                  ? quantities.quantityDispatched
+                  : cancelledQuantity
+                : readyView
+                  ? quantities.quantityReadyAvailable
+                  : dispatchedView
+                    ? quantities.quantityDispatched
+                    : sentView
+                      ? quantities.quantityPendingPrepare
+                      : activeQuantity;
 
-        return {
-          ...order,
-          status: cancelledView ? "CANCELLED" : order.status,
-          cancelled_at: cancelledView ? (order.cancelled_at ?? cancelledOrdersMeta[order.id]?.cancelled_at ?? null) : order.cancelled_at,
-          split_code: null,
-          table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
-          total,
-          item_count,
-          items: formattedItems,
-        };
-      });
+              const effectiveStatus = cancelledView
+                ? isTakeoutDispatchedOnCancelledTab
+                  ? "DISPATCHED"
+                  : "CANCELLED"
+                : readyView
+                  ? "READY"
+                  : dispatchedView
+                    ? "DISPATCHED"
+                    : sentView
+                      ? "SENT"
+                      : activeQuantity <= 0
+                        ? "CANCELLED"
+                        : item.status;
+
+              return {
+                ...item,
+                quantity: displayQuantity,
+                total: computeLineAmount(displayQuantity, Number(item.unit_price ?? 0)),
+                status: effectiveStatus,
+              };
+            })
+            .filter((item) => item.status !== "DRAFT" && item.quantity > 0);
+
+          const formattedItems: OrderItemSummary[] = related.map((item) => ({
+            id: item.id,
+            description_snapshot: item.description_snapshot,
+            quantity: item.quantity,
+            total: Number(item.total ?? 0),
+            status: item.status,
+            modifiers: modsMap[item.id] || [],
+            item_note: item.item_note ?? null,
+          }));
+
+          const total = related.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+          const item_count = related.reduce((count, item) => count + Number(item.quantity ?? 0), 0);
+
+          const isTakeoutDispatchedOnCancelledTab =
+            cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
+
+          const effectiveOrderStatus = cancelledView
+            ? isTakeoutDispatchedOnCancelledTab
+              ? "KITCHEN_DISPATCHED"
+              : "CANCELLED"
+            : readyView
+              ? "READY"
+              : dispatchedView
+                ? "KITCHEN_DISPATCHED"
+                : sentView
+                  ? "SENT_TO_KITCHEN"
+                  : paidView
+                    ? "PAID"
+                    : order.status;
+
+          return {
+            ...order,
+            status: effectiveOrderStatus,
+            cancelled_at: cancelledView && !isTakeoutDispatchedOnCancelledTab
+              ? (order.cancelled_at ?? cancelledOrdersMeta[order.id]?.cancelled_at ?? null)
+              : order.cancelled_at,
+            split_code: null,
+            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            total,
+            item_count,
+            items: formattedItems,
+          };
+        })
+        .filter((order) => {
+          if (order.items.length === 0) return false;
+          if (dispatchedView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED") {
+            return false;
+          }
+          return true;
+        });
     },
     enabled: !!activeBranchId,
   });
 }
-
-
-

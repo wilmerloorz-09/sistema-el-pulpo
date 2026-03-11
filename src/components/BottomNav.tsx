@@ -1,6 +1,7 @@
-import { NavLink } from "@/components/NavLink";
+﻿import { NavLink } from "@/components/NavLink";
 import { useBranch } from "@/contexts/BranchContext";
 import { canView } from "@/lib/permissions";
+import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import {
   LayoutGrid,
   UtensilsCrossed,
@@ -34,7 +35,10 @@ const NAV_ITEMS: NavItem[] = [
     to: "/despacho",
     label: "Despacho",
     icon: <ChefHat className="h-5 w-5" />,
-    visible: (permissions) => canView(permissions, "despacho_total"),
+    visible: (permissions) =>
+      canView(permissions, "despacho_total") ||
+      canView(permissions, "despacho_mesa") ||
+      canView(permissions, "despacho_para_llevar"),
   },
   {
     to: "/caja",
@@ -57,9 +61,28 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const BottomNav = () => {
-  const { permissions } = useBranch();
+  const { permissions, isGlobalAdmin, branches } = useBranch();
+  const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
 
-  const visibleItems = NAV_ITEMS.filter((item) => item.visible(permissions));
+  const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
+
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (isGlobalAdminWithoutBranches) {
+      return item.to === "/admin";
+    }
+
+    if (item.to === "/admin" && isGlobalAdmin) {
+      return true;
+    }
+
+    if (item.to !== "/despacho") return item.visible(permissions);
+    if (!item.visible(permissions)) return false;
+    return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
+  });
+
+  if (visibleItems.length === 0) {
+    return null;
+  }
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-bottom md:bottom-0">

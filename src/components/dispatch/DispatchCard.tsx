@@ -5,19 +5,15 @@ import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 
 interface DispatchCardProps {
   order: DispatchOrder;
-  onMarkReady: (orderId: string) => void;
-  onMarkDispatched: (orderId: string) => void;
-  isMarkingReady: boolean;
-  isMarkingDispatched: boolean;
+  onOpenReadyDialog: (order: DispatchOrder) => void;
+  onOpenDispatchDialog: (order: DispatchOrder) => void;
   readOnly?: boolean;
 }
 
 export default function DispatchCard({
   order,
-  onMarkReady,
-  onMarkDispatched,
-  isMarkingReady,
-  isMarkingDispatched,
+  onOpenReadyDialog,
+  onOpenDispatchDialog,
   readOnly = false,
 }: DispatchCardProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -26,10 +22,8 @@ export default function DispatchCard({
     <>
       <DispatchCardBase
         order={order}
-        onMarkReady={onMarkReady}
-        onMarkDispatched={onMarkDispatched}
-        isMarkingReady={isMarkingReady}
-        isMarkingDispatched={isMarkingDispatched}
+        onOpenReadyDialog={onOpenReadyDialog}
+        onOpenDispatchDialog={onOpenDispatchDialog}
         showEyeIcon={true}
         onEyeClick={() => setIsDrawerOpen(true)}
         readOnly={readOnly}
@@ -37,10 +31,8 @@ export default function DispatchCard({
 
       <DispatchOrderDrawer
         order={order}
-        onMarkReady={onMarkReady}
-        onMarkDispatched={onMarkDispatched}
-        isMarkingReady={isMarkingReady}
-        isMarkingDispatched={isMarkingDispatched}
+        onOpenReadyDialog={onOpenReadyDialog}
+        onOpenDispatchDialog={onOpenDispatchDialog}
         open={isDrawerOpen}
         onOpenChange={setIsDrawerOpen}
         readOnly={readOnly}

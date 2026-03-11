@@ -3,12 +3,16 @@ export interface PaymentMethodOption {
   name: string;
 }
 
-function normalizeText(value: string): string {
+export function normalizePaymentMethodName(value: string): string {
   return value
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .trim()
     .toLowerCase();
+}
+
+export function isCashPaymentMethodName(value: string): boolean {
+  return normalizePaymentMethodName(value) === "efectivo";
 }
 
 export function dedupePaymentMethods(methods: PaymentMethodOption[]): PaymentMethodOption[] {
@@ -27,8 +31,12 @@ export function dedupePaymentMethods(methods: PaymentMethodOption[]): PaymentMet
 export function getDefaultPaymentMethodId(methods: PaymentMethodOption[]): string {
   if (methods.length === 0) return "";
 
-  const efectivo = methods.find((method) => normalizeText(method.name) === "efectivo");
+  const efectivo = methods.find((method) => isCashPaymentMethodName(method.name));
   if (efectivo) return efectivo.id;
 
   return methods[0].id;
+}
+
+export function getCashPaymentMethod(methods: PaymentMethodOption[]): PaymentMethodOption | null {
+  return methods.find((method) => isCashPaymentMethodName(method.name)) ?? null;
 }

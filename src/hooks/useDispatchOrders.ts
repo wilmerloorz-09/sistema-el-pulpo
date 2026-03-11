@@ -6,19 +6,37 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useDispatchConfig } from "./useDispatchConfig";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import type { OrderStatus } from "@/types/cancellation";
+import { computeOperationalQuantities, sumRowsByItem } from "@/lib/orderOperational";
+import type { DispatchView } from "@/hooks/useDispatchAccess";
+
+interface OperationalRow {
+  order_item_id: string;
+  quantity_ready?: number;
+  quantity_dispatched?: number;
+  quantity_cancelled?: number;
+  source_stage?: string | null;
+  order_ready_event_id?: string;
+  order_dispatch_event_id?: string;
+  order_cancellation_id?: string;
+}
 
 export interface DispatchOrderItem {
   id: string;
   description_snapshot: string;
-  quantity: number;
+  quantity_ordered: number;
+  quantity_pending_prepare: number;
+  quantity_ready_available: number;
+  quantity_dispatched: number;
+  quantity_cancelled: number;
   status: string;
-  dispatched_at: string | null;
   modifiers: { description: string }[];
   item_note?: string | null;
   total?: number;
+  sent_to_kitchen_at: string | null;
 }
 
 export interface DispatchOrder {
+  card_id: string;
   id: string;
   order_number: number;
   order_code: string | null;
@@ -32,56 +50,49 @@ export interface DispatchOrder {
   dispatched_at: string | null;
   paid_at: string | null;
   cancelled_at: string | null;
+  pending_prepare_count: number;
+  ready_available_count: number;
   items: DispatchOrderItem[];
 }
 
-async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]): Promise<Record<string, number>> {
-  if (orderItemIds.length === 0) return {};
-
-  try {
-    const { data: itemCancellations, error: itemCancellationsError } = await supabase
-      .from("order_item_cancellations")
-      .select("order_item_id, quantity_cancelled, order_cancellation_id")
-      .in("order_item_id", orderItemIds);
-    if (itemCancellationsError) throw itemCancellationsError;
-
-    const cancellationIds = [...new Set((itemCancellations ?? []).map((row) => row.order_cancellation_id))];
-    if (cancellationIds.length === 0) return {};
-
-    const { data: cancellationHeaders, error: headersError } = await supabase
-      .from("order_cancellations")
-      .select("id, status")
-      .in("id", cancellationIds);
-    if (headersError) throw headersError;
-
-    const activeCancellationIds = new Set(
-      (cancellationHeaders ?? []).filter((header) => header.status === "APPLIED").map((header) => header.id)
-    );
-
-    const map: Record<string, number> = {};
-    for (const row of itemCancellations ?? []) {
-      if (!activeCancellationIds.has(row.order_cancellation_id)) continue;
-      map[row.order_item_id] = (map[row.order_item_id] ?? 0) + Number(row.quantity_cancelled);
-    }
-
-    return map;
-  } catch {
-    return {};
-  }
+export interface OperationPayload {
+  orderId: string;
+  operationType: "partial" | "total";
+  items: Array<Record<string, unknown>>;
 }
 
-export function useDispatchOrders() {
+function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+  qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+  qc.invalidateQueries({ queryKey: ["orders"] });
+  qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+}
+
+function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updated_at: string }>(rows: T[]) {
+  return [...rows].sort((left, right) => {
+    const leftTime = new Date(left.sent_to_kitchen_at ?? left.updated_at).getTime();
+    const rightTime = new Date(right.sent_to_kitchen_at ?? right.updated_at).getTime();
+    return leftTime - rightTime;
+  });
+}
+
+function matchesScope(orderType: string, scope: DispatchView) {
+  if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE";
+  return orderType === "TAKEOUT";
+}
+
+export function useDispatchOrders(scope: DispatchView) {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
   const { config, assignments, isLoading: configLoading } = useDispatchConfig();
 
   const query = useQuery({
-    queryKey: ["dispatch-orders", activeBranchId, config?.dispatch_mode, user?.id],
+    queryKey: ["dispatch-orders", activeBranchId, config?.dispatch_mode, user?.id, scope],
     queryFn: async () => {
       if (!activeBranchId || !user) return [];
 
-      const dispatchMode = configLoading ? "SINGLE" : (config?.dispatch_mode || "SINGLE");
+      const dispatchMode = configLoading ? "SINGLE" : config?.dispatch_mode || "SINGLE";
 
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
@@ -93,24 +104,27 @@ export function useDispatchOrders() {
       if (ordersError) throw ordersError;
       if (!orders || orders.length === 0) return [];
 
-      const tableIds = [...new Set(orders.map((order) => order.table_id).filter(Boolean))] as string[];
+      const permittedOrders = orders.filter((order) => matchesScope(order.order_type, scope));
+      if (permittedOrders.length === 0) return [];
+
+      const tableIds = [...new Set(permittedOrders.map((order) => order.table_id).filter(Boolean))] as string[];
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
         const { data: tables } = await supabase.from("restaurant_tables").select("id, name").in("id", tableIds);
         tablesMap = Object.fromEntries((tables ?? []).map((table) => [table.id, table.name]));
       }
 
-      const splitIds = [...new Set(orders.map((order) => order.split_id).filter(Boolean))] as string[];
+      const splitIds = [...new Set(permittedOrders.map((order) => order.split_id).filter(Boolean))] as string[];
       let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
         const { data: splits } = await supabase.from("table_splits").select("id, split_code").in("id", splitIds);
         splitsMap = Object.fromEntries((splits ?? []).map((split) => [split.id, split.split_code]));
       }
 
-      const orderIds = orders.map((order) => order.id);
+      const orderIds = permittedOrders.map((order) => order.id);
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
-        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, total, status, dispatched_at")
+        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, status, sent_to_kitchen_at")
         .in("order_id", orderIds);
       if (itemsError) throw itemsError;
 
@@ -124,123 +138,192 @@ export function useDispatchOrders() {
 
         for (const row of modifierRows ?? []) {
           if (!modifiersMap[row.order_item_id]) modifiersMap[row.order_item_id] = [];
-          const rawDescription = Array.isArray((row as any).modifiers) ? (row as any).modifiers[0]?.description : (row as any).modifiers?.description;
+          const rawDescription = Array.isArray((row as any).modifiers)
+            ? (row as any).modifiers[0]?.description
+            : (row as any).modifiers?.description;
           const description = String(rawDescription ?? "").trim();
           if (!description) continue;
           modifiersMap[row.order_item_id].push({ description });
         }
       }
-      const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
 
-      let filteredOrders = orders;
+      let readyRows: OperationalRow[] = [];
+      let dispatchRows: OperationalRow[] = [];
+      let cancellationRows: OperationalRow[] = [];
+
+      if (itemIds.length > 0) {
+        const [readyResponse, dispatchResponse, cancellationResponse] = await Promise.all([
+          (supabase as any)
+            .from("order_item_ready_events")
+            .select("order_item_id, quantity_ready, order_ready_event_id")
+            .in("order_item_id", itemIds),
+          (supabase as any)
+            .from("order_item_dispatch_events")
+            .select("order_item_id, quantity_dispatched, order_dispatch_event_id")
+            .in("order_item_id", itemIds),
+          (supabase as any)
+            .from("order_item_cancellations")
+            .select("order_item_id, quantity_cancelled, source_stage, order_cancellation_id")
+            .in("order_item_id", itemIds),
+        ]);
+
+        const readyEventIds = [...new Set(((readyResponse.data ?? []) as OperationalRow[]).map((row) => row.order_ready_event_id).filter(Boolean))] as string[];
+        const dispatchEventIds = [...new Set(((dispatchResponse.data ?? []) as OperationalRow[]).map((row) => row.order_dispatch_event_id).filter(Boolean))] as string[];
+        const cancellationIds = [...new Set(((cancellationResponse.data ?? []) as OperationalRow[]).map((row) => row.order_cancellation_id).filter(Boolean))] as string[];
+
+        let activeReadyIds = new Set<string>();
+        let activeDispatchIds = new Set<string>();
+        let activeCancellationIds = new Set<string>();
+
+        if (readyEventIds.length > 0) {
+          const { data } = await (supabase as any).from("order_ready_events").select("id, status").in("id", readyEventIds);
+          activeReadyIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
+        }
+
+        if (dispatchEventIds.length > 0) {
+          const { data } = await (supabase as any).from("order_dispatch_events").select("id, status").in("id", dispatchEventIds);
+          activeDispatchIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
+        }
+
+        if (cancellationIds.length > 0) {
+          const { data } = await supabase.from("order_cancellations").select("id, status").in("id", cancellationIds);
+          activeCancellationIds = new Set((data ?? []).filter((row) => row.status === "APPLIED").map((row) => row.id));
+        }
+
+        readyRows = (readyResponse.data ?? []).filter((row: OperationalRow) => row.order_ready_event_id && activeReadyIds.has(row.order_ready_event_id));
+        dispatchRows = (dispatchResponse.data ?? []).filter((row: OperationalRow) => row.order_dispatch_event_id && activeDispatchIds.has(row.order_dispatch_event_id));
+        cancellationRows = (cancellationResponse.data ?? []).filter((row: OperationalRow) => row.order_cancellation_id && activeCancellationIds.has(row.order_cancellation_id));
+      }
+
+      const readyMap = sumRowsByItem(readyRows, "order_item_id", "quantity_ready");
+      const dispatchedMap = sumRowsByItem(dispatchRows, "order_item_id", "quantity_dispatched");
+      const cancelledPendingMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "PENDING");
+      const cancelledReadyMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "READY");
+
+      let filteredOrders = permittedOrders;
       if (dispatchMode === "SPLIT") {
         const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
         if (userAssignments.length > 0) {
           const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
-          filteredOrders = orders.filter((order) => {
+          filteredOrders = permittedOrders.filter((order) => {
             const orderType = order.order_type === "DINE_IN" || order.order_type === "TABLE" ? "TABLE" : "TAKEOUT";
             return assignedTypes.has(orderType) || assignedTypes.has("ALL");
           });
         }
       }
 
-      const itemsMap = ((items ?? []) as any[])
-        .map((item) => {
-          const originalQuantity = Number(item.quantity ?? 0);
-          const cancelledQuantity = Math.min(originalQuantity, cancelledQtyMap[item.id] ?? 0);
-          const activeQuantity = Math.max(0, originalQuantity - cancelledQuantity);
-          const effectiveStatus = activeQuantity <= 0 ? "CANCELLED" : (item.status ?? "SENT");
+      const cards = filteredOrders.flatMap((order) => {
+        const mappedItems = ((items ?? []) as any[])
+          .filter((item) => item.order_id === order.id && !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at))
+          .map((item) => {
+            const quantities = computeOperationalQuantities({
+              quantityOrdered: Number(item.quantity ?? 0),
+              quantityReadyTotal: readyMap[item.id] ?? 0,
+              quantityDispatched: dispatchedMap[item.id] ?? 0,
+              quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
+              quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+            });
+
+            const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+
+            return {
+              id: item.id,
+              description_snapshot: item.description_snapshot,
+              quantity_ordered: quantities.quantityOrdered,
+              quantity_pending_prepare: quantities.quantityPendingPrepare,
+              quantity_ready_available: quantities.quantityReadyAvailable,
+              quantity_dispatched: quantities.quantityDispatched,
+              quantity_cancelled: quantities.quantityCancelledTotal,
+              status: item.status ?? "SENT",
+              total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+              modifiers: modifiersMap[item.id] ?? [],
+              item_note: item.item_note ?? null,
+              sent_to_kitchen_at: item.sent_to_kitchen_at ?? order.sent_to_kitchen_at,
+            };
+          })
+          .filter((item) => item.quantity_ordered - item.quantity_cancelled > 0 && !!item.sent_to_kitchen_at);
+
+        const batches = new Map<string, DispatchOrderItem[]>();
+        for (const item of mappedItems) {
+          const batchKey = item.sent_to_kitchen_at as string;
+          if (!batches.has(batchKey)) batches.set(batchKey, []);
+          batches.get(batchKey)!.push(item);
+        }
+
+        return Array.from(batches.entries()).map(([sentAt, batchItems]) => {
+          const pendingPrepareCount = batchItems.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
+          const readyAvailableCount = batchItems.reduce((sum, item) => sum + item.quantity_ready_available, 0);
 
           return {
-            ...item,
-            quantity: activeQuantity,
-            status: effectiveStatus,
-            total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+            card_id: `${order.id}:${sentAt}`,
+            id: order.id,
+            order_number: order.order_number,
+            order_code: order.order_code,
+            order_type: order.order_type as "DINE_IN" | "TAKEOUT",
+            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
+            status: order.status,
+            updated_at: order.updated_at,
+            sent_to_kitchen_at: sentAt,
+            ready_at: order.ready_at ?? null,
+            dispatched_at: order.dispatched_at ?? null,
+            paid_at: order.paid_at ?? null,
+            cancelled_at: order.cancelled_at ?? null,
+            pending_prepare_count: pendingPrepareCount,
+            ready_available_count: readyAvailableCount,
+            items: batchItems,
           };
-        })
-        .filter((item) => item.status !== "DRAFT" && item.quantity > 0)
-        .reduce((acc: Record<string, any[]>, item: any) => {
-          if (!acc[item.order_id]) acc[item.order_id] = [];
-          acc[item.order_id].push(item);
-          return acc;
-        }, {});
+        });
+      });
 
-      return filteredOrders
-        .map((order) => ({
-          id: order.id,
-          order_number: order.order_number,
-          order_code: order.order_code,
-          order_type: order.order_type,
-          table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
-          split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
-          status: order.status,
-          updated_at: order.updated_at,
-          sent_to_kitchen_at: order.sent_to_kitchen_at ?? null,
-          ready_at: order.ready_at ?? null,
-          dispatched_at: order.dispatched_at ?? null,
-          paid_at: order.paid_at ?? null,
-          cancelled_at: order.cancelled_at ?? null,
-          items: (itemsMap[order.id] || []).map((item) => ({
-            id: item.id,
-            description_snapshot: item.description_snapshot,
-            quantity: item.quantity,
-            status: item.status,
-            dispatched_at: item.dispatched_at ?? null,
-            total: item.total,
-            modifiers: modifiersMap[item.id] ?? [],
-            item_note: item.item_note ?? null,
-          })),
-        }))
-        .filter((order) => order.items.length > 0) as DispatchOrder[];
+      return sortByBatchArrival(cards)
+        .filter((order) => order.items.length > 0 && (order.pending_prepare_count > 0 || order.ready_available_count > 0)) as DispatchOrder[];
     },
     enabled: !!activeBranchId && !!user,
     refetchInterval: 5000,
   });
 
-  const markReadyMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      const now = new Date().toISOString();
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({ status: "READY", ready_at: now })
-        .eq("id", orderId);
-      if (updateError) throw updateError;
-
-      await supabase.from("order_items").update({ ready_at: now }).eq("order_id", orderId).neq("status", "CANCELLED");
-
-      try {
-        await (supabase.from("order_ready_notifications" as any).insert({ order_id: orderId, created_at: now }) as any);
-      } catch {
-        // Notification should not block dispatch flow.
-      }
+  const applyReadyOperation = useMutation({
+    mutationFn: async (payload: OperationPayload) => {
+      if (!user?.id) throw new Error("Usuario no autenticado");
+      const { error } = await (supabase as any).rpc("mark_order_quantities_ready", {
+        p_order_id: payload.orderId,
+        p_ready_by: user.id,
+        p_items: payload.items,
+        p_operation_type: payload.operationType,
+        p_source_module: "dispatch",
+        p_notes: null,
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      toast.success("Orden lista para despachar");
+      invalidateOperationalQueries(qc);
+      toast.success("Operacion de listo aplicada");
     },
     onError: (error: any) => {
-      toast.error(`Error al marcar orden lista: ${error?.message || "Error desconocido"}`);
+      toast.error(`Error al aplicar listo: ${error?.message || "Error desconocido"}`);
     },
   });
 
-  const markDispatchedMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      const now = new Date().toISOString();
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({ status: "KITCHEN_DISPATCHED", dispatched_at: now })
-        .eq("id", orderId);
-      if (updateError) throw updateError;
-
-      const { error: itemsError } = await supabase.from("order_items").update({ dispatched_at: now }).eq("order_id", orderId);
-      if (itemsError) throw itemsError;
+  const applyDispatchOperation = useMutation({
+    mutationFn: async (payload: OperationPayload) => {
+      if (!user?.id) throw new Error("Usuario no autenticado");
+      const { error } = await (supabase as any).rpc("dispatch_order_quantities", {
+        p_order_id: payload.orderId,
+        p_dispatched_by: user.id,
+        p_items: payload.items,
+        p_operation_type: payload.operationType,
+        p_source_module: "dispatch",
+        p_notes: null,
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      toast.success("Orden despachada");
+      invalidateOperationalQueries(qc);
+      toast.success("Operacion de despacho aplicada");
     },
     onError: (error: any) => {
-      toast.error(`Error al despachar orden: ${error?.message || "Error desconocido"}`);
+      toast.error(`Error al aplicar despacho: ${error?.message || "Error desconocido"}`);
     },
   });
 
@@ -248,11 +331,7 @@ export function useDispatchOrders() {
     orders: query.data || [],
     isLoading: query.isLoading,
     isError: query.isError,
-    markReady: markReadyMutation,
-    markDispatched: markDispatchedMutation,
+    applyReadyOperation,
+    applyDispatchOperation,
   };
 }
-
-
-
-

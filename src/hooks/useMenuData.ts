@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+﻿import { useQuery } from "@tanstack/react-query";
 import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 
@@ -19,6 +19,7 @@ interface Product {
   id: string;
   description: string;
   subcategory_id: string;
+  display_order: number;
   unit_price: number | null;
   price_mode: "FIXED" | "MANUAL";
   is_active: boolean;
@@ -69,12 +70,12 @@ export function useMenuData() {
       const subIds = subcategories.data?.map((s) => s.id) ?? [];
       if (subIds.length === 0) return Promise.resolve([]);
       return dbSelect<Product>("products", {
-        select: "id, description, subcategory_id, unit_price, price_mode",
+        select: "id, description, subcategory_id, display_order, unit_price, price_mode",
         filters: [
           { column: "is_active", op: "eq", value: true },
           { column: "subcategory_id", op: "in", value: subIds },
         ],
-        orderBy: { column: "description" },
+        orderBy: { column: "display_order" },
       });
     },
     enabled: !!activeBranchId && !!subcategories.data,

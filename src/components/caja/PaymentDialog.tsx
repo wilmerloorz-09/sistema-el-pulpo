@@ -1,14 +1,29 @@
-﻿import { useState, useMemo, useEffect } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { computeLineAmount } from "@/lib/paymentQuantity";
-import { getDefaultPaymentMethodId, type PaymentMethodOption } from "@/lib/paymentMethods";
+import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
+import {
+  getCashPaymentMethod,
+  getDefaultPaymentMethodId,
+  isCashPaymentMethodName,
+  type PaymentMethodOption,
+} from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { CreditCard, Loader2, RotateCcw, ArrowDown, ArrowUp } from "lucide-react";
+import { CreditCard, Loader2, RotateCcw, ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 
 interface Props {
@@ -21,8 +36,18 @@ interface Props {
   readOnly?: boolean;
 }
 
-function clampQty(value: number, min: number, max: number): number {
+interface PaymentSplitDraft {
+  id: string;
+  methodId: string;
+  amount: number;
+}
+
+function clampQty(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function buildSplitId() {
+  return Math.random().toString(36).slice(2, 10);
 }
 
 export default function PaymentDialog({
@@ -37,28 +62,28 @@ export default function PaymentDialog({
   const unpaidItems = useMemo(() => order?.items.filter((item) => item.quantity_pending > 0) ?? [], [order]);
   const paidItems = useMemo(() => order?.items.filter((item) => item.quantity_pending <= 0) ?? [], [order]);
   const defaultMethodId = useMemo(() => getDefaultPaymentMethodId(paymentMethods), [paymentMethods]);
+  const cashMethod = useMemo(() => getCashPaymentMethod(paymentMethods), [paymentMethods]);
 
   const [payQuantities, setPayQuantities] = useState<Record<string, number>>({});
-  const [itemMethodIds, setItemMethodIds] = useState<Record<string, string>>({});
+  const [paymentSplits, setPaymentSplits] = useState<PaymentSplitDraft[]>([]);
   const [received, setReceived] = useState<Record<string, number>>({});
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!order) return;
 
     const nextQuantities: Record<string, number> = {};
-    const nextMethods: Record<string, string> = {};
-
     for (const item of order.items) {
       if (item.quantity_pending > 0) {
         nextQuantities[item.id] = item.quantity_pending;
-        nextMethods[item.id] = defaultMethodId;
       }
     }
 
+    const initialMethodId = cashMethod?.id ?? defaultMethodId;
     setPayQuantities(nextQuantities);
-    setItemMethodIds(nextMethods);
+    setPaymentSplits(initialMethodId ? [{ id: buildSplitId(), methodId: initialMethodId, amount: 0 }] : []);
     setReceived({});
-  }, [order?.id, order?.items, defaultMethodId]);
+  }, [order?.id, order?.items, defaultMethodId, cashMethod?.id]);
 
   const selectedItems = useMemo(
     () => unpaidItems.filter((item) => (payQuantities[item.id] ?? 0) > 0),
@@ -66,17 +91,73 @@ export default function PaymentDialog({
   );
 
   const selectedTotal = useMemo(
-    () => selectedItems.reduce((sum, item) => sum + computeLineAmount(payQuantities[item.id] ?? 0, item.unit_price), 0),
+    () => roundMoney(selectedItems.reduce((sum, item) => sum + computeLineAmount(payQuantities[item.id] ?? 0, item.unit_price), 0)),
     [selectedItems, payQuantities],
   );
 
-  const totalReceived = useMemo(
-    () => shiftDenoms.reduce((sum, denomination) => sum + (received[denomination.denomination_id] || 0) * denomination.value, 0),
-    [received, shiftDenoms],
+  useEffect(() => {
+    setPaymentSplits((prev) => {
+      const validMethods = new Set(paymentMethods.map((method) => method.id));
+      const filtered = prev.filter((split) => validMethods.has(split.methodId));
+      const base = filtered.length > 0 ? filtered : defaultMethodId ? [{ id: buildSplitId(), methodId: defaultMethodId, amount: 0 }] : [];
+
+      if (base.length === 0) return base;
+      if (base.length === 1) {
+        return [{ ...base[0], amount: selectedTotal }];
+      }
+
+      const next = base.map((split) => ({ ...split }));
+      const sumBeforeLast = roundMoney(next.slice(0, -1).reduce((sum, split) => sum + Number(split.amount || 0), 0));
+      next[next.length - 1].amount = Math.max(0, roundMoney(selectedTotal - sumBeforeLast));
+      return next;
+    });
+  }, [selectedTotal, defaultMethodId, paymentMethods]);
+
+  const paymentMethodMap = useMemo(
+    () => Object.fromEntries(paymentMethods.map((method) => [method.id, method])),
+    [paymentMethods],
   );
 
+  const cashSplit = useMemo(
+    () => paymentSplits.find((split) => isCashPaymentMethodName(paymentMethodMap[split.methodId]?.name ?? "")) ?? null,
+    [paymentSplits, paymentMethodMap],
+  );
+
+
+
+  const totalReceived = useMemo(
+    () => roundMoney(shiftDenoms.reduce((sum, denomination) => sum + (received[denomination.denomination_id] || 0) * denomination.value, 0)),
+    [received, shiftDenoms],
+  );
   const hasReceivedDenoms = Object.values(received).some((quantity) => quantity > 0);
-  const changeAmount = hasReceivedDenoms ? Math.round(Math.max(0, totalReceived - selectedTotal) * 100) / 100 : 0;
+  const paymentAllocationPreview = useMemo(() => {
+    let remainingToApply = selectedTotal;
+
+    return paymentSplits
+      .filter((split) => Number(split.amount) > 0)
+      .map((split) => {
+        const isCashMethod = isCashPaymentMethodName(paymentMethodMap[split.methodId]?.name ?? "");
+        const baseAmount = roundMoney(Number(split.amount) || 0);
+        const receivedAmount = isCashMethod && hasReceivedDenoms ? totalReceived : baseAmount;
+        const appliedAmount = roundMoney(Math.min(receivedAmount, Math.max(0, remainingToApply)));
+        remainingToApply = roundMoney(Math.max(0, remainingToApply - appliedAmount));
+
+        return {
+          ...split,
+          isCashMethod,
+          receivedAmount,
+          appliedAmount,
+          overpayAmount: roundMoney(Math.max(0, receivedAmount - appliedAmount)),
+          methodName: paymentMethodMap[split.methodId]?.name ?? "Metodo",
+        };
+      });
+  }, [paymentSplits, paymentMethodMap, selectedTotal, hasReceivedDenoms, totalReceived]);
+  const cashPreview = paymentAllocationPreview.find((split) => split.isCashMethod) ?? null;
+  const cashAppliedAmount = roundMoney(cashPreview?.appliedAmount ?? 0);
+  const appliedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.appliedAmount, 0));
+  const receivedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.receivedAmount, 0));
+  const shortageAmount = roundMoney(Math.max(0, selectedTotal - appliedSplitTotal));
+  const changeAmount = roundMoney(Math.max(0, receivedSplitTotal - selectedTotal));
 
   const changeDenomBreakdown = useMemo(() => {
     if (changeAmount <= 0) return [];
@@ -98,19 +179,17 @@ export default function PaymentDialog({
           value: denomination.value,
           label: denomination.label,
         });
-        remaining = Math.round((remaining - qty * denomination.value) * 100) / 100;
+        remaining = roundMoney(remaining - qty * denomination.value);
       }
     }
 
     return result;
   }, [changeAmount, shiftDenoms, received]);
 
-  const changeGiven = changeDenomBreakdown.reduce((sum, denomination) => sum + denomination.qty * denomination.value, 0);
+  const changeGiven = roundMoney(changeDenomBreakdown.reduce((sum, denomination) => sum + denomination.qty * denomination.value, 0));
   const cannotMakeChange = changeAmount > 0 && Math.abs(changeGiven - changeAmount) > 0.001;
-  const missingMethodCount = useMemo(
-    () => selectedItems.filter((item) => !itemMethodIds[item.id]).length,
-    [selectedItems, itemMethodIds],
-  );
+  const availableMethodIds = useMemo(() => new Set(paymentMethods.map((method) => method.id)), [paymentMethods]);
+  const selectedMethodIds = useMemo(() => new Set(paymentSplits.map((split) => split.methodId)), [paymentSplits]);
 
   const setItemQty = (itemId: string, qty: number, maxQty: number) => {
     const normalized = Number.isFinite(qty) ? Math.floor(qty) : 0;
@@ -118,15 +197,6 @@ export default function PaymentDialog({
       ...prev,
       [itemId]: clampQty(normalized, 0, maxQty),
     }));
-
-    setItemMethodIds((prev) => ({
-      ...prev,
-      [itemId]: prev[itemId] || defaultMethodId,
-    }));
-  };
-
-  const setItemMethod = (itemId: string, methodId: string) => {
-    setItemMethodIds((prev) => ({ ...prev, [itemId]: methodId }));
   };
 
   const fillAllPending = () => {
@@ -143,6 +213,40 @@ export default function PaymentDialog({
       next[item.id] = 0;
     }
     setPayQuantities(next);
+  };
+
+  const setSplitMethod = (splitId: string, methodId: string) => {
+    setPaymentSplits((prev) => {
+      const next = prev.map((split) => (split.id === splitId ? { ...split, methodId } : split));
+      const cashRows = next.filter((split) => isCashPaymentMethodName(paymentMethodMap[split.methodId]?.name ?? ""));
+      if (cashRows.length > 1) {
+        toast.error("Solo puede existir una linea de Efectivo por cobro");
+        return prev;
+      }
+      return next;
+    });
+  };
+
+  const setSplitAmount = (splitId: string, amount: number) => {
+    const normalized = Number.isFinite(amount) ? roundMoney(Math.max(0, amount)) : 0;
+    setPaymentSplits((prev) => prev.map((split) => (split.id === splitId ? { ...split, amount: normalized } : split)));
+  };
+
+  const addSplit = () => {
+    const nextMethod = paymentMethods.find((method) => !selectedMethodIds.has(method.id)) ?? paymentMethods[0];
+    if (!nextMethod) return;
+    setPaymentSplits((prev) => [
+      ...prev,
+      {
+        id: buildSplitId(),
+        methodId: nextMethod.id,
+        amount: Math.max(0, shortageAmount),
+      },
+    ]);
+  };
+
+  const removeSplit = (splitId: string) => {
+    setPaymentSplits((prev) => (prev.length <= 1 ? prev : prev.filter((split) => split.id !== splitId)));
   };
 
   const addDenom = (denominationId: string) => {
@@ -169,43 +273,79 @@ export default function PaymentDialog({
       return;
     }
 
-    const itemPayments = selectedItems.map((item) => {
+    const itemSelections = selectedItems.map((item) => {
       const quantity = payQuantities[item.id] ?? 0;
       const amount = computeLineAmount(quantity, item.unit_price);
       return {
         itemId: item.id,
-        methodId: itemMethodIds[item.id] || defaultMethodId,
         quantity,
         unitPrice: item.unit_price,
         amount,
       };
     });
 
-    if (itemPayments.some((item) => !item.methodId)) {
-      toast.error("Todos los items seleccionados deben tener metodo de pago");
-      return;
-    }
-
-    if (itemPayments.some((item) => item.quantity <= 0)) {
+    if (itemSelections.some((item) => item.quantity <= 0)) {
       toast.error("Debes seleccionar al menos una cantidad valida para cobrar");
       return;
     }
 
-    const receivedDenoms = Object.entries(received)
+    const tenderedSplitsPayload = paymentAllocationPreview.map((split) => ({
+      methodId: split.methodId,
+      amount: split.receivedAmount,
+    }));
+    const paymentSplitsPayload = paymentAllocationPreview
+      .filter((split) => split.appliedAmount > 0)
+      .map((split) => ({ methodId: split.methodId, amount: split.appliedAmount }));
+
+    if (tenderedSplitsPayload.length === 0) {
+      toast.error("Debes ingresar al menos un metodo de pago");
+      return;
+    }
+
+    if (tenderedSplitsPayload.some((split) => !split.methodId || !availableMethodIds.has(split.methodId))) {
+      toast.error("Hay metodos de pago invalidos en la distribucion");
+      return;
+    }
+
+    if (shortageAmount > 0.01) {
+      toast.error("El total recibido es menor al total a cobrar");
+      return;
+    }
+
+    if (cashSplit && cashAppliedAmount > 0) {
+      if (!hasReceivedDenoms) {
+        toast.error("Efectivo requiere registrar el monto recibido por denominaciones");
+        return;
+      }
+      if (totalReceived + 0.001 < cashAppliedAmount) {
+        toast.error("El monto recibido en efectivo es menor al valor aplicado en efectivo");
+        return;
+      }
+      if (cannotMakeChange) {
+        toast.error("No hay suficientes denominaciones en caja para dar el cambio exacto");
+        return;
+      }
+    }
+
+    const cashReceivedDenoms = Object.entries(received)
       .filter(([, quantity]) => quantity > 0)
       .map(([denomination_id, qty]) => ({ denomination_id, qty }));
 
-    const changeDenoms = changeDenomBreakdown.map((denomination) => ({
+    const cashChangeDenoms = changeDenomBreakdown.map((denomination) => ({
       denomination_id: denomination.denomination_id,
       qty: denomination.qty,
     }));
 
+    setConfirmOpen(false);
     onPay({
       orderId: order.id,
-      itemPayments,
-      totalAmount: Math.round(selectedTotal * 100) / 100,
-      receivedDenoms,
-      changeDenoms,
+      itemSelections,
+      paymentSplits: paymentSplitsPayload,
+      tenderedSplits: tenderedSplitsPayload,
+      receivedTotal: roundMoney(receivedSplitTotal),
+      totalAmount: roundMoney(selectedTotal),
+      cashReceivedDenoms,
+      cashChangeDenoms,
     });
   };
 
@@ -213,264 +353,524 @@ export default function PaymentDialog({
     !readOnly &&
     selectedItems.length > 0 &&
     paymentMethods.length > 0 &&
-    missingMethodCount === 0 &&
+    paymentSplits.some((split) => split.amount > 0) &&
     !paying &&
-    (!hasReceivedDenoms || (totalReceived >= selectedTotal && !cannotMakeChange));
+    shortageAmount <= 0.01 &&
+    (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.001 >= cashAppliedAmount))) &&
+    !(changeAmount > 0 && cannotMakeChange);
+
+  const paymentStatusMessage = useMemo(() => {
+    if (readOnly) return "Modo consulta activo";
+    if (selectedItems.length === 0) return "Selecciona al menos una cantidad para cobrar";
+    if (paymentMethods.length === 0) return "No hay metodos de pago activos";
+    if (!paymentSplits.some((split) => split.amount > 0)) return "Ingresa al menos un monto de pago";
+    if (shortageAmount > 0.01) return `Faltan $${shortageAmount.toFixed(2)} por recibir`;
+    if (cashSplit && cashAppliedAmount > 0 && !hasReceivedDenoms) return "Registra el monto recibido en efectivo";
+    if (cashSplit && cashAppliedAmount > 0 && totalReceived + 0.001 < cashAppliedAmount) {
+      return `Efectivo recibido insuficiente: faltan $${(cashAppliedAmount - totalReceived).toFixed(2)}`;
+    }
+    if (changeAmount > 0 && cannotMakeChange) return "No hay cambio exacto disponible en caja";
+    if (paying) return "Procesando cobro...";
+    if (changeAmount > 0) return `Listo para confirmar. Se entregaran $${changeAmount.toFixed(2)} de cambio`;
+    return "Cobro listo para confirmar";
+  }, [
+    readOnly,
+    selectedItems.length,
+    paymentMethods.length,
+    paymentSplits,
+    shortageAmount,
+    cashSplit,
+    cashAppliedAmount,
+    hasReceivedDenoms,
+    totalReceived,
+    changeAmount,
+    cannotMakeChange,
+    paying,
+  ]);
 
   const sortedDenoms = useMemo(() => [...shiftDenoms].sort((a, b) => a.value - b.value), [shiftDenoms]);
 
   return (
     <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] sm:max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-display">
-            {readOnly ? "Consulta de cobro" : "Cobrar"} {order?.order_code ?? `#${order?.order_number}`}{" "}
+      <DialogContent className="flex max-h-[92vh] flex-col overflow-hidden p-0 sm:max-w-6xl">
+        <DialogHeader className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
+          <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-xl">
+            <span>
+              {readOnly ? "Consulta de cobro" : "Cobrar"} {order?.order_code ?? `#${order?.order_number}`}
+            </span>
             {order?.order_type === "DINE_IN" && order?.table_name && (
-              <span className="font-normal text-muted-foreground">- {order.table_name}</span>
+              <span className="text-sm font-normal text-muted-foreground">- {order.table_name}</span>
             )}
-            {order?.split_code && <span className="font-normal text-muted-foreground"> ({order.split_code})</span>}
+            {order?.split_code && <span className="text-sm font-normal text-muted-foreground">({order.split_code})</span>}
           </DialogTitle>
         </DialogHeader>
 
         {order && (
-          <div className="space-y-4">
-            {readOnly && (
-              <div className="rounded-xl border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-                Modo consulta: puedes revisar los montos pendientes, pero no registrar pagos.
-              </div>
-            )}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)]">
+                <div className="space-y-4">
+                  {readOnly && (
+                    <div className="rounded-2xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+                      Modo consulta: puedes revisar los montos pendientes, pero no registrar pagos.
+                    </div>
+                  )}
 
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-foreground">Cobro parcial por cantidad</p>
-                {!readOnly && (
-                  <div className="flex items-center gap-3">
-                    <button onClick={fillAllPending} className="text-xs text-primary hover:underline">
-                      Todo pendiente
-                    </button>
-                    <button onClick={clearAllSelection} className="text-xs text-muted-foreground hover:underline">
-                      Limpiar
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="max-h-80 space-y-2 overflow-y-auto rounded-xl border border-border p-2">
-                {unpaidItems.map((item) => {
-                  const qtyToPay = payQuantities[item.id] ?? 0;
-                  const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "grid grid-cols-1 gap-2 rounded-lg border p-2 lg:grid-cols-[1.7fr,120px,120px,120px,120px,180px]",
-                        qtyToPay > 0 ? "border-primary/40 bg-primary/5" : "border-border",
-                      )}
-                    >
+                  <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
+                        <p className="text-sm font-semibold text-foreground">Seleccion de cantidades a cobrar</p>
                         <p className="text-xs text-muted-foreground">
-                          Total: {item.quantity} · Pagado: {item.quantity_paid} · Pendiente: {item.quantity_pending}
+                          Ajusta solo las cantidades que se van a cobrar en esta operacion.
                         </p>
                       </div>
-
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Precio unit.</p>
-                        <p className="text-sm font-medium text-foreground">${item.unit_price.toFixed(2)}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Pendiente</p>
-                        <p className="text-sm font-medium text-foreground">{item.quantity_pending}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Cobrar ahora</p>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={item.quantity_pending}
-                          step={1}
-                          value={qtyToPay}
-                          onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
-                          className="h-8"
-                          disabled={readOnly}
-                        />
-                      </div>
-
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Subtotal</p>
-                        <p className="text-sm font-semibold text-foreground">${lineSubtotal.toFixed(2)}</p>
-                      </div>
-
-                      <Select
-                        value={itemMethodIds[item.id] || defaultMethodId}
-                        onValueChange={(value) => setItemMethod(item.id, value)}
-                        disabled={readOnly || qtyToPay <= 0 || paymentMethods.length === 0}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue placeholder="Metodo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {paymentMethods.map((method) => (
-                            <SelectItem key={method.id} value={method.id}>
-                              {method.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {!readOnly && (
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={fillAllPending}>
+                            Todo pendiente
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" onClick={clearAllSelection}>
+                            Limpiar
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
 
-                {paidItems.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2 rounded-lg border border-border p-1.5 opacity-50">
-                    <span className="flex-1 truncate text-sm text-foreground line-through">
-                      {item.description_snapshot} · {item.quantity} unidad(es)
-                    </span>
-                    <Badge variant="outline" className="text-[10px]">
-                      Pagado completo
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {paymentMethods.length === 0 && (
-              <p className="text-xs font-medium text-destructive">No hay metodos de pago activos para esta sucursal.</p>
-            )}
-
-            <div className="rounded-xl bg-primary/10 p-3 text-center">
-              <p className="text-xs text-muted-foreground">Subtotal a cobrar</p>
-              <p className="font-display text-2xl font-bold text-primary">${selectedTotal.toFixed(2)}</p>
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-foreground">
-                  Monto recibido <span className="font-normal text-muted-foreground">(opcional)</span>
-                </p>
-                {!readOnly && hasReceivedDenoms && (
-                  <button
-                    onClick={() => setReceived({})}
-                    className="flex items-center gap-1 text-xs text-destructive hover:underline"
-                  >
-                    <RotateCcw className="h-3 w-3" /> Limpiar
-                  </button>
-                )}
-              </div>
-
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {sortedDenoms.map((denomination) => (
-                  <button
-                    key={denomination.denomination_id}
-                    onClick={() => addDenom(denomination.denomination_id)}
-                    className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
-                    disabled={readOnly}
-                  >
-                    {denomination.label}
-                  </button>
-                ))}
-              </div>
-
-              {hasReceivedDenoms && (
-                <div className="space-y-1 rounded-xl border border-border p-2">
-                  {sortedDenoms
-                    .filter((denomination) => (received[denomination.denomination_id] || 0) > 0)
-                    .map((denomination) => (
-                      <div key={denomination.denomination_id} className="flex items-center gap-2 text-sm">
-                        {!readOnly && (
-                          <button
-                            onClick={() => removeDenom(denomination.denomination_id)}
-                            className="flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground hover:text-foreground"
-                          >
-                            -
-                          </button>
-                        )}
-                        <span className="flex-1 text-foreground">
-                          {received[denomination.denomination_id]}x {denomination.label}
-                        </span>
-                        <span className="font-medium text-foreground">
-                          ${(received[denomination.denomination_id]! * denomination.value).toFixed(2)}
-                        </span>
-                        {!readOnly && (
-                          <button
-                            onClick={() => addDenom(denomination.denomination_id)}
-                            className="flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground hover:text-foreground"
-                          >
-                            +
-                          </button>
-                        )}
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-xl bg-muted/50 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Items pendientes</p>
+                        <p className="mt-1 text-lg font-semibold text-foreground">{unpaidItems.length}</p>
                       </div>
-                    ))}
+                      <div className="rounded-xl bg-muted/50 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Items seleccionados</p>
+                        <p className="mt-1 text-lg font-semibold text-foreground">{selectedItems.length}</p>
+                      </div>
+                      <div className="rounded-xl bg-primary/10 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar ahora</p>
+                        <p className="mt-1 font-display text-2xl font-bold text-primary">${selectedTotal.toFixed(2)}</p>
+                      </div>
+                    </div>
 
-                  <div className="flex justify-between border-t border-border pt-1 text-sm font-bold">
-                    <span className="flex items-center gap-1 text-foreground">
-                      <ArrowDown className="h-3 w-3 text-green-500" /> Recibido
-                    </span>
-                    <span className="text-foreground">${totalReceived.toFixed(2)}</span>
-                  </div>
+                    <div className="mt-4 space-y-2">
+                      {unpaidItems.map((item) => {
+                        const qtyToPay = payQuantities[item.id] ?? 0;
+                        const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={cn(
+                              "rounded-2xl border p-3 transition-colors",
+                              qtyToPay > 0 ? "border-primary/40 bg-primary/5 shadow-sm" : "border-border bg-background",
+                            )}
+                          >
+                            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-foreground">{item.description_snapshot}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Despachado: {item.quantity} · Pagado: {item.quantity_paid} · Pendiente: {item.quantity_pending}
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:w-[420px]">
+                                <div className="rounded-xl bg-muted/50 p-2">
+                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Precio unit.</p>
+                                  <p className="mt-1 text-sm font-semibold text-foreground">${item.unit_price.toFixed(2)}</p>
+                                </div>
+                                <div className="rounded-xl bg-muted/50 p-2">
+                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Pendiente</p>
+                                  <p className="mt-1 text-sm font-semibold text-foreground">{item.quantity_pending}</p>
+                                </div>
+                                <div className="rounded-xl border border-border p-2">
+                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cobrar ahora</p>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={item.quantity_pending}
+                                    step={1}
+                                    value={qtyToPay}
+                                    onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
+                                    className="mt-1 h-9"
+                                    disabled={readOnly}
+                                  />
+                                </div>
+                                <div className="rounded-xl bg-muted/50 p-2">
+                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Subtotal</p>
+                                  <p className="mt-1 text-sm font-semibold text-foreground">${lineSubtotal.toFixed(2)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {paidItems.length > 0 && (
+                        <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-3">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-muted-foreground">Items ya pagados</p>
+                            <Badge variant="outline" className="text-[10px]">
+                              {paidItems.length}
+                            </Badge>
+                          </div>
+                          <div className="space-y-2">
+                            {paidItems.map((item) => (
+                              <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
+                                <span className="min-w-0 flex-1 truncate text-sm text-foreground line-through">
+                                  {item.description_snapshot} · {item.quantity} unidad(es)
+                                </span>
+                                <Badge variant="outline" className="text-[10px]">
+                                  Pagado completo
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
                 </div>
-              )}
+
+                <div className="space-y-4">
+                  {paymentMethods.length === 0 && (
+                    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">
+                      No hay metodos de pago activos para esta sucursal.
+                    </div>
+                  )}
+
+                  <section className="rounded-2xl border border-border bg-card p-4 shadow-sm xl:sticky xl:top-0">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Distribucion por metodo de pago</p>
+                        <p className="text-xs text-muted-foreground">
+                          El metodo aplica al cobro de este momento, no a cada item.
+                        </p>
+                      </div>
+                      {!readOnly && paymentMethods.length > paymentSplits.length && (
+                        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={addSplit}>
+                          <Plus className="h-4 w-4" /> Agregar metodo
+                        </Button>
+                      )}
+                    </div>
+
+
+                    <div className="space-y-3">
+                      {paymentSplits.map((split) => {
+                        const method = paymentMethodMap[split.methodId];
+                        const isCash = isCashPaymentMethodName(method?.name ?? "");
+                        const methodOptions = paymentMethods.filter(
+                          (option) =>
+                            option.id === split.methodId ||
+                            !paymentSplits.some((row) => row.id !== split.id && row.methodId === option.id),
+                        );
+
+                        return (
+                          <div key={split.id} className="rounded-2xl border border-border bg-background p-3">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_132px_40px] md:items-end">
+                              <div>
+                                <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Metodo</p>
+                                <Select value={split.methodId} onValueChange={(value) => setSplitMethod(split.id, value)} disabled={readOnly}>
+                                  <SelectTrigger className="h-10">
+                                    <SelectValue placeholder="Metodo" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {methodOptions.map((option) => (
+                                      <SelectItem key={option.id} value={option.id}>
+                                        {option.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div>
+                                <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Monto</p>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={split.amount}
+                                  onChange={(e) => setSplitAmount(split.id, Number(e.target.value))}
+                                  className="h-10"
+                                  disabled={readOnly}
+                                />
+                              </div>
+
+                              <div className="flex justify-end">
+                                {!readOnly && paymentSplits.length > 1 && (
+                                  <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={() => removeSplit(split.id)}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+
+                            {isCash && split.amount > 0 && (
+                              <div className="mt-3 space-y-3 rounded-2xl bg-muted/40 p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-semibold text-foreground">Monto recibido en efectivo</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Registra monedas y billetes entregados por el cliente.
+                                    </p>
+                                  </div>
+                                  {!readOnly && hasReceivedDenoms && (
+                                    <Button type="button" variant="ghost" size="sm" className="gap-1 text-destructive" onClick={() => setReceived({})}>
+                                      <RotateCcw className="h-3.5 w-3.5" /> Limpiar
+                                    </Button>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap gap-1.5">
+                                  {sortedDenoms.map((denomination) => (
+                                    <button
+                                      key={denomination.denomination_id}
+                                      onClick={() => addDenom(denomination.denomination_id)}
+                                      className="rounded-xl border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
+                                      disabled={readOnly}
+                                    >
+                                      {denomination.label}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {hasReceivedDenoms && (
+                                  <div className="space-y-1 rounded-2xl border border-border bg-background p-3">
+                                    {sortedDenoms
+                                      .filter((denomination) => (received[denomination.denomination_id] || 0) > 0)
+                                      .map((denomination) => (
+                                        <div key={denomination.denomination_id} className="flex items-center gap-2 text-sm">
+                                          {!readOnly && (
+                                            <button
+                                              onClick={() => removeDenom(denomination.denomination_id)}
+                                              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
+                                            >
+                                              -
+                                            </button>
+                                          )}
+                                          <span className="flex-1 text-foreground">
+                                            {received[denomination.denomination_id]}x {denomination.label}
+                                          </span>
+                                          <span className="font-medium text-foreground">
+                                            ${(received[denomination.denomination_id] * denomination.value).toFixed(2)}
+                                          </span>
+                                          {!readOnly && (
+                                            <button
+                                              onClick={() => addDenom(denomination.denomination_id)}
+                                              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
+                                            >
+                                              +
+                                            </button>
+                                          )}
+                                        </div>
+                                      ))}
+
+                                    <div className="mt-2 flex justify-between border-t border-border pt-2 text-sm font-bold">
+                                      <span className="flex items-center gap-1 text-foreground">
+                                        <ArrowDown className="h-3.5 w-3.5 text-green-500" /> Recibido
+                                      </span>
+                                      <span className="text-foreground">${totalReceived.toFixed(2)}</span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                  <div className="rounded-xl bg-background p-3">
+                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Efectivo aplicado</p>
+                                    <p className="mt-1 font-semibold text-foreground">${cashAppliedAmount.toFixed(2)}</p>
+                                  </div>
+                                  <div className="rounded-xl bg-background p-3">
+                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recibido</p>
+                                    <p className="mt-1 font-semibold text-foreground">${totalReceived.toFixed(2)}</p>
+                                  </div>
+                                  <div className="rounded-xl bg-background p-3">
+                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Estado</p>
+                                    <p className={cn("mt-1 font-semibold", cannotMakeChange ? "text-destructive" : "text-foreground")}>
+                                      {changeAmount > 0 ? "Cambio pendiente" : "Sin cambio"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {hasReceivedDenoms && totalReceived < cashAppliedAmount && (
+                                  <p className="text-center text-xs font-medium text-destructive">
+                                    El monto recibido en efectivo (${totalReceived.toFixed(2)}) es menor al valor aplicado (${cashAppliedAmount.toFixed(2)}).
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+              </div>
             </div>
 
-            {hasReceivedDenoms && changeAmount > 0 && (
-              <div className="space-y-2 rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1 text-sm font-bold text-foreground">
-                    <ArrowUp className="h-3.5 w-3.5 text-amber-600" /> Cambio
-                  </span>
-                  <span className="font-display text-lg font-bold text-amber-600">${changeAmount.toFixed(2)}</span>
+            <div className="shrink-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur sm:px-6">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="rounded-2xl bg-muted/50 px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total seleccionado</p>
+                      <p className="mt-1 text-lg font-semibold text-foreground">${selectedTotal.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-2xl bg-muted/50 px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total recibido</p>
+                      <p className="mt-1 text-lg font-semibold text-foreground">${receivedSplitTotal.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-2xl bg-muted/50 px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        {changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
+                      </p>
+                      <p className={cn(
+                        "mt-1 text-lg font-semibold",
+                        shortageAmount > 0 ? "text-destructive" : changeAmount > 0 ? "text-emerald-700" : "text-green-600",
+                      )}>
+                        ${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!readOnly ? (
+                    <Button
+                      onClick={() => setConfirmOpen(true)}
+                      disabled={!canPay}
+                      className="h-14 w-full gap-2 rounded-2xl px-6 font-display text-base font-semibold lg:w-[280px]"
+                    >
+                      {paying ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <>
+                          <CreditCard className="h-5 w-5" />
+                          Cobrar ${selectedTotal.toFixed(2)}
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <div className="rounded-2xl bg-muted px-4 py-3 text-center text-xs text-muted-foreground lg:w-[280px]">
+                      Esta cuenta no puede registrar cobros.
+                    </div>
+                  )}
                 </div>
 
-                {changeDenomBreakdown.length > 0 && (
-                  <div className="space-y-0.5">
-                    <p className="text-xs text-muted-foreground">Entregar:</p>
+
+                <div
+                  className={cn(
+                    "rounded-2xl px-4 py-3 text-sm font-medium",
+                    canPay
+                      ? "border border-green-500/20 bg-green-500/10 text-green-700"
+                      : "border border-amber-500/20 bg-amber-500/10 text-amber-700",
+                  )}
+                >
+                  {paymentStatusMessage}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Confirmar cobro</AlertDialogTitle>
+            <AlertDialogDescription>
+              Revisa como quedara aplicado el cobro antes de registrarlo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-2xl bg-muted/50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">${selectedTotal.toFixed(2)}</p>
+              </div>
+              <div className="rounded-2xl bg-muted/50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total recibido</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">${receivedSplitTotal.toFixed(2)}</p>
+              </div>
+              <div className="rounded-2xl bg-primary/10 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Cambio</p>
+                <p className="mt-1 font-display text-xl font-bold text-primary">${changeAmount.toFixed(2)}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border p-3">
+              <p className="mb-2 text-sm font-semibold text-foreground">Metodos utilizados</p>
+              <div className="space-y-2">
+                {paymentAllocationPreview.map((split) => (
+                  <div key={split.id} className="grid grid-cols-[minmax(0,1fr)_96px_96px] gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm">
+                    <span className="truncate text-foreground">{split.methodName}</span>
+                    <span className="text-right text-foreground">Recibido ${split.receivedAmount.toFixed(2)}</span>
+                    <span className="text-right font-medium text-foreground">Aplica ${split.appliedAmount.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {changeAmount > 0 && (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Cambio a entregar desde caja</p>
+                  <p className="font-display text-xl font-bold text-emerald-700">${changeAmount.toFixed(2)}</p>
+                </div>
+                {changeDenomBreakdown.length > 0 ? (
+                  <div className="space-y-1">
                     {changeDenomBreakdown.map((denomination) => (
                       <div key={denomination.denomination_id} className="flex justify-between text-sm">
-                        <span className="text-foreground">
-                          {denomination.qty}x {denomination.label}
-                        </span>
+                        <span className="text-foreground">{denomination.qty}x {denomination.label}</span>
                         <span className="font-medium text-foreground">${(denomination.qty * denomination.value).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
-                )}
-
-                {cannotMakeChange && (
-                  <p className="text-xs font-medium text-destructive">
-                    No hay suficientes denominaciones en caja para dar el cambio exacto.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {hasReceivedDenoms && totalReceived < selectedTotal && (
-              <p className="text-center text-xs font-medium text-destructive">
-                El monto recibido (${totalReceived.toFixed(2)}) es menor al total (${selectedTotal.toFixed(2)}).
-              </p>
-            )}
-
-            {!readOnly ? (
-              <Button onClick={handlePay} disabled={!canPay} className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold">
-                {paying ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>
-                    <CreditCard className="h-5 w-5" />
-                    Cobrar ${selectedTotal.toFixed(2)}
-                  </>
+                  <p className="text-sm text-muted-foreground">No hay detalle de cambio disponible todavia.</p>
                 )}
-              </Button>
-            ) : (
-              <div className="rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground">
-                Esta cuenta no puede registrar cobros.
               </div>
             )}
           </div>
-        )}
-      </DialogContent>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePay} disabled={!canPay || paying}>
+              {paying ? "Procesando..." : "Confirmar cobro"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

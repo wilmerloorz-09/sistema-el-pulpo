@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { KitchenOrder } from "@/hooks/useKitchenOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, CheckCircle2, Clock, UtensilsCrossed, ShoppingBag, Loader2 } from "lucide-react";
+import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 function useElapsed(since: string) {
@@ -18,50 +18,72 @@ function useElapsed(since: string) {
   return { elapsed };
 }
 
-interface Props {
-  order: KitchenOrder;
-  onDispatchItem: (itemId: string, orderId: string) => void;
-  onDispatchAll: (orderId: string) => void;
-  dispatchingItemId: string | null;
-  dispatchingAll: boolean;
+function StageChip({ label, quantity, tone }: { label: string; quantity: number; tone: "pending" | "ready" | "dispatched" }) {
+  const toneClass =
+    tone === "pending"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : tone === "ready"
+        ? "border-blue-200 bg-blue-50 text-blue-700"
+        : "border-green-200 bg-green-50 text-green-700";
+
+  return (
+    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", toneClass)}>
+      {label} {quantity}
+    </span>
+  );
 }
 
-export default function KitchenCard({ order, onDispatchItem, onDispatchAll, dispatchingItemId, dispatchingAll }: Props) {
+interface Props {
+  order: KitchenOrder;
+  onOpenReadyDialog: (order: KitchenOrder) => void;
+}
+
+export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
   const { elapsed } = useElapsed(order.sent_at);
   const isUrgent = elapsed > 15 * 60;
   const isWarning = elapsed > 8 * 60;
-
   const label = order.split_code ?? order.table_name ?? "Para llevar";
-  const pendingCount = order.items.filter((i) => !i.dispatched_at).length;
-  const allDispatched = pendingCount === 0;
+  const pendingCount = order.items.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
+  const readyCount = order.items.reduce((sum, item) => sum + item.quantity_ready_available, 0);
+  const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
+  const previewableItems = order.items.filter(
+    (item) => item.quantity_pending_prepare > 0 || item.quantity_ready_available > 0 || item.quantity_dispatched > 0,
+  );
+  const previewItems = previewableItems.slice(0, 3);
+  const hiddenCount = Math.max(0, previewableItems.length - previewItems.length);
+
+  const summaryParts = [] as string[];
+  if (pendingCount > 0) summaryParts.push(`${pendingCount} pendientes`);
+  if (readyCount > 0) summaryParts.push(`${readyCount} listos`);
+  if (dispatchedCount > 0) summaryParts.push(`${dispatchedCount} despachados`);
 
   return (
     <div
       className={cn(
-        "flex flex-col rounded-2xl border-2 bg-card overflow-hidden transition-colors",
+        "flex self-start flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
             ? "border-warning/50 shadow-md shadow-warning/10"
-            : "border-border"
+            : "border-border",
       )}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
           {order.order_type === "TAKEOUT" ? (
-            <ShoppingBag className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ShoppingBag className="h-4 w-4 shrink-0 text-muted-foreground" />
           ) : (
-            <UtensilsCrossed className="h-4 w-4 text-muted-foreground shrink-0" />
+            <UtensilsCrossed className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
-          <span className="font-display text-sm font-bold truncate">{label}</span>
-          <Badge variant="secondary" className="text-[10px] shrink-0">
+          <span className="truncate font-display text-sm font-bold">{label}</span>
+          <Badge variant="secondary" className="shrink-0 text-[10px]">
             {order.order_code ?? String(order.order_number)}
           </Badge>
         </div>
         <div
           className={cn(
-            "flex items-center gap-1 text-xs font-mono font-semibold shrink-0",
-            isUrgent ? "text-destructive" : isWarning ? "text-warning" : "text-muted-foreground"
+            "flex shrink-0 items-center gap-1 text-xs font-mono font-semibold",
+            isUrgent ? "text-destructive" : isWarning ? "text-warning" : "text-muted-foreground",
           )}
         >
           <Clock className="h-3.5 w-3.5" />
@@ -69,78 +91,58 @@ export default function KitchenCard({ order, onDispatchItem, onDispatchAll, disp
         </div>
       </div>
 
-      <div className="flex-1 px-3 py-2 space-y-1">
-        {order.items.map((item) => {
-          const isDispatched = !!item.dispatched_at;
-          const isDispatching = dispatchingItemId === item.id;
+      <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+        {summaryParts.join(" · ") || "Sin pendientes por preparar"}
+      </div>
 
-          return (
-            <div
-              key={item.id}
-              className={cn(
-                "flex items-start gap-2 rounded-xl px-2 py-2 transition-colors",
-                isDispatched ? "bg-accent/10 opacity-60" : "bg-background"
-              )}
-            >
-              <button
-                onClick={() => !isDispatched && onDispatchItem(item.id, order.id)}
-                disabled={isDispatched || isDispatching || dispatchingAll}
-                className={cn(
-                  "flex items-center justify-center shrink-0 h-7 w-7 rounded-lg border-2 transition-all",
-                  isDispatched
-                    ? "bg-accent border-accent text-accent-foreground"
-                    : "border-muted-foreground/30 hover:border-primary hover:bg-primary/10 active:scale-90"
-                )}
-              >
-                {isDispatching ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : isDispatched ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : null}
-              </button>
-
-              <span className={cn("text-sm font-bold w-6 text-right shrink-0", isDispatched ? "text-muted-foreground" : "text-primary")}>
-                {item.quantity}x
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className={cn("text-sm font-medium", isDispatched ? "line-through text-muted-foreground" : "text-foreground")}>
-                  {item.description_snapshot}
-                </p>
+      <div className="space-y-2 px-4 py-3">
+        {previewItems.map((item) => (
+          <div key={item.id} className="rounded-xl border border-border px-3 py-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-2">
+                  <span className="mt-0.5 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
+                  <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
+                </div>
                 {item.modifiers.length > 0 && (
-                  <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
-                    {item.modifiers.filter((m) => String(m.description ?? "").trim().length > 0).map((m) => (
-                      <span key={m.description}>- {m.description}</span>
+                  <div className="mt-1 flex flex-col pl-[18px] text-xs text-muted-foreground">
+                    {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
+                      <span key={modifier.description}>- {modifier.description}</span>
                     ))}
                   </div>
                 )}
-                {item.item_note && (
-                  <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
-                )}
+                <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px]">
+                  {item.quantity_pending_prepare > 0 ? (
+                    <StageChip label="Pend" quantity={item.quantity_pending_prepare} tone="pending" />
+                  ) : null}
+                  {item.quantity_ready_available > 0 ? (
+                    <StageChip label="Listo" quantity={item.quantity_ready_available} tone="ready" />
+                  ) : null}
+                  {item.quantity_dispatched > 0 ? (
+                    <StageChip label="Desp" quantity={item.quantity_dispatched} tone="dispatched" />
+                  ) : null}
+                </div>
               </div>
+              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                {item.quantity_ordered}x
+              </span>
             </div>
-          );
-        })}
+          </div>
+        ))}
+
+        {hiddenCount > 0 && (
+          <div className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
+            +{hiddenCount} item{hiddenCount !== 1 ? "s" : ""} mas
+          </div>
+        )}
       </div>
 
-      {!allDispatched && (
-        <div className="px-4 py-3 border-t border-border">
-          <Button
-            onClick={() => onDispatchAll(order.id)}
-            disabled={dispatchingAll}
-            className="w-full h-11 rounded-xl font-display font-semibold gap-2"
-          >
-            {dispatchingAll ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <CheckCircle2 className="h-4 w-4" />
-                Despachar todo ({pendingCount})
-              </>
-            )}
-          </Button>
-        </div>
-      )}
+      <div className="border-t border-border px-4 py-3">
+        <Button onClick={() => onOpenReadyDialog(order)} className="h-11 w-full gap-2 rounded-xl font-display font-semibold">
+          <CheckCircle2 className="h-4 w-4" />
+          Marcar listo
+        </Button>
+      </div>
     </div>
   );
 }
-

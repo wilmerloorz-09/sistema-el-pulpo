@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Textarea } from "@/components/ui/textarea";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
-import type { CompletedPayment, CompletedPaymentsFilters, PaymentMethod } from "@/hooks/useCaja";
+import type { CompletedPayment, CompletedPaymentsFilters, CompletedPaymentsMethodSummary, PaymentMethod } from "@/hooks/useCaja";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import {
   ChevronDown,
@@ -57,6 +57,8 @@ interface PaymentGroup {
 interface Props {
   payments: CompletedPayment[];
   total: number;
+  methodSummary: CompletedPaymentsMethodSummary[];
+  collectedTotal: number;
   paymentMethods: PaymentMethod[];
   loading?: boolean;
   filters: CompletedPaymentsFilters;
@@ -131,6 +133,8 @@ function getPermissionFlags(permissions: PermissionMap) {
 export default function CompletedPaymentsList({
   payments,
   total,
+  methodSummary,
+  collectedTotal,
   paymentMethods,
   loading = false,
   filters,
@@ -192,7 +196,7 @@ export default function CompletedPaymentsList({
 
       map.get(row.id)!.items.push({
         id: row.item_id ?? row.id,
-        paymentEntryId: row.payment_item_id ?? row.id,
+        paymentEntryId: row.id,
         product_name: row.item_description ?? "Item no especificado",
         quantity: row.item_paid_quantity ?? row.item_quantity ?? 1,
         amount: row.item_amount,
@@ -317,6 +321,33 @@ export default function CompletedPaymentsList({
           </button>
         </div>
       </div>
+
+      {methodSummary.length > 0 && (
+        <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="font-display text-sm font-bold text-foreground">Cobrado por metodo</h3>
+              <p className="text-xs text-muted-foreground">Resumen segun los filtros actuales.</p>
+            </div>
+            <div className="rounded-lg bg-primary/10 px-3 py-2 text-right">
+              <p className="text-[11px] text-muted-foreground">Total cobrado</p>
+              <p className="font-display text-lg font-bold text-primary">${collectedTotal.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {methodSummary.map((method) => (
+              <div key={method.methodId} className="rounded-xl border border-border bg-muted/40 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{method.methodName}</p>
+                  <Badge variant="secondary" className="text-[10px]">{method.paymentCount} pago(s)</Badge>
+                </div>
+                <p className="mt-2 font-display text-xl font-bold text-foreground">${method.amount.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="py-10 text-center">

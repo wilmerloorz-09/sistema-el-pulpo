@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+﻿import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { hasPermission, type AccessLevel } from "@/lib/permissions";
@@ -27,7 +27,7 @@ const MODULE_FALLBACK_PATH: Record<string, string> = {
 
 const ProtectedRoute = ({ children, allowedModules, requiredPermission }: Props) => {
   const { user, loading } = useAuth();
-  const { permissions, allowedModules: currentModules } = useBranch();
+  const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
 
   if (loading) {
     return (
@@ -39,17 +39,28 @@ const ProtectedRoute = ({ children, allowedModules, requiredPermission }: Props)
 
   if (!user) return <Navigate to="/login" replace />;
 
-  if (requiredPermission && !hasPermission(permissions, requiredPermission.module, requiredPermission.level)) {
+  const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
+  const fallback = (() => {
     const firstAllowed = currentModules.find((code) => MODULE_FALLBACK_PATH[code]);
-    const fallback = firstAllowed ? MODULE_FALLBACK_PATH[firstAllowed] : "/mesas";
-    return <Navigate to={fallback} replace />;
+    if (firstAllowed) return MODULE_FALLBACK_PATH[firstAllowed];
+    if (isGlobalAdminWithoutBranches) return "/admin";
+    return "/mesas";
+  })();
+
+  if (requiredPermission) {
+    const hasRequiredPermission = hasPermission(permissions, requiredPermission.module, requiredPermission.level)
+      || (isGlobalAdmin && requiredPermission.module === "admin_global");
+
+    if (!hasRequiredPermission) {
+      return <Navigate to={fallback} replace />;
+    }
   }
 
   if (allowedModules && allowedModules.length > 0) {
-    const hasModule = allowedModules.some((moduleCode) => currentModules.includes(moduleCode));
+    const hasModule = allowedModules.some((moduleCode) => currentModules.includes(moduleCode))
+      || (isGlobalAdmin && allowedModules.includes("admin_global"));
+
     if (!hasModule) {
-      const firstAllowed = currentModules.find((code) => MODULE_FALLBACK_PATH[code]);
-      const fallback = firstAllowed ? MODULE_FALLBACK_PATH[firstAllowed] : "/mesas";
       return <Navigate to={fallback} replace />;
     }
   }
