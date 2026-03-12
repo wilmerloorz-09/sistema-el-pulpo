@@ -1,4 +1,4 @@
-# Database Architecture
+﻿# Database Architecture
 
 ## Resumen
 - BD en PostgreSQL (Supabase).
@@ -59,3 +59,12 @@
 3. Confirmar visualizacion en Ordenes/Cocina/Despacho/Ticket.
 4. Crear orden desde mesas y validar ausencia de colision `uq_orders_order_code`.
 5. Desactivar subcategoria desde Admin y verificar que no haya error FK por historial.
+
+### Arbol de menu - menu_nodes
+- Tabla menu_nodes: arbol recursivo de profundidad indefinida.
+- parent_id = NULL -> nodo raiz (L1).
+- node_type: category | product.
+- depth calculado por trigger trg_menu_node_depth.
+- Migracion: 20260312110000_add_menu_nodes_tree.sql.
+- Tablas originales categories, subcategories, products conservadas como respaldo.
+

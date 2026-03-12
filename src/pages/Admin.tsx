@@ -1,10 +1,7 @@
 ﻿import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutGrid, Layers, Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck } from "lucide-react";
-import CategoriesCrud from "@/components/admin/CategoriesCrud";
-import SubcategoriesCrud from "@/components/admin/SubcategoriesCrud";
+import { Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree } from "lucide-react";
 import ProductsCrud from "@/components/admin/ProductsCrud";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
-import SubcategoryModifiersCrud from "@/components/admin/SubcategoryModifiersCrud";
 import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -12,6 +9,7 @@ import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
 import DispatchConfig from "@/components/admin/DispatchConfig";
+import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
 
@@ -39,17 +37,10 @@ const TABS: AdminTab[] = [
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
-    value: "categories",
-    label: "Categorias",
-    icon: <LayoutGrid className="h-4 w-4" />,
-    component: CategoriesCrud,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
-  },
-  {
-    value: "subcategories",
-    label: "Subcategorias",
-    icon: <Layers className="h-4 w-4" />,
-    component: SubcategoriesCrud,
+    value: "menu-tree",
+    label: "Arbol Menu",
+    icon: <FolderTree className="h-4 w-4" />,
+    component: MenuNodesCrud,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {

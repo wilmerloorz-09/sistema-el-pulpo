@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+ï»¿import { useState, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import ProductPicker from "@/components/order/ProductPicker";
+import MenuNavigator from "@/components/order/MenuNavigator";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
 import ThermalReceipt from "@/components/order/ThermalReceipt";
@@ -19,6 +19,15 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
+import type { MenuNode } from "@/hooks/useMenuTree";
+
+interface SelectedProduct {
+  id: string;
+  description: string;
+  subcategory_id: string;
+  unit_price: number | null;
+  price_mode: "FIXED" | "MANUAL";
+}
 
 const Ordenes = () => {
   const [searchParams] = useSearchParams();
@@ -31,7 +40,7 @@ const Ordenes = () => {
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen } = useOrder(orderId);
   const menu = useMenuData();
 
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
@@ -46,6 +55,17 @@ const Ordenes = () => {
   const printReceipt = useCallback(() => {
     window.print();
   }, []);
+
+  const handleSelectMenuProduct = useCallback((node: MenuNode) => {
+    const legacyProduct = menu.products.find((product) => product.id === node.id);
+
+    if (!legacyProduct) {
+      toast.error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+      return;
+    }
+
+    setSelectedProduct(legacyProduct);
+  }, [menu.products]);
 
   if (!orderId) {
     return (
@@ -193,7 +213,7 @@ const Ordenes = () => {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-sm font-bold">{order.order_code ?? `#${order.order_number}`}</span>
-            {order.table_name && <span className="text-xs text-muted-foreground">· {order.table_name}</span>}
+            {order.table_name && <span className="text-xs text-muted-foreground">Â· {order.table_name}</span>}
             <Badge className={cn("text-[10px]", statusColor[order.status])}>{statusLabel[order.status]}</Badge>
             {!canOperateOrders && (
               <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -239,12 +259,7 @@ const Ordenes = () => {
       <div className="flex flex-1 overflow-hidden">
         <div className={cn("flex-1 overflow-y-auto p-4", showCart && "hidden sm:block")}>
           {canEditItems ? (
-            <ProductPicker
-              categories={menu.categories}
-              subcategories={menu.subcategories}
-              products={menu.products}
-              onSelectProduct={(p) => setSelectedProduct(p)}
-            />
+            <MenuNavigator onSelectProduct={handleSelectMenuProduct} />
           ) : (
             <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
               Modo consulta: puedes ver la orden, pero no agregar ni editar items.
@@ -289,17 +304,17 @@ const Ordenes = () => {
               ) : hasSentItems ? (
                 <>
                   <ChefHat className="h-5 w-5" />
-                  Enviar nuevos items · ${total.toFixed(2)}
+                  Enviar nuevos items Â· ${total.toFixed(2)}
                 </>
               ) : isTakeout ? (
                 <>
                   <CircleDollarSign className="h-5 w-5" />
-                  Enviar a caja · ${total.toFixed(2)}
+                  Enviar a caja Â· ${total.toFixed(2)}
                 </>
               ) : (
                 <>
                   <ChefHat className="h-5 w-5" />
-                  Enviar a cocina · ${total.toFixed(2)}
+                  Enviar a cocina Â· ${total.toFixed(2)}
                 </>
               )}
             </Button>
@@ -323,7 +338,7 @@ const Ordenes = () => {
       {!showCart && itemCount > 0 && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 sm:hidden">
           <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">{itemCount} items · ${total.toFixed(2)}</span>
+          <span className="font-display text-sm font-bold">{itemCount} items Â· ${total.toFixed(2)}</span>
         </button>
       )}
 

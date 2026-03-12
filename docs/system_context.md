@@ -69,3 +69,11 @@
 3. Validar Admin > Modificadores (alta/edicion con categoria+subcategoria).
 4. Validar Admin > Subcategorias (baja logica, sin delete fisico).
 5. Si aparece error de `order_code`, aplicar/confirmar migracion `20260310223000`.
+
+### 8) Arbol de menu con navegacion drill-down
+- Se implemento menu_nodes para reemplazar la estructura fija de 3 niveles.
+- La navegacion en UI usa patron L1 (tabs) + L2 (chips) siempre visibles + breadcrumb desde L3+.
+- Hook useMenuTree carga el arbol completo una vez y navega en memoria.
+- Componente MenuNavigator integrado en el modulo de ordenes.
+- Admin: MenuNodesCrud para gestion del arbol con baja logica.
+
