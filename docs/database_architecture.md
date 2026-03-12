@@ -1,70 +1,80 @@
-﻿# Database Architecture
+# Database Architecture
 
 ## Resumen
-- BD en PostgreSQL (Supabase).
+- Base de datos: PostgreSQL en Supabase.
 - UUID se mantiene como PK tecnica.
-- Se usan codigos legibles para operacion donde aplica (`order_code`, etc.).
+- Los codigos legibles operativos se conservan donde aplica, por ejemplo `order_code`.
 
-## Estructura relevante para cambios de hoy
+## Catalogo Operativo Actual
 
-### Modificadores
-- `modifiers`
-  - catalogo de modificadores por sucursal.
-- `subcategory_modifiers` (nuevo uso activo)
-  - relacion subcategoria <-> modificador
-  - soporta `is_active` y `display_order`
-- `order_item_modifiers`
-  - seleccion real de modificadores por item de orden
-- `order_items.item_note`
-  - nota opcional por item (columna agregada para soporte de detalle)
+### Modelo nuevo de navegacion
+- Tabla: `menu_nodes`
+- Proposito: representar el arbol completo del menu con profundidad indefinida.
+- Campos clave esperados:
+  - `id`
+  - `branch_id`
+  - `parent_id`
+  - `name`
+  - `node_type`
+  - `depth`
+  - `display_order`
+  - `is_active`
+  - `icon`
+  - `image_url`
+  - `description`
+  - `price`
 
-### Catalogo de menu
-- `categories` (por sucursal)
-- `subcategories` (relacionadas a categoria)
-- `products` (relacionados a subcategoria)
+### Modelo legacy que sigue vivo
+- `categories`
+- `subcategories`
+- `products`
 
-## Migraciones creadas hoy
+Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sigue dependiendo de `products`.
 
-### 1) Modificadores por subcategoria + item_note
+## Regla Funcional del Arbol
+- `parent_id IS NULL` identifica nodos raiz (Nivel 1).
+- Los productos solo pueden existir desde Nivel 2 en adelante.
+- Un nodo `product` no puede tener hijos.
+- La baja sigue siendo logica por `is_active=false`.
+
+## Persistencia de Ordenes
+- `order_items.product_id` sigue con FK hacia `products(id)`.
+- Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
+- Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
+
+## Sincronizacion Transitoria entre Modelos
+- `MenuNodesCrud` sincroniza estructura minima hacia tablas legacy.
+- Objetivo:
+  - preservar compatibilidad con el flujo operativo actual
+  - permitir vender productos creados desde el arbol
+- Restricciones:
+  - cuidar unicidad de orden visual legacy
+  - no romper FK historicas
+  - no asumir columnas inexistentes en el esquema real
+
+## Modificadores
+- `modifiers`: catalogo de modificadores.
+- `subcategory_modifiers`: disponibilidad de modificadores por subcategoria.
+- `order_item_modifiers`: seleccion real de modificadores por item.
+- `order_items.item_note`: nota opcional por item.
+
+## Consultas Correctas para Modificadores
+- No leer descripcion desde `order_item_modifiers` como fuente principal.
+- Leer descripcion desde `modifiers(description)` mediante join relacional.
+
+## Migraciones Relevantes
 - `supabase/migrations/20260310213000_subcategory_modifiers_and_item_notes.sql`
-- Incluye:
-  - creacion/normalizacion de `subcategory_modifiers`
-  - RLS/policies para esta tabla
-  - `ALTER TABLE order_items ADD COLUMN item_note`
-  - backfill base de asociaciones
-
-### 2) Fix colisiones de `order_code`
+  - normalizacion de modificadores por subcategoria
+  - columna `order_items.item_note`
 - `supabase/migrations/20260310223000_fix_order_code_generator_collision.sql`
-- Incluye:
-  - resincronizacion de `entity_counters` para `orders_daily`
-  - `generate_order_code()` robusto con reintento ante colision
+  - correccion de colisiones en `order_code`
+- `supabase/migrations/20260312110000_add_menu_nodes_tree.sql`
+  - tabla `menu_nodes`
+  - trigger/calculo de profundidad
+  - base inicial para navegacion del arbol
 
-## Regla de integridad aplicada
-- No eliminar fisicamente subcategorias que pueden tener historial de ordenes asociado.
-- En app se implemento desactivacion logica para subcategorias.
-
-## Consultas/joins recomendados para modificadores
-- No consultar `order_item_modifiers.description` (no es fuente valida en el modelo actual).
-- Consultar descripcion desde `modifiers` via join relacional:
-  - `order_item_modifiers(order_item_id, modifier_id)` + `modifiers(description)`
-
-## RLS y seguridad
-- Mantener validaciones por sucursal activa y permisos efectivos.
-- No confiar en filtro solo frontend.
-- Para nuevas tablas o cambios de acceso, agregar policies explicitas y probar con usuario no admin.
-
-## Verificaciones recomendadas post-migracion
-1. Crear orden y agregar item con multiples modificadores.
-2. Confirmar persistencia en `order_item_modifiers`.
-3. Confirmar visualizacion en Ordenes/Cocina/Despacho/Ticket.
-4. Crear orden desde mesas y validar ausencia de colision `uq_orders_order_code`.
-5. Desactivar subcategoria desde Admin y verificar que no haya error FK por historial.
-
-### Arbol de menu - menu_nodes
-- Tabla menu_nodes: arbol recursivo de profundidad indefinida.
-- parent_id = NULL -> nodo raiz (L1).
-- node_type: category | product.
-- depth calculado por trigger trg_menu_node_depth.
-- Migracion: 20260312110000_add_menu_nodes_tree.sql.
-- Tablas originales categories, subcategories, products conservadas como respaldo.
-
+## Reglas de Integridad
+1. No hacer deletes fisicos en entidades con historial operativo.
+2. Si se altera catalogo legacy, validar impacto en FK de `orders` y `order_items`.
+3. Toda tabla nueva o cambio de acceso requiere revisar RLS/policies por sucursal.
+4. Si aparece error en insercion de items, revisar primero la correspondencia entre `menu_nodes.product` y `products`.

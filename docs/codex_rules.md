@@ -1,60 +1,73 @@
 # Codex Rules
 
 ## Objetivo
-Mantener continuidad tecnica y funcional del POS entre sesiones/equipos sin perder decisiones de arquitectura.
+Preservar continuidad tecnica y funcional del POS entre sesiones sin perder decisiones ya tomadas.
 
-## Reglas vigentes obligatorias
+## Reglas Obligatorias Vigentes
 
-### 1) Refactor incremental, no rediseno total
-- Reutilizar estructura existente antes de crear tablas o flujos nuevos.
-- Evitar duplicidades funcionales (especialmente en permisos y catalogos).
+### 1) Refactor incremental, no rediseño total
+- Reutilizar el flujo existente antes de abrir modelos paralelos innecesarios.
+- Si un cambio nuevo convive con legacy, documentar claramente que parte ya migro y cual sigue operando en el modelo anterior.
 
 ### 2) Seguridad en backend/BD primero
-- UI no define seguridad.
-- Toda accion sensible debe respetar permisos efectivos en backend/BD.
+- La UI no define seguridad.
+- Validar siempre por permisos efectivos y sucursal activa en backend/BD.
 
-### 3) Modificadores: estandar obligatorio
-- Modificador es entidad estructurada, no texto concatenado.
-- Asociacion por subcategoria en `subcategory_modifiers`.
-- Seleccion por item en `order_item_modifiers`.
-- Render por lineas debajo del producto en todos los modulos.
+### 3) Arbol de menu como fuente principal de estructura
+- La construccion jerarquica del menu se administra desde `Admin > Arbol Menu`.
+- No volver a depender de pantallas separadas de `Categorias` y `Subcategorias` para la estructura principal.
+- Nivel 1 es el unico nivel obligatorio para navegar en Ordenes.
+- Los productos pueden existir desde Nivel 2 en adelante.
 
-### 4) No borrar historico operativo por UI
-- En entidades con posible historial, preferir baja logica (`is_active=false`).
-- Caso aplicado: subcategorias.
+### 4) Compatibilidad legacy obligatoria mientras siga la FK actual
+- Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
+- Cualquier cambio en `MenuNodesCrud`, `useMenuTree` o `MenuNavigator` debe considerar el espejo operativo en legacy.
 
-### 5) `order_code` y codigos legibles
-- Si hay error de duplicado por `uq_orders_order_code`, revisar/sincronizar contadores.
-- Usar migracion de fix vigente antes de tocar app.
+### 5) Modificadores: modelo estructurado obligatorio
+- Modificador no es texto libre concatenado.
+- Disponibilidad por `subcategory_modifiers`.
+- Seleccion por `order_item_modifiers`.
+- Render consistente debajo del producto en todas las vistas operativas.
 
-## Convenciones de implementacion para este proyecto
+### 6) No borrar historico operativo
+- En catalogo y otras entidades con trazabilidad, preferir `is_active=false`.
+- Evitar deletes fisicos salvo que exista certeza de no afectar historial.
+
+### 7) `order_code` y contadores
+- Si reaparece un problema de duplicados, revisar primero la migracion/correccion vigente antes de tocar la app.
+
+## Convenciones de Implementacion
 
 ### Frontend
-- Si cambia detalle de item (producto/modificadores/nota), actualizar de forma consistente:
-  - ordenes
-  - cocina
-  - despacho
-  - ticket
-- Mantener alineacion visual coherente (modificadores debajo del nombre del producto).
-
-### Backend/consultas
-- Para descripciones de modificadores, leer via relacion a `modifiers(description)`.
-- Filtrar descripciones vacias antes de renderizar.
+- Si cambia la navegacion del catalogo o el detalle de item, revisar consistencia en:
+  - Ordenes
+  - Cocina
+  - Despacho
+  - Ticket
+- Distinguir visualmente categoria vs producto; una categoria no debe mostrarse como item vendible con precio.
 
 ### Admin
-- En Modificadores, alta/edicion requiere categoria + subcategoria validas.
-- Si categoria no tiene subcategorias activas, bloquear guardado con mensaje claro.
+- `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo.
+- El campo `icon` debe tratarse como emoji/caracter simple.
+- `image_url` se usa para imagen real, no reemplaza la semantica de `icon`.
 
-## Checklist corto antes de cerrar una tarea
+### Backend y consultas
+- Para modificadores, leer descripciones desde la relacion con `modifiers`.
+- Filtrar datos vacios o inconsistentes antes de renderizar.
+
+## Checklist Minimo Antes de Cerrar una Tarea
 1. `npx.cmd tsc --noEmit`
-2. Probar flujo de orden end-to-end (mesa -> agregar item -> ver en vistas)
-3. Verificar que no se rompa historial por deletes fisicos
-4. Documentar migraciones nuevas en `docs/database_architecture.md`
-5. Documentar impacto funcional en `docs/system_context.md`
+2. Probar alta/edicion relevante en `Admin > Arbol Menu` si el cambio toca catalogo
+3. Probar flujo de orden si el cambio toca seleccion de productos
+4. Documentar impacto en:
+   - `docs/system_context.md`
+   - `docs/PROJECT_ARCHITECTURE.md`
+   - `docs/database_architecture.md`
+   - `docs/codex_rules.md`
 
-## Estado base que debe preservarse
-- Login con email o username funcional.
+## Estado Base que Debe Mantenerse
+- Login con email o username.
 - Sucursal activa como contexto operativo.
 - Permisos efectivos por modulo/sucursal.
-- Modificadores por subcategoria con persistencia estructurada.
-- Codigos legibles sin colisiones en creacion de ordenes.
+- Modificadores estructurados por subcategoria e item.
+- Navegacion del menu basada en arbol, con Nivel 1 como unica obligatoriedad.

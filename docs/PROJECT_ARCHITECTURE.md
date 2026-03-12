@@ -1,76 +1,65 @@
 # Project Architecture
 
-## Arquitectura Vigente (Resumen)
+## Arquitectura Vigente
 - Frontend: React + TypeScript.
-- Backend: Supabase (PostgreSQL, RLS, RPC, Edge Functions).
-- Dominio clave: multi-sucursal con control operativo por permisos efectivos.
+- Backend: Supabase sobre PostgreSQL con RLS, RPC y funciones auxiliares.
+- Contexto multi-sucursal: la sucursal activa viene de `profiles.active_branch_id`.
+- Estrategia actual: coexistencia controlada entre el arbol nuevo `menu_nodes` y el catalogo legacy `categories` / `subcategories` / `products`.
 
-## Capas funcionales
+## Capas Funcionales
 
 ### Identidad y sesion
-- Auth Supabase + perfil en `profiles`.
-- Login por email o username via Edge Function `login-with-identifier`.
-- Sucursal activa de sesion: `profiles.active_branch_id`.
+- Supabase Auth + perfil en `profiles`.
+- Login por email o username.
+- La sucursal activa sigue siendo parte del estado de sesion y de las consultas operativas.
 
 ### Autorizacion
-- Base de autorizacion: permisos efectivos por modulo + nivel de acceso.
-- Roles usados para estructura y plantillas administrativas.
-- Validacion final siempre en backend/BD.
+- La autorizacion real se define por permisos efectivos por modulo y sucursal.
+- Los roles sirven como organizacion administrativa, no como verdad final de acceso operativo.
+- La validacion final siempre debe existir en backend/BD.
 
-### Operacion de ordenes
-- Orden -> items -> modificadores.
-- Modificadores guardados estructurados en `order_item_modifiers`.
-- Render de modificadores separado del nombre del producto en todas las vistas operativas.
+### Catalogo
+- Fuente de navegacion actual: `menu_nodes`.
+- Fuente operativa legacy aun activa: `categories`, `subcategories`, `products`.
+- `MenuNodesCrud` es la interfaz principal para administrar la estructura del menu.
+- El modulo `ProductsCrud` puede seguir coexistiendo como superficie legacy mientras no se retire definitivamente el modelo operativo anterior.
 
-## Cambios de arquitectura aplicados hoy
+### Ordenes
+- La navegacion de seleccion usa `MenuNavigator` + `useMenuTree`.
+- El unico nivel obligatorio para navegar es L1.
+- La persistencia del item sigue usando `order_items.product_id`, por lo que `products` aun es obligatorio.
+- El resto del flujo operativo (modificadores, cocina, despacho, ticket) continua apoyandose en el modelo existente.
 
-### A) Modificadores por subcategoria
-- Se incorporo asociacion formal subcategoria <-> modificador.
-- El catalogo de modificadores ya no se trata como texto libre por producto.
-- El selector de modificadores en `AddItemDialog` ahora es check multi-seleccion.
+## Cambios Arquitectonicos de Esta Jornada
 
-### B) Consistencia cross-modulo para detalle de item
-- Se estandarizo lectura de modificadores usando join relacional a `modifiers(description)`.
-- Se corrigio render de vacios y se unifico alineacion visual (modificadores bajo nombre de producto) en:
-  - cards de orden
-  - panel de detalle
-  - cocina
-  - despacho
-  - ticket termico
+### A) Arbol recursivo de profundidad indefinida
+- Se agrego `menu_nodes` con `parent_id`, `depth`, `node_type`, `display_order`, `icon`, `image_url`, `price` e `is_active`.
+- La UI de Ordenes ya trabaja sobre esa jerarquia en memoria, sin consultas por cada nivel.
 
-### C) Administracion de catalogo
-- `SubcategoriesCrud`: delete fisico reemplazado por desactivacion logica.
-- `ModifiersCrud`: alta/edicion con categoria y subcategoria obligatorias, bloqueo si no hay subcategorias activas.
+### B) Navegacion con L1 como unica obligatoriedad
+- Se elimino la dependencia funcional de elegir L2 para empezar a navegar.
+- Los hijos directos de L1 pueden mostrarse inmediatamente.
+- La navegacion profunda se resuelve con breadcrumb, drill-down y retroceso por rama.
 
-### D) Codigos legibles operativos
-- Se mantiene estrategia UUID interno + codigo visible humano.
-- Para ordenes, se agrego fix de colision de `order_code` con resincronizacion de contadores.
+### C) Admin orientado al arbol
+- Se retiraron de `Admin` las pestanas de `Categorias` y `Subcategorias`.
+- `Arbol Menu` es la fuente principal para construir la jerarquia del catalogo.
+- Los productos se permiten desde Nivel 2 en adelante.
 
-## Componentes/hook impactados hoy
-- `src/components/order/AddItemDialog.tsx`
-- `src/components/order/OrderItemsList.tsx`
-- `src/components/order/OrderCardBase.tsx`
-- `src/components/order/OrderDetailPanel.tsx`
-- `src/components/order/ThermalReceipt.tsx`
-- `src/components/kitchen/KitchenCard.tsx`
-- `src/components/dispatch/DispatchCardBase.tsx`
-- `src/components/admin/ModifiersCrud.tsx`
-- `src/components/admin/SubcategoryModifiersCrud.tsx`
-- `src/components/admin/SubcategoriesCrud.tsx`
-- `src/hooks/useMenuData.ts`
-- `src/hooks/useOrder.ts`
-- `src/hooks/useOrdersByStatus.ts`
-- `src/hooks/useKitchenOrders.ts`
-- `src/hooks/useDispatchOrders.ts`
+### D) Capa de compatibilidad legacy
+- Al guardar nodos del arbol, se replica la estructura minima necesaria en tablas legacy.
+- Los nodos `product` se sincronizan hacia `products` para que puedan entrar a `order_items`.
+- Esta capa debe tratarse como compatibilidad transitoria, no como arquitectura destino.
+
+## Componentes Impactados
+- `src/hooks/useMenuTree.ts`
+- `src/components/order/MenuNavigator.tsx`
 - `src/pages/Ordenes.tsx`
+- `src/components/admin/MenuNodesCrud.tsx`
 - `src/pages/Admin.tsx`
 
-## Migraciones nuevas relevantes
-- `20260310213000_subcategory_modifiers_and_item_notes.sql`
-- `20260310223000_fix_order_code_generator_collision.sql`
-
-## Riesgos/atencion para siguientes tareas
-1. No volver a cargar modificadores desde columnas inexistentes en `order_item_modifiers`.
-2. Mantener baja logica en entidades con historial operativo.
-3. Cualquier cambio de generacion de codigos debe validar concurrencia + indice unico.
-4. Mantener coherencia visual del detalle de item en todos los modulos (evitar divergencias por componente).
+## Principios para los Siguientes Cambios
+1. No reintroducir la obligatoriedad de L2 salvo redefinicion funcional explicita.
+2. No asumir que `menu_nodes` ya reemplazo por completo a `products`.
+3. Si se toca catalogo o detalle de item, validar consistencia en Ordenes, Cocina, Despacho y Ticket.
+4. Mantener la migracion al arbol como refactor incremental, no como corte brusco del modelo legacy.
