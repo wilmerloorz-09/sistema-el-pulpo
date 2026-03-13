@@ -264,6 +264,7 @@ export type Database = {
           branch_id: string
           display_order: number
           id: string
+          image_url: string | null
           is_active: boolean
           label: string
           value: number
@@ -272,6 +273,7 @@ export type Database = {
           branch_id: string
           display_order?: number
           id?: string
+          image_url?: string | null
           is_active?: boolean
           label: string
           value: number
@@ -280,6 +282,7 @@ export type Database = {
           branch_id?: string
           display_order?: number
           id?: string
+          image_url?: string | null
           is_active?: boolean
           label?: string
           value?: number
@@ -1261,6 +1264,7 @@ export const Constants = {
     },
   },
 } as const
+
 
 
 

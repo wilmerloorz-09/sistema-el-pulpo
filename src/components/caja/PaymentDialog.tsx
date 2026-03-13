@@ -1,4 +1,4 @@
-ï»¿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { CreditCard, Loader2, RotateCcw, ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
+import DenominationVisual from "@/components/caja/DenominationVisual";
 
 interface Props {
   order: PayableOrder | null;
@@ -163,7 +164,7 @@ export default function PaymentDialog({
     if (changeAmount <= 0) return [];
 
     const sorted = [...shiftDenoms].filter((denomination) => denomination.value > 0).sort((a, b) => b.value - a.value);
-    const result: { denomination_id: string; qty: number; value: number; label: string }[] = [];
+    const result: { denomination_id: string; qty: number; value: number; label: string; image_url?: string | null }[] = [];
     let remaining = changeAmount;
 
     for (const denomination of sorted) {
@@ -178,6 +179,7 @@ export default function PaymentDialog({
           qty,
           value: denomination.value,
           label: denomination.label,
+          image_url: denomination.image_url ?? null,
         });
         remaining = roundMoney(remaining - qty * denomination.value);
       }
@@ -468,7 +470,7 @@ export default function PaymentDialog({
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold text-foreground">{item.description_snapshot}</p>
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                  Despachado: {item.quantity} Â· Pagado: {item.quantity_paid} Â· Pendiente: {item.quantity_pending}
+                                  Despachado: {item.quantity} · Pagado: {item.quantity_paid} · Pendiente: {item.quantity_pending}
                                 </p>
                               </div>
 
@@ -516,7 +518,7 @@ export default function PaymentDialog({
                             {paidItems.map((item) => (
                               <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
                                 <span className="min-w-0 flex-1 truncate text-sm text-foreground line-through">
-                                  {item.description_snapshot} Â· {item.quantity} unidad(es)
+                                  {item.description_snapshot} · {item.quantity} unidad(es)
                                 </span>
                                 <Badge variant="outline" className="text-[10px]">
                                   Pagado completo
@@ -620,17 +622,35 @@ export default function PaymentDialog({
                                   )}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1.5">
-                                  {sortedDenoms.map((denomination) => (
-                                    <button
-                                      key={denomination.denomination_id}
-                                      onClick={() => addDenom(denomination.denomination_id)}
-                                      className="rounded-xl border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
-                                      disabled={readOnly}
-                                    >
-                                      {denomination.label}
-                                    </button>
-                                  ))}
+                                <div className="grid grid-cols-2 gap-2 xl:grid-cols-2">
+                                  {sortedDenoms.map((denomination) => {
+                                    const selectedQty = received[denomination.denomination_id] || 0;
+
+                                    return (
+                                      <button
+                                        key={denomination.denomination_id}
+                                        onClick={() => addDenom(denomination.denomination_id)}
+                                        className="group relative overflow-hidden rounded-2xl border border-border bg-card text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                                        disabled={readOnly}
+                                      >
+                                        {selectedQty > 0 && (
+                                          <span className="absolute right-2 top-2 z-10 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground shadow-sm">
+                                            x{selectedQty}
+                                          </span>
+                                        )}
+                                        <DenominationVisual
+                                          label={denomination.label}
+                                          imageUrl={denomination.image_url}
+                                          className="h-20 w-full rounded-none border-0 bg-white"
+                                          imageClassName="object-contain bg-white p-0.5"
+                                          iconClassName="h-8 w-8"
+                                        />
+                                        <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-center">
+                                            <div className="text-base font-black leading-none text-primary">${denomination.value.toFixed(2)}</div>
+                                          </div>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
 
                                 {hasReceivedDenoms && (
@@ -647,6 +667,12 @@ export default function PaymentDialog({
                                               -
                                             </button>
                                           )}
+                                          <DenominationVisual
+                                            label={denomination.label}
+                                            imageUrl={denomination.image_url}
+                                            className="h-9 w-9 rounded-xl"
+                                            iconClassName="h-4 w-4"
+                                          />
                                           <span className="flex-1 text-foreground">
                                             {received[denomination.denomination_id]}x {denomination.label}
                                           </span>
@@ -817,8 +843,16 @@ export default function PaymentDialog({
                 {changeDenomBreakdown.length > 0 ? (
                   <div className="space-y-1">
                     {changeDenomBreakdown.map((denomination) => (
-                      <div key={denomination.denomination_id} className="flex justify-between text-sm">
-                        <span className="text-foreground">{denomination.qty}x {denomination.label}</span>
+                      <div key={denomination.denomination_id} className="flex items-center justify-between gap-3 text-sm">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <DenominationVisual
+                            label={denomination.label}
+                            imageUrl={denomination.image_url}
+                            className="h-9 w-9 rounded-xl"
+                            iconClassName="h-4 w-4"
+                          />
+                          <span className="truncate text-foreground">{denomination.qty}x {denomination.label}</span>
+                        </div>
                         <span className="font-medium text-foreground">${(denomination.qty * denomination.value).toFixed(2)}</span>
                       </div>
                     ))}
@@ -841,6 +875,12 @@ export default function PaymentDialog({
     </Dialog>
   );
 }
+
+
+
+
+
+
 
 
 

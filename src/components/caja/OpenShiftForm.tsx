@@ -1,8 +1,9 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import type { Denomination } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, DollarSign, Loader2 } from "lucide-react";
+import DenominationVisual from "@/components/caja/DenominationVisual";
 
 interface Props {
   denominations: Denomination[];
@@ -53,8 +54,16 @@ export default function OpenShiftForm({ denominations, onOpen, opening, readOnly
         <div className="mb-6 space-y-3">
           {denominations.map((denomination) => (
             <div key={denomination.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-              <span className="flex-1 text-sm font-medium text-foreground">{denomination.label}</span>
-              <span className="w-16 text-right text-xs text-muted-foreground">${denomination.value.toFixed(2)}</span>
+              <DenominationVisual
+                label={denomination.label}
+                imageUrl={denomination.image_url}
+                className="h-14 w-20 rounded-2xl"
+                imageClassName="object-contain bg-white p-0.5"
+                iconClassName="h-6 w-6"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-2xl font-black leading-none text-red-600">${denomination.value.toFixed(2)}</div>
+              </div>
               <Input
                 type="number"
                 min={0}
@@ -86,4 +95,3 @@ export default function OpenShiftForm({ denominations, onOpen, opening, readOnly
     </div>
   );
 }
-

@@ -1,9 +1,10 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import type { CashShift } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Clock, Coins, DollarSign, Loader2, Lock } from "lucide-react";
+import DenominationVisual from "@/components/caja/DenominationVisual";
 
 interface Props {
   shift: CashShift;
@@ -102,8 +103,11 @@ export default function ShiftSummary({ shift, onClose, closing, readOnly = false
               </div>
               <div className="space-y-1">
                 {sortedDenoms.map((denomination) => (
-                  <div key={`initial-${denomination.id}`} className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-muted/50">
-                    <span className="text-sm text-foreground">{denomination.label}</span>
+                  <div key={`initial-${denomination.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-10 w-10 rounded-xl" iconClassName="h-4 w-4" />
+                      <span className="truncate text-sm text-foreground">{denomination.label}</span>
+                    </div>
                     <div className="flex items-center gap-3">
                       <span className="tabular-nums text-sm font-bold text-foreground">{denomination.qty_initial}</span>
                       <span className="w-16 text-right text-xs text-muted-foreground">
@@ -122,8 +126,11 @@ export default function ShiftSummary({ shift, onClose, closing, readOnly = false
               </div>
               <div className="space-y-1">
                 {sortedDenoms.map((denomination) => (
-                  <div key={`current-${denomination.id}`} className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-muted/50">
-                    <span className="text-sm text-foreground">{denomination.label}</span>
+                  <div key={`current-${denomination.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-10 w-10 rounded-xl" iconClassName="h-4 w-4" />
+                      <span className="truncate text-sm text-foreground">{denomination.label}</span>
+                    </div>
                     <div className="flex items-center gap-3">
                       <span className="tabular-nums text-sm font-bold text-foreground">{denomination.qty_current}</span>
                       <span className="w-16 text-right text-xs text-muted-foreground">

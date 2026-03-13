@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -134,7 +134,7 @@ async function cloneCatalogDirectly(
   if (selectedItems.has("denominations")) {
     const { data: denominations, error } = await supabase
       .from("denominations")
-      .select("label, value, display_order, is_active")
+      .select("label, value, display_order, image_url, is_active")
       .eq("branch_id", sourceBranchId)
       .order("display_order");
     if (error) throw error;
@@ -397,3 +397,4 @@ const CloneBranchCatalog = () => {
 };
 
 export default CloneBranchCatalog;
+

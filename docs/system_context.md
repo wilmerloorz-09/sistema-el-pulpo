@@ -30,6 +30,7 @@
   - precio para nodos `product`
   - baja logica con `is_active=false`
 - La pestana `Modificadores` administra solo el catalogo base (`modifiers`).
+- `Admin > Denominaciones` ahora permite subir imagen por archivo; esa imagen se muestra en Caja al listar monedas/billetes y opciones de cambio.
 - El editor del arbol incorpora la asignacion operativa por nodo mediante `menu_node_modifiers`.
 - El panel de modificadores muestra:
   - heredados acumulativos desde ancestros
@@ -69,7 +70,7 @@
 3. No hacer deletes fisicos en catalogo con historial operativo; usar desactivacion logica.
 
 ## Checklist Rapido para Continuar
-1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql` y `supabase/migrations/20260313143000_move_modifier_assignments_to_menu_nodes.sql` esten aplicadas.
+1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql`, `supabase/migrations/20260313143000_move_modifier_assignments_to_menu_nodes.sql` y `supabase/migrations/20260313170000_add_denomination_images.sql` esten aplicadas.
 2. Validar en `Admin > Arbol Menu`:
    - crear raiz
    - crear hijo
@@ -83,3 +84,5 @@
    - producto sincronizado agregandose sin error a la orden
    - modificadores heredados/propios disponibles en el dialogo del producto
 4. Si un producto del arbol no entra a la orden, revisar primero su espejo en `products`.
+
+

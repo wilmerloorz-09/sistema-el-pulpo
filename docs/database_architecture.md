@@ -60,6 +60,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `order_items.item_note`: nota opcional por item.
 - `subcategory_modifiers`: tabla legacy de asignacion previa por subcategoria; ya no debe ser la fuente principal para nuevos cambios.
 
+## Denominaciones
+- `denominations` ahora soporta `image_url` para representar visualmente monedas y billetes.
+- La imagen se carga a Storage en el bucket publico `denomination-images` y se reutiliza en Admin/Caja.
+- El flujo de Caja debe leer `image_url` junto con `label`, `value` y `display_order`.
+
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.
 - Leer descripcion desde `modifiers(description)` mediante join relacional.
@@ -82,6 +87,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - tabla `menu_node_modifiers`
   - backfill inicial desde `subcategory_modifiers`
   - RLS por sucursal tomando `menu_nodes.branch_id` como referencia
+- `supabase/migrations/20260313170000_add_denomination_images.sql` 
+  - columna `denominations.image_url` 
+  - bucket publico `denomination-images` 
+  - policies de Storage para administracion por sucursal
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.
@@ -89,3 +98,5 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 3. Toda tabla nueva o cambio de acceso requiere revisar RLS/policies por sucursal.
 4. Los archivos de `menu-node-images` deben quedar protegidos por policies de Storage alineadas con permisos administrativos por sucursal.
 5. Si aparece error en insercion de items, revisar primero la correspondencia entre `menu_nodes.product` y `products`.
+
+

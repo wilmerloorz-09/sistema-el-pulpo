@@ -68,6 +68,7 @@ export interface LocalDenomination extends LocalRecord {
   value: number;
   branch_id: string;
   display_order: number;
+  image_url?: string | null;
   is_active: boolean;
 }
 
@@ -234,3 +235,4 @@ class PosLocalDB extends Dexie {
 }
 
 export const localDb = new PosLocalDB();
+

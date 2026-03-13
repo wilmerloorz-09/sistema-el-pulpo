@@ -1,4 +1,4 @@
-﻿import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,6 +14,7 @@ export interface Denomination {
   label: string;
   value: number;
   display_order: number;
+  image_url?: string | null;
 }
 
 export interface ShiftDenom {
@@ -21,6 +22,7 @@ export interface ShiftDenom {
   denomination_id: string;
   label: string;
   value: number;
+  image_url?: string | null;
   qty_initial: number;
   qty_current: number;
 }
@@ -522,7 +524,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     queryKey: ["denominations", activeBranchId],
     queryFn: () =>
       dbSelect<Denomination>("denominations", {
-        select: "id, label, value, display_order",
+        select: "id, label, value, display_order, image_url",
         branchId: activeBranchId,
         filters: [{ column: "is_active", op: "eq", value: true }],
         orderBy: { column: "display_order" },
@@ -557,6 +559,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           ...d,
           label: denom?.label ?? "",
           value: denom?.value ?? 0,
+          image_url: denom?.image_url ?? null,
         };
       });
 
@@ -1694,6 +1697,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     closeShift,
   };
 }
+
 
 
 
