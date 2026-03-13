@@ -53,6 +53,79 @@ export function AdminTable<T extends { id: string }>({
   groupBy,
   renderGroupHeader,
 }: Props<T>) {
+  const renderCellContent = React.useCallback((item: T, col: ColumnDef<T>, isEditing: boolean) => {
+    if (isEditing) {
+      if (col.editRender) {
+        return col.editRender(editValues[col.key], (value) => onFieldChange(col.key, value));
+      }
+
+      if (col.type === "switch") {
+        return (
+          <Switch
+            checked={!!editValues[col.key]}
+            onCheckedChange={(value) => onFieldChange(col.key, value)}
+          />
+        );
+      }
+
+      if (col.type === "number") {
+        return (
+          <Input
+            type="number"
+            value={editValues[col.key] ?? ""}
+            onChange={(e) => onFieldChange(col.key, parseFloat(e.target.value) || 0)}
+            className="h-10 rounded-xl text-sm"
+          />
+        );
+      }
+
+      return (
+        <Input
+          value={editValues[col.key] ?? ""}
+          onChange={(e) => onFieldChange(col.key, e.target.value)}
+          className="h-10 rounded-xl text-sm"
+        />
+      );
+    }
+
+    if (col.render) {
+      return col.render(item);
+    }
+
+    if (col.type === "switch") {
+      return <Switch checked={!!(item as any)[col.key]} disabled />;
+    }
+
+    return <span className="block break-words">{String((item as any)[col.key] ?? "")}</span>;
+  }, [editValues, onFieldChange]);
+
+  const renderDesktopActions = React.useCallback((item: T, isEditing: boolean) => {
+    if (isEditing) {
+      return (
+        <>
+          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={onSave} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 text-accent" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={onCancelEdit}>
+            <X className="h-4 w-4" />
+          </Button>
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderRowActions?.(item)}
+        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => onEdit(item)}>
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => onDelete(item.id)}>
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      </>
+    );
+  }, [onCancelEdit, onDelete, onEdit, onSave, renderRowActions, saving]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -92,32 +165,24 @@ export function AdminTable<T extends { id: string }>({
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button size="sm" onClick={onAdd} className="gap-1.5 rounded-xl font-display text-xs">
+        <Button size="sm" onClick={onAdd} className="h-11 gap-1.5 rounded-xl font-display text-xs">
           <Plus className="h-4 w-4" />
           {addLabel}
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border">
-        <div
-          className="hidden bg-muted/50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:grid"
-          style={{ gridTemplateColumns }}
-        >
-          {columns.map((c) => <div key={c.key}>{c.header}</div>)}
-          <div className="text-right">Acciones</div>
-        </div>
+      {rows.length === 0 && (
+        <div className="rounded-2xl border border-border px-4 py-8 text-center text-sm text-muted-foreground">Sin registros</div>
+      )}
 
-        {rows.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">Sin registros</div>
-        )}
-
+      <div className="space-y-3 sm:hidden">
         {groupedRows.map((group, groupIndex) => (
           <React.Fragment key={group.key}>
             {groupBy && renderGroupHeader && group.items.length > 0 && (
               <div
                 className={cn(
-                  "border-t border-border bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
-                  groupIndex === 0 && "border-t-0"
+                  "rounded-2xl border border-border bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+                  groupIndex > 0 && "mt-2"
                 )}
               >
                 {renderGroupHeader(group.key, group.items)}
@@ -130,62 +195,45 @@ export function AdminTable<T extends { id: string }>({
                 <div
                   key={item.id}
                   className={cn(
-                    "grid items-center gap-2 border-t border-border px-3 py-2.5 text-sm",
-                    isEditing && "bg-primary/5"
+                    "space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm",
+                    isEditing && "border-primary/40 bg-primary/5"
                   )}
-                  style={{ gridTemplateColumns }}
                 >
-                  {columns.map((col) => (
-                    <div key={col.key} className="min-w-0">
-                      {isEditing ? (
-                        col.editRender ? (
-                          col.editRender(editValues[col.key], (v) => onFieldChange(col.key, v))
-                        ) : col.type === "switch" ? (
-                          <Switch
-                            checked={!!editValues[col.key]}
-                            onCheckedChange={(v) => onFieldChange(col.key, v)}
-                          />
-                        ) : col.type === "number" ? (
-                          <Input
-                            type="number"
-                            value={editValues[col.key] ?? ""}
-                            onChange={(e) => onFieldChange(col.key, parseFloat(e.target.value) || 0)}
-                            className="h-8 rounded-lg text-sm"
-                          />
-                        ) : (
-                          <Input
-                            value={editValues[col.key] ?? ""}
-                            onChange={(e) => onFieldChange(col.key, e.target.value)}
-                            className="h-8 rounded-lg text-sm"
-                          />
-                        )
-                      ) : col.render ? (
-                        col.render(item)
-                      ) : col.type === "switch" ? (
-                        <Switch checked={!!(item as any)[col.key]} disabled />
-                      ) : (
-                        <span className="truncate">{String((item as any)[col.key] ?? "")}</span>
-                      )}
-                    </div>
-                  ))}
-                  <div className="flex justify-end gap-1">
+                  <div className="grid gap-3">
+                    {columns.map((col) => (
+                      <div key={col.key} className="space-y-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {col.header}
+                        </p>
+                        <div className="min-w-0 text-sm text-foreground">
+                          {renderCellContent(item, col, isEditing)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+                    {renderRowActions?.(item)}
                     {isEditing ? (
                       <>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onSave} disabled={saving}>
-                          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 text-accent" />}
+                        <Button className="h-10 flex-1 rounded-xl" onClick={onSave} disabled={saving}>
+                          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                          Guardar
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCancelEdit}>
-                          <X className="h-3.5 w-3.5" />
+                        <Button variant="outline" className="h-10 flex-1 rounded-xl" onClick={onCancelEdit}>
+                          <X className="mr-2 h-4 w-4" />
+                          Cancelar
                         </Button>
                       </>
                     ) : (
                       <>
-                        {renderRowActions?.(item)}
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(item)}>
-                          <Pencil className="h-3.5 w-3.5" />
+                        <Button variant="outline" className="h-10 flex-1 rounded-xl" onClick={() => onEdit(item)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Editar
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(item.id)}>
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        <Button variant="outline" className="h-10 flex-1 rounded-xl text-destructive hover:text-destructive" onClick={() => onDelete(item.id)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Eliminar
                         </Button>
                       </>
                     )}
@@ -196,6 +244,56 @@ export function AdminTable<T extends { id: string }>({
           </React.Fragment>
         ))}
       </div>
+
+      {rows.length > 0 && (
+        <div className="hidden overflow-hidden rounded-xl border border-border sm:block">
+          <div
+            className="bg-muted/50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:grid"
+            style={{ gridTemplateColumns }}
+          >
+            {columns.map((c) => <div key={c.key}>{c.header}</div>)}
+            <div className="text-right">Acciones</div>
+          </div>
+
+          {groupedRows.map((group, groupIndex) => (
+            <React.Fragment key={group.key}>
+              {groupBy && renderGroupHeader && group.items.length > 0 && (
+                <div
+                  className={cn(
+                    "border-t border-border bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+                    groupIndex === 0 && "border-t-0"
+                  )}
+                >
+                  {renderGroupHeader(group.key, group.items)}
+                </div>
+              )}
+
+              {group.items.map((item) => {
+                const isEditing = editingId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "grid items-center gap-2 border-t border-border px-3 py-2.5 text-sm",
+                      isEditing && "bg-primary/5"
+                    )}
+                    style={{ gridTemplateColumns }}
+                  >
+                    {columns.map((col) => (
+                      <div key={col.key} className="min-w-0">
+                        {renderCellContent(item, col, isEditing)}
+                      </div>
+                    ))}
+                    <div className="flex justify-end gap-1">
+                      {renderDesktopActions(item, isEditing)}
+                    </div>
+                  </div>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

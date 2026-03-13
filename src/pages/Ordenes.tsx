@@ -346,25 +346,27 @@ const Ordenes = () => {
         </div>
       </div>
 
-      <ResizablePanelGroup
-        direction="horizontal"
-        autoSaveId={`ordenes-layout-${activeBranchId ?? "default"}`}
-        className="hidden flex-1 overflow-hidden md:flex"
-      >
-        <ResizablePanel defaultSize={68} minSize={35} className="min-w-0">
-          <div className="h-full overflow-y-auto p-4">
-            {menuPanel}
-          </div>
-        </ResizablePanel>
+      <div className="hidden flex-1 overflow-hidden md:block">
+        <ResizablePanelGroup
+          direction="horizontal"
+          autoSaveId={`ordenes-layout-${activeBranchId ?? "default"}`}
+          className="h-full overflow-hidden"
+        >
+          <ResizablePanel defaultSize={68} minSize={35} className="min-w-0">
+            <div className="h-full overflow-y-auto p-4">
+              {menuPanel}
+            </div>
+          </ResizablePanel>
 
-        <ResizableHandle withHandle className="bg-border/70 transition-colors hover:bg-primary/30" />
+          <ResizableHandle withHandle className="bg-border/70 transition-colors hover:bg-primary/30" />
 
-        <ResizablePanel defaultSize={32} minSize={22} maxSize={55} className="min-w-0">
-          <div className="flex h-full min-h-0 flex-col overflow-y-auto border-l border-border p-4">
-            {orderPanel(false)}
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          <ResizablePanel defaultSize={32} minSize={22} maxSize={55} className="min-w-0">
+            <div className="flex h-full min-h-0 flex-col overflow-y-auto border-l border-border p-4">
+              {orderPanel(false)}
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
 
       {!showCart && itemCount > 0 && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
