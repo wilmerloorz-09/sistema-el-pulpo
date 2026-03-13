@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree, ChevronDown, Menu, X } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
@@ -13,6 +12,7 @@ import DispatchConfig from "@/components/admin/DispatchConfig";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 interface AdminTab {
   value: string;
@@ -114,6 +114,7 @@ const Admin = () => {
   }, [activeTab, defaultTab, visibleTabs]);
 
   const selectedTab = visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0] ?? null;
+  const SelectedComponent = selectedTab?.component ?? null;
 
   return (
     <div className="space-y-4 p-4">
@@ -128,7 +129,7 @@ const Admin = () => {
           >
             {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             {selectedTab?.label ?? "Secciones"}
-            <ChevronDown className={`h-4 w-4 transition-transform ${mobileTabsOpen ? "rotate-180" : ""}`} />
+            <ChevronDown className={cn("h-4 w-4 transition-transform", mobileTabsOpen && "rotate-180")} />
           </Button>
         )}
       </div>
@@ -144,7 +145,7 @@ const Admin = () => {
           No tienes permisos administrativos para esta sucursal.
         </div>
       ) : (
-        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setMobileTabsOpen(false); }} className="w-full">
+        <>
           <div className="md:hidden">
             {mobileTabsOpen && (
               <div className="rounded-2xl border border-border bg-card p-2 shadow-sm">
@@ -170,26 +171,26 @@ const Admin = () => {
           </div>
 
           <div className="-mx-4 hidden overflow-x-auto px-4 pb-2 md:block">
-            <TabsList className="inline-flex h-auto gap-1 rounded-xl bg-muted/50 p-1">
+            <div className="inline-flex gap-1 rounded-xl bg-muted/50 p-1">
               {visibleTabs.map((tab) => (
-                <TabsTrigger
+                <Button
                   key={tab.value}
-                  value={tab.value}
-                  className="gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm"
+                  type="button"
+                  variant={tab.value === activeTab ? "secondary" : "ghost"}
+                  className="gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium"
+                  onClick={() => setActiveTab(tab.value)}
                 >
                   {tab.icon}
                   <span className="hidden sm:inline">{tab.label}</span>
-                </TabsTrigger>
+                </Button>
               ))}
-            </TabsList>
+            </div>
           </div>
 
-          {visibleTabs.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value} className="mt-3">
-              <tab.component />
-            </TabsContent>
-          ))}
-        </Tabs>
+          <div className="mt-3">
+            {SelectedComponent ? <SelectedComponent /> : null}
+          </div>
+        </>
       )}
     </div>
   );

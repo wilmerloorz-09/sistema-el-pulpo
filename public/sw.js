@@ -1,6 +1,5 @@
-const CACHE_NAME = "elpulpo-v1";
+const CACHE_NAME = "elpulpo-v2";
 const APP_SHELL = [
-  "/",
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -76,11 +75,6 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        return cache.match("/");
-      })
-    );
+    event.respondWith(fetch(request));
   }
 });
