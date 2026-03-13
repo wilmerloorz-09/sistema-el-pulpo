@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
     if (action === "options") {
       const options = await generateAuthenticationOptions({
         rpID,
-        userVerification: "required",
+        userVerification: "preferred",
       });
 
       const challengeId = generateUUID();
@@ -106,20 +106,42 @@ Deno.serve(async (req) => {
 
       const publicKeyBytes = Uint8Array.from(atob(credRow.public_key), (char) => char.charCodeAt(0));
 
-      const verification = await verifyAuthenticationResponse({
-        response: assertion,
-        expectedChallenge: challengeRow.challenge,
-        expectedOrigin: origin,
-        expectedRPID: rpID,
-        credential: {
-          id: credRow.credential_id,
-          publicKey: publicKeyBytes,
-          counter: Number(credRow.counter),
-          transports: (credRow.transports || []) as AuthenticatorTransportFuture[],
-        },
-      });
+      let verification;
+      try {
+        verification = await verifyAuthenticationResponse({
+          response: assertion,
+          expectedChallenge: challengeRow.challenge,
+          expectedOrigin: origin,
+          expectedRPID: rpID,
+          credential: {
+            id: credRow.credential_id,
+            publicKey: publicKeyBytes,
+            counter: Number(credRow.counter),
+            transports: (credRow.transports || []) as AuthenticatorTransportFuture[],
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Verificacion fallida";
+        console.error("WebAuthn verification detail:", {
+          message,
+          origin,
+          rpID,
+          credentialId,
+          challengeId,
+        });
+        return new Response(JSON.stringify({ error: message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       if (!verification.verified) {
+        console.error("WebAuthn verification rejected:", {
+          origin,
+          rpID,
+          credentialId,
+          challengeId,
+        });
         return new Response(JSON.stringify({ error: "Verificacion fallida" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

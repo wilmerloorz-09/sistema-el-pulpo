@@ -83,10 +83,11 @@ const Login = () => {
         className="w-full max-w-sm space-y-8"
       >
         <div className="text-center space-y-2">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-            <span className="text-2xl font-bold text-primary-foreground">EP</span>
-          </div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">El Pulpo</h1>
+          <img
+            src="/logo.png"
+            alt="El Pulpo"
+            className="mx-auto h-28 w-28 rounded-3xl object-cover"
+          />
           <p className="text-sm text-muted-foreground">Sistema POS</p>
         </div>
 

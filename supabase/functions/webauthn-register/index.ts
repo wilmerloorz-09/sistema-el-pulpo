@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
         excludeCredentials,
         authenticatorSelection: {
           residentKey: "preferred",
-          userVerification: "required",
+          userVerification: "preferred",
         },
       });
 
