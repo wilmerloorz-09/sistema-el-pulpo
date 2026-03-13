@@ -1,5 +1,5 @@
 /**
- * Tipos para la lógica de cancelación de órdenes e ítems
+ * Tipos para la logica de cancelacion de ordenes e items
  */
 
 export type OrderItemStatus = 'DRAFT' | 'SENT' | 'DISPATCHED' | 'PAID' | 'CANCELLED';
@@ -14,7 +14,7 @@ export type CancellationReason =
   | 'otro';
 export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'VOIDED';
 
-// Cancelación
+// Cancelacion
 export interface CancellationData {
   reason?: CancellationReason;
   notes?: string;
@@ -31,7 +31,7 @@ export interface OperationalLoss {
   created_at?: string;
 }
 
-// Órdenes
+// Ordenes
 export interface Order {
   id: string;
   order_number: number;
@@ -52,7 +52,7 @@ export interface Order {
   cancelled_from_status: OrderStatus | null;
 }
 
-// Ítems de orden
+// Items de orden
 export interface OrderItem {
   id: string;
   order_id: string;
@@ -110,9 +110,9 @@ export interface Profile {
 // Constantes
 export const CANCELLATION_REASONS: Record<CancellationReason, string> = {
   error_mesero: 'Error del mesero',
-  cliente_cambio_opinion: 'El cliente cambió de opinión',
+  cliente_cambio_opinion: 'El cliente cambio de opinion',
   producto_no_disponible: 'Producto no disponible',
-  cliente_no_solicito: 'El cliente no lo solicitó',
+  cliente_no_solicito: 'El cliente no lo solicito',
   otro: 'Otro',
 };
 

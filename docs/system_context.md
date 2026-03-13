@@ -63,6 +63,11 @@
 
 ## Estado Operativo que Debe Preservarse
 - Login con email o username sigue activo.
+- Login biometrico sigue basado en WebAuthn/passkeys:
+  - la huella o PIN se valida localmente por el dispositivo
+  - el servidor valida contra `webauthn_credentials` guardadas en base de datos
+  - los challenges de registro/login expiran en 5 minutos
+  - la app cierra sesion tras 10 minutos de inactividad
 - Sucursal activa sigue resolviendose por `profiles.active_branch_id`.
 - Seguridad y permisos siguen validandose en backend/BD, no en UI.
 - Modificadores siguen usando el modelo estructurado:

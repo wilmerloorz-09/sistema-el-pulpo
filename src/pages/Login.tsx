@@ -84,7 +84,7 @@ const Login = () => {
       >
         <div className="text-center space-y-2">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-            <span className="text-3xl">??</span>
+            <span className="text-2xl font-bold text-primary-foreground">EP</span>
           </div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">El Pulpo</h1>
           <p className="text-sm text-muted-foreground">Sistema POS</p>
@@ -109,14 +109,14 @@ const Login = () => {
 
           <div className="space-y-2">
             <Label htmlFor="password" className="text-sm font-medium">
-              Contraseña
+              Contrasena
             </Label>
             <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="********"
               required
               autoComplete="current-password"
               className="h-12 rounded-xl bg-card text-base"
@@ -150,14 +150,7 @@ const Login = () => {
             </Button>
           </div>
         )}
-
-        <div className="rounded-xl border border-border bg-muted/50 p-3 text-center text-xs text-muted-foreground">
-          <p className="font-medium">Usuarios de prueba:</p>
-          <p>admin@elpulpo.com · contraseña: <span className="font-mono">admin123</span></p>
-          <p>mesero1@elpulpo.com · contraseña: <span className="font-mono">mesero123</span></p>
-          <p>super@elpulpo.com · contraseña: <span className="font-mono">super123</span></p>
-        </div>
-      </motion.div>
+</motion.div>
     </div>
   );
 };

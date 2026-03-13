@@ -394,7 +394,7 @@ const UsersCrud = () => {
                   {user.branch_assignments.map((assignment) => (
                     <Badge key={`${assignment.branch_id}-${assignment.role_code}`} variant={user.active_branch_id === assignment.branch_id ? "default" : "outline"} className="gap-1 pr-1 text-[10px]">
                       <Building2 className="h-2.5 w-2.5" />
-                      {assignment.branch_name} · {assignment.role_name}
+                      {assignment.branch_name} - {assignment.role_name}
                       {user.active_branch_id === assignment.branch_id ? " (Activa)" : ""}
                       <button disabled={isProtected} onClick={() => removeAssignment.mutate({ user_id: user.id, branch_id: assignment.branch_id, role_code: assignment.role_code })} className="hover:text-destructive disabled:opacity-50">
                         <Trash2 className="h-3 w-3" />

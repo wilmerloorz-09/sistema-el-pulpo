@@ -92,7 +92,7 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
       </div>
 
       <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        {summaryParts.join(" · ") || "Sin pendientes por preparar"}
+        {summaryParts.join(" - ") || "Sin pendientes por preparar"}
       </div>
 
       <div className="space-y-2 px-4 py-3">

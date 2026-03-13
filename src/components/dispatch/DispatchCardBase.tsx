@@ -96,7 +96,7 @@ export function DispatchCardBase({
   if (order.pending_prepare_count > 0) summaryParts.push(`${order.pending_prepare_count} pendientes`);
   if (order.ready_available_count > 0) summaryParts.push(`${order.ready_available_count} listos`);
   if (dispatchedCount > 0) summaryParts.push(`${dispatchedCount} despachados`);
-  const summaryText = summaryParts.length > 0 ? summaryParts.join(" · ") : "Sin acciones pendientes";
+  const summaryText = summaryParts.length > 0 ? summaryParts.join(" - ") : "Sin acciones pendientes";
 
   return (
     <div

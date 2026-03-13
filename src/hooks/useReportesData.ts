@@ -18,12 +18,12 @@ export interface OrderWithStatus {
 }
 
 /**
- * Hook para obtener datos de órdenes tanto locales como remotas
+ * Hook para obtener datos de ordenes tanto locales como remotas
  */
 export function useReportesData() {
   const qc = useQueryClient();
 
-  // Órdenes locales (IndexedDB)
+  // Ordenes locales (IndexedDB)
   const localOrders = useQuery({
     queryKey: ['reports-local-orders'],
     queryFn: async () => {
@@ -58,7 +58,7 @@ export function useReportesData() {
     refetchInterval: 5000, // Actualizar cada 5s
   });
 
-  // Órdenes remotas (Supabase)
+  // Ordenes remotas (Supabase)
   const remoteOrders = useQuery({
     queryKey: ['reports-remote-orders'],
     queryFn: async () => {
@@ -116,20 +116,20 @@ export function useReportesData() {
     refetchInterval: 5000,
   });
 
-  // Mutación para sincronizar
+  // Mutacion para sincronizar
   const syncMutation = useMutation({
     mutationFn: async () => {
       const result = await processSyncQueue();
       return result;
     },
     onSuccess: (result) => {
-      toast.success(`Sincronización completada: ${result.processed} registros`);
+      toast.success(`Sincronizacion completada: ${result.processed} registros`);
       qc.invalidateQueries({ queryKey: ['reports-local-orders'] });
       qc.invalidateQueries({ queryKey: ['reports-remote-orders'] });
       qc.invalidateQueries({ queryKey: ['sync-pending-count'] });
     },
     onError: (error: any) => {
-      toast.error('Error en sincronización: ' + error.message);
+      toast.error('Error en sincronizacion: ' + error.message);
     },
   });
 

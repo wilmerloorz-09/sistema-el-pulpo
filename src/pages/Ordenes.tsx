@@ -253,17 +253,17 @@ const Ordenes = () => {
           ) : hasSentItems ? (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar nuevos items � ${total.toFixed(2)}
+              Enviar nuevos items - ${total.toFixed(2)}
             </>
           ) : isTakeout ? (
             <>
               <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja � ${total.toFixed(2)}
+              Enviar a caja - ${total.toFixed(2)}
             </>
           ) : (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar a cocina � ${total.toFixed(2)}
+              Enviar a cocina - ${total.toFixed(2)}
             </>
           )}
         </Button>
@@ -293,7 +293,7 @@ const Ordenes = () => {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-sm font-bold">{order.order_code ?? `#${order.order_number}`}</span>
-            {order.table_name && <span className="text-xs text-muted-foreground">� {order.table_name}</span>}
+            {order.table_name && <span className="text-xs text-muted-foreground">- {order.table_name}</span>}
             <Badge className={cn("text-[10px]", statusColor[order.status])}>{statusLabel[order.status]}</Badge>
             {!canOperateOrders && (
               <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -371,7 +371,7 @@ const Ordenes = () => {
       {!showCart && itemCount > 0 && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">{itemCount} items � ${total.toFixed(2)}</span>
+          <span className="font-display text-sm font-bold">{itemCount} items - ${total.toFixed(2)}</span>
         </button>
       )}
 

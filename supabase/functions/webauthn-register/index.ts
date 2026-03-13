@@ -3,15 +3,15 @@ import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
 } from "https://esm.sh/@simplewebauthn/server@13.1.1";
-import type {
-  AuthenticatorTransportFuture,
-} from "https://esm.sh/@simplewebauthn/types@13.1.0";
+import type { AuthenticatorTransportFuture } from "https://esm.sh/@simplewebauthn/types@13.1.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+const CHALLENGE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const toJson = (payload: unknown, status = 200) =>
   new Response(JSON.stringify(payload), {
@@ -63,9 +63,9 @@ Deno.serve(async (req) => {
         return toJson({ error: "No se pudieron leer credenciales existentes" }, 500);
       }
 
-      const excludeCredentials = (existingCreds || []).map((c: any) => ({
-        id: c.credential_id,
-        transports: c.transports as AuthenticatorTransportFuture[],
+      const excludeCredentials = (existingCreds || []).map((credential: { credential_id: string; transports: string[] | null }) => ({
+        id: credential.credential_id,
+        transports: (credential.transports || []) as AuthenticatorTransportFuture[],
       }));
 
       const options = await generateRegistrationOptions({
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
         excludeCredentials,
         authenticatorSelection: {
           residentKey: "preferred",
-          userVerification: "preferred",
+          userVerification: "required",
         },
       });
 
@@ -108,6 +108,16 @@ Deno.serve(async (req) => {
 
       if (challengeError || !challengeRow) {
         return toJson({ error: "Challenge no encontrado" }, 400);
+      }
+
+      const challengeAgeMs = Date.now() - new Date(challengeRow.created_at).getTime();
+      if (Number.isFinite(challengeAgeMs) && challengeAgeMs > CHALLENGE_MAX_AGE_MS) {
+        await adminClient
+          .from("webauthn_challenges")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("type", "registration");
+        return toJson({ error: "Challenge expirado" }, 400);
       }
 
       const verification = await verifyRegistrationResponse({

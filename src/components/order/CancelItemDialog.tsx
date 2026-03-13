@@ -86,7 +86,7 @@ export function CancelItemDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Cancelar Ítem</DialogTitle>
+          <DialogTitle>Cancelar Item</DialogTitle>
           <DialogDescription>
             {quantity}x {description}
           </DialogDescription>
@@ -98,7 +98,7 @@ export function CancelItemDialog({
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                ⚠️ Este ítem ya fue despachado. Se registrará como pérdida operacional.
+                ⚠️ Este item ya fue despachado. Se registrara como perdida operacional.
               </AlertDescription>
             </Alert>
           )}
@@ -106,7 +106,7 @@ export function CancelItemDialog({
           {/* Mostrar motivos si es necesario */}
           {requiresReason && (
             <div className="space-y-3">
-              <Label className="text-sm font-medium">Motivo de cancelación *</Label>
+              <Label className="text-sm font-medium">Motivo de cancelacion *</Label>
               <RadioGroup value={reason} onValueChange={(value) => setReason(value as CancellationReason)}>
                 {Object.entries(CANCELLATION_REASONS).map(([key, label]) => (
                   <div key={key} className="flex items-center space-x-2">
@@ -128,7 +128,7 @@ export function CancelItemDialog({
               </Label>
               <Textarea
                 id="notes"
-                placeholder="Agrega más detalles si es necesario..."
+                placeholder="Agrega mas detalles si es necesario..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="h-20"
@@ -164,7 +164,7 @@ export function CancelItemDialog({
                 Cancelando...
               </>
             ) : (
-              'Confirmar cancelación'
+              'Confirmar cancelacion'
             )}
           </Button>
         </DialogFooter>

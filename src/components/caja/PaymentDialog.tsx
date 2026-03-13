@@ -470,7 +470,7 @@ export default function PaymentDialog({
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold text-foreground">{item.description_snapshot}</p>
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                  Despachado: {item.quantity} · Pagado: {item.quantity_paid} · Pendiente: {item.quantity_pending}
+                                  Despachado: {item.quantity} - Pagado: {item.quantity_paid} - Pendiente: {item.quantity_pending}
                                 </p>
                               </div>
 
@@ -518,7 +518,7 @@ export default function PaymentDialog({
                             {paidItems.map((item) => (
                               <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
                                 <span className="min-w-0 flex-1 truncate text-sm text-foreground line-through">
-                                  {item.description_snapshot} · {item.quantity} unidad(es)
+                                  {item.description_snapshot} - {item.quantity} unidad(es)
                                 </span>
                                 <Badge variant="outline" className="text-[10px]">
                                   Pagado completo

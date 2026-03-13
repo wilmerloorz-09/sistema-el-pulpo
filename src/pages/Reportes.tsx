@@ -64,14 +64,14 @@ const Reportes = () => {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="font-display text-2xl font-bold text-foreground">
-            Reportes de Órdenes
+            Reportes de Ordenes
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Ver todas las órdenes (locales y sincronizadas)
+            Ver todas las ordenes (locales y sincronizadas)
           </p>
         </div>
 
-        {/* Estado de conexión */}
+        {/* Estado de conexion */}
         <div className="flex items-center gap-2">
           {isOnline ? (
             <Badge className="bg-green-600">🟢 Online</Badge>
@@ -87,7 +87,7 @@ const Reportes = () => {
         </div>
       </div>
 
-      {/* Botón de sincronización */}
+      {/* Boton de sincronizacion */}
       {pendingCount.data !== undefined && pendingCount.data > 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -127,7 +127,7 @@ const Reportes = () => {
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab: Órdenes Locales */}
+        {/* Tab: Ordenes Locales */}
         <TabsContent value="local" className="mt-4">
           {localOrders.isLoading ? (
             <div className="flex justify-center items-center p-8">
@@ -135,7 +135,7 @@ const Reportes = () => {
             </div>
           ) : localOrders.data?.length === 0 ? (
             <div className="text-center p-8 text-muted-foreground">
-              <p className="text-sm">No hay órdenes locales</p>
+              <p className="text-sm">No hay ordenes locales</p>
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
@@ -144,9 +144,9 @@ const Reportes = () => {
                   <TableRow className="bg-muted">
                     <TableHead>Orden #</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead>Ítems</TableHead>
+                    <TableHead>Items</TableHead>
                     <TableHead>Total</TableHead>
-                    <TableHead>Sincronización</TableHead>
+                    <TableHead>Sincronizacion</TableHead>
                     <TableHead>Fecha</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -185,13 +185,13 @@ const Reportes = () => {
           )}
         </TabsContent>
 
-        {/* Tab: Órdenes Sincronizadas */}
+        {/* Tab: Ordenes Sincronizadas */}
         <TabsContent value="remote" className="mt-4">
           {!isOnline ? (
             <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-8 text-center">
               <AlertCircle className="w-6 h-6 text-yellow-600 mx-auto mb-2" />
               <p className="text-sm text-yellow-800">
-                No estás conectado. Activa tu conexión para ver órdenes sincronizadas.
+                No estas conectado. Activa tu conexion para ver ordenes sincronizadas.
               </p>
             </div>
           ) : remoteOrders.isLoading ? (
@@ -200,7 +200,7 @@ const Reportes = () => {
             </div>
           ) : remoteOrders.data?.length === 0 ? (
             <div className="text-center p-8 text-muted-foreground">
-              <p className="text-sm">No hay órdenes sincronizadas en Supabase</p>
+              <p className="text-sm">No hay ordenes sincronizadas en Supabase</p>
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
@@ -209,7 +209,7 @@ const Reportes = () => {
                   <TableRow className="bg-muted">
                     <TableHead>Orden #</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead>Ítems</TableHead>
+                    <TableHead>Items</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead className="text-center">Fuente</TableHead>
                     <TableHead>Fecha</TableHead>
@@ -250,7 +250,7 @@ const Reportes = () => {
       {/* Resumen */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm text-blue-600 font-semibold">Órdenes Locales</p>
+          <p className="text-sm text-blue-600 font-semibold">Ordenes Locales</p>
           <p className="text-2xl font-bold text-blue-900 mt-2">
             {localOrders.data?.length || 0}
           </p>

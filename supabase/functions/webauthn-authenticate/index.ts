@@ -3,25 +3,18 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "https://esm.sh/@simplewebauthn/server@13.1.1";
-import type {
-  AuthenticatorTransportFuture,
-} from "https://esm.sh/@simplewebauthn/types@13.1.0";
+import type { AuthenticatorTransportFuture } from "https://esm.sh/@simplewebauthn/types@13.1.0";
 
-/**
- * Generate a UUID v4 compatible fallback function
- * For Deno/Supabase Edge Functions
- */
 function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && 
-      typeof crypto.randomUUID === 'function') {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-    .replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.random() * 16 | 0;
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
 const corsHeaders = {
@@ -30,29 +23,35 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const CHALLENGE_MAX_AGE_MS = 5 * 60 * 1000;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(JSON.stringify({ error: "Configuracion incompleta del servidor" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const { action, ...body } = await req.json();
     const origin = req.headers.get("origin") || "https://localhost";
     const rpID = new URL(origin).hostname;
 
     if (action === "options") {
-      // Get all credentials (allowCredentials empty = discoverable/resident key)
       const options = await generateAuthenticationOptions({
         rpID,
-        userVerification: "preferred",
-        // Empty allowCredentials = use discoverable credentials (passkeys)
+        userVerification: "required",
       });
 
-      // Store challenge with no user_id (we don't know who yet)
       const challengeId = generateUUID();
       await adminClient.from("webauthn_challenges").insert({
         id: challengeId,
@@ -68,7 +67,6 @@ Deno.serve(async (req) => {
     if (action === "verify") {
       const { assertion, challengeId } = body;
 
-      // Get stored challenge
       const { data: challengeRow } = await adminClient
         .from("webauthn_challenges")
         .select("*")
@@ -83,7 +81,15 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Find credential by ID
+      const challengeAgeMs = Date.now() - new Date(challengeRow.created_at).getTime();
+      if (Number.isFinite(challengeAgeMs) && challengeAgeMs > CHALLENGE_MAX_AGE_MS) {
+        await adminClient.from("webauthn_challenges").delete().eq("id", challengeId);
+        return new Response(JSON.stringify({ error: "Challenge expirado" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const credentialId = assertion.id;
       const { data: credRow } = await adminClient
         .from("webauthn_credentials")
@@ -98,10 +104,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Decode stored public key
-      const publicKeyBytes = Uint8Array.from(atob(credRow.public_key), (c) =>
-        c.charCodeAt(0)
-      );
+      const publicKeyBytes = Uint8Array.from(atob(credRow.public_key), (char) => char.charCodeAt(0));
 
       const verification = await verifyAuthenticationResponse({
         response: assertion,
@@ -117,35 +120,35 @@ Deno.serve(async (req) => {
       });
 
       if (!verification.verified) {
-        return new Response(JSON.stringify({ error: "Verificación fallida" }), {
+        return new Response(JSON.stringify({ error: "Verificacion fallida" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Update counter
       await adminClient
         .from("webauthn_credentials")
         .update({ counter: Number(verification.authenticationInfo.newCounter) })
         .eq("credential_id", credentialId);
 
-      // Clean up challenge
-      await adminClient
-        .from("webauthn_challenges")
-        .delete()
-        .eq("id", challengeId);
+      await adminClient.from("webauthn_challenges").delete().eq("id", challengeId);
 
-      // Get user email to generate magic link
       const { data: profile } = await adminClient
         .from("profiles")
-        .select("id, username")
+        .select("id, username, is_active")
         .eq("id", credRow.user_id)
         .single();
 
-      // Get user from auth to get email
-      const { data: { user: authUser } } = await adminClient.auth.admin.getUserById(
-        credRow.user_id
-      );
+      if (!profile || profile.is_active === false) {
+        return new Response(JSON.stringify({ error: "Usuario inactivo" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const {
+        data: { user: authUser },
+      } = await adminClient.auth.admin.getUserById(credRow.user_id);
 
       if (!authUser?.email) {
         return new Response(JSON.stringify({ error: "Usuario no encontrado" }), {
@@ -154,24 +157,18 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Generate magic link for passwordless sign-in
-      const { data: linkData, error: linkError } =
-        await adminClient.auth.admin.generateLink({
-          type: "magiclink",
-          email: authUser.email,
-        });
+      const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+        type: "magiclink",
+        email: authUser.email,
+      });
 
       if (linkError || !linkData) {
-        return new Response(
-          JSON.stringify({ error: "Error generando sesión" }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
+        return new Response(JSON.stringify({ error: "Error generando sesion" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      // Extract token hash from the action link
       const actionUrl = new URL(linkData.properties.action_link);
       const tokenHash = actionUrl.searchParams.get("token_hash");
       const type = actionUrl.searchParams.get("type");
@@ -185,17 +182,18 @@ Deno.serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        },
       );
     }
 
-    return new Response(JSON.stringify({ error: "Acción no válida" }), {
+    return new Response(JSON.stringify({ error: "Accion no valida" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("WebAuthn auth error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    const message = err instanceof Error ? err.message : "Error interno inesperado";
+    console.error("WebAuthn auth error:", message);
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -106,7 +106,7 @@ export default function PayableOrdersList({
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {pending} unidad(es) pendiente(s)
-                  {paid > 0 && ` · ${paid} unidad(es) pagada(s)`}
+                  {paid > 0 && ` - ${paid} unidad(es) pagada(s)`}
                 </p>
               </div>
               <div className="text-right">

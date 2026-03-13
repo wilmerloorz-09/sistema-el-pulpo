@@ -454,7 +454,7 @@ export async function notifyKitchenItemCancelled(
   reason: string,
   branchId: string
 ): Promise<void> {
-  const message = `🚫 Ítem cancelado: ${quantity}x ${description} - Razón: ${reason}`;
+  const message = `🚫 Item cancelado: ${quantity}x ${description} - Razon: ${reason}`;
   
   await dbInsert("kitchen_notifications", {
     type: "ITEM_CANCELLED",
@@ -476,7 +476,7 @@ export async function notifyKitchenOrderCancelled(
   reason: string,
   branchId: string
 ): Promise<void> {
-  const message = `🚫 Orden CANCELADA: ${itemCount} ítem(s) - Razón: ${reason}`;
+  const message = `🚫 Orden CANCELADA: ${itemCount} item(s) - Razon: ${reason}`;
   
   await dbInsert("kitchen_notifications", {
     type: "ORDER_CANCELLED",

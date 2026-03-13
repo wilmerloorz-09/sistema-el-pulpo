@@ -16,8 +16,8 @@ const BranchesCrud = () => {
 
   const columns: ColumnDef<Branch>[] = [
     { key: "name", header: "Nombre", width: "1fr", type: "text" },
-    { key: "branch_code", header: "Código", width: "5rem", type: "text" },
-    { key: "address", header: "Dirección", width: "1fr", type: "text" },
+    { key: "branch_code", header: "Codigo", width: "5rem", type: "text" },
+    { key: "address", header: "Direccion", width: "1fr", type: "text" },
     { key: "is_active", header: "Activa", width: "4rem", type: "switch" },
   ];
 

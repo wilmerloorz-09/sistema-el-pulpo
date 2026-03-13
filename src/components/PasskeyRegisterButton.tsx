@@ -29,7 +29,7 @@ const PasskeyRegisterButton = () => {
             action: "verify",
             attestation,
             deviceName: navigator.userAgent.includes("Mobile")
-              ? "Dispositivo móvil"
+              ? "Dispositivo movil"
               : "Computadora",
           },
         }
@@ -43,7 +43,7 @@ const PasskeyRegisterButton = () => {
       }
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
-        toast.error("Operación cancelada por el usuario");
+        toast.error("Operacion cancelada por el usuario");
       } else {
         toast.error(err.message || "Error al registrar huella");
       }
