@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree, ChevronDown, Menu, X } from "lucide-react";
+import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree, ChevronDown, Menu, X, AlertTriangle } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
@@ -20,6 +20,58 @@ interface AdminTab {
   icon: React.ReactNode;
   component: React.ComponentType;
   visible: (permissions: Record<string, any>, isGlobalAdmin: boolean) => boolean;
+}
+
+interface AdminErrorBoundaryProps {
+  activeTabLabel: string;
+  children: React.ReactNode;
+}
+
+interface AdminErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string;
+}
+
+class AdminErrorBoundary extends React.Component<AdminErrorBoundaryProps, AdminErrorBoundaryState> {
+  constructor(props: AdminErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+
+  static getDerivedStateFromError(error: Error): AdminErrorBoundaryState {
+    return {
+      hasError: true,
+      errorMessage: error?.message || "Error desconocido en el modulo de administracion.",
+    };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("Admin module crashed", error);
+  }
+
+  componentDidUpdate(prevProps: AdminErrorBoundaryProps) {
+    if (prevProps.activeTabLabel !== this.props.activeTabLabel && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: "" });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-2">
+              <p className="font-semibold">No se pudo abrir la seccion {this.props.activeTabLabel}.</p>
+              <p className="text-xs">Detalle: {this.state.errorMessage}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 const TABS: AdminTab[] = [
@@ -188,7 +240,9 @@ const Admin = () => {
           </div>
 
           <div className="mt-3">
-            {SelectedComponent ? <SelectedComponent /> : null}
+            <AdminErrorBoundary activeTabLabel={selectedTab?.label ?? "Administracion"}>
+              {SelectedComponent ? <SelectedComponent /> : null}
+            </AdminErrorBoundary>
           </div>
         </>
       )}
