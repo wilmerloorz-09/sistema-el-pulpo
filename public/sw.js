@@ -1,4 +1,4 @@
-const CACHE_NAME = "elpulpo-v2";
+const CACHE_NAME = "elpulpo-v3";
 const APP_SHELL = [
   "/manifest.json",
   "/icons/icon-192.png",
