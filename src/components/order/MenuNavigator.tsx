@@ -21,17 +21,27 @@ const renderNodeVisual = (node: MenuNode) => {
   return <ImageIcon className="h-12 w-12 text-muted-foreground/60" />;
 };
 
+const renderCompactNodeVisual = (node: MenuNode) => {
+  if (node.image_url) {
+    return <img src={node.image_url} alt={node.name} className="h-6 w-6 rounded-lg object-cover" />;
+  }
+
+  if (node.icon) {
+    return <span className="text-base leading-none">{node.icon}</span>;
+  }
+
+  return <ImageIcon className="h-4 w-4 text-muted-foreground/60" />;
+};
+
 const NodeCard = ({
   node,
   childCount,
   additionalDepth,
-  hasChildren,
   onClick,
 }: {
   node: MenuNode;
   childCount: number;
   additionalDepth: number;
-  hasChildren: boolean;
   onClick: () => void;
 }) => {
   const isProduct = node.node_type === "product";
@@ -75,14 +85,11 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
     visibleNodes,
     breadcrumb,
     activeL1,
-    activeL2,
     selectL1,
-    selectL2,
     drillDown,
     goBack,
     goToBreadcrumbIndex,
     getChildren,
-    hasChildren,
     countDescendantDepth,
     loading,
     error,
@@ -148,11 +155,7 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
     () => getChildren(null).filter((node) => node.node_type === "category"),
     [getChildren],
   );
-  const l2Nodes = useMemo(
-    () => (activeL1 ? getChildren(activeL1.id).filter((node) => node.node_type === "category") : []),
-    [activeL1, getChildren],
-  );
-  const showBreadcrumb = breadcrumb.length > 2;
+  const showBreadcrumb = breadcrumb.length > 1;
   const currentLevel = Math.max(1, breadcrumb.length || (activeL1 ? 1 : 0));
 
   if (loading) {
@@ -179,30 +182,8 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
             )}
           >
             <span className="flex items-center gap-2">
-              {node.icon ? <span>{node.icon}</span> : null}
+              {renderCompactNodeVisual(node)}
               <span>{node.name}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="menu-scroll flex gap-2 overflow-x-auto rounded-2xl bg-muted/40 p-2">
-        {l2Nodes.map((node) => (
-          <button
-            key={node.id}
-            type="button"
-            onClick={() => selectL2(node.id)}
-            className={cn(
-              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-              activeL2?.id === node.id
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-transparent bg-background text-muted-foreground hover:border-border hover:text-foreground",
-            )}
-          >
-            <span className="flex items-center gap-1.5">
-              {node.icon ? <span className="leading-none">{node.icon}</span> : null}
-              <span>{node.name}</span>
-              <span>{hasChildren(node.id) ? " •" : ""}</span>
             </span>
           </button>
         ))}
@@ -221,7 +202,7 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
                     {node.name}
                   </button>
                 )}
-                {!isLast ? <span className="text-muted-foreground/60">›</span> : null}
+                {!isLast ? <span className="text-muted-foreground/60">{">"}</span> : null}
               </div>
             );
           })}
@@ -251,25 +232,21 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
 
       <div ref={panelRef} className="min-h-0 flex-1">
         <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-          {renderedNodes.map((node) => {
-            const nodeHasChildren = hasChildren(node.id);
-            return (
-              <NodeCard
-                key={node.id}
-                node={node}
-                childCount={getChildren(node.id).length}
-                additionalDepth={countDescendantDepth(node.id)}
-                hasChildren={nodeHasChildren}
-                onClick={() => {
-                  if (node.node_type === "product") {
-                    onSelectProduct(node);
-                    return;
-                  }
-                  drillDown(node);
-                }}
-              />
-            );
-          })}
+          {renderedNodes.map((node) => (
+            <NodeCard
+              key={node.id}
+              node={node}
+              childCount={getChildren(node.id).length}
+              additionalDepth={countDescendantDepth(node.id)}
+              onClick={() => {
+                if (node.node_type === "product") {
+                  onSelectProduct(node);
+                  return;
+                }
+                drillDown(node);
+              }}
+            />
+          ))}
 
           {renderedNodes.length === 0 && (
             <div className="col-span-full rounded-3xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">

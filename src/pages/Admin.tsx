@@ -1,6 +1,5 @@
-﻿import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree } from "lucide-react";
-import ProductsCrud from "@/components/admin/ProductsCrud";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
@@ -41,13 +40,6 @@ const TABS: AdminTab[] = [
     label: "Arbol Menu",
     icon: <FolderTree className="h-4 w-4" />,
     component: MenuNodesCrud,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
-  },
-  {
-    value: "products",
-    label: "Productos",
-    icon: <Package className="h-4 w-4" />,
-    component: ProductsCrud,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {

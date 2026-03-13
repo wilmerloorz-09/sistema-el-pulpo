@@ -1,4 +1,4 @@
-﻿import { useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 
@@ -25,10 +25,23 @@ interface Product {
   is_active: boolean;
 }
 
+interface MenuNodeRef {
+  id: string;
+  parent_id: string | null;
+  node_type: "category" | "product";
+}
+
+interface MenuNodeModifierLink {
+  node_id: string;
+  modifier_id: string;
+  display_order: number | null;
+  is_active: boolean;
+}
+
 interface Modifier {
   id: string;
   description: string;
-  subcategory_id: string;
+  node_id: string;
   display_order: number;
 }
 
@@ -82,23 +95,36 @@ export function useMenuData() {
   });
 
   const modifiers = useQuery({
-    queryKey: ["menu-modifiers", activeBranchId],
+    queryKey: ["menu-modifiers", activeBranchId, products.data?.length ?? 0],
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const subIds = subcategories.data?.map((s) => s.id) ?? [];
-      if (subIds.length === 0) return [];
+      const activeProducts = products.data ?? [];
+      if (activeProducts.length === 0) return [];
 
+      const { data: menuNodes, error: menuNodesError } = await supabase
+        .from("menu_nodes" as never)
+        .select("id, parent_id, node_type")
+        .eq("branch_id", activeBranchId)
+        .eq("is_active", true);
+
+      if (menuNodesError) throw menuNodesError;
+
+      const nodeRows = (menuNodes ?? []) as unknown as MenuNodeRef[];
+      if (nodeRows.length === 0) return [];
+
+      const nodeIds = nodeRows.map((node) => node.id);
       const { data: links, error: linksError } = await supabase
-        .from("subcategory_modifiers" as never)
-        .select("subcategory_id, modifier_id, display_order, is_active")
-        .in("subcategory_id", subIds)
+        .from("menu_node_modifiers" as never)
+        .select("node_id, modifier_id, display_order, is_active")
+        .in("node_id", nodeIds)
         .eq("is_active", true)
         .order("display_order", { ascending: true });
 
       if (linksError) throw linksError;
 
-      const modifierIds = [...new Set((links ?? []).map((link: any) => link.modifier_id).filter(Boolean))] as string[];
+      const linkRows = (links ?? []) as unknown as MenuNodeModifierLink[];
+      const modifierIds = [...new Set(linkRows.map((link) => link.modifier_id).filter(Boolean))] as string[];
       if (modifierIds.length === 0) return [];
 
       const mods = await dbSelect<{ id: string; description: string }>("modifiers", {
@@ -111,22 +137,47 @@ export function useMenuData() {
         orderBy: { column: "description" },
       });
 
+      const nodesById = new Map(nodeRows.map((node) => [node.id, node]));
+      const linksByNode = new Map<string, MenuNodeModifierLink[]>();
+      for (const link of linkRows) {
+        const bucket = linksByNode.get(link.node_id) ?? [];
+        bucket.push(link);
+        linksByNode.set(link.node_id, bucket);
+      }
       const modsById = Object.fromEntries(mods.map((mod) => [mod.id, mod]));
 
-      return (links ?? [])
-        .map((link: any) => {
-          const mod = modsById[link.modifier_id];
-          if (!mod) return null;
-          return {
-            id: mod.id,
-            description: mod.description,
-            subcategory_id: String(link.subcategory_id),
-            display_order: Number(link.display_order ?? 0),
-          } as Modifier;
-        })
-        .filter(Boolean) as Modifier[];
+      return activeProducts.flatMap((product) => {
+        const startNodeId = nodesById.has(product.id) ? product.id : product.subcategory_id;
+        const seenModifierIds = new Set<string>();
+        const effectiveModifiers: Modifier[] = [];
+
+        let currentNodeId: string | null = startNodeId;
+        while (currentNodeId) {
+          const currentNode = nodesById.get(currentNodeId);
+          if (!currentNode) break;
+
+          const nodeLinks = linksByNode.get(currentNode.id) ?? [];
+          for (const link of nodeLinks) {
+            if (seenModifierIds.has(link.modifier_id)) continue;
+            const mod = modsById[link.modifier_id];
+            if (!mod) continue;
+
+            effectiveModifiers.push({
+              id: mod.id,
+              description: mod.description,
+              node_id: product.id,
+              display_order: Number(link.display_order ?? 0),
+            });
+            seenModifierIds.add(link.modifier_id);
+          }
+
+          currentNodeId = currentNode.parent_id ?? null;
+        }
+
+        return effectiveModifiers;
+      });
     },
-    enabled: !!activeBranchId && !!subcategories.data,
+    enabled: !!activeBranchId && !!products.data,
   });
 
   return {

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -22,9 +22,7 @@ interface UseMenuTreeReturn {
   visibleNodes: MenuNode[];
   breadcrumb: MenuNode[];
   activeL1: MenuNode | null;
-  activeL2: MenuNode | null;
   selectL1: (nodeId: string) => void;
-  selectL2: (nodeId: string) => void;
   drillDown: (node: MenuNode) => boolean;
   goBack: () => void;
   goToBreadcrumbIndex: (index: number) => void;
@@ -123,7 +121,6 @@ export function useMenuTree(): UseMenuTreeReturn {
   );
 
   const activeL1 = breadcrumb[0] ?? null;
-  const activeL2 = breadcrumb[1] ?? null;
   const currentNode = breadcrumb[breadcrumb.length - 1] ?? activeL1 ?? null;
 
   const visibleNodes = useMemo(() => {
@@ -135,13 +132,6 @@ export function useMenuTree(): UseMenuTreeReturn {
     const l1 = nodesById.get(nodeId);
     if (!l1) return;
     setPathIds([l1.id]);
-  };
-
-  const selectL2 = (nodeId: string) => {
-    if (!activeL1) return;
-    const l2 = nodesById.get(nodeId);
-    if (!l2) return;
-    setPathIds([activeL1.id, l2.id]);
   };
 
   const hasChildren = (nodeId: string) => getChildren(nodeId).length > 0;
@@ -179,9 +169,7 @@ export function useMenuTree(): UseMenuTreeReturn {
     visibleNodes,
     breadcrumb,
     activeL1,
-    activeL2,
     selectL1,
-    selectL2,
     drillDown,
     goBack,
     goToBreadcrumbIndex,

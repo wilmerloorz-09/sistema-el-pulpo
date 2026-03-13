@@ -1,6 +1,6 @@
-﻿import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, FolderTree, Plus, Power, Save } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderTree, ImageUp, Plus, Power, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
 import type { MenuNode } from "@/hooks/useMenuTree";
+import NodeModifiersPanel from "@/components/admin/NodeModifiersPanel";
 
 interface AdminMenuNode extends MenuNode {}
 
@@ -37,7 +38,6 @@ interface FormState {
   name: string;
   node_type: "category" | "product";
   parent_id: string | null;
-  icon: string;
   price: string;
   display_order: string;
   description: string;
@@ -45,17 +45,15 @@ interface FormState {
   is_active: boolean;
 }
 
-const SUGGESTED_ICONS = [
-  "🍤", "🦐", "🦑", "🐙", "🐟", "🍲", "🍛", "🥩", "🍗", "🍔", "🍟", "🥗",
-  "🍚", "🍜", "🍝", "🍕", "🌮", "🥪", "🥤", "☕", "🍺", "🍰", "🔥", "⭐",
-];
+const MENU_NODE_IMAGE_BUCKET = "menu-node-images";
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 
 const emptyForm = (parentId: string | null = null): FormState => ({
   id: null,
   name: "",
   node_type: "category",
   parent_id: parentId,
-  icon: "",
   price: "",
   display_order: "0",
   description: "",
@@ -71,12 +69,71 @@ const nextAvailableOrder = (usedOrders: number[], preferred: number) => {
   return (normalized.length > 0 ? normalized[normalized.length - 1] : 0) + 1;
 };
 
+const normalizeImageUrl = (value: string | null | undefined) => value?.trim() || "";
+
+const validateImageFile = (file: File) => {
+  if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    throw new Error("La imagen debe ser JPG, PNG, WEBP o GIF.");
+  }
+
+  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+    throw new Error("La imagen no puede superar 2 MB.");
+  }
+};
+
+const getFileExtension = (file: File) => {
+  const fromName = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+  if (fromName) return fromName;
+
+  switch (file.type) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "bin";
+  }
+};
+
+const buildMenuNodeImagePath = (branchId: string, nodeId: string, file: File) => {
+  const extension = getFileExtension(file);
+  return `${branchId}/${nodeId}/${Date.now()}-${generateUUID()}.${extension}`;
+};
+
+const extractManagedImagePath = (imageUrl: string | null | undefined) => {
+  const normalized = normalizeImageUrl(imageUrl);
+  const marker = `/storage/v1/object/public/${MENU_NODE_IMAGE_BUCKET}/`;
+  const markerIndex = normalized.indexOf(marker);
+  if (markerIndex === -1) return null;
+  return decodeURIComponent(normalized.slice(markerIndex + marker.length));
+};
+
+const getPublicImageUrl = (path: string) => supabase.storage.from(MENU_NODE_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+const sortMenuNodes = (items: AdminMenuNode[]) =>
+  [...items].sort((a, b) => {
+    if (a.depth !== b.depth) return a.depth - b.depth;
+    if (a.display_order !== b.display_order) return a.display_order - b.display_order;
+    return a.name.localeCompare(b.name);
+  });
+
+const upsertMenuNodeInList = (items: AdminMenuNode[], nextNode: AdminMenuNode) => {
+  const filtered = items.filter((item) => item.id !== nextNode.id);
+  return sortMenuNodes([...filtered, nextNode]);
+};
+
 const MenuNodesCrud = () => {
   const { activeBranchId } = useBranch();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm());
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ["admin-menu-nodes", activeBranchId],
@@ -97,6 +154,17 @@ const MenuNodesCrud = () => {
 
   const nodes = query.data ?? [];
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  useEffect(() => {
+    if (!selectedImageFile) {
+      setLocalPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(selectedImageFile);
+    setLocalPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [selectedImageFile]);
 
   const childrenByParent = useMemo(() => {
     const next = new Map<string | null, AdminMenuNode[]>();
@@ -153,6 +221,8 @@ const MenuNodesCrud = () => {
 
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
   const selectedDescendants = selectedNode ? getDescendantIds(selectedNode.id) : new Set<string>();
+  const imagePreviewUrl = localPreviewUrl ?? (removeImage ? "" : normalizeImageUrl(form.image_url));
+  const hasCurrentImage = Boolean(normalizeImageUrl(form.image_url)) && !removeImage;
 
   const parentOptions = useMemo(
     () =>
@@ -167,17 +237,20 @@ const MenuNodesCrud = () => {
 
   const resetForm = (nextParentId: string | null = null) => {
     setSelectedId(null);
+    setSelectedImageFile(null);
+    setRemoveImage(false);
     setForm(emptyForm(nextParentId));
   };
 
   const startEdit = (node: AdminMenuNode) => {
     setSelectedId(node.id);
+    setSelectedImageFile(null);
+    setRemoveImage(false);
     setForm({
       id: node.id,
       name: node.name,
       node_type: node.node_type,
       parent_id: node.parent_id,
-      icon: node.icon ?? "",
       price: node.price == null ? "" : String(node.price),
       display_order: String(node.display_order ?? 0),
       description: node.description ?? "",
@@ -258,95 +331,155 @@ const MenuNodesCrud = () => {
       if (!activeBranchId) throw new Error("No hay sucursal activa");
 
       const id = form.id ?? generateUUID();
-      const name = form.name.trim();
-      if (!name) throw new Error("El nombre es obligatorio");
+      const previousImageUrl = normalizeImageUrl(form.id ? nodesById.get(form.id)?.image_url : "");
+      const previousManagedImagePath = extractManagedImagePath(previousImageUrl);
+      let uploadedImagePath: string | null = null;
 
-      const displayOrder = Number.parseInt(form.display_order, 10);
-      if (Number.isNaN(displayOrder)) throw new Error("El orden debe ser numerico");
+      try {
+        const name = form.name.trim();
+        if (!name) throw new Error("El nombre es obligatorio");
 
-      if (form.parent_id) {
-        const parent = nodesById.get(form.parent_id);
-        if (!parent) throw new Error("El nodo padre ya no existe");
-        if (parent.node_type !== "category") throw new Error("Solo una categoria puede tener hijos");
-      }
+        const displayOrder = Number.parseInt(form.display_order, 10);
+        if (Number.isNaN(displayOrder)) throw new Error("El orden debe ser numerico");
 
-      let price: number | null = null;
-      if (form.node_type === "product") {
-        if (!form.parent_id) throw new Error("El producto debe crearse desde el nivel 2 en adelante.");
-        price = Number.parseFloat(form.price);
-        if (!Number.isFinite(price) || price < 0) throw new Error("El producto requiere un precio valido");
-      }
-
-      if (form.id) {
-        const children = getChildren(form.id);
-        if (form.node_type === "product" && children.length > 0) {
-          throw new Error("No puedes convertir en producto un nodo que ya tiene hijos");
+        if (form.parent_id) {
+          const parent = nodesById.get(form.parent_id);
+          if (!parent) throw new Error("El nodo padre ya no existe");
+          if (parent.node_type !== "category") throw new Error("Solo una categoria puede tener hijos");
         }
+
+        let price: number | null = null;
+        if (form.node_type === "product") {
+          if (!form.parent_id) throw new Error("El producto debe crearse desde el nivel 2 en adelante.");
+          price = Number.parseFloat(form.price);
+          if (!Number.isFinite(price) || price < 0) throw new Error("El producto requiere un precio valido");
+        }
+
+        if (form.id) {
+          const children = getChildren(form.id);
+          if (form.node_type === "product" && children.length > 0) {
+            throw new Error("No puedes convertir en producto un nodo que ya tiene hijos");
+          }
+        }
+
+        let imageUrlToPersist = removeImage ? "" : previousImageUrl;
+
+        if (selectedImageFile) {
+          validateImageFile(selectedImageFile);
+          uploadedImagePath = buildMenuNodeImagePath(activeBranchId, id, selectedImageFile);
+          const { error: uploadError } = await supabase.storage
+            .from(MENU_NODE_IMAGE_BUCKET)
+            .upload(uploadedImagePath, selectedImageFile, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: selectedImageFile.type,
+            });
+          if (uploadError) throw uploadError;
+
+          imageUrlToPersist = getPublicImageUrl(uploadedImagePath);
+        }
+
+        const { data: savedMenuNode, error: menuNodeError } = await supabase
+          .from("menu_nodes" as never)
+          .upsert({
+            id,
+            branch_id: activeBranchId,
+            parent_id: form.parent_id,
+            name,
+            node_type: form.node_type,
+            display_order: displayOrder,
+            is_active: form.is_active,
+            icon: null,
+            price,
+            description: form.description.trim() || null,
+            image_url: imageUrlToPersist || null,
+          } as never)
+          .select("*")
+          .single();
+        if (menuNodeError) throw menuNodeError;
+
+        if (form.node_type === "category") {
+          await ensureLegacyCategoryMirror(id, name, form.parent_id, displayOrder > 0 ? displayOrder : 1, form.is_active);
+        } else {
+          const nearestCategoryAncestorId = findNearestCategoryAncestorId(form.parent_id);
+          if (!nearestCategoryAncestorId) throw new Error("El producto debe colgar de una categoria valida.");
+
+          const ancestorCategory = nodesById.get(nearestCategoryAncestorId);
+          if (!ancestorCategory) throw new Error("No se pudo resolver la categoria ancestro del producto.");
+
+          const legacySubcategoryId = await ensureLegacyCategoryMirror(
+            ancestorCategory.id,
+            ancestorCategory.name,
+            ancestorCategory.parent_id,
+            Number(ancestorCategory.display_order ?? 1) || 1,
+            true,
+          );
+
+          const { data: siblingProducts, error: siblingProductsError } = await supabase
+            .from("products")
+            .select("id, display_order")
+            .eq("subcategory_id", legacySubcategoryId);
+          if (siblingProductsError) throw siblingProductsError;
+
+          const rows = (siblingProducts ?? []) as ProductRecord[];
+          const existingProduct = rows.find((product) => product.id === id) ?? null;
+          const usedOrders = rows
+            .filter((product) => product.id !== id)
+            .map((product) => Number(product.display_order) || 0);
+
+          const productDisplayOrder = existingProduct
+            ? nextAvailableOrder(usedOrders, Number(existingProduct.display_order) || displayOrder)
+            : nextAvailableOrder(usedOrders, displayOrder > 0 ? displayOrder : 1);
+
+          const { error: productError } = await supabase.from("products").upsert({
+            id,
+            subcategory_id: legacySubcategoryId,
+            description: name,
+            unit_price: price,
+            price_mode: "FIXED",
+            display_order: productDisplayOrder,
+            is_active: form.is_active,
+          });
+          if (productError) throw productError;
+        }
+
+        const nextManagedImagePath = uploadedImagePath ?? extractManagedImagePath(imageUrlToPersist);
+        if (previousManagedImagePath && previousManagedImagePath !== nextManagedImagePath) {
+          const { error: removePreviousError } = await supabase.storage
+            .from(MENU_NODE_IMAGE_BUCKET)
+            .remove([previousManagedImagePath]);
+          if (removePreviousError) {
+            console.warn("No se pudo eliminar la imagen anterior del nodo", removePreviousError);
+          }
+        }
+
+        return {
+          ...(savedMenuNode as unknown as AdminMenuNode),
+          price: savedMenuNode?.price == null ? null : Number(savedMenuNode.price),
+          image_url: normalizeImageUrl(savedMenuNode?.image_url),
+        } satisfies AdminMenuNode;
+      } catch (error) {
+        if (uploadedImagePath) {
+          const { error: rollbackError } = await supabase.storage
+            .from(MENU_NODE_IMAGE_BUCKET)
+            .remove([uploadedImagePath]);
+          if (rollbackError) {
+            console.warn("No se pudo limpiar la imagen recien subida tras un error", rollbackError);
+          }
+        }
+        throw error;
       }
-
-      const { error: menuNodeError } = await supabase.from("menu_nodes" as never).upsert({
-        id,
-        branch_id: activeBranchId,
-        parent_id: form.parent_id,
-        name,
-        node_type: form.node_type,
-        display_order: displayOrder,
-        is_active: form.is_active,
-        icon: form.icon.trim() || null,
-        price,
-        description: form.description.trim() || null,
-        image_url: form.image_url.trim() || null,
-      } as never);
-      if (menuNodeError) throw menuNodeError;
-
-      if (form.node_type === "category") {
-        await ensureLegacyCategoryMirror(id, name, form.parent_id, displayOrder > 0 ? displayOrder : 1, form.is_active);
-        return;
-      }
-
-      const nearestCategoryAncestorId = findNearestCategoryAncestorId(form.parent_id);
-      if (!nearestCategoryAncestorId) throw new Error("El producto debe colgar de una categoria valida.");
-
-      const ancestorCategory = nodesById.get(nearestCategoryAncestorId);
-      if (!ancestorCategory) throw new Error("No se pudo resolver la categoria ancestro del producto.");
-
-      const legacySubcategoryId = await ensureLegacyCategoryMirror(
-        ancestorCategory.id,
-        ancestorCategory.name,
-        ancestorCategory.parent_id,
-        Number(ancestorCategory.display_order ?? 1) || 1,
-        true,
-      );
-
-      const { data: siblingProducts, error: siblingProductsError } = await supabase
-        .from("products")
-        .select("id, display_order")
-        .eq("subcategory_id", legacySubcategoryId);
-      if (siblingProductsError) throw siblingProductsError;
-
-      const rows = (siblingProducts ?? []) as ProductRecord[];
-      const existingProduct = rows.find((product) => product.id === id) ?? null;
-      const usedOrders = rows
-        .filter((product) => product.id !== id)
-        .map((product) => Number(product.display_order) || 0);
-
-      const productDisplayOrder = existingProduct
-        ? nextAvailableOrder(usedOrders, Number(existingProduct.display_order) || displayOrder)
-        : nextAvailableOrder(usedOrders, displayOrder > 0 ? displayOrder : 1);
-
-      const { error: productError } = await supabase.from("products").upsert({
-        id,
-        subcategory_id: legacySubcategoryId,
-        description: name,
-        unit_price: price,
-        price_mode: "FIXED",
-        display_order: productDisplayOrder,
-        is_active: form.is_active,
-      });
-      if (productError) throw productError;
     },
-    onSuccess: () => {
+    onSuccess: (savedNode) => {
       toast.success("Nodo guardado");
+      if (savedNode && activeBranchId) {
+        queryClient.setQueryData(["admin-menu-nodes", activeBranchId], (current: AdminMenuNode[] | undefined) =>
+          upsertMenuNodeInList(current ?? [], savedNode),
+        );
+        queryClient.setQueryData(["menu-tree", activeBranchId], (current: MenuNode[] | undefined) =>
+          upsertMenuNodeInList((current ?? []) as AdminMenuNode[], savedNode),
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
@@ -371,6 +504,16 @@ const MenuNodesCrud = () => {
         .update({ is_active: false } as never)
         .eq("id", node.id);
       if (menuNodeError) throw menuNodeError;
+
+      const managedImagePath = extractManagedImagePath(node.image_url);
+      if (managedImagePath) {
+        const { error: removeImageError } = await supabase.storage
+          .from(MENU_NODE_IMAGE_BUCKET)
+          .remove([managedImagePath]);
+        if (removeImageError) {
+          console.warn("No se pudo eliminar la imagen del nodo desactivado", removeImageError);
+        }
+      }
 
       if (node.node_type === "product") {
         const { error: productError } = await supabase.from("products").update({ is_active: false }).eq("id", node.id);
@@ -401,6 +544,33 @@ const MenuNodesCrud = () => {
 
   const toggleCollapsed = (nodeId: string) => {
     setCollapsedIds((prev) => (prev.includes(nodeId) ? prev.filter((id) => id !== nodeId) : [...prev, nodeId]));
+  };
+
+  const handleImageFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) return;
+
+    try {
+      validateImageFile(file);
+      setSelectedImageFile(file);
+      setRemoveImage(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo cargar la imagen seleccionada.");
+      event.target.value = "";
+      return;
+    }
+
+    event.target.value = "";
+  };
+
+  const clearSelectedUpload = () => {
+    setSelectedImageFile(null);
+  };
+
+  const clearCurrentImage = () => {
+    setSelectedImageFile(null);
+    setRemoveImage(true);
+    setForm((prev) => ({ ...prev, image_url: "" }));
   };
 
   const renderTree = (parentId: string | null = null, depth = 0): ReactNode => {
@@ -438,7 +608,11 @@ const MenuNodesCrud = () => {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                {node.icon ? <span className="text-sm leading-none">{node.icon}</span> : null}
+                {node.image_url ? (
+                  <img src={node.image_url} alt={node.name} className="h-6 w-6 rounded-lg object-cover" />
+                ) : node.icon ? (
+                  <span className="text-sm leading-none">{node.icon}</span>
+                ) : null}
                 <span className="truncate font-medium">{node.name}</span>
                 <Badge variant={node.node_type === "product" ? "secondary" : "default"} className="text-[10px] uppercase">
                   {node.node_type === "product" ? "Producto" : "Categoria"}
@@ -446,7 +620,7 @@ const MenuNodesCrud = () => {
                 {!node.is_active ? <Badge variant="outline" className="text-[10px]">Inactivo</Badge> : null}
               </div>
               <div className="text-[11px] text-muted-foreground">
-                Nivel {node.depth + 1} · Orden {node.display_order}
+                Nivel {node.depth + 1} | Orden {node.display_order}
               </div>
             </div>
           </button>
@@ -474,6 +648,8 @@ const MenuNodesCrud = () => {
               className="rounded-xl"
               onClick={() => {
                 setSelectedId(null);
+                setSelectedImageFile(null);
+                setRemoveImage(false);
                 setForm(emptyForm(selectedNode?.node_type === "category" ? selectedNode.id : null));
               }}
             >
@@ -547,60 +723,11 @@ const MenuNodesCrud = () => {
               </Select>
             </div>
           </div>
-
-          <div className="space-y-2">
-            <div className="space-y-1.5">
-              <Label>Icono</Label>
-              <Input
-                value={form.icon}
-                onChange={(event) => setForm((prev) => ({ ...prev, icon: event.target.value }))}
-                className="rounded-xl"
-                placeholder="Pega cualquier emoji o usa las sugerencias"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTED_ICONS.map((icon) => (
-                <button
-                  key={icon}
-                  type="button"
-                  onClick={() => setForm((prev) => ({ ...prev, icon }))}
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-2xl border text-lg transition-colors",
-                    form.icon === icon
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-background hover:border-primary/40 hover:bg-muted/60",
-                  )}
-                  title={`Usar ${icon}`}
-                >
-                  {icon}
-                </button>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-2xl"
-                onClick={() => setForm((prev) => ({ ...prev, icon: "" }))}
-              >
-                Limpiar
-              </Button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Puedes elegir uno sugerido o pegar cualquier otro emoji manualmente en el campo.
-            </p>
-          </div>
-
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Orden</Label>
               <Input value={form.display_order} onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))} className="rounded-xl" inputMode="numeric" />
             </div>
-            <div className="space-y-1.5">
-              <Label>Imagen URL</Label>
-              <Input value={form.image_url} onChange={(event) => setForm((prev) => ({ ...prev, image_url: event.target.value }))} className="rounded-xl" />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Precio</Label>
               <Input
@@ -612,11 +739,61 @@ const MenuNodesCrud = () => {
                 placeholder={form.node_type === "product" ? "0.00" : "Solo para productos"}
               />
             </div>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
             <div className="space-y-1.5">
-              <Label>Vista previa</Label>
-              <div className="flex h-11 items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 text-sm text-muted-foreground">
-                <span className="text-lg leading-none">{form.icon || "◌"}</span>
-                <span>{form.icon ? "Icono seleccionado" : "Sin icono"}</span>
+              <Label>Imagen</Label>
+              <input
+                id="menu-node-image-input"
+                type="file"
+                accept={ACCEPTED_IMAGE_TYPES.join(",")}
+                onChange={handleImageFileChange}
+                className="sr-only"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <label
+                  htmlFor="menu-node-image-input"
+                  className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
+                >
+                  Seleccionar imagen
+                </label>
+                <span className="text-xs text-muted-foreground">
+                  {selectedImageFile ? selectedImageFile.name : "Ningun archivo seleccionado"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" className="rounded-xl" onClick={clearSelectedUpload} disabled={!selectedImageFile}>
+                <Trash2 className="mr-1.5 h-4 w-4" />
+                Quitar archivo nuevo
+              </Button>
+              <Button type="button" variant="outline" className="rounded-xl" onClick={clearCurrentImage} disabled={!hasCurrentImage}>
+                <Trash2 className="mr-1.5 h-4 w-4" />
+                Quitar imagen actual
+              </Button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[1fr_112px] sm:items-start">
+              <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">
+                La imagen del nodo se gestiona solo por archivo subido. Acepta JPG, PNG, WEBP o GIF hasta 2 MB.
+                {hasCurrentImage ? (
+                  <div className="mt-2 text-foreground">Este nodo ya tiene una imagen guardada.</div>
+                ) : null}
+                {selectedImageFile ? (
+                  <div className="mt-2 text-foreground">Archivo nuevo: {selectedImageFile.name}</div>
+                ) : null}
+              </div>
+              <div className="flex h-28 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background">
+                {imagePreviewUrl ? (
+                  <img src={imagePreviewUrl} alt="Vista previa del nodo" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-center text-xs text-muted-foreground">
+                    <ImageUp className="h-5 w-5" />
+                    <span>Sin imagen</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -634,6 +811,18 @@ const MenuNodesCrud = () => {
             Los nodos de tipo producto no pueden tener hijos. Si desactivas una categoria, su rama completa quedara fuera de la navegacion operativa.
           </div>
 
+          {selectedNode ? (
+            <div className="space-y-3 border-t border-border pt-4">
+              <div>
+                <h3 className="font-display text-sm font-semibold">Modificadores del nodo</h3>
+                <p className="text-xs text-muted-foreground">
+                  Gestiona aqui los modificadores propios y revisa los heredados desde ancestros sin salir del arbol.
+                </p>
+              </div>
+              <NodeModifiersPanel nodeId={selectedNode.id} nodeType={selectedNode.node_type} />
+            </div>
+          ) : null}
+
           <div className="flex gap-2">
             <Button className="flex-1 rounded-xl" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
               <Save className="mr-1.5 h-4 w-4" />
@@ -650,3 +839,4 @@ const MenuNodesCrud = () => {
 };
 
 export default MenuNodesCrud;
+

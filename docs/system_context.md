@@ -6,7 +6,7 @@
 - `profiles.active_branch_id` sigue siendo el pivote de sesion y contexto operativo.
 - El catalogo visible en Ordenes ya navega con arbol recursivo `menu_nodes`, pero la persistencia operativa de items sigue dependiendo de `products`.
 
-## Cambios Aplicados en Esta Jornada (2026-03-12)
+## Cambios Aplicados en Esta Jornada (2026-03-13)
 
 ### 1) Arbol de menu recursivo como nueva navegacion
 - Se introdujo `menu_nodes` como estructura jerarquica de profundidad indefinida.
@@ -21,24 +21,30 @@
 - Un nodo `product` no puede ser raiz y no puede tener hijos.
 
 ### 3) Administracion centralizada en Arbol Menu
-- En `Admin` se retiraron las pestanas `Categorias` y `Subcategorias`.
+- En `Admin` se retiraron las pestanas `Categorias`, `Subcategorias` y `Productos`.
 - `Admin > Arbol Menu` pasa a ser la via principal para crear, editar, reordenar y desactivar ramas del catalogo.
 - El editor del arbol soporta:
-  - icono por emoji libre
-  - iconos sugeridos
-  - imagen por URL
+  - imagen por archivo subido
   - cambio de padre
   - cambio de orden
   - precio para nodos `product`
   - baja logica con `is_active=false`
+- La pestana `Modificadores` administra solo el catalogo base (`modifiers`).
+- El editor del arbol incorpora la asignacion operativa por nodo mediante `menu_node_modifiers`.
+- El panel de modificadores muestra:
+  - heredados acumulativos desde ancestros
+  - propios del nodo actual
+  - vista combinada efectiva
+- Un mismo modificador puede reutilizarse en varios nodos distintos sin duplicar el catalogo base.
 
 ### 4) Ordenes: UX actual
 - Se selecciona un nodo raiz L1 y desde ahi se puede navegar la rama.
-- Los chips del siguiente nivel funcionan como acceso rapido, no como requisito operativo.
+- Solo el Nivel 1 se mantiene fijo como barra superior; desde Nivel 2 en adelante toda la navegacion usa el mismo tratamiento por cards, breadcrumb y retroceso.
 - El breadcrumb aparece desde niveles profundos.
 - Las cards distinguen categoria vs producto:
   - categoria: muestra conteo/indicador de profundidad, no precio
   - producto: muestra precio y permite agregarse a la orden
+- La disponibilidad de modificadores ya debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
 
 ### 5) Compatibilidad transitoria con modelo legacy
 - Aunque la UI ya navega con `menu_nodes`, `order_items.product_id` sigue referenciando `products(id)`.
@@ -52,7 +58,8 @@
 - Sucursal activa sigue resolviendose por `profiles.active_branch_id`.
 - Seguridad y permisos siguen validandose en backend/BD, no en UI.
 - Modificadores siguen usando el modelo estructurado:
-  - disponibilidad por `subcategory_modifiers`
+  - catalogo base por `modifiers`
+  - disponibilidad por `menu_node_modifiers`
   - seleccion real por `order_item_modifiers`
 - La correccion de colisiones de `order_code` sigue vigente y no debe revertirse.
 
@@ -62,16 +69,17 @@
 3. No hacer deletes fisicos en catalogo con historial operativo; usar desactivacion logica.
 
 ## Checklist Rapido para Continuar
-1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql` este aplicada.
+1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql` y `supabase/migrations/20260313143000_move_modifier_assignments_to_menu_nodes.sql` esten aplicadas.
 2. Validar en `Admin > Arbol Menu`:
    - crear raiz
    - crear hijo
    - crear producto desde Nivel 2
    - mover nodo de padre
-   - editar icono o imagen
-   - desactivar nodo
+   - editar imagen
+   - agregar/quitar modificador propio
 3. Validar en `Mesas/Ordenes`:
    - L1 como unico nivel obligatorio
    - navegacion por ramas profundas
    - producto sincronizado agregandose sin error a la orden
+   - modificadores heredados/propios disponibles en el dialogo del producto
 4. Si un producto del arbol no entra a la orden, revisar primero su espejo en `products`.

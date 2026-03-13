@@ -1,4 +1,4 @@
-ï»¿import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
@@ -14,6 +14,7 @@ import OrdersList from "@/components/order/OrdersList";
 import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -204,6 +205,85 @@ const Ordenes = () => {
     }
   };
 
+  const menuPanel = canEditItems ? (
+    <MenuNavigator onSelectProduct={handleSelectMenuProduct} />
+  ) : (
+    <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+      Modo consulta: puedes ver la orden, pero no agregar ni editar items.
+    </div>
+  );
+
+  const orderPanel = (mobile: boolean) => (
+    <>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-display text-sm font-bold">Orden</h2>
+        {mobile ? (
+          <Button variant="ghost" size="sm" className="text-xs sm:hidden" onClick={() => setShowCart(false)}>
+            Ver menu
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1">
+        <OrderItemsList
+          items={order.items}
+          onRemove={(id) => removeItem.mutate(id)}
+          onUpdateQty={(id, qty, price) => updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price })}
+          disabled={!canEditItems}
+        />
+      </div>
+
+      {canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+        <Button
+          onClick={() => {
+            sendToKitchen.mutate(undefined, {
+              onSuccess: () => {
+                if (isTakeout) {
+                  printReceipt();
+                  setTimeout(() => navigate("/mesas"), 500);
+                }
+              },
+            });
+          }}
+          disabled={sendToKitchen.isPending}
+          className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+        >
+          {sendToKitchen.isPending ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : hasSentItems ? (
+            <>
+              <ChefHat className="h-5 w-5" />
+              Enviar nuevos items · ${total.toFixed(2)}
+            </>
+          ) : isTakeout ? (
+            <>
+              <CircleDollarSign className="h-5 w-5" />
+              Enviar a caja · ${total.toFixed(2)}
+            </>
+          ) : (
+            <>
+              <ChefHat className="h-5 w-5" />
+              Enviar a cocina · ${total.toFixed(2)}
+            </>
+          )}
+        </Button>
+      )}
+
+      {!canOperateOrders && (
+        <div className="mt-4 rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground">
+          Modo consulta: sin acciones operativas sobre la orden.
+        </div>
+      )}
+
+      {isSent && (
+        <div className="mt-4 rounded-xl bg-primary/10 p-3 text-center">
+          <p className="text-sm font-medium text-primary">Orden en cocina</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Esperando despacho</p>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col">
       <div className="flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
@@ -213,7 +293,7 @@ const Ordenes = () => {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-sm font-bold">{order.order_code ?? `#${order.order_number}`}</span>
-            {order.table_name && <span className="text-xs text-muted-foreground">Â· {order.table_name}</span>}
+            {order.table_name && <span className="text-xs text-muted-foreground">· {order.table_name}</span>}
             <Badge className={cn("text-[10px]", statusColor[order.status])}>{statusLabel[order.status]}</Badge>
             {!canOperateOrders && (
               <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -246,7 +326,7 @@ const Ordenes = () => {
       </div>
 
       {hasSiblings && (
-        <div className="flex overflow-x-auto border-b border-border bg-muted/30 px-4 py-2 gap-1">
+        <div className="flex gap-1 overflow-x-auto border-b border-border bg-muted/30 px-4 py-2">
           {order.siblings.map((sib) => (
             <Button key={sib.id} variant={sib.id === order.id ? "default" : "outline"} size="sm" className="h-8 shrink-0 gap-1.5 rounded-lg text-xs" onClick={() => navigate(`/ordenes?order=${sib.id}`, { replace: true })}>
               {sib.split_code}
@@ -256,95 +336,46 @@ const Ordenes = () => {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className={cn("flex-1 overflow-y-auto p-4", showCart && "hidden sm:block")}>
-          {canEditItems ? (
-            <MenuNavigator onSelectProduct={handleSelectMenuProduct} />
-          ) : (
-            <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
-              Modo consulta: puedes ver la orden, pero no agregar ni editar items.
-            </div>
-          )}
+      <div className="flex flex-1 overflow-hidden sm:hidden">
+        <div className={cn("flex-1 overflow-y-auto p-4", showCart && "hidden")}>
+          {menuPanel}
         </div>
 
-        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-4 sm:w-80 sm:border-l", !showCart && "hidden sm:flex")}>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-sm font-bold">Orden</h2>
-            <Button variant="ghost" size="sm" className="text-xs sm:hidden" onClick={() => setShowCart(false)}>
-              Ver menu
-            </Button>
-          </div>
-
-          <div className="flex-1">
-            <OrderItemsList
-              items={order.items}
-              onRemove={(id) => removeItem.mutate(id)}
-              onUpdateQty={(id, qty, price) => updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price })}
-              disabled={!canEditItems}
-            />
-          </div>
-
-          {canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
-            <Button
-              onClick={() => {
-                sendToKitchen.mutate(undefined, {
-                  onSuccess: () => {
-                    if (isTakeout) {
-                      printReceipt();
-                      setTimeout(() => navigate("/mesas"), 500);
-                    }
-                  },
-                });
-              }}
-              disabled={sendToKitchen.isPending}
-              className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-            >
-              {sendToKitchen.isPending ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : hasSentItems ? (
-                <>
-                  <ChefHat className="h-5 w-5" />
-                  Enviar nuevos items Â· ${total.toFixed(2)}
-                </>
-              ) : isTakeout ? (
-                <>
-                  <CircleDollarSign className="h-5 w-5" />
-                  Enviar a caja Â· ${total.toFixed(2)}
-                </>
-              ) : (
-                <>
-                  <ChefHat className="h-5 w-5" />
-                  Enviar a cocina Â· ${total.toFixed(2)}
-                </>
-              )}
-            </Button>
-          )}
-
-          {!canOperateOrders && (
-            <div className="mt-4 rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground">
-              Modo consulta: sin acciones operativas sobre la orden.
-            </div>
-          )}
-
-          {isSent && (
-            <div className="mt-4 rounded-xl bg-primary/10 p-3 text-center">
-              <p className="text-sm font-medium text-primary">Orden en cocina</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Esperando despacho</p>
-            </div>
-          )}
+        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-4", !showCart && "hidden")}>
+          {orderPanel(true)}
         </div>
       </div>
+
+      <ResizablePanelGroup
+        direction="horizontal"
+        autoSaveId={`ordenes-layout-${activeBranchId ?? "default"}`}
+        className="hidden flex-1 overflow-hidden sm:flex"
+      >
+        <ResizablePanel defaultSize={68} minSize={35} className="min-w-0">
+          <div className="h-full overflow-y-auto p-4">
+            {menuPanel}
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle className="bg-border/70 transition-colors hover:bg-primary/30" />
+
+        <ResizablePanel defaultSize={32} minSize={22} maxSize={55} className="min-w-0">
+          <div className="flex h-full min-h-0 flex-col overflow-y-auto border-l border-border p-4">
+            {orderPanel(false)}
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {!showCart && itemCount > 0 && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 sm:hidden">
           <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">{itemCount} items Â· ${total.toFixed(2)}</span>
+          <span className="font-display text-sm font-bold">{itemCount} items · ${total.toFixed(2)}</span>
         </button>
       )}
 
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
-        modifiers={selectedProduct ? menu.modifiers.filter((mod: any) => mod.subcategory_id === selectedProduct.subcategory_id) : []}
+        modifiers={selectedProduct ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.id) : []}
         open={canEditItems && !!selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onConfirm={(data) => {

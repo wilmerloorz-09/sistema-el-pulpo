@@ -5,7 +5,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ## Reglas Obligatorias Vigentes
 
-### 1) Refactor incremental, no rediseño total
+### 1) Refactor incremental, no rediseno total
 - Reutilizar el flujo existente antes de abrir modelos paralelos innecesarios.
 - Si un cambio nuevo convive con legacy, documentar claramente que parte ya migro y cual sigue operando en el modelo anterior.
 
@@ -15,8 +15,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ### 3) Arbol de menu como fuente principal de estructura
 - La construccion jerarquica del menu se administra desde `Admin > Arbol Menu`.
-- No volver a depender de pantallas separadas de `Categorias` y `Subcategorias` para la estructura principal.
-- Nivel 1 es el unico nivel obligatorio para navegar en Ordenes.
+- No volver a depender de pantallas separadas de `Categorias`, `Subcategorias` o `Productos` para la estructura principal.
+- Nivel 1 es el unico nivel obligatorio y la unica capa fija para navegar en Ordenes; desde Nivel 2 en adelante no deben existir tratamientos especiales por nivel.
 - Los productos pueden existir desde Nivel 2 en adelante.
 
 ### 4) Compatibilidad legacy obligatoria mientras siga la FK actual
@@ -25,7 +25,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ### 5) Modificadores: modelo estructurado obligatorio
 - Modificador no es texto libre concatenado.
-- Disponibilidad por `subcategory_modifiers`.
+- Catalogo base por `modifiers`.
+- Disponibilidad por `menu_node_modifiers`.
 - Seleccion por `order_item_modifiers`.
 - Render consistente debajo del producto en todas las vistas operativas.
 
@@ -47,12 +48,14 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Distinguir visualmente categoria vs producto; una categoria no debe mostrarse como item vendible con precio.
 
 ### Admin
-- `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo.
-- El campo `icon` debe tratarse como emoji/caracter simple.
-- `image_url` se usa para imagen real, no reemplaza la semantica de `icon`.
+- `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
+- `image_url` es la representacion visual principal del nodo y debe llenarse desde la subida de archivo a Storage.
+- El campo `icon` ya no debe exponerse en `Admin > Arbol Menu`; si persiste en BD, tratarlo solo como remanente legacy.
+- La pestana `Modificadores` solo administra el catalogo base; la asignacion a nodos debe hacerse en `Arbol Menu`.
 
 ### Backend y consultas
 - Para modificadores, leer descripciones desde la relacion con `modifiers`.
+- La disponibilidad operativa del modificador debe resolverse desde `menu_node_modifiers`.
 - Filtrar datos vacios o inconsistentes antes de renderizar.
 
 ## Checklist Minimo Antes de Cerrar una Tarea
@@ -69,5 +72,5 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Login con email o username.
 - Sucursal activa como contexto operativo.
 - Permisos efectivos por modulo/sucursal.
-- Modificadores estructurados por subcategoria e item.
+- Modificadores estructurados por nodo e item.
 - Navegacion del menu basada en arbol, con Nivel 1 como unica obligatoriedad.
