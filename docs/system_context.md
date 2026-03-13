@@ -52,6 +52,8 @@
 - El `service worker` usa `cache-first` para assets estaticos y `network-first` para trafico a `supabase.co`.
 - El registro del `service worker` ocurre solo en produccion, sin alterar el arranque normal en desarrollo.
 - En pantallas pequenas (`max-width: 768px`) se reforzo la UX tactil en `Ordenes`, `MenuNavigator` y `Admin` sin cambiar el comportamiento desktop.
+- La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
+- La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
 ### 5) Compatibilidad transitoria con modelo legacy
 - Aunque la UI ya navega con `menu_nodes`, `order_items.product_id` sigue referenciando `products(id)`.
 - Para no romper el flujo actual, `MenuNodesCrud` sincroniza:

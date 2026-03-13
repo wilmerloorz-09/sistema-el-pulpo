@@ -218,7 +218,7 @@ const Ordenes = () => {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-display text-sm font-bold">Orden</h2>
         {mobile ? (
-          <Button variant="ghost" size="sm" className="h-11 px-3 text-sm sm:hidden" onClick={() => setShowCart(false)}>
+          <Button variant="ghost" size="sm" className="h-11 px-3 text-sm md:hidden" onClick={() => setShowCart(false)}>
             Ver menu
           </Button>
         ) : null}
@@ -315,7 +315,7 @@ const Ordenes = () => {
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="relative h-11 rounded-xl gap-1.5 sm:hidden" onClick={() => setShowCart(!showCart)}>
+        <Button variant="outline" size="sm" className="relative h-11 rounded-xl gap-1.5 md:hidden" onClick={() => setShowCart(!showCart)}>
           <ShoppingBag className="h-4 w-4" />
           {itemCount > 0 && (
             <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -336,7 +336,7 @@ const Ordenes = () => {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden sm:hidden">
+      <div className="flex flex-1 overflow-hidden md:hidden">
         <div className={cn("flex-1 overflow-y-auto p-3", showCart && "hidden")}>
           {menuPanel}
         </div>
@@ -349,7 +349,7 @@ const Ordenes = () => {
       <ResizablePanelGroup
         direction="horizontal"
         autoSaveId={`ordenes-layout-${activeBranchId ?? "default"}`}
-        className="hidden flex-1 overflow-hidden sm:flex"
+        className="hidden flex-1 overflow-hidden md:flex"
       >
         <ResizablePanel defaultSize={68} minSize={35} className="min-w-0">
           <div className="h-full overflow-y-auto p-4">
@@ -367,7 +367,7 @@ const Ordenes = () => {
       </ResizablePanelGroup>
 
       {!showCart && itemCount > 0 && (
-        <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 sm:hidden">
+        <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
           <span className="font-display text-sm font-bold">{itemCount} items � ${total.toFixed(2)}</span>
         </button>
