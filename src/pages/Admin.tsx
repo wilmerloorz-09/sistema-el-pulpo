@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree, ChevronDown, Menu, X, AlertTriangle } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
