@@ -1,5 +1,7 @@
+import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree, ChevronDown, Menu, X } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
@@ -88,15 +90,48 @@ const TABS: AdminTab[] = [
 
 const Admin = () => {
   const { permissions, branches, isGlobalAdmin } = useBranch();
+  const [activeTab, setActiveTab] = useState("");
+  const [mobileTabsOpen, setMobileTabsOpen] = useState(false);
 
-  const visibleTabs = TABS.filter((tab) => tab.visible(permissions, isGlobalAdmin));
+  const visibleTabs = useMemo(
+    () => TABS.filter((tab) => tab.visible(permissions, isGlobalAdmin)),
+    [permissions, isGlobalAdmin],
+  );
+
   const defaultTab = isGlobalAdmin && branches.length === 0
     ? (visibleTabs.find((tab) => tab.value === "branches")?.value ?? visibleTabs[0]?.value ?? "branches")
     : (visibleTabs[0]?.value ?? "users");
 
+  useEffect(() => {
+    if (!visibleTabs.some((tab) => tab.value === activeTab)) {
+      setActiveTab(defaultTab);
+      return;
+    }
+
+    if (!activeTab) {
+      setActiveTab(defaultTab);
+    }
+  }, [activeTab, defaultTab, visibleTabs]);
+
+  const selectedTab = visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0] ?? null;
+
   return (
     <div className="space-y-4 p-4">
-      <h1 className="font-display text-xl font-bold text-foreground">Administracion</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="font-display text-xl font-bold text-foreground">Administracion</h1>
+        {visibleTabs.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 gap-2 rounded-xl md:hidden"
+            onClick={() => setMobileTabsOpen((open) => !open)}
+          >
+            {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            {selectedTab?.label ?? "Secciones"}
+            <ChevronDown className={`h-4 w-4 transition-transform ${mobileTabsOpen ? "rotate-180" : ""}`} />
+          </Button>
+        )}
+      </div>
 
       {isGlobalAdmin && branches.length === 0 && (
         <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -109,8 +144,32 @@ const Admin = () => {
           No tienes permisos administrativos para esta sucursal.
         </div>
       ) : (
-        <Tabs defaultValue={defaultTab} className="w-full">
-          <div className="-mx-4 overflow-x-auto px-4 pb-2">
+        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setMobileTabsOpen(false); }} className="w-full">
+          <div className="md:hidden">
+            {mobileTabsOpen && (
+              <div className="rounded-2xl border border-border bg-card p-2 shadow-sm">
+                <div className="grid gap-2">
+                  {visibleTabs.map((tab) => (
+                    <Button
+                      key={tab.value}
+                      type="button"
+                      variant={tab.value === activeTab ? "default" : "ghost"}
+                      className="h-11 justify-start gap-2 rounded-xl"
+                      onClick={() => {
+                        setActiveTab(tab.value);
+                        setMobileTabsOpen(false);
+                      }}
+                    >
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="-mx-4 hidden overflow-x-auto px-4 pb-2 md:block">
             <TabsList className="inline-flex h-auto gap-1 rounded-xl bg-muted/50 p-1">
               {visibleTabs.map((tab) => (
                 <TabsTrigger

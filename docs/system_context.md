@@ -47,6 +47,11 @@
   - producto: muestra precio y permite agregarse a la orden
 - La disponibilidad de modificadores ya debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
 
+### 4.1) App instalable y UX movil
+- La aplicacion ahora expone `manifest.json`, iconos PWA y `service worker` para instalacion en movil y desktop.
+- El `service worker` usa `cache-first` para assets estaticos y `network-first` para trafico a `supabase.co`.
+- El registro del `service worker` ocurre solo en produccion, sin alterar el arranque normal en desarrollo.
+- En pantallas pequenas (`max-width: 768px`) se reforzo la UX tactil en `Ordenes`, `MenuNavigator` y `Admin` sin cambiar el comportamiento desktop.
 ### 5) Compatibilidad transitoria con modelo legacy
 - Aunque la UI ya navega con `menu_nodes`, `order_items.product_id` sigue referenciando `products(id)`.
 - Para no romper el flujo actual, `MenuNodesCrud` sincroniza:

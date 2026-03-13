@@ -1,0 +1,14 @@
+{
+  "name": "Picanteria El Pulpo",
+  "short_name": "El Pulpo",
+  "description": "Sistema POS Picanteria El Pulpo",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#1a7a3c",
+  "background_color": "#f5e6c0",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

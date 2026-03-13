@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode } from "@/hooks/useMenuTree";
@@ -11,26 +11,26 @@ const MAX_DEPTH_DOTS = 6;
 
 const renderNodeVisual = (node: MenuNode) => {
   if (node.image_url) {
-    return <img src={node.image_url} alt={node.name} className="h-16 w-16 rounded-2xl object-cover" />;
+    return <img src={node.image_url} alt={node.name} className="h-20 w-20 rounded-[1.75rem] object-cover md:h-16 md:w-16 md:rounded-2xl" />;
   }
 
   if (node.icon) {
     return <span className="text-4xl leading-none">{node.icon}</span>;
   }
 
-  return <ImageIcon className="h-12 w-12 text-muted-foreground/60" />;
+  return <ImageIcon className="h-14 w-14 text-muted-foreground/60 md:h-12 md:w-12" />;
 };
 
 const renderCompactNodeVisual = (node: MenuNode) => {
   if (node.image_url) {
-    return <img src={node.image_url} alt={node.name} className="h-6 w-6 rounded-lg object-cover" />;
+    return <img src={node.image_url} alt={node.name} className="h-7 w-7 rounded-xl object-cover md:h-6 md:w-6 md:rounded-lg" />;
   }
 
   if (node.icon) {
     return <span className="text-base leading-none">{node.icon}</span>;
   }
 
-  return <ImageIcon className="h-4 w-4 text-muted-foreground/60" />;
+  return <ImageIcon className="h-5 w-5 text-muted-foreground/60 md:h-4 md:w-4" />;
 };
 
 const NodeCard = ({
@@ -51,7 +51,7 @@ const NodeCard = ({
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex min-h-[184px] flex-col rounded-3xl bg-card p-4 text-left transition-all",
+        "group relative flex min-h-[208px] flex-col rounded-3xl bg-card p-5 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:p-4",
         isProduct
           ? "border border-border hover:-translate-y-0.5 hover:border-emerald-400/60 hover:shadow-[0_12px_24px_-18px_rgba(16,185,129,0.75)]"
           : "border border-dashed border-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_12px_24px_-18px_hsl(var(--primary)/0.55)]",
@@ -59,11 +59,11 @@ const NodeCard = ({
     >
       <div className="mb-4 flex justify-center">{renderNodeVisual(node)}</div>
       <div className="flex-1">
-        <p className="line-clamp-2 text-sm font-semibold text-foreground">{node.name}</p>
+        <p className="line-clamp-2 text-base font-semibold text-foreground md:text-sm">{node.name}</p>
         {isProduct ? (
-          <p className="mt-2 text-sm font-semibold text-emerald-600">${Number(node.price ?? 0).toFixed(2)}</p>
+          <p className="mt-2 text-base font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
         ) : (
-          <p className="mt-2 text-xs text-muted-foreground">{childCount} items</p>
+          <p className="mt-2 text-sm text-muted-foreground md:text-xs">{childCount} items</p>
         )}
       </div>
 
@@ -175,7 +175,7 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
             type="button"
             onClick={() => selectL1(node.id)}
             className={cn(
-              "shrink-0 rounded-2xl border-b-2 px-4 py-2 text-sm font-semibold transition-colors",
+              "shrink-0 rounded-2xl border-b-2 px-4 py-3 text-sm font-semibold transition-colors md:py-2",
               activeL1?.id === node.id
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-transparent bg-muted/40 text-muted-foreground hover:bg-muted",
@@ -223,7 +223,7 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
         </div>
         <span className="text-xs font-medium text-muted-foreground">Nivel {currentLevel}</span>
         {showBreadcrumb && (
-          <button type="button" onClick={goBack} className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-primary">
+          <button type="button" onClick={goBack} className="ml-auto inline-flex min-h-[44px] items-center gap-1 text-xs font-medium text-primary md:min-h-0">
             <ChevronLeft className="h-3.5 w-3.5" />
             Volver
           </button>
@@ -231,7 +231,7 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
       </div>
 
       <div ref={panelRef} className="min-h-0 flex-1">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(164px,1fr))] gap-4 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3">
           {renderedNodes.map((node) => (
             <NodeCard
               key={node.id}
@@ -287,5 +287,6 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
 };
 
 export default MenuNavigator;
+
 
 

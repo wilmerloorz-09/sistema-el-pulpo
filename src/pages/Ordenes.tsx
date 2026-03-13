@@ -70,7 +70,7 @@ const Ordenes = () => {
 
   if (!orderId) {
     return (
-      <div className="flex h-[calc(100vh-7rem)] flex-col">
+      <div className="ordenes-mobile-touch flex h-[calc(100vh-7rem)] flex-col">
         <div className="mb-4 flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
           <h1 className="font-display text-lg font-bold text-foreground">Ordenes</h1>
           {!canOperateOrders && (
@@ -218,7 +218,7 @@ const Ordenes = () => {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-display text-sm font-bold">Orden</h2>
         {mobile ? (
-          <Button variant="ghost" size="sm" className="text-xs sm:hidden" onClick={() => setShowCart(false)}>
+          <Button variant="ghost" size="sm" className="h-11 px-3 text-sm sm:hidden" onClick={() => setShowCart(false)}>
             Ver menu
           </Button>
         ) : null}
@@ -253,17 +253,17 @@ const Ordenes = () => {
           ) : hasSentItems ? (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar nuevos items · ${total.toFixed(2)}
+              Enviar nuevos items ï¿½ ${total.toFixed(2)}
             </>
           ) : isTakeout ? (
             <>
               <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja · ${total.toFixed(2)}
+              Enviar a caja ï¿½ ${total.toFixed(2)}
             </>
           ) : (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar a cocina · ${total.toFixed(2)}
+              Enviar a cocina ï¿½ ${total.toFixed(2)}
             </>
           )}
         </Button>
@@ -285,15 +285,15 @@ const Ordenes = () => {
   );
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
+    <div className="ordenes-mobile-touch flex h-[calc(100vh-7rem)] flex-col">
       <div className="flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("/mesas")}>
+        <Button variant="ghost" size="icon" className="h-11 w-11 md:h-8 md:w-8" onClick={() => navigate("/mesas")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-sm font-bold">{order.order_code ?? `#${order.order_number}`}</span>
-            {order.table_name && <span className="text-xs text-muted-foreground">· {order.table_name}</span>}
+            {order.table_name && <span className="text-xs text-muted-foreground">ï¿½ {order.table_name}</span>}
             <Badge className={cn("text-[10px]", statusColor[order.status])}>{statusLabel[order.status]}</Badge>
             {!canOperateOrders && (
               <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -304,7 +304,7 @@ const Ordenes = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 rounded-lg text-xs"
+                className="h-11 gap-1 rounded-lg px-3 text-xs md:h-7"
                 onClick={handleSplit}
                 disabled={!canSplit || splitting}
                 title={!canSplit && canOperateOrders && !hasSiblings ? "Agrega items antes de dividir" : undefined}
@@ -315,7 +315,7 @@ const Ordenes = () => {
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="relative rounded-xl gap-1.5 sm:hidden" onClick={() => setShowCart(!showCart)}>
+        <Button variant="outline" size="sm" className="relative h-11 rounded-xl gap-1.5 sm:hidden" onClick={() => setShowCart(!showCart)}>
           <ShoppingBag className="h-4 w-4" />
           {itemCount > 0 && (
             <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -328,7 +328,7 @@ const Ordenes = () => {
       {hasSiblings && (
         <div className="flex gap-1 overflow-x-auto border-b border-border bg-muted/30 px-4 py-2">
           {order.siblings.map((sib) => (
-            <Button key={sib.id} variant={sib.id === order.id ? "default" : "outline"} size="sm" className="h-8 shrink-0 gap-1.5 rounded-lg text-xs" onClick={() => navigate(`/ordenes?order=${sib.id}`, { replace: true })}>
+            <Button key={sib.id} variant={sib.id === order.id ? "default" : "outline"} size="sm" className="h-11 shrink-0 gap-1.5 rounded-lg px-3 text-xs md:h-8" onClick={() => navigate(`/ordenes?order=${sib.id}`, { replace: true })}>
               {sib.split_code}
               <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{sib.item_count}</Badge>
             </Button>
@@ -337,11 +337,11 @@ const Ordenes = () => {
       )}
 
       <div className="flex flex-1 overflow-hidden sm:hidden">
-        <div className={cn("flex-1 overflow-y-auto p-4", showCart && "hidden")}>
+        <div className={cn("flex-1 overflow-y-auto p-3", showCart && "hidden")}>
           {menuPanel}
         </div>
 
-        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-4", !showCart && "hidden")}>
+        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-3", !showCart && "hidden")}>
           {orderPanel(true)}
         </div>
       </div>
@@ -367,9 +367,9 @@ const Ordenes = () => {
       </ResizablePanelGroup>
 
       {!showCart && itemCount > 0 && (
-        <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 sm:hidden">
+        <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 sm:hidden">
           <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">{itemCount} items · ${total.toFixed(2)}</span>
+          <span className="font-display text-sm font-bold">{itemCount} items ï¿½ ${total.toFixed(2)}</span>
         </button>
       )}
 
@@ -399,6 +399,19 @@ const Ordenes = () => {
       )}
 
       <style>{`
+        @media (max-width: 768px) {
+          .ordenes-mobile-touch button,
+          .ordenes-mobile-touch [role="button"] {
+            min-height: 44px;
+          }
+
+          .ordenes-mobile-touch input,
+          .ordenes-mobile-touch select {
+            min-height: 44px;
+            font-size: 16px;
+          }
+        }
+
         @media print {
           body * { visibility: hidden !important; }
           .print\\:block, .print\\:block * { visibility: visible !important; }
@@ -410,4 +423,5 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
+
 
