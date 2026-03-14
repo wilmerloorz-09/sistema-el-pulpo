@@ -126,14 +126,6 @@ export function AdminTable<T extends { id: string }>({
     );
   }, [onCancelEdit, onDelete, onEdit, onSave, renderRowActions, saving]);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   const isAddingNew = !!editingId && !data.some((item) => item.id === editingId);
   const rows = isAddingNew
     ? ([{ ...(editValues as T), id: editingId! }, ...data] as T[])
@@ -161,6 +153,14 @@ export function AdminTable<T extends { id: string }>({
 
     return groups;
   }, [groupBy, rows]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
