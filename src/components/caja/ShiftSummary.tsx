@@ -3,6 +3,7 @@ import type { CashShift } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { MetricCard } from "@/components/ui/metric-card";
 import { Clock, Coins, DollarSign, Loader2, Lock } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
@@ -43,15 +44,16 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
 
   return (
     <>
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+      <div className="relative overflow-hidden rounded-[28px] border border-emerald-200 bg-gradient-to-r from-white via-emerald-50 to-sky-50 p-4 shadow-[0_22px_55px_-42px_rgba(16,185,129,0.7)]">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-200/35 blur-2xl" />
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15">
-              <DollarSign className="h-4 w-4 text-accent" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-300 bg-white/90 shadow-sm">
+              <DollarSign className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-bold text-foreground">Turno Activo</p>
-              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <p className="text-sm font-black text-foreground">Turno Activo</p>
+              <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                 <Clock className="h-3 w-3" />
                 {hours}h {mins}m
               </p>
@@ -62,7 +64,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 rounded-lg text-xs"
+                className="gap-1.5 rounded-2xl border-rose-200 bg-gradient-to-r from-white via-rose-50 to-white text-xs font-semibold text-rose-700 shadow-[0_12px_30px_-24px_rgba(244,63,94,0.8)] hover:border-rose-300 hover:from-rose-50 hover:to-white"
                 onClick={() => setShowClose(true)}
               >
                 <Lock className="h-3.5 w-3.5" />
@@ -72,7 +74,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 rounded-lg text-xs"
+              className="gap-1.5 rounded-2xl border-violet-200 bg-gradient-to-r from-white via-violet-50 to-white text-xs font-semibold text-violet-700 shadow-[0_12px_30px_-24px_rgba(139,92,246,0.8)] hover:border-violet-300 hover:from-violet-50 hover:to-white"
               onClick={() => setShowTotals(true)}
             >
               <DollarSign className="h-3.5 w-3.5" />
@@ -81,7 +83,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 rounded-lg text-xs"
+              className="gap-1.5 rounded-2xl border-sky-200 bg-gradient-to-r from-white via-sky-50 to-white text-xs font-semibold text-sky-700 shadow-[0_12px_30px_-24px_rgba(14,165,233,0.8)] hover:border-sky-300 hover:from-sky-50 hover:to-white"
               onClick={() => setShowDenoms(true)}
             >
               <Coins className="h-3.5 w-3.5" />
@@ -91,7 +93,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
         </div>
 
         {readOnly && (
-          <div className="rounded-xl border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <div className="rounded-2xl border border-border bg-white/80 px-3 py-2 text-xs text-muted-foreground shadow-sm">
             Modo consulta: puedes ver el turno, pero no cerrarlo.
           </div>
         )}
@@ -111,23 +113,12 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
               <span className="text-xs text-muted-foreground">Dinero real en caja</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-muted/50 p-3 text-center">
-                <p className="text-xs text-muted-foreground">Apertura</p>
-                <p className="font-display text-lg font-bold text-foreground">${totalInitial.toFixed(2)}</p>
-              </div>
-              <div className="rounded-xl bg-accent/10 p-3 text-center">
-                <p className="text-xs text-muted-foreground">Actual</p>
-                <p className="font-display text-lg font-bold text-accent">${totalCurrent.toFixed(2)}</p>
-              </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <MetricCard title="Apertura" value={`$${totalInitial.toFixed(2)}`} description="Base inicial del turno" icon={<Lock className="h-5 w-5" />} tone="sky" />
+              <MetricCard title="Actual" value={`$${totalCurrent.toFixed(2)}`} description="Dinero fisico en caja" icon={<DollarSign className="h-5 w-5" />} tone="violet" />
             </div>
 
-            <div className="rounded-xl bg-primary/10 p-3 text-center">
-              <p className="text-xs text-muted-foreground">Diferencia</p>
-              <p className="font-display text-xl font-bold text-primary">
-                ${(totalCurrent - totalInitial).toFixed(2)}
-              </p>
-            </div>
+            <MetricCard title="Diferencia" value={`$${(totalCurrent - totalInitial).toFixed(2)}`} description="Actual menos apertura" icon={<Coins className="h-5 w-5" />} tone="emerald" />
           </div>
 
           <div className="space-y-3 rounded-2xl border border-border bg-card p-3">
@@ -136,19 +127,10 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
               <span className="text-xs text-muted-foreground">Cobros registrados por metodo</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl bg-muted/50 p-3 text-center">
-                <p className="text-[11px] text-muted-foreground">Cobrado total</p>
-                <p className="font-display text-lg font-bold text-foreground">${totalCollected.toFixed(2)}</p>
-              </div>
-              <div className="rounded-xl bg-accent/10 p-3 text-center">
-                <p className="text-[11px] text-muted-foreground">En efectivo</p>
-                <p className="font-display text-lg font-bold text-accent">${totalCashCollected.toFixed(2)}</p>
-              </div>
-              <div className="rounded-xl bg-muted/50 p-3 text-center">
-                <p className="text-[11px] text-muted-foreground">No efectivo</p>
-                <p className="font-display text-lg font-bold text-foreground">${totalNonCashCollected.toFixed(2)}</p>
-              </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <MetricCard title="Cobrado total" value={`$${totalCollected.toFixed(2)}`} description="Todos los metodos sumados" icon={<DollarSign className="h-5 w-5" />} tone="sky" />
+              <MetricCard title="En efectivo" value={`$${totalCashCollected.toFixed(2)}`} description="Ingreso fisico registrado" icon={<Coins className="h-5 w-5" />} tone="emerald" />
+              <MetricCard title="No efectivo" value={`$${totalNonCashCollected.toFixed(2)}`} description="Transferencias y otros medios" icon={<Lock className="h-5 w-5" />} tone="amber" />
             </div>
 
             <div className="space-y-2 rounded-xl border border-border p-3">

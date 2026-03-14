@@ -29,10 +29,14 @@ const Cocina = () => {
   return (
     <>
       <div className="p-4">
-        <div className="mb-4 flex items-center gap-2">
-          <ChefHat className="h-5 w-5 text-primary" />
-          <h1 className="font-display text-lg font-bold text-foreground">Cocina</h1>
-          <span className="text-xs text-muted-foreground">({orders.length} pendientes)</span>
+        <div className="surface-glow mb-4 px-5 py-4">
+          <div className="relative flex flex-wrap items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
+              <ChefHat className="h-5 w-5" />
+            </div>
+            <h1 className="font-display text-lg font-bold text-foreground">Cocina</h1>
+            <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">({orders.length} pendientes)</span>
+          </div>
         </div>
         <div className="grid auto-rows-max grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {orders.map((order) => (

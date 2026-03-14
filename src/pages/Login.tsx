@@ -75,20 +75,24 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_22%),radial-gradient(circle_at_bottom_right,rgba(249,115,22,0.14),transparent_26%)]" />
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-sm space-y-8"
+        className="surface-glow w-full max-w-md space-y-8 p-8"
       >
         <div className="text-center space-y-2">
           <img
             src="/logo.png"
             alt="El Pulpo"
-            className="mx-auto h-28 w-28 rounded-3xl object-cover"
+            className="mx-auto h-28 w-28 rounded-[28px] border border-orange-200 bg-white/90 object-cover shadow-[0_20px_45px_-30px_rgba(249,115,22,0.75)]"
           />
-          <p className="text-sm text-muted-foreground">Sistema POS</p>
+          <div className="space-y-1">
+            <h1 className="font-display text-2xl font-black text-foreground">El Pulpo POS</h1>
+            <p className="text-sm text-muted-foreground">Sistema POS</p>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -104,7 +108,7 @@ const Login = () => {
               placeholder="usuario@elpulpo.com o admin"
               required
               autoComplete="username"
-              className="h-12 rounded-xl bg-card text-base"
+              className="h-12 text-base"
             />
           </div>
 
@@ -120,11 +124,11 @@ const Login = () => {
               placeholder="********"
               required
               autoComplete="current-password"
-              className="h-12 rounded-xl bg-card text-base"
+              className="h-12 text-base"
             />
           </div>
 
-          <Button type="submit" disabled={loading} className="h-12 w-full rounded-xl font-display text-base font-semibold">
+          <Button type="submit" disabled={loading} className="h-12 w-full font-display text-base font-semibold">
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Iniciar sesion"}
           </Button>
         </form>
@@ -136,10 +140,10 @@ const Login = () => {
                 <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">o</span>
+                <span className="rounded-full bg-white/90 px-3 py-1 text-muted-foreground shadow-sm">o</span>
               </div>
             </div>
-            <Button variant="outline" onClick={handlePasskeyLogin} disabled={passkeyLoading} className="h-12 w-full rounded-xl text-base gap-2">
+            <Button variant="outline" onClick={handlePasskeyLogin} disabled={passkeyLoading} className="h-12 w-full text-base gap-2">
               {passkeyLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (

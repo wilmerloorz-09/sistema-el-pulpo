@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { MetricCard } from "@/components/ui/metric-card";
 import { cn } from "@/lib/utils";
 import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
 import {
@@ -23,7 +24,7 @@ import {
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { ArrowDown, CreditCard, Loader2, RotateCcw } from "lucide-react";
+import { ArrowDown, CreditCard, Loader2, RotateCcw, Trash2, Coins, WalletCards, Minus, Plus, HandCoins, Wallet, BadgeDollarSign, Clock3 } from "lucide-react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 
@@ -93,6 +94,8 @@ export default function PaymentDialog({
   const [cashDraftReceived, setCashDraftReceived] = useState<Record<string, number>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cashDetailOpen, setCashDetailOpen] = useState(false);
+  const [cashOverpayConfirmOpen, setCashOverpayConfirmOpen] = useState(false);
+  const [pendingCashDenominationId, setPendingCashDenominationId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!order) return;
@@ -111,6 +114,8 @@ export default function PaymentDialog({
     setReceived({});
     setCashDraftReceived({});
     setCashDetailOpen(false);
+    setCashOverpayConfirmOpen(false);
+    setPendingCashDenominationId(null);
   }, [order?.id, order?.items, defaultMethodId, cashMethod?.id, paymentMethods]);
 
   const selectedItems = useMemo(
@@ -428,6 +433,14 @@ export default function PaymentDialog({
     () => [...shiftDenoms].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value),
     [shiftDenoms],
   );
+  const coinDenoms = useMemo(
+    () => sortedDenoms.filter((denomination) => denomination.denomination_type !== "bill"),
+    [sortedDenoms],
+  );
+  const billDenoms = useMemo(
+    () => sortedDenoms.filter((denomination) => denomination.denomination_type === "bill"),
+    [sortedDenoms],
+  );
 
   const draftTotalReceived = useMemo(
     () =>
@@ -448,6 +461,40 @@ export default function PaymentDialog({
   const draftCashAppliedAmount = roundMoney(Math.max(0, selectedTotal - nonCashAppliedAmount));
   const draftChangeAmount = roundMoney(draftCashAppliedAmount > 0 ? Math.max(0, draftTotalReceived - draftCashAppliedAmount) : 0);
 
+  const commitDraftDenomination = (denominationId: string) => {
+    setCashDraftReceived((prev) => ({
+      ...prev,
+      [denominationId]: (prev[denominationId] || 0) + 1,
+    }));
+  };
+
+  const addDraftDenomination = (denominationId: string) => {
+    if (draftCashAppliedAmount > 0 && draftTotalReceived + 0.001 >= draftCashAppliedAmount) {
+      setPendingCashDenominationId(denominationId);
+      setCashOverpayConfirmOpen(true);
+      return;
+    }
+
+    commitDraftDenomination(denominationId);
+  };
+
+  const setDraftDenominationQty = (denominationId: string, nextQty: number) => {
+    const normalized = Math.max(0, Math.floor(Number.isFinite(nextQty) ? nextQty : 0));
+
+    setCashDraftReceived((prev) => {
+      if (normalized <= 0) {
+        const next = { ...prev };
+        delete next[denominationId];
+        return next;
+      }
+
+      return {
+        ...prev,
+        [denominationId]: normalized,
+      };
+    });
+  };
+
   const openCashDetail = (methodId: string, isSelected: boolean) => {
     if (!isSelected) {
       toggleMethodSelection(methodId, true);
@@ -459,6 +506,8 @@ export default function PaymentDialog({
   const cancelCashDetail = () => {
     setCashDraftReceived(received);
     setCashDetailOpen(false);
+    setCashOverpayConfirmOpen(false);
+    setPendingCashDenominationId(null);
   };
 
   const acceptCashDetail = () => {
@@ -473,6 +522,38 @@ export default function PaymentDialog({
       setSplitAmount(cashSplit.id, nextAmount);
     }
     setCashDetailOpen(false);
+  };
+
+  const renderDenominationButton = (denomination: ShiftDenom) => {
+    const selectedQty = cashDraftReceived[denomination.denomination_id] || 0;
+
+    return (
+      <button
+        key={denomination.denomination_id}
+        onClick={() => addDraftDenomination(denomination.denomination_id)}
+        className={cn(
+          "group relative overflow-hidden rounded-2xl border bg-card text-left transition-all",
+          selectedQty > 0 ? "border-primary/50 shadow-sm" : "border-border hover:border-primary/30 hover:shadow-sm",
+        )}
+        disabled={readOnly}
+      >
+        {selectedQty > 0 && (
+          <span className="absolute right-1.5 top-1.5 z-10 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground shadow-sm">
+            x{selectedQty}
+          </span>
+        )}
+        <DenominationVisual
+          label={denomination.label}
+          imageUrl={denomination.image_url}
+          className="h-12 w-full rounded-none border-0 bg-white sm:h-14"
+          imageClassName="object-contain bg-white p-1"
+          iconClassName="h-5 w-5"
+        />
+        <div className="border-t border-border bg-muted/20 px-1 py-1 text-center">
+          <div className="text-xs font-black leading-none text-primary">${denomination.value.toFixed(2)}</div>
+        </div>
+      </button>
+    );
   };
 
   return (
@@ -521,19 +602,31 @@ export default function PaymentDialog({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
-                      <div className="rounded-xl bg-muted/50 p-2.5 sm:p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Items pendientes</p>
-                        <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">{unpaidItems.length}</p>
-                      </div>
-                      <div className="rounded-xl bg-muted/50 p-2.5 sm:p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Items seleccionados</p>
-                        <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">{selectedItems.length}</p>
-                      </div>
-                      <div className="rounded-xl bg-primary/10 p-2.5 sm:p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar ahora</p>
-                        <p className="mt-1 font-display text-base font-bold text-primary sm:text-2xl">${selectedTotal.toFixed(2)}</p>
-                      </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <MetricCard
+                        title="Items pendientes"
+                        value={String(unpaidItems.length)}
+                        description="Lineas pendientes por cobrar"
+                        icon={<Clock3 className="h-5 w-5" />}
+                        tone="sky"
+                        className="py-2.5"
+                      />
+                      <MetricCard
+                        title="Items seleccionados"
+                        value={String(selectedItems.length)}
+                        description="Lineas incluidas en esta operacion"
+                        icon={<CreditCard className="h-5 w-5" />}
+                        tone="violet"
+                        className="py-2.5"
+                      />
+                      <MetricCard
+                        title="Total a cobrar ahora"
+                        value={`$${selectedTotal.toFixed(2)}`}
+                        description="Monto actual de esta operacion"
+                        icon={<BadgeDollarSign className="h-5 w-5" />}
+                        tone="emerald"
+                        className="py-2.5"
+                      />
                     </div>
 
                     <div className="mt-4 space-y-2">
@@ -695,26 +788,37 @@ export default function PaymentDialog({
             <div className="shrink-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur sm:px-6">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="grid flex-1 grid-cols-3 gap-2 sm:grid-cols-3">
-                    <div className="rounded-2xl bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total seleccionado</p>
-                      <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${selectedTotal.toFixed(2)}</p>
-                    </div>
-                    <div className="rounded-2xl bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total recibido</p>
-                      <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${receivedSplitTotal.toFixed(2)}</p>
-                    </div>
-                    <div className="rounded-2xl bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
-                      </p>
-                      <p className={cn(
-                        "mt-1 text-base font-semibold sm:text-lg",
-                        shortageAmount > 0 ? "text-destructive" : changeAmount > 0 ? "text-emerald-700" : "text-green-600",
-                      )}>
-                        ${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}
-                      </p>
-                    </div>
+                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
+                    <MetricCard
+                      title="Total seleccionado"
+                      value={`$${selectedTotal.toFixed(2)}`}
+                      description="Lo elegido para cobrar"
+                      icon={<CreditCard className="h-5 w-5" />}
+                      tone="sky"
+                      className="py-2.5"
+                    />
+                    <MetricCard
+                      title="Total recibido"
+                      value={`$${receivedSplitTotal.toFixed(2)}`}
+                      description="Monto recibido por metodos"
+                      icon={<Wallet className="h-5 w-5" />}
+                      tone="violet"
+                      className="py-2.5"
+                    />
+                    <MetricCard
+                      title={changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
+                      value={`$${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}`}
+                      description={
+                        changeAmount > 0
+                          ? "Excedente a devolver"
+                          : shortageAmount > 0
+                            ? "Monto faltante por recibir"
+                            : "Cobro balanceado"
+                      }
+                      icon={changeAmount > 0 ? <BadgeDollarSign className="h-5 w-5" /> : <ArrowDown className="h-5 w-5" />}
+                      tone={changeAmount > 0 ? "emerald" : shortageAmount > 0 ? "amber" : "sky"}
+                      className="py-2.5"
+                    />
                   </div>
 
                   {!readOnly ? (
@@ -772,60 +876,68 @@ export default function PaymentDialog({
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-hidden px-4 py-2.5">
-            <div className="mb-2 grid grid-cols-3 gap-2">
-              <div className="rounded-lg bg-muted/50 px-2 py-1">
-                <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Aplicado</p>
-                <p className="mt-0.5 text-sm font-semibold text-foreground">${draftCashAppliedAmount.toFixed(2)}</p>
-              </div>
-              <div className="rounded-lg bg-muted/50 px-2 py-1">
-                <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Recibido</p>
-                <p className="mt-0.5 text-sm font-semibold text-foreground">${draftTotalReceived.toFixed(2)}</p>
-              </div>
-              <div className="rounded-lg bg-primary/10 px-2 py-1">
-                <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Cambio</p>
-                <p className="mt-0.5 text-sm font-semibold text-primary">${draftChangeAmount.toFixed(2)}</p>
-              </div>
+            <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <MetricCard
+                title="Aplicado"
+                value={`$${draftCashAppliedAmount.toFixed(2)}`}
+                description="Lo que se usa en este cobro"
+                icon={<HandCoins className="h-5 w-5" />}
+                tone="sky"
+              />
+              <MetricCard
+                title="Recibido"
+                value={`$${draftTotalReceived.toFixed(2)}`}
+                description="Todo lo entregado por el cliente"
+                icon={<Wallet className="h-5 w-5" />}
+                tone="violet"
+              />
+              <MetricCard
+                title="Cambio"
+                value={`$${draftChangeAmount.toFixed(2)}`}
+                description="Lo que debe volver al cliente"
+                icon={<BadgeDollarSign className="h-5 w-5" />}
+                tone="emerald"
+              />
             </div>
 
-            <div className="grid h-[calc(94vh-152px)] min-h-0 gap-3 lg:grid-cols-[minmax(0,1.7fr)_320px]">
+            <div className="grid h-[calc(94vh-152px)] min-h-0 gap-3 lg:grid-cols-[minmax(0,1.55fr)_380px]">
               <div className="min-h-0 overflow-y-auto rounded-2xl border border-border bg-card p-3">
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
-                  {sortedDenoms.map((denomination) => {
-                    const selectedQty = cashDraftReceived[denomination.denomination_id] || 0;
-
-                    return (
-                      <button
-                        key={denomination.denomination_id}
-                        onClick={() =>
-                          setCashDraftReceived((prev) => ({
-                            ...prev,
-                            [denomination.denomination_id]: (prev[denomination.denomination_id] || 0) + 1,
-                          }))
-                        }
-                        className={cn(
-                          "group relative overflow-hidden rounded-2xl border bg-card text-left transition-all",
-                          selectedQty > 0 ? "border-primary/50 shadow-sm" : "border-border hover:border-primary/30 hover:shadow-sm",
-                        )}
-                        disabled={readOnly}
-                      >
-                        {selectedQty > 0 && (
-                          <span className="absolute right-1.5 top-1.5 z-10 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground shadow-sm">
-                            x{selectedQty}
-                          </span>
-                        )}
-                        <DenominationVisual
-                          label={denomination.label}
-                          imageUrl={denomination.image_url}
-                          className="h-12 w-full rounded-none border-0 bg-white sm:h-14"
-                          imageClassName="object-contain bg-white p-1"
-                          iconClassName="h-5 w-5"
-                        />
-                        <div className="border-t border-border bg-muted/20 px-1 py-1 text-center">
-                          <div className="text-xs font-black leading-none text-primary">${denomination.value.toFixed(2)}</div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3 rounded-2xl border border-amber-200/70 bg-gradient-to-b from-amber-50/80 to-background p-3 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
+                          <Coins className="h-4 w-4" />
                         </div>
-                      </button>
-                    );
-                  })}
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Monedas</p>
+                          <p className="text-[11px] text-muted-foreground">Cambio menudo y efectivo fraccionado</p>
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{coinDenoms.length}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {coinDenoms.map(renderDenominationButton)}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-emerald-200/70 bg-gradient-to-b from-emerald-50/80 to-background p-3 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-emerald-200/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                          <WalletCards className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Billetes</p>
+                          <p className="text-[11px] text-muted-foreground">Montos altos y pagos de valor completo</p>
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{billDenoms.length}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {billDenoms.map(renderDenominationButton)}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -848,13 +960,42 @@ export default function PaymentDialog({
                   )}
                 </div>
 
+                {draftHasReceivedDenoms && (
+                  <div className="mb-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <span className="text-sm font-semibold text-emerald-800">Total de items</span>
+                    <span className="font-display text-lg font-bold text-emerald-700">${draftTotalReceived.toFixed(2)}</span>
+                  </div>
+                )}
+
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                   {draftHasReceivedDenoms ? (
                     <div className="space-y-1">
                       {sortedDenoms
                         .filter((denomination) => (cashDraftReceived[denomination.denomination_id] || 0) > 0)
                         .map((denomination) => (
-                          <div key={denomination.denomination_id} className="flex items-center gap-2 rounded-xl border border-border px-2 py-1.5 text-sm">
+                          <div key={denomination.denomination_id} className="flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 text-sm">
+                            {!readOnly && (
+                              <button
+                                onClick={() =>
+                                  setCashDraftReceived((prev) => {
+                                    const next = { ...prev };
+                                    delete next[denomination.denomination_id];
+                                    return next;
+                                  })
+                                }
+                                className="flex h-8 shrink-0 items-center justify-center px-1 text-destructive transition-colors hover:text-red-700"
+                                title="Quitar denominacion"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <DenominationVisual
+                              label={denomination.label}
+                              imageUrl={denomination.image_url}
+                              className="h-8 w-8 shrink-0 rounded-lg"
+                              iconClassName="h-4 w-4"
+                            />
+                            <span className="min-w-[58px] font-medium text-foreground">${denomination.value.toFixed(2)}</span>
                             {!readOnly && (
                               <button
                                 onClick={() =>
@@ -868,37 +1009,37 @@ export default function PaymentDialog({
                                     return { ...prev, [denomination.denomination_id]: value };
                                   })
                                 }
-                                className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 shadow-sm transition-all hover:scale-105 hover:bg-red-100 hover:text-red-700"
+                                title="Restar una unidad"
                               >
-                                -
+                                <Minus className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            <DenominationVisual
-                              label={denomination.label}
-                              imageUrl={denomination.image_url}
-                              className="h-8 w-8 rounded-lg"
-                              iconClassName="h-4 w-4"
-                            />
-                            <span className="min-w-[54px] font-medium text-foreground">
-                              {cashDraftReceived[denomination.denomination_id]}x
-                            </span>
-                            <span className="flex-1 font-medium text-foreground">${denomination.value.toFixed(2)}</span>
+                            <div className="flex min-w-[58px] items-center gap-1">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                inputMode="numeric"
+                                value={cashDraftReceived[denomination.denomination_id] || 0}
+                                onChange={(event) => setDraftDenominationQty(denomination.denomination_id, Number.parseInt(event.target.value || "0", 10))}
+                                onBlur={(event) => setDraftDenominationQty(denomination.denomination_id, Number.parseInt(event.target.value || "0", 10))}
+                                className="h-8 w-14 rounded-lg px-2 text-center text-sm font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                disabled={readOnly}
+                              />
+                            </div>
+                            {!readOnly && (
+                              <button
+                                onClick={() => addDraftDenomination(denomination.denomination_id)}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 shadow-sm transition-all hover:scale-105 hover:bg-emerald-100 hover:text-emerald-700"
+                                title="Sumar una unidad"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                             <span className="font-semibold text-foreground">
                               ${((cashDraftReceived[denomination.denomination_id] || 0) * denomination.value).toFixed(2)}
                             </span>
-                            {!readOnly && (
-                              <button
-                                onClick={() =>
-                                  setCashDraftReceived((prev) => ({
-                                    ...prev,
-                                    [denomination.denomination_id]: (prev[denomination.denomination_id] || 0) + 1,
-                                  }))
-                                }
-                                className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
-                              >
-                                +
-                              </button>
-                            )}
                           </div>
                         ))}
                     </div>
@@ -1010,6 +1151,46 @@ export default function PaymentDialog({
             <AlertDialogCancel>Volver</AlertDialogCancel>
             <AlertDialogAction onClick={handlePay} disabled={!canPay || paying}>
               {paying ? "Procesando..." : "Confirmar cobro"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={cashOverpayConfirmOpen}
+        onOpenChange={(open) => {
+          setCashOverpayConfirmOpen(open);
+          if (!open) {
+            setPendingCashDenominationId(null);
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Ya se cubrio el valor a pagar</AlertDialogTitle>
+            <AlertDialogDescription>
+              El efectivo recibido ya es igual o mayor al monto aplicado. Si agregas otra moneda o billete, se tomara como excedente para cambio.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setCashOverpayConfirmOpen(false);
+                setPendingCashDenominationId(null);
+              }}
+            >
+              Descartar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingCashDenominationId) {
+                  commitDraftDenomination(pendingCashDenominationId);
+                }
+                setCashOverpayConfirmOpen(false);
+                setPendingCashDenominationId(null);
+              }}
+            >
+              Agregar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -2,10 +2,12 @@
 import { useBranch } from "@/contexts/BranchContext";
 import { canView } from "@/lib/permissions";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
+import { cn } from "@/lib/utils";
 import {
   LayoutGrid,
   UtensilsCrossed,
   ChefHat,
+  Package,
   CircleDollarSign,
   BarChart3,
   Settings,
@@ -15,6 +17,11 @@ interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
+  tone: {
+    active: string;
+    idle: string;
+    iconIdle: string;
+  };
   visible: (permissions: Record<string, any>) => boolean;
 }
 
@@ -23,19 +30,49 @@ const NAV_ITEMS: NavItem[] = [
     to: "/mesas",
     label: "Mesas",
     icon: <LayoutGrid className="h-5 w-5" />,
+    tone: {
+      active: "from-sky-500 to-cyan-400",
+      idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
+      iconIdle: "bg-sky-50 text-sky-600",
+    },
     visible: (permissions) => canView(permissions, "mesas"),
   },
   {
     to: "/ordenes",
     label: "Ordenes",
     icon: <UtensilsCrossed className="h-5 w-5" />,
+    tone: {
+      active: "from-orange-500 to-amber-400",
+      idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
+      iconIdle: "bg-orange-50 text-orange-600",
+    },
     visible: (permissions) => canView(permissions, "ordenes"),
   },
   {
     to: "/despacho",
     label: "Despacho",
     icon: <ChefHat className="h-5 w-5" />,
+    tone: {
+      active: "from-rose-500 to-pink-400",
+      idle: "hover:border-rose-200 hover:bg-rose-50/90 hover:text-rose-700",
+      iconIdle: "bg-rose-50 text-rose-600",
+    },
     visible: (permissions) =>
+      canView(permissions, "despacho_total") ||
+      canView(permissions, "despacho_mesa") ||
+      canView(permissions, "despacho_para_llevar"),
+  },
+  {
+    to: "/productos",
+    label: "Productos",
+    icon: <Package className="h-5 w-5" />,
+    tone: {
+      active: "from-teal-500 to-cyan-400",
+      idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
+      iconIdle: "bg-teal-50 text-teal-600",
+    },
+    visible: (permissions) =>
+      canView(permissions, "ordenes") ||
       canView(permissions, "despacho_total") ||
       canView(permissions, "despacho_mesa") ||
       canView(permissions, "despacho_para_llevar"),
@@ -44,18 +81,33 @@ const NAV_ITEMS: NavItem[] = [
     to: "/caja",
     label: "Caja",
     icon: <CircleDollarSign className="h-5 w-5" />,
+    tone: {
+      active: "from-emerald-500 to-lime-400",
+      idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
+      iconIdle: "bg-emerald-50 text-emerald-600",
+    },
     visible: (permissions) => canView(permissions, "caja"),
   },
   {
     to: "/reportes",
     label: "Reportes",
     icon: <BarChart3 className="h-5 w-5" />,
+    tone: {
+      active: "from-violet-500 to-fuchsia-400",
+      idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
+      iconIdle: "bg-violet-50 text-violet-600",
+    },
     visible: (permissions) => canView(permissions, "reportes_sucursal") || canView(permissions, "reportes_globales"),
   },
   {
     to: "/admin",
     label: "Admin",
     icon: <Settings className="h-5 w-5" />,
+    tone: {
+      active: "from-slate-700 to-slate-500",
+      idle: "hover:border-slate-200 hover:bg-slate-50/90 hover:text-slate-700",
+      iconIdle: "bg-slate-100 text-slate-600",
+    },
     visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
 ];
@@ -85,17 +137,25 @@ const BottomNav = () => {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-bottom md:bottom-0">
-      <div className="flex items-center justify-around px-1 py-1.5">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white/80 backdrop-blur-xl safe-bottom md:bottom-0">
+      <div className="mx-auto flex max-w-6xl items-center justify-around px-2 py-2">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
-            className="flex min-w-[3.5rem] flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-muted-foreground transition-colors"
-            activeClassName="bg-primary/10 text-primary"
+            className={cn(
+              "group flex min-w-[4.6rem] flex-col items-center gap-1 rounded-[20px] border border-white/70 bg-white/82 px-3 py-2 text-muted-foreground shadow-[0_14px_28px_-24px_rgba(15,23,42,0.28)] transition-all",
+              item.tone.idle,
+            )}
+            activeClassName={cn(
+              "border-white/20 bg-gradient-to-b text-white shadow-[0_18px_35px_-24px_rgba(15,23,42,0.45)] [&>span:first-child]:bg-white/15 [&>span:first-child]:text-white",
+              item.tone.active,
+            )}
           >
-            {item.icon}
-            <span className="text-[10px] font-medium leading-tight">{item.label}</span>
+            <span className={cn("flex h-8 w-8 items-center justify-center rounded-2xl transition-all group-hover:scale-105", item.tone.iconIdle)}>
+              {item.icon}
+            </span>
+            <span className="text-[10px] font-semibold leading-tight">{item.label}</span>
           </NavLink>
         ))}
       </div>

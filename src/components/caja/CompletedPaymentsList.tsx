@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { MetricCard } from "@/components/ui/metric-card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
@@ -285,29 +286,29 @@ export default function CompletedPaymentsList({
 
   return (
     <div className="space-y-3">
-      <div className="space-y-2 rounded-xl border border-border p-3">
+      <div className="space-y-3 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/70 to-white p-4 shadow-[0_18px_45px_-38px_rgba(139,92,246,0.65)]">
         <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-          <input value={filters.orderQuery} onChange={(e) => setFilter({ orderQuery: e.target.value })} placeholder="Buscar por orden o mesa" className="h-9 rounded-lg border border-border bg-background px-3 text-sm" />
-          <select value={filters.methodId} onChange={(e) => setFilter({ methodId: e.target.value })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
+          <input value={filters.orderQuery} onChange={(e) => setFilter({ orderQuery: e.target.value })} placeholder="Buscar por orden o mesa" className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
+          <select value={filters.methodId} onChange={(e) => setFilter({ methodId: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
             <option value="ALL">Todos los metodos</option>
             {paymentMethods.map((method) => (
               <option key={method.id} value={method.id}>{method.name}</option>
             ))}
           </select>
-          <input type="datetime-local" value={filters.fromDateTime} onChange={(e) => setFilter({ fromDateTime: e.target.value })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm" />
-          <input type="datetime-local" value={filters.toDateTime} onChange={(e) => setFilter({ toDateTime: e.target.value })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm" />
+          <input type="datetime-local" value={filters.fromDateTime} onChange={(e) => setFilter({ fromDateTime: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
+          <input type="datetime-local" value={filters.toDateTime} onChange={(e) => setFilter({ toDateTime: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
         </div>
 
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-          <select value={filters.sortBy} onChange={(e) => setFilter({ sortBy: e.target.value as CompletedPaymentsFilters["sortBy"] })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
+          <select value={filters.sortBy} onChange={(e) => setFilter({ sortBy: e.target.value as CompletedPaymentsFilters["sortBy"] })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
             <option value="created_at">Ordenar por fecha</option>
             <option value="amount">Ordenar por monto</option>
           </select>
-          <select value={filters.sortDir} onChange={(e) => setFilter({ sortDir: e.target.value as CompletedPaymentsFilters["sortDir"] })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
+          <select value={filters.sortDir} onChange={(e) => setFilter({ sortDir: e.target.value as CompletedPaymentsFilters["sortDir"] })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
             <option value="desc">Descendente</option>
             <option value="asc">Ascendente</option>
           </select>
-          <select value={String(filters.pageSize)} onChange={(e) => setFilter({ pageSize: Number(e.target.value) })} className="h-9 rounded-lg border border-border bg-background px-3 text-sm">
+          <select value={String(filters.pageSize)} onChange={(e) => setFilter({ pageSize: Number(e.target.value) })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
             <option value="10">10 por pagina</option>
             <option value="20">20 por pagina</option>
             <option value="50">50 por pagina</option>
@@ -315,8 +316,8 @@ export default function CompletedPaymentsList({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">Total DB: {total} pago(s) - Pagina {currentPage} de {totalPages}</p>
-          <button onClick={() => exportCsv(payments)} disabled={payments.length === 0} className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium disabled:opacity-50">
+          <p className="text-xs font-medium text-muted-foreground">Total DB: {total} pago(s) - Pagina {currentPage} de {totalPages}</p>
+          <button onClick={() => exportCsv(payments)} disabled={payments.length === 0} className="flex h-9 items-center gap-1.5 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold shadow-sm disabled:opacity-50">
             <Download className="h-3.5 w-3.5" /> Exportar CSV (pagina)
           </button>
         </div>
@@ -329,21 +330,23 @@ export default function CompletedPaymentsList({
               <h3 className="font-display text-sm font-bold text-foreground">Cobrado por metodo</h3>
               <p className="text-xs text-muted-foreground">Resumen segun los filtros actuales.</p>
             </div>
-            <div className="rounded-lg bg-primary/10 px-3 py-2 text-right">
-              <p className="text-[11px] text-muted-foreground">Total cobrado</p>
-              <p className="font-display text-lg font-bold text-primary">${collectedTotal.toFixed(2)}</p>
+            <div className="w-full sm:w-[280px]">
+              <MetricCard title="Total cobrado" value={`$${collectedTotal.toFixed(2)}`} description="Resumen segun filtros activos" icon={<CreditCard className="h-5 w-5" />} tone="emerald" className="py-2.5" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {methodSummary.map((method) => (
-              <div key={method.methodId} className="rounded-xl border border-border bg-muted/40 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">{method.methodName}</p>
-                  <Badge variant="secondary" className="text-[10px]">{method.paymentCount} pago(s)</Badge>
-                </div>
-                <p className="mt-2 font-display text-xl font-bold text-foreground">${method.amount.toFixed(2)}</p>
-              </div>
+              <MetricCard
+                key={method.methodId}
+                title={method.methodName}
+                value={`$${method.amount.toFixed(2)}`}
+                description="Cobrado por este metodo"
+                badge={`${method.paymentCount} pago(s)`}
+                icon={<CreditCard className="h-5 w-5" />}
+                tone="violet"
+                className="py-3"
+              />
             ))}
           </div>
         </div>
@@ -362,22 +365,22 @@ export default function CompletedPaymentsList({
       ) : (
         <>
           {selectedOrder && (
-            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+            <div className="space-y-3 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/55 to-white p-4 shadow-[0_18px_45px_-38px_rgba(139,92,246,0.55)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-display text-sm font-bold text-foreground">Resumen de cuenta</h3>
-                <select value={selectedOrder.id} onChange={(e) => setSelectedOrderId(e.target.value)} className="h-8 rounded-lg border border-border bg-background px-2 text-xs">
+                <select value={selectedOrder.id} onChange={(e) => setSelectedOrderId(e.target.value)} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs shadow-sm">
                   {orderSummaries.map((order) => (
                     <option key={order.id} value={order.id}>{order.code ?? `#${order.number}`} - {order.split_code ?? order.table_name ?? "Para llevar"}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-5">
-                <div className="rounded-lg bg-muted/50 p-2"><p className="text-[11px] text-muted-foreground">Orden</p><p className="font-semibold">{selectedOrder.code ?? `#${selectedOrder.number}`}</p></div>
-                <div className="rounded-lg bg-muted/50 p-2"><p className="text-[11px] text-muted-foreground">Mesa</p><p className="font-semibold">{selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"}</p></div>
-                <div className="rounded-lg bg-muted/50 p-2"><p className="text-[11px] text-muted-foreground">Total cuenta</p><p className="font-semibold">${selectedOrder.total.toFixed(2)}</p></div>
-                <div className="rounded-lg bg-green-50 p-2"><p className="text-[11px] text-muted-foreground">Total pagado</p><p className="font-semibold text-green-700">${selectedOrder.paid.toFixed(2)}</p></div>
-                <div className="rounded-lg bg-amber-50 p-2 col-span-2 md:col-span-1"><p className="text-[11px] text-muted-foreground">Saldo pendiente</p><p className="font-semibold text-amber-700">${selectedOrder.pending.toFixed(2)}</p></div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+                <MetricCard title="Orden" value={selectedOrder.code ?? `#${selectedOrder.number}`} description="Cuenta seleccionada" icon={<History className="h-5 w-5" />} tone="slate" className="py-2.5" />
+                <MetricCard title="Mesa" value={selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"} description="Origen de la orden" icon={selectedOrder.type === "TAKEOUT" ? <ShoppingBag className="h-5 w-5" /> : <UtensilsCrossed className="h-5 w-5" />} tone="sky" className="py-2.5" />
+                <MetricCard title="Total cuenta" value={`$${selectedOrder.total.toFixed(2)}`} description="Importe completo" icon={<CreditCard className="h-5 w-5" />} tone="violet" className="py-2.5" />
+                <MetricCard title="Total pagado" value={`$${selectedOrder.paid.toFixed(2)}`} description="Pagos aplicados" icon={<ShieldCheck className="h-5 w-5" />} tone="emerald" className="py-2.5" />
+                <MetricCard title="Saldo pendiente" value={`$${selectedOrder.pending.toFixed(2)}`} description="Monto aun por cobrar" icon={<Clock3 className="h-5 w-5" />} tone="amber" className="py-2.5" />
               </div>
             </div>
           )}
@@ -393,10 +396,10 @@ export default function CompletedPaymentsList({
               const entryIds = payment.items.map((item) => item.paymentEntryId);
 
               return (
-                <div key={payment.paymentId} className="space-y-2 rounded-xl border border-border bg-card p-3">
+                <div key={payment.paymentId} className="space-y-2 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/45 to-white p-3 shadow-[0_16px_40px_-36px_rgba(139,92,246,0.55)]">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                      {payment.order.type === "TAKEOUT" ? <ShoppingBag className="h-4 w-4 text-primary" /> : <UtensilsCrossed className="h-4 w-4 text-primary" />}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm">
+                      {payment.order.type === "TAKEOUT" ? <ShoppingBag className="h-4 w-4 text-violet-600" /> : <UtensilsCrossed className="h-4 w-4 text-violet-600" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -410,18 +413,20 @@ export default function CompletedPaymentsList({
                         <span>- Metodo: {payment.method_name}</span>
                       </p>
                     </div>
-                    <span className="font-display text-base font-bold text-foreground">${payment.amount.toFixed(2)}</span>
-                    <button onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border" title="Ver detalle">
+                    <div className="rounded-2xl border border-violet-200 bg-white/90 px-3 py-2 shadow-sm">
+                      <span className="font-display text-base font-black text-foreground">${payment.amount.toFixed(2)}</span>
+                    </div>
+                    <button onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)} className="flex h-9 w-9 items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm" title="Ver detalle">
                       {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                   </div>
 
                   {expanded && (
-                    <div className="space-y-2 rounded-lg bg-muted/40 p-3">
+                    <div className="space-y-2 rounded-2xl border border-violet-200 bg-white/80 p-3">
                       <p className="text-xs font-medium text-muted-foreground">Items cubiertos</p>
                       <div className="space-y-1">
                         {payment.items.map((item) => (
-                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-md border border-border bg-background p-2 text-sm md:grid-cols-5">
+                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-2xl border border-violet-100 bg-violet-50/45 p-3 text-sm md:grid-cols-5">
                             <span className="font-medium text-foreground">{item.product_name}</span>
                             <span className="text-muted-foreground">Cant: {item.quantity}</span>
                             <span className="text-muted-foreground">Metodo: {item.method_name}</span>
@@ -464,8 +469,8 @@ export default function CompletedPaymentsList({
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            <button onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} className="h-8 rounded-lg border border-border px-3 text-xs disabled:opacity-50">Anterior</button>
-            <button onClick={() => setPage(currentPage + 1)} disabled={currentPage >= totalPages} className="h-8 rounded-lg border border-border px-3 text-xs disabled:opacity-50">Siguiente</button>
+            <button onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-4 text-xs font-semibold shadow-sm disabled:opacity-50">Anterior</button>
+            <button onClick={() => setPage(currentPage + 1)} disabled={currentPage >= totalPages} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-4 text-xs font-semibold shadow-sm disabled:opacity-50">Siguiente</button>
           </div>
         </>
       )}

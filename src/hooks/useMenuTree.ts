@@ -18,6 +18,10 @@ export interface MenuNode {
   image_url?: string | null;
 }
 
+interface UseMenuTreeOptions {
+  includeInactive?: boolean;
+}
+
 interface UseMenuTreeReturn {
   visibleNodes: MenuNode[];
   breadcrumb: MenuNode[];
@@ -39,21 +43,27 @@ const sortNodes = (nodes: MenuNode[]) =>
     return a.name.localeCompare(b.name);
   });
 
-export function useMenuTree(): UseMenuTreeReturn {
+export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn {
   const { activeBranchId } = useBranch();
   const [pathIds, setPathIds] = useState<string[]>([]);
+  const includeInactive = options.includeInactive ?? false;
 
   const query = useQuery({
-    queryKey: ["menu-tree", activeBranchId],
+    queryKey: ["menu-tree", activeBranchId, includeInactive],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let queryBuilder = supabase
         .from("menu_nodes" as never)
         .select("*")
         .eq("branch_id", activeBranchId!)
-        .eq("is_active", true)
         .order("depth", { ascending: true })
         .order("display_order", { ascending: true })
         .order("name", { ascending: true });
+
+      if (!includeInactive) {
+        queryBuilder = queryBuilder.eq("is_active", true);
+      }
+
+      const { data, error } = await queryBuilder;
 
       if (error) throw error;
       return (data ?? []) as unknown as MenuNode[];

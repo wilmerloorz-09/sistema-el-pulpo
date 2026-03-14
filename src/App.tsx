@@ -16,6 +16,7 @@ import Login from "./pages/Login";
 import Mesas from "./pages/Mesas";
 import Ordenes from "./pages/Ordenes";
 import Despacho from "./pages/Despacho";
+import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
@@ -263,6 +264,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]}>
                       <Despacho />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/productos"
+                  element={
+                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]}>
+                      <Productos />
                     </ProtectedRoute>
                   }
                 />

@@ -139,7 +139,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
 
           {sortedModifiers.length > 0 && (
             <div className="space-y-2">
-              <Label className="text-sm">Modificaciones</Label>
+              <Label className="text-sm text-red-600">Modificaciones</Label>
               <div className="grid grid-cols-1 gap-2">
                 {sortedModifiers.map((modifier) => (
                   <label
@@ -150,7 +150,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
                       checked={selectedMods.includes(modifier.id)}
                       onCheckedChange={() => toggleMod(modifier.id)}
                     />
-                    <span className="text-sm">{modifier.description}</span>
+                    <span className="text-sm text-red-600">{modifier.description}</span>
                   </label>
                 ))}
               </div>

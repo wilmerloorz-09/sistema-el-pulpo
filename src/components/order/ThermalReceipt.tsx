@@ -70,7 +70,7 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
               {item.modifiers
                 .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
                 .map((mod, midx) => (
-                  <div key={midx} style={{ paddingLeft: indentCh, fontSize: "11px" }}>
+                  <div key={midx} style={{ paddingLeft: indentCh, fontSize: "11px", color: "#dc2626" }}>
                     - {mod.description}
                   </div>
                 ))}

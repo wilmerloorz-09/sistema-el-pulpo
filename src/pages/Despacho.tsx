@@ -4,7 +4,7 @@ import { useDispatchAccess, type DispatchView } from "@/hooks/useDispatchAccess"
 import { useMeseroOrderReadyNotification, OrderReadyNotificationBanner } from "@/hooks/useMeseroOrderReadyNotification";
 import DispatchCard from "@/components/dispatch/DispatchCard";
 import OperationDialog from "@/components/order/OperationDialog";
-import { Loader2, Truck, AlertCircle } from "lucide-react";
+import { Loader2, Truck, AlertCircle, ShoppingBag, UtensilsCrossed } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useBranch } from "@/contexts/BranchContext";
 
@@ -17,6 +17,10 @@ function resolveInitialView(availableViews: DispatchView[], storageKey: string):
   }
 
   return availableViews.includes("TABLE") ? "TABLE" : availableViews[0];
+}
+
+function getViewIcon(view: DispatchView) {
+  return view === "TABLE" ? UtensilsCrossed : ShoppingBag;
 }
 
 const Despacho = () => {
@@ -95,20 +99,24 @@ const Despacho = () => {
   return (
     <>
       <div className="p-4">
-        <div className="mb-4 flex items-center gap-2">
-          <Truck className="h-5 w-5 text-primary" />
-          <h1 className="font-display text-lg font-bold text-foreground">Despacho</h1>
-          <span className="text-xs text-muted-foreground">({orders.length} pendientes)</span>
-          {!showTabs && (
-            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              Vista: {getViewLabel(scope)}
-            </span>
-          )}
-          {readOnly && (
-            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              Solo consulta
-            </span>
-          )}
+        <div className="surface-glow mb-4 px-5 py-4">
+          <div className="relative flex flex-wrap items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
+              <Truck className="h-5 w-5" />
+            </div>
+            <h1 className="font-display text-lg font-bold text-foreground">Despacho</h1>
+            <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">({orders.length} pendientes)</span>
+            {!showTabs && (
+              <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+                Vista: {getViewLabel(scope)}
+              </span>
+            )}
+            {readOnly && (
+              <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+                Solo consulta
+              </span>
+            )}
+          </div>
         </div>
 
         {showTabs && (
@@ -120,17 +128,25 @@ const Despacho = () => {
                 if (!value) return;
                 setActiveView(value as DispatchView);
               }}
-              className="rounded-xl border border-border bg-muted/40 p-1"
+              className="rounded-2xl border border-border bg-muted/50 p-1.5 shadow-sm"
             >
               {availableViews.map((view) => (
-                <ToggleGroupItem
-                  key={view}
-                  value={view}
-                  className="rounded-lg px-4 py-2 text-sm font-medium data-[state=on]:bg-background data-[state=on]:text-foreground"
-                  aria-label={getViewLabel(view)}
-                >
-                  {getViewLabel(view)}
-                </ToggleGroupItem>
+                (() => {
+                  const Icon = getViewIcon(view);
+                  return (
+                    <ToggleGroupItem
+                      key={view}
+                      value={view}
+                      className="rounded-xl px-4 py-2.5 text-sm font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm"
+                      aria-label={getViewLabel(view)}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="h-4 w-4" />
+                        <span>{getViewLabel(view)}</span>
+                      </span>
+                    </ToggleGroupItem>
+                  );
+                })()
               ))}
             </ToggleGroup>
           </div>

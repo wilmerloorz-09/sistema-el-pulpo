@@ -5,32 +5,38 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Loader2, Plus, Users, CircleDollarSign, ShoppingBag } from "lucide-react";
+import { Loader2, Plus, Users, CircleDollarSign, ShoppingBag, LayoutGrid, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { canOperate } from "@/lib/permissions";
 
 const STATUS_CONFIG = {
   free: {
-    bg: "bg-card",
-    border: "border-border",
-    text: "text-muted-foreground",
+    bg: "bg-gradient-to-br from-sky-50 via-white to-cyan-100",
+    border: "border-sky-300",
+    text: "text-sky-700",
     label: "Libre",
     icon: null,
+    artWrap: "border-sky-200 bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-300 text-white shadow-[0_18px_38px_-24px_rgba(14,165,233,0.8)]",
+    artIcon: <LayoutGrid className="h-8 w-8" />,
   },
   occupied: {
-    bg: "bg-primary/10",
+    bg: "bg-gradient-to-br from-orange-50 via-white to-amber-100",
     border: "border-primary/40",
     text: "text-primary",
     label: "Ocupada",
     icon: <Users className="h-4 w-4" />,
+    artWrap: "border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)]",
+    artIcon: <Users className="h-8 w-8" />,
   },
   to_pay: {
-    bg: "bg-warning/15",
+    bg: "bg-gradient-to-br from-amber-50 via-white to-lime-100",
     border: "border-warning/40",
-    text: "text-foreground",
+    text: "text-amber-800",
     label: "Por pagar",
     icon: <CircleDollarSign className="h-4 w-4" />,
+    artWrap: "border-lime-200 bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(132,204,22,0.82)]",
+    artIcon: <CircleDollarSign className="h-8 w-8" />,
   },
 };
 
@@ -161,31 +167,33 @@ const Mesas = () => {
 
   return (
     <div className="space-y-5 p-4">
-      <div className="flex items-center justify-between">
+      <div className="surface-glow px-5 py-4">
+        <div className="relative flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
           {!canOperateMesas && (
-            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
               Solo consulta
             </span>
           )}
         </div>
-        <div className="flex gap-3 text-xs font-medium">
-          <span className="flex items-center gap-1 text-muted-foreground">
+        <div className="flex flex-wrap gap-3 text-xs font-medium">
+          <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-3 py-1 text-muted-foreground shadow-sm">
             <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
             {freeCount} libres
           </span>
-          <span className="flex items-center gap-1 text-primary">
+          <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-primary shadow-sm">
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />
             {occupiedCount} ocupadas
           </span>
           {toPayCount > 0 && (
-            <span className="flex items-center gap-1 text-warning">
+            <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-warning shadow-sm">
               <span className="h-2.5 w-2.5 rounded-full bg-warning" />
               {toPayCount} por pagar
             </span>
           )}
         </div>
+      </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -196,8 +204,8 @@ const Mesas = () => {
           onClick={handleTakeout}
           disabled={creatingTakeout || !canOperateMesas}
           className={cn(
-            "relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 transition-all active:scale-95",
-            "bg-accent/10 border-accent/40",
+            "relative overflow-hidden flex flex-col items-center justify-center gap-2 rounded-[28px] border-2 p-5 shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95",
+            "bg-gradient-to-br from-emerald-50 via-white to-emerald-100 border-emerald-300",
             canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
           )}
         >
@@ -230,7 +238,7 @@ const Mesas = () => {
               onClick={() => handleTableClick(table)}
               disabled={isCreating}
               className={cn(
-                "relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 transition-all active:scale-95",
+                "relative flex flex-col items-center justify-center gap-3 rounded-[28px] border-2 p-5 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95",
                 config.bg,
                 config.border,
                 table.status === "free" && canOperateMesas && "hover:border-primary/30 hover:bg-primary/5",
@@ -241,7 +249,10 @@ const Mesas = () => {
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               ) : (
                 <>
-                  <span className={cn("font-display text-lg font-bold", config.text)}>{table.name}</span>
+                  <div className={cn("flex h-16 w-16 items-center justify-center rounded-[22px] border-2", config.artWrap)}>
+                    {config.artIcon}
+                  </div>
+                  <span className={cn("font-display text-lg font-black", config.text)}>{table.name}</span>
                   <div className={cn("flex items-center gap-1 text-xs font-medium", config.text)}>
                     {config.icon}
                     <span>{config.label}</span>
@@ -249,6 +260,12 @@ const Mesas = () => {
                   {table.status === "free" && canOperateMesas && (
                     <div className="absolute right-2 top-2 rounded-full bg-primary/10 p-1">
                       <Plus className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                  )}
+                  {table.status === "free" && (
+                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[10px] font-semibold text-sky-700 shadow-sm">
+                      <Sparkles className="h-3 w-3" />
+                      Lista para abrir
                     </div>
                   )}
                   {table.splitCount > 0 && (

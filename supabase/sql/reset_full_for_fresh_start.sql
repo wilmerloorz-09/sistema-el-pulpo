@@ -1,10 +1,10 @@
-﻿-- ============================================================
+-- ============================================================
 -- RESET TOTAL DEL SISTEMA POS PARA PRUEBAS DESDE CERO (MODO DESTRUCTIVO)
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
--- - Elimina catalogos operativos: categorias, subcategorias, productos, modificadores
+-- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 -- - Elimina sucursales y configuraciones asociadas
 -- - Elimina usuarios no protegidos
 -- - Conserva solo el superadmin principal protegido
@@ -57,6 +57,8 @@ DECLARE
     'public.restaurant_tables',
 
     -- Catalogos
+    'public.menu_node_modifiers',
+    'public.menu_nodes',
     'public.subcategory_modifiers',
     'public.products',
     'public.subcategories',
@@ -198,9 +200,11 @@ COMMIT;
 -- - 1 usuario: el superadmin protegido
 -- - 0 sucursales
 -- - 0 mesas
--- - 0 categorias/subcategorias/productos/modificadores
+-- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
 -- - 0 ordenes/pagos/caja/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
+
 
 

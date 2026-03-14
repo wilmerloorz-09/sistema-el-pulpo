@@ -6,7 +6,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { generateUUID } from "@/lib/uuid";
 import { dedupePaymentMethods, isCashPaymentMethodName } from "@/lib/paymentMethods";
 import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
-import { computeOperationalQuantities, sumRowsByItem } from "@/lib/orderOperational";
+import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 
 export interface Denomination {
@@ -22,6 +22,7 @@ export interface ShiftDenom {
   id: string;
   denomination_id: string;
   label: string;
+  denomination_type?: "coin" | "bill";
   display_order: number;
   value: number;
   image_url?: string | null;
@@ -341,25 +342,6 @@ async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]):
 
 type OrderStatus = Database["public"]["Enums"]["order_status"];
 
-type OperationalRow = {
-  order_item_id: string;
-  quantity_ready?: number;
-  quantity_dispatched?: number;
-  quantity_cancelled?: number;
-  source_stage?: string | null;
-  order_ready_event_id?: string | null;
-  order_dispatch_event_id?: string | null;
-  order_cancellation_id?: string | null;
-};
-
-type OperationalMaps = {
-  readyMap: Record<string, number>;
-  dispatchedMap: Record<string, number>;
-  cancelledPendingMap: Record<string, number>;
-  cancelledReadyMap: Record<string, number>;
-  cancelledTotalMap: Record<string, number>;
-};
-
 function resolvePaidQuantity(params: {
   payableQuantity: number;
   orderedQuantity: number;
@@ -373,98 +355,6 @@ function resolvePaidQuantity(params: {
       : 0;
 
   return Math.min(params.payableQuantity, fallbackPaidQuantity);
-}
-
-async function fetchOperationalMaps(orderItemIds: string[]): Promise<OperationalMaps> {
-  if (orderItemIds.length === 0) {
-    return {
-      readyMap: {},
-      dispatchedMap: {},
-      cancelledPendingMap: {},
-      cancelledReadyMap: {},
-      cancelledTotalMap: {},
-    };
-  }
-
-  try {
-    const [readyResponse, dispatchResponse, cancellationResponse] = await Promise.all([
-      (supabase as any)
-        .from("order_item_ready_events")
-        .select("order_item_id, quantity_ready, order_ready_event_id")
-        .in("order_item_id", orderItemIds),
-      (supabase as any)
-        .from("order_item_dispatch_events")
-        .select("order_item_id, quantity_dispatched, order_dispatch_event_id")
-        .in("order_item_id", orderItemIds),
-      (supabase as any)
-        .from("order_item_cancellations")
-        .select("order_item_id, quantity_cancelled, source_stage, order_cancellation_id")
-        .in("order_item_id", orderItemIds),
-    ]);
-
-    if (readyResponse.error) throw readyResponse.error;
-    if (dispatchResponse.error) throw dispatchResponse.error;
-    if (cancellationResponse.error) throw cancellationResponse.error;
-
-    const readyRowsRaw = (readyResponse.data ?? []) as OperationalRow[];
-    const dispatchRowsRaw = (dispatchResponse.data ?? []) as OperationalRow[];
-    const cancellationRowsRaw = (cancellationResponse.data ?? []) as OperationalRow[];
-
-    const readyEventIds = [...new Set(readyRowsRaw.map((row) => row.order_ready_event_id).filter(Boolean))] as string[];
-    const dispatchEventIds = [...new Set(dispatchRowsRaw.map((row) => row.order_dispatch_event_id).filter(Boolean))] as string[];
-    const cancellationIds = [...new Set(cancellationRowsRaw.map((row) => row.order_cancellation_id).filter(Boolean))] as string[];
-
-    let activeReadyIds = new Set<string>();
-    let activeDispatchIds = new Set<string>();
-    let activeCancellationIds = new Set<string>();
-
-    if (readyEventIds.length > 0) {
-      const { data, error } = await (supabase as any)
-        .from("order_ready_events")
-        .select("id, status")
-        .in("id", readyEventIds);
-      if (error) throw error;
-      activeReadyIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
-    }
-
-    if (dispatchEventIds.length > 0) {
-      const { data, error } = await (supabase as any)
-        .from("order_dispatch_events")
-        .select("id, status")
-        .in("id", dispatchEventIds);
-      if (error) throw error;
-      activeDispatchIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
-    }
-
-    if (cancellationIds.length > 0) {
-      const { data, error } = await supabase
-        .from("order_cancellations")
-        .select("id, status")
-        .in("id", cancellationIds);
-      if (error) throw error;
-      activeCancellationIds = new Set((data ?? []).filter((row) => row.status === "APPLIED").map((row) => row.id));
-    }
-
-    const readyRows = readyRowsRaw.filter((row) => row.order_ready_event_id && activeReadyIds.has(row.order_ready_event_id));
-    const dispatchRows = dispatchRowsRaw.filter((row) => row.order_dispatch_event_id && activeDispatchIds.has(row.order_dispatch_event_id));
-    const cancellationRows = cancellationRowsRaw.filter((row) => row.order_cancellation_id && activeCancellationIds.has(row.order_cancellation_id));
-
-    return {
-      readyMap: sumRowsByItem(readyRows, "order_item_id", "quantity_ready"),
-      dispatchedMap: sumRowsByItem(dispatchRows, "order_item_id", "quantity_dispatched"),
-      cancelledPendingMap: sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "PENDING"),
-      cancelledReadyMap: sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "READY"),
-      cancelledTotalMap: sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled"),
-    };
-  } catch {
-    return {
-      readyMap: {},
-      dispatchedMap: {},
-      cancelledPendingMap: {},
-      cancelledReadyMap: {},
-      cancelledTotalMap: {},
-    };
-  }
 }
 
 function deriveOrderOperationalStatus(
@@ -560,6 +450,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         return {
           ...d,
           label: denom?.label ?? "",
+          denomination_type: denom?.denomination_type,
           display_order: denom?.display_order ?? 0,
           value: denom?.value ?? 0,
           image_url: denom?.image_url ?? null,
@@ -609,7 +500,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const orderItemIds = (items ?? []).map((item) => item.id);
       const activePaymentItems = await fetchActivePaymentItemsForOrderItems(orderItemIds);
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
-      const operationalMaps = await fetchOperationalMaps(orderItemIds);
+      const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
       return orders
         .map((o) => {
@@ -1227,7 +1118,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const paidRows = await fetchActivePaymentItemsForOrderItems(itemIds);
       const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRows);
-      const operationalMaps = await fetchOperationalMaps(itemIds);
+      const operationalMaps = await fetchOperationalMapsForOrders([orderId]);
       const dbItemMap = Object.fromEntries((dbItems ?? []).map((item) => [item.id, item]));
 
       for (const itemSelection of itemSelections) {
@@ -1350,7 +1241,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const orderItemIdsAfter = (orderItemsAfter ?? []).map((item) => item.id);
       const paidRowsAfter = await fetchActivePaymentItemsForOrderItems(orderItemIdsAfter);
       const paidQtyMapAfter = aggregatePaidQuantityByOrderItem(paidRowsAfter);
-      const operationalMapsAfter = await fetchOperationalMaps(orderItemIdsAfter);
+      const operationalMapsAfter = await fetchOperationalMapsForOrders([orderId]);
 
       for (const orderItem of orderItemsAfter ?? []) {
         const quantities = computeOperationalQuantities({
@@ -1553,7 +1444,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const orderItemIds = (orderItems ?? []).map((item) => item.id);
         const paidRows = await fetchActivePaymentItemsForOrderItems(orderItemIds);
         const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRows);
-        const operationalMaps = await fetchOperationalMaps(orderItemIds);
+        const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
         for (const orderItem of orderItems ?? []) {
           const quantities = computeOperationalQuantities({

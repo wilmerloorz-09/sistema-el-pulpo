@@ -40,6 +40,7 @@ interface Props {
 
 export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
   const { elapsed } = useElapsed(order.sent_at);
+  const isTakeout = order.order_type === "TAKEOUT";
   const isUrgent = elapsed > 15 * 60;
   const isWarning = elapsed > 8 * 60;
   const label = order.split_code ?? order.table_name ?? "Para llevar";
@@ -60,7 +61,8 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
   return (
     <div
       className={cn(
-        "flex self-start flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
+        "flex self-start flex-col overflow-hidden rounded-2xl border-2 transition-colors",
+        isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
@@ -68,12 +70,12 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
             : "border-border",
       )}
     >
-      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="flex min-w-0 items-center gap-2">
           {order.order_type === "TAKEOUT" ? (
-            <ShoppingBag className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
           ) : (
-            <UtensilsCrossed className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <UtensilsCrossed className="h-4 w-4 shrink-0 text-sky-700" />
           )}
           <span className="truncate font-display text-sm font-bold">{label}</span>
           <Badge variant="secondary" className="shrink-0 text-[10px]">
@@ -105,9 +107,14 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
                   <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
                 </div>
                 {item.modifiers.length > 0 && (
-                  <div className="mt-1 flex flex-col pl-[18px] text-xs text-muted-foreground">
+                  <div className="mt-1 flex flex-col gap-1 pl-[18px]">
                     {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
-                      <span key={modifier.description}>- {modifier.description}</span>
+                      <span
+                        key={modifier.description}
+                        className="w-fit rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700"
+                      >
+                        - {modifier.description}
+                      </span>
                     ))}
                   </div>
                 )}
@@ -123,8 +130,8 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
                   ) : null}
                 </div>
               </div>
-              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                {item.quantity_ordered}x
+              <span className="rounded-md bg-primary/12 px-2.5 py-1 text-sm font-bold text-primary">
+                x{item.quantity_ordered}
               </span>
             </div>
           </div>

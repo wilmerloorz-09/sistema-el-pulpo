@@ -170,13 +170,22 @@ const Admin = () => {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="font-display text-xl font-bold text-foreground">Administracion</h1>
+      <div className="surface-glow px-5 py-4">
+        <div className="relative flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="font-display text-xl font-black text-foreground">Administracion</h1>
+              <p className="text-sm text-muted-foreground">Configura catalogo, accesos y operacion de la sucursal.</p>
+            </div>
+          </div>
         {visibleTabs.length > 0 && (
           <Button
             type="button"
             variant="outline"
-            className="h-11 gap-2 rounded-xl md:hidden"
+            className="h-11 gap-2 rounded-2xl md:hidden"
             onClick={() => setMobileTabsOpen((open) => !open)}
           >
             {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
@@ -184,30 +193,31 @@ const Admin = () => {
             <ChevronDown className={cn("h-4 w-4 transition-transform", mobileTabsOpen && "rotate-180")} />
           </Button>
         )}
+        </div>
       </div>
 
       {isGlobalAdmin && branches.length === 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        <div className="rounded-[24px] border border-orange-200 bg-white/80 p-4 text-sm text-muted-foreground shadow-sm">
           No hay sucursales creadas. Puedes crear la primera desde la pestana <span className="font-medium text-foreground">Sucursales</span>.
         </div>
       )}
 
       {visibleTabs.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        <div className="rounded-[24px] border border-orange-200 bg-white/80 p-4 text-sm text-muted-foreground shadow-sm">
           No tienes permisos administrativos para esta sucursal.
         </div>
       ) : (
         <>
           <div className="md:hidden">
             {mobileTabsOpen && (
-              <div className="rounded-2xl border border-border bg-card p-2 shadow-sm">
+              <div className="rounded-[24px] border border-orange-200 bg-white/85 p-2 shadow-[0_18px_40px_-34px_rgba(249,115,22,0.55)]">
                 <div className="grid gap-2">
                   {visibleTabs.map((tab) => (
                     <Button
                       key={tab.value}
                       type="button"
                       variant={tab.value === activeTab ? "default" : "ghost"}
-                      className="h-11 justify-start gap-2 rounded-xl"
+                      className="h-11 justify-start gap-2 rounded-2xl"
                       onClick={() => {
                         setActiveTab(tab.value);
                         setMobileTabsOpen(false);
@@ -223,17 +233,22 @@ const Admin = () => {
           </div>
 
           <div className="-mx-4 hidden overflow-x-auto px-4 pb-2 md:block">
-            <div className="inline-flex gap-1 rounded-xl bg-muted/50 p-1">
+            <div className="inline-flex gap-2 rounded-[28px] border border-orange-200 bg-white/80 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
               {visibleTabs.map((tab) => (
                 <Button
                   key={tab.value}
                   type="button"
-                  variant={tab.value === activeTab ? "secondary" : "ghost"}
-                  className="gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium"
+                  variant={tab.value === activeTab ? "default" : "outline"}
+                  className={cn(
+                    "gap-2 whitespace-nowrap rounded-2xl px-4 py-2.5 text-xs font-semibold",
+                    tab.value === activeTab
+                      ? "shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
+                      : "border-transparent bg-white/70 hover:border-orange-200 hover:bg-orange-50",
+                  )}
                   onClick={() => setActiveTab(tab.value)}
                 >
                   {tab.icon}
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span>{tab.label}</span>
                 </Button>
               ))}
             </div>

@@ -60,7 +60,7 @@ const UsersCrud = () => {
   const qc = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingProfile, setEditingProfile] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState({ full_name: "", username: "" });
+  const [editValues, setEditValues] = useState({ full_name: "", username: "", email: "" });
   const [addingAssignmentFor, setAddingAssignmentFor] = useState<string | null>(null);
   const [newAssignmentBranchId, setNewAssignmentBranchId] = useState("");
   const [newAssignmentRoleCode, setNewAssignmentRoleCode] = useState("");
@@ -229,7 +229,7 @@ const UsersCrud = () => {
 
   const startEditing = (user: UserRow) => {
     setEditingProfile(user.id);
-    setEditValues({ full_name: user.full_name, username: user.username });
+    setEditValues({ full_name: user.full_name, username: user.username, email: user.email ?? "" });
   };
 
   const openAssignmentEditor = (userId: string) => {
@@ -325,33 +325,142 @@ const UsersCrud = () => {
 
           return (
             <div key={user.id} className="space-y-3 rounded-xl border border-border bg-card p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-1">
-                  {isEditing ? (
-                    <div className="flex gap-2">
-                      <Input value={editValues.full_name} onChange={(e) => setEditValues({ ...editValues, full_name: e.target.value })} className="h-8 text-sm" />
-                      <Input value={editValues.username} onChange={(e) => setEditValues({ ...editValues, username: e.target.value })} className="h-8 text-sm" />
+              {isEditing ? (
+                <>
+                  <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold">Editar usuario</h3>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          Activo
+                          <Switch checked={user.is_active} disabled={isProtected} onCheckedChange={(checked) => toggleActive.mutate({ id: user.id, is_active: checked })} />
+                        </label>
+                      </div>
                     </div>
-                  ) : (
-                    <>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <Input value={editValues.full_name} onChange={(e) => setEditValues({ ...editValues, full_name: e.target.value })} placeholder="Nombre completo" className="h-9 rounded-lg text-sm" />
+                      <Input value={editValues.username} onChange={(e) => setEditValues({ ...editValues, username: e.target.value })} placeholder="Nombre de usuario" className="h-9 rounded-lg text-sm" />
+                      <Input value={editValues.email} disabled placeholder="Email" className="h-9 rounded-lg text-sm opacity-80" />
+                      <div className="flex items-center gap-2 rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                        <KeyRound className="h-4 w-4" />
+                        La contrasena se cambia desde el boton de llave
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium">Sucursal activa</p>
+                        <Select value={user.active_branch_id ?? undefined} onValueChange={(value) => setActiveBranch.mutate({ user_id: user.id, branch_id: value })} disabled={isProtected || uniqueBranchAssignments.length === 0}>
+                          <SelectTrigger className="h-9 rounded-lg text-sm">
+                            <SelectValue placeholder="Selecciona sucursal activa" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {uniqueBranchAssignments.map((assignment) => (
+                              <SelectItem key={assignment.branch_id} value={assignment.branch_id}>
+                                {branchesMap[assignment.branch_id] ?? assignment.branch_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <label className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2 text-sm">
+                        <span>Administrador global</span>
+                        <Switch checked={isAdmin} disabled={isProtected} onCheckedChange={(checked) => toggleAdmin.mutate({ user_id: user.id, enable: checked })} />
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium">Asignaciones por sucursal</p>
+                      <div className="flex flex-wrap gap-1">
+                        {user.branch_assignments.map((assignment) => (
+                          <Badge key={`${assignment.branch_id}-${assignment.role_code}`} variant={user.active_branch_id === assignment.branch_id ? "default" : "outline"} className="gap-1 pr-1 text-[10px]">
+                            <Building2 className="h-2.5 w-2.5" />
+                            {assignment.branch_name} - {assignment.role_name}
+                            {user.active_branch_id === assignment.branch_id ? " (Activa)" : ""}
+                            <button disabled={isProtected} onClick={() => removeAssignment.mutate({ user_id: user.id, branch_id: assignment.branch_id, role_code: assignment.role_code })} className="hover:text-destructive disabled:opacity-50">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+
+                      {addingAssignmentFor === user.id ? (
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/70 p-2">
+                          <Select
+                            value={newAssignmentBranchId || undefined}
+                            onValueChange={(value) => {
+                              setNewAssignmentBranchId(value);
+                              setNewAssignmentRoleCode("");
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+                            <SelectContent>
+                              {branchOptions.map((branch) => (
+                                <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select value={newAssignmentRoleCode || undefined} onValueChange={setNewAssignmentRoleCode}>
+                            <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Rol" /></SelectTrigger>
+                            <SelectContent>
+                              {(catalog?.branch_roles ?? []).map((role) => (
+                                <SelectItem key={role.id} value={role.code} disabled={assignedRoleCodesForSelectedBranch.includes(role.code)}>
+                                  {role.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => saveAssignment.mutate({ user_id: user.id, branch_id: newAssignmentBranchId, role_code: newAssignmentRoleCode })}
+                            disabled={!newAssignmentBranchId || !newAssignmentRoleCode || assignedRoleCodesForSelectedBranch.includes(newAssignmentRoleCode) || saveAssignment.isPending}
+                          >
+                            OK
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddingAssignmentFor(null)}>X</Button>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="ghost" className="h-8 gap-1 rounded-lg text-xs" disabled={isProtected} onClick={() => openAssignmentEditor(user.id)}>
+                          <Plus className="h-3.5 w-3.5" />
+                          Agregar asignacion
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <ChangePasswordDialog
+                        targetUserId={user.id}
+                        targetUserName={user.full_name}
+                        trigger={
+                          <Button size="sm" variant="outline" className="rounded-lg text-xs gap-1">
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Cambiar contrasena
+                          </Button>
+                        }
+                      />
+                      <Button size="sm" variant="ghost" className="rounded-lg text-xs gap-1" onClick={() => setEditingProfile(null)}>
+                        <X className="h-3.5 w-3.5" />
+                        Cancelar
+                      </Button>
+                      <Button size="sm" className="rounded-lg text-xs gap-1" onClick={() => updateProfile.mutate({ id: user.id, full_name: editValues.full_name, username: editValues.username })}>
+                        <Check className="h-3.5 w-3.5" />
+                        Guardar cambios
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-1">
                       <p className="font-semibold">{user.full_name}</p>
                       <p className="text-xs text-muted-foreground">@{user.username}{user.email ? ` - ${user.email}` : ""}</p>
-                    </>
-                  )}
-                </div>
+                    </div>
 
-                <div className="flex items-center gap-1">
-                  {isEditing ? (
-                    <>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => updateProfile.mutate({ id: user.id, ...editValues })}>
-                        <Check className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingProfile(null)}>
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
+                    <div className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => startEditing(user)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -364,101 +473,101 @@ const UsersCrud = () => {
                           </Button>
                         }
                       />
-                    </>
-                  )}
-                  <Switch checked={user.is_active} disabled={isProtected} onCheckedChange={(checked) => toggleActive.mutate({ id: user.id, is_active: checked })} />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium">Rol global</p>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Shield className="h-3.5 w-3.5" />
-                    Administrador
-                    <Switch checked={isAdmin} disabled={isProtected} onCheckedChange={(checked) => toggleAdmin.mutate({ user_id: user.id, enable: checked })} />
-                  </label>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {user.global_roles.length === 0 ? (
-                    <Badge variant="outline" className="text-[10px]">Sin rol global</Badge>
-                  ) : user.global_roles.map((role) => (
-                    <Badge key={role.code} variant="secondary" className="text-[10px]">{role.name}</Badge>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium">Asignaciones por sucursal</p>
-                <div className="flex flex-wrap gap-1">
-                  {user.branch_assignments.map((assignment) => (
-                    <Badge key={`${assignment.branch_id}-${assignment.role_code}`} variant={user.active_branch_id === assignment.branch_id ? "default" : "outline"} className="gap-1 pr-1 text-[10px]">
-                      <Building2 className="h-2.5 w-2.5" />
-                      {assignment.branch_name} - {assignment.role_name}
-                      {user.active_branch_id === assignment.branch_id ? " (Activa)" : ""}
-                      <button disabled={isProtected} onClick={() => removeAssignment.mutate({ user_id: user.id, branch_id: assignment.branch_id, role_code: assignment.role_code })} className="hover:text-destructive disabled:opacity-50">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-
-                {uniqueBranchAssignments.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Sucursal activa:</span>
-                    <Select value={user.active_branch_id ?? undefined} onValueChange={(value) => setActiveBranch.mutate({ user_id: user.id, branch_id: value })} disabled={isProtected}>
-                      <SelectTrigger className="h-8 w-56 text-xs"><SelectValue placeholder="Selecciona" /></SelectTrigger>
-                      <SelectContent>
-                        {uniqueBranchAssignments.map((assignment) => (
-                          <SelectItem key={assignment.branch_id} value={assignment.branch_id}>{branchesMap[assignment.branch_id] ?? assignment.branch_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <Switch checked={user.is_active} disabled={isProtected} onCheckedChange={(checked) => toggleActive.mutate({ id: user.id, is_active: checked })} />
+                    </div>
                   </div>
-                )}
 
-                {addingAssignmentFor === user.id ? (
-                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2">
-                    <Select
-                      value={newAssignmentBranchId || undefined}
-                      onValueChange={(value) => {
-                        setNewAssignmentBranchId(value);
-                        setNewAssignmentRoleCode("");
-                      }}
-                    >
-                      <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Sucursal" /></SelectTrigger>
-                      <SelectContent>
-                        {branchOptions.map((branch) => (
-                          <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={newAssignmentRoleCode || undefined} onValueChange={setNewAssignmentRoleCode}>
-                      <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Rol" /></SelectTrigger>
-                      <SelectContent>
-                        {(catalog?.branch_roles ?? []).map((role) => (
-                          <SelectItem key={role.id} value={role.code} disabled={assignedRoleCodesForSelectedBranch.includes(role.code)}>
-                            {role.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => saveAssignment.mutate({ user_id: user.id, branch_id: newAssignmentBranchId, role_code: newAssignmentRoleCode })}
-                      disabled={!newAssignmentBranchId || !newAssignmentRoleCode || assignedRoleCodesForSelectedBranch.includes(newAssignmentRoleCode) || saveAssignment.isPending}
-                    >
-                      OK
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddingAssignmentFor(null)}>X</Button>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium">Rol global</p>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Shield className="h-3.5 w-3.5" />
+                        Administrador
+                        <Switch checked={isAdmin} disabled={isProtected} onCheckedChange={(checked) => toggleAdmin.mutate({ user_id: user.id, enable: checked })} />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {user.global_roles.length === 0 ? (
+                        <Badge variant="outline" className="text-[10px]">Sin rol global</Badge>
+                      ) : user.global_roles.map((role) => (
+                        <Badge key={role.code} variant="secondary" className="text-[10px]">{role.name}</Badge>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" disabled={isProtected} onClick={() => openAssignmentEditor(user.id)}>
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium">Asignaciones por sucursal</p>
+                    <div className="flex flex-wrap gap-1">
+                      {user.branch_assignments.map((assignment) => (
+                        <Badge key={`${assignment.branch_id}-${assignment.role_code}`} variant={user.active_branch_id === assignment.branch_id ? "default" : "outline"} className="gap-1 pr-1 text-[10px]">
+                          <Building2 className="h-2.5 w-2.5" />
+                          {assignment.branch_name} - {assignment.role_name}
+                          {user.active_branch_id === assignment.branch_id ? " (Activa)" : ""}
+                          <button disabled={isProtected} onClick={() => removeAssignment.mutate({ user_id: user.id, branch_id: assignment.branch_id, role_code: assignment.role_code })} className="hover:text-destructive disabled:opacity-50">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+
+                    {uniqueBranchAssignments.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Sucursal activa:</span>
+                        <Select value={user.active_branch_id ?? undefined} onValueChange={(value) => setActiveBranch.mutate({ user_id: user.id, branch_id: value })} disabled={isProtected}>
+                          <SelectTrigger className="h-8 w-56 text-xs"><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                          <SelectContent>
+                            {uniqueBranchAssignments.map((assignment) => (
+                              <SelectItem key={assignment.branch_id} value={assignment.branch_id}>{branchesMap[assignment.branch_id] ?? assignment.branch_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {addingAssignmentFor === user.id ? (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2">
+                        <Select
+                          value={newAssignmentBranchId || undefined}
+                          onValueChange={(value) => {
+                            setNewAssignmentBranchId(value);
+                            setNewAssignmentRoleCode("");
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Sucursal" /></SelectTrigger>
+                          <SelectContent>
+                            {branchOptions.map((branch) => (
+                              <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select value={newAssignmentRoleCode || undefined} onValueChange={setNewAssignmentRoleCode}>
+                          <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="Rol" /></SelectTrigger>
+                          <SelectContent>
+                            {(catalog?.branch_roles ?? []).map((role) => (
+                              <SelectItem key={role.id} value={role.code} disabled={assignedRoleCodesForSelectedBranch.includes(role.code)}>
+                                {role.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => saveAssignment.mutate({ user_id: user.id, branch_id: newAssignmentBranchId, role_code: newAssignmentRoleCode })}
+                          disabled={!newAssignmentBranchId || !newAssignmentRoleCode || assignedRoleCodesForSelectedBranch.includes(newAssignmentRoleCode) || saveAssignment.isPending}
+                        >
+                          OK
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddingAssignmentFor(null)}>X</Button>
+                      </div>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" disabled={isProtected} onClick={() => openAssignmentEditor(user.id)}>
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           );
         })}

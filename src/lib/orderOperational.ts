@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export interface OperationalQuantitySnapshot {
   quantityOrdered: number;
   quantityReadyTotal: number;
@@ -60,4 +62,71 @@ export function sumRowsByItem<Row extends Record<string, unknown>>(
   }
 
   return map;
+}
+
+export interface OrderOperationalSnapshotRow {
+  order_id: string;
+  order_item_id: string;
+  description_snapshot: string;
+  item_status: string;
+  unit_price: number | string | null;
+  quantity_ordered: number;
+  quantity_paid: number;
+  quantity_ready_total: number;
+  quantity_ready_available: number;
+  quantity_dispatched: number;
+  quantity_cancelled_pending: number;
+  quantity_cancelled_ready: number;
+  quantity_cancelled_total: number;
+  quantity_pending_prepare: number;
+}
+
+export interface OperationalMaps {
+  readyMap: Record<string, number>;
+  dispatchedMap: Record<string, number>;
+  cancelledPendingMap: Record<string, number>;
+  cancelledReadyMap: Record<string, number>;
+  cancelledTotalMap: Record<string, number>;
+}
+
+export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise<OperationalMaps> {
+  if (orderIds.length === 0) {
+    return {
+      readyMap: {},
+      dispatchedMap: {},
+      cancelledPendingMap: {},
+      cancelledReadyMap: {},
+      cancelledTotalMap: {},
+    };
+  }
+
+  try {
+    const snapshots = await Promise.all(
+      [...new Set(orderIds)].map(async (orderId) => {
+        const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", {
+          p_order_id: orderId,
+        });
+        if (error) throw error;
+        return (data ?? []) as OrderOperationalSnapshotRow[];
+      }),
+    );
+
+    const rows = snapshots.flat();
+
+    return {
+      readyMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_total"),
+      dispatchedMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched"),
+      cancelledPendingMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_pending"),
+      cancelledReadyMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_ready"),
+      cancelledTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_total"),
+    };
+  } catch {
+    return {
+      readyMap: {},
+      dispatchedMap: {},
+      cancelledPendingMap: {},
+      cancelledReadyMap: {},
+      cancelledTotalMap: {},
+    };
+  }
 }

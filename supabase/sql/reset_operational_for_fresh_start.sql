@@ -1,11 +1,11 @@
-﻿-- ============================================================
+-- ============================================================
 -- RESET OPERATIVO DEL SISTEMA POS PARA PRUEBAS DESDE CERO
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 -- - Conserva usuarios, sucursales, permisos, mesas y catalogos
--- - Conserva categorias, subcategorias, productos, modificadores y configuracion base
+-- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --
 -- IDEAL PARA:
@@ -76,6 +76,7 @@ COMMIT;
 -- - Usuarios intactos
 -- - Sucursales intactas
 -- - Mesas intactas
--- - Catalogo intacto
+-- - Catalogo intacto (incluye arbol menu y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/notificaciones/eventos
 -- ============================================================
+

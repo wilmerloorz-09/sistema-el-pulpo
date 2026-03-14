@@ -71,15 +71,7 @@ const Ordenes = () => {
   if (!orderId) {
     return (
       <div className="ordenes-mobile-touch flex h-[calc(100vh-7rem)] flex-col">
-        <div className="mb-4 flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
-          <h1 className="font-display text-lg font-bold text-foreground">Ordenes</h1>
-          {!canOperateOrders && (
-            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              Solo consulta
-            </span>
-          )}
-        </div>
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
           <OrdersList onCancelOrder={canCancelOrders ? setCancelOrder : undefined} readOnly={!canCancelOrders} />
         </div>
         {cancelOrder && user && canCancelOrders && (
@@ -206,7 +198,17 @@ const Ordenes = () => {
   };
 
   const menuPanel = canEditItems ? (
-    <MenuNavigator onSelectProduct={handleSelectMenuProduct} />
+    <MenuNavigator
+      includeInactive={true}
+      onSelectProduct={handleSelectMenuProduct}
+      renderNodeAction={(node) =>
+        !node.is_active && node.node_type === "product" ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-bold text-red-700">
+            Producto agotado
+          </div>
+        ) : null
+      }
+    />
   ) : (
     <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
       Modo consulta: puedes ver la orden, pero no agregar ni editar items.

@@ -62,7 +62,7 @@ const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
               </div>
 
               {item.modifiers.length > 0 && (
-                <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                <div className="mt-1 space-y-0.5 text-xs text-red-600">
                   {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
                     <p key={modifier.id}>- {modifier.description}</p>
                   ))}

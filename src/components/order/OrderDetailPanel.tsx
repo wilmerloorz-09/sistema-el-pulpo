@@ -145,7 +145,7 @@ export default function OrderDetailPanel({
                 <p className="text-sm font-medium text-foreground">{item.description_snapshot || "Item sin nombre"}</p>
               </div>
               {item.modifiers && item.modifiers.length > 0 && (
-                <div className="mt-0.5 flex flex-col text-xs text-muted-foreground">
+                <div className="mt-0.5 flex flex-col text-xs text-red-600">
                   {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
                     <span key={modifier.description}>- {modifier.description}</span>
                   ))}

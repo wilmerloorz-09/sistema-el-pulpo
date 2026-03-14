@@ -94,6 +94,7 @@ export function OrderCardBase({
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
   const { visibleItems, hiddenItemsCount } = buildCardSummary(order.items ?? []);
+  const isTakeout = order.order_type === "TAKEOUT";
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
@@ -105,15 +106,16 @@ export function OrderCardBase({
     <div
       className={cn(
         "flex self-start flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
+        isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isWarning ? "border-warning/50 shadow-md shadow-warning/10" : "border-border",
       )}
     >
-      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="min-w-0 flex items-center gap-2">
           {order.order_type === "TAKEOUT" ? (
-            <ShoppingBag className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
           ) : (
-            <UtensilsCrossed className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <UtensilsCrossed className="h-4 w-4 shrink-0 text-sky-700" />
           )}
           <span className="truncate font-display text-sm font-bold">
             {order.split_code ?? order.table_name ?? "Para llevar"}
@@ -152,7 +154,7 @@ export function OrderCardBase({
             <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
-                  <Badge className="w-9 justify-center border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
+                  <Badge className="min-w-[3.15rem] justify-center rounded-xl border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-2.5 py-1.5 text-sm font-black leading-none text-white shadow-[0_14px_24px_-18px_rgba(249,115,22,0.95)]">
                     {item.quantity || 1}x
                   </Badge>
                   <div className="min-w-0 flex-1">
@@ -161,9 +163,12 @@ export function OrderCardBase({
                     </p>
 
                     {item.visibleModifiers.length > 0 && (
-                      <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                      <div className="mt-1 flex flex-col gap-1">
                         {item.visibleModifiers.map((modifier, index) => (
-                          <p key={`${item.id}-modifier-${index}-${modifier.description}`} className="truncate pl-2">
+                          <p
+                            key={`${item.id}-modifier-${index}-${modifier.description}`}
+                            className="w-fit max-w-full truncate rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700"
+                          >
                             - {modifier.description}
                           </p>
                         ))}
@@ -171,7 +176,7 @@ export function OrderCardBase({
                     )}
 
                     {item.hiddenModifiersCount > 0 && (
-                      <p className="mt-1 pl-2 text-xs font-medium text-muted-foreground">
+                      <p className="mt-1 text-xs font-bold text-red-700">
                         +{item.hiddenModifiersCount} modificacion
                         {item.hiddenModifiersCount !== 1 ? "es" : ""} mas
                       </p>

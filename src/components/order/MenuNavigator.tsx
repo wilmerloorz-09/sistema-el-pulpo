@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode } from "@/hooks/useMenuTree";
 
 interface MenuNavigatorProps {
-  onSelectProduct: (node: MenuNode) => void;
+  onSelectProduct?: (node: MenuNode) => void;
+  includeInactive?: boolean;
+  renderNodeAction?: (node: MenuNode) => ReactNode;
 }
 
 const MAX_DEPTH_DOTS = 6;
@@ -38,34 +40,64 @@ const NodeCard = ({
   childCount,
   additionalDepth,
   onClick,
+  nodeAction,
 }: {
   node: MenuNode;
   childCount: number;
   additionalDepth: number;
   onClick: () => void;
+  nodeAction?: ReactNode;
 }) => {
   const isProduct = node.node_type === "product";
+  const isDisabledNode = !node.is_active && !nodeAction;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={isDisabledNode ? -1 : 0}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (isDisabledNode) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       className={cn(
         "group relative flex min-h-[208px] flex-col rounded-3xl bg-card p-5 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:p-4",
         isProduct
           ? "border border-border hover:-translate-y-0.5 hover:border-emerald-400/60 hover:shadow-[0_12px_24px_-18px_rgba(16,185,129,0.75)]"
           : "border border-dashed border-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_12px_24px_-18px_hsl(var(--primary)/0.55)]",
+        !node.is_active && "opacity-70 saturate-75",
+        !isDisabledNode && "cursor-pointer",
+        isDisabledNode && "cursor-not-allowed",
       )}
     >
       <div className="mb-4 flex justify-center">{renderNodeVisual(node)}</div>
       <div className="flex-1">
         <p className="line-clamp-2 text-base font-semibold text-foreground md:text-sm">{node.name}</p>
         {isProduct ? (
-          <p className="mt-2 text-base font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-base font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
+            {!node.is_active && (
+              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                Agotado
+              </span>
+            )}
+          </div>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground md:text-xs">{childCount} items</p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-sm text-muted-foreground md:text-xs">{childCount} items</p>
+            {!node.is_active && (
+              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                Agotado
+              </span>
+            )}
+          </div>
         )}
       </div>
+
+      {nodeAction ? <div className="mt-3">{nodeAction}</div> : null}
 
       {!isProduct && additionalDepth > 0 && (
         <span className="absolute bottom-3 right-3 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
@@ -76,11 +108,11 @@ const NodeCard = ({
       {!isProduct && (
         <ChevronRight className="absolute right-4 top-4 h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
       )}
-    </button>
+    </div>
   );
 };
 
-const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
+const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAction }: MenuNavigatorProps) => {
   const {
     visibleNodes,
     breadcrumb,
@@ -93,7 +125,7 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
     countDescendantDepth,
     loading,
     error,
-  } = useMenuTree();
+  } = useMenuTree({ includeInactive });
 
   const panelRef = useRef<HTMLDivElement>(null);
   const animationTimeouts = useRef<number[]>([]);
@@ -239,12 +271,15 @@ const MenuNavigator = ({ onSelectProduct }: MenuNavigatorProps) => {
               childCount={getChildren(node.id).length}
               additionalDepth={countDescendantDepth(node.id)}
               onClick={() => {
+                if (!node.is_active && !renderNodeAction?.(node)) return;
                 if (node.node_type === "product") {
-                  onSelectProduct(node);
+                  if (!node.is_active && !renderNodeAction?.(node)) return;
+                  onSelectProduct?.(node);
                   return;
                 }
                 drillDown(node);
               }}
+              nodeAction={renderNodeAction?.(node)}
             />
           ))}
 

@@ -3,18 +3,7 @@ import { dbSelect, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { computeOperationalQuantities, sumRowsByItem } from "@/lib/orderOperational";
-
-interface OperationalRow {
-  order_item_id: string;
-  quantity_ready?: number;
-  quantity_dispatched?: number;
-  quantity_cancelled?: number;
-  source_stage?: string | null;
-  order_ready_event_id?: string;
-  order_dispatch_event_id?: string;
-  order_cancellation_id?: string;
-}
+import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 
 export interface KitchenOrderItem {
   id: string;
@@ -128,67 +117,8 @@ export function useKitchenOrders() {
         }
       }
 
-      let readyRows: OperationalRow[] = [];
-      let dispatchRows: OperationalRow[] = [];
-      let cancellationRows: OperationalRow[] = [];
-
-      if (itemIds.length > 0) {
-        const [readyResponse, dispatchResponse, cancellationResponse] = await Promise.all([
-          (supabase as any)
-            .from("order_item_ready_events")
-            .select("order_item_id, quantity_ready, order_ready_event_id")
-            .in("order_item_id", itemIds),
-          (supabase as any)
-            .from("order_item_dispatch_events")
-            .select("order_item_id, quantity_dispatched, order_dispatch_event_id")
-            .in("order_item_id", itemIds),
-          (supabase as any)
-            .from("order_item_cancellations")
-            .select("order_item_id, quantity_cancelled, source_stage, order_cancellation_id")
-            .in("order_item_id", itemIds),
-        ]);
-
-        const readyEventIds = [...new Set(((readyResponse.data ?? []) as OperationalRow[]).map((row) => row.order_ready_event_id).filter(Boolean))] as string[];
-        const dispatchEventIds = [...new Set(((dispatchResponse.data ?? []) as OperationalRow[]).map((row) => row.order_dispatch_event_id).filter(Boolean))] as string[];
-        const cancellationIds = [...new Set(((cancellationResponse.data ?? []) as OperationalRow[]).map((row) => row.order_cancellation_id).filter(Boolean))] as string[];
-
-        let activeReadyIds = new Set<string>();
-        let activeDispatchIds = new Set<string>();
-        let activeCancellationIds = new Set<string>();
-
-        if (readyEventIds.length > 0) {
-          const { data } = await (supabase as any)
-            .from("order_ready_events")
-            .select("id, status")
-            .in("id", readyEventIds);
-          activeReadyIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
-        }
-
-        if (dispatchEventIds.length > 0) {
-          const { data } = await (supabase as any)
-            .from("order_dispatch_events")
-            .select("id, status")
-            .in("id", dispatchEventIds);
-          activeDispatchIds = new Set((data ?? []).filter((row: any) => row.status === "APPLIED").map((row: any) => row.id));
-        }
-
-        if (cancellationIds.length > 0) {
-          const { data } = await supabase
-            .from("order_cancellations")
-            .select("id, status")
-            .in("id", cancellationIds);
-          activeCancellationIds = new Set((data ?? []).filter((row) => row.status === "APPLIED").map((row) => row.id));
-        }
-
-        readyRows = (readyResponse.data ?? []).filter((row: OperationalRow) => row.order_ready_event_id && activeReadyIds.has(row.order_ready_event_id));
-        dispatchRows = (dispatchResponse.data ?? []).filter((row: OperationalRow) => row.order_dispatch_event_id && activeDispatchIds.has(row.order_dispatch_event_id));
-        cancellationRows = (cancellationResponse.data ?? []).filter((row: OperationalRow) => row.order_cancellation_id && activeCancellationIds.has(row.order_cancellation_id));
-      }
-
-      const readyMap = sumRowsByItem(readyRows, "order_item_id", "quantity_ready");
-      const dispatchedMap = sumRowsByItem(dispatchRows, "order_item_id", "quantity_dispatched");
-      const cancelledPendingMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "PENDING");
-      const cancelledReadyMap = sumRowsByItem(cancellationRows, "order_item_id", "quantity_cancelled", (row) => String(row.source_stage ?? "PENDING") === "READY");
+      const { readyMap, dispatchedMap, cancelledPendingMap, cancelledReadyMap } =
+        await fetchOperationalMapsForOrders(orderIds);
 
       const cards = orders.flatMap((order) => {
         const mappedItems = items
