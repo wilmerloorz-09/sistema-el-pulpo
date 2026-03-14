@@ -372,12 +372,12 @@ export default function CompletedPaymentsList({
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-5">
-                <div className="rounded-lg bg-muted/50 p-2"><p className="text-xs text-muted-foreground">Orden</p><p className="font-semibold">{selectedOrder.code ?? `#${selectedOrder.number}`}</p></div>
-                <div className="rounded-lg bg-muted/50 p-2"><p className="text-xs text-muted-foreground">Mesa</p><p className="font-semibold">{selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"}</p></div>
-                <div className="rounded-lg bg-muted/50 p-2"><p className="text-xs text-muted-foreground">Total cuenta</p><p className="font-semibold">${selectedOrder.total.toFixed(2)}</p></div>
-                <div className="rounded-lg bg-green-50 p-2"><p className="text-xs text-muted-foreground">Total pagado</p><p className="font-semibold text-green-700">${selectedOrder.paid.toFixed(2)}</p></div>
-                <div className="rounded-lg bg-amber-50 p-2"><p className="text-xs text-muted-foreground">Saldo pendiente</p><p className="font-semibold text-amber-700">${selectedOrder.pending.toFixed(2)}</p></div>
+              <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-5">
+                <div className="rounded-lg bg-muted/50 p-2"><p className="text-[11px] text-muted-foreground">Orden</p><p className="font-semibold">{selectedOrder.code ?? `#${selectedOrder.number}`}</p></div>
+                <div className="rounded-lg bg-muted/50 p-2"><p className="text-[11px] text-muted-foreground">Mesa</p><p className="font-semibold">{selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"}</p></div>
+                <div className="rounded-lg bg-muted/50 p-2"><p className="text-[11px] text-muted-foreground">Total cuenta</p><p className="font-semibold">${selectedOrder.total.toFixed(2)}</p></div>
+                <div className="rounded-lg bg-green-50 p-2"><p className="text-[11px] text-muted-foreground">Total pagado</p><p className="font-semibold text-green-700">${selectedOrder.paid.toFixed(2)}</p></div>
+                <div className="rounded-lg bg-amber-50 p-2 col-span-2 md:col-span-1"><p className="text-[11px] text-muted-foreground">Saldo pendiente</p><p className="font-semibold text-amber-700">${selectedOrder.pending.toFixed(2)}</p></div>
               </div>
             </div>
           )}

@@ -438,18 +438,18 @@ export default function PaymentDialog({
                       )}
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-xl bg-muted/50 p-3">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
+                      <div className="rounded-xl bg-muted/50 p-2.5 sm:p-3">
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Items pendientes</p>
-                        <p className="mt-1 text-lg font-semibold text-foreground">{unpaidItems.length}</p>
+                        <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">{unpaidItems.length}</p>
                       </div>
-                      <div className="rounded-xl bg-muted/50 p-3">
+                      <div className="rounded-xl bg-muted/50 p-2.5 sm:p-3">
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Items seleccionados</p>
-                        <p className="mt-1 text-lg font-semibold text-foreground">{selectedItems.length}</p>
+                        <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">{selectedItems.length}</p>
                       </div>
-                      <div className="rounded-xl bg-primary/10 p-3">
+                      <div className="rounded-xl bg-primary/10 p-2.5 sm:p-3">
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar ahora</p>
-                        <p className="mt-1 font-display text-2xl font-bold text-primary">${selectedTotal.toFixed(2)}</p>
+                        <p className="mt-1 font-display text-base font-bold text-primary sm:text-2xl">${selectedTotal.toFixed(2)}</p>
                       </div>
                     </div>
 
@@ -699,18 +699,18 @@ export default function PaymentDialog({
                                   </div>
                                 )}
 
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                  <div className="rounded-xl bg-background p-3">
+                                <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
+                                  <div className="rounded-xl bg-background p-2.5 sm:p-3">
                                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Efectivo aplicado</p>
-                                    <p className="mt-1 font-semibold text-foreground">${cashAppliedAmount.toFixed(2)}</p>
+                                    <p className="mt-1 text-sm font-semibold text-foreground sm:text-base">${cashAppliedAmount.toFixed(2)}</p>
                                   </div>
-                                  <div className="rounded-xl bg-background p-3">
+                                  <div className="rounded-xl bg-background p-2.5 sm:p-3">
                                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recibido</p>
-                                    <p className="mt-1 font-semibold text-foreground">${totalReceived.toFixed(2)}</p>
+                                    <p className="mt-1 text-sm font-semibold text-foreground sm:text-base">${totalReceived.toFixed(2)}</p>
                                   </div>
-                                  <div className="rounded-xl bg-background p-3">
+                                  <div className="rounded-xl bg-background p-2.5 sm:p-3">
                                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Estado</p>
-                                    <p className={cn("mt-1 font-semibold", cannotMakeChange ? "text-destructive" : "text-foreground")}>
+                                    <p className={cn("mt-1 text-sm font-semibold sm:text-base", cannotMakeChange ? "text-destructive" : "text-foreground")}>
                                       {changeAmount > 0 ? "Cambio pendiente" : "Sin cambio"}
                                     </p>
                                   </div>
@@ -735,21 +735,21 @@ export default function PaymentDialog({
             <div className="shrink-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur sm:px-6">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
-                    <div className="rounded-2xl bg-muted/50 px-4 py-3">
+                  <div className="grid flex-1 grid-cols-3 gap-2 sm:grid-cols-3">
+                    <div className="rounded-2xl bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total seleccionado</p>
-                      <p className="mt-1 text-lg font-semibold text-foreground">${selectedTotal.toFixed(2)}</p>
+                      <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${selectedTotal.toFixed(2)}</p>
                     </div>
-                    <div className="rounded-2xl bg-muted/50 px-4 py-3">
+                    <div className="rounded-2xl bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total recibido</p>
-                      <p className="mt-1 text-lg font-semibold text-foreground">${receivedSplitTotal.toFixed(2)}</p>
+                      <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${receivedSplitTotal.toFixed(2)}</p>
                     </div>
-                    <div className="rounded-2xl bg-muted/50 px-4 py-3">
+                    <div className="rounded-2xl bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                         {changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
                       </p>
                       <p className={cn(
-                        "mt-1 text-lg font-semibold",
+                        "mt-1 text-base font-semibold sm:text-lg",
                         shortageAmount > 0 ? "text-destructive" : changeAmount > 0 ? "text-emerald-700" : "text-green-600",
                       )}>
                         ${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}
@@ -806,18 +806,18 @@ export default function PaymentDialog({
           </AlertDialogHeader>
 
           <div className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div className="rounded-2xl bg-muted/50 p-3">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
+              <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">${selectedTotal.toFixed(2)}</p>
+                <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${selectedTotal.toFixed(2)}</p>
               </div>
-              <div className="rounded-2xl bg-muted/50 p-3">
+              <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total recibido</p>
-                <p className="mt-1 text-lg font-semibold text-foreground">${receivedSplitTotal.toFixed(2)}</p>
+                <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${receivedSplitTotal.toFixed(2)}</p>
               </div>
-              <div className="rounded-2xl bg-primary/10 p-3">
+              <div className="rounded-2xl bg-primary/10 p-2.5 sm:p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Cambio</p>
-                <p className="mt-1 font-display text-xl font-bold text-primary">${changeAmount.toFixed(2)}</p>
+                <p className="mt-1 font-display text-base font-bold text-primary sm:text-xl">${changeAmount.toFixed(2)}</p>
               </div>
             </div>
 

@@ -51,18 +51,18 @@ export default function PayableOrdersList({
         )}
       </div>
 
-      <div className="mb-4 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-2xl border border-border bg-card px-4 py-3">
+      <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-3">
+        <div className="rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ordenes por cobrar</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{orders.length}</p>
+          <p className="mt-1 text-lg font-semibold text-foreground sm:text-xl">{orders.length}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-card px-4 py-3">
+        <div className="rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Unidades pendientes</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{totalPendingUnits}</p>
+          <p className="mt-1 text-lg font-semibold text-foreground sm:text-xl">{totalPendingUnits}</p>
         </div>
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5 sm:px-4 sm:py-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total pendiente</p>
-          <p className="mt-1 font-display text-2xl font-bold text-primary">${totalPendingAmount.toFixed(2)}</p>
+          <p className="mt-1 font-display text-lg font-bold text-primary sm:text-2xl">${totalPendingAmount.toFixed(2)}</p>
         </div>
       </div>
 
