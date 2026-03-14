@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
@@ -23,7 +23,7 @@ import {
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { CreditCard, Loader2, RotateCcw, ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, CreditCard, Loader2, RotateCcw } from "lucide-react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 
@@ -51,6 +51,28 @@ function buildSplitId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function parseMoneyInput(value: string) {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return 0;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildInitialPaymentSplits(
+  paymentMethods: PaymentMethodOption[],
+  cashMethodId: string | null,
+  preferredMethodId: string | null,
+  totalAmount: number,
+): PaymentSplitDraft[] {
+  if (cashMethodId) {
+    return [{ id: buildSplitId(), methodId: cashMethodId, amount: 0 }];
+  }
+
+  const fallbackMethodId =
+    preferredMethodId ?? paymentMethods.find((method) => method.id !== cashMethodId)?.id ?? null;
+  return fallbackMethodId ? [{ id: buildSplitId(), methodId: fallbackMethodId, amount: totalAmount }] : [];
+}
+
 export default function PaymentDialog({
   order,
   paymentMethods,
@@ -68,23 +90,28 @@ export default function PaymentDialog({
   const [payQuantities, setPayQuantities] = useState<Record<string, number>>({});
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplitDraft[]>([]);
   const [received, setReceived] = useState<Record<string, number>>({});
+  const [cashDraftReceived, setCashDraftReceived] = useState<Record<string, number>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cashDetailOpen, setCashDetailOpen] = useState(false);
 
   useEffect(() => {
     if (!order) return;
 
     const nextQuantities: Record<string, number> = {};
+    let initialTotal = 0;
     for (const item of order.items) {
       if (item.quantity_pending > 0) {
         nextQuantities[item.id] = item.quantity_pending;
+        initialTotal = roundMoney(initialTotal + computeLineAmount(item.quantity_pending, item.unit_price));
       }
     }
 
-    const initialMethodId = cashMethod?.id ?? defaultMethodId;
     setPayQuantities(nextQuantities);
-    setPaymentSplits(initialMethodId ? [{ id: buildSplitId(), methodId: initialMethodId, amount: 0 }] : []);
+    setPaymentSplits(buildInitialPaymentSplits(paymentMethods, cashMethod?.id ?? null, defaultMethodId ?? null, initialTotal));
     setReceived({});
-  }, [order?.id, order?.items, defaultMethodId, cashMethod?.id]);
+    setCashDraftReceived({});
+    setCashDetailOpen(false);
+  }, [order?.id, order?.items, defaultMethodId, cashMethod?.id, paymentMethods]);
 
   const selectedItems = useMemo(
     () => unpaidItems.filter((item) => (payQuantities[item.id] ?? 0) > 0),
@@ -96,6 +123,11 @@ export default function PaymentDialog({
     [selectedItems, payQuantities],
   );
 
+  const paymentMethodMap = useMemo(
+    () => Object.fromEntries(paymentMethods.map((method) => [method.id, method])),
+    [paymentMethods],
+  );
+
   useEffect(() => {
     setPaymentSplits((prev) => {
       const validMethods = new Set(paymentMethods.map((method) => method.id));
@@ -104,7 +136,8 @@ export default function PaymentDialog({
 
       if (base.length === 0) return base;
       if (base.length === 1) {
-        return [{ ...base[0], amount: selectedTotal }];
+        const isCashOnly = isCashPaymentMethodName(paymentMethodMap[base[0].methodId]?.name ?? "");
+        return [{ ...base[0], amount: isCashOnly ? 0 : selectedTotal }];
       }
 
       const next = base.map((split) => ({ ...split }));
@@ -112,17 +145,33 @@ export default function PaymentDialog({
       next[next.length - 1].amount = Math.max(0, roundMoney(selectedTotal - sumBeforeLast));
       return next;
     });
-  }, [selectedTotal, defaultMethodId, paymentMethods]);
-
-  const paymentMethodMap = useMemo(
-    () => Object.fromEntries(paymentMethods.map((method) => [method.id, method])),
-    [paymentMethods],
-  );
+  }, [selectedTotal, defaultMethodId, paymentMethods, paymentMethodMap]);
 
   const cashSplit = useMemo(
     () => paymentSplits.find((split) => isCashPaymentMethodName(paymentMethodMap[split.methodId]?.name ?? "")) ?? null,
     [paymentSplits, paymentMethodMap],
   );
+
+  useEffect(() => {
+    if (!cashSplit && cashDetailOpen) {
+      setCashDetailOpen(false);
+    }
+  }, [cashDetailOpen, cashSplit]);
+
+  useEffect(() => {
+    if (cashDetailOpen) {
+      setCashDraftReceived(received);
+    }
+  }, [cashDetailOpen, received]);
+
+  const orderedPaymentMethods = useMemo(() => {
+    if (!cashMethod) return paymentMethods;
+
+    return [
+      cashMethod,
+      ...paymentMethods.filter((method) => method.id !== cashMethod.id),
+    ];
+  }, [cashMethod, paymentMethods]);
 
 
 
@@ -191,8 +240,6 @@ export default function PaymentDialog({
   const changeGiven = roundMoney(changeDenomBreakdown.reduce((sum, denomination) => sum + denomination.qty * denomination.value, 0));
   const cannotMakeChange = changeAmount > 0 && Math.abs(changeGiven - changeAmount) > 0.001;
   const availableMethodIds = useMemo(() => new Set(paymentMethods.map((method) => method.id)), [paymentMethods]);
-  const selectedMethodIds = useMemo(() => new Set(paymentSplits.map((split) => split.methodId)), [paymentSplits]);
-
   const setItemQty = (itemId: string, qty: number, maxQty: number) => {
     const normalized = Number.isFinite(qty) ? Math.floor(qty) : 0;
     setPayQuantities((prev) => ({
@@ -217,54 +264,37 @@ export default function PaymentDialog({
     setPayQuantities(next);
   };
 
-  const setSplitMethod = (splitId: string, methodId: string) => {
-    setPaymentSplits((prev) => {
-      const next = prev.map((split) => (split.id === splitId ? { ...split, methodId } : split));
-      const cashRows = next.filter((split) => isCashPaymentMethodName(paymentMethodMap[split.methodId]?.name ?? ""));
-      if (cashRows.length > 1) {
-        toast.error("Solo puede existir una linea de Efectivo por cobro");
-        return prev;
-      }
-      return next;
-    });
-  };
-
   const setSplitAmount = (splitId: string, amount: number) => {
     const normalized = Number.isFinite(amount) ? roundMoney(Math.max(0, amount)) : 0;
     setPaymentSplits((prev) => prev.map((split) => (split.id === splitId ? { ...split, amount: normalized } : split)));
   };
 
-  const addSplit = () => {
-    const nextMethod = paymentMethods.find((method) => !selectedMethodIds.has(method.id)) ?? paymentMethods[0];
-    if (!nextMethod) return;
-    setPaymentSplits((prev) => [
-      ...prev,
-      {
-        id: buildSplitId(),
-        methodId: nextMethod.id,
-        amount: Math.max(0, shortageAmount),
-      },
-    ]);
-  };
+  const toggleMethodSelection = (methodId: string, checked: boolean) => {
+    const isCashMethod = isCashPaymentMethodName(paymentMethodMap[methodId]?.name ?? "");
+    setPaymentSplits((prev) => {
+      const exists = prev.some((split) => split.methodId === methodId);
 
-  const removeSplit = (splitId: string) => {
-    setPaymentSplits((prev) => (prev.length <= 1 ? prev : prev.filter((split) => split.id !== splitId)));
-  };
-
-  const addDenom = (denominationId: string) => {
-    setReceived((prev) => ({ ...prev, [denominationId]: (prev[denominationId] || 0) + 1 }));
-  };
-
-  const removeDenom = (denominationId: string) => {
-    setReceived((prev) => {
-      const value = (prev[denominationId] || 0) - 1;
-      if (value <= 0) {
-        const next = { ...prev };
-        delete next[denominationId];
-        return next;
+      if (checked) {
+        if (exists) return prev;
+        return [
+          ...prev,
+          {
+            id: buildSplitId(),
+            methodId,
+            amount: prev.length === 0 ? selectedTotal : Math.max(0, shortageAmount),
+          },
+        ];
       }
-      return { ...prev, [denominationId]: value };
+
+      if (!exists) return prev;
+      return prev.filter((split) => split.methodId !== methodId);
     });
+
+    if (!checked && isCashMethod) {
+      setReceived({});
+      setCashDraftReceived({});
+      setCashDetailOpen(false);
+    }
   };
 
   const handlePay = () => {
@@ -329,14 +359,18 @@ export default function PaymentDialog({
       }
     }
 
-    const cashReceivedDenoms = Object.entries(received)
-      .filter(([, quantity]) => quantity > 0)
-      .map(([denomination_id, qty]) => ({ denomination_id, qty }));
+    const cashReceivedDenoms = cashSplit
+      ? Object.entries(received)
+          .filter(([, quantity]) => quantity > 0)
+          .map(([denomination_id, qty]) => ({ denomination_id, qty }))
+      : [];
 
-    const cashChangeDenoms = changeDenomBreakdown.map((denomination) => ({
-      denomination_id: denomination.denomination_id,
-      qty: denomination.qty,
-    }));
+    const cashChangeDenoms = cashSplit
+      ? changeDenomBreakdown.map((denomination) => ({
+          denomination_id: denomination.denomination_id,
+          qty: denomination.qty,
+        }))
+      : [];
 
     setConfirmOpen(false);
     onPay({
@@ -390,7 +424,56 @@ export default function PaymentDialog({
     paying,
   ]);
 
-  const sortedDenoms = useMemo(() => [...shiftDenoms].sort((a, b) => a.value - b.value), [shiftDenoms]);
+  const sortedDenoms = useMemo(
+    () => [...shiftDenoms].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value),
+    [shiftDenoms],
+  );
+
+  const draftTotalReceived = useMemo(
+    () =>
+      roundMoney(
+        shiftDenoms.reduce(
+          (sum, denomination) => sum + (cashDraftReceived[denomination.denomination_id] || 0) * denomination.value,
+          0,
+        ),
+      ),
+    [cashDraftReceived, shiftDenoms],
+  );
+  const draftHasReceivedDenoms = Object.values(cashDraftReceived).some((quantity) => quantity > 0);
+  const nonCashAppliedAmount = roundMoney(
+    paymentAllocationPreview
+      .filter((split) => !split.isCashMethod)
+      .reduce((sum, split) => sum + split.appliedAmount, 0),
+  );
+  const draftCashAppliedAmount = roundMoney(Math.max(0, selectedTotal - nonCashAppliedAmount));
+  const draftChangeAmount = roundMoney(draftCashAppliedAmount > 0 ? Math.max(0, draftTotalReceived - draftCashAppliedAmount) : 0);
+
+  const openCashDetail = (methodId: string, isSelected: boolean) => {
+    if (!isSelected) {
+      toggleMethodSelection(methodId, true);
+    }
+    setCashDraftReceived(received);
+    setCashDetailOpen(true);
+  };
+
+  const cancelCashDetail = () => {
+    setCashDraftReceived(received);
+    setCashDetailOpen(false);
+  };
+
+  const acceptCashDetail = () => {
+    setReceived(cashDraftReceived);
+    if (cashSplit) {
+      const nextAmount = roundMoney(
+        shiftDenoms.reduce(
+          (sum, denomination) => sum + (cashDraftReceived[denomination.denomination_id] || 0) * denomination.value,
+          0,
+        ),
+      );
+      setSplitAmount(cashSplit.id, nextAmount);
+    }
+    setCashDetailOpen(false);
+  };
 
   return (
     <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
@@ -539,193 +622,70 @@ export default function PaymentDialog({
                     </div>
                   )}
 
-                  <section className="rounded-2xl border border-border bg-card p-4 shadow-sm xl:sticky xl:top-0">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">Distribucion por metodo de pago</p>
-                        <p className="text-xs text-muted-foreground">
-                          El metodo aplica al cobro de este momento, no a cada item.
-                        </p>
-                      </div>
-                      {!readOnly && paymentMethods.length > paymentSplits.length && (
-                        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={addSplit}>
-                          <Plus className="h-4 w-4" /> Agregar metodo
-                        </Button>
-                      )}
-                    </div>
-
-
+                  <section className="rounded-2xl border border-border bg-card p-3 shadow-sm xl:sticky xl:top-0 sm:p-4">
                     <div className="space-y-3">
-                      {paymentSplits.map((split) => {
-                        const method = paymentMethodMap[split.methodId];
-                        const isCash = isCashPaymentMethodName(method?.name ?? "");
-                        const methodOptions = paymentMethods.filter(
-                          (option) =>
-                            option.id === split.methodId ||
-                            !paymentSplits.some((row) => row.id !== split.id && row.methodId === option.id),
-                        );
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground">Metodos de pago</p>
+                        <p className="text-xs text-muted-foreground">Selecciona los metodos y define el monto de cada uno.</p>
+                      </div>
 
-                        return (
-                          <div key={split.id} className="rounded-2xl border border-border bg-background p-3">
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_132px_40px] md:items-end">
-                              <div>
-                                <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Metodo</p>
-                                <Select value={split.methodId} onValueChange={(value) => setSplitMethod(split.id, value)} disabled={readOnly}>
-                                  <SelectTrigger className="h-10">
-                                    <SelectValue placeholder="Metodo" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {methodOptions.map((option) => (
-                                      <SelectItem key={option.id} value={option.id}>
-                                        {option.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                      <div className="space-y-1.5">
+                        {orderedPaymentMethods.map((method) => {
+                          const split = paymentSplits.find((row) => row.methodId === method.id) ?? null;
+                          const isSelected = !!split;
+                          const isCash = isCashPaymentMethodName(method.name);
 
-                              <div>
-                                <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Monto</p>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  value={split.amount}
-                                  onChange={(e) => setSplitAmount(split.id, Number(e.target.value))}
-                                  className="h-10"
+                          return (
+                            <div
+                              key={method.id}
+                              className={cn(
+                                "rounded-2xl border px-3 py-2.5",
+                                isSelected ? "border-primary/30 bg-primary/5" : "border-border bg-background",
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  "grid items-center gap-2",
+                                  isCash
+                                    ? "grid-cols-[20px_minmax(0,1fr)_auto_88px] sm:grid-cols-[20px_minmax(0,1fr)_auto_110px]"
+                                    : "grid-cols-[20px_minmax(0,1fr)_88px] sm:grid-cols-[20px_minmax(0,1fr)_110px]",
+                                )}
+                              >
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => toggleMethodSelection(method.id, checked === true)}
                                   disabled={readOnly}
+                                  className="h-5 w-5 rounded-md"
+                                />
+
+                                <p className="min-w-0 truncate text-sm font-semibold text-foreground">{method.name}</p>
+
+                                {isCash ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 shrink-0 rounded-xl px-2.5 text-[11px] sm:h-9 sm:px-3 sm:text-xs"
+                                    onClick={() => openCashDetail(method.id, isSelected)}
+                                  >
+                                    Monedas y billetes
+                                  </Button>
+                                ) : null}
+
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={(split?.amount ?? 0).toFixed(2)}
+                                  onChange={(e) => split && setSplitAmount(split.id, parseMoneyInput(e.target.value))}
+                                  className="h-9 w-full shrink-0 rounded-xl pl-3 text-left [appearance:textfield] sm:h-10"
+                                  readOnly={isCash}
+                                  disabled={readOnly || !isSelected || isCash}
                                 />
                               </div>
-
-                              <div className="flex justify-end">
-                                {!readOnly && paymentSplits.length > 1 && (
-                                  <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={() => removeSplit(split.id)}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                )}
-                              </div>
                             </div>
-
-                            {isCash && split.amount > 0 && (
-                              <div className="mt-3 space-y-3 rounded-2xl bg-muted/40 p-3">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div>
-                                    <p className="text-sm font-semibold text-foreground">Monto recibido en efectivo</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      Registra monedas y billetes entregados por el cliente.
-                                    </p>
-                                  </div>
-                                  {!readOnly && hasReceivedDenoms && (
-                                    <Button type="button" variant="ghost" size="sm" className="gap-1 text-destructive" onClick={() => setReceived({})}>
-                                      <RotateCcw className="h-3.5 w-3.5" /> Limpiar
-                                    </Button>
-                                  )}
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2 xl:grid-cols-2">
-                                  {sortedDenoms.map((denomination) => {
-                                    const selectedQty = received[denomination.denomination_id] || 0;
-
-                                    return (
-                                      <button
-                                        key={denomination.denomination_id}
-                                        onClick={() => addDenom(denomination.denomination_id)}
-                                        className="group relative overflow-hidden rounded-2xl border border-border bg-card text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-                                        disabled={readOnly}
-                                      >
-                                        {selectedQty > 0 && (
-                                          <span className="absolute right-2 top-2 z-10 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground shadow-sm">
-                                            x{selectedQty}
-                                          </span>
-                                        )}
-                                        <DenominationVisual
-                                          label={denomination.label}
-                                          imageUrl={denomination.image_url}
-                                          className="h-20 w-full rounded-none border-0 bg-white"
-                                          imageClassName="object-contain bg-white p-0.5"
-                                          iconClassName="h-8 w-8"
-                                        />
-                                        <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-center">
-                                            <div className="text-base font-black leading-none text-primary">${denomination.value.toFixed(2)}</div>
-                                          </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-
-                                {hasReceivedDenoms && (
-                                  <div className="space-y-1 rounded-2xl border border-border bg-background p-3">
-                                    {sortedDenoms
-                                      .filter((denomination) => (received[denomination.denomination_id] || 0) > 0)
-                                      .map((denomination) => (
-                                        <div key={denomination.denomination_id} className="flex items-center gap-2 text-sm">
-                                          {!readOnly && (
-                                            <button
-                                              onClick={() => removeDenom(denomination.denomination_id)}
-                                              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
-                                            >
-                                              -
-                                            </button>
-                                          )}
-                                          <DenominationVisual
-                                            label={denomination.label}
-                                            imageUrl={denomination.image_url}
-                                            className="h-9 w-9 rounded-xl"
-                                            iconClassName="h-4 w-4"
-                                          />
-                                          <span className="flex-1 text-foreground">
-                                            {received[denomination.denomination_id]}x {denomination.label}
-                                          </span>
-                                          <span className="font-medium text-foreground">
-                                            ${(received[denomination.denomination_id] * denomination.value).toFixed(2)}
-                                          </span>
-                                          {!readOnly && (
-                                            <button
-                                              onClick={() => addDenom(denomination.denomination_id)}
-                                              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
-                                            >
-                                              +
-                                            </button>
-                                          )}
-                                        </div>
-                                      ))}
-
-                                    <div className="mt-2 flex justify-between border-t border-border pt-2 text-sm font-bold">
-                                      <span className="flex items-center gap-1 text-foreground">
-                                        <ArrowDown className="h-3.5 w-3.5 text-green-500" /> Recibido
-                                      </span>
-                                      <span className="text-foreground">${totalReceived.toFixed(2)}</span>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
-                                  <div className="rounded-xl bg-background p-2.5 sm:p-3">
-                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Efectivo aplicado</p>
-                                    <p className="mt-1 text-sm font-semibold text-foreground sm:text-base">${cashAppliedAmount.toFixed(2)}</p>
-                                  </div>
-                                  <div className="rounded-xl bg-background p-2.5 sm:p-3">
-                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recibido</p>
-                                    <p className="mt-1 text-sm font-semibold text-foreground sm:text-base">${totalReceived.toFixed(2)}</p>
-                                  </div>
-                                  <div className="rounded-xl bg-background p-2.5 sm:p-3">
-                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Estado</p>
-                                    <p className={cn("mt-1 text-sm font-semibold sm:text-base", cannotMakeChange ? "text-destructive" : "text-foreground")}>
-                                      {changeAmount > 0 ? "Cambio pendiente" : "Sin cambio"}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {hasReceivedDenoms && totalReceived < cashAppliedAmount && (
-                                  <p className="text-center text-xs font-medium text-destructive">
-                                    El monto recibido en efectivo (${totalReceived.toFixed(2)}) es menor al valor aplicado (${cashAppliedAmount.toFixed(2)}).
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   </section>
                 </div>
@@ -795,6 +755,188 @@ export default function PaymentDialog({
           </div>
         )}
       </DialogContent>
+
+      <Dialog
+        open={cashDetailOpen && !!cashSplit}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelCashDetail();
+            return;
+          }
+          setCashDetailOpen(true);
+        }}
+      >
+        <DialogContent className="flex max-h-[94vh] w-[96vw] flex-col overflow-hidden p-0 sm:max-w-6xl">
+          <DialogHeader className="border-b border-border px-4 py-2.5">
+            <DialogTitle className="font-display text-lg">Monedas y billetes</DialogTitle>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 overflow-hidden px-4 py-2.5">
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-muted/50 px-2 py-1">
+                <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Aplicado</p>
+                <p className="mt-0.5 text-sm font-semibold text-foreground">${draftCashAppliedAmount.toFixed(2)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 px-2 py-1">
+                <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Recibido</p>
+                <p className="mt-0.5 text-sm font-semibold text-foreground">${draftTotalReceived.toFixed(2)}</p>
+              </div>
+              <div className="rounded-lg bg-primary/10 px-2 py-1">
+                <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Cambio</p>
+                <p className="mt-0.5 text-sm font-semibold text-primary">${draftChangeAmount.toFixed(2)}</p>
+              </div>
+            </div>
+
+            <div className="grid h-[calc(94vh-152px)] min-h-0 gap-3 lg:grid-cols-[minmax(0,1.7fr)_320px]">
+              <div className="min-h-0 overflow-y-auto rounded-2xl border border-border bg-card p-3">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
+                  {sortedDenoms.map((denomination) => {
+                    const selectedQty = cashDraftReceived[denomination.denomination_id] || 0;
+
+                    return (
+                      <button
+                        key={denomination.denomination_id}
+                        onClick={() =>
+                          setCashDraftReceived((prev) => ({
+                            ...prev,
+                            [denomination.denomination_id]: (prev[denomination.denomination_id] || 0) + 1,
+                          }))
+                        }
+                        className={cn(
+                          "group relative overflow-hidden rounded-2xl border bg-card text-left transition-all",
+                          selectedQty > 0 ? "border-primary/50 shadow-sm" : "border-border hover:border-primary/30 hover:shadow-sm",
+                        )}
+                        disabled={readOnly}
+                      >
+                        {selectedQty > 0 && (
+                          <span className="absolute right-1.5 top-1.5 z-10 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground shadow-sm">
+                            x{selectedQty}
+                          </span>
+                        )}
+                        <DenominationVisual
+                          label={denomination.label}
+                          imageUrl={denomination.image_url}
+                          className="h-12 w-full rounded-none border-0 bg-white sm:h-14"
+                          imageClassName="object-contain bg-white p-1"
+                          iconClassName="h-5 w-5"
+                        />
+                        <div className="border-t border-border bg-muted/20 px-1 py-1 text-center">
+                          <div className="text-xs font-black leading-none text-primary">${denomination.value.toFixed(2)}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-card p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Detalle seleccionado</p>
+                    <p className="text-xs text-muted-foreground">Lo recibido en efectivo</p>
+                  </div>
+                  {!readOnly && draftHasReceivedDenoms && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1 px-2 text-destructive"
+                      onClick={() => setCashDraftReceived({})}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Limpiar
+                    </Button>
+                  )}
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  {draftHasReceivedDenoms ? (
+                    <div className="space-y-1">
+                      {sortedDenoms
+                        .filter((denomination) => (cashDraftReceived[denomination.denomination_id] || 0) > 0)
+                        .map((denomination) => (
+                          <div key={denomination.denomination_id} className="flex items-center gap-2 rounded-xl border border-border px-2 py-1.5 text-sm">
+                            {!readOnly && (
+                              <button
+                                onClick={() =>
+                                  setCashDraftReceived((prev) => {
+                                    const value = (prev[denomination.denomination_id] || 0) - 1;
+                                    if (value <= 0) {
+                                      const next = { ...prev };
+                                      delete next[denomination.denomination_id];
+                                      return next;
+                                    }
+                                    return { ...prev, [denomination.denomination_id]: value };
+                                  })
+                                }
+                                className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
+                              >
+                                -
+                              </button>
+                            )}
+                            <DenominationVisual
+                              label={denomination.label}
+                              imageUrl={denomination.image_url}
+                              className="h-8 w-8 rounded-lg"
+                              iconClassName="h-4 w-4"
+                            />
+                            <span className="min-w-[54px] font-medium text-foreground">
+                              {cashDraftReceived[denomination.denomination_id]}x
+                            </span>
+                            <span className="flex-1 font-medium text-foreground">${denomination.value.toFixed(2)}</span>
+                            <span className="font-semibold text-foreground">
+                              ${((cashDraftReceived[denomination.denomination_id] || 0) * denomination.value).toFixed(2)}
+                            </span>
+                            {!readOnly && (
+                              <button
+                                onClick={() =>
+                                  setCashDraftReceived((prev) => ({
+                                    ...prev,
+                                    [denomination.denomination_id]: (prev[denomination.denomination_id] || 0) + 1,
+                                  }))
+                                }
+                                className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground"
+                              >
+                                +
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground">
+                      Selecciona monedas o billetes para ver el detalle aqui.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 space-y-2 border-t border-border pt-3">
+                  <div className="flex justify-between text-sm font-bold">
+                    <span className="flex items-center gap-1 text-foreground">
+                      <ArrowDown className="h-3.5 w-3.5 text-green-500" /> Recibido
+                    </span>
+                    <span className="text-foreground">${draftTotalReceived.toFixed(2)}</span>
+                  </div>
+
+                  {draftHasReceivedDenoms && draftTotalReceived < cashAppliedAmount && (
+                    <p className="text-xs font-medium text-destructive">
+                      Recibido insuficiente. Faltan ${(cashAppliedAmount - draftTotalReceived).toFixed(2)}.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="sticky bottom-0 flex shrink-0 justify-end gap-2 border-t border-border bg-background px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
+            <Button type="button" variant="outline" onClick={cancelCashDetail}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={acceptCashDetail}>
+              Aceptar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent className="max-w-2xl">

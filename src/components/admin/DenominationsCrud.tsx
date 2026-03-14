@@ -13,6 +13,7 @@ import { AdminTable, ColumnDef } from "./AdminTable";
 interface Denomination {
   id: string;
   label: string;
+  denomination_type: "coin" | "bill";
   value: number;
   display_order: number;
   image_url: string | null;
@@ -22,6 +23,10 @@ interface Denomination {
 const DENOMINATION_IMAGE_BUCKET = "denomination-images";
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
+const DENOMINATION_TYPE_OPTIONS = [
+  { value: "coin", label: "Moneda" },
+  { value: "bill", label: "Billete" },
+] as const;
 
 const normalizeImageUrl = (value: string | null | undefined) => value?.trim() || "";
 
@@ -72,7 +77,7 @@ const DenominationsCrud = () => {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
   const crud = useCrud<Denomination>({ table: "denominations", queryKey: "admin-denominations", orderBy: { column: "display_order" } });
-  const edit = useEditState<Denomination>({ label: "", value: 0, display_order: 1, image_url: "", is_active: true } as any);
+  const edit = useEditState<Denomination>({ label: "", denomination_type: "coin", value: 0, display_order: 1, image_url: "", is_active: true } as any);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
@@ -170,6 +175,7 @@ const DenominationsCrud = () => {
           id,
           branch_id: activeBranchId,
           label,
+          denomination_type: values.denomination_type === "bill" ? "bill" : "coin",
           value,
           display_order: displayOrder,
           image_url: imageUrlToPersist || null,
@@ -233,7 +239,7 @@ const DenominationsCrud = () => {
   };
 
   const startAdd = () => {
-    edit.startAdd({ display_order: getNextDisplayOrder(), image_url: "", is_active: true });
+    edit.startAdd({ denomination_type: "coin", display_order: getNextDisplayOrder(), image_url: "", is_active: true });
     resetImageState();
   };
 
@@ -244,6 +250,25 @@ const DenominationsCrud = () => {
 
   const columns: ColumnDef<Denomination>[] = [
     { key: "label", header: "Etiqueta", width: "1fr", type: "text" },
+    {
+      key: "denomination_type",
+      header: "Tipo",
+      width: "8rem",
+      render: (item) => <span>{item.denomination_type === "bill" ? "Billete" : "Moneda"}</span>,
+      editRender: (value, onChange) => (
+        <select
+          value={value ?? "coin"}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm"
+        >
+          {DENOMINATION_TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ),
+    },
     {
       key: "image_url",
       header: "Imagen",

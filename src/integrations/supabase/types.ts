@@ -262,6 +262,7 @@ export type Database = {
       denominations: {
         Row: {
           branch_id: string
+          denomination_type: string
           display_order: number
           id: string
           image_url: string | null
@@ -271,6 +272,7 @@ export type Database = {
         }
         Insert: {
           branch_id: string
+          denomination_type?: string
           display_order?: number
           id?: string
           image_url?: string | null
@@ -280,6 +282,7 @@ export type Database = {
         }
         Update: {
           branch_id?: string
+          denomination_type?: string
           display_order?: number
           id?: string
           image_url?: string | null

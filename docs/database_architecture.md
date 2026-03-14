@@ -62,8 +62,9 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 
 ## Denominaciones
 - `denominations` ahora soporta `image_url` para representar visualmente monedas y billetes.
+- `denominations.denomination_type` define explicitamente si una denominacion es `coin` o `bill`.
 - La imagen se carga a Storage en el bucket publico `denomination-images` y se reutiliza en Admin/Caja.
-- El flujo de Caja debe leer `image_url` junto con `label`, `value` y `display_order`.
+- El flujo de Caja debe leer `image_url` junto con `label`, `denomination_type`, `value` y `display_order`.
 
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.
@@ -91,6 +92,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - columna `denominations.image_url` 
   - bucket publico `denomination-images` 
   - policies de Storage para administracion por sucursal
+- `supabase/migrations/20260313193000_add_denomination_type.sql`
+  - columna `denominations.denomination_type`
+  - backfill inicial de datos existentes
+  - restriccion `coin|bill`
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

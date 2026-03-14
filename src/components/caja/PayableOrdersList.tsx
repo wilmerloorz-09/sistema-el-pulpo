@@ -51,71 +51,73 @@ export default function PayableOrdersList({
         )}
       </div>
 
-      <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-3">
-        <div className="rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ordenes por cobrar</p>
-          <p className="mt-1 text-lg font-semibold text-foreground sm:text-xl">{orders.length}</p>
+      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="space-y-2">
+          <div className="rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ordenes por cobrar</p>
+            <p className="mt-1 text-lg font-semibold text-foreground sm:text-xl">{orders.length}</p>
+          </div>
+          <div className="rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Unidades pendientes</p>
+            <p className="mt-1 text-lg font-semibold text-foreground sm:text-xl">{totalPendingUnits}</p>
+          </div>
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5 sm:px-4 sm:py-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total pendiente</p>
+            <p className="mt-1 font-display text-lg font-bold text-primary sm:text-2xl">${totalPendingAmount.toFixed(2)}</p>
+          </div>
         </div>
-        <div className="rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Unidades pendientes</p>
-          <p className="mt-1 text-lg font-semibold text-foreground sm:text-xl">{totalPendingUnits}</p>
-        </div>
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5 sm:px-4 sm:py-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total pendiente</p>
-          <p className="mt-1 font-display text-lg font-bold text-primary sm:text-2xl">${totalPendingAmount.toFixed(2)}</p>
-        </div>
-      </div>
 
-      <div className="space-y-2">
-        {orders.map((order) => {
-          const label = order.order_type === "TAKEOUT" ? "Para llevar" : order.split_code ?? order.table_name ?? "Mesa";
-          const pending = pendingUnits(order);
-          const paid = paidUnits(order);
-          const pendingTotal = order.items.reduce((sum, item) => sum + item.pending_total, 0);
+        <div className="space-y-2">
+          {orders.map((order) => {
+            const label = order.order_type === "TAKEOUT" ? "Para llevar" : order.split_code ?? order.table_name ?? "Mesa";
+            const pending = pendingUnits(order);
+            const paid = paidUnits(order);
+            const pendingTotal = order.items.reduce((sum, item) => sum + item.pending_total, 0);
 
-          return (
-            <button
-              key={order.id}
-              onClick={() => setSelectedOrder(order)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-left shadow-sm transition-colors",
-                readOnly ? "hover:bg-card" : "hover:bg-muted/50",
-              )}
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                {order.order_type === "TAKEOUT" ? (
-                  <ShoppingBag className="h-4 w-4 text-primary" />
-                ) : (
-                  <UtensilsCrossed className="h-4 w-4 text-primary" />
+            return (
+              <button
+                key={order.id}
+                onClick={() => setSelectedOrder(order)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 text-left shadow-sm transition-colors",
+                  readOnly ? "hover:bg-card" : "hover:bg-muted/50",
                 )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-bold text-foreground">{label}</span>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {order.order_code ?? `#${order.order_number}`}
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {pending} pendiente{pending === 1 ? "" : "s"}
-                  </Badge>
-                  {readOnly && (
-                    <Badge variant="outline" className="text-[10px]">
-                      Consulta
-                    </Badge>
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  {order.order_type === "TAKEOUT" ? (
+                    <ShoppingBag className="h-4 w-4 text-primary" />
+                  ) : (
+                    <UtensilsCrossed className="h-4 w-4 text-primary" />
                   )}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {pending} unidad(es) pendiente(s)
-                  {paid > 0 && ` - ${paid} unidad(es) pagada(s)`}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Por cobrar</p>
-                <span className="font-display text-lg font-bold text-foreground">${pendingTotal.toFixed(2)}</span>
-              </div>
-            </button>
-          );
-        })}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-foreground">{label}</span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {order.order_code ?? `#${order.order_number}`}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {pending} pendiente{pending === 1 ? "" : "s"}
+                    </Badge>
+                    {readOnly && (
+                      <Badge variant="outline" className="text-[10px]">
+                        Consulta
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {pending} unidad(es) pendiente(s)
+                    {paid > 0 && ` - ${paid} unidad(es) pagada(s)`}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Por cobrar</p>
+                  <span className="font-display text-lg font-bold text-foreground">${pendingTotal.toFixed(2)}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <PaymentDialog

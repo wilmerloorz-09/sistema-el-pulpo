@@ -48,6 +48,7 @@ interface FormState {
 const MENU_NODE_IMAGE_BUCKET = "menu-node-images";
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
+const getCollapsedNodesStorageKey = (branchId: string) => `adminMenuNodesCollapsed:${branchId}`;
 
 const emptyForm = (parentId: string | null = null): FormState => ({
   id: null,
@@ -154,6 +155,38 @@ const MenuNodesCrud = () => {
 
   const nodes = query.data ?? [];
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  useEffect(() => {
+    if (!activeBranchId || nodes.length === 0) return;
+
+    const storageKey = getCollapsedNodesStorageKey(activeBranchId);
+    const availableNodeIds = new Set(nodes.map((node) => node.id));
+    const defaultCollapsedIds = nodes.filter((node) => node.parent_id !== null).map((node) => node.id);
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        setCollapsedIds(defaultCollapsedIds);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setCollapsedIds(defaultCollapsedIds);
+        return;
+      }
+
+      const restored = parsed.filter((id): id is string => typeof id === "string" && availableNodeIds.has(id));
+      setCollapsedIds(restored);
+    } catch {
+      setCollapsedIds(defaultCollapsedIds);
+    }
+  }, [activeBranchId, nodes]);
+
+  useEffect(() => {
+    if (!activeBranchId) return;
+    localStorage.setItem(getCollapsedNodesStorageKey(activeBranchId), JSON.stringify(collapsedIds));
+  }, [activeBranchId, collapsedIds]);
 
   useEffect(() => {
     if (!selectedImageFile) {
@@ -490,48 +523,41 @@ const MenuNodesCrud = () => {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const deactivateMutation = useMutation({
+  const toggleActiveMutation = useMutation({
     mutationFn: async (node: AdminMenuNode) => {
       const childrenCount = getChildren(node.id).length;
-      const message = node.node_type === "category" && childrenCount > 0
-        ? "Esta categoria tiene hijos. Si la desactivas, su rama quedara inaccesible en la UI."
-        : "Se desactivara el nodo seleccionado.";
+      const nextIsActive = !node.is_active;
+      const message = nextIsActive
+        ? "Se activara el nodo seleccionado."
+        : node.node_type === "category" && childrenCount > 0
+          ? "Esta categoria tiene hijos. Si la desactivas, su rama quedara inaccesible en la UI."
+          : "Se desactivara el nodo seleccionado.";
 
       if (!window.confirm(message)) return false;
 
       const { error: menuNodeError } = await supabase
         .from("menu_nodes" as never)
-        .update({ is_active: false } as never)
+        .update({ is_active: nextIsActive } as never)
         .eq("id", node.id);
       if (menuNodeError) throw menuNodeError;
 
-      const managedImagePath = extractManagedImagePath(node.image_url);
-      if (managedImagePath) {
-        const { error: removeImageError } = await supabase.storage
-          .from(MENU_NODE_IMAGE_BUCKET)
-          .remove([managedImagePath]);
-        if (removeImageError) {
-          console.warn("No se pudo eliminar la imagen del nodo desactivado", removeImageError);
-        }
-      }
-
       if (node.node_type === "product") {
-        const { error: productError } = await supabase.from("products").update({ is_active: false }).eq("id", node.id);
+        const { error: productError } = await supabase.from("products").update({ is_active: nextIsActive }).eq("id", node.id);
         if (productError) throw productError;
       } else {
         if (node.parent_id === null) {
-          const { error: categoryError } = await supabase.from("categories").update({ is_active: false }).eq("id", node.id);
+          const { error: categoryError } = await supabase.from("categories").update({ is_active: nextIsActive }).eq("id", node.id);
           if (categoryError) throw categoryError;
         }
-        const { error: subcategoryError } = await supabase.from("subcategories").update({ is_active: false }).eq("id", node.id);
+        const { error: subcategoryError } = await supabase.from("subcategories").update({ is_active: nextIsActive }).eq("id", node.id);
         if (subcategoryError) throw subcategoryError;
       }
 
       return true;
     },
-    onSuccess: (didDeactivate) => {
-      if (!didDeactivate) return;
-      toast.success("Nodo desactivado");
+    onSuccess: (_didToggle, node) => {
+      if (!_didToggle) return;
+      toast.success(node.is_active ? "Nodo desactivado" : "Nodo activado");
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
@@ -614,9 +640,18 @@ const MenuNodesCrud = () => {
                   <span className="text-sm leading-none">{node.icon}</span>
                 ) : null}
                 <span className="truncate font-medium">{node.name}</span>
-                <Badge variant={node.node_type === "product" ? "secondary" : "default"} className="text-[10px] uppercase">
+                <Badge
+                  variant={node.node_type === "product" ? "secondary" : "default"}
+                  className={cn(
+                    "text-[10px] uppercase",
+                    node.node_type === "product" && "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
+                  )}
+                >
                   {node.node_type === "product" ? "Producto" : "Categoria"}
                 </Badge>
+                {node.node_type === "product" && typeof node.price === "number" ? (
+                  <span className="text-xs font-semibold text-emerald-700">${node.price.toFixed(2)}</span>
+                ) : null}
                 {!node.is_active ? <Badge variant="outline" className="text-[10px]">Inactivo</Badge> : null}
               </div>
               <div className="text-[11px] text-muted-foreground">
@@ -680,12 +715,15 @@ const MenuNodesCrud = () => {
             <Button
               variant="outline"
               size="sm"
-              className="rounded-xl text-destructive"
-              onClick={() => deactivateMutation.mutate(selectedNode)}
-              disabled={deactivateMutation.isPending}
+              className={cn(
+                "rounded-xl",
+                selectedNode.is_active ? "text-destructive" : "text-emerald-700",
+              )}
+              onClick={() => toggleActiveMutation.mutate(selectedNode)}
+              disabled={toggleActiveMutation.isPending}
             >
               <Power className="mr-1.5 h-4 w-4" />
-              Desactivar
+              {selectedNode.is_active ? "Desactivar" : "Activar"}
             </Button>
           ) : null}
         </div>

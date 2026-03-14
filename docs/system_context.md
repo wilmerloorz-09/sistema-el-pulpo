@@ -31,6 +31,7 @@
   - baja logica con `is_active=false`
 - La pestana `Modificadores` administra solo el catalogo base (`modifiers`).
 - `Admin > Denominaciones` ahora permite subir imagen por archivo; esa imagen se muestra en Caja al listar monedas/billetes y opciones de cambio.
+- `Admin > Denominaciones` ahora maneja tambien `denomination_type` (`Moneda` o `Billete`) como campo explicito, independiente de la etiqueta visible.
 - El editor del arbol incorpora la asignacion operativa por nodo mediante `menu_node_modifiers`.
 - El panel de modificadores muestra:
   - heredados acumulativos desde ancestros
@@ -70,6 +71,8 @@
   - la app cierra sesion tras 10 minutos de inactividad
 - Sucursal activa sigue resolviendose por `profiles.active_branch_id`.
 - Seguridad y permisos siguen validandose en backend/BD, no en UI.
+- La creacion y gestion operativa de ordenes, items, modificadores de item y divisiones de mesa depende de permisos `OPERATE` por sucursal en `mesas` y/o `ordenes`; no basta con mostrar el modulo en frontend.
+- La visibilidad de estados operativos (`Enviadas`, `Listas`, `Despachadas`, cancelaciones parciales) depende tambien de poder leer las tablas de eventos operativos por sucursal; si RLS de esos eventos no esta alineado con permisos branch/module, las ordenes pueden desaparecer de una pestana sin caer en la siguiente.
 - Modificadores siguen usando el modelo estructurado:
   - catalogo base por `modifiers`
   - disponibilidad por `menu_node_modifiers`

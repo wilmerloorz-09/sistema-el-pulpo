@@ -12,6 +12,7 @@ import type { Database } from "@/integrations/supabase/types";
 export interface Denomination {
   id: string;
   label: string;
+  denomination_type?: "coin" | "bill";
   value: number;
   display_order: number;
   image_url?: string | null;
@@ -21,6 +22,7 @@ export interface ShiftDenom {
   id: string;
   denomination_id: string;
   label: string;
+  display_order: number;
   value: number;
   image_url?: string | null;
   qty_initial: number;
@@ -524,7 +526,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     queryKey: ["denominations", activeBranchId],
     queryFn: () =>
       dbSelect<Denomination>("denominations", {
-        select: "id, label, value, display_order, image_url",
+        select: "id, label, denomination_type, value, display_order, image_url",
         branchId: activeBranchId,
         filters: [{ column: "is_active", op: "eq", value: true }],
         orderBy: { column: "display_order" },
@@ -558,6 +560,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         return {
           ...d,
           label: denom?.label ?? "",
+          display_order: denom?.display_order ?? 0,
           value: denom?.value ?? 0,
           image_url: denom?.image_url ?? null,
         };
@@ -1153,6 +1156,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const cashMethodId = cashMethods[0]?.id ?? null;
       const cashSplit = cashMethodId ? paymentSplits.find((split) => split.methodId === cashMethodId) ?? null : null;
       const cashSplitAmount = roundMoney(cashSplit?.amount ?? 0);
+      const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
+      const effectiveCashChangeDenoms = cashMethodId ? cashChangeDenoms : [];
 
       const appliedTotal = roundMoney(paymentSplits.reduce((sum, split) => sum + Number(split.amount), 0));
       if (Math.abs(appliedTotal - totalAmount) > 0.01) {
@@ -1168,7 +1173,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const totalReceivedCash = roundMoney(
-        cashReceivedDenoms.reduce((sum, entry) => {
+        effectiveCashReceivedDenoms.reduce((sum, entry) => {
           const denom = shift.denoms.find((item) => item.denomination_id === entry.denomination_id);
           return sum + (denom ? denom.value * entry.qty : 0);
         }, 0),
@@ -1180,7 +1185,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const expectedChangeTotal = roundMoney(Math.max(0, receivedTotal - totalAmount));
       const providedChangeTotal = roundMoney(
-        cashChangeDenoms.reduce((sum, entry) => {
+        effectiveCashChangeDenoms.reduce((sum, entry) => {
           const denom = shift.denoms.find((item) => item.denomination_id === entry.denomination_id);
           return sum + (denom ? denom.value * entry.qty : 0);
         }, 0),
@@ -1193,10 +1198,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       for (const denom of shift.denoms) {
         availableCashByDenom[denom.denomination_id] = denom.qty_current;
       }
-      for (const receivedDenom of cashReceivedDenoms) {
+      for (const receivedDenom of effectiveCashReceivedDenoms) {
         availableCashByDenom[receivedDenom.denomination_id] = (availableCashByDenom[receivedDenom.denomination_id] ?? 0) + receivedDenom.qty;
       }
-      for (const changeDenom of cashChangeDenoms) {
+      for (const changeDenom of effectiveCashChangeDenoms) {
         availableCashByDenom[changeDenom.denomination_id] = (availableCashByDenom[changeDenom.denomination_id] ?? 0) - changeDenom.qty;
         if (availableCashByDenom[changeDenom.denomination_id] < 0) {
           throw new Error("No hay suficientes denominaciones en caja para entregar el cambio");
@@ -1309,10 +1314,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const denomChanges = {};
-      for (const rd of cashReceivedDenoms) {
+      for (const rd of effectiveCashReceivedDenoms) {
         denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
       }
-      for (const cd of cashChangeDenoms) {
+      for (const cd of effectiveCashChangeDenoms) {
         denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
       }
       for (const [denomId, delta] of Object.entries(denomChanges)) {
@@ -1325,7 +1330,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-      for (const cd of cashChangeDenoms) {
+      for (const cd of effectiveCashChangeDenoms) {
         await dbInsert("cash_movements", {
           id: generateUUID(),
           shift_id: shift.id,

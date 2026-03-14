@@ -4,13 +4,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, RefreshCw, WifiOff } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LogOut, WifiOff } from "lucide-react";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import PasskeyRegisterButton from "./PasskeyRegisterButton";
 
 const AppLayout = () => {
   const { signOut, profile } = useAuth();
-  const { activeBranch, branches, setActiveBranch, isGlobalAdmin } = useBranch();
+  const { activeBranch, activeBranchId, branches, setActiveBranch, isGlobalAdmin, loading } = useBranch();
   const { isOnline } = useNetwork();
 
   return (
@@ -18,16 +19,29 @@ const AppLayout = () => {
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 px-3 py-2 backdrop-blur-md sm:px-4 sm:py-2.5">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="text-lg">Pulpo</span>
-            <span className="font-display text-sm font-bold text-foreground">El Pulpo</span>
+            <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto shrink-0 object-contain sm:h-11" />
             {activeBranch && branches.length > 1 ? (
-              <button
-                onClick={() => setActiveBranch(null)}
-                className="ml-0 inline-flex min-h-[36px] max-w-full items-center gap-1 rounded-lg bg-accent/20 px-2 py-1 text-left text-xs font-medium text-accent-foreground"
+              <Select
+                value={activeBranchId ?? undefined}
+                onValueChange={(value) => {
+                  const nextBranch = branches.find((branch) => branch.id === value) ?? null;
+                  if (nextBranch) {
+                    void setActiveBranch(nextBranch);
+                  }
+                }}
+                disabled={loading}
               >
-                <span className="truncate">{activeBranch.name}</span>
-                <RefreshCw className="h-3 w-3 shrink-0" />
-              </button>
+                <SelectTrigger className="h-9 w-[220px] min-w-[220px] rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground shadow-sm [&>span]:truncate">
+                  <SelectValue placeholder="Seleccionar sucursal" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : activeBranch ? (
               <span className="ml-0 inline-flex min-h-[36px] max-w-full items-center rounded-lg bg-accent/20 px-2 py-1 text-xs font-medium text-accent-foreground">
                 <span className="truncate">{activeBranch.name}</span>

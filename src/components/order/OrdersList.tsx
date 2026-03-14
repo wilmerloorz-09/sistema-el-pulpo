@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import OrderCard from "./OrderCard";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +64,98 @@ interface OrdersListProps {
 export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersListProps) {
   const [activeTab, setActiveTab] = useState<TabType>("sent");
   const { activeBranchId } = useBranch();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!activeBranchId) return;
+
+    const invalidateOrders = () => {
+      qc.invalidateQueries({ queryKey: ["orders", activeBranchId] });
+      qc.invalidateQueries({ queryKey: ["order"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    };
+
+    const channel = supabase
+      .channel(`orders-live-sync:${activeBranchId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: `branch_id=eq.${activeBranchId}`,
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_items",
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_ready_events",
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_item_ready_events",
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_dispatch_events",
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_item_dispatch_events",
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_cancellations",
+        },
+        invalidateOrders,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_item_cancellations",
+        },
+        invalidateOrders,
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [activeBranchId, qc]);
 
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
   const readyOrders = useOrdersByStatus("READY");

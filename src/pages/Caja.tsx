@@ -81,35 +81,40 @@ const Caja = () => {
 
       <ShiftSummary
         shift={shift}
+        methodSummary={completedPaymentsMethodSummary}
         onClose={(notes) => closeShift.mutate(notes)}
         closing={closeShift.isPending}
         readOnly={!canOperateCaja}
       />
 
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-border p-1">
-        <button
-          onClick={() => setActiveTab("pending")}
-          className={cn(
-            "h-9 rounded-lg text-sm font-medium transition-colors",
-            activeTab === "pending" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50",
-          )}
-        >
-          Por cobrar ({payableOrders.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("completed")}
-          className={cn(
-            "h-9 rounded-lg text-sm font-medium transition-colors",
-            activeTab === "completed" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50",
-          )}
-        >
-          Pagos realizados ({completedPaymentsTotal})
-        </button>
-      </div>
+      <div className="grid gap-4 xl:grid-cols-[72px_minmax(0,1fr)]">
+        <div className="grid grid-cols-2 gap-1 rounded-xl border border-border p-1 xl:w-[72px] xl:grid-cols-1 xl:self-start">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={cn(
+              "h-10 rounded-lg px-3 text-sm font-medium text-left transition-colors xl:flex xl:h-40 xl:w-full xl:items-center xl:justify-center xl:px-0 xl:text-center",
+              activeTab === "pending" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            <span className="xl:[writing-mode:vertical-rl] xl:rotate-180 xl:[text-orientation:mixed]">
+              Por cobrar ({payableOrders.length})
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("completed")}
+            className={cn(
+              "h-10 rounded-lg px-3 text-sm font-medium text-left transition-colors xl:flex xl:h-40 xl:w-full xl:items-center xl:justify-center xl:px-0 xl:text-center",
+              activeTab === "completed" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            <span className="xl:[writing-mode:vertical-rl] xl:rotate-180 xl:[text-orientation:mixed]">
+              Pagos realizados ({completedPaymentsTotal})
+            </span>
+          </button>
+        </div>
 
-      {activeTab === "pending" ? (
-        <div>
-          <h2 className="mb-3 font-display text-sm font-bold text-foreground">Ordenes por cobrar ({payableOrders.length})</h2>
+        {activeTab === "pending" ? (
+          <div>
           <PayableOrdersList
             orders={payableOrders}
             paymentMethods={paymentMethods}
@@ -118,34 +123,35 @@ const Caja = () => {
             paying={payOrder.isPending}
             readOnly={!canOperateCaja}
           />
-        </div>
-      ) : (
-        <div>
-          <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
-          <CompletedPaymentsList
-            payments={completedPayments}
-            total={completedPaymentsTotal}
-            methodSummary={completedPaymentsMethodSummary}
-            collectedTotal={completedPaymentsCollectedTotal}
-            paymentMethods={paymentMethods}
-            loading={isLoadingCompletedPayments}
-            filters={completedFilters}
-            permissions={permissions}
-            cashierReverseWindowMinutes={cashierReverseWindowMinutes}
-            actionLoading={requestPaymentReversal.isPending || reversePayment.isPending || approvePaymentReversal.isPending}
-            onFiltersChange={setCompletedFilters}
-            onRequestReversal={(paymentId, reason, paymentEntryIds) =>
-              requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
-            }
-            onReversePayment={(paymentId, reason, paymentEntryIds) =>
-              reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds })
-            }
-            onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
-              approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
-            }
-          />
-        </div>
-      )}
+          </div>
+        ) : (
+          <div>
+            <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
+            <CompletedPaymentsList
+              payments={completedPayments}
+              total={completedPaymentsTotal}
+              methodSummary={completedPaymentsMethodSummary}
+              collectedTotal={completedPaymentsCollectedTotal}
+              paymentMethods={paymentMethods}
+              loading={isLoadingCompletedPayments}
+              filters={completedFilters}
+              permissions={permissions}
+              cashierReverseWindowMinutes={cashierReverseWindowMinutes}
+              actionLoading={requestPaymentReversal.isPending || reversePayment.isPending || approvePaymentReversal.isPending}
+              onFiltersChange={setCompletedFilters}
+              onRequestReversal={(paymentId, reason, paymentEntryIds) =>
+                requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
+              }
+              onReversePayment={(paymentId, reason, paymentEntryIds) =>
+                reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds })
+              }
+              onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
+                approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
+              }
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };
