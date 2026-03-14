@@ -65,6 +65,18 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `denominations.denomination_type` define explicitamente si una denominacion es `coin` o `bill`.
 - La imagen se carga a Storage en el bucket publico `denomination-images` y se reutiliza en Admin/Caja.
 - El flujo de Caja debe leer `image_url` junto con `label`, `denomination_type`, `value` y `display_order`.
+- El orden de presentacion visible en Caja y Desglose debe salir de `display_order` ascendente, no del valor monetario ni de la etiqueta.
+
+## Caja y pagos
+- `cash_shifts` + detalle de denominaciones siguen siendo la fuente de `Apertura`, `Actual` y `Diferencia`.
+- `payment_entries` / tablas equivalentes de cobro son la fuente de `Recaudado` por metodo.
+- Regla funcional importante:
+  - `Actual - Apertura` representa caja fisica
+  - `Cobrado por metodo` puede incluir metodos no efectivos y no debe asumirse equivalente a caja fisica
+- En el flujo de cobro:
+  - `cashReceivedDenoms` y `cashChangeDenoms` solo deben persistirse si realmente participa un metodo efectivo
+  - desactivar `Efectivo` debe limpiar denominaciones temporales para no contaminar el cierre o el total actual
+- La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
 
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.
@@ -96,6 +108,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - columna `denominations.denomination_type`
   - backfill inicial de datos existentes
   - restriccion `coin|bill`
+- `supabase/migrations/20260313201000_fix_orders_rls_for_branch_operate_permissions.sql`
+  - alinea RLS de `orders` y entidades relacionadas con permisos `OPERATE` por sucursal/modulo
+- `supabase/migrations/20260313205500_fix_operational_event_visibility_by_branch_permissions.sql`
+  - alinea RLS de eventos operativos para que `Enviadas`, `Listas` y `Despachadas` sean visibles segun permisos efectivos
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

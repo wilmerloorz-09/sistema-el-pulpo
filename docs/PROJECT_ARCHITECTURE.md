@@ -35,6 +35,9 @@
 - El unico nivel obligatorio para navegar es L1.
 - La persistencia del item sigue usando `order_items.product_id`, por lo que `products` aun es obligatorio.
 - La disponibilidad de modificadores en el dialogo de producto debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
+- La visibilidad de estados operativos entre usuarios depende de dos capas:
+  - RLS correcto sobre tablas de eventos operativos
+  - suscripciones en vivo en frontend para invalidar listas cuando cambia `orders`, `order_items` y eventos asociados
 
 ## Cambios Arquitectonicos de Esta Jornada
 
@@ -58,6 +61,26 @@
 - Los nodos `product` se sincronizan hacia `products` para que puedan entrar a `order_items`.
 - Esta capa debe tratarse como compatibilidad transitoria, no como arquitectura destino.
 
+### E) Caja: composicion actual del flujo de cobro
+- `Caja` se divide en:
+  - resumen de turno (`ShiftSummary`)
+  - ordenes por cobrar (`PayableOrdersList`)
+  - pagos realizados (`CompletedPaymentsList`)
+- `ShiftSummary` ya no expone totales de apertura/actual de forma permanente en la pantalla; usa un modal `Resumen` y otro modal `Desglose`.
+- `PayableOrdersList` usa layout de dos columnas en desktop: KPIs verticales y listado operativo.
+- `PaymentDialog` contiene:
+  - seleccion de cantidades a cobrar
+  - metodos de pago compactos
+  - modal dedicado para `Monedas y billetes`
+- La regla de efectivo en arquitectura actual es:
+  - monto de efectivo controlado por denominaciones
+  - no editable manualmente
+  - transferencia/no efectivo editable por input
+
+### F) Admin movil
+- Los listados administrativos reutilizan `AdminTable`.
+- En movil, `AdminTable` debe renderizar tarjetas apiladas y no tablas comprimidas, para evitar superposicion de campos y acciones.
+
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`
 - `src/hooks/useMenuData.ts`
@@ -66,6 +89,11 @@
 - `src/components/admin/MenuNodesCrud.tsx`
 - `src/components/admin/ModifiersCrud.tsx`
 - `src/pages/Admin.tsx`
+- `src/pages/Caja.tsx`
+- `src/components/caja/ShiftSummary.tsx`
+- `src/components/caja/PayableOrdersList.tsx`
+- `src/components/caja/PaymentDialog.tsx`
+- `src/components/admin/AdminTable.tsx`
 
 ## Principios para los Siguientes Cambios
 1. No reintroducir la obligatoriedad de L2 salvo redefinicion funcional explicita.
@@ -73,3 +101,4 @@
 3. Si se toca catalogo o detalle de item, validar consistencia en Ordenes, Cocina, Despacho y Ticket.
 4. Mantener la migracion al arbol como refactor incremental, no como corte brusco del modelo legacy.
 5. Mantener `modifiers` como catalogo reutilizable y mover la disponibilidad a relaciones por nodo, no al CRUD base.
+6. En Caja, diferenciar siempre `caja fisica` de `recaudacion por metodo`; no mezclar ambos conceptos en el mismo resumen sin rotulacion clara.

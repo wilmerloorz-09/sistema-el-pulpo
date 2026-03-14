@@ -53,8 +53,28 @@
 - El `service worker` usa `cache-first` para assets estaticos y `network-first` para trafico a `supabase.co`.
 - El registro del `service worker` ocurre solo en produccion, sin alterar el arranque normal en desarrollo.
 - En pantallas pequenas (`max-width: 768px`) se reforzo la UX tactil en `Ordenes`, `MenuNavigator` y `Admin` sin cambiar el comportamiento desktop.
+- `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
+
+### 4.2) Caja: UX y reglas operativas nuevas
+- La pantalla principal de `Caja` ya no debe ensuciarse con datos redundantes; el resumen `Apertura / Actual / Diferencia` vive en un modal `Resumen`.
+- En `Resumen de Caja` deben distinguirse visualmente dos temas:
+  - `Caja fisica`: apertura, actual y diferencia
+  - `Recaudado`: cobrado total, efectivo, no efectivo y desglose por metodo
+- El desglose de `Resumen de Caja` puede sumar metodos no efectivos; la `Diferencia` solo representa dinero fisico en caja.
+- `Desglose de Caja` muestra denominaciones ordenadas por `display_order` ascendente y cada fila debe mostrar solo imagen, valor, cantidad y total.
+- En `PayableOrdersList`, la vista desktop usa dos columnas: izquierda con KPIs verticales y derecha con detalle operativo mas ancho.
+- En desktop las pestanas `Por cobrar` / `Pagos realizados` de Caja se colocan en una columna lateral estrecha; en movil permanecen compactas arriba.
+- En `PaymentDialog`, `Efectivo` y `Transferencia` se muestran como filas compactas.
+- `Efectivo` queda activo por defecto, muestra `0.00` al iniciar, no es editable manualmente y solo cambia al aceptar `Monedas y billetes`.
+- `Transferencia` queda visible pero desactivada por defecto.
+- El modal `Monedas y billetes` debe calcular:
+  - `Aplicado`: lo realmente asignado al efectivo en ese cobro
+  - `Recibido`: suma de denominaciones seleccionadas
+  - `Cambio`: `Recibido - Aplicado`, solo si existe monto aplicado en efectivo
+- Si el unico metodo activo es `Efectivo`, no debe autocompletarse con el total a cobrar; se mantiene en `0.00` hasta seleccionar denominaciones.
+
 ### 5) Compatibilidad transitoria con modelo legacy
 - Aunque la UI ya navega con `menu_nodes`, `order_items.product_id` sigue referenciando `products(id)`.
 - Para no romper el flujo actual, `MenuNodesCrud` sincroniza:
@@ -73,6 +93,7 @@
 - Seguridad y permisos siguen validandose en backend/BD, no en UI.
 - La creacion y gestion operativa de ordenes, items, modificadores de item y divisiones de mesa depende de permisos `OPERATE` por sucursal en `mesas` y/o `ordenes`; no basta con mostrar el modulo en frontend.
 - La visibilidad de estados operativos (`Enviadas`, `Listas`, `Despachadas`, cancelaciones parciales) depende tambien de poder leer las tablas de eventos operativos por sucursal; si RLS de esos eventos no esta alineado con permisos branch/module, las ordenes pueden desaparecer de una pestana sin caer en la siguiente.
+- `OrdersList` ya debe refrescarse entre sesiones/usuarios mediante suscripciones en vivo; no confiar solo en invalidaciones locales para reflejar cambios operativos.
 - Modificadores siguen usando el modelo estructurado:
   - catalogo base por `modifiers`
   - disponibilidad por `menu_node_modifiers`

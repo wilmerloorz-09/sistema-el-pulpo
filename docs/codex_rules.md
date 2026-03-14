@@ -46,17 +46,27 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - Despacho
   - Ticket
 - Distinguir visualmente categoria vs producto; una categoria no debe mostrarse como item vendible con precio.
+- En `Caja`, diferenciar visualmente:
+  - caja fisica
+  - recaudacion por metodo
+- En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
 - `image_url` es la representacion visual principal del nodo y debe llenarse desde la subida de archivo a Storage.
 - El campo `icon` ya no debe exponerse en `Admin > Arbol Menu`; si persiste en BD, tratarlo solo como remanente legacy.
 - La pestana `Modificadores` solo administra el catalogo base; la asignacion a nodos debe hacerse en `Arbol Menu`.
+- `AdminTable` debe seguir siendo la base para listados administrativos y en movil debe mostrarse como tarjetas, no como tabla apretada.
 
 ### Backend y consultas
 - Para modificadores, leer descripciones desde la relacion con `modifiers`.
 - La disponibilidad operativa del modificador debe resolverse desde `menu_node_modifiers`.
 - Filtrar datos vacios o inconsistentes antes de renderizar.
+- Si se toca Ordenes o Despacho, revisar tambien:
+  - RLS de tablas de eventos operativos
+  - reflejo en vivo entre usuarios/sesiones
+- En Caja, no mezclar montos de efectivo con montos no efectivos al presentar `Diferencia` o `Actual`.
+- Si el metodo efectivo no participa en un cobro final, no persistir ni reutilizar denominaciones temporales.
 
 ## Checklist Minimo Antes de Cerrar una Tarea
 1. `npx.cmd tsc --noEmit`
@@ -74,3 +84,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Permisos efectivos por modulo/sucursal.
 - Modificadores estructurados por nodo e item.
 - Navegacion del menu basada en arbol, con Nivel 1 como unica obligatoriedad.
+- Caja con:
+  - efectivo controlado por denominaciones
+  - transferencia/no efectivo como monto editable
+  - resumen de turno separado de recaudacion por metodo
