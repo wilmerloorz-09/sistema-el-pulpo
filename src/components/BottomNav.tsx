@@ -137,14 +137,14 @@ const BottomNav = () => {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white/80 backdrop-blur-xl safe-bottom md:bottom-0">
-      <div className="mx-auto flex max-w-6xl items-center justify-around px-2 py-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white/85 backdrop-blur-xl safe-bottom md:bottom-0">
+      <div className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-2.5 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={cn(
-              "group flex min-w-[4.6rem] flex-col items-center gap-1 rounded-[20px] border border-white/70 bg-white/82 px-3 py-2 text-muted-foreground shadow-[0_14px_28px_-24px_rgba(15,23,42,0.28)] transition-all",
+              "group flex min-w-[4.9rem] shrink-0 snap-start flex-col items-center gap-1.5 rounded-[20px] border border-white/70 bg-white/82 px-3 py-2 text-muted-foreground shadow-[0_14px_28px_-24px_rgba(15,23,42,0.28)] transition-all",
               item.tone.idle,
             )}
             activeClassName={cn(
@@ -152,10 +152,10 @@ const BottomNav = () => {
               item.tone.active,
             )}
           >
-            <span className={cn("flex h-8 w-8 items-center justify-center rounded-2xl transition-all group-hover:scale-105", item.tone.iconIdle)}>
+            <span className={cn("flex h-9 w-9 items-center justify-center rounded-2xl transition-all group-hover:scale-105", item.tone.iconIdle)}>
               {item.icon}
             </span>
-            <span className="text-[10px] font-semibold leading-tight">{item.label}</span>
+            <span className="max-w-[4.9rem] text-center text-[10px] font-semibold leading-tight">{item.label}</span>
           </NavLink>
         ))}
       </div>

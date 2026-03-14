@@ -287,7 +287,7 @@ export default function CompletedPaymentsList({
   return (
     <div className="space-y-3">
       <div className="space-y-3 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/70 to-white p-4 shadow-[0_18px_45px_-38px_rgba(139,92,246,0.65)]">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
           <input value={filters.orderQuery} onChange={(e) => setFilter({ orderQuery: e.target.value })} placeholder="Buscar por orden o mesa" className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
           <select value={filters.methodId} onChange={(e) => setFilter({ methodId: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
             <option value="ALL">Todos los metodos</option>
@@ -299,7 +299,7 @@ export default function CompletedPaymentsList({
           <input type="datetime-local" value={filters.toDateTime} onChange={(e) => setFilter({ toDateTime: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
         </div>
 
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
           <select value={filters.sortBy} onChange={(e) => setFilter({ sortBy: e.target.value as CompletedPaymentsFilters["sortBy"] })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
             <option value="created_at">Ordenar por fecha</option>
             <option value="amount">Ordenar por monto</option>
@@ -315,7 +315,7 @@ export default function CompletedPaymentsList({
           </select>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <p className="text-xs font-medium text-muted-foreground">Total DB: {total} pago(s) - Pagina {currentPage} de {totalPages}</p>
           <button onClick={() => exportCsv(payments)} disabled={payments.length === 0} className="flex h-9 items-center gap-1.5 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold shadow-sm disabled:opacity-50">
             <Download className="h-3.5 w-3.5" /> Exportar CSV (pagina)
@@ -397,7 +397,7 @@ export default function CompletedPaymentsList({
 
               return (
                 <div key={payment.paymentId} className="space-y-2 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/45 to-white p-3 shadow-[0_16px_40px_-36px_rgba(139,92,246,0.55)]">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm">
                       {payment.order.type === "TAKEOUT" ? <ShoppingBag className="h-4 w-4 text-violet-600" /> : <UtensilsCrossed className="h-4 w-4 text-violet-600" />}
                     </div>
@@ -413,10 +413,10 @@ export default function CompletedPaymentsList({
                         <span>- Metodo: {payment.method_name}</span>
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-violet-200 bg-white/90 px-3 py-2 shadow-sm">
+                    <div className="w-full rounded-2xl border border-violet-200 bg-white/90 px-3 py-2 text-center shadow-sm md:w-auto md:text-right">
                       <span className="font-display text-base font-black text-foreground">${payment.amount.toFixed(2)}</span>
                     </div>
-                    <button onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)} className="flex h-9 w-9 items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm" title="Ver detalle">
+                    <button onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)} className="flex h-10 w-full items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm md:h-9 md:w-9" title="Ver detalle">
                       {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                   </div>
@@ -426,7 +426,7 @@ export default function CompletedPaymentsList({
                       <p className="text-xs font-medium text-muted-foreground">Items cubiertos</p>
                       <div className="space-y-1">
                         {payment.items.map((item) => (
-                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-2xl border border-violet-100 bg-violet-50/45 p-3 text-sm md:grid-cols-5">
+                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-2xl border border-violet-100 bg-violet-50/45 p-3 text-sm xl:grid-cols-5">
                             <span className="font-medium text-foreground">{item.product_name}</span>
                             <span className="text-muted-foreground">Cant: {item.quantity}</span>
                             <span className="text-muted-foreground">Metodo: {item.method_name}</span>

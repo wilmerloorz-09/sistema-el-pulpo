@@ -166,10 +166,10 @@ const Mesas = () => {
   const toPayCount = tables?.filter((t) => t.status === "to_pay").length ?? 0;
 
   return (
-    <div className="space-y-5 p-4">
+    <div className="space-y-5 p-3 sm:p-4">
       <div className="surface-glow px-5 py-4">
-        <div className="relative flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
           {!canOperateMesas && (
             <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
@@ -177,7 +177,7 @@ const Mesas = () => {
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-3 text-xs font-medium">
+        <div className="flex flex-wrap gap-2 text-xs font-medium">
           <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-3 py-1 text-muted-foreground shadow-sm">
             <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
             {freeCount} libres
@@ -196,7 +196,7 @@ const Mesas = () => {
       </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
         <motion.button
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}

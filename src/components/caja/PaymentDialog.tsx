@@ -558,7 +558,7 @@ export default function PaymentDialog({
 
   return (
     <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[92vh] flex-col overflow-hidden p-0 sm:max-w-6xl">
+      <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] flex-col overflow-hidden p-0 sm:max-h-[92vh] sm:max-w-6xl">
         <DialogHeader className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
           <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-xl">
             <span>
@@ -573,7 +573,7 @@ export default function PaymentDialog({
 
         {order && (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-6 sm:py-4">
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)]">
                 <div className="space-y-4">
                   {readOnly && (
@@ -591,7 +591,7 @@ export default function PaymentDialog({
                         </p>
                       </div>
                       {!readOnly && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                           <Button type="button" variant="outline" size="sm" onClick={fillAllPending}>
                             Todo pendiente
                           </Button>
@@ -650,7 +650,7 @@ export default function PaymentDialog({
                                 </p>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:w-[420px]">
+                              <div className="grid grid-cols-2 gap-2 xl:w-[420px]">
                                 <div className="rounded-xl bg-muted/50 p-2">
                                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Precio unit.</p>
                                   <p className="mt-1 text-sm font-semibold text-foreground">${item.unit_price.toFixed(2)}</p>
@@ -740,8 +740,8 @@ export default function PaymentDialog({
                                 className={cn(
                                   "grid items-center gap-2",
                                   isCash
-                                    ? "grid-cols-[20px_minmax(0,1fr)_auto_88px] sm:grid-cols-[20px_minmax(0,1fr)_auto_110px]"
-                                    : "grid-cols-[20px_minmax(0,1fr)_88px] sm:grid-cols-[20px_minmax(0,1fr)_110px]",
+                                    ? "grid-cols-[20px_minmax(0,1fr)] sm:grid-cols-[20px_minmax(0,1fr)_auto_110px]"
+                                    : "grid-cols-[20px_minmax(0,1fr)] sm:grid-cols-[20px_minmax(0,1fr)_110px]",
                                 )}
                               >
                                 <Checkbox
@@ -758,7 +758,7 @@ export default function PaymentDialog({
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    className="h-8 shrink-0 rounded-xl px-2.5 text-[11px] sm:h-9 sm:px-3 sm:text-xs"
+                                    className="col-span-full h-9 shrink-0 rounded-xl px-2.5 text-[11px] sm:col-auto sm:h-9 sm:px-3 sm:text-xs"
                                     onClick={() => openCashDetail(method.id, isSelected)}
                                   >
                                     Monedas y billetes
@@ -770,7 +770,7 @@ export default function PaymentDialog({
                                   inputMode="decimal"
                                   value={(split?.amount ?? 0).toFixed(2)}
                                   onChange={(e) => split && setSplitAmount(split.id, parseMoneyInput(e.target.value))}
-                                  className="h-9 w-full shrink-0 rounded-xl pl-3 text-left [appearance:textfield] sm:h-10"
+                                  className={cn("h-9 w-full shrink-0 rounded-xl pl-3 text-left [appearance:textfield] sm:h-10", isCash && "col-span-full sm:col-auto")}
                                   readOnly={isCash}
                                   disabled={readOnly || !isSelected || isCash}
                                 />
@@ -785,7 +785,7 @@ export default function PaymentDialog({
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur sm:px-6">
+            <div className="shrink-0 border-t border-border bg-background/95 px-3 py-4 backdrop-blur sm:px-6">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
@@ -825,7 +825,7 @@ export default function PaymentDialog({
                     <Button
                       onClick={() => setConfirmOpen(true)}
                       disabled={!canPay}
-                      className="h-14 w-full gap-2 rounded-2xl px-6 font-display text-base font-semibold lg:w-[280px]"
+                      className="h-14 w-full gap-2 rounded-2xl px-4 font-display text-base font-semibold lg:w-[280px]"
                     >
                       {paying ? (
                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -870,12 +870,12 @@ export default function PaymentDialog({
           setCashDetailOpen(true);
         }}
       >
-        <DialogContent className="flex max-h-[94vh] w-[96vw] flex-col overflow-hidden p-0 sm:max-w-6xl">
+      <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] flex-col overflow-hidden p-0 sm:max-h-[94vh] sm:w-[96vw] sm:max-w-6xl">
           <DialogHeader className="border-b border-border px-4 py-2.5">
             <DialogTitle className="font-display text-lg">Monedas y billetes</DialogTitle>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-hidden px-4 py-2.5">
+          <div className="min-h-0 flex-1 overflow-hidden px-3 py-2.5 sm:px-4">
             <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <MetricCard
                 title="Aplicado"
@@ -900,7 +900,7 @@ export default function PaymentDialog({
               />
             </div>
 
-            <div className="grid h-[calc(94vh-152px)] min-h-0 gap-3 lg:grid-cols-[minmax(0,1.55fr)_380px]">
+            <div className="grid h-[calc(100dvh-15rem)] min-h-0 gap-3 lg:h-[calc(94vh-152px)] lg:grid-cols-[minmax(0,1.55fr)_380px]">
               <div className="min-h-0 overflow-y-auto rounded-2xl border border-border bg-card p-3">
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3 rounded-2xl border border-amber-200/70 bg-gradient-to-b from-amber-50/80 to-background p-3 shadow-sm">
@@ -973,7 +973,7 @@ export default function PaymentDialog({
                       {sortedDenoms
                         .filter((denomination) => (cashDraftReceived[denomination.denomination_id] || 0) > 0)
                         .map((denomination) => (
-                          <div key={denomination.denomination_id} className="flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 text-sm">
+                          <div key={denomination.denomination_id} className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm sm:flex sm:items-center sm:px-3 sm:py-1.5">
                             {!readOnly && (
                               <button
                                 onClick={() =>
@@ -1037,7 +1037,7 @@ export default function PaymentDialog({
                                 <Plus className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            <span className="font-semibold text-foreground">
+                            <span className="col-span-full text-right font-semibold text-foreground sm:col-auto sm:text-left">
                               ${((cashDraftReceived[denomination.denomination_id] || 0) * denomination.value).toFixed(2)}
                             </span>
                           </div>
@@ -1068,11 +1068,11 @@ export default function PaymentDialog({
             </div>
           </div>
 
-          <div className="sticky bottom-0 flex shrink-0 justify-end gap-2 border-t border-border bg-background px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
-            <Button type="button" variant="outline" onClick={cancelCashDetail}>
+          <div className="sticky bottom-0 flex shrink-0 flex-col gap-2 border-t border-border bg-background px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end sm:px-4">
+            <Button type="button" variant="outline" onClick={cancelCashDetail} className="w-full sm:w-auto">
               Cancelar
             </Button>
-            <Button type="button" onClick={acceptCashDetail}>
+            <Button type="button" onClick={acceptCashDetail} className="w-full sm:w-auto">
               Aceptar
             </Button>
           </div>
@@ -1080,7 +1080,7 @@ export default function PaymentDialog({
       </Dialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent className="max-w-2xl">
+        <AlertDialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display">Confirmar cobro</AlertDialogTitle>
             <AlertDialogDescription>
@@ -1089,7 +1089,7 @@ export default function PaymentDialog({
           </AlertDialogHeader>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
                 <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${selectedTotal.toFixed(2)}</p>
@@ -1108,7 +1108,7 @@ export default function PaymentDialog({
               <p className="mb-2 text-sm font-semibold text-foreground">Metodos utilizados</p>
               <div className="space-y-2">
                 {paymentAllocationPreview.map((split) => (
-                  <div key={split.id} className="grid grid-cols-[minmax(0,1fr)_96px_96px] gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm">
+                  <div key={split.id} className="grid grid-cols-1 gap-1 rounded-xl bg-muted/40 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_96px_96px] sm:gap-2">
                     <span className="truncate text-foreground">{split.methodName}</span>
                     <span className="text-right text-foreground">Recibido ${split.receivedAmount.toFixed(2)}</span>
                     <span className="text-right font-medium text-foreground">Aplica ${split.appliedAmount.toFixed(2)}</span>

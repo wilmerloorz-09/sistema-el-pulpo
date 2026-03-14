@@ -15,10 +15,10 @@ const AppLayout = () => {
   const { isOnline } = useNetwork();
 
   return (
-    <div className="flex min-h-screen flex-col bg-transparent">
-      <header className="sticky top-0 z-40 border-b border-orange-200/80 bg-white/78 px-3 py-2 backdrop-blur-xl sm:px-4 sm:py-2.5">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-h-dvh flex-col bg-transparent">
+      <header className="sticky top-0 z-40 border-b border-orange-200/80 bg-white/82 px-3 py-2 backdrop-blur-xl sm:px-4 sm:py-2.5">
+        <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto shrink-0 object-contain sm:h-11" />
             {activeBranch && branches.length > 1 ? (
               <Select
@@ -31,7 +31,7 @@ const AppLayout = () => {
                 }}
                 disabled={loading}
               >
-                <SelectTrigger className="h-10 w-[220px] min-w-[220px] rounded-2xl border border-orange-200 bg-white/88 px-3 text-xs font-semibold text-foreground shadow-sm [&>span]:truncate">
+                <SelectTrigger className="h-11 w-full min-w-0 rounded-2xl border border-orange-200 bg-white/88 px-3 text-xs font-semibold text-foreground shadow-sm sm:h-10 sm:w-[220px] sm:min-w-[220px] [&>span]:truncate">
                   <SelectValue placeholder="Seleccionar sucursal" />
                 </SelectTrigger>
                 <SelectContent>
@@ -70,7 +70,7 @@ const AppLayout = () => {
         </div>
       </header>
 
-      <main className="mb-safe flex-1 pb-20 md:pb-20">
+      <main className="mb-safe flex-1 pb-24 md:pb-20">
         <Outlet />
       </main>
 

@@ -70,7 +70,7 @@ const Ordenes = () => {
 
   if (!orderId) {
     return (
-      <div className="ordenes-mobile-touch flex h-[calc(100vh-7rem)] flex-col">
+      <div className="ordenes-mobile-touch flex min-h-[calc(100dvh-7rem)] flex-col">
         <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
           <OrdersList onCancelOrder={canCancelOrders ? setCancelOrder : undefined} readOnly={!canCancelOrders} />
         </div>
@@ -287,8 +287,8 @@ const Ordenes = () => {
   );
 
   return (
-    <div className="ordenes-mobile-touch flex h-[calc(100vh-7rem)] flex-col">
-      <div className="flex items-center gap-2 border-b border-border bg-card/50 px-4 py-3">
+    <div className="ordenes-mobile-touch flex min-h-[calc(100dvh-7rem)] flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
         <Button variant="ghost" size="icon" className="h-11 w-11 md:h-8 md:w-8" onClick={() => navigate("/mesas")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -317,7 +317,7 @@ const Ordenes = () => {
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="relative h-11 rounded-xl gap-1.5 md:hidden" onClick={() => setShowCart(!showCart)}>
+        <Button variant="outline" size="sm" className="relative ml-auto h-11 rounded-xl gap-1.5 md:hidden" onClick={() => setShowCart(!showCart)}>
           <ShoppingBag className="h-4 w-4" />
           {itemCount > 0 && (
             <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -339,11 +339,11 @@ const Ordenes = () => {
       )}
 
       <div className="flex flex-1 overflow-hidden md:hidden">
-        <div className={cn("flex-1 overflow-y-auto p-3", showCart && "hidden")}>
+        <div className={cn("flex-1 overflow-y-auto p-3 pb-24", showCart && "hidden")}>
           {menuPanel}
         </div>
 
-        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-3", !showCart && "hidden")}>
+        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-3 pb-24", !showCart && "hidden")}>
           {orderPanel(true)}
         </div>
       </div>
@@ -371,7 +371,7 @@ const Ordenes = () => {
       </div>
 
       {!showCart && itemCount > 0 && (
-        <button onClick={() => setShowCart(true)} className="fixed bottom-20 right-4 z-30 flex min-h-[52px] items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
+        <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
           <span className="font-display text-sm font-bold">{itemCount} items - ${total.toFixed(2)}</span>
         </button>

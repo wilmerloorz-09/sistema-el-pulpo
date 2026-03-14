@@ -46,7 +46,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
     <>
       <div className="relative overflow-hidden rounded-[28px] border border-emerald-200 bg-gradient-to-r from-white via-emerald-50 to-sky-50 p-4 shadow-[0_22px_55px_-42px_rgba(16,185,129,0.7)]">
         <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-200/35 blur-2xl" />
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-300 bg-white/90 shadow-sm">
               <DollarSign className="h-5 w-5 text-emerald-600" />
@@ -59,22 +59,22 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {!readOnly && (
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 rounded-2xl border-rose-200 bg-gradient-to-r from-white via-rose-50 to-white text-xs font-semibold text-rose-700 shadow-[0_12px_30px_-24px_rgba(244,63,94,0.8)] hover:border-rose-300 hover:from-rose-50 hover:to-white"
+                className="h-10 gap-1.5 rounded-2xl border-rose-200 bg-gradient-to-r from-white via-rose-50 to-white px-3 text-xs font-semibold text-rose-700 shadow-[0_12px_30px_-24px_rgba(244,63,94,0.8)] hover:border-rose-300 hover:from-rose-50 hover:to-white"
                 onClick={() => setShowClose(true)}
               >
                 <Lock className="h-3.5 w-3.5" />
                 Cerrar Turno
               </Button>
             )}
-            <Button
+              <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 rounded-2xl border-violet-200 bg-gradient-to-r from-white via-violet-50 to-white text-xs font-semibold text-violet-700 shadow-[0_12px_30px_-24px_rgba(139,92,246,0.8)] hover:border-violet-300 hover:from-violet-50 hover:to-white"
+              className="h-10 gap-1.5 rounded-2xl border-violet-200 bg-gradient-to-r from-white via-violet-50 to-white px-3 text-xs font-semibold text-violet-700 shadow-[0_12px_30px_-24px_rgba(139,92,246,0.8)] hover:border-violet-300 hover:from-violet-50 hover:to-white"
               onClick={() => setShowTotals(true)}
             >
               <DollarSign className="h-3.5 w-3.5" />
@@ -83,7 +83,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 rounded-2xl border-sky-200 bg-gradient-to-r from-white via-sky-50 to-white text-xs font-semibold text-sky-700 shadow-[0_12px_30px_-24px_rgba(14,165,233,0.8)] hover:border-sky-300 hover:from-sky-50 hover:to-white"
+              className="h-10 gap-1.5 rounded-2xl border-sky-200 bg-gradient-to-r from-white via-sky-50 to-white px-3 text-xs font-semibold text-sky-700 shadow-[0_12px_30px_-24px_rgba(14,165,233,0.8)] hover:border-sky-300 hover:from-sky-50 hover:to-white"
               onClick={() => setShowDenoms(true)}
             >
               <Coins className="h-3.5 w-3.5" />
