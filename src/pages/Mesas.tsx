@@ -196,7 +196,7 @@ const Mesas = () => {
       </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-3 gap-2.5 sm:gap-3 xl:grid-cols-4">
         <motion.button
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -204,7 +204,7 @@ const Mesas = () => {
           onClick={handleTakeout}
           disabled={creatingTakeout || !canOperateMesas}
           className={cn(
-            "relative overflow-hidden flex flex-col items-center justify-center gap-2 rounded-[28px] border-2 p-5 shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95",
+            "relative overflow-hidden flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 p-3 text-center shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95 sm:min-h-[180px] sm:rounded-[28px] sm:p-5",
             "bg-gradient-to-br from-emerald-50 via-white to-emerald-100 border-emerald-300",
             canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
           )}
@@ -213,8 +213,8 @@ const Mesas = () => {
             <Loader2 className="h-6 w-6 animate-spin text-accent" />
           ) : (
             <>
-              <ShoppingBag className="h-6 w-6 text-accent" />
-              <span className="font-display text-lg font-bold text-accent">Para llevar</span>
+              <ShoppingBag className="h-5 w-5 text-accent sm:h-6 sm:w-6" />
+              <span className="font-display text-base font-bold text-accent sm:text-lg">Para llevar</span>
               {canOperateMesas && (
                 <div className="absolute right-2 top-2 rounded-full bg-accent/10 p-1">
                   <Plus className="h-3.5 w-3.5 text-accent" />
@@ -238,7 +238,7 @@ const Mesas = () => {
               onClick={() => handleTableClick(table)}
               disabled={isCreating}
               className={cn(
-                "relative flex flex-col items-center justify-center gap-3 rounded-[28px] border-2 p-5 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95",
+                "relative flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 p-3 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-3 sm:rounded-[28px] sm:p-5",
                 config.bg,
                 config.border,
                 table.status === "free" && canOperateMesas && "hover:border-primary/30 hover:bg-primary/5",
@@ -249,11 +249,11 @@ const Mesas = () => {
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               ) : (
                 <>
-                  <div className={cn("flex h-16 w-16 items-center justify-center rounded-[22px] border-2", config.artWrap)}>
+                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-[18px] border-2 sm:h-16 sm:w-16 sm:rounded-[22px]", config.artWrap)}>
                     {config.artIcon}
                   </div>
-                  <span className={cn("font-display text-lg font-black", config.text)}>{table.name}</span>
-                  <div className={cn("flex items-center gap-1 text-xs font-medium", config.text)}>
+                  <span className={cn("font-display text-base font-black leading-tight sm:text-lg", config.text)}>{table.name}</span>
+                  <div className={cn("flex items-center gap-1 text-[11px] font-medium sm:text-xs", config.text)}>
                     {config.icon}
                     <span>{config.label}</span>
                   </div>
@@ -263,7 +263,7 @@ const Mesas = () => {
                     </div>
                   )}
                   {table.status === "free" && (
-                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[10px] font-semibold text-sky-700 shadow-sm">
+                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-sky-700 shadow-sm sm:text-[10px]">
                       <Sparkles className="h-3 w-3" />
                       Lista para abrir
                     </div>
