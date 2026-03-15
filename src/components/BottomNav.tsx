@@ -138,7 +138,7 @@ const BottomNav = () => {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white safe-bottom md:bottom-0 dark:border-border dark:bg-card">
-      <div className="mx-auto flex max-w-6xl items-center justify-center gap-4 overflow-x-auto px-4 py-2 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden sm:gap-6 md:gap-8">
+      <div className="mx-auto flex max-w-6xl items-center justify-start gap-3 overflow-x-auto px-2 py-2 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden sm:gap-6 sm:px-4 md:gap-8">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
