@@ -15,14 +15,14 @@ const MAX_RECENT_SEARCHES = 6;
 
 const renderNodeVisual = (node: MenuNode) => {
   if (node.image_url) {
-    return <img src={node.image_url} alt={node.name} className="h-20 w-20 rounded-[1.75rem] object-cover md:h-16 md:w-16 md:rounded-2xl" />;
+    return <img src={node.image_url} alt={node.name} className="h-14 w-14 rounded-[1.1rem] object-cover md:h-16 md:w-16 md:rounded-2xl" />;
   }
 
   if (node.icon) {
-    return <span className="text-4xl leading-none">{node.icon}</span>;
+    return <span className="text-[2rem] leading-none md:text-4xl">{node.icon}</span>;
   }
 
-  return <ImageIcon className="h-14 w-14 text-muted-foreground/60 md:h-12 md:w-12" />;
+  return <ImageIcon className="h-10 w-10 text-muted-foreground/60 md:h-12 md:w-12" />;
 };
 
 const renderCompactNodeVisual = (node: MenuNode) => {
@@ -66,7 +66,7 @@ const NodeCard = ({
         }
       }}
       className={cn(
-        "group relative flex min-h-[178px] flex-col rounded-3xl bg-card p-4 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:p-4",
+        "group relative flex min-h-[146px] flex-col rounded-[1.4rem] bg-card p-3 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:rounded-3xl md:p-4",
         isProduct
           ? "border border-border hover:-translate-y-0.5 hover:border-emerald-400/60 hover:shadow-[0_12px_24px_-18px_rgba(16,185,129,0.75)]"
           : "border border-dashed border-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_12px_24px_-18px_hsl(var(--primary)/0.55)]",
@@ -75,11 +75,11 @@ const NodeCard = ({
         isDisabledNode && "cursor-not-allowed",
       )}
     >
-      <div className="mb-3 flex justify-center md:mb-4">{renderNodeVisual(node)}</div>
+      <div className="mb-2 flex justify-center md:mb-4">{renderNodeVisual(node)}</div>
       <div className="flex-1">
-        <p className="line-clamp-2 text-base font-semibold text-foreground md:text-sm">{node.name}</p>
+        <p className="line-clamp-2 text-[0.95rem] font-semibold leading-tight text-foreground md:text-sm">{node.name}</p>
         {isProduct ? (
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-1.5 flex items-center gap-2">
             <p className="text-sm font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
             {!node.is_active && (
               <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
@@ -88,8 +88,8 @@ const NodeCard = ({
             )}
           </div>
         ) : (
-          <div className="mt-2 flex items-center gap-2">
-            <p className="text-sm text-muted-foreground md:text-xs">{childCount} items</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <p className="text-xs text-muted-foreground md:text-xs">{childCount} items</p>
             {!node.is_active && (
               <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
                 Agotado
@@ -99,10 +99,10 @@ const NodeCard = ({
         )}
       </div>
 
-      {nodeAction ? <div className="mt-3">{nodeAction}</div> : null}
+      {nodeAction ? <div className="mt-2">{nodeAction}</div> : null}
 
       {!isProduct && additionalDepth > 0 && (
-        <span className="absolute bottom-3 right-3 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
+        <span className="absolute bottom-2.5 right-2.5 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
           +{additionalDepth} nivel{additionalDepth === 1 ? "" : "es"}
         </span>
       )}
@@ -405,7 +405,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
       )}
 
       <div ref={panelRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(136px,1fr))] gap-3 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3 px-1 pb-4">
+        <div className="grid grid-cols-3 gap-2 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3 px-1 pb-4">
           {displayNodes.map((node) => (
             <NodeCard
               key={node.id}
