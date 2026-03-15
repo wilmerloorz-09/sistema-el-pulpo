@@ -68,13 +68,6 @@ const AppLayout = () => {
             </Button>
           </div>
         </div>
-        {isGlobalAdmin && (
-          <div className="mt-2 sm:hidden">
-            <span className="inline-flex min-h-[34px] items-center rounded-2xl border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-semibold text-primary shadow-sm">
-              Admin global
-            </span>
-          </div>
-        )}
         {!isOnline && (
           <div className="mt-2 sm:hidden">
             <span className="inline-flex min-h-[34px] items-center gap-1 rounded-2xl border border-destructive/20 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-destructive shadow-sm">
