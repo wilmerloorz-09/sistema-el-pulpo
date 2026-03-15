@@ -4,7 +4,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import OrderCard from "./OrderCard";
-import { Loader2, ClipboardList } from "lucide-react";
+import { Loader2, ClipboardList, Clock, CheckCircle2, Truck, Ban, CircleDollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,7 @@ interface TabInfo {
   status: string | null;
   showCancel: boolean;
   helperText: string;
+  icon: React.ReactNode;
 }
 
 const tabs: TabInfo[] = [
@@ -25,6 +26,7 @@ const tabs: TabInfo[] = [
     status: "SENT_TO_KITCHEN",
     showCancel: true,
     helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
+    icon: <Clock className="h-4 w-4" />,
   },
   {
     key: "ready",
@@ -32,6 +34,7 @@ const tabs: TabInfo[] = [
     status: "READY",
     showCancel: true,
     helperText: "Aqui ves solo las cantidades que ya estan listas para entregar o despachar.",
+    icon: <CheckCircle2 className="h-4 w-4" />,
   },
   {
     key: "dispatched",
@@ -39,6 +42,7 @@ const tabs: TabInfo[] = [
     status: "KITCHEN_DISPATCHED",
     showCancel: true,
     helperText: "Aqui ves solo las cantidades de mesa que ya fueron despachadas, aunque la linea original haya sido mayor.",
+    icon: <Truck className="h-4 w-4" />,
   },
   {
     key: "cancelled",
@@ -46,6 +50,7 @@ const tabs: TabInfo[] = [
     status: "CANCELLED",
     showCancel: false,
     helperText: "Aqui ves las cantidades anuladas y tambien las ordenes para llevar ya despachadas.",
+    icon: <Ban className="h-4 w-4" />,
   },
   {
     key: "paid",
@@ -53,6 +58,7 @@ const tabs: TabInfo[] = [
     status: "PAID",
     showCancel: false,
     helperText: "Aqui ves las ordenes ya cerradas para cobro.",
+    icon: <CircleDollarSign className="h-4 w-4" />,
   },
 ];
 
@@ -226,7 +232,10 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
                   : "border border-transparent bg-white/70 text-muted-foreground hover:border-orange-200 hover:bg-orange-50 hover:text-foreground",
               )}
             >
-              {tab.label}
+              <div className="flex items-center gap-1.5">
+                {tab.icon}
+                <span>{tab.label}</span>
+              </div>
               {count > 0 && (
                 <Badge variant={isActive ? "secondary" : "outline"} className={cn("h-6 px-2 text-xs", isActive ? "border-white/30 bg-white/20 text-white" : "border-orange-200 bg-white text-primary")}>
                   {count}

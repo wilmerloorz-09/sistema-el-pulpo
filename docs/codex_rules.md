@@ -23,6 +23,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
 - Cualquier cambio en `MenuNodesCrud`, `useMenuTree` o `MenuNavigator` debe considerar el espejo operativo en legacy.
 
+### 4.1) Productos agotados deben reflejarse en venta
+- Si un nodo o producto se desactiva desde `Productos`, `Ordenes` debe reflejarlo como agotado.
+- No basta con cambiar color o etiqueta; debe bloquearse su seleccion operativa.
+
 ### 5) Modificadores: modelo estructurado obligatorio
 - Modificador no es texto libre concatenado.
 - Catalogo base por `modifiers`.
@@ -36,6 +40,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ### 7) `order_code` y contadores
 - Si reaparece un problema de duplicados, revisar primero la migracion/correccion vigente antes de tocar la app.
+- Lo mismo aplica para `restaurant_tables.table_number`: primero revisar trigger/contador/BD antes de meter mas heuristicas en frontend.
+
+### 8) Snapshot operativo compartido
+- Si una pantalla clasifica estados de orden (`Enviada`, `Lista`, `Despachada`, `Por cobrar`), preferir snapshot operativo compartido sobre lecturas parciales.
+- No reconstruir reglas operativas criticas desde una sola tabla si ya existe un snapshot consolidado.
 
 ## Convenciones de Implementacion
 
@@ -45,11 +54,16 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - Cocina
   - Despacho
   - Ticket
+- Si cambia disponibilidad/agotado, revisar tambien:
+  - Productos
+  - Ordenes
+  - vistas de consulta relacionadas
 - Distinguir visualmente categoria vs producto; una categoria no debe mostrarse como item vendible con precio.
 - En `Caja`, diferenciar visualmente:
   - caja fisica
   - recaudacion por metodo
 - En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
+- No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
@@ -65,6 +79,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si se toca Ordenes o Despacho, revisar tambien:
   - RLS de tablas de eventos operativos
   - reflejo en vivo entre usuarios/sesiones
+- Si se toca divisiones de mesa, validar tambien:
+  - que la nueva division quede seleccionada
+  - que no pueda crearse una division nueva si una anterior no tiene items
+  - que `Eliminar division` se bloquee si ya hubo cocina/listo/despacho/pago/cancelacion
 - En Caja, no mezclar montos de efectivo con montos no efectivos al presentar `Diferencia` o `Actual`.
 - Si el metodo efectivo no participa en un cobro final, no persistir ni reutilizar denominaciones temporales.
 
@@ -77,6 +95,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
+5. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
 
 ## Estado Base que Debe Mantenerse
 - Login con email o username.
@@ -84,7 +103,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Permisos efectivos por modulo/sucursal.
 - Modificadores estructurados por nodo e item.
 - Navegacion del menu basada en arbol, con Nivel 1 como unica obligatoriedad.
+- Modulo `Productos` como superficie operativa para consulta y agotado/activacion.
 - Caja con:
   - efectivo controlado por denominaciones
   - transferencia/no efectivo como monto editable
   - resumen de turno separado de recaudacion por metodo
+
+## 9) Autonomía de Asistentes IA
+- **Aplicación Directa:** Los asistentes de IA (como Windsurf, Cursor, Gemini, etc.) tienen permitido y se les requiere aplicar los cambios de código directamente a los archivos del proyecto, omitiendo los pasos intermedios de pedir permiso o confirmación para proceder con la escritura de código, a menos que el flujo requiera revisión humana crítica de arquitectura o se rompa un sistema en producción.

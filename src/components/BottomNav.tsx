@@ -1,4 +1,4 @@
-﻿import { NavLink } from "@/components/NavLink";
+import { NavLink } from "@/components/NavLink";
 import { useBranch } from "@/contexts/BranchContext";
 import { canView } from "@/lib/permissions";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -137,8 +137,8 @@ const BottomNav = () => {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white/88 backdrop-blur-xl safe-bottom md:bottom-0">
-      <div className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-2 py-2 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white safe-bottom md:bottom-0 dark:border-border dark:bg-card">
+      <div className="mx-auto flex max-w-6xl items-center justify-center gap-4 overflow-x-auto px-4 py-2 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden sm:gap-6 md:gap-8">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}

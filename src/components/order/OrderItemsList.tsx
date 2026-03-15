@@ -1,7 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 interface OrderItem {
   id: string;
@@ -82,7 +84,7 @@ const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-7 w-7 sm:h-9 sm:w-9"
                 disabled={itemDisabled}
                 onClick={() => {
                   if (item.quantity <= 1) {
@@ -92,17 +94,29 @@ const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
                   }
                 }}
               >
-                {item.quantity <= 1 ? <Trash2 className="h-3.5 w-3.5 text-destructive" /> : <Minus className="h-3.5 w-3.5" />}
+                {item.quantity <= 1 ? <Trash2 className="h-3.5 w-3.5 text-destructive sm:h-4 sm:w-4" /> : <Minus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
               </Button>
-              <span className="w-5 text-center text-sm font-bold">{item.quantity}</span>
+              
+              <QuantityInput
+                initialQuantity={item.quantity}
+                disabled={itemDisabled}
+                onUpdate={(newQty) => {
+                  if (newQty <= 0) {
+                    onRemove(item.id);
+                  } else if (newQty !== item.quantity) {
+                    onUpdateQty(item.id, newQty, item.unit_price);
+                  }
+                }}
+              />
+
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-7 w-7 sm:h-9 sm:w-9"
                 disabled={itemDisabled}
                 onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </Button>
             </div>
           </div>
@@ -117,5 +131,54 @@ const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
   );
 };
 
-export default OrderItemsList;
+const QuantityInput = ({
+  initialQuantity,
+  disabled,
+  onUpdate,
+}: {
+  initialQuantity: number;
+  disabled?: boolean;
+  onUpdate: (val: number) => void;
+}) => {
+  const [value, setValue] = useState(initialQuantity.toString());
+  const [isEditing, setIsEditing] = useState(false);
 
+  // Sync external changes when not editing
+  if (!isEditing && value !== initialQuantity.toString()) {
+    setValue(initialQuantity.toString());
+  }
+
+  const handleCommit = () => {
+    setIsEditing(false);
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) {
+      setValue(initialQuantity.toString());
+    } else {
+      setValue(parsed.toString());
+      onUpdate(parsed);
+    }
+  };
+
+  return (
+    <Input
+      type="number"
+      inputMode="numeric"
+      className="h-7 w-12 text-center text-sm font-bold px-1 sm:h-9 sm:w-14 sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => {
+        setIsEditing(true);
+        setValue(e.target.value);
+      }}
+      onBlur={handleCommit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        }
+      }}
+      onFocus={(e) => e.target.select()}
+    />
+  );
+};
+
+export default OrderItemsList;

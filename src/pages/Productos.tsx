@@ -148,7 +148,7 @@ const Productos = () => {
             >
               {node.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
               <span className="truncate">
-                {pendingNodeId === node.id ? "Guardando..." : node.is_active ? "Agotado" : "Activar"}
+                {pendingNodeId === node.id ? "Guardando..." : node.is_active ? "Desactivar" : "Activar"}
               </span>
             </Button>
           )}

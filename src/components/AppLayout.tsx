@@ -19,7 +19,7 @@ const AppLayout = () => {
 
   return (
     <div className="flex min-h-dvh flex-col bg-transparent">
-      <header className="sticky top-0 z-40 border-b border-orange-200/80 bg-white/82 px-2.5 py-2 backdrop-blur-xl sm:px-4 sm:py-2.5">
+      <header className="sticky top-0 z-40 border-b border-orange-200/80 bg-white px-2.5 py-2 sm:px-4 sm:py-2.5 dark:border-border dark:bg-card">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <img src="/logo.png" alt="El Pulpo" className="h-8 w-auto shrink-0 object-contain sm:h-11" />
@@ -60,7 +60,7 @@ const AppLayout = () => {
           <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-2">
             {!isOnline && (
               <span className="hidden min-h-[38px] items-center gap-1 rounded-2xl border border-destructive/20 bg-rose-50 px-3 py-1 text-xs font-semibold text-destructive shadow-sm sm:flex">
-                <WifiOff className="h-3 w-3" /> Offline
+                <WifiOff className="h-3 w-3" /> Sin conexión
               </span>
             )}
             <Button variant="outline" size="icon" className="h-10 w-10 rounded-2xl shadow-sm" onClick={() => setUserMenuOpen(true)}>
@@ -71,7 +71,7 @@ const AppLayout = () => {
         {!isOnline && (
           <div className="mt-2 sm:hidden">
             <span className="inline-flex min-h-[34px] items-center gap-1 rounded-2xl border border-destructive/20 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-destructive shadow-sm">
-              <WifiOff className="h-3 w-3" /> Offline
+              <WifiOff className="h-3 w-3" /> Sin conexión
             </span>
           </div>
         )}

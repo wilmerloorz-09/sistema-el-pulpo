@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus, ShoppingBag } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Modifier {
   id: string;
@@ -84,35 +85,40 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="max-w-sm rounded-2xl">
-        <DialogHeader>
-          <DialogTitle className="font-display text-lg">{product.description}</DialogTitle>
+      <DialogContent className="max-w-sm rounded-[24px] p-5 shadow-xl sm:rounded-[28px] border-orange-200/40 bg-background">
+        <DialogHeader className="mb-1 text-left">
+          <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
+            {product.description}
+          </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           {isManual && (
-            <div className="space-y-1.5">
-              <Label className="text-sm">Precio</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={manualPrice}
-                onChange={(event) => setManualPrice(event.target.value)}
-                placeholder="0.00"
-                className="h-11 rounded-xl text-lg font-display"
-                autoFocus
-              />
+            <div className="space-y-1.5 mt-2">
+              <Label className="text-sm font-semibold text-muted-foreground">Precio</Label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={manualPrice}
+                  onChange={(event) => setManualPrice(event.target.value)}
+                  placeholder="0.00"
+                  className="h-11 rounded-xl pl-8 text-lg font-bold shadow-sm"
+                  autoFocus
+                />
+              </div>
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label className="text-sm">Cantidad</Label>
+          <div className="space-y-1.5 mt-2">
+            <Label className="text-sm font-semibold text-muted-foreground">Cantidad</Label>
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
                 size="icon"
-                className="h-10 w-10 rounded-xl"
+                className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
                 onClick={() => setQuantity((current) => Math.max(1, current - 1))}
               >
                 <Minus className="h-4 w-4" />
@@ -124,12 +130,12 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
                 value={quantity}
                 onChange={(event) => handleManualQuantityChange(event.target.value)}
                 onBlur={(event) => handleManualQuantityChange(event.target.value)}
-                className="h-10 w-20 rounded-xl text-center font-display text-lg font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
               <Button
                 variant="outline"
                 size="icon"
-                className="h-10 w-10 rounded-xl"
+                className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
                 onClick={() => setQuantity((current) => current + 1)}
               >
                 <Plus className="h-4 w-4" />
@@ -138,30 +144,47 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
           </div>
 
           {sortedModifiers.length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-sm text-red-600">Modificaciones</Label>
-              <div className="grid grid-cols-1 gap-2">
-                {sortedModifiers.map((modifier) => (
-                  <label
-                    key={modifier.id}
-                    className="flex items-center gap-2 rounded-lg border border-border p-2.5 cursor-pointer hover:bg-muted/50"
-                  >
-                    <Checkbox
-                      checked={selectedMods.includes(modifier.id)}
-                      onCheckedChange={() => toggleMod(modifier.id)}
-                    />
-                    <span className="text-sm text-red-600">{modifier.description}</span>
-                  </label>
-                ))}
+            <div className="space-y-2.5">
+              <Label className="text-sm font-semibold text-orange-600">Modificaciones</Label>
+              <div className="grid grid-cols-1 gap-1.5 max-h-[35vh] overflow-y-auto pr-1">
+                {sortedModifiers.map((modifier) => {
+                  const isChecked = selectedMods.includes(modifier.id);
+                  return (
+                    <label
+                      key={modifier.id}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-[14px] border p-2.5 transition-all cursor-pointer",
+                        isChecked
+                          ? "border-orange-200 bg-orange-50 shadow-sm"
+                          : "border-border/60 bg-white/60 hover:border-orange-100 hover:bg-white"
+                      )}
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleMod(modifier.id)}
+                        className={cn("h-4 w-4 rounded-[4px] border-orange-300", isChecked && "data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500")}
+                      />
+                      <span className={cn("text-[13px] font-medium leading-none", isChecked ? "text-orange-900" : "text-muted-foreground")}>
+                        {modifier.description}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-border pt-2">
-            <span className="text-sm text-muted-foreground">
-              Total: <span className="font-display text-lg font-bold text-foreground">${(price * quantity).toFixed(2)}</span>
+          <div className="flex items-center justify-between border-t border-border/60 pt-4 mt-2">
+            <span className="text-[13px] text-muted-foreground font-medium flex flex-col">
+              Total
+              <span className="font-display text-2xl font-black text-foreground">${(price * quantity).toFixed(2)}</span>
             </span>
-            <Button onClick={handleConfirm} disabled={adding || (isManual && price <= 0)} className="rounded-xl font-display">
+            <Button 
+              onClick={handleConfirm} 
+              disabled={adding || (isManual && price <= 0)} 
+              className="h-11 rounded-xl px-5 font-bold shadow-sm flex items-center gap-1.5"
+            >
+              <ShoppingBag className="h-4 w-4" />
               Agregar
             </Button>
           </div>

@@ -145,7 +145,7 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
       </div>
 
       <div className="border-t border-border px-4 py-3">
-        <Button onClick={() => onOpenReadyDialog(order)} className="h-11 w-full gap-2 rounded-xl font-display font-semibold">
+        <Button onClick={() => onOpenReadyDialog(order)} variant="info" className="h-11 w-full gap-2 rounded-xl font-display font-semibold">
           <CheckCircle2 className="h-4 w-4" />
           Marcar listo
         </Button>

@@ -11,7 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
+import { AlertCircle, RefreshCw, Loader2, Smartphone, Cloud } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -119,11 +119,13 @@ const Reportes = () => {
       {/* Tabs */}
       <Tabs defaultValue="local" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="local">
-            📱 Locales ({localOrders.data?.length || 0})
+          <TabsTrigger value="local" className="flex items-center gap-2">
+            <Smartphone className="h-4 w-4" />
+            Locales ({localOrders.data?.length || 0})
           </TabsTrigger>
-          <TabsTrigger value="remote">
-            ☁️ Sincronizadas ({remoteOrders.data?.length || 0})
+          <TabsTrigger value="remote" className="flex items-center gap-2">
+            <Cloud className="h-4 w-4" />
+            Sincronizadas ({remoteOrders.data?.length || 0})
           </TabsTrigger>
         </TabsList>
 

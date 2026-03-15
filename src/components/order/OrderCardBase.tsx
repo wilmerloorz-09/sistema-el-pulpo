@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye } from "lucide-react";
+import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye, Ban } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 const CARD_SUMMARY_LIMITS = {
@@ -154,7 +154,7 @@ export function OrderCardBase({
             <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
-                  <Badge className="min-w-[3.15rem] justify-center rounded-xl border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-2.5 py-1.5 text-sm font-black leading-none text-white shadow-[0_14px_24px_-18px_rgba(249,115,22,0.95)]">
+                  <Badge className="min-w-[2.35rem] justify-center rounded-md border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-0.5 text-[11px] font-black leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
                     {item.quantity || 1}x
                   </Badge>
                   <div className="min-w-0 flex-1">
@@ -224,8 +224,9 @@ export function OrderCardBase({
           <Button
             onClick={() => onCancel(order)}
             variant="destructive"
-            className="h-10 w-full rounded-xl font-display font-semibold"
+            className="h-10 w-full rounded-xl font-display font-semibold gap-2"
           >
+            <Ban className="h-4 w-4" />
             Cancelar pedido
           </Button>
         </div>

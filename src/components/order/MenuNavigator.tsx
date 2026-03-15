@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode } from "@/hooks/useMenuTree";
 
@@ -130,7 +131,37 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
   const panelRef = useRef<HTMLDivElement>(null);
   const animationTimeouts = useRef<number[]>([]);
   const [renderedNodes, setRenderedNodes] = useState<MenuNode[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const visibleSignature = useMemo(() => visibleNodes.map((node) => node.id).join("|"), [visibleNodes]);
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const lowerQuery = searchQuery.trim().toLowerCase();
+    
+    const allProducts = getChildren(null, true).filter(n => n.node_type === "product");
+    
+    const recursiveFind = (nodes: MenuNode[]): MenuNode[] => {
+      let results: MenuNode[] = [];
+      for (const node of nodes) {
+        if (node.node_type === "product" && node.name.toLowerCase().includes(lowerQuery)) {
+          results.push(node);
+        }
+        if (node.node_type === "category") {
+          results = [...results, ...recursiveFind(getChildren(node.id))];
+        }
+      }
+      return results;
+    };
+    
+    const rootNodes = getChildren(null);
+    const foundInsideNavigation = recursiveFind(rootNodes);
+    
+    const dedupedResults = Array.from(new Map(foundInsideNavigation.map(item => [item.id, item])).values());
+    
+    return dedupedResults;
+  }, [searchQuery, getChildren]);
+
+  const displayNodes = searchQuery.trim() ? searchResults : renderedNodes;
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -200,12 +231,26 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="menu-scroll flex gap-2 overflow-x-auto pb-1">
-        {l1Nodes.map((node) => (
-          <button
-            key={node.id}
-            type="button"
-            onClick={() => selectL1(node.id)}
+      <div className="relative mb-1">
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+          <Search className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <Input
+          type="search"
+          placeholder="Buscar producto..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9 h-11 w-full rounded-2xl border-orange-200/60 bg-white/70 shadow-sm backdrop-blur-md focus-visible:ring-primary/40 dark:border-border dark:bg-card/50"
+        />
+      </div>
+
+      {!searchQuery.trim() && (
+        <div className="menu-scroll flex gap-2 overflow-x-auto pb-1">
+          {l1Nodes.map((node) => (
+            <button
+              key={node.id}
+              type="button"
+              onClick={() => selectL1(node.id)}
             className={cn(
               "shrink-0 rounded-2xl border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors md:px-4 md:py-2 md:text-sm",
               activeL1?.id === node.id
@@ -219,9 +264,10 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
             </span>
           </button>
         ))}
-      </div>
+        </div>
+      )}
 
-      {showBreadcrumb && (
+      {!searchQuery.trim() && showBreadcrumb && (
         <div className="menu-scroll flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs text-muted-foreground">
           {breadcrumb.map((node, index) => {
             const isLast = index === breadcrumb.length - 1;
@@ -241,6 +287,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
         </div>
       )}
 
+      {!searchQuery.trim() && (
       <div className="flex items-center gap-2.5">
         <div className="flex items-center gap-1.5">
           {Array.from({ length: MAX_DEPTH_DOTS }).map((_, index) => (
@@ -267,10 +314,17 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
           </button>
         )}
       </div>
+      )}
 
-      <div ref={panelRef} className="min-h-0 flex-1">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(136px,1fr))] gap-3 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3">
-          {renderedNodes.map((node) => (
+      {searchQuery.trim() && searchResults.length > 0 && (
+        <div className="mb-1 text-xs font-semibold text-muted-foreground">
+          {searchResults.length} {searchResults.length === 1 ? 'resultado' : 'resultados'} para "{searchQuery}"
+        </div>
+      )}
+
+      <div ref={panelRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(136px,1fr))] gap-3 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3 px-1 pb-4">
+          {displayNodes.map((node) => (
             <NodeCard
               key={node.id}
               node={node}
@@ -289,9 +343,16 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
             />
           ))}
 
-          {renderedNodes.length === 0 && (
+          {!searchQuery.trim() && displayNodes.length === 0 && (
             <div className="col-span-full rounded-3xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
               No hay nodos activos en este nivel.
+            </div>
+          )}
+
+          {searchQuery.trim() && displayNodes.length === 0 && (
+            <div className="col-span-full rounded-3xl border border-dashed border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+              <Search className="h-8 w-8 mx-auto mb-3 text-muted-foreground/30" />
+              <p>No se encontraron productos para "{searchQuery}"</p>
             </div>
           )}
         </div>

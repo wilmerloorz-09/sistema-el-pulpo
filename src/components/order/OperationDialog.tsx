@@ -84,7 +84,7 @@ export default function OperationDialog({ open, onOpenChange, order, mode, proce
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl bg-background shadow-xl rounded-[24px]">
         <DialogHeader>
           <DialogTitle>{actionLabel} de orden</DialogTitle>
           <DialogDescription>{order.order_code ?? `#${order.order_number}`}</DialogDescription>

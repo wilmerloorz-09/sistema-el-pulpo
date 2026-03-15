@@ -35,9 +35,27 @@
 - El unico nivel obligatorio para navegar es L1.
 - La persistencia del item sigue usando `order_items.product_id`, por lo que `products` aun es obligatorio.
 - La disponibilidad de modificadores en el dialogo de producto debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
+- La disponibilidad/agotado de productos tambien se resuelve desde `menu_nodes.is_active`; un producto agotado puede seguir existiendo en legacy, pero `Ordenes` no debe permitir venderlo.
 - La visibilidad de estados operativos entre usuarios depende de dos capas:
   - RLS correcto sobre tablas de eventos operativos
   - suscripciones en vivo en frontend para invalidar listas cuando cambia `orders`, `order_items` y eventos asociados
+- La clasificacion final de estados operativos ya no debe depender solo de eventos sueltos: `Ordenes`, `Despacho`, `Cocina` y `Caja` deben apoyarse en un snapshot operativo comun.
+
+### Productos
+- Nuevo modulo operativo visible en el menu inferior.
+- Reutiliza `MenuNavigator` para consulta del arbol completo.
+- Puede funcionar en dos modos:
+  - consulta para meseros
+  - activacion/desactivacion operativa para perfiles de despacho
+- La activacion/desactivacion por nodo es cascada sobre descendientes.
+
+### Mesas y divisiones
+- La division de mesa se resuelve sobre `table_splits` + `orders`.
+- La regla vigente es:
+  - una mesa base con items puede dividirse
+  - una division nueva solo puede crearse si todas las divisiones anteriores tienen al menos un item
+  - la nueva division creada debe quedar seleccionada automaticamente
+  - la eliminacion de division solo aplica antes de cocina/listo/despacho/pago/cancelacion
 
 ## Cambios Arquitectonicos de Esta Jornada
 
@@ -76,20 +94,45 @@
   - monto de efectivo controlado por denominaciones
   - no editable manualmente
   - transferencia/no efectivo editable por input
+- El modal de efectivo se comporta como subflujo especializado:
+  - agrupa `Monedas` y `Billetes`
+  - permite cantidad manual por denominacion
+  - valida excedentes con confirmacion explicita
 
-### F) Admin movil
+### F) Snapshot operativo compartido
+- Se consolido la dependencia en `get_order_operational_snapshot` para evitar divergencias entre:
+  - `OrdersList`
+  - `useDispatchOrders`
+  - `useKitchenOrders`
+  - `useCaja`
+- La arquitectura operativa de estados debe considerar ese snapshot como lectura principal para UI cross-modulo.
+
+### G) Admin movil
 - Los listados administrativos reutilizan `AdminTable`.
 - En movil, `AdminTable` debe renderizar tarjetas apiladas y no tablas comprimidas, para evitar superposicion de campos y acciones.
+
+### H) Movil primero en vistas operativas
+- `AppLayout`, `BottomNav`, `Mesas`, `Caja`, `Productos`, `Admin` y `MenuNavigator` ya recibieron una pasada movil explicita.
+- La navegacion inferior y los contenedores superiores ya no deben asumirse como layouts desktop reducidos; deben comportarse como superficies tactiles reales.
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`
 - `src/hooks/useMenuData.ts`
+- `src/hooks/useOrder.ts`
+- `src/hooks/useOrdersByStatus.ts`
+- `src/hooks/useCaja.ts`
+- `src/hooks/useDispatchOrders.ts`
+- `src/hooks/useKitchenOrders.ts`
 - `src/components/order/MenuNavigator.tsx`
 - `src/pages/Ordenes.tsx`
+- `src/pages/Productos.tsx`
 - `src/components/admin/MenuNodesCrud.tsx`
 - `src/components/admin/ModifiersCrud.tsx`
 - `src/pages/Admin.tsx`
 - `src/pages/Caja.tsx`
+- `src/pages/Mesas.tsx`
+- `src/components/AppLayout.tsx`
+- `src/components/BottomNav.tsx`
 - `src/components/caja/ShiftSummary.tsx`
 - `src/components/caja/PayableOrdersList.tsx`
 - `src/components/caja/PaymentDialog.tsx`
@@ -102,3 +145,4 @@
 4. Mantener la migracion al arbol como refactor incremental, no como corte brusco del modelo legacy.
 5. Mantener `modifiers` como catalogo reutilizable y mover la disponibilidad a relaciones por nodo, no al CRUD base.
 6. En Caja, diferenciar siempre `caja fisica` de `recaudacion por metodo`; no mezclar ambos conceptos en el mismo resumen sin rotulacion clara.
+7. Si un flujo necesita el estado real de una orden, preferir snapshot operativo compartido antes que reconstrucciones parciales ad hoc.

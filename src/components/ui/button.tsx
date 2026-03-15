@@ -13,6 +13,8 @@ const buttonVariants = cva(
         destructive: "border border-destructive/60 bg-gradient-to-r from-destructive via-rose-500 to-pink-500 text-destructive-foreground shadow-[0_18px_36px_-22px_hsl(var(--destructive)/0.92)] hover:-translate-y-0.5 hover:brightness-105",
         outline: "border border-orange-200/90 bg-gradient-to-r from-white via-orange-50 to-amber-50 text-foreground shadow-[0_14px_28px_-24px_rgba(15,23,42,0.42)] backdrop-blur-sm hover:-translate-y-0.5 hover:border-orange-300 hover:from-orange-50 hover:to-amber-50",
         secondary: "border border-violet-200 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-[0_16px_32px_-22px_rgba(139,92,246,0.82)] hover:-translate-y-0.5 hover:brightness-105",
+        success: "border border-emerald-500/60 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 text-white shadow-[0_16px_32px_-22px_rgba(16,185,129,0.8)] hover:-translate-y-0.5 hover:brightness-105",
+        info: "border border-sky-500/60 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 text-white shadow-[0_16px_32px_-22px_rgba(14,165,233,0.8)] hover:-translate-y-0.5 hover:brightness-105",
         ghost: "text-foreground hover:bg-orange-100/90 hover:text-primary",
         link: "text-primary underline-offset-4 hover:underline",
       },

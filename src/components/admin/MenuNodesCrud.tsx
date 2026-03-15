@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, FolderTree, ImageUp, Plus, Power, Save, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderTree, ImageUp, Plus, Power, Save, Trash2, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -866,7 +866,8 @@ const MenuNodesCrud = () => {
               <Save className="mr-1.5 h-4 w-4" />
               Guardar nodo
             </Button>
-            <Button variant="outline" className="rounded-xl" onClick={() => resetForm(selectedNode?.parent_id ?? null)}>
+            <Button variant="outline" className="rounded-xl gap-1.5" onClick={() => resetForm(selectedNode?.parent_id ?? null)}>
+              <Eraser className="h-4 w-4" />
               Limpiar
             </Button>
           </div>

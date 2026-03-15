@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { Fingerprint, Loader2 } from "lucide-react";
+import { Fingerprint, Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser";
@@ -128,8 +128,13 @@ const Login = () => {
             />
           </div>
 
-          <Button type="submit" disabled={loading} className="h-12 w-full font-display text-base font-semibold">
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Iniciar sesion"}
+          <Button type="submit" disabled={loading} className="h-12 w-full gap-2 font-display text-base font-semibold">
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+              <>
+                <LogIn className="h-5 w-5" />
+                Iniciar sesion
+              </>
+            )}
           </Button>
         </form>
 

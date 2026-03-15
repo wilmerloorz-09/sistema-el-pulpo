@@ -201,14 +201,14 @@ export function DispatchCardBase({
           {readOnly ? <div className="text-center text-xs text-muted-foreground">Modo consulta: no puedes ejecutar acciones de despacho.</div> : null}
 
           {!readOnly && canMarkReady && (
-            <Button onClick={() => onOpenReadyDialog(order)} className="w-full gap-2 bg-blue-600 text-white hover:bg-blue-700" size="sm">
+            <Button onClick={() => onOpenReadyDialog(order)} variant="info" className="w-full gap-2" size="sm">
               <CheckCircle2 className="h-4 w-4" />
               Marcar listo
             </Button>
           )}
 
           {!readOnly && canDispatch && (
-            <Button onClick={() => onOpenDispatchDialog(order)} className="w-full gap-2 bg-green-600 text-white hover:bg-green-700" size="sm">
+            <Button onClick={() => onOpenDispatchDialog(order)} variant="success" className="w-full gap-2" size="sm">
               <Truck className="h-4 w-4" />
               Despachar
             </Button>

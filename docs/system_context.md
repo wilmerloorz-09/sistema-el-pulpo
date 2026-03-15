@@ -6,7 +6,7 @@
 - `profiles.active_branch_id` sigue siendo el pivote de sesion y contexto operativo.
 - El catalogo visible en Ordenes ya navega con arbol recursivo `menu_nodes`, pero la persistencia operativa de items sigue dependiendo de `products`.
 
-## Cambios Aplicados en Esta Jornada (2026-03-13)
+## Cambios Aplicados en Esta Jornada (2026-03-14)
 
 ### 1) Arbol de menu recursivo como nueva navegacion
 - Se introdujo `menu_nodes` como estructura jerarquica de profundidad indefinida.
@@ -48,6 +48,34 @@
   - producto: muestra precio y permite agregarse a la orden
 - La disponibilidad de modificadores ya debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
 
+### 4.3) Productos: nuevo modulo operativo
+- Se agrego un modulo visible en el menu inferior: `Productos`.
+- Este modulo reutiliza el mismo arbol de `Ordenes` para consulta operativa del catalogo.
+- Si el usuario solo tiene perfil tipo mesero, el modulo funciona en modo consulta.
+- Si el usuario tiene capacidad operativa de despacho, puede:
+  - marcar un producto como `Agotado`
+  - `Activar` nuevamente un producto agotado
+  - activar/desactivar nodos completos del arbol
+- La activacion/desactivacion por nodo es recursiva: afecta todos los descendientes.
+- Lo marcado como agotado en `Productos` debe reflejarse en `Ordenes` como no seleccionable.
+
+### 4.4) Ordenes: reglas operativas nuevas para divisiones
+- `Dividir` se interpreta como `dividir mesa`, no como dividir borrador abstracto.
+- Solo aplica a ordenes `DINE_IN` con mesa activa y al menos un item.
+- Para crear una nueva division adicional (`C`, `D`, etc.), todas las divisiones existentes deben tener al menos un item.
+- Al crear una nueva division, la UI debe seleccionar automaticamente la division recien creada.
+- Si existe al menos una division, aparece `Eliminar division`, pero solo puede ejecutarse si esa division:
+  - no fue enviada a cocina
+  - no esta lista
+  - no fue despachada
+  - no esta pagada
+  - no esta cancelada
+
+### 4.5) Ordenes/Caja/Despacho: snapshot operativo unificado
+- La clasificacion de ordenes visibles entre `Enviadas`, `Listas`, `Despachadas` y `Por cobrar` ya no debe depender de lecturas parciales de eventos.
+- `Ordenes`, `Despacho`, `Cocina` y `Caja` deben apoyarse en el snapshot operativo (`get_order_operational_snapshot`) para evitar que una orden quede pegada en una pestana equivocada.
+- Al despachar una orden, `Caja` debe invalidar tambien `payable-orders` para reflejar enseguida lo cobrable.
+
 ### 4.1) App instalable y UX movil
 - La aplicacion ahora expone `manifest.json`, iconos PWA y `service worker` para instalacion en movil y desktop.
 - El `service worker` usa `cache-first` para assets estaticos y `network-first` para trafico a `supabase.co`.
@@ -74,6 +102,14 @@
   - `Recibido`: suma de denominaciones seleccionadas
   - `Cambio`: `Recibido - Aplicado`, solo si existe monto aplicado en efectivo
 - Si el unico metodo activo es `Efectivo`, no debe autocompletarse con el total a cobrar; se mantiene en `0.00` hasta seleccionar denominaciones.
+- El modal `Monedas y billetes` ahora permite:
+  - sumar/restar cantidades por denominacion
+  - editar cantidad manualmente
+  - borrar una denominacion completa
+  - advertir cuando el recibido ya cubre el pago y aun asi permitir agregar mas, previa confirmacion del usuario
+- Las denominaciones se presentan en dos grupos visibles:
+  - `Monedas`
+  - `Billetes`
 
 ### 5) Compatibilidad transitoria con modelo legacy
 - Aunque la UI ya navega con `menu_nodes`, `order_items.product_id` sigue referenciando `products(id)`.
@@ -92,6 +128,7 @@
 - Sucursal activa sigue resolviendose por `profiles.active_branch_id`.
 - Seguridad y permisos siguen validandose en backend/BD, no en UI.
 - La creacion y gestion operativa de ordenes, items, modificadores de item y divisiones de mesa depende de permisos `OPERATE` por sucursal en `mesas` y/o `ordenes`; no basta con mostrar el modulo en frontend.
+- La disponibilidad/agotado de productos ya no es solo visual: si un nodo o producto esta inactivo en `menu_nodes`, `Ordenes` debe tratarlo como agotado y bloquear su seleccion.
 - La visibilidad de estados operativos (`Enviadas`, `Listas`, `Despachadas`, cancelaciones parciales) depende tambien de poder leer las tablas de eventos operativos por sucursal; si RLS de esos eventos no esta alineado con permisos branch/module, las ordenes pueden desaparecer de una pestana sin caer en la siguiente.
 - `OrdersList` ya debe refrescarse entre sesiones/usuarios mediante suscripciones en vivo; no confiar solo en invalidaciones locales para reflejar cambios operativos.
 - Modificadores siguen usando el modelo estructurado:
@@ -99,6 +136,7 @@
   - disponibilidad por `menu_node_modifiers`
   - seleccion real por `order_item_modifiers`
 - La correccion de colisiones de `order_code` sigue vigente y no debe revertirse.
+- La correccion de numeracion de mesas por sucursal tambien debe preservarse: nuevas mesas no deben reutilizar `table_number` existentes aunque `entity_counters` este desalineado.
 
 ## Riesgos Vigentes
 1. No asumir que crear un nodo `product` en `menu_nodes` reemplaza automaticamente toda la operacion: la venta real sigue cerrando sobre `products`.
@@ -120,5 +158,6 @@
    - producto sincronizado agregandose sin error a la orden
    - modificadores heredados/propios disponibles en el dialogo del producto
 4. Si un producto del arbol no entra a la orden, revisar primero su espejo en `products`.
+5. Si una mesa nueva choca por `uq_restaurant_tables_branch_table_number`, revisar trigger/contador remoto antes de culpar al frontend.
 
 

@@ -414,13 +414,15 @@ const UsersCrud = () => {
                           </Select>
                           <Button
                             size="sm"
-                            className="h-8 text-xs"
+                            className="h-8 w-8 p-0"
                             onClick={() => saveAssignment.mutate({ user_id: user.id, branch_id: newAssignmentBranchId, role_code: newAssignmentRoleCode })}
                             disabled={!newAssignmentBranchId || !newAssignmentRoleCode || assignedRoleCodesForSelectedBranch.includes(newAssignmentRoleCode) || saveAssignment.isPending}
                           >
-                            OK
+                            <Check className="h-4 w-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddingAssignmentFor(null)}>X</Button>
+                          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground" onClick={() => setAddingAssignmentFor(null)}>
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
                       ) : (
                         <Button size="sm" variant="ghost" className="h-8 gap-1 rounded-lg text-xs" disabled={isProtected} onClick={() => openAssignmentEditor(user.id)}>
@@ -552,13 +554,15 @@ const UsersCrud = () => {
                         </Select>
                         <Button
                           size="sm"
-                          className="h-8 text-xs"
+                          className="h-8 w-8 p-0"
                           onClick={() => saveAssignment.mutate({ user_id: user.id, branch_id: newAssignmentBranchId, role_code: newAssignmentRoleCode })}
                           disabled={!newAssignmentBranchId || !newAssignmentRoleCode || assignedRoleCodesForSelectedBranch.includes(newAssignmentRoleCode) || saveAssignment.isPending}
                         >
-                          OK
+                          <Check className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddingAssignmentFor(null)}>X</Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground" onClick={() => setAddingAssignmentFor(null)}>
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
                     ) : (
                       <Button size="sm" variant="ghost" className="h-6 w-6 p-0" disabled={isProtected} onClick={() => openAssignmentEditor(user.id)}>

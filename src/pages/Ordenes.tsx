@@ -15,7 +15,7 @@ import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign, Trash2 } from "lucide-react";
+import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign, Trash2, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
@@ -293,7 +293,8 @@ const Ordenes = () => {
           <p className="truncate text-xs font-semibold text-muted-foreground">{order.order_code ?? `#${order.order_number}`}</p>
         </div>
         {mobile ? (
-          <Button variant="ghost" size="sm" className="h-11 px-3 text-sm 2xl:hidden" onClick={() => setShowCart(false)}>
+          <Button variant="ghost" size="sm" className="h-11 px-3 gap-2 text-sm 2xl:hidden" onClick={() => setShowCart(false)}>
+            <Menu className="h-4 w-4" />
             Ver menu
           </Button>
         ) : null}
@@ -378,11 +379,16 @@ const Ordenes = () => {
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            {order.table_name && (
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-extrabold text-sky-800 shadow-sm">
+            {order.table_name ? (
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-extrabold text-sky-800 shadow-sm dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-400">
                 {order.table_name}
               </span>
-            )}
+            ) : isTakeout ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-extrabold text-emerald-800 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
+                <ShoppingBag className="h-4 w-4" />
+                Para llevar
+              </span>
+            ) : null}
             <Badge variant="outline" className={cn("text-[10px] font-bold shadow-sm", statusColor[order.status])}>
               {statusLabel[order.status]}
             </Badge>

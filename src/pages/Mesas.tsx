@@ -12,30 +12,30 @@ import { canOperate } from "@/lib/permissions";
 
 const STATUS_CONFIG = {
   free: {
-    bg: "bg-gradient-to-br from-sky-50 via-white to-cyan-100",
-    border: "border-sky-300",
-    text: "text-sky-700",
+    bg: "bg-gradient-to-br from-sky-50 via-white to-cyan-100 dark:from-sky-950/20 dark:via-card dark:to-cyan-950/20",
+    border: "border-sky-300 dark:border-sky-800",
+    text: "text-sky-700 dark:text-sky-400",
     label: "Libre",
     icon: null,
-    artWrap: "border-sky-200 bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-300 text-white shadow-[0_18px_38px_-24px_rgba(14,165,233,0.8)]",
+    artWrap: "border-sky-200 bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-300 text-white shadow-[0_18px_38px_-24px_rgba(14,165,233,0.8)] dark:border-sky-800 dark:from-sky-600 dark:via-cyan-600 dark:to-teal-500 dark:shadow-[0_18px_38px_-24px_rgba(14,165,233,0.3)]",
     artIcon: <LayoutGrid className="h-8 w-8" />,
   },
   occupied: {
-    bg: "bg-gradient-to-br from-orange-50 via-white to-amber-100",
-    border: "border-primary/40",
-    text: "text-primary",
+    bg: "bg-gradient-to-br from-orange-50 via-white to-amber-100 dark:from-orange-950/20 dark:via-card dark:to-amber-950/20",
+    border: "border-primary/40 dark:border-primary/30",
+    text: "text-primary dark:text-orange-400",
     label: "Ocupada",
     icon: <Users className="h-4 w-4" />,
-    artWrap: "border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)]",
+    artWrap: "border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)] dark:border-orange-800 dark:from-orange-600 dark:via-amber-500 dark:to-yellow-500 dark:shadow-[0_18px_38px_-24px_rgba(249,115,22,0.3)]",
     artIcon: <Users className="h-8 w-8" />,
   },
   to_pay: {
-    bg: "bg-gradient-to-br from-amber-50 via-white to-lime-100",
-    border: "border-warning/40",
-    text: "text-amber-800",
+    bg: "bg-gradient-to-br from-amber-50 via-white to-lime-100 dark:from-amber-950/20 dark:via-card dark:to-lime-950/20",
+    border: "border-warning/40 dark:border-warning/30",
+    text: "text-amber-800 dark:text-amber-500",
     label: "Por pagar",
     icon: <CircleDollarSign className="h-4 w-4" />,
-    artWrap: "border-lime-200 bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(132,204,22,0.82)]",
+    artWrap: "border-lime-200 bg-gradient-to-br from-emerald-500 via-lime-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(132,204,22,0.82)] dark:border-lime-800 dark:from-emerald-600 dark:via-lime-600 dark:to-yellow-500 dark:shadow-[0_18px_38px_-24px_rgba(132,204,22,0.3)]",
     artIcon: <CircleDollarSign className="h-8 w-8" />,
   },
 };
@@ -166,10 +166,11 @@ const Mesas = () => {
   const toPayCount = tables?.filter((t) => t.status === "to_pay").length ?? 0;
 
   return (
-    <div className="space-y-4 p-2.5 sm:p-4">
-      <div className="surface-glow px-4 py-4 sm:px-5">
-        <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="pb-8">
+      <div className="sticky top-[57px] sm:top-[65px] z-30 bg-background pt-2.5 sm:pt-4 pb-4 px-2.5 sm:px-4">
+        <div className="surface-glow px-4 py-4 sm:px-5">
+          <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
           {!canOperateMesas && (
             <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
@@ -182,22 +183,24 @@ const Mesas = () => {
             <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
             {freeCount} libres
           </span>
-          <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-primary shadow-sm">
+          <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-primary shadow-sm dark:border-primary/30 dark:bg-orange-950/40">
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />
             {occupiedCount} ocupadas
           </span>
           {toPayCount > 0 && (
-            <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-warning shadow-sm">
+            <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-warning shadow-sm dark:border-warning/30 dark:bg-amber-950/40">
               <span className="h-2.5 w-2.5 rounded-full bg-warning" />
               {toPayCount} por pagar
             </span>
           )}
         </div>
+        </div>
       </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-4">
-        <motion.button
+      <div className="px-2.5 sm:px-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-4">
+          <motion.button
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0 }}
@@ -205,7 +208,7 @@ const Mesas = () => {
           disabled={creatingTakeout || !canOperateMesas}
           className={cn(
             "relative overflow-hidden flex min-h-[130px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 p-2.5 text-center shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-2 sm:rounded-[28px] sm:p-5",
-            "bg-gradient-to-br from-emerald-50 via-white to-emerald-100 border-emerald-300",
+            "bg-gradient-to-br from-emerald-50 via-white to-emerald-100 border-emerald-300 dark:from-emerald-950/20 dark:via-card dark:to-emerald-950/30 dark:border-emerald-800",
             canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
           )}
         >
@@ -263,14 +266,14 @@ const Mesas = () => {
                     </div>
                   )}
                   {table.status === "free" && (
-                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[8px] font-semibold text-sky-700 shadow-sm sm:text-[10px]">
+                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[8px] font-semibold text-sky-700 shadow-sm sm:text-[10px] dark:border-sky-800 dark:bg-card/85 dark:text-sky-400">
                       <Sparkles className="h-3 w-3" />
                       Lista para abrir
                     </div>
                   )}
                   {table.splitCount > 0 && (
                     <span className="absolute left-2 top-2 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-secondary-foreground">
-                      {table.splitCount} splits
+                      {table.splitCount} {table.splitCount === 1 ? 'división' : 'divisiones'}
                     </span>
                   )}
                 </>
@@ -278,6 +281,7 @@ const Mesas = () => {
             </motion.button>
           );
         })}
+        </div>
       </div>
     </div>
   );

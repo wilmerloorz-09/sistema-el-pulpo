@@ -42,6 +42,9 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `order_items.product_id` sigue con FK hacia `products(id)`.
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
+- `menu_nodes.is_active` pasa a tener impacto operativo real en UI:
+  - si un producto/nodo esta agotado, debe bloquear venta en `Ordenes`
+  - la activacion/desactivacion puede originarse desde el modulo `Productos`
 
 ## Sincronizacion Transitoria entre Modelos
 - `MenuNodesCrud` sincroniza estructura minima hacia tablas legacy.
@@ -60,12 +63,26 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `order_items.item_note`: nota opcional por item.
 - `subcategory_modifiers`: tabla legacy de asignacion previa por subcategoria; ya no debe ser la fuente principal para nuevos cambios.
 
+## Divisiones de mesa
+- `table_splits` sigue siendo la entidad de soporte para submesas.
+- `orders.split_id` enlaza la orden con su division.
+- Regla operativa vigente:
+  - una division nueva solo debe crearse cuando las divisiones existentes ya tienen al menos un item
+  - una division no debe eliminarse si ya tiene rastro operativo de cocina/listo/despacho/pago/cancelacion
+- Para que esa validacion sea consistente, la lectura de orden debe incluir:
+  - `sent_to_kitchen_at`
+  - `ready_at`
+  - `dispatched_at`
+  - `paid_at`
+  - `cancelled_at`
+
 ## Denominaciones
 - `denominations` ahora soporta `image_url` para representar visualmente monedas y billetes.
 - `denominations.denomination_type` define explicitamente si una denominacion es `coin` o `bill`.
 - La imagen se carga a Storage en el bucket publico `denomination-images` y se reutiliza en Admin/Caja.
 - El flujo de Caja debe leer `image_url` junto con `label`, `denomination_type`, `value` y `display_order`.
 - El orden de presentacion visible en Caja y Desglose debe salir de `display_order` ascendente, no del valor monetario ni de la etiqueta.
+- El flujo operativo en UI agrupa denominaciones por `denomination_type` (`coin`, `bill`) y conserva la posibilidad de editar `quantity` manualmente por denominacion antes de persistir.
 
 ## Caja y pagos
 - `cash_shifts` + detalle de denominaciones siguen siendo la fuente de `Apertura`, `Actual` y `Diferencia`.
@@ -76,7 +93,15 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - En el flujo de cobro:
   - `cashReceivedDenoms` y `cashChangeDenoms` solo deben persistirse si realmente participa un metodo efectivo
   - desactivar `Efectivo` debe limpiar denominaciones temporales para no contaminar el cierre o el total actual
+- Si `Recibido >= Aplicado` y el usuario agrega mas denominaciones, la UI debe pedir confirmacion antes de aceptar excedente.
 - La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
+
+## Snapshot operativo
+- La UI operativa ya no debe reconstruir estados solo desde eventos dispersos.
+- Existe una dependencia funcional en `get_order_operational_snapshot` para:
+  - clasificar `Enviadas`, `Listas`, `Despachadas`
+  - determinar que entra a `Por cobrar`
+  - mantener consistencia entre `Ordenes`, `Despacho`, `Cocina` y `Caja`
 
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.
@@ -112,6 +137,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - alinea RLS de `orders` y entidades relacionadas con permisos `OPERATE` por sucursal/modulo
 - `supabase/migrations/20260313205500_fix_operational_event_visibility_by_branch_permissions.sql`
   - alinea RLS de eventos operativos para que `Enviadas`, `Listas` y `Despachadas` sean visibles segun permisos efectivos
+- `supabase/migrations/20260314120000_fix_restaurant_table_number_collision.sql`
+  - endurece la asignacion de `restaurant_tables.table_number`
+  - mantiene sincronizado `entity_counters`
+  - evita reutilizar numeros de mesa existentes por sucursal cuando hay drift entre contador y datos reales
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.
@@ -119,5 +148,6 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 3. Toda tabla nueva o cambio de acceso requiere revisar RLS/policies por sucursal.
 4. Los archivos de `menu-node-images` deben quedar protegidos por policies de Storage alineadas con permisos administrativos por sucursal.
 5. Si aparece error en insercion de items, revisar primero la correspondencia entre `menu_nodes.product` y `products`.
+6. Si aparece colision de `table_number` al crear mesas, revisar trigger remoto y `entity_counters` antes de agregar mas logica en frontend.
 
 

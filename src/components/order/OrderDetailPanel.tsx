@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
-import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, X } from "lucide-react";
+import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, X, Ban } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 interface OrderItem {
@@ -136,7 +136,7 @@ export default function OrderDetailPanel({
       <div className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div key={item.id} className="flex items-start gap-2 rounded-xl bg-background px-2 py-2">
-            <Badge className="w-9 shrink-0 justify-center border-primary/20 bg-primary/10 text-[10px] font-medium text-primary">
+            <Badge className="min-w-[2.9rem] shrink-0 justify-center rounded-lg border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-2 py-1.5 text-sm font-black leading-none text-white shadow-[0_12px_22px_-18px_rgba(249,115,22,0.95)]">
               {item.quantity || 1}x
             </Badge>
 
@@ -184,6 +184,7 @@ export default function OrderDetailPanel({
           order.status === "READY" ? (
             <Button
               onClick={() => onMarkDispatched && onMarkDispatched(order.id)}
+              variant="success"
               className="h-12 w-full rounded-xl font-display font-semibold"
             >
               Despachar
@@ -191,6 +192,7 @@ export default function OrderDetailPanel({
           ) : (
             <Button
               onClick={() => onMarkReady && onMarkReady(order.id)}
+              variant="info"
               className="h-12 w-full rounded-xl font-display font-semibold"
             >
               Listo para despachar
@@ -202,8 +204,9 @@ export default function OrderDetailPanel({
           <Button
             onClick={() => onCancel?.(order)}
             variant="destructive"
-            className="h-10 w-full rounded-xl font-display font-semibold"
+            className="h-10 w-full rounded-xl font-display font-semibold gap-2"
           >
+            <Ban className="h-4 w-4" />
             Cancelar pedido
           </Button>
         )}
