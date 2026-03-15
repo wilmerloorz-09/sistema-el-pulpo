@@ -5,7 +5,15 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LogOut, WifiOff } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Fingerprint, KeyRound, LogOut, UserRound, WifiOff } from "lucide-react";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import PasskeyRegisterButton from "./PasskeyRegisterButton";
 
@@ -60,12 +68,43 @@ const AppLayout = () => {
                 <WifiOff className="h-3 w-3" /> Offline
               </span>
             )}
-            <span className="hidden rounded-2xl border border-white/70 bg-white/80 px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm lg:block">{profile?.full_name}</span>
-            <PasskeyRegisterButton />
-            <ChangePasswordDialog />
-            <Button variant="outline" size="icon" onClick={signOut} className="h-10 w-10 rounded-2xl">
-              <LogOut className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-10 w-10 rounded-2xl">
+                  <UserRound className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 rounded-2xl border-orange-200 bg-white/95 p-2 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.22)]">
+                <DropdownMenuLabel className="rounded-xl bg-orange-50 px-3 py-2.5">
+                  <div className="text-sm font-bold text-foreground">{profile?.full_name || "Usuario"}</div>
+                  {profile?.username ? (
+                    <div className="text-xs font-medium text-muted-foreground">@{profile.username}</div>
+                  ) : null}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <ChangePasswordDialog
+                  trigger={
+                    <DropdownMenuItem className="cursor-pointer rounded-xl px-3 py-2.5" onSelect={(event) => event.preventDefault()}>
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      Contrasena
+                    </DropdownMenuItem>
+                  }
+                />
+                <PasskeyRegisterButton
+                  trigger={
+                    <DropdownMenuItem className="cursor-pointer rounded-xl px-3 py-2.5" onSelect={(event) => event.preventDefault()}>
+                      <Fingerprint className="mr-2 h-4 w-4" />
+                      Biometrico
+                    </DropdownMenuItem>
+                  }
+                />
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="cursor-pointer rounded-xl px-3 py-2.5 text-destructive focus:text-destructive" onClick={signOut}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Cerrar sesion
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

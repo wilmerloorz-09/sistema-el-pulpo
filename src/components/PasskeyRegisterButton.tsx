@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { cloneElement, isValidElement, useState } from "react";
 import { Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { startRegistration } from "@simplewebauthn/browser";
 import { toast } from "sonner";
 
-const PasskeyRegisterButton = () => {
+interface PasskeyRegisterButtonProps {
+  trigger?: React.ReactNode;
+}
+
+const PasskeyRegisterButton = ({ trigger }: PasskeyRegisterButtonProps) => {
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -51,6 +55,13 @@ const PasskeyRegisterButton = () => {
       setLoading(false);
     }
   };
+
+  if (trigger && isValidElement(trigger)) {
+    return cloneElement(trigger, {
+      onClick: handleRegister,
+      disabled: loading || (trigger.props as { disabled?: boolean }).disabled,
+    });
+  }
 
   return (
     <Button
