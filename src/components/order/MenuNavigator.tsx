@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ImageIcon, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, History, ImageIcon, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode } from "@/hooks/useMenuTree";
@@ -10,7 +10,8 @@ interface MenuNavigatorProps {
   renderNodeAction?: (node: MenuNode) => ReactNode;
 }
 
-const MAX_DEPTH_DOTS = 6;
+const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
+const MAX_RECENT_SEARCHES = 6;
 
 const renderNodeVisual = (node: MenuNode) => {
   if (node.image_url) {
@@ -129,10 +130,63 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
   } = useMenuTree({ includeInactive });
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
   const animationTimeouts = useRef<number[]>([]);
   const [renderedNodes, setRenderedNodes] = useState<MenuNode[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const visibleSignature = useMemo(() => visibleNodes.map((node) => node.id).join("|"), [visibleNodes]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(RECENT_SEARCHES_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        setRecentSearches(parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0));
+      }
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!searchFocused) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!searchPanelRef.current?.contains(event.target as Node)) {
+        setSearchFocused(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [searchFocused]);
+
+  const persistRecentSearches = (nextSearches: string[]) => {
+    setRecentSearches(nextSearches);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(nextSearches));
+    } catch {
+      // noop
+    }
+  };
+
+  const registerRecentSearch = (rawQuery: string) => {
+    const normalized = rawQuery.trim();
+    if (!normalized) return;
+    const nextSearches = [
+      normalized,
+      ...recentSearches.filter((item) => item.toLowerCase() !== normalized.toLowerCase()),
+    ].slice(0, MAX_RECENT_SEARCHES);
+    persistRecentSearches(nextSearches);
+  };
+
+  const clearRecentSearches = () => {
+    persistRecentSearches([]);
+  };
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -219,8 +273,6 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
     [getChildren],
   );
   const showBreadcrumb = breadcrumb.length > 1;
-  const currentLevel = Math.max(1, breadcrumb.length || (activeL1 ? 1 : 0));
-
   if (loading) {
     return <div className="rounded-3xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Cargando menu...</div>;
   }
@@ -232,16 +284,71 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="relative mb-1">
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-          <Search className="h-4 w-4 text-muted-foreground" />
+        <div ref={searchPanelRef} className="relative">
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+            <Search className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <Input
+            type="search"
+            placeholder="Buscar producto..."
+            value={searchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                registerRecentSearch(searchQuery);
+                setSearchFocused(false);
+              }
+            }}
+            className="pl-9 h-11 w-full rounded-2xl border-orange-200/60 bg-white/70 shadow-sm backdrop-blur-md focus-visible:ring-primary/40 dark:border-border dark:bg-card/50"
+          />
+
+          {searchFocused && !searchQuery.trim() && recentSearches.length > 0 && (
+            <div className="absolute left-0 right-0 top-[calc(100%+0.45rem)] z-20 rounded-2xl border border-orange-200 bg-white/95 p-2 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.28)] backdrop-blur-md">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <History className="h-3.5 w-3.5" />
+                  Busquedas recientes
+                </div>
+                <button
+                  type="button"
+                  onClick={clearRecentSearches}
+                  className="text-[11px] font-semibold text-primary hover:text-primary/80"
+                >
+                  Limpiar
+                </button>
+              </div>
+              <div className="space-y-1">
+                {recentSearches.map((item) => (
+                  <div key={item} className="flex items-center gap-2 rounded-xl border border-transparent bg-muted/30 px-2 py-1.5 hover:border-orange-100 hover:bg-orange-50/70">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery(item);
+                        registerRecentSearch(item);
+                        setSearchFocused(false);
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm text-foreground">{item}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        persistRecentSearches(recentSearches.filter((search) => search !== item));
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-white hover:text-foreground"
+                      aria-label={`Eliminar busqueda ${item}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-        <Input
-          type="search"
-          placeholder="Buscar producto..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9 h-11 w-full rounded-2xl border-orange-200/60 bg-white/70 shadow-sm backdrop-blur-md focus-visible:ring-primary/40 dark:border-border dark:bg-card/50"
-        />
       </div>
 
       {!searchQuery.trim() && (
@@ -268,52 +375,27 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
       )}
 
       {!searchQuery.trim() && showBreadcrumb && (
-        <div className="menu-scroll flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs text-muted-foreground">
+        <div className="menu-scroll inline-flex w-fit max-w-full items-center gap-2 overflow-x-auto whitespace-nowrap rounded-full border border-orange-200/70 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-1.5 text-xs shadow-[0_12px_28px_-24px_rgba(249,115,22,0.55)]">
           {breadcrumb.map((node, index) => {
             const isLast = index === breadcrumb.length - 1;
             return (
               <div key={node.id} className="flex items-center gap-2">
                 {isLast ? (
-                  <span className="font-semibold text-foreground">{node.name}</span>
+                  <span className="rounded-full bg-orange-100 px-2.5 py-1 font-bold text-orange-800">{node.name}</span>
                 ) : (
-                  <button type="button" onClick={() => goToBreadcrumbIndex(index)} className="hover:text-foreground">
+                  <button
+                    type="button"
+                    onClick={() => goToBreadcrumbIndex(index)}
+                    className="font-medium text-muted-foreground transition-colors hover:text-orange-700"
+                  >
                     {node.name}
                   </button>
                 )}
-                {!isLast ? <span className="text-muted-foreground/60">{">"}</span> : null}
+                {!isLast ? <span className="text-orange-400">{">"}</span> : null}
               </div>
             );
           })}
         </div>
-      )}
-
-      {!searchQuery.trim() && (
-      <div className="flex items-center gap-2.5">
-        <div className="flex items-center gap-1.5">
-          {Array.from({ length: MAX_DEPTH_DOTS }).map((_, index) => (
-            <span
-              key={index}
-              className={cn(
-                "h-2.5 w-2.5 rounded-full transition-colors",
-                index < Math.min(currentLevel, MAX_DEPTH_DOTS) ? "bg-primary" : "bg-muted",
-              )}
-            />
-          ))}
-        </div>
-        <span className="text-xs font-medium text-muted-foreground">Nivel {currentLevel}</span>
-        {showBreadcrumb && (
-          <button
-            type="button"
-            onClick={goBack}
-            className="ml-auto inline-flex min-h-[44px] items-center gap-2 rounded-full border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-2 text-xs font-bold text-orange-700 shadow-[0_10px_24px_-18px_rgba(249,115,22,0.65)] transition-all hover:-translate-y-0.5 hover:border-orange-300 hover:text-orange-800 md:min-h-0 md:px-2.5 md:py-1.5"
-          >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-amber-400 text-white shadow-sm">
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </span>
-            <span>Volver</span>
-          </button>
-        )}
-      </div>
       )}
 
       {searchQuery.trim() && searchResults.length > 0 && (
@@ -332,9 +414,13 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
               additionalDepth={countDescendantDepth(node.id)}
               onClick={() => {
                 if (!node.is_active && !renderNodeAction?.(node)) return;
+                if (searchQuery.trim()) {
+                  registerRecentSearch(searchQuery);
+                }
                 if (node.node_type === "product") {
                   if (!node.is_active && !renderNodeAction?.(node)) return;
                   onSelectProduct?.(node);
+                  setSearchFocused(false);
                   return;
                 }
                 drillDown(node);
