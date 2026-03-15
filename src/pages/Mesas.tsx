@@ -166,8 +166,8 @@ const Mesas = () => {
   const toPayCount = tables?.filter((t) => t.status === "to_pay").length ?? 0;
 
   return (
-    <div className="space-y-5 p-3 sm:p-4">
-      <div className="surface-glow px-5 py-4">
+    <div className="space-y-4 p-2.5 sm:p-4">
+      <div className="surface-glow px-4 py-4 sm:px-5">
         <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
@@ -177,7 +177,7 @@ const Mesas = () => {
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 text-xs font-medium">
+        <div className="menu-scroll -mx-1 flex gap-2 overflow-x-auto px-1 text-xs font-medium sm:flex-wrap">
           <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-3 py-1 text-muted-foreground shadow-sm">
             <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
             {freeCount} libres
@@ -196,7 +196,7 @@ const Mesas = () => {
       </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2.5 sm:gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-4">
         <motion.button
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -204,7 +204,7 @@ const Mesas = () => {
           onClick={handleTakeout}
           disabled={creatingTakeout || !canOperateMesas}
           className={cn(
-            "relative overflow-hidden flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 p-3 text-center shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95 sm:min-h-[180px] sm:rounded-[28px] sm:p-5",
+            "relative overflow-hidden flex min-h-[130px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 p-2.5 text-center shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-2 sm:rounded-[28px] sm:p-5",
             "bg-gradient-to-br from-emerald-50 via-white to-emerald-100 border-emerald-300",
             canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
           )}
@@ -214,7 +214,7 @@ const Mesas = () => {
           ) : (
             <>
               <ShoppingBag className="h-5 w-5 text-accent sm:h-6 sm:w-6" />
-              <span className="font-display text-base font-bold text-accent sm:text-lg">Para llevar</span>
+              <span className="font-display text-sm font-bold text-accent sm:text-lg">Para llevar</span>
               {canOperateMesas && (
                 <div className="absolute right-2 top-2 rounded-full bg-accent/10 p-1">
                   <Plus className="h-3.5 w-3.5 text-accent" />
@@ -238,7 +238,7 @@ const Mesas = () => {
               onClick={() => handleTableClick(table)}
               disabled={isCreating}
               className={cn(
-                "relative flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 p-3 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-3 sm:rounded-[28px] sm:p-5",
+                "relative flex min-h-[130px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-3 sm:rounded-[28px] sm:p-5",
                 config.bg,
                 config.border,
                 table.status === "free" && canOperateMesas && "hover:border-primary/30 hover:bg-primary/5",
@@ -249,11 +249,11 @@ const Mesas = () => {
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               ) : (
                 <>
-                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-[18px] border-2 sm:h-16 sm:w-16 sm:rounded-[22px]", config.artWrap)}>
+                  <div className={cn("flex h-10 w-10 items-center justify-center rounded-[16px] border-2 sm:h-16 sm:w-16 sm:rounded-[22px]", config.artWrap)}>
                     {config.artIcon}
                   </div>
-                  <span className={cn("font-display text-base font-black leading-tight sm:text-lg", config.text)}>{table.name}</span>
-                  <div className={cn("flex items-center gap-1 text-[11px] font-medium sm:text-xs", config.text)}>
+                  <span className={cn("font-display text-sm font-black leading-tight sm:text-lg", config.text)}>{table.name}</span>
+                  <div className={cn("flex items-center gap-1 text-[10px] font-medium sm:text-xs", config.text)}>
                     {config.icon}
                     <span>{config.label}</span>
                   </div>
@@ -263,7 +263,7 @@ const Mesas = () => {
                     </div>
                   )}
                   {table.status === "free" && (
-                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-sky-700 shadow-sm sm:text-[10px]">
+                    <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[8px] font-semibold text-sky-700 shadow-sm sm:text-[10px]">
                       <Sparkles className="h-3 w-3" />
                       Lista para abrir
                     </div>

@@ -64,7 +64,7 @@ const NodeCard = ({
         }
       }}
       className={cn(
-        "group relative flex min-h-[208px] flex-col rounded-3xl bg-card p-5 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:p-4",
+        "group relative flex min-h-[178px] flex-col rounded-3xl bg-card p-4 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:p-4",
         isProduct
           ? "border border-border hover:-translate-y-0.5 hover:border-emerald-400/60 hover:shadow-[0_12px_24px_-18px_rgba(16,185,129,0.75)]"
           : "border border-dashed border-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_12px_24px_-18px_hsl(var(--primary)/0.55)]",
@@ -73,12 +73,12 @@ const NodeCard = ({
         isDisabledNode && "cursor-not-allowed",
       )}
     >
-      <div className="mb-4 flex justify-center">{renderNodeVisual(node)}</div>
+      <div className="mb-3 flex justify-center md:mb-4">{renderNodeVisual(node)}</div>
       <div className="flex-1">
         <p className="line-clamp-2 text-base font-semibold text-foreground md:text-sm">{node.name}</p>
         {isProduct ? (
           <div className="mt-2 flex items-center gap-2">
-            <p className="text-base font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
+            <p className="text-sm font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
             {!node.is_active && (
               <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
                 Agotado
@@ -207,7 +207,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
             type="button"
             onClick={() => selectL1(node.id)}
             className={cn(
-              "shrink-0 rounded-2xl border-b-2 px-4 py-3 text-sm font-semibold transition-colors md:py-2",
+              "shrink-0 rounded-2xl border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors md:px-4 md:py-2 md:text-sm",
               activeL1?.id === node.id
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-transparent bg-muted/40 text-muted-foreground hover:bg-muted",
@@ -241,7 +241,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <div className="flex items-center gap-1.5">
           {Array.from({ length: MAX_DEPTH_DOTS }).map((_, index) => (
             <span
@@ -255,15 +255,21 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
         </div>
         <span className="text-xs font-medium text-muted-foreground">Nivel {currentLevel}</span>
         {showBreadcrumb && (
-          <button type="button" onClick={goBack} className="ml-auto inline-flex min-h-[44px] items-center gap-1 text-xs font-medium text-primary md:min-h-0">
-            <ChevronLeft className="h-3.5 w-3.5" />
-            Volver
+          <button
+            type="button"
+            onClick={goBack}
+            className="ml-auto inline-flex min-h-[44px] items-center gap-2 rounded-full border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-2 text-xs font-bold text-orange-700 shadow-[0_10px_24px_-18px_rgba(249,115,22,0.65)] transition-all hover:-translate-y-0.5 hover:border-orange-300 hover:text-orange-800 md:min-h-0 md:px-2.5 md:py-1.5"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-amber-400 text-white shadow-sm">
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </span>
+            <span>Volver</span>
           </button>
         )}
       </div>
 
       <div ref={panelRef} className="min-h-0 flex-1">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(164px,1fr))] gap-4 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(136px,1fr))] gap-3 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3">
           {renderedNodes.map((node) => (
             <NodeCard
               key={node.id}

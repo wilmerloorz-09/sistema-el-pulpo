@@ -97,9 +97,9 @@ const Productos = () => {
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="surface-glow px-5 py-4">
-        <div className="relative flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-4 p-2.5 sm:p-4">
+      <div className="surface-glow px-4 py-4 sm:px-5">
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
               <PackageSearch className="h-5 w-5" />
@@ -130,7 +130,7 @@ const Productos = () => {
         </div>
       </div>
 
-      <div className="rounded-[28px] border border-orange-200 bg-white/75 p-4 shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+      <div className="rounded-[28px] border border-orange-200 bg-white/75 p-3 shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)] sm:p-4">
         <MenuNavigator
           includeInactive={true}
           onSelectProduct={() => {}}
@@ -139,7 +139,7 @@ const Productos = () => {
               type="button"
               size="sm"
               variant={node.is_active ? "destructive" : "secondary"}
-              className="h-10 w-full rounded-2xl px-3 text-xs font-bold leading-tight"
+              className="h-11 w-full rounded-2xl px-3 text-xs font-bold leading-tight"
               disabled={readOnly || pendingNodeId === node.id}
               onClick={(event) => {
                 event.stopPropagation();

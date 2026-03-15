@@ -40,6 +40,11 @@ interface Order {
   split_id: string | null;
   table_name?: string;
   created_at: string;
+  sent_to_kitchen_at?: string | null;
+  ready_at?: string | null;
+  dispatched_at?: string | null;
+  paid_at?: string | null;
+  cancelled_at?: string | null;
   items: OrderItem[];
   siblings: SiblingOrder[];
 }
@@ -89,7 +94,7 @@ export function useOrder(orderId: string | null) {
 
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, status, order_type, table_id, split_id, created_at")
+        .select("id, order_number, order_code, status, order_type, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;

@@ -169,9 +169,9 @@ const Admin = () => {
   const SelectedComponent = selectedTab?.component ?? null;
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="surface-glow px-5 py-4">
-        <div className="relative flex items-center justify-between gap-3">
+    <div className="space-y-4 p-2.5 sm:p-4">
+      <div className="surface-glow px-4 py-4 sm:px-5">
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
               <Sparkles className="h-5 w-5" />
@@ -185,7 +185,7 @@ const Admin = () => {
           <Button
             type="button"
             variant="outline"
-            className="h-11 gap-2 rounded-2xl md:hidden"
+            className="h-11 w-full justify-between gap-2 rounded-2xl sm:w-auto md:hidden"
             onClick={() => setMobileTabsOpen((open) => !open)}
           >
             {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}

@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useCrud } from "@/hooks/useCrud";
 import { useEditState } from "@/hooks/useEditState";
+import { useBranch } from "@/contexts/BranchContext";
 import { AdminTable, ColumnDef } from "./AdminTable";
 
 interface RestaurantTable {
   id: string;
   name: string;
   visual_order: number;
+  table_number?: number | null;
   is_active: boolean;
 }
 
@@ -22,6 +24,7 @@ const columns: ColumnDef<RestaurantTable>[] = [
 
 const TablesCrud = () => {
   const qc = useQueryClient();
+  const { activeBranchId } = useBranch();
   const crud = useCrud<RestaurantTable>({ table: "restaurant_tables", queryKey: "admin-tables", orderBy: { column: "visual_order" } });
   const edit = useEditState<RestaurantTable>({ name: "", visual_order: 1, is_active: true } as any);
 
@@ -50,9 +53,10 @@ const TablesCrud = () => {
     onError: (err: any) => toast.error(err.message || "No se pudo mover la mesa"),
   });
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = String(edit.editValues.name ?? "").trim();
     const visualOrder = Math.trunc(Number(edit.editValues.visual_order ?? 0));
+    const isAdding = !!edit.editingId && !crud.data.some((item) => item.id === edit.editingId);
 
     if (!name) {
       toast.error("El nombre de la mesa es obligatorio");
@@ -70,6 +74,59 @@ const TablesCrud = () => {
 
     if (duplicate) {
       toast.error(`Ya existe una mesa con el orden ${visualOrder}`);
+      return;
+    }
+
+    if (isAdding) {
+      if (!activeBranchId) {
+        toast.error("No hay sucursal activa para crear la mesa");
+        return;
+      }
+
+      try {
+        let lastError: any = null;
+
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const { data: nextSequence, error: sequenceError } = await supabase.rpc("next_human_sequence", {
+            p_entity_key: "restaurant_tables",
+            p_branch_id: activeBranchId,
+            p_period_key: null,
+          });
+
+          if (sequenceError) throw sequenceError;
+
+          const nextTableNumber = Number(nextSequence);
+          if (!Number.isFinite(nextTableNumber) || nextTableNumber < 1) {
+            throw new Error("No se pudo generar un numero de mesa valido");
+          }
+
+          const { error: insertError } = await supabase.from("restaurant_tables").insert({
+            id: edit.editingId!,
+            branch_id: activeBranchId,
+            name,
+            visual_order: visualOrder,
+            is_active: !!edit.editValues.is_active,
+            table_number: nextTableNumber,
+          } as any);
+
+          if (!insertError) {
+            qc.invalidateQueries({ queryKey: ["admin-tables"] });
+            qc.invalidateQueries({ queryKey: ["tables-status"] });
+            edit.cancelEdit();
+            toast.success("Guardado correctamente");
+            return;
+          }
+
+          lastError = insertError;
+          if (!String(insertError.message || "").includes("uq_restaurant_tables_branch_table_number")) {
+            throw insertError;
+          }
+        }
+
+        throw lastError;
+      } catch (err: any) {
+        toast.error(err.message || "No se pudo crear la mesa");
+      }
       return;
     }
 

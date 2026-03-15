@@ -19,10 +19,10 @@ const AppLayout = () => {
 
   return (
     <div className="flex min-h-dvh flex-col bg-transparent">
-      <header className="sticky top-0 z-40 border-b border-orange-200/80 bg-white/82 px-3 py-2 backdrop-blur-xl sm:px-4 sm:py-2.5">
-        <div className="flex items-center justify-between gap-2.5">
+      <header className="sticky top-0 z-40 border-b border-orange-200/80 bg-white/82 px-2.5 py-2 backdrop-blur-xl sm:px-4 sm:py-2.5">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <img src="/logo.png" alt="El Pulpo" className="h-9 w-auto shrink-0 object-contain sm:h-11" />
+            <img src="/logo.png" alt="El Pulpo" className="h-8 w-auto shrink-0 object-contain sm:h-11" />
             {activeBranch && branches.length > 1 ? (
               <Select
                 value={activeBranchId ?? undefined}
@@ -63,7 +63,7 @@ const AppLayout = () => {
                 <WifiOff className="h-3 w-3" /> Offline
               </span>
             )}
-            <Button variant="outline" size="icon" className="h-10 w-10 rounded-2xl" onClick={() => setUserMenuOpen(true)}>
+            <Button variant="outline" size="icon" className="h-10 w-10 rounded-2xl shadow-sm" onClick={() => setUserMenuOpen(true)}>
               <UserRound className="h-4 w-4" />
             </Button>
           </div>
@@ -77,7 +77,7 @@ const AppLayout = () => {
         )}
       </header>
 
-      <main className="mb-safe flex-1 pb-24 md:pb-20">
+      <main className="mb-safe flex-1 pb-28 md:pb-20">
         <Outlet />
       </main>
 
