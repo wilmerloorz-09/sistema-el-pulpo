@@ -51,6 +51,11 @@
 
 ### Mesas y divisiones
 - La division de mesa se resuelve sobre `table_splits` + `orders`.
+- `restaurant_tables` sigue siendo la entidad interna real para FKs y divisiones.
+- La administracion visible ya no debe operar mesas como CRUD manual una por una.
+- `branches.reference_table_count` define la base referencial por sucursal.
+- `cash_shifts.active_tables_count` define la cantidad operativa del turno abierto.
+- `Mesas` solo debe renderizar la capacidad activa del turno, no todo el pool interno de `restaurant_tables`.
 - La regla vigente es:
   - una mesa base con items puede dividirse
   - una division nueva solo puede crearse si todas las divisiones anteriores tienen al menos un item
@@ -84,6 +89,7 @@
   - resumen de turno (`ShiftSummary`)
   - ordenes por cobrar (`PayableOrdersList`)
   - pagos realizados (`CompletedPaymentsList`)
+- La apertura del turno ya no debe vivir aqui como flujo principal; queda en `Admin > Turno`.
 - `ShiftSummary` ya no expone totales de apertura/actual de forma permanente en la pantalla; usa un modal `Resumen` y otro modal `Desglose`.
 - `PayableOrdersList` usa layout de dos columnas en desktop: KPIs verticales y listado operativo.
 - `PaymentDialog` contiene:
@@ -107,6 +113,18 @@
   - `useCaja`
 - La arquitectura operativa de estados debe considerar ese snapshot como lectura principal para UI cross-modulo.
 
+### I) Apertura/cierre de turno como frontera operativa de mesas
+- Abrir turno debe ser transaccional respecto a `cash_shifts`, `cash_shift_denoms`, `cash_movements` y mesas activas.
+- Cerrar turno debe apagar internamente las mesas visibles del turno para no dejar capacidad operativa colgada fuera de Caja.
+- La configuracion del turno ahora vive en `Admin > Turno`, donde tambien se administran:
+  - mesas activas
+  - metodo de despacho
+  - usuarios habilitados del turno
+- `Admin > Turno` debe tratarse como un formulario unico de configuracion operativa, no como varios modulos independientes:
+  - `Despacho` no debe persistir cambios de inmediato desde switches o asignaciones
+  - la persistencia total ocurre solo con `Abrir turno` o `Guardar`
+- Sin turno abierto, los modulos operativos deben degradarse a estado bloqueado; `Admin` queda como unico punto de entrada para administradores/supervisores.
+
 ### G) Admin movil
 - Los listados administrativos reutilizan `AdminTable`.
 - En movil, `AdminTable` debe renderizar tarjetas apiladas y no tablas comprimidas, para evitar superposicion de campos y acciones.
@@ -114,6 +132,11 @@
 ### H) Movil primero en vistas operativas
 - `AppLayout`, `BottomNav`, `Mesas`, `Caja`, `Productos`, `Admin` y `MenuNavigator` ya recibieron una pasada movil explicita.
 - La navegacion inferior y los contenedores superiores ya no deben asumirse como layouts desktop reducidos; deben comportarse como superficies tactiles reales.
+- `ShiftSetupAdmin` y `DispatchConfig` tambien quedaron dentro de esta regla:
+  - el resumen del turno puede colapsar en 1 o 2 columnas
+  - los bloques del formulario se apilan verticalmente
+  - las acciones principales deben mantenerse usables a ancho completo en telefono
+  - los formularios de asignacion de despacho deben degradar a una sola columna en movil
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`
@@ -121,6 +144,8 @@
 - `src/hooks/useOrder.ts`
 - `src/hooks/useOrdersByStatus.ts`
 - `src/hooks/useCaja.ts`
+- `src/hooks/useBranchShiftGate.ts`
+- `src/hooks/useTablesWithStatus.ts`
 - `src/hooks/useDispatchOrders.ts`
 - `src/hooks/useKitchenOrders.ts`
 - `src/components/order/MenuNavigator.tsx`
@@ -130,6 +155,8 @@
 - `src/components/admin/ModifiersCrud.tsx`
 - `src/pages/Admin.tsx`
 - `src/pages/Caja.tsx`
+- `src/components/caja/OpenShiftForm.tsx`
+- `src/components/admin/ShiftSetupAdmin.tsx`
 - `src/pages/Mesas.tsx`
 - `src/components/AppLayout.tsx`
 - `src/components/BottomNav.tsx`

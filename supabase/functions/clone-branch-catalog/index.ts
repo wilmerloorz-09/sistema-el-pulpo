@@ -118,7 +118,6 @@ Deno.serve(async (req) => {
       }
 
       for (const [itemKey, tableName] of [
-        ["tables", "restaurant_tables"],
         ["modifiers", "modifiers"],
         ["payment_methods", "payment_methods"],
         ["denominations", "denominations"],
@@ -133,18 +132,36 @@ Deno.serve(async (req) => {
     }
 
     if (selectedItems.has("tables")) {
-      const { data: tables, error } = await adminClient
-        .from("restaurant_tables")
-        .select("name, visual_order, is_active")
-        .eq("branch_id", source_branch_id);
+      const { data: sourceBranch, error: sourceBranchError } = await adminClient
+        .from("branches")
+        .select("reference_table_count")
+        .eq("id", source_branch_id)
+        .single();
 
-      if (error) return toJson({ error: `No se pudo leer mesas: ${error.message}` }, 400);
-      if (tables?.length) {
-        const rows = tables.map((t: any) => ({ ...t, branch_id: target_branch_id }));
-        const { error: insertError } = await adminClient.from("restaurant_tables").insert(rows);
-        if (insertError) return toJson({ error: `No se pudo duplicar mesas: ${insertError.message}` }, 400);
-        stats.mesas = rows.length;
+      if (sourceBranchError) {
+        return toJson({ error: `No se pudo leer referencia de mesas: ${sourceBranchError.message}` }, 400);
       }
+
+      const referenceCount = Number(sourceBranch.reference_table_count ?? 0);
+      const { error: updateBranchError } = await adminClient
+        .from("branches")
+        .update({ reference_table_count: referenceCount })
+        .eq("id", target_branch_id);
+
+      if (updateBranchError) {
+        return toJson({ error: `No se pudo copiar referencia de mesas: ${updateBranchError.message}` }, 400);
+      }
+
+      const { error: ensureTablesError } = await adminClient.rpc("ensure_branch_table_capacity", {
+        p_branch_id: target_branch_id,
+        p_requested_count: referenceCount,
+      });
+
+      if (ensureTablesError) {
+        return toJson({ error: `No se pudo preparar mesas internas: ${ensureTablesError.message}` }, 400);
+      }
+
+      stats.mesas = referenceCount;
     }
 
     if (selectedItems.has("modifiers")) {

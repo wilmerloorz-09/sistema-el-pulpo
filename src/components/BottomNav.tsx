@@ -1,5 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useBranch } from "@/contexts/BranchContext";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { canView } from "@/lib/permissions";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { cn } from "@/lib/utils";
@@ -115,12 +116,19 @@ const NAV_ITEMS: NavItem[] = [
 const BottomNav = () => {
   const { permissions, isGlobalAdmin, branches } = useBranch();
   const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
+  const shiftGateQuery = useBranchShiftGate();
 
   const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
+  const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
+  const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && (Boolean(shiftGateQuery.data?.userEnabled) || canAccessAdmin);
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (isGlobalAdminWithoutBranches) {
       return item.to === "/admin";
+    }
+
+    if (!hasOperationalShift) {
+      return item.to === "/admin" && canAccessAdmin;
     }
 
     if (item.to === "/admin" && isGlobalAdmin) {

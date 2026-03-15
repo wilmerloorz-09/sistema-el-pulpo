@@ -37,6 +37,7 @@ interface Props {
 
 const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }: Props) => {
   const [quantity, setQuantity] = useState(1);
+  const [quantityInput, setQuantityInput] = useState("1");
   const [manualPrice, setManualPrice] = useState("");
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
 
@@ -49,9 +50,10 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
 
   const isManual = product.price_mode === "MANUAL";
   const price = isManual ? parseFloat(manualPrice) || 0 : (product.unit_price ?? 0);
+  const canAdd = quantity > 0 && (!isManual || price > 0);
 
   const handleConfirm = () => {
-    if (isManual && price <= 0) return;
+    if (!canAdd) return;
 
     onConfirm({
       product_id: product.id,
@@ -63,6 +65,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
     });
 
     setQuantity(1);
+    setQuantityInput("1");
     setManualPrice("");
     setSelectedMods([]);
   };
@@ -72,15 +75,20 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
   };
 
   const handleManualQuantityChange = (value: string) => {
+    setQuantityInput(value);
+
     if (!value) {
-      setQuantity(1);
+      setQuantity(0);
       return;
     }
 
     const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed)) return;
+    if (Number.isNaN(parsed)) {
+      setQuantity(0);
+      return;
+    }
 
-    setQuantity(Math.max(1, parsed));
+    setQuantity(Math.max(0, parsed));
   };
 
   return (
@@ -119,24 +127,31 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
                 variant="outline"
                 size="icon"
                 className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
-                onClick={() => setQuantity((current) => Math.max(1, current - 1))}
+                onClick={() => {
+                  const nextQuantity = Math.max(0, quantity - 1);
+                  setQuantity(nextQuantity);
+                  setQuantityInput(String(nextQuantity));
+                }}
               >
                 <Minus className="h-4 w-4" />
               </Button>
               <Input
                 type="number"
-                min="1"
+                min="0"
                 step="1"
-                value={quantity}
+                value={quantityInput}
                 onChange={(event) => handleManualQuantityChange(event.target.value)}
-                onBlur={(event) => handleManualQuantityChange(event.target.value)}
                 className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
               <Button
                 variant="outline"
                 size="icon"
                 className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
-                onClick={() => setQuantity((current) => current + 1)}
+                onClick={() => {
+                  const nextQuantity = quantity + 1;
+                  setQuantity(nextQuantity);
+                  setQuantityInput(String(nextQuantity));
+                }}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -181,7 +196,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
             </span>
             <Button 
               onClick={handleConfirm} 
-              disabled={adding || (isManual && price <= 0)} 
+              disabled={adding || !canAdd} 
               className="h-11 rounded-xl px-5 font-bold shadow-sm flex items-center gap-1.5"
             >
               <ShoppingBag className="h-4 w-4" />

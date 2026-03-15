@@ -138,6 +138,7 @@ export interface LocalCashShift extends LocalRecord {
   id: string;
   branch_id: string;
   cashier_id: string;
+  active_tables_count: number;
   status: string;
   opened_at: string;
   closed_at: string | null;

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { BranchProvider, useBranch } from "@/contexts/BranchContext";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { useEffect, useState } from "react";
 import { initSyncListeners } from "@/services/SyncService";
@@ -21,6 +22,7 @@ import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
+import { canManage } from "@/lib/permissions";
 
 const queryClient = new QueryClient();
 
@@ -99,14 +101,21 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
 };
 
 const HomeRedirect = () => {
-  const { branches, isGlobalAdmin, loading } = useBranch();
+  const { branches, isGlobalAdmin, permissions, loading } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
 
-  if (loading) {
+  if (loading || shiftGateQuery.isLoading) {
     return <LoadingScreen />;
   }
 
   if (isGlobalAdmin && branches.length === 0) {
     return <Navigate to="/admin" replace />;
+  }
+
+  if (!shiftGateQuery.data?.shiftOpen) {
+    if (isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global")) {
+      return <Navigate to="/admin" replace />;
+    }
   }
 
   return <Navigate to="/mesas" replace />;
@@ -246,7 +255,7 @@ const App = () => (
                 <Route
                   path="/mesas"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift>
                       <Mesas />
                     </ProtectedRoute>
                   }
@@ -254,7 +263,7 @@ const App = () => (
                 <Route
                   path="/ordenes"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }}>
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift>
                       <Ordenes />
                     </ProtectedRoute>
                   }
@@ -262,7 +271,7 @@ const App = () => (
                 <Route
                   path="/despacho"
                   element={
-                    <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]}>
+                    <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift>
                       <Despacho />
                     </ProtectedRoute>
                   }
@@ -270,7 +279,7 @@ const App = () => (
                 <Route
                   path="/productos"
                   element={
-                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]}>
+                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift>
                       <Productos />
                     </ProtectedRoute>
                   }
@@ -278,7 +287,7 @@ const App = () => (
                 <Route
                   path="/caja"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "caja", level: "VIEW" }}>
+                    <ProtectedRoute requiredPermission={{ module: "caja", level: "VIEW" }} requiresOpenShift>
                       <Caja />
                     </ProtectedRoute>
                   }
@@ -286,7 +295,7 @@ const App = () => (
                 <Route
                   path="/reportes"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "reportes_sucursal", level: "VIEW" }}>
+                    <ProtectedRoute requiredPermission={{ module: "reportes_sucursal", level: "VIEW" }} requiresOpenShift>
                       <Reportes />
                     </ProtectedRoute>
                   }

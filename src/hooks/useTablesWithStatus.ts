@@ -26,7 +26,7 @@ export function useTablesWithStatus() {
       if (!activeBranchId) return [];
 
       // Fetch tables and active orders in parallel via DatabaseService
-      const [tables, orders] = await Promise.all([
+      const [tables, openShift, orders] = await Promise.all([
         dbSelect<{
           id: string;
           name: string;
@@ -37,9 +37,16 @@ export function useTablesWithStatus() {
           updated_at: string;
         }>("restaurant_tables", {
           branchId: activeBranchId,
-          filters: [{ column: "is_active", op: "eq", value: true }],
           orderBy: { column: "visual_order" },
         }),
+        supabase
+          .rpc("get_my_branch_shift_gate" as never, {
+            p_branch_id: activeBranchId,
+          } as never)
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return Array.isArray(data) ? data[0] ?? null : data ?? null;
+          }),
         // Orders need a relational sub-select (order_items count), use passthrough
         supabase
           .from("orders")
@@ -53,10 +60,17 @@ export function useTablesWithStatus() {
           }),
       ]);
 
+      const activeTableCount = openShift?.shift_open
+        ? Math.max(0, Number(openShift.active_tables_count ?? 0))
+        : 0;
+      const visibleTables = activeTableCount > 0 ? tables.slice(0, activeTableCount) : [];
+      const visibleTableIds = new Set(visibleTables.map((table) => table.id));
+
       // Group orders by table — only include orders that have items OR are past DRAFT
       const ordersByTable = new Map<string, typeof orders>();
       for (const order of orders) {
         if (!order.table_id) continue;
+        if (!visibleTableIds.has(order.table_id)) continue;
         const hasItems = Array.isArray(order.order_items) && order.order_items.length > 0;
         const isPastDraft = order.status !== "DRAFT";
         if (!hasItems && !isPastDraft) continue;
@@ -69,13 +83,14 @@ export function useTablesWithStatus() {
       const draftByTable = new Map<string, string>();
       for (const order of orders) {
         if (!order.table_id) continue;
+        if (!visibleTableIds.has(order.table_id)) continue;
         const hasItems = Array.isArray(order.order_items) && order.order_items.length > 0;
         if (order.status === "DRAFT" && !hasItems) {
           draftByTable.set(order.table_id, order.id);
         }
       }
 
-      return tables.map((table): TableWithStatus => {
+      return visibleTables.map((table): TableWithStatus => {
         const tableOrders = ordersByTable.get(table.id) ?? [];
         if (tableOrders.length === 0) {
           return {

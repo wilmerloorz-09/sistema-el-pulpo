@@ -64,6 +64,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `subcategory_modifiers`: tabla legacy de asignacion previa por subcategoria; ya no debe ser la fuente principal para nuevos cambios.
 
 ## Divisiones de mesa
+- `restaurant_tables` sigue siendo la entidad fisica interna que soporta `orders.table_id` y `table_splits.table_id`.
+- `branches.reference_table_count` guarda la cantidad referencial de mesas por sucursal.
+- `cash_shifts.active_tables_count` guarda la cantidad operativa de mesas del turno abierto.
+- La UI de `Mesas` no debe depender de contar filas activas historicas; debe recortar la capacidad visible segun el turno abierto.
 - `table_splits` sigue siendo la entidad de soporte para submesas.
 - `orders.split_id` enlaza la orden con su division.
 - Regla operativa vigente:
@@ -86,6 +90,8 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 
 ## Caja y pagos
 - `cash_shifts` + detalle de denominaciones siguen siendo la fuente de `Apertura`, `Actual` y `Diferencia`.
+- La apertura de turno tambien fija `active_tables_count` como frontera operativa de mesas para ese turno.
+- La habilitacion de usuarios por turno ya no es implícita: vive en `cash_shift_users`.
 - `payment_entries` / tablas equivalentes de cobro son la fuente de `Recaudado` por metodo.
 - Regla funcional importante:
   - `Actual - Apertura` representa caja fisica
@@ -95,6 +101,26 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - desactivar `Efectivo` debe limpiar denominaciones temporales para no contaminar el cierre o el total actual
 - Si `Recibido >= Aplicado` y el usuario agrega mas denominaciones, la UI debe pedir confirmacion antes de aceptar excedente.
 - La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
+
+## Funciones operativas nuevas para mesas por turno
+- `ensure_branch_table_capacity(branch_id, requested_count)`
+  - garantiza que exista capacidad interna suficiente en `restaurant_tables`
+  - no elimina mesas historicas; solo crea faltantes
+- `configure_shift_active_tables(branch_id, shift_id, active_tables_count)`
+  - sincroniza cuantas mesas quedan activas para el turno
+  - no debe permitir bajar el conteo por debajo de mesas con ordenes abiertas
+- `open_cash_shift_with_tables(cashier_id, branch_id, active_tables_count, denoms)`
+  - abre el turno de forma transaccional
+  - crea `cash_shifts`, detalle de denominaciones, movimientos de apertura y mesas activas en una sola operacion
+- `close_cash_shift_with_tables(shift_id, branch_id, notes)`
+  - cierra el turno y desactiva internamente las mesas del turno
+- `list_shift_users_for_branch(branch_id)`
+  - devuelve los usuarios activos de la sucursal con su estado habilitado en el turno actual
+- `set_shift_user_enabled(shift_id, user_id, is_enabled)`
+  - activa/desactiva un usuario para el turno abierto
+- get_my_branch_shift_gate(branch_id) 
+  - indica si hay turno abierto y si el usuario autenticado esta habilitado para operar
+  - expone tambien ctive_tables_count para que usuarios operativos puedan ver Mesas aunque no tengan permisos de Caja
 
 ## Snapshot operativo
 - La UI operativa ya no debe reconstruir estados solo desde eventos dispersos.
@@ -141,6 +167,14 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - endurece la asignacion de `restaurant_tables.table_number`
   - mantiene sincronizado `entity_counters`
   - evita reutilizar numeros de mesa existentes por sucursal cuando hay drift entre contador y datos reales
+- `supabase/migrations/20260315090000_branch_reference_tables_and_shift_active_count.sql`
+  - agrega `branches.reference_table_count`
+  - agrega `cash_shifts.active_tables_count`
+  - introduce RPCs para capacidad interna, mesas activas por turno y apertura/cierre transaccional de turno
+- `supabase/migrations/20260315170000_shift_admin_gate_and_enabled_users.sql`
+  - agrega `cash_shift_users`
+  - mueve la apertura operativa del turno al modelo administrado por Admin
+  - introduce el gate operativo por usuario habilitado dentro del turno
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.
@@ -149,5 +183,16 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 4. Los archivos de `menu-node-images` deben quedar protegidos por policies de Storage alineadas con permisos administrativos por sucursal.
 5. Si aparece error en insercion de items, revisar primero la correspondencia entre `menu_nodes.product` y `products`.
 6. Si aparece colision de `table_number` al crear mesas, revisar trigger remoto y `entity_counters` antes de agregar mas logica en frontend.
+
+## Addendum 2026-03-15
+- `Admin > Turno` trabaja como formulario unico de configuracion operativa.
+- Los cambios de mesas, usuarios y despacho pueden vivir en borrador local, pero la persistencia final sigue cerrando sobre:
+  - `cash_shifts`
+  - `cash_shift_users`
+  - `dispatch_config`
+  - `dispatch_assignments`
+- `get_my_branch_shift_gate(branch_id)` debe seguir devolviendo tambien `active_tables_count` para que usuarios operativos sin permisos de Caja puedan ver `Mesas` correctamente.
+
+
 
 

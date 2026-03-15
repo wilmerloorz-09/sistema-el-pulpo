@@ -7,17 +7,19 @@ interface Branch {
   name: string;
   branch_code: string;
   address: string | null;
+  reference_table_count: number;
   is_active: boolean;
 }
 
 const BranchesCrud = () => {
   const crud = useCrud<Branch>({ table: "branches" as any, queryKey: "admin-branches", orderBy: { column: "name" } });
-  const edit = useEditState<Branch>({ name: "", branch_code: "", address: "", is_active: true } as any);
+  const edit = useEditState<Branch>({ name: "", branch_code: "", address: "", reference_table_count: 0, is_active: true } as any);
 
   const columns: ColumnDef<Branch>[] = [
     { key: "name", header: "Nombre", width: "1fr", type: "text" },
     { key: "branch_code", header: "Codigo", width: "5rem", type: "text" },
     { key: "address", header: "Direccion", width: "1fr", type: "text" },
+    { key: "reference_table_count", header: "Mesas ref.", width: "6rem", type: "number" },
     { key: "is_active", header: "Activa", width: "4rem", type: "switch" },
   ];
 

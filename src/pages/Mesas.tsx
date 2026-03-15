@@ -282,6 +282,12 @@ const Mesas = () => {
           );
         })}
         </div>
+
+      {(tables?.length ?? 0) === 0 && (
+        <div className="rounded-[24px] border border-orange-200 bg-white/80 p-4 text-sm text-muted-foreground shadow-sm">
+          No hay mesas habilitadas para el turno actual. La cantidad disponible se define al abrir turno en Caja.
+        </div>
+      )}
       </div>
     </div>
   );

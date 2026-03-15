@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Denomination } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,15 +7,21 @@ import DenominationVisual from "@/components/caja/DenominationVisual";
 
 interface Props {
   denominations: Denomination[];
-  onOpen: (counts: { denomination_id: string; qty: number }[]) => void;
+  referenceTableCount: number;
+  onOpen: (payload: { counts: { denomination_id: string; qty: number }[]; activeTableCount: number }) => void;
   opening: boolean;
   readOnly?: boolean;
 }
 
-export default function OpenShiftForm({ denominations, onOpen, opening, readOnly = false }: Props) {
+export default function OpenShiftForm({ denominations, referenceTableCount, onOpen, opening, readOnly = false }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(denominations.map((d) => [d.id, 0]))
   );
+  const [activeTableCount, setActiveTableCount] = useState(referenceTableCount);
+
+  useEffect(() => {
+    setActiveTableCount(referenceTableCount);
+  }, [referenceTableCount]);
 
   const hasDenominations = denominations.length > 0;
   const total = denominations.reduce((sum, denomination) => sum + denomination.value * (counts[denomination.id] ?? 0), 0);
@@ -25,7 +31,7 @@ export default function OpenShiftForm({ denominations, onOpen, opening, readOnly
       denomination_id: denomination.id,
       qty: counts[denomination.id] ?? 0,
     }));
-    onOpen(data);
+    onOpen({ counts: data, activeTableCount: Math.max(0, Math.trunc(activeTableCount || 0)) });
   };
 
   return (
@@ -51,7 +57,25 @@ export default function OpenShiftForm({ denominations, onOpen, opening, readOnly
           </p>
         </div>
       ) : (
-        <div className="mb-6 space-y-3">
+        <div className="mb-6 space-y-4">
+          <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-4">
+            <div className="mb-2">
+              <div className="text-sm font-semibold text-foreground">Mesas activas para este turno</div>
+              <p className="text-xs text-muted-foreground">
+                La sucursal tiene {referenceTableCount} mesa{referenceTableCount === 1 ? "" : "s"} como referencia. Puedes abrir este turno con un numero mayor o menor.
+              </p>
+            </div>
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={activeTableCount}
+              onChange={(e) => setActiveTableCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+              className="h-10 w-28 rounded-xl text-center text-base font-bold"
+              disabled={readOnly}
+            />
+          </div>
+
           {denominations.map((denomination) => (
             <div key={denomination.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
               <DenominationVisual

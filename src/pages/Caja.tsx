@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
-import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
@@ -57,12 +56,12 @@ const Caja = () => {
   if (!shift) {
     return (
       <div className="p-4 pt-8">
-        <OpenShiftForm
-          denominations={denominations}
-          onOpen={(counts) => openShift.mutate(counts)}
-          opening={openShift.isPending}
-          readOnly={!canOperateCaja}
-        />
+        <div className="mx-auto max-w-md rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+          <h2 className="font-display text-xl font-black text-foreground">No hay turno abierto</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            La apertura del turno ahora se realiza desde Administracion en la pestana Turno.
+          </p>
+        </div>
       </div>
     );
   }

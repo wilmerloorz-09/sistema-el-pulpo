@@ -63,6 +63,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          reference_table_count: number
           updated_at: string
         }
         Insert: {
@@ -72,6 +73,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          reference_table_count?: number
           updated_at?: string
         }
         Update: {
@@ -81,6 +83,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          reference_table_count?: number
           updated_at?: string
         }
         Relationships: []
@@ -178,6 +181,7 @@ export type Database = {
       }
       cash_shifts: {
         Row: {
+          active_tables_count: number
           branch_id: string
           cashier_id: string
           closed_at: string | null
@@ -187,6 +191,7 @@ export type Database = {
           status: Database["public"]["Enums"]["cash_shift_status"]
         }
         Insert: {
+          active_tables_count?: number
           branch_id: string
           cashier_id: string
           closed_at?: string | null
@@ -196,6 +201,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["cash_shift_status"]
         }
         Update: {
+          active_tables_count?: number
           branch_id?: string
           cashier_id?: string
           closed_at?: string | null

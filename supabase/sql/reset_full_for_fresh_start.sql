@@ -5,7 +5,7 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
--- - Elimina sucursales y configuraciones asociadas
+-- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
 -- - Elimina usuarios no protegidos
 -- - Conserva solo el superadmin principal protegido
 -- - Preserva estructura base del sistema: modulos, roles, permisos, funciones, migraciones
@@ -16,7 +16,7 @@
 -- ADVERTENCIA:
 -- - ESTE SCRIPT ES DESTRUCTIVO
 -- - NO LO EJECUTES SI QUIERES CONSERVAR HISTORIAL
--- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/MESAS DESDE CERO
+-- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
 -- ============================================================
 
 BEGIN;
@@ -199,11 +199,14 @@ COMMIT;
 -- POST RESET ESPERADO
 -- - 1 usuario: el superadmin protegido
 -- - 0 sucursales
--- - 0 mesas
+-- - 0 referencias de mesas por sucursal
+-- - 0 mesas internas
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
 -- - 0 ordenes/pagos/caja/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
+
 
 
 

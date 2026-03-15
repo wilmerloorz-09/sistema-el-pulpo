@@ -42,6 +42,19 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si reaparece un problema de duplicados, revisar primero la migracion/correccion vigente antes de tocar la app.
 - Lo mismo aplica para `restaurant_tables.table_number`: primero revisar trigger/contador/BD antes de meter mas heuristicas en frontend.
 
+### 7.1) Mesas: referencia de sucursal + capacidad por turno
+- No volver a tratar las mesas como CRUD operativo fila por fila en Admin.
+- `branches.reference_table_count` es solo referencia de sucursal.
+- `cash_shifts.active_tables_count` define cuantas mesas se muestran operativamente en el turno.
+- `restaurant_tables` se conserva como pool interno para FKs, ordenes y divisiones.
+- Si se cambia la cantidad de mesas visibles, preferir RPC/flujo transaccional de turno antes que updates sueltos desde frontend.
+- La apertura del turno debe vivir en `Admin > Turno`, no en `Caja`.
+- Los usuarios habilitados para operar durante el turno deben resolverse desde `cash_shift_users`.
+- `Admin > Turno` debe funcionar como formulario unico:
+  - cambios de mesas, usuarios y despacho quedan en borrador local
+  - solo `Abrir turno` o `Guardar` deben persistir cambios
+- Si no hay turno abierto, los modulos operativos deben quedar bloqueados y solo `Admin` debe seguir accesible para administradores/supervisores.
+
 ### 8) Snapshot operativo compartido
 - Si una pantalla clasifica estados de orden (`Enviada`, `Lista`, `Despachada`, `Por cobrar`), preferir snapshot operativo compartido sobre lecturas parciales.
 - No reconstruir reglas operativas criticas desde una sola tabla si ya existe un snapshot consolidado.
@@ -64,6 +77,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - recaudacion por metodo
 - En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
 - No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
+- En `Admin > Turno`, priorizar usabilidad movil:
+  - bloques verticales
+  - resumen adaptable a 1 o 2 columnas
+  - controles de despacho apilados
+  - boton principal a ancho completo en telefono
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
@@ -76,6 +94,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Para modificadores, leer descripciones desde la relacion con `modifiers`.
 - La disponibilidad operativa del modificador debe resolverse desde `menu_node_modifiers`.
 - Filtrar datos vacios o inconsistentes antes de renderizar.
+- Si se toca apertura/cierre de turno, validar tambien la consistencia de mesas activas; no dejar turnos medio abiertos ni mesas activas sin turno.
 - Si se toca Ordenes o Despacho, revisar tambien:
   - RLS de tablas de eventos operativos
   - reflejo en vivo entre usuarios/sesiones

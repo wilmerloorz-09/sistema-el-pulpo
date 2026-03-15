@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, Truck, FolderTree, ChevronDown, Menu, X, AlertTriangle } from "lucide-react";
+import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
@@ -8,8 +8,8 @@ import DenominationsCrud from "@/components/admin/DenominationsCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
-import DispatchConfig from "@/components/admin/DispatchConfig";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
+import ShiftSetupAdmin from "@/components/admin/ShiftSetupAdmin";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -76,18 +76,18 @@ class AdminErrorBoundary extends React.Component<AdminErrorBoundaryProps, AdminE
 
 const TABS: AdminTab[] = [
   {
+    value: "shift",
+    label: "Turno",
+    icon: <PlayCircle className="h-4 w-4" />,
+    component: ShiftSetupAdmin,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+  },
+  {
     value: "branches",
     label: "Sucursales",
     icon: <Building2 className="h-4 w-4" />,
     component: BranchesCrud,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_global"),
-  },
-  {
-    value: "dispatch",
-    label: "Despacho",
-    icon: <Truck className="h-4 w-4" />,
-    component: DispatchConfig,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
     value: "menu-tree",

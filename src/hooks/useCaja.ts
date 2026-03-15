@@ -36,6 +36,7 @@ export interface CashShift {
   opened_at: string;
   closed_at: string | null;
   notes: string | null;
+  active_tables_count: number;
   denoms: ShiftDenom[];
 }
 
@@ -424,17 +425,37 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     enabled: !!activeBranchId,
   });
 
+  const branchTableSettingsQuery = useQuery({
+    queryKey: ["branch-table-settings", activeBranchId],
+    queryFn: async () => {
+      if (!activeBranchId) return { reference_table_count: 0 };
+
+      const { data, error } = await supabase
+        .from("branches")
+        .select("reference_table_count")
+        .eq("id", activeBranchId)
+        .single();
+      if (error) throw error;
+
+      return {
+        reference_table_count: Number(data.reference_table_count ?? 0),
+      };
+    },
+    enabled: !!activeBranchId,
+  });
+
   const shiftQuery = useQuery({
     queryKey: ["current-shift", activeBranchId],
     queryFn: async () => {
-      if (!user || !activeBranchId) return null;
+      if (!activeBranchId) return null;
 
       const { data, error } = await supabase
         .from("cash_shifts")
-        .select("id, status, opened_at, closed_at, notes")
-        .eq("cashier_id", user.id)
+        .select("id, status, opened_at, closed_at, notes, active_tables_count")
         .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
+        .order("opened_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (error) throw error;
       if (!data) return null;
@@ -459,7 +480,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       return { ...data, denoms: enriched } as CashShift;
     },
-    enabled: !!user && !!denomsQuery.data,
+    enabled: !!activeBranchId && !!denomsQuery.data,
   });
 
   const ordersQuery = useQuery({
@@ -973,42 +994,28 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   });
 
   const openShift = useMutation({
-    mutationFn: async (denomCounts: { denomination_id: string; qty: number }[]) => {
+    mutationFn: async ({ counts: denomCounts, activeTableCount }: { counts: { denomination_id: string; qty: number }[]; activeTableCount: number }) => {
       if (!user) throw new Error("No user");
       if (!activeBranchId) throw new Error("No branch selected");
 
-      const shiftId = generateUUID();
-      await dbInsert("cash_shifts", {
-        id: shiftId,
-        cashier_id: user.id,
-        branch_id: activeBranchId,
-        status: "OPEN",
-        opened_at: new Date().toISOString(),
+      const normalizedActiveTableCount = Math.max(0, Math.trunc(activeTableCount || 0));
+      const normalizedDenomCounts = denomCounts.map((denom) => ({
+        denomination_id: denom.denomination_id,
+        qty: Math.max(0, Math.trunc(denom.qty || 0)),
+      }));
+
+      const { error } = await supabase.rpc("open_cash_shift_with_tables", {
+        p_cashier_id: user.id,
+        p_branch_id: activeBranchId,
+        p_active_tables_count: normalizedActiveTableCount,
+        p_denoms: normalizedDenomCounts,
       });
-
-      for (const d of denomCounts) {
-        await dbInsert("cash_shift_denoms", {
-          id: generateUUID(),
-          shift_id: shiftId,
-          denomination_id: d.denomination_id,
-          qty_initial: d.qty,
-          qty_current: d.qty,
-        });
-      }
-
-      for (const d of denomCounts.filter((d) => d.qty > 0)) {
-        await dbInsert("cash_movements", {
-          id: generateUUID(),
-          shift_id: shiftId,
-          denomination_id: d.denomination_id,
-          movement_type: "OPENING",
-          qty_delta: d.qty,
-          created_at: new Date().toISOString(),
-        });
-      }
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["branch-table-settings"] });
       toast.success("Turno abierto");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1559,15 +1566,18 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     mutationFn: async (notes?: string) => {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
+      if (!activeBranchId) throw new Error("No branch selected");
 
-      await dbUpdate("cash_shifts", shift.id, {
-        status: "CLOSED",
-        closed_at: new Date().toISOString(),
-        notes: notes ?? null,
+      const { error } = await supabase.rpc("close_cash_shift_with_tables", {
+        p_shift_id: shift.id,
+        p_branch_id: activeBranchId,
+        p_notes: notes ?? null,
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       toast.success("Turno cerrado");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1585,6 +1595,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     completedPaymentsCollectedTotal: completedPaymentsQuery.data?.collectedTotal ?? 0,
     isLoadingCompletedPayments: completedPaymentsQuery.isLoading,
     cashierReverseWindowMinutes: cashierReverseWindowQuery.data ?? DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES,
+    branchReferenceTableCount: branchTableSettingsQuery.data?.reference_table_count ?? 0,
     openShift,
     payOrder,
     requestPaymentReversal,

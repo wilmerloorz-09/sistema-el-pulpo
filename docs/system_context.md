@@ -76,11 +76,52 @@
 - `Ordenes`, `Despacho`, `Cocina` y `Caja` deben apoyarse en el snapshot operativo (`get_order_operational_snapshot`) para evitar que una orden quede pegada en una pestana equivocada.
 - Al despachar una orden, `Caja` debe invalidar tambien `payable-orders` para reflejar enseguida lo cobrable.
 
+### 4.6) Mesas: modelo hibrido nuevo
+- `restaurant_tables` no desaparece: sigue siendo la entidad interna real para FKs, ordenes y divisiones.
+- La administracion visible ya no debe tratar las mesas como CRUD fila por fila.
+- `branches.reference_table_count` guarda la cantidad referencial de mesas por sucursal.
+- `cash_shifts.active_tables_count` guarda cuantas mesas quedan habilitadas para el turno abierto.
+- Al abrir turno, Caja define la cantidad operativa del dia y esa cantidad puede ser menor o mayor a la referencia de sucursal.
+- El sistema debe preparar internamente capacidad suficiente en `restaurant_tables`, pero en `Mesas` solo deben mostrarse las primeras `active_tables_count`.
+- Si no hay turno abierto, `Mesas` no debe asumir automaticamente la referencia de sucursal como mesas visibles.
+- La configuracion operativa de mesas ya no se resuelve creando/eliminando registros visibles uno por uno desde Admin.
+
+### 4.7) Turno operativo: nueva superficie en Administracion
+- La apertura del turno ya no debe hacerse desde `Caja`.
+- Existe una pestana nueva en `Admin`: `Turno`.
+- Solo debe estar disponible para:
+  - administrador general
+  - supervisor / administrador de sucursal con permisos `MANAGE`
+- Desde esa pestana se configura:
+  - numero de mesas habilitadas del turno
+  - metodo de despacho del turno (lo que antes estaba en la pestana `Despacho`)
+  - usuarios habilitados para el turno
+- `Turno` debe comportarse como un solo formulario:
+  - los cambios de despacho, mesas y usuarios quedan en borrador local
+  - nada se persiste al cambiar switches, modo o asignaciones
+  - solo se guarda al presionar `Abrir turno` o `Guardar`
+- Al abrir turno, todos los usuarios activos de la sucursal aparecen habilitados por defecto y pueden desmarcarse.
+- Los usuarios habilitados del turno se persisten por `cash_shift_users`.
+- Antes de abrir o guardar turno deben cumplirse estas condiciones:
+  - al menos una vista habilitada (`Mesa` o `Para llevar`)
+  - si `Mesa` esta habilitada, `active_tables_count` debe ser mayor a 0
+  - al menos un usuario habilitado
+  - al menos un usuario habilitado para despacho; si el modo es `SPLIT`, cada vista activa debe quedar cubierta por asignacion
+- Si un turno ya abierto reduce el numero de mesas visibles, todas las mesas que queden fuera del nuevo limite deben estar libres; no basta con que no esten activas visualmente.
+- Si no hay turno abierto:
+  - los modulos operativos deben quedar bloqueados
+  - solo `Administracion` sigue accesible para abrir/configurar turno
+
 ### 4.1) App instalable y UX movil
 - La aplicacion ahora expone `manifest.json`, iconos PWA y `service worker` para instalacion en movil y desktop.
 - El `service worker` usa `cache-first` para assets estaticos y `network-first` para trafico a `supabase.co`.
 - El registro del `service worker` ocurre solo en produccion, sin alterar el arranque normal en desarrollo.
 - En pantallas pequenas (`max-width: 768px`) se reforzo la UX tactil en `Ordenes`, `MenuNavigator` y `Admin` sin cambiar el comportamiento desktop.
+- `Admin > Turno` y su bloque interno de `Despacho` ya deben comportarse bien en movil:
+  - tarjetas mas compactas
+  - controles de despacho apilados
+  - botones principales a ancho completo
+  - bloques informativos sin depender de layouts desktop
 - `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
@@ -137,6 +178,9 @@
   - seleccion real por `order_item_modifiers`
 - La correccion de colisiones de `order_code` sigue vigente y no debe revertirse.
 - La correccion de numeracion de mesas por sucursal tambien debe preservarse: nuevas mesas no deben reutilizar `table_number` existentes aunque `entity_counters` este desalineado.
+- La apertura/cierre de turno debe seguir siendo transaccional respecto a mesas activas:
+  - abrir turno configura `active_tables_count` y activa internamente las mesas del turno
+  - cerrar turno desactiva internamente las mesas visibles del turno
 
 ## Riesgos Vigentes
 1. No asumir que crear un nodo `product` en `menu_nodes` reemplaza automaticamente toda la operacion: la venta real sigue cerrando sobre `products`.

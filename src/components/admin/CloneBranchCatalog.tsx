@@ -14,6 +14,7 @@ interface Branch {
   id: string;
   name: string;
   branch_code: string;
+  reference_table_count?: number;
 }
 
 const CATALOG_ITEMS = [
@@ -65,11 +66,6 @@ async function cloneCatalogDirectly(
       }
     }
 
-    if (selectedItems.has("tables")) {
-      const { error } = await supabase.from("restaurant_tables").delete().eq("branch_id", targetBranchId);
-      if (error) throw error;
-    }
-
     if (selectedItems.has("modifiers")) {
       const { error } = await supabase.from("modifiers").delete().eq("branch_id", targetBranchId);
       if (error) throw error;
@@ -87,18 +83,27 @@ async function cloneCatalogDirectly(
   }
 
   if (selectedItems.has("tables")) {
-    const { data: tables, error } = await supabase
-      .from("restaurant_tables")
-      .select("name, visual_order, is_active")
-      .eq("branch_id", sourceBranchId);
-    if (error) throw error;
+    const { data: sourceBranch, error: sourceBranchError } = await supabase
+      .from("branches")
+      .select("reference_table_count")
+      .eq("id", sourceBranchId)
+      .single();
+    if (sourceBranchError) throw sourceBranchError;
 
-    if ((tables ?? []).length > 0) {
-      const rows = (tables ?? []).map((table) => ({ ...table, branch_id: targetBranchId }));
-      const { error: insertError } = await supabase.from("restaurant_tables").insert(rows);
-      if (insertError) throw insertError;
-      stats.mesas = rows.length;
-    }
+    const referenceCount = Number(sourceBranch.reference_table_count ?? 0);
+    const { error: updateBranchError } = await supabase
+      .from("branches")
+      .update({ reference_table_count: referenceCount })
+      .eq("id", targetBranchId);
+    if (updateBranchError) throw updateBranchError;
+
+    const { error: ensureTablesError } = await supabase.rpc("ensure_branch_table_capacity", {
+      p_branch_id: targetBranchId,
+      p_requested_count: referenceCount,
+    });
+    if (ensureTablesError) throw ensureTablesError;
+
+    stats.mesas = referenceCount;
   }
 
   if (selectedItems.has("modifiers")) {
@@ -229,7 +234,7 @@ const CloneBranchCatalog = () => {
   const { data: branches = [] } = useQuery({
     queryKey: ["clone-branches"],
     queryFn: async () => {
-      const { data } = await supabase.from("branches").select("id, name, branch_code").eq("is_active", true).order("name");
+      const { data } = await supabase.from("branches").select("id, name, branch_code, reference_table_count").eq("is_active", true).order("name");
       return (data ?? []) as Branch[];
     },
   });

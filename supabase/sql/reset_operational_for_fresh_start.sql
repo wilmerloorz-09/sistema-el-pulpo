@@ -4,7 +4,7 @@
 --
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
--- - Conserva usuarios, sucursales, permisos, mesas y catalogos
+-- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --
@@ -46,6 +46,9 @@ DECLARE
     'public.order_items',
     'public.orders',
 
+    -- Divisiones de mesa operativas
+    'public.table_splits',
+
     -- Configuracion operativa por jornada/sucursal
     'public.dispatch_assignments',
     'public.dispatch_config',
@@ -64,6 +67,12 @@ BEGIN
       RAISE NOTICE 'Tabla no encontrada, se omite: %', v_table;
     END IF;
   END LOOP;
+
+  IF to_regclass('public.restaurant_tables') IS NOT NULL THEN
+    UPDATE public.restaurant_tables
+    SET is_active = false;
+    RAISE NOTICE 'Mesas internas desactivadas para dejar el turno en limpio';
+  END IF;
 END $$;
 
 -- Reinicia secuencias legacy si existen.
@@ -75,8 +84,8 @@ COMMIT;
 -- POST RESET ESPERADO
 -- - Usuarios intactos
 -- - Sucursales intactas
--- - Mesas intactas
+-- - Referencia de mesas intacta
+-- - Mesas internas intactas, pero desactivadas
 -- - Catalogo intacto (incluye arbol menu y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/notificaciones/eventos
 -- ============================================================
-
