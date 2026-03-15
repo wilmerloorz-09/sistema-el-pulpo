@@ -66,21 +66,30 @@ const NodeCard = ({
         }
       }}
       className={cn(
-        "group relative flex min-h-[146px] flex-col rounded-[1.4rem] bg-card p-3 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:rounded-3xl md:p-4",
+        "group relative flex min-h-[146px] flex-col rounded-[1.4rem] p-3 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:rounded-3xl md:p-4",
         isProduct
-          ? "border border-border hover:-translate-y-0.5 hover:border-emerald-400/60 hover:shadow-[0_12px_24px_-18px_rgba(16,185,129,0.75)]"
-          : "border border-dashed border-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_12px_24px_-18px_hsl(var(--primary)/0.55)]",
+          ? "border border-emerald-400/95 bg-gradient-to-br from-emerald-200 via-teal-100 to-cyan-200 shadow-[0_22px_46px_-32px_rgba(16,185,129,0.58)] hover:-translate-y-0.5 hover:border-emerald-500 hover:shadow-[0_20px_34px_-20px_rgba(16,185,129,0.58)]"
+          : "border border-dashed border-orange-400/95 bg-gradient-to-br from-orange-200 via-amber-100 to-yellow-200 shadow-[0_22px_46px_-32px_rgba(249,115,22,0.52)] hover:-translate-y-0.5 hover:border-orange-500 hover:shadow-[0_20px_34px_-20px_rgba(249,115,22,0.5)]",
         !node.is_active && "opacity-70 saturate-75",
         !isDisabledNode && "cursor-pointer",
         isDisabledNode && "cursor-not-allowed",
       )}
     >
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 rounded-[inherit]",
+          isProduct
+            ? "bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,0.26),transparent_24%)] md:bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,0.26),transparent_22%)]"
+            : "bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(250,204,21,0.28),transparent_24%)] md:bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(250,204,21,0.28),transparent_22%)]",
+        )}
+      />
       <div className="mb-2 flex justify-center md:mb-4">{renderNodeVisual(node)}</div>
       <div className="flex-1">
-        <p className="line-clamp-2 text-[0.95rem] font-semibold leading-tight text-foreground md:text-sm">{node.name}</p>
+        <p className="line-clamp-2 text-[0.82rem] font-semibold leading-tight text-foreground md:text-sm">{node.name}</p>
         {isProduct ? (
-          <div className="mt-1.5 flex items-center gap-2">
-            <p className="text-sm font-semibold text-emerald-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <span />
+            <p className="text-sm font-bold text-red-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
             {!node.is_active && (
               <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
                 Agotado
@@ -88,7 +97,7 @@ const NodeCard = ({
             )}
           </div>
         ) : (
-          <div className="mt-1.5 flex items-center gap-2">
+          <div className="mt-1.5 flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground md:text-xs">{childCount} items</p>
             {!node.is_active && (
               <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
