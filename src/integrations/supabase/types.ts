@@ -189,6 +189,7 @@ export type Database = {
           notes: string | null
           opened_at: string
           status: Database["public"]["Enums"]["cash_shift_status"]
+          caja_status: Database["public"]["Enums"]["caja_status"]
         }
         Insert: {
           active_tables_count?: number
@@ -199,6 +200,7 @@ export type Database = {
           notes?: string | null
           opened_at?: string
           status?: Database["public"]["Enums"]["cash_shift_status"]
+          caja_status?: Database["public"]["Enums"]["caja_status"]
         }
         Update: {
           active_tables_count?: number
@@ -209,6 +211,7 @@ export type Database = {
           notes?: string | null
           opened_at?: string
           status?: Database["public"]["Enums"]["cash_shift_status"]
+          caja_status?: Database["public"]["Enums"]["caja_status"]
         }
         Relationships: [
           {
@@ -1127,6 +1130,7 @@ export type Database = {
         | "despachador_takeout" | "supervisor" | "superadmin"
       cash_movement_type: "OPENING" | "PAYMENT_IN" | "CHANGE_OUT"
       cash_shift_status: "OPEN" | "CLOSED"
+      caja_status: "UNOPENED" | "OPEN" | "CLOSED"
       order_status: "DRAFT" | "SENT_TO_KITCHEN" | "READY" | "KITCHEN_DISPATCHED" | "PAID" | "CANCELLED"
       order_type: "DINE_IN" | "TAKEOUT"
       price_mode: "FIXED" | "MANUAL"
@@ -1267,6 +1271,7 @@ export const Constants = {
       ],
       cash_movement_type: ["OPENING", "PAYMENT_IN", "CHANGE_OUT"],
       cash_shift_status: ["OPEN", "CLOSED"],
+      caja_status: ["UNOPENED", "OPEN", "CLOSED"],
       order_status: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID", "CANCELLED"],
       order_type: ["DINE_IN", "TAKEOUT"],
       price_mode: ["FIXED", "MANUAL"],

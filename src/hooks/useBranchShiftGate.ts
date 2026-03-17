@@ -7,6 +7,12 @@ export interface BranchShiftGate {
   shiftOpen: boolean;
   userEnabled: boolean;
   activeTablesCount: number;
+  cajaStatus: "UNOPENED" | "OPEN" | "CLOSED";
+  canServeTables: boolean;
+  canDispatchOrders: boolean;
+  canUseCaja: boolean;
+  canAuthorizeOrderCancel: boolean;
+  isSupervisor: boolean;
   legacyFallbackApplied: boolean;
 }
 
@@ -22,6 +28,12 @@ export function useBranchShiftGate() {
           shiftOpen: false,
           userEnabled: false,
           activeTablesCount: 0,
+          cajaStatus: "UNOPENED",
+          canServeTables: false,
+          canDispatchOrders: false,
+          canUseCaja: false,
+          canAuthorizeOrderCancel: false,
+          isSupervisor: false,
           legacyFallbackApplied: false,
         };
       }
@@ -38,6 +50,12 @@ export function useBranchShiftGate() {
         shiftOpen: Boolean(row?.shift_open),
         userEnabled: Boolean(row?.user_enabled),
         activeTablesCount: Number(row?.active_tables_count ?? 0),
+        cajaStatus: row?.caja_status ?? "UNOPENED",
+        canServeTables: Boolean(row?.can_serve_tables),
+        canDispatchOrders: Boolean(row?.can_dispatch_orders),
+        canUseCaja: Boolean(row?.can_use_caja),
+        canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
+        isSupervisor: Boolean(row?.is_supervisor),
         legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
       };
     },

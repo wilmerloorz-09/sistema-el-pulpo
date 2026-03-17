@@ -188,6 +188,16 @@ export function useDispatchConfig() {
     mutationFn: async (params: { userId: string; dispatchType: DispatchType; fullName?: string }) => {
       if (!configQuery.data?.id) throw new Error("No config");
 
+      const existingAssignments = (assignmentsQuery.data || []).filter((assignment) => assignment.user_id === params.userId);
+      for (const assignment of existingAssignments) {
+        const deleteResult = await (supabase
+          .from("dispatch_assignments" as any)
+          .delete()
+          .eq("id", assignment.id) as any);
+
+        if (deleteResult.error) throw deleteResult.error;
+      }
+
       const insertResult = await (supabase
         .from("dispatch_assignments" as any)
         .insert({
@@ -211,12 +221,20 @@ export function useDispatchConfig() {
   });
 
   const removeAssignment = useMutation({
-    mutationFn: async (assignmentId: string) => {
-      const deleteResult = await (supabase
+    mutationFn: async (params: { assignmentId?: string; userId?: string }) => {
+      let query = (supabase
         .from("dispatch_assignments" as any)
-        .delete()
-        .eq("id", assignmentId) as any);
+        .delete() as any);
 
+      if (params.userId) {
+        query = query.eq("user_id", params.userId);
+      } else if (params.assignmentId) {
+        query = query.eq("id", params.assignmentId);
+      } else {
+        throw new Error("No assignment reference");
+      }
+
+      const deleteResult = await query;
       if (deleteResult.error) throw deleteResult.error;
     },
     onSuccess: () => {

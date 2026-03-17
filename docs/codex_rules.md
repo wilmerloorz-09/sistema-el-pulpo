@@ -54,6 +54,15 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - cambios de mesas, usuarios y despacho quedan en borrador local
   - solo `Abrir turno` o `Guardar` deben persistir cambios
 - Si no hay turno abierto, los modulos operativos deben quedar bloqueados y solo `Admin` debe seguir accesible para administradores/supervisores.
+- En `Admin > Turno`, la UX vigente de usuarios es `combo + agregar + tarjetas`; no volver al modelo de "todos visibles y luego desmarcar".
+- En `Admin > Turno`, `Despacho` ya no debe exponer switches manuales de vistas activas; `Mesa` se deriva de mesas activas y `Para llevar` queda disponible.
+
+### 7.2) Cancelacion/Anulacion directa por categoria
+- La configuracion visible vive en `Admin > Turno`.
+- La UI actual trabaja solo con categorias `nivel 0`.
+- La primera categoria raiz queda reservada al administrador general.
+- No reintroducir una UI de "plato de cocina" por fila salvo cambio funcional explicito.
+- Si una categoria raiz no tiene productos aun, igual debe aparecer en el listado si sigue siendo una categoria activa valida.
 
 ### 8) Snapshot operativo compartido
 - Si una pantalla clasifica estados de orden (`Enviada`, `Lista`, `Despachada`, `Por cobrar`), preferir snapshot operativo compartido sobre lecturas parciales.
@@ -82,6 +91,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - resumen adaptable a 1 o 2 columnas
   - controles de despacho apilados
   - boton principal a ancho completo en telefono
+- En tablet, `Admin` ya debe comportarse con tabs horizontales; no dejarlo en modo dropdown de telefono si ya hay ancho suficiente.
+- `BranchCancelPolicyEditor`, `DispatchConfig`, `ShiftSetupAdmin` y `UsersCrud` deben revisarse juntos cuando se hagan cambios recientes de UX en Admin.
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
@@ -89,15 +100,26 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - El campo `icon` ya no debe exponerse en `Admin > Arbol Menu`; si persiste en BD, tratarlo solo como remanente legacy.
 - La pestana `Modificadores` solo administra el catalogo base; la asignacion a nodos debe hacerse en `Arbol Menu`.
 - `AdminTable` debe seguir siendo la base para listados administrativos y en movil debe mostrarse como tarjetas, no como tabla apretada.
+- En `Usuarios`, distinguir siempre entre:
+  - rol en sucursal activa
+  - rol global
+- No mostrar etiquetas vacias o confusas como `Sin rol global` si no aportan valor operativo.
 
 ### Backend y consultas
 - Para modificadores, leer descripciones desde la relacion con `modifiers`.
 - La disponibilidad operativa del modificador debe resolverse desde `menu_node_modifiers`.
 - Filtrar datos vacios o inconsistentes antes de renderizar.
 - Si se toca apertura/cierre de turno, validar tambien la consistencia de mesas activas; no dejar turnos medio abiertos ni mesas activas sin turno.
+- Si se toca creacion de usuarios, validar el circuito completo:
+  - Auth
+  - `profiles`
+  - sucursal inicial
+  - rol de sucursal inicial
+  - rollback si la asignacion posterior falla
 - Si se toca Ordenes o Despacho, revisar tambien:
   - RLS de tablas de eventos operativos
   - reflejo en vivo entre usuarios/sesiones
+- Si se toca `Despacho`, validar tambien la unicidad de asignacion por usuario y la visibilidad final de tabs segun modo `SINGLE` / `SPLIT`.
 - Si se toca divisiones de mesa, validar tambien:
   - que la nueva division quede seleccionada
   - que no pueda crearse una division nueva si una anterior no tiene items
@@ -115,6 +137,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 5. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
+
+6. Si se toco una Edge Function o una RPC critica, confirmar si requiere deploy o migracion remota antes de dar por cerrado el cambio.
 
 ## Estado Base que Debe Mantenerse
 - Login con email o username.

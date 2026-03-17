@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import OrderCardBase from "./OrderCardBase";
 import OrderDetailDrawer from "./OrderDetailDrawer";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
@@ -8,6 +8,7 @@ interface OrderCardProps {
   onCancel?: (order: OrderSummary) => void;
   showCancelButton?: boolean;
   readOnly?: boolean;
+  canAuthorizeCancel?: boolean;
 }
 
 export default function OrderCard({
@@ -15,6 +16,7 @@ export default function OrderCard({
   onCancel,
   showCancelButton = true,
   readOnly = false,
+  canAuthorizeCancel = true,
 }: OrderCardProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -27,6 +29,7 @@ export default function OrderCard({
         showEyeIcon={true}
         onEyeClick={() => setIsDrawerOpen(true)}
         readOnly={readOnly}
+        canAuthorizeCancel={canAuthorizeCancel}
       />
 
       <OrderDetailDrawer

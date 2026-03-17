@@ -1,4 +1,4 @@
-﻿import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   recordOperationalLoss,
   notifyKitchenItemCancelled as notifyKitchenItemCancelledDB,
@@ -34,6 +34,7 @@ interface CancelOrderParams {
   userId: string;
   cancellationType: "partial" | "total";
   cancellationData?: CancellationData;
+  requiresAuthorization?: boolean;
 }
 
 function isMissingRelationError(error: unknown, relationName: string) {
@@ -169,16 +170,24 @@ export function useCancellation() {
       return {
         itemId,
         orderId,
+        isRequest: false,
         selections: [{ order_item_id: itemId, quantity_cancelled: quantity }],
         cancellationType: "partial" as const,
       };
     },
     onSuccess: async (data) => {
-      qc.setQueryData(["order", data.orderId], (current: any) =>
-        applyCancellationToOrderCache(current, data.selections, data.cancellationType)
-      );
-      toast.success("Item cancelado");
-      qc.invalidateQueries({ queryKey: ["order", data.orderId] });
+      if (data.isRequest) {
+        toast.success("Solicitud de anulación enviada");
+        qc.setQueryData(["order", data.orderId], (current: any) => {
+          if (!current) return current;
+          return { ...current, cancel_requested_at: new Date().toISOString() };
+        });
+      } else {
+        qc.setQueryData(["order", data.orderId], (current: any) =>
+          applyCancellationToOrderCache(current, data.selections, data.cancellationType)
+        );
+        toast.success("Item cancelado");
+      }
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
@@ -193,8 +202,25 @@ export function useCancellation() {
 
   const cancelOrderMutation = useMutation({
     mutationFn: async (params: CancelOrderParams) => {
-      const { orderId, items, userId, cancellationType, cancellationData } = params;
+      const { orderId, items, userId, cancellationType, cancellationData, requiresAuthorization } = params;
       const reason = cancellationData?.reason || "Sin especificar";
+
+      if (requiresAuthorization) {
+        const { error } = await supabase.rpc("request_order_cancellation", {
+          p_order_id: orderId,
+          p_user_id: userId,
+        });
+
+        if (error) throw error;
+
+        return {
+          orderId,
+          isRequest: true,
+          cancellationId: null,
+          selections: [],
+          cancellationType,
+        };
+      }
 
       const selectedItems = items.filter((item) => item.quantity_cancelled > 0);
 
@@ -220,6 +246,7 @@ export function useCancellation() {
 
       return {
         orderId,
+        isRequest: false,
         cancellationId: data as string | null,
         selections: (cancellationType === "total" ? items : selectedItems).map((item) => ({
           order_item_id: item.order_item_id,
@@ -229,10 +256,18 @@ export function useCancellation() {
       };
     },
     onSuccess: async (data) => {
-      qc.setQueryData(["order", data.orderId], (current: any) =>
-        applyCancellationToOrderCache(current, data.selections, data.cancellationType)
-      );
-      toast.success("Cancelacion aplicada");
+      if (data.isRequest) {
+        toast.success("Solicitud de anulación enviada");
+        qc.setQueryData(["order", data.orderId], (current: any) => {
+          if (!current) return current;
+          return { ...current, cancel_requested_at: new Date().toISOString() };
+        });
+      } else {
+        qc.setQueryData(["order", data.orderId], (current: any) =>
+          applyCancellationToOrderCache(current, data.selections, data.cancellationType)
+        );
+        toast.success("Cancelacion aplicada");
+      }
       qc.invalidateQueries({ queryKey: ["order", data.orderId] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });

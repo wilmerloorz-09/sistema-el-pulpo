@@ -52,7 +52,9 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
               <DollarSign className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-black text-foreground">Turno Activo</p>
+              <p className="text-sm font-black text-foreground">
+                {shift.caja_status === "OPEN" ? "Caja Activa" : "Turno Activo"}
+              </p>
               <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                 <Clock className="h-3 w-3" />
                 {hours}h {mins}m
@@ -68,7 +70,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
                 onClick={() => setShowClose(true)}
               >
                 <Lock className="h-3.5 w-3.5" />
-                Cerrar Turno
+                Cerrar Caja
               </Button>
             )}
               <Button
@@ -94,7 +96,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
 
         {readOnly && (
           <div className="rounded-2xl border border-border bg-white/80 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-            Modo consulta: puedes ver el turno, pero no cerrarlo.
+            Modo consulta: puedes ver la caja, pero no cerrarla.
           </div>
         )}
       </div>
@@ -229,7 +231,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
         <Dialog open={showClose} onOpenChange={setShowClose}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="font-display">Cerrar Turno</DialogTitle>
+              <DialogTitle className="font-display">Cerrar Caja</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -255,7 +257,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Observaciones del turno..."
+                  placeholder="Observaciones de la caja..."
                   className="resize-none rounded-xl"
                   rows={3}
                 />
@@ -274,7 +276,7 @@ export default function ShiftSummary({ shift, methodSummary = [], onClose, closi
                 className="gap-2 rounded-xl"
               >
                 {closing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-                Confirmar Cierre
+                Confirmar cierre de caja
               </Button>
             </DialogFooter>
           </DialogContent>

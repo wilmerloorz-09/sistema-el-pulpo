@@ -5,12 +5,14 @@ import { toast } from "sonner";
 import MenuNavigator from "@/components/order/MenuNavigator";
 import { Button } from "@/components/ui/button";
 import { useBranch } from "@/contexts/BranchContext";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { supabase } from "@/integrations/supabase/client";
 import { canOperate, canView } from "@/lib/permissions";
 import type { MenuNode } from "@/hooks/useMenuTree";
 
 const Productos = () => {
   const { permissions, activeBranchId } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
 
@@ -25,7 +27,8 @@ const Productos = () => {
     canOperate(permissions, "despacho_mesa") ||
     canOperate(permissions, "despacho_para_llevar");
 
-  const readOnly = !canOperateDispatch;
+  const canOperateByShift = Boolean(shiftGateQuery.data?.canDispatchOrders) || Boolean(shiftGateQuery.data?.isSupervisor);
+  const readOnly = !canOperateDispatch || !canOperateByShift;
 
   const refreshMenuQueries = () => {
     qc.invalidateQueries({ queryKey: ["menu-tree"] });

@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import MenuNavigator from "@/components/order/MenuNavigator";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
@@ -35,6 +36,7 @@ const Ordenes = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { activeBranchId, permissions } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
@@ -52,6 +54,10 @@ const Ordenes = () => {
   const canOperateOrders = canOperate(permissions, "ordenes");
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   const canCancelOrders = canOperateOrders || canManageOrders;
+  const canAuthorizeCancel =
+    canManage(permissions, "admin_global")
+    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
 
   const isTakeout = order?.order_type === "TAKEOUT";
 
@@ -83,6 +89,8 @@ const Ordenes = () => {
             userId={user.id}
             open={!!cancelOrder}
             onOpenChange={(open) => !open && setCancelOrder(null)}
+            canAuthorizeCancel={canAuthorizeCancel}
+            isCancelRequested={!!cancelOrder.cancel_requested_at}
           />
         )}
       </div>

@@ -12,6 +12,7 @@ interface Props {
     level: AccessLevel;
   };
   requiresOpenShift?: boolean;
+  requiredShiftRoles?: Array<"canServeTables" | "canDispatchOrders" | "canUseCaja">;
 }
 
 const MODULE_FALLBACK_PATH: Record<string, string> = {
@@ -27,7 +28,19 @@ const MODULE_FALLBACK_PATH: Record<string, string> = {
   admin_global: "/admin",
 };
 
-const ProtectedRoute = ({ children, allowedModules, requiredPermission, requiresOpenShift = false }: Props) => {
+const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number], string> = {
+  canServeTables: "Mesas y Ordenes",
+  canDispatchOrders: "Despacho",
+  canUseCaja: "Caja",
+};
+
+const ProtectedRoute = ({
+  children,
+  allowedModules,
+  requiredPermission,
+  requiresOpenShift = false,
+  requiredShiftRoles,
+}: Props) => {
   const { user, loading } = useAuth();
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
@@ -80,6 +93,10 @@ const ProtectedRoute = ({ children, allowedModules, requiredPermission, requires
     const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
     const canAccessAdmin = isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
     const userEnabled = Boolean(shiftGateQuery.data?.userEnabled) || canAccessAdmin;
+    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || canAccessAdmin;
+    const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
+      ? true
+      : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
 
     if (!shiftOpen || !userEnabled) {
       if (canAccessAdmin) {
@@ -96,6 +113,23 @@ const ProtectedRoute = ({ children, allowedModules, requiredPermission, requires
               {!shiftOpen
                 ? "Los modulos operativos permanecen deshabilitados hasta que un administrador general o supervisor abra el turno desde Administracion."
                 : "Tu usuario esta deshabilitado para este turno. Solicita al administrador o supervisor que lo habilite desde Administracion."}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!hasSupervisorBypass && !hasRequiredShiftRole) {
+      const requestedAreas = (requiredShiftRoles ?? []).map((role) => SHIFT_ROLE_LABELS[role]).join(" o ");
+
+      return (
+        <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+            <h2 className="font-display text-xl font-black text-foreground">
+              No tienes acceso operativo en este turno
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Tu usuario esta habilitado en la jornada, pero no tiene asignado el rol operativo necesario para entrar a {requestedAreas || "este modulo"}.
             </p>
           </div>
         </div>

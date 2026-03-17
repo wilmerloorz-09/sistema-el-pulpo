@@ -4,21 +4,30 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Loader2, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { DispatchType } from "@/types/cancellation";
 
 interface DispatchConfigProps {
   enabledUserIds?: string[];
+  availableViewTypes?: Array<Extract<DispatchType, "TABLE" | "TAKEOUT">>;
   configOverride?: DispatchConfigModel | null;
   assignmentsOverride?: DispatchAssignment[];
   onConfigChange?: (nextConfig: DispatchConfigModel) => void;
   onAssignmentsChange?: (nextAssignments: DispatchAssignment[]) => void;
 }
 
+function dedupeAssignmentsByUser(items: DispatchAssignment[]) {
+  const map = new Map<string, DispatchAssignment>();
+  for (const item of items) {
+    map.set(item.user_id, item);
+  }
+  return Array.from(map.values());
+}
+
 export default function DispatchConfig({
   enabledUserIds,
+  availableViewTypes,
   configOverride,
   assignmentsOverride,
   onConfigChange,
@@ -32,6 +41,10 @@ export default function DispatchConfig({
   const isControlled = Boolean(configOverride && onConfigChange && onAssignmentsChange);
   const currentConfig = configOverride ?? config;
   const currentAssignments = assignmentsOverride ?? assignments;
+  const uniqueAssignments = useMemo(
+    () => dedupeAssignmentsByUser(currentAssignments ?? []),
+    [currentAssignments],
+  );
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -62,11 +75,15 @@ export default function DispatchConfig({
   }, [activeBranchId]);
 
   const availableAssignmentTypes = useMemo(() => {
+    if (availableViewTypes && availableViewTypes.length > 0) {
+      return availableViewTypes;
+    }
+
     const options: DispatchType[] = [];
     if (currentConfig?.table_enabled) options.push("TABLE");
     if (currentConfig?.takeout_enabled) options.push("TAKEOUT");
     return options;
-  }, [currentConfig?.table_enabled, currentConfig?.takeout_enabled]);
+  }, [availableViewTypes, currentConfig?.table_enabled, currentConfig?.takeout_enabled]);
 
   const availableDispatchUsers = useMemo(() => {
     if (!enabledUserIds) return dispatchUsers;
@@ -104,18 +121,6 @@ export default function DispatchConfig({
     updateConfig.mutate({ dispatch_mode: mode });
   };
 
-  const handleToggleView = (key: "table_enabled" | "takeout_enabled", checked: boolean) => {
-    if (!currentConfig) return;
-    if (isControlled) {
-      onConfigChange({
-        ...currentConfig,
-        [key]: checked,
-      });
-      return;
-    }
-    updateConfig.mutate({ [key]: checked });
-  };
-
   const handleAddAssignment = () => {
     if (!selectedUser) {
       toast.error("Selecciona un despachador");
@@ -123,7 +128,7 @@ export default function DispatchConfig({
     }
 
     if (availableAssignmentTypes.length === 0) {
-      toast.error("Habilita al menos un tipo de despacho en la jornada");
+      toast.error("No hay vistas disponibles para asignar en este turno");
       return;
     }
 
@@ -135,7 +140,10 @@ export default function DispatchConfig({
         dispatch_type: selectedType,
         created_at: new Date().toISOString(),
       };
-      onAssignmentsChange([...(currentAssignments ?? []), nextAssignment]);
+      onAssignmentsChange([
+        ...(currentAssignments ?? []).filter((assignment) => assignment.user_id !== selectedUser),
+        nextAssignment,
+      ]);
       setSelectedUser("");
       setSelectedType(availableAssignmentTypes[0] ?? "TABLE");
       return;
@@ -174,35 +182,8 @@ export default function DispatchConfig({
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-foreground">Vistas habilitadas en la jornada</h3>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 sm:p-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Mesa</p>
-              <p className="text-xs text-muted-foreground">Permite despachar ordenes de mesa en esta sucursal.</p>
-            </div>
-            <Switch checked={currentConfig.table_enabled} onCheckedChange={(checked) => handleToggleView("table_enabled", checked)} />
-          </div>
-
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 sm:p-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Para llevar</p>
-              <p className="text-xs text-muted-foreground">Permite despachar ordenes para llevar en esta sucursal.</p>
-            </div>
-            <Switch checked={currentConfig.takeout_enabled} onCheckedChange={(checked) => handleToggleView("takeout_enabled", checked)} />
-          </div>
-        </div>
-
-        {!currentConfig.table_enabled && !currentConfig.takeout_enabled && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            No hay tipos de despacho habilitados. El modulo quedara sin vistas disponibles hasta activar al menos una.
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3 border-t border-border pt-4">
         <h3 className="text-sm font-semibold text-foreground">Modo de asignacion</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <button
             onClick={() => handleModeChange("SINGLE")}
             className={`rounded-xl border-2 p-3 text-left transition-colors sm:p-4 ${
@@ -210,7 +191,7 @@ export default function DispatchConfig({
             }`}
           >
             <h4 className="font-semibold text-foreground">Un despachador</h4>
-            <p className="mt-1 text-xs text-muted-foreground">La vista disponible se atiende sin asignaciones por tipo.</p>
+            <p className="mt-1 text-xs text-muted-foreground">En Despacho se mostraran las tabs Todos, Mesa y Para llevar segun las vistas disponibles.</p>
           </button>
 
           <button
@@ -220,7 +201,7 @@ export default function DispatchConfig({
             }`}
           >
             <h4 className="font-semibold text-foreground">Por tipo de orden</h4>
-            <p className="mt-1 text-xs text-muted-foreground">Permite asignar despachadores especificos a Mesa o Para llevar.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Cada despachador solo vera las ordenes del tipo que le asignes.</p>
           </button>
         </div>
       </div>
@@ -229,9 +210,9 @@ export default function DispatchConfig({
         <div className="space-y-4 border-t border-border pt-4">
           <h3 className="text-sm font-semibold text-foreground">Asignaciones de despachadores</h3>
 
-          <div className="space-y-2 rounded-xl bg-muted/30 p-3 sm:p-4">
+          <div className="space-y-2">
             <label className="block text-xs font-medium text-foreground">Agregar nueva asignacion</label>
-            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+            <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px_auto]">
               <select
                 value={selectedUser}
                 onChange={(e) => setSelectedUser(e.target.value)}
@@ -266,7 +247,7 @@ export default function DispatchConfig({
                 onClick={handleAddAssignment}
                 disabled={!selectedUser || availableAssignmentTypes.length === 0 || availableDispatchUsers.length === 0 || updateAssignment.isPending}
                 size="sm"
-                className="h-10 gap-2 md:w-auto"
+                className="h-10 w-full gap-2 lg:w-auto"
               >
                 <Plus className="h-4 w-4" />
                 Agregar
@@ -277,17 +258,17 @@ export default function DispatchConfig({
             )}
           </div>
 
-          {currentAssignments.length > 0 ? (
+          {uniqueAssignments.length > 0 ? (
             <div className="space-y-2">
               <label className="block text-xs font-medium text-foreground">Asignaciones actuales</label>
               <div className="space-y-2">
-                {currentAssignments.map((assignment) => {
+                {uniqueAssignments.map((assignment) => {
                   const user = dispatchUsers.find((u) => u.id === assignment.user_id);
                   const isEnabledForShift = !enabledUserIds || enabledUserIds.includes(assignment.user_id);
                   return (
                     <div
                       key={assignment.id}
-                      className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${
+                      className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start sm:justify-between ${
                         isEnabledForShift ? "border-border bg-card" : "border-amber-200 bg-amber-50"
                       }`}
                     >
@@ -305,14 +286,14 @@ export default function DispatchConfig({
                       <Button
                         onClick={() => {
                           if (isControlled) {
-                            onAssignmentsChange(currentAssignments.filter((item) => item.id !== assignment.id));
+                            onAssignmentsChange((currentAssignments ?? []).filter((item) => item.user_id !== assignment.user_id));
                             return;
                           }
-                          removeAssignment.mutate(assignment.id);
+                          removeAssignment.mutate({ assignmentId: assignment.id, userId: assignment.user_id });
                         }}
                         variant="ghost"
                         size="sm"
-                        className="h-9 w-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="h-9 w-full shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-9"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -322,18 +303,13 @@ export default function DispatchConfig({
               </div>
             </div>
           ) : (
-            <div className="rounded-xl bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+            <div className="px-1 py-4 text-center text-sm text-muted-foreground">
               No hay asignaciones. Agrega despachadores a los tipos habilitados.
             </div>
           )}
         </div>
       )}
 
-      {currentConfig.dispatch_mode === "SINGLE" && (
-        <div className="rounded-xl border border-accent/20 bg-accent/10 p-4 text-sm text-foreground">
-          En modo <Badge className="ml-1">Un despachador</Badge>, el modulo se sigue mostrando como una sola entrada y la vista disponible depende de permisos + jornada.
-        </div>
-      )}
     </div>
   );
 }

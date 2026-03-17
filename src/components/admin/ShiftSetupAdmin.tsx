@@ -14,14 +14,17 @@ import {
   CheckCircle2,
   LayoutGrid,
   Loader2,
+  Plus,
   PlayCircle,
   Power,
   Save,
   Truck,
+  Trash2,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import DispatchConfig from "@/components/admin/DispatchConfig";
+import BranchCancelPolicyEditor, { type BranchCancelPolicyDraftRow } from "@/components/admin/BranchCancelPolicyEditor";
 import { useDispatchConfig, type DispatchAssignment, type DispatchConfig as DispatchConfigModel } from "@/hooks/useDispatchConfig";
 
 interface ShiftUserRow {
@@ -30,6 +33,38 @@ interface ShiftUserRow {
   username: string;
   is_profile_active: boolean;
   is_enabled: boolean;
+  can_serve_tables: boolean;
+  can_dispatch_orders: boolean;
+  can_use_caja: boolean;
+  can_authorize_order_cancel: boolean;
+  is_supervisor: boolean;
+}
+
+const OPERATIVE_ROLE_KEYS: Array<keyof Pick<
+  ShiftUserRow,
+  "can_serve_tables" | "can_dispatch_orders" | "can_use_caja" | "is_supervisor"
+>> = ["can_serve_tables", "can_dispatch_orders", "can_use_caja", "is_supervisor"];
+
+function hasOperationalCapability(user: ShiftUserRow) {
+  return OPERATIVE_ROLE_KEYS.some((key) => user[key]);
+}
+
+function normalizeShiftUser(user: ShiftUserRow, useFallbackServeRole: boolean): ShiftUserRow {
+  const normalized: ShiftUserRow = {
+    ...user,
+    is_enabled: user.is_enabled ?? false,
+    can_serve_tables: user.can_serve_tables ?? false,
+    can_dispatch_orders: user.can_dispatch_orders ?? false,
+    can_use_caja: user.can_use_caja ?? false,
+    can_authorize_order_cancel: user.can_authorize_order_cancel ?? false,
+    is_supervisor: user.is_supervisor ?? false,
+  };
+
+  if (useFallbackServeRole && !hasOperationalCapability(normalized)) {
+    normalized.can_serve_tables = true;
+  }
+
+  return normalized;
 }
 
 function sameMembers(left: string[], right: string[]) {
@@ -58,15 +93,23 @@ function showShiftSetupError(
     return;
   }
 
-  toast.error(rawMessage || "No se pudo guardar la configuracion del turno");
+  setWarningDialog({
+    open: true,
+    title: "Revisa la configuracion del turno",
+    description: rawMessage || "No se pudo guardar la configuracion del turno. Revisa los datos y vuelve a intentarlo.",
+  });
 }
 
 const ShiftSetupAdmin = () => {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { activeBranchId, activeBranch } = useBranch();
+  const { activeBranchId, activeBranch, isGlobalAdmin } = useBranch();
   const [activeTablesCount, setActiveTablesCount] = useState(0);
-  const [enabledUserIds, setEnabledUserIds] = useState<string[]>([]);
+  const [shiftUsersState, setShiftUsersState] = useState<ShiftUserRow[]>([]);
+  const [selectedUserToAdd, setSelectedUserToAdd] = useState("");
+  const [cancelPolicyState, setCancelPolicyState] = useState<BranchCancelPolicyDraftRow[]>([]);
+  const [cancelPoliciesDirty, setCancelPoliciesDirty] = useState(false);
+
   const [draftDispatchConfig, setDraftDispatchConfig] = useState<DispatchConfigModel | null>(null);
   const [draftAssignments, setDraftAssignments] = useState<DispatchAssignment[]>([]);
   const [warningDialog, setWarningDialog] = useState({
@@ -132,22 +175,73 @@ const ShiftSetupAdmin = () => {
     enabled: !!activeBranchId,
   });
 
+  const cancelPolicyQuery = useQuery({
+    queryKey: ["shift-admin-cancel-policy", activeBranchId],
+    queryFn: async () => {
+      if (!activeBranchId) return [] as BranchCancelPolicyDraftRow[];
+      const { data, error } = await supabase.rpc("list_branch_cancel_policy_nodes" as never, {
+        p_branch_id: activeBranchId,
+      } as never);
+      if (error) throw error;
+      return ((data ?? []) as BranchCancelPolicyDraftRow[]).map((row) => ({
+        ...row,
+        descendant_product_count: Number(row.descendant_product_count ?? 0),
+        is_primary_root_category: Boolean(row.is_primary_root_category),
+        is_kitchen_plate: Boolean(row.is_kitchen_plate),
+        allow_direct_cancel: Boolean(row.allow_direct_cancel),
+      }));
+    },
+    enabled: !!activeBranchId,
+  });
+
   const referenceCount = branchSettingsQuery.data?.referenceTableCount ?? 0;
   const isOpen = Boolean(shiftQuery.data);
+  const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
-  const persistedEnabledUserIds = useMemo(() => {
-    const rows = shiftUsersQuery.data ?? [];
-    return isOpen ? rows.filter((row) => row.is_enabled).map((row) => row.user_id) : rows.map((row) => row.user_id);
-  }, [isOpen, shiftUsersQuery.data]);
+  const persistedEnabledUsersData = useMemo(
+    () =>
+      allBranchUsers
+        .filter((row) => row.is_enabled)
+        .map((row) => normalizeShiftUser(row, false)),
+    [allBranchUsers, isOpen],
+  );
+  const persistedEnabledUserIds = useMemo(
+    () => persistedEnabledUsersData.map((row) => row.user_id),
+    [persistedEnabledUsersData],
+  );
   const persistedEnabledUserIdsKey = persistedEnabledUserIds.join("|");
+  const enabledUserIds = useMemo(() => shiftUsersState.map((userState) => userState.user_id), [shiftUsersState]);
+  const persistedCancelPolicies = useMemo(
+    () => cancelPolicyQuery.data ?? [],
+    [cancelPolicyQuery.data],
+  );
+  const availableUsersToAdd = useMemo(
+    () => allBranchUsers.filter((branchUser) => !enabledUserIds.includes(branchUser.user_id)),
+    [allBranchUsers, enabledUserIds],
+  );
+  const dispatchCapableUsers = useMemo(
+    () => shiftUsersState.filter((userState) => userState.can_dispatch_orders || userState.is_supervisor),
+    [shiftUsersState],
+  );
+  const dispatchCapableUserIds = useMemo(
+    () => dispatchCapableUsers.map((userState) => userState.user_id),
+    [dispatchCapableUsers],
+  );
 
   useEffect(() => {
     setActiveTablesCount(persistedTablesCount);
   }, [persistedTablesCount]);
 
   useEffect(() => {
-    setEnabledUserIds(persistedEnabledUserIds);
-  }, [persistedEnabledUserIdsKey]);
+    setShiftUsersState(persistedEnabledUsersData);
+  }, [persistedEnabledUserIdsKey, persistedEnabledUsersData]);
+
+  useEffect(() => {
+    if (!selectedUserToAdd) return;
+    if (!availableUsersToAdd.some((branchUser) => branchUser.user_id === selectedUserToAdd)) {
+      setSelectedUserToAdd("");
+    }
+  }, [availableUsersToAdd, selectedUserToAdd]);
 
   useEffect(() => {
     setDraftDispatchConfig(dispatchConfig ?? null);
@@ -157,20 +251,25 @@ const ShiftSetupAdmin = () => {
     setDraftAssignments(assignments ?? []);
   }, [assignments]);
 
+  useEffect(() => {
+    setCancelPolicyState(persistedCancelPolicies);
+    setCancelPoliciesDirty(false);
+  }, [persistedCancelPolicies]);
+
   const workingDispatchConfig = draftDispatchConfig ?? dispatchConfig;
   const workingAssignments = draftAssignments;
 
   const enabledViews = useMemo(() => {
     const views: Array<{ code: "TABLE" | "TAKEOUT"; label: string }> = [];
-    if (workingDispatchConfig?.table_enabled ?? true) views.push({ code: "TABLE", label: "Mesa" });
-    if (workingDispatchConfig?.takeout_enabled ?? true) views.push({ code: "TAKEOUT", label: "Para llevar" });
+    if (activeTablesCount > 0) views.push({ code: "TABLE", label: "Mesa" });
+    views.push({ code: "TAKEOUT", label: "Para llevar" });
     return views;
-  }, [workingDispatchConfig?.table_enabled, workingDispatchConfig?.takeout_enabled]);
+  }, [activeTablesCount]);
 
   const enabledAssignments = useMemo(() => {
-    const enabledSet = new Set(enabledUserIds);
+    const enabledSet = new Set(dispatchCapableUserIds);
     return workingAssignments.filter((assignment) => enabledSet.has(assignment.user_id));
-  }, [workingAssignments, enabledUserIds]);
+  }, [dispatchCapableUserIds, workingAssignments]);
 
   const enabledDispatchUserIds = useMemo(
     () => Array.from(new Set(enabledAssignments.map((assignment) => assignment.user_id))),
@@ -188,16 +287,20 @@ const ShiftSetupAdmin = () => {
   const setupIssues = useMemo(() => {
     const issues: string[] = [];
 
-    if (enabledViews.length === 0) {
-      issues.push("Debe haber por lo menos una vista habilitada para el turno: Mesa o Para llevar.");
-    }
-
-    if ((workingDispatchConfig?.table_enabled ?? true) && activeTablesCount <= 0) {
-      issues.push("Si Mesa esta habilitado, debes configurar al menos una mesa activa para el turno.");
-    }
-
     if (enabledUserIds.length === 0) {
       issues.push("Debe haber por lo menos un usuario habilitado para este turno.");
+    }
+
+    const usersWithoutOperationalRole = shiftUsersState
+      .filter((userState) => !hasOperationalCapability(userState))
+      .map((userState) => userState.full_name || userState.username || "Usuario");
+
+    if (usersWithoutOperationalRole.length > 0) {
+      issues.push(`Cada usuario habilitado debe tener al menos un rol operativo. Revisa: ${usersWithoutOperationalRole.join(", ")}.`);
+    }
+
+    if (dispatchCapableUsers.length === 0) {
+      issues.push("Debe haber por lo menos un usuario para despacho en este turno.");
     }
 
     if ((workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT") {
@@ -207,26 +310,22 @@ const ShiftSetupAdmin = () => {
       if (missingDispatchViews.length > 0) {
         issues.push(`Asigna al menos un despachador habilitado para: ${missingDispatchViews.join(", ")}.`);
       }
-    } else if (enabledUserIds.length === 0) {
-      issues.push("Debe haber por lo menos un usuario disponible para despacho.");
     }
 
     return Array.from(new Set(issues));
   }, [
     activeTablesCount,
+    dispatchCapableUsers.length,
     workingDispatchConfig?.dispatch_mode,
-    workingDispatchConfig?.table_enabled,
     enabledDispatchUserIds.length,
     enabledUserIds.length,
-    enabledViews.length,
+    shiftUsersState.length,
     missingDispatchViews,
   ]);
 
   const hasSetupIssues = setupIssues.length > 0;
   const dispatchConfigChanged =
-    (dispatchConfig?.dispatch_mode ?? "SINGLE") !== (workingDispatchConfig?.dispatch_mode ?? "SINGLE") ||
-    (dispatchConfig?.table_enabled ?? true) !== (workingDispatchConfig?.table_enabled ?? true) ||
-    (dispatchConfig?.takeout_enabled ?? true) !== (workingDispatchConfig?.takeout_enabled ?? true);
+    (dispatchConfig?.dispatch_mode ?? "SINGLE") !== (workingDispatchConfig?.dispatch_mode ?? "SINGLE");
   const assignmentsChanged =
     JSON.stringify(
       [...(assignments ?? [])]
@@ -238,11 +337,45 @@ const ShiftSetupAdmin = () => {
         .map((item) => ({ user_id: item.user_id, dispatch_type: item.dispatch_type }))
         .sort((a, b) => `${a.user_id}-${a.dispatch_type}`.localeCompare(`${b.user_id}-${b.dispatch_type}`)),
     );
+  const cancelPoliciesChanged =
+    JSON.stringify(
+      [...cancelPolicyState]
+        .map((policy) => ({
+          menu_node_id: policy.menu_node_id,
+          is_kitchen_plate: policy.is_kitchen_plate,
+          allow_direct_cancel: policy.allow_direct_cancel,
+        }))
+        .sort((a, b) => a.menu_node_id.localeCompare(b.menu_node_id)),
+    ) !==
+    JSON.stringify(
+      [...persistedCancelPolicies]
+        .map((policy) => ({
+          menu_node_id: policy.menu_node_id,
+          is_kitchen_plate: policy.is_kitchen_plate,
+          allow_direct_cancel: policy.allow_direct_cancel,
+        }))
+        .sort((a, b) => a.menu_node_id.localeCompare(b.menu_node_id)),
+    );
   const hasLocalChanges =
     activeTablesCount !== persistedTablesCount ||
-    !sameMembers(enabledUserIds, persistedEnabledUserIds) ||
+    !sameMembers(shiftUsersState.map(u => u.user_id), persistedEnabledUserIds) ||
+    JSON.stringify(shiftUsersState.map(u => ({
+      can_serve_tables: u.can_serve_tables,
+      can_dispatch_orders: u.can_dispatch_orders,
+      can_use_caja: u.can_use_caja,
+      can_authorize_order_cancel: u.can_authorize_order_cancel,
+      is_supervisor: u.is_supervisor
+    }))) !== JSON.stringify(persistedEnabledUsersData.map(u => ({
+      can_serve_tables: u.can_serve_tables,
+      can_dispatch_orders: u.can_dispatch_orders,
+      can_use_caja: u.can_use_caja,
+      can_authorize_order_cancel: u.can_authorize_order_cancel,
+      is_supervisor: u.is_supervisor
+    }))) ||
     dispatchConfigChanged ||
-    assignmentsChanged;
+    assignmentsChanged ||
+    cancelPoliciesChanged ||
+    cancelPoliciesDirty;
 
   const validateSetup = () => {
     if (setupIssues.length > 0) {
@@ -251,10 +384,31 @@ const ShiftSetupAdmin = () => {
   };
 
   const toggleUser = (userId: string, checked: boolean) => {
-    setEnabledUserIds((prev) => {
-      if (checked) return [...new Set([...prev, userId])];
-      return prev.filter((id) => id !== userId);
+    setShiftUsersState((prev) => {
+      if (checked) {
+        const userRow = allBranchUsers.find((branchUser) => branchUser.user_id === userId);
+        if (!userRow) return prev;
+
+        return [...prev, normalizeShiftUser({ ...userRow, is_enabled: true }, true)];
+      }
+      return prev.filter((u) => u.user_id !== userId);
     });
+  };
+
+  const addSelectedUser = () => {
+    if (!selectedUserToAdd) {
+      toast.error("Selecciona un usuario para agregar al turno");
+      return;
+    }
+
+    toggleUser(selectedUserToAdd, true);
+    setSelectedUserToAdd("");
+  };
+
+  const updateUserRole = (userId: string, role: keyof ShiftUserRow, value: boolean) => {
+    setShiftUsersState((prev) => prev.map((u) =>
+      u.user_id === userId ? { ...u, [role]: value } : u
+    ));
   };
 
   const invalidateShiftState = () => {
@@ -265,6 +419,33 @@ const ShiftSetupAdmin = () => {
     qc.invalidateQueries({ queryKey: ["current-shift"] });
     qc.invalidateQueries({ queryKey: ["dispatch-config", activeBranchId] });
     qc.invalidateQueries({ queryKey: ["dispatch-assignments"] });
+    qc.invalidateQueries({ queryKey: ["shift-admin-cancel-policy", activeBranchId] });
+  };
+
+  const updateCancelPolicy = (
+    menuNodeId: string,
+    patch: Partial<Pick<BranchCancelPolicyDraftRow, "is_kitchen_plate" | "allow_direct_cancel">>,
+  ) => {
+    setCancelPolicyState((prev) => {
+      let changed = false;
+      const next = prev.map((row) => {
+        if (row.menu_node_id !== menuNodeId) return row;
+        const updatedRow = { ...row, ...patch };
+        if (
+          updatedRow.allow_direct_cancel !== row.allow_direct_cancel
+          || updatedRow.is_kitchen_plate !== row.is_kitchen_plate
+        ) {
+          changed = true;
+        }
+        return updatedRow;
+      });
+
+      if (changed) {
+        setCancelPoliciesDirty(true);
+      }
+
+      return next;
+    });
   };
 
   const persistDispatchDraft = async () => {
@@ -273,8 +454,8 @@ const ShiftSetupAdmin = () => {
     const upsertPayload = {
       branch_id: activeBranchId,
       dispatch_mode: workingDispatchConfig.dispatch_mode,
-      table_enabled: workingDispatchConfig.table_enabled,
-      takeout_enabled: workingDispatchConfig.takeout_enabled,
+      table_enabled: activeTablesCount > 0,
+      takeout_enabled: true,
       updated_at: new Date().toISOString(),
     };
 
@@ -298,17 +479,103 @@ const ShiftSetupAdmin = () => {
     if (deleteResult.error) throw deleteResult.error;
 
     if (savedConfig.dispatch_mode === "SPLIT" && workingAssignments.length > 0) {
-      const sanitizedAssignments = workingAssignments.map((assignment) => ({
-        dispatch_config_id: savedConfig.id,
-        user_id: assignment.user_id,
-        dispatch_type: assignment.dispatch_type,
-      }));
+      const dispatchUserSet = new Set(dispatchCapableUserIds);
+      const sanitizedAssignments = workingAssignments
+        .filter((assignment) => dispatchUserSet.has(assignment.user_id))
+        .map((assignment) => ({
+          dispatch_config_id: savedConfig.id,
+          user_id: assignment.user_id,
+          dispatch_type: assignment.dispatch_type,
+        }));
 
-      const insertResult = await (supabase
-        .from("dispatch_assignments" as any)
-        .insert(sanitizedAssignments) as any);
-      if (insertResult.error) throw insertResult.error;
+      if (sanitizedAssignments.length > 0) {
+        const insertResult = await (supabase
+          .from("dispatch_assignments" as any)
+          .insert(sanitizedAssignments) as any);
+        if (insertResult.error) throw insertResult.error;
+      }
     }
+  };
+
+  const persistCancelPolicyDraft = async () => {
+    if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+    const payload = cancelPolicyState.map((row) => ({
+      menu_node_id: row.menu_node_id,
+      is_kitchen_plate: row.is_kitchen_plate,
+      allow_direct_cancel: row.allow_direct_cancel,
+    }));
+
+    const { error } = await supabase.rpc("save_branch_cancel_policy" as never, {
+      p_branch_id: activeBranchId,
+      p_policies: payload,
+    } as never);
+
+    if (error) throw error;
+  };
+
+  const setShiftUserEnabledCompat = async (params: {
+    shiftId: string;
+    userId: string;
+    isEnabled: boolean;
+    canServeTables: boolean;
+    canDispatchOrders: boolean;
+    canUseCaja: boolean;
+    canAuthorizeOrderCancel: boolean;
+    isSupervisor: boolean;
+  }) => {
+    const rpcParams = {
+      p_shift_id: params.shiftId,
+      p_user_id: params.userId,
+      p_is_enabled: params.isEnabled,
+      p_can_serve_tables: params.canServeTables,
+      p_can_dispatch_orders: params.canDispatchOrders,
+      p_can_use_caja: params.canUseCaja,
+      p_can_authorize_order_cancel: params.canAuthorizeOrderCancel,
+      p_is_supervisor: params.isSupervisor,
+    };
+
+    const { error } = await supabase.rpc("set_shift_user_enabled" as never, rpcParams as never);
+
+    if (!error) return;
+
+    const message = String(error.message ?? "");
+    const missingExtendedSignature =
+      message.includes("Could not find the function public.set_shift_user_enabled")
+      || message.includes("schema cache");
+
+    if (!missingExtendedSignature) {
+      throw error;
+    }
+
+    if (params.isEnabled) {
+      const { error: upsertError } = await (supabase
+        .from("cash_shift_users" as never)
+        .upsert({
+          shift_id: params.shiftId,
+          user_id: params.userId,
+          is_enabled: true,
+          can_serve_tables: params.canServeTables,
+          can_dispatch_orders: params.canDispatchOrders,
+          can_use_caja: params.canUseCaja,
+          can_authorize_order_cancel: params.canAuthorizeOrderCancel,
+          is_supervisor: params.isSupervisor,
+        } as never, {
+          onConflict: "shift_id,user_id",
+          ignoreDuplicates: false,
+        }) as any);
+
+      if (upsertError) throw upsertError;
+      return;
+    }
+
+    const { error: deleteError } = await (supabase
+      .from("cash_shift_users" as never)
+      .delete()
+      .eq("shift_id", params.shiftId)
+      .eq("user_id", params.userId) as any);
+
+    if (deleteError) throw deleteError;
   };
 
   const openShiftMutation = useMutation({
@@ -317,14 +584,23 @@ const ShiftSetupAdmin = () => {
       if (!activeBranchId) throw new Error("No hay sucursal activa");
       validateSetup();
       await persistDispatchDraft();
+      await persistCancelPolicyDraft();
 
       const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
+      const enabledUsersJson = shiftUsersState.map((u) => ({
+        user_id: u.user_id,
+        can_serve_tables: u.can_serve_tables,
+        can_dispatch_orders: u.can_dispatch_orders,
+        can_use_caja: u.can_use_caja,
+        can_authorize_order_cancel: u.can_authorize_order_cancel,
+        is_supervisor: u.is_supervisor,
+      }));
+
       const { error } = await supabase.rpc("open_cash_shift_with_tables" as never, {
         p_cashier_id: user.id,
         p_branch_id: activeBranchId,
         p_active_tables_count: normalizedCount,
-        p_denoms: [],
-        p_enabled_user_ids: enabledUserIds,
+        p_enabled_users: enabledUsersJson,
       } as never);
       if (error) throw error;
     },
@@ -340,6 +616,7 @@ const ShiftSetupAdmin = () => {
       if (!activeBranchId || !shiftQuery.data?.id) throw new Error("No hay turno abierto");
       validateSetup();
       await persistDispatchDraft();
+      await persistCancelPolicyDraft();
 
       const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
       const { error: tablesError } = await supabase.rpc("configure_shift_active_tables" as never, {
@@ -351,18 +628,38 @@ const ShiftSetupAdmin = () => {
 
       const currentEnabledSet = new Set(persistedEnabledUserIds);
       const nextEnabledSet = new Set(enabledUserIds);
-      const changedUsers = (shiftUsersQuery.data ?? []).filter(
-        (row) => currentEnabledSet.has(row.user_id) !== nextEnabledSet.has(row.user_id),
-      );
+
+      const changedUsers = allBranchUsers.filter((row) => {
+        const wasEnabled = currentEnabledSet.has(row.user_id);
+        const isEnabled = nextEnabledSet.has(row.user_id);
+
+        if (wasEnabled !== isEnabled) return true;
+        if (!isEnabled) return false;
+
+        const currentState = persistedEnabledUsersData.find((u) => u.user_id === row.user_id);
+        const nextState = shiftUsersState.find((u) => u.user_id === row.user_id);
+        if (!currentState || !nextState) return true;
+
+        return currentState.can_serve_tables !== nextState.can_serve_tables
+          || currentState.can_dispatch_orders !== nextState.can_dispatch_orders
+          || currentState.can_use_caja !== nextState.can_use_caja
+          || currentState.can_authorize_order_cancel !== nextState.can_authorize_order_cancel
+          || currentState.is_supervisor !== nextState.is_supervisor;
+      });
 
       await Promise.all(
         changedUsers.map(async (row) => {
-          const { error } = await supabase.rpc("set_shift_user_enabled" as never, {
-            p_shift_id: shiftQuery.data.id,
-            p_user_id: row.user_id,
-            p_is_enabled: nextEnabledSet.has(row.user_id),
-          } as never);
-          if (error) throw error;
+          const nextState = shiftUsersState.find(u => u.user_id === row.user_id);
+          await setShiftUserEnabledCompat({
+            shiftId: shiftQuery.data!.id,
+            userId: row.user_id,
+            isEnabled: nextEnabledSet.has(row.user_id),
+            canServeTables: nextState?.can_serve_tables ?? false,
+            canDispatchOrders: nextState?.can_dispatch_orders ?? false,
+            canUseCaja: nextState?.can_use_caja ?? false,
+            canAuthorizeOrderCancel: nextState?.can_authorize_order_cancel ?? false,
+            isSupervisor: nextState?.is_supervisor ?? false,
+          });
         }),
       );
     },
@@ -402,7 +699,8 @@ const ShiftSetupAdmin = () => {
     branchSettingsQuery.isLoading ||
     shiftUsersQuery.isLoading ||
     shiftQuery.isLoading ||
-    dispatchLoading;
+    dispatchLoading ||
+    cancelPolicyQuery.isLoading;
 
   if (loading) {
     return (
@@ -430,7 +728,7 @@ const ShiftSetupAdmin = () => {
             <div>
               <h3 className="font-display text-base font-black text-foreground sm:text-lg">Configuracion del turno operativo</h3>
               <p className="text-xs text-muted-foreground sm:text-sm">
-                {activeBranch?.name ?? "Sucursal activa"}: define mesas, usuarios y metodo de despacho antes de abrir.
+                {activeBranch?.name ?? "Sucursal activa"}: define mesas, usuarios y como se repartira el despacho antes de abrir.
               </p>
             </div>
           </div>
@@ -460,7 +758,7 @@ const ShiftSetupAdmin = () => {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard
             title="Estado"
             value={isOpen ? "Abierto" : "Cerrado"}
@@ -469,18 +767,11 @@ const ShiftSetupAdmin = () => {
             tone={isOpen ? "emerald" : "amber"}
           />
           <MetricCard
-            title="Vistas habilitadas"
-            value={enabledViewLabels.length > 0 ? enabledViewLabels.join(" + ") : "Ninguna"}
-            description="Debe existir al menos una vista activa"
-            icon={<Truck className="h-5 w-5" />}
-            tone={enabledViewLabels.length > 0 ? "sky" : "rose"}
-          />
-          <MetricCard
             title="Usuarios del turno"
-            value={`${enabledUserIds.length}`}
+            value={`${shiftUsersState.length}`}
             description="Usuarios operativos habilitados"
             icon={<Users className="h-5 w-5" />}
-            tone={enabledUserIds.length > 0 ? "violet" : "rose"}
+            tone={shiftUsersState.length > 0 ? "violet" : "rose"}
           />
           <MetricCard
             title="Despacho"
@@ -524,26 +815,26 @@ const ShiftSetupAdmin = () => {
         </div>
       </section>
 
-      <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 text-sky-700">
-              <LayoutGrid className="h-5 w-5" />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 text-sky-700">
+                <LayoutGrid className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-foreground sm:text-base">Numero de mesas</h4>
+                <p className="text-xs text-muted-foreground sm:text-sm">
+                  Define cuantas mesas estaran operativas en esta jornada.
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="text-sm font-black text-foreground sm:text-base">Numero de mesas</h4>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                Solo aplica si la vista de Mesa esta habilitada en despacho.
-              </p>
-            </div>
+            <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
+              Referencial sucursal: {referenceCount}
+            </Badge>
           </div>
-          <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
-            Referencial sucursal: {referenceCount}
-          </Badge>
-        </div>
 
-        <div className="mt-4 grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
-          <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-100 via-white to-cyan-100 p-4 shadow-sm">
+          <div className="mt-4 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-100 via-white to-cyan-100 p-3.5 shadow-sm sm:p-4">
             <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
               Mesas habilitadas del turno
             </label>
@@ -553,32 +844,19 @@ const ShiftSetupAdmin = () => {
               step={1}
               value={activeTablesCount}
               onChange={(event) => setActiveTablesCount(Math.max(0, parseInt(event.target.value, 10) || 0))}
-              className="h-12 rounded-2xl text-center text-xl font-black sm:h-14 sm:text-2xl"
+              className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
             />
           </div>
+        </section>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/85 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">Regla activa</p>
-              <p className="mt-2 text-sm font-semibold text-amber-950">
-                Si la vista Mesa esta encendida, no puede quedar en cero.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-violet-200 bg-violet-50/85 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-700">Flexibilidad</p>
-              <p className="mt-2 text-sm font-semibold text-violet-950">
-                Puede ser mayor o menor a la referencia de sucursal segun la jornada.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-rose-200 bg-rose-50/85 p-4 md:col-span-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-700">Al reducir mesas</p>
-              <p className="mt-2 text-sm font-semibold text-rose-950">
-                Todas las mesas que queden fuera del nuevo limite deben estar libres. Si alguna sigue ocupada o por cobrar, el sistema no dejara guardar.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
+        <BranchCancelPolicyEditor
+          rows={cancelPolicyState}
+          isGlobalAdmin={isGlobalAdmin}
+          disabled={openShiftMutation.isPending || saveShiftMutation.isPending}
+          onChange={updateCancelPolicy}
+          className="h-full"
+        />
+      </div>
 
       <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -589,7 +867,7 @@ const ShiftSetupAdmin = () => {
             <div>
               <h4 className="text-sm font-black text-foreground sm:text-base">Usuarios habilitados</h4>
               <p className="text-xs text-muted-foreground sm:text-sm">
-                Por defecto aparecen activos. Puedes desmarcar quien no operara en este turno.
+                Agrega solo los usuarios que operaran en este turno y luego define sus roles.
               </p>
             </div>
           </div>
@@ -598,26 +876,124 @@ const ShiftSetupAdmin = () => {
           </Badge>
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {shiftUsers.map((branchUser) => {
-            const checked = enabledUserIds.includes(branchUser.user_id);
-            return (
-              <label
-                key={branchUser.user_id}
-                className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-3 transition-colors sm:px-4 ${
-                  checked ? "border-violet-200 bg-violet-50/80" : "border-border bg-card"
-                }`}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-foreground">
-                    {branchUser.full_name || branchUser.username || "Usuario"}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">@{branchUser.username}</p>
-                </div>
-                <Checkbox checked={checked} onCheckedChange={(nextChecked) => toggleUser(branchUser.user_id, nextChecked === true)} />
-              </label>
-            );
-          })}
+        <div className="mt-4 space-y-4">
+          <div className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 via-white to-fuchsia-50 p-3.5 shadow-sm sm:p-4">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-violet-700">
+                  Agregar usuario al turno
+                </label>
+                <select
+                  value={selectedUserToAdd}
+                  onChange={(event) => setSelectedUserToAdd(event.target.value)}
+                  className="h-12 w-full rounded-2xl border border-violet-200 bg-white px-4 text-sm font-medium text-foreground shadow-sm outline-none transition focus:border-violet-400"
+                >
+                  <option value="">Selecciona un usuario de esta sucursal...</option>
+                  {availableUsersToAdd.map((branchUser) => (
+                    <option key={branchUser.user_id} value={branchUser.user_id}>
+                      {(branchUser.full_name || branchUser.username || "Usuario")} {branchUser.username ? `(@${branchUser.username})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  onClick={addSelectedUser}
+                  disabled={!selectedUserToAdd}
+                  className="h-11 w-full gap-2 rounded-2xl xl:h-12 xl:w-auto"
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar
+                </Button>
+              </div>
+            </div>
+
+            {availableUsersToAdd.length === 0 && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Todos los usuarios activos de esta sucursal ya fueron agregados al turno.
+              </p>
+            )}
+          </div>
+
+          {shiftUsersState.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/50 px-4 py-8 text-center text-sm text-violet-800">
+              Todavia no has agregado usuarios a este turno.
+            </div>
+          ) : (
+            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {shiftUsersState.map((branchUser) => {
+                const userState = shiftUsersState.find((u) => u.user_id === branchUser.user_id);
+                const isSupervisorLocked = !!userState?.is_supervisor && isOpen;
+
+                return (
+                  <div
+                    key={branchUser.user_id}
+                    className="flex flex-col gap-2.5 rounded-2xl border border-violet-200 bg-violet-50/80 px-3 py-2.5 transition-colors sm:min-h-[168px]"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[13px] font-bold text-foreground">
+                            {branchUser.full_name || branchUser.username || "Usuario"}
+                          </p>
+                          {userState?.is_supervisor && (
+                            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+                              Supervisor
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">@{branchUser.username}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={isSupervisorLocked}
+                        className="h-9 w-9 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => toggleUser(branchUser.user_id, false)}
+                        title={isSupervisorLocked ? "No puedes quitar al supervisor del turno abierto" : "Quitar usuario del turno"}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="mt-1.5 grid gap-1.5 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm md:grid-cols-2">
+                      <label className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={userState?.can_serve_tables ?? false}
+                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_serve_tables", c === true)}
+                        />
+                        <span className="text-muted-foreground">Mesero (Mesas)</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={userState?.can_dispatch_orders ?? false}
+                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_dispatch_orders", c === true)}
+                        />
+                        <span className="text-muted-foreground">Despacho</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={userState?.can_use_caja ?? false}
+                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_use_caja", c === true)}
+                        />
+                        <span className="text-muted-foreground">Cajero</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={userState?.can_authorize_order_cancel ?? false}
+                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_authorize_order_cancel", c === true)}
+                        />
+                        <span className="text-muted-foreground">Autorizar anul.</span>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -630,26 +1006,16 @@ const ShiftSetupAdmin = () => {
             <div>
               <h4 className="text-sm font-black text-foreground sm:text-base">Metodo de despacho</h4>
               <p className="text-xs text-muted-foreground sm:text-sm">
-                Define las vistas activas y quienes atienden el despacho de esta jornada.
+                Define si despacho trabaja con un solo flujo o por tipo de orden, y quienes atenderan cada caso.
               </p>
             </div>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-              {(workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT" ? "Asignado por tipo" : "Un despachador"}
-            </Badge>
-            {enabledViewLabels.map((label) => (
-              <Badge key={label} variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
-                {label}
-              </Badge>
-            ))}
-          </div>
         </div>
 
-        <div className="mt-4 rounded-[20px] border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-white to-cyan-50/70 p-3 sm:rounded-[22px] sm:p-4">
+        <div className="mt-4">
           <DispatchConfig
-            enabledUserIds={enabledUserIds}
+            enabledUserIds={dispatchCapableUserIds}
+            availableViewTypes={enabledViews.map((view) => view.code)}
             configOverride={workingDispatchConfig}
             assignmentsOverride={workingAssignments}
             onConfigChange={setDraftDispatchConfig}
@@ -659,13 +1025,13 @@ const ShiftSetupAdmin = () => {
       </section>
 
       <section className="rounded-[22px] border border-orange-200 bg-gradient-to-r from-white via-orange-50 to-amber-50 p-4 shadow-sm sm:rounded-[26px]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
           {isOpen ? (
             <Button
               variant="secondary"
               onClick={() => saveShiftMutation.mutate()}
-              disabled={!hasLocalChanges || hasSetupIssues || saveShiftMutation.isPending}
-              className="h-12 w-full sm:w-auto"
+              disabled={!hasLocalChanges || saveShiftMutation.isPending}
+              className="h-12 w-full md:w-auto"
             >
               {saveShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Guardar
@@ -673,8 +1039,8 @@ const ShiftSetupAdmin = () => {
           ) : (
             <Button
               onClick={() => openShiftMutation.mutate()}
-              disabled={hasSetupIssues || openShiftMutation.isPending}
-              className="h-12 w-full sm:w-auto"
+              disabled={openShiftMutation.isPending}
+              className="h-12 w-full md:w-auto"
             >
               {openShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
               Abrir turno

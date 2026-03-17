@@ -67,6 +67,7 @@ function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updat
 }
 
 function matchesScope(orderType: string, scope: DispatchView) {
+  if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT";
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE";
   return orderType === "TAKEOUT";
 }

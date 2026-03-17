@@ -190,11 +190,24 @@ const UsersCrud = () => {
 
   const createUser = useMutation({
     mutationFn: async () => {
+      const normalizedEmail = newUser.email.trim().toLowerCase();
+      const normalizedUsername = newUser.username.trim().toLowerCase();
+
+      const existingUsername = users.find((row) => row.username.trim().toLowerCase() === normalizedUsername);
+      if (existingUsername) {
+        throw new Error("El nombre de usuario ya existe. Usa otro diferente.");
+      }
+
+      const existingEmail = users.find((row) => (row.email ?? "").trim().toLowerCase() === normalizedEmail);
+      if (existingEmail) {
+        throw new Error("El correo electronico ya esta registrado.");
+      }
+
       const payload = {
-        email: newUser.email,
+        email: normalizedEmail,
         password: newUser.password,
         full_name: newUser.full_name,
-        username: newUser.username,
+        username: newUser.username.trim(),
         branch_roles: newUser.branch_id
           ? [{ branch_id: newUser.branch_id, role_code: newUser.role_code }]
           : [],
@@ -249,7 +262,7 @@ const UsersCrud = () => {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button size="sm" onClick={() => setShowAddForm(true)} className="gap-1.5 rounded-xl font-display text-xs" disabled={showAddForm}>
+        <Button size="sm" onClick={() => setShowAddForm(true)} className="h-10 w-full gap-1.5 rounded-xl font-display text-xs sm:h-9 sm:w-auto" disabled={showAddForm}>
           <Plus className="h-4 w-4" />
           Agregar usuario
         </Button>
@@ -286,8 +299,8 @@ const UsersCrud = () => {
             <Switch checked={newUser.is_admin} onCheckedChange={(checked) => setNewUser({ ...newUser, is_admin: checked })} />
           </label>
 
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)} className="rounded-lg text-xs gap-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)} className="h-10 rounded-lg text-xs gap-1 sm:h-9">
               <X className="h-3.5 w-3.5" /> Cancelar
             </Button>
             <Button
@@ -301,7 +314,7 @@ const UsersCrud = () => {
                 !newUser.username ||
                 (!newUser.is_admin && (!newUser.branch_id || !newUser.role_code))
               }
-              className="rounded-lg text-xs gap-1"
+              className="h-10 rounded-lg text-xs gap-1 sm:h-9"
             >
               {createUser.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               Crear usuario
@@ -318,6 +331,10 @@ const UsersCrud = () => {
           const uniqueBranchAssignments = Array.from(
             new Map(user.branch_assignments.map((assignment) => [assignment.branch_id, assignment])).values(),
           );
+          const activeBranchAssignment =
+            user.branch_assignments.find((assignment) => assignment.branch_id === user.active_branch_id) ??
+            user.branch_assignments[0] ??
+            null;
           const assignedRoleCodesForSelectedBranch = user.branch_assignments
             .filter((assignment) => assignment.branch_id === newAssignmentBranchId)
             .map((assignment) => assignment.role_code);
@@ -369,6 +386,19 @@ const UsersCrud = () => {
                         <span>Administrador global</span>
                         <Switch checked={isAdmin} disabled={isProtected} onCheckedChange={(checked) => toggleAdmin.mutate({ user_id: user.id, enable: checked })} />
                       </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium">Rol en sucursal activa</p>
+                      <div className="flex flex-wrap gap-1">
+                        {activeBranchAssignment ? (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {activeBranchAssignment.role_name} - {branchesMap[activeBranchAssignment.branch_id] ?? activeBranchAssignment.branch_name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">Sin rol de sucursal</Badge>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -432,22 +462,22 @@ const UsersCrud = () => {
                       )}
                     </div>
 
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                       <ChangePasswordDialog
                         targetUserId={user.id}
                         targetUserName={user.full_name}
                         trigger={
-                          <Button size="sm" variant="outline" className="rounded-lg text-xs gap-1">
+                          <Button size="sm" variant="outline" className="h-10 rounded-lg text-xs gap-1 sm:h-9">
                             <KeyRound className="h-3.5 w-3.5" />
                             Cambiar contrasena
                           </Button>
                         }
                       />
-                      <Button size="sm" variant="ghost" className="rounded-lg text-xs gap-1" onClick={() => setEditingProfile(null)}>
+                      <Button size="sm" variant="ghost" className="h-10 rounded-lg text-xs gap-1 sm:h-9" onClick={() => setEditingProfile(null)}>
                         <X className="h-3.5 w-3.5" />
                         Cancelar
                       </Button>
-                      <Button size="sm" className="rounded-lg text-xs gap-1" onClick={() => updateProfile.mutate({ id: user.id, full_name: editValues.full_name, username: editValues.username })}>
+                      <Button size="sm" className="h-10 rounded-lg text-xs gap-1 sm:h-9" onClick={() => updateProfile.mutate({ id: user.id, full_name: editValues.full_name, username: editValues.username })}>
                         <Check className="h-3.5 w-3.5" />
                         Guardar cambios
                       </Button>
@@ -480,22 +510,37 @@ const UsersCrud = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-medium">Rol global</p>
-                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Shield className="h-3.5 w-3.5" />
-                        Administrador
-                        <Switch checked={isAdmin} disabled={isProtected} onCheckedChange={(checked) => toggleAdmin.mutate({ user_id: user.id, enable: checked })} />
-                      </label>
-                    </div>
+                    <p className="text-xs font-medium">Rol en sucursal activa</p>
                     <div className="flex flex-wrap gap-1">
-                      {user.global_roles.length === 0 ? (
-                        <Badge variant="outline" className="text-[10px]">Sin rol global</Badge>
-                      ) : user.global_roles.map((role) => (
-                        <Badge key={role.code} variant="secondary" className="text-[10px]">{role.name}</Badge>
-                      ))}
+                      {activeBranchAssignment ? (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {activeBranchAssignment.role_name} - {branchesMap[activeBranchAssignment.branch_id] ?? activeBranchAssignment.branch_name}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">Sin rol de sucursal</Badge>
+                      )}
                     </div>
                   </div>
+
+                  {(user.global_roles.length > 0 || isAdmin) && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium">Rol global</p>
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Shield className="h-3.5 w-3.5" />
+                          Administrador
+                          <Switch checked={isAdmin} disabled={isProtected} onCheckedChange={(checked) => toggleAdmin.mutate({ user_id: user.id, enable: checked })} />
+                        </label>
+                      </div>
+                      {user.global_roles.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {user.global_roles.map((role) => (
+                            <Badge key={role.code} variant="secondary" className="text-[10px]">{role.name}</Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <p className="text-xs font-medium">Asignaciones por sucursal</p>
@@ -513,10 +558,10 @@ const UsersCrud = () => {
                     </div>
 
                     {uniqueBranchAssignments.length > 0 && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <span className="text-xs text-muted-foreground">Sucursal activa:</span>
                         <Select value={user.active_branch_id ?? undefined} onValueChange={(value) => setActiveBranch.mutate({ user_id: user.id, branch_id: value })} disabled={isProtected}>
-                          <SelectTrigger className="h-8 w-56 text-xs"><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                          <SelectTrigger className="h-9 w-full text-xs sm:h-8 sm:w-56"><SelectValue placeholder="Selecciona" /></SelectTrigger>
                           <SelectContent>
                             {uniqueBranchAssignments.map((assignment) => (
                               <SelectItem key={assignment.branch_id} value={assignment.branch_id}>{branchesMap[assignment.branch_id] ?? assignment.branch_name}</SelectItem>

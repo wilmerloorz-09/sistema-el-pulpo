@@ -24,6 +24,8 @@ interface CancelOrderDialogProps {
   userId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canAuthorizeCancel?: boolean;
+  isCancelRequested?: boolean;
 }
 
 interface SnapshotItem {
@@ -40,7 +42,7 @@ interface SnapshotItem {
   unit_price: number;
 }
 
-export default function CancelOrderDialog({ orderId, orderNumber, userId, open, onOpenChange }: CancelOrderDialogProps) {
+export default function CancelOrderDialog({ orderId, orderNumber, userId, open, onOpenChange, canAuthorizeCancel = true, isCancelRequested = false }: CancelOrderDialogProps) {
   const [reason, setReason] = useState<CancellationReason | "">("");
   const [notes, setNotes] = useState("");
   const [cancellationType, setCancellationType] = useState<"partial" | "total">("partial");
@@ -138,6 +140,7 @@ export default function CancelOrderDialog({ orderId, orderNumber, userId, open, 
           notes,
           cancelledBy: userId,
         },
+        requiresAuthorization: !canAuthorizeCancel && !isCancelRequested,
       },
       {
         onSuccess: () => {
@@ -272,6 +275,10 @@ export default function CancelOrderDialog({ orderId, orderNumber, userId, open, 
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...
               </>
+            ) : isCancelRequested && canAuthorizeCancel ? (
+              "Autorizar anulación"
+            ) : !canAuthorizeCancel ? (
+              "Solicitar anulación"
             ) : (
               "Confirmar cancelacion"
             )}

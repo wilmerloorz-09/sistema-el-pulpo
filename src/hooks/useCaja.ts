@@ -33,6 +33,7 @@ export interface ShiftDenom {
 export interface CashShift {
   id: string;
   status: "OPEN" | "CLOSED";
+  caja_status: Database["public"]["Enums"]["caja_status"];
   opened_at: string;
   closed_at: string | null;
   notes: string | null;
@@ -451,7 +452,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const { data, error } = await supabase
         .from("cash_shifts")
-        .select("id, status, opened_at, closed_at, notes, active_tables_count")
+        .select("id, status, caja_status, opened_at, closed_at, notes, active_tables_count")
         .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
         .order("opened_at", { ascending: false })
@@ -993,21 +994,22 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     refetchInterval: 10000,
   });
 
-  const openShift = useMutation({
-    mutationFn: async ({ counts: denomCounts, activeTableCount }: { counts: { denomination_id: string; qty: number }[]; activeTableCount: number }) => {
+  const openCashRegister = useMutation({
+    mutationFn: async ({ counts: denomCounts }: { counts: { denomination_id: string; qty: number }[] }) => {
       if (!user) throw new Error("No user");
       if (!activeBranchId) throw new Error("No branch selected");
+      const shift = shiftQuery.data;
+      if (!shift) throw new Error("No hay turno abierto");
 
-      const normalizedActiveTableCount = Math.max(0, Math.trunc(activeTableCount || 0));
       const normalizedDenomCounts = denomCounts.map((denom) => ({
         denomination_id: denom.denomination_id,
         qty: Math.max(0, Math.trunc(denom.qty || 0)),
       }));
 
-      const { error } = await supabase.rpc("open_cash_shift_with_tables", {
+      const { error } = await supabase.rpc("open_cash_register", {
+        p_shift_id: shift.id,
         p_cashier_id: user.id,
         p_branch_id: activeBranchId,
-        p_active_tables_count: normalizedActiveTableCount,
         p_denoms: normalizedDenomCounts,
       });
       if (error) throw error;
@@ -1016,7 +1018,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["branch-table-settings"] });
-      toast.success("Turno abierto");
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+      toast.success("Caja abierta");
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1562,14 +1565,16 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     },
     onError: (err: any) => toast.error(err.message),
   });
-  const closeShift = useMutation({
+  const closeCashRegister = useMutation({
     mutationFn: async (notes?: string) => {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
       if (!activeBranchId) throw new Error("No branch selected");
+      if (!user) throw new Error("No user");
 
-      const { error } = await supabase.rpc("close_cash_shift_with_tables", {
+      const { error } = await supabase.rpc("close_cash_register", {
         p_shift_id: shift.id,
+        p_cashier_id: user.id,
         p_branch_id: activeBranchId,
         p_notes: notes ?? null,
       });
@@ -1578,7 +1583,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      toast.success("Turno cerrado");
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+      toast.success("Caja cerrada");
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1596,12 +1602,12 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     isLoadingCompletedPayments: completedPaymentsQuery.isLoading,
     cashierReverseWindowMinutes: cashierReverseWindowQuery.data ?? DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES,
     branchReferenceTableCount: branchTableSettingsQuery.data?.reference_table_count ?? 0,
-    openShift,
+    openCashRegister,
     payOrder,
     requestPaymentReversal,
     reversePayment,
     approvePaymentReversal,
-    closeShift,
+    closeCashRegister,
   };
 }
 

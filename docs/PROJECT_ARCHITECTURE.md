@@ -17,6 +17,12 @@
 - La autorizacion real se define por permisos efectivos por modulo y sucursal.
 - Los roles sirven como organizacion administrativa, no como verdad final de acceso operativo.
 - La validacion final siempre debe existir en backend/BD.
+- Dentro de un turno abierto, `cash_shift_users` agrega una segunda capa operativa por usuario:
+  - `can_serve_tables`
+  - `can_dispatch_orders`
+  - `can_use_caja`
+  - `can_authorize_order_cancel`
+  - `is_supervisor`
 
 ### Catalogo
 - Fuente de navegacion actual: `menu_nodes`.
@@ -56,11 +62,24 @@
 - `branches.reference_table_count` define la base referencial por sucursal.
 - `cash_shifts.active_tables_count` define la cantidad operativa del turno abierto.
 - `Mesas` solo debe renderizar la capacidad activa del turno, no todo el pool interno de `restaurant_tables`.
+- `Admin` ya no expone una pestana visible de `Mesas` como CRUD operativo.
 - La regla vigente es:
   - una mesa base con items puede dividirse
   - una division nueva solo puede crearse si todas las divisiones anteriores tienen al menos un item
   - la nueva division creada debe quedar seleccionada automaticamente
   - la eliminacion de division solo aplica antes de cocina/listo/despacho/pago/cancelacion
+
+### Usuarios y alta administrativa
+- `UsersCrud` sigue siendo la superficie de administracion de usuarios.
+- La Edge Function `create-user` debe:
+  - validar duplicados de `email` y `username`
+  - crear el usuario en Auth
+  - asignar sucursal inicial y rol de sucursal inicial
+  - asignar rol global si aplica
+  - hacer rollback del usuario de Auth si la asignacion posterior falla
+- La UI de `Usuarios` debe distinguir:
+  - rol en sucursal activa
+  - rol global, solo si existe
 
 ## Cambios Arquitectonicos de Esta Jornada
 
@@ -123,7 +142,22 @@
 - `Admin > Turno` debe tratarse como un formulario unico de configuracion operativa, no como varios modulos independientes:
   - `Despacho` no debe persistir cambios de inmediato desde switches o asignaciones
   - la persistencia total ocurre solo con `Abrir turno` o `Guardar`
+- La UX vigente del bloque de usuarios del turno ya no es "todos visibles y luego desmarcar":
+  - se agregan usuarios activos de sucursal desde combo + boton
+  - solo los agregados quedan como tarjetas configurables
+- El bloque `Cancelacion/Anulacion directa de orden por categoria` vive dentro de este mismo formulario y persiste junto con el resto.
 - Sin turno abierto, los modulos operativos deben degradarse a estado bloqueado; `Admin` queda como unico punto de entrada para administradores/supervisores.
+
+### J) Despacho por tipo de orden
+- El bloque de `Metodo de despacho` ya no expone switches manuales de vistas activas.
+- Las vistas activas se derivan de la configuracion operativa:
+  - `Mesa` depende de que haya mesas activas en el turno
+  - `Para llevar` se mantiene disponible
+- En `Despacho`:
+  - modo `SINGLE`: tabs `Todos`, `Mesa`, `Para llevar`
+  - modo `SPLIT`: cada usuario ve solo el tipo asignado
+  - si un usuario queda con ambos tipos, tambien puede ver `Todos`
+- Una asignacion de despachador debe ser unica por usuario; no se permiten duplicados del mismo usuario.
 
 ### G) Admin movil
 - Los listados administrativos reutilizan `AdminTable`.
@@ -137,6 +171,10 @@
   - los bloques del formulario se apilan verticalmente
   - las acciones principales deben mantenerse usables a ancho completo en telefono
   - los formularios de asignacion de despacho deben degradar a una sola columna en movil
+- `Admin` ya tiene comportamiento mixto movil/tablet:
+  - telefono: selector colapsado por dropdown
+  - tablet/desktop: tabs horizontales con scroll
+- `BranchCancelPolicyEditor` y `UsersCrud` tambien deben degradar a layouts tactiles reales, no a escritorio comprimido.
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`
@@ -157,6 +195,9 @@
 - `src/pages/Caja.tsx`
 - `src/components/caja/OpenShiftForm.tsx`
 - `src/components/admin/ShiftSetupAdmin.tsx`
+- `src/components/admin/BranchCancelPolicyEditor.tsx`
+- `src/components/admin/DispatchConfig.tsx`
+- `src/components/admin/UsersCrud.tsx`
 - `src/pages/Mesas.tsx`
 - `src/components/AppLayout.tsx`
 - `src/components/BottomNav.tsx`

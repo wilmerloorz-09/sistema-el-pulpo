@@ -3,6 +3,7 @@ import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import OrderCard from "./OrderCard";
 import { Loader2, ClipboardList, Clock, CheckCircle2, Truck, Ban, CircleDollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -69,8 +70,10 @@ interface OrdersListProps {
 
 export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersListProps) {
   const [activeTab, setActiveTab] = useState<TabType>("sent");
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, isGlobalAdmin } = useBranch();
   const qc = useQueryClient();
+  const shiftGateQuery = useBranchShiftGate();
+  const canAuthorizeCancel = isGlobalAdmin || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel) || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {
     if (!activeBranchId) return;
@@ -267,6 +270,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
               onCancel={onCancelOrder}
               showCancelButton={currentTab.showCancel && !readOnly}
               readOnly={readOnly}
+              canAuthorizeCancel={canAuthorizeCancel}
             />
           ))
         )}

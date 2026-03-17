@@ -85,6 +85,8 @@
 - El sistema debe preparar internamente capacidad suficiente en `restaurant_tables`, pero en `Mesas` solo deben mostrarse las primeras `active_tables_count`.
 - Si no hay turno abierto, `Mesas` no debe asumir automaticamente la referencia de sucursal como mesas visibles.
 - La configuracion operativa de mesas ya no se resuelve creando/eliminando registros visibles uno por uno desde Admin.
+- `Mesas` ya no debe aparecer como pestana visible dentro de `Admin`.
+- En `Duplicar catalogo`, ya no debe existir una opcion separada para copiar `Mesas`.
 
 ### 4.7) Turno operativo: nueva superficie en Administracion
 - La apertura del turno ya no debe hacerse desde `Caja`.
@@ -96,21 +98,37 @@
   - numero de mesas habilitadas del turno
   - metodo de despacho del turno (lo que antes estaba en la pestana `Despacho`)
   - usuarios habilitados para el turno
+  - cancelacion/anulacion directa de orden por categoria
 - `Turno` debe comportarse como un solo formulario:
   - los cambios de despacho, mesas y usuarios quedan en borrador local
   - nada se persiste al cambiar switches, modo o asignaciones
   - solo se guarda al presionar `Abrir turno` o `Guardar`
-- Al abrir turno, todos los usuarios activos de la sucursal aparecen habilitados por defecto y pueden desmarcarse.
+- La UX vigente de usuarios del turno es:
+  - combo para elegir usuario activo de la sucursal
+  - boton `Agregar`
+  - solo los usuarios agregados quedan visibles abajo para definir capacidades
 - Los usuarios habilitados del turno se persisten por `cash_shift_users`.
 - Antes de abrir o guardar turno deben cumplirse estas condiciones:
-  - al menos una vista habilitada (`Mesa` o `Para llevar`)
-  - si `Mesa` esta habilitada, `active_tables_count` debe ser mayor a 0
   - al menos un usuario habilitado
   - al menos un usuario habilitado para despacho; si el modo es `SPLIT`, cada vista activa debe quedar cubierta por asignacion
+- En la configuracion actual de `Despacho` dentro de `Turno`:
+  - `Mesa` existe si `active_tables_count > 0`
+  - `Para llevar` queda disponible
+  - no hay switches manuales para prender/apagar vistas
+- En modo `SPLIT`, cada despachador solo puede existir una vez en asignaciones; si se vuelve a agregar, debe reemplazar su tipo anterior.
 - Si un turno ya abierto reduce el numero de mesas visibles, todas las mesas que queden fuera del nuevo limite deben estar libres; no basta con que no esten activas visualmente.
+- Si esa validacion falla, la advertencia al usuario debe salir como dialogo/modal con `Aceptar`, no como `toast`.
 - Si no hay turno abierto:
   - los modulos operativos deben quedar bloqueados
   - solo `Administracion` sigue accesible para abrir/configurar turno
+
+### 4.7.1) Cancelacion/Anulacion directa de orden por categoria
+- La configuracion vive dentro de `Admin > Turno`.
+- La UI actual lista solo categorias `nivel 0` del arbol.
+- Cada fila muestra un check de anulacion directa.
+- La primera categoria raiz de la lista solo puede ser marcada o desmarcada por el administrador general.
+- El supervisor de sucursal la ve bloqueada.
+- Ya no existe una pregunta visual separada para clasificar `plato de cocina` en este bloque; la politica visible fue simplificada a categorias raiz.
 
 ### 4.1) App instalable y UX movil
 - La aplicacion ahora expone `manifest.json`, iconos PWA y `service worker` para instalacion en movil y desktop.
@@ -122,6 +140,17 @@
   - controles de despacho apilados
   - botones principales a ancho completo
   - bloques informativos sin depender de layouts desktop
+- En tablet, `Admin` ya no debe seguir el mismo patron colapsado de telefono:
+  - las tabs de `Admin` se muestran horizontales desde tablet
+  - el dropdown de secciones queda solo para telefono
+- `Admin > Turno` debe degradar asi:
+  - metricas en 2 columnas en tablet y 1 en telefono
+  - `Numero de mesas` y `Cancelacion/Anulacion por categoria` comparten fila en pantallas amplias y se apilan en telefono
+  - tarjetas de usuarios del turno en 1 columna telefono, 2 columnas tablet, 3+ en desktop
+- `BranchCancelPolicyEditor`, `DispatchConfig` y `UsersCrud` tambien quedaron ajustados para movil/tablet:
+  - filas y badges se apilan si falta ancho
+  - selects y botones pasan a ancho completo en telefono cuando corresponde
+  - acciones de formularios se vuelven verticales en telefono
 - `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
@@ -172,12 +201,16 @@
 - La disponibilidad/agotado de productos ya no es solo visual: si un nodo o producto esta inactivo en `menu_nodes`, `Ordenes` debe tratarlo como agotado y bloquear su seleccion.
 - La visibilidad de estados operativos (`Enviadas`, `Listas`, `Despachadas`, cancelaciones parciales) depende tambien de poder leer las tablas de eventos operativos por sucursal; si RLS de esos eventos no esta alineado con permisos branch/module, las ordenes pueden desaparecer de una pestana sin caer en la siguiente.
 - `OrdersList` ya debe refrescarse entre sesiones/usuarios mediante suscripciones en vivo; no confiar solo en invalidaciones locales para reflejar cambios operativos.
+- En `Despacho`, la visibilidad final de tabs debe depender del modo configurado y del tipo asignado al usuario del turno:
+  - `SINGLE`: puede ver `Todos`, `Mesa` y `Para llevar` segun vistas disponibles
+  - `SPLIT`: ve solo el/los tipos asignados; si tiene ambos, tambien puede ver `Todos`
 - Modificadores siguen usando el modelo estructurado:
   - catalogo base por `modifiers`
   - disponibilidad por `menu_node_modifiers`
   - seleccion real por `order_item_modifiers`
 - La correccion de colisiones de `order_code` sigue vigente y no debe revertirse.
 - La correccion de numeracion de mesas por sucursal tambien debe preservarse: nuevas mesas no deben reutilizar `table_number` existentes aunque `entity_counters` este desalineado.
+- La creacion de usuarios debe seguir asignando sucursal inicial y rol de sucursal desde backend; no dejar usuarios creados solo en Auth o con sucursal sin rol.
 - La apertura/cierre de turno debe seguir siendo transaccional respecto a mesas activas:
   - abrir turno configura `active_tables_count` y activa internamente las mesas del turno
   - cerrar turno desactiva internamente las mesas visibles del turno

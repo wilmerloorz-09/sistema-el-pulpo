@@ -1,27 +1,29 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Denomination } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AlertCircle, DollarSign, Loader2 } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 
 interface Props {
   denominations: Denomination[];
-  referenceTableCount: number;
-  onOpen: (payload: { counts: { denomination_id: string; qty: number }[]; activeTableCount: number }) => void;
+  onOpen: (payload: { counts: { denomination_id: string; qty: number }[] }) => void;
   opening: boolean;
   readOnly?: boolean;
+  title?: string;
+  description?: string;
 }
 
-export default function OpenShiftForm({ denominations, referenceTableCount, onOpen, opening, readOnly = false }: Props) {
+export default function OpenShiftForm({
+  denominations,
+  onOpen,
+  opening,
+  readOnly = false,
+  title = "Abrir Caja",
+  description = "Ingresa el conteo inicial de caja",
+}: Props) {
   const [counts, setCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(denominations.map((d) => [d.id, 0]))
   );
-  const [activeTableCount, setActiveTableCount] = useState(referenceTableCount);
-
-  useEffect(() => {
-    setActiveTableCount(referenceTableCount);
-  }, [referenceTableCount]);
 
   const hasDenominations = denominations.length > 0;
   const total = denominations.reduce((sum, denomination) => sum + denomination.value * (counts[denomination.id] ?? 0), 0);
@@ -31,7 +33,7 @@ export default function OpenShiftForm({ denominations, referenceTableCount, onOp
       denomination_id: denomination.id,
       qty: counts[denomination.id] ?? 0,
     }));
-    onOpen({ counts: data, activeTableCount: Math.max(0, Math.trunc(activeTableCount || 0)) });
+    onOpen({ counts: data });
   };
 
   return (
@@ -40,9 +42,9 @@ export default function OpenShiftForm({ denominations, referenceTableCount, onOp
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
           <DollarSign className="h-7 w-7 text-primary" />
         </div>
-        <h2 className="font-display text-xl font-bold text-foreground">Abrir Turno</h2>
+        <h2 className="font-display text-xl font-bold text-foreground">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {readOnly ? "Solo consulta: no puedes abrir turno desde esta cuenta" : "Ingresa el conteo inicial de caja"}
+          {readOnly ? "Solo consulta: no puedes abrir caja desde esta cuenta" : description}
         </p>
       </div>
 
@@ -58,24 +60,6 @@ export default function OpenShiftForm({ denominations, referenceTableCount, onOp
         </div>
       ) : (
         <div className="mb-6 space-y-4">
-          <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-4">
-            <div className="mb-2">
-              <div className="text-sm font-semibold text-foreground">Mesas activas para este turno</div>
-              <p className="text-xs text-muted-foreground">
-                La sucursal tiene {referenceTableCount} mesa{referenceTableCount === 1 ? "" : "s"} como referencia. Puedes abrir este turno con un numero mayor o menor.
-              </p>
-            </div>
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              value={activeTableCount}
-              onChange={(e) => setActiveTableCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-              className="h-10 w-28 rounded-xl text-center text-base font-bold"
-              disabled={readOnly}
-            />
-          </div>
-
           {denominations.map((denomination) => (
             <div key={denomination.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
               <DenominationVisual
@@ -114,7 +98,7 @@ export default function OpenShiftForm({ denominations, referenceTableCount, onOp
         disabled={opening || readOnly || !hasDenominations}
         className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
       >
-        {opening ? <Loader2 className="h-5 w-5 animate-spin" /> : "Abrir Turno"}
+        {opening ? <Loader2 className="h-5 w-5 animate-spin" /> : "Abrir Caja"}
       </Button>
     </div>
   );

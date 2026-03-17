@@ -92,6 +92,13 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `cash_shifts` + detalle de denominaciones siguen siendo la fuente de `Apertura`, `Actual` y `Diferencia`.
 - La apertura de turno tambien fija `active_tables_count` como frontera operativa de mesas para ese turno.
 - La habilitacion de usuarios por turno ya no es implícita: vive en `cash_shift_users`.
+- `cash_shift_users` ya no es solo un flag binario:
+  - `is_enabled`
+  - `can_serve_tables`
+  - `can_dispatch_orders`
+  - `can_use_caja`
+  - `can_authorize_order_cancel`
+  - `is_supervisor`
 - `payment_entries` / tablas equivalentes de cobro son la fuente de `Recaudado` por metodo.
 - Regla funcional importante:
   - `Actual - Apertura` representa caja fisica
@@ -117,10 +124,12 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `list_shift_users_for_branch(branch_id)`
   - devuelve los usuarios activos de la sucursal con su estado habilitado en el turno actual
 - `set_shift_user_enabled(shift_id, user_id, is_enabled)`
-  - activa/desactiva un usuario para el turno abierto
+  - la firma vieja binaria puede seguir existiendo en algunas bases remotas
+  - la firma objetivo debe contemplar tambien capacidades operativas del usuario del turno
 - get_my_branch_shift_gate(branch_id) 
   - indica si hay turno abierto y si el usuario autenticado esta habilitado para operar
-  - expone tambien ctive_tables_count para que usuarios operativos puedan ver Mesas aunque no tengan permisos de Caja
+  - expone tambien `active_tables_count` para que usuarios operativos puedan ver Mesas aunque no tengan permisos de Caja
+  - debe poder reflejar tambien las capacidades del usuario del turno para modular menu y rutas
 
 ## Snapshot operativo
 - La UI operativa ya no debe reconstruir estados solo desde eventos dispersos.
@@ -128,6 +137,18 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - clasificar `Enviadas`, `Listas`, `Despachadas`
   - determinar que entra a `Por cobrar`
   - mantener consistencia entre `Ordenes`, `Despacho`, `Cocina` y `Caja`
+
+## Politica de cancelacion/anulacion directa por categoria
+- Tabla operativa: `branch_cancel_policy`
+- Unidad visible actual: categoria `nivel 0` de `menu_nodes`
+- Campos operativos esperados:
+  - `branch_id`
+  - `menu_node_id`
+  - `allow_direct_cancel`
+- La UI actual ya no usa una clasificacion editable de `plato de cocina`; la politica visible fue simplificada a checks por categoria raiz.
+- Regla especial vigente:
+  - la primera categoria raiz de la sucursal solo puede ser modificada por administrador general
+- La RPC/listado debe devolver todas las categorias nivel 0 activas, incluso si alguna aun no tiene productos, para no ocultar raices validas.
 
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.
@@ -175,6 +196,19 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - agrega `cash_shift_users`
   - mueve la apertura operativa del turno al modelo administrado por Admin
   - introduce el gate operativo por usuario habilitado dentro del turno
+- `supabase/migrations/20260316203000_shift_roles_caja_cancellations.sql`
+  - agrega capacidades operativas por usuario dentro del turno
+  - obliga a que un usuario habilitado tenga al menos una capacidad operativa
+- `supabase/migrations/20260316203001_caja_and_user_rpcs.sql`
+  - extiende RPCs de usuarios/turno/caja para el nuevo modelo de capacidades
+- `supabase/migrations/20260316203002_user_and_gate_rpcs.sql`
+  - ajusta lecturas/gates alineados con capacidades del turno
+- `supabase/migrations/20260317033000_branch_cancel_policy.sql`
+  - crea `branch_cancel_policy`
+  - introduce RPCs de listado/guardado/consulta para politica de cancelacion/anulacion por categoria
+- `supabase/migrations/20260317091500_fix_profile_user_code_counter.sql`
+  - corrige el contador de `profiles.user_code`
+  - evita colisiones silenciosas al crear usuarios nuevos
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.
@@ -192,6 +226,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `dispatch_config`
   - `dispatch_assignments`
 - `get_my_branch_shift_gate(branch_id)` debe seguir devolviendo tambien `active_tables_count` para que usuarios operativos sin permisos de Caja puedan ver `Mesas` correctamente.
+- Si la base remota todavia conserva la firma vieja de `set_shift_user_enabled`, el frontend puede necesitar compatibilidad temporal; el objetivo final sigue siendo alinear la RPC extendida en BD remota.
 
 
 

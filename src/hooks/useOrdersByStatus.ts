@@ -32,6 +32,7 @@ export interface OrderSummary {
   dispatched_at?: string | null;
   paid_at?: string | null;
   cancelled_at?: string | null;
+  cancel_requested_at?: string | null;
   total: number;
   item_count: number;
   items: OrderItemSummary[];
@@ -51,7 +52,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       const dispatchedView = status === "KITCHEN_DISPATCHED";
       const paidView = status === "PAID";
 
-      const filters = (() => {
+      const filters: any[] = (() => {
         if (!status || cancelledView) return [];
         if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
         if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
@@ -72,9 +73,10 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         dispatched_at: string | null;
         paid_at: string | null;
         cancelled_at: string | null;
+        cancel_requested_at: string | null;
         total: number;
       }>("orders", {
-        select: "id, order_number, order_code, status, order_type, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, total",
+        select: "id, order_number, order_code, status, order_type, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
         branchId: activeBranchId,
         filters,
         orderBy: { column: "created_at", ascending: false },
@@ -249,6 +251,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             cancelled_at: cancelledView && !isTakeoutDispatchedOnCancelledTab
               ? (order.cancelled_at ?? cancelledOrdersMeta[order.id]?.cancelled_at ?? null)
               : order.cancelled_at,
+            cancel_requested_at: order.cancel_requested_at ?? null,
             split_code: null,
             table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
             total,

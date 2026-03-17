@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
+import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
@@ -29,6 +30,7 @@ const Caja = () => {
     denominations,
     shift,
     isLoadingShift,
+    branchReferenceTableCount,
     payableOrders,
     paymentMethods,
     completedPayments,
@@ -37,12 +39,12 @@ const Caja = () => {
     completedPaymentsCollectedTotal,
     isLoadingCompletedPayments,
     cashierReverseWindowMinutes,
-    openShift,
+    openCashRegister,
     payOrder,
     requestPaymentReversal,
     reversePayment,
     approvePaymentReversal,
-    closeShift,
+    closeCashRegister,
   } = useCaja(completedFilters);
 
   if (isLoadingShift) {
@@ -61,6 +63,56 @@ const Caja = () => {
           <p className="mt-2 text-sm text-muted-foreground">
             La apertura del turno ahora se realiza desde Administracion en la pestana Turno.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (shift.caja_status !== "OPEN") {
+    return (
+      <div className="space-y-4 p-2.5 sm:p-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] xl:items-stretch">
+          <div className="relative overflow-hidden rounded-[28px] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-5 py-4 shadow-[0_20px_60px_-40px_rgba(249,115,22,0.55)]">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-orange-200/35 blur-2xl" />
+            <div className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl" />
+            <div className="relative mb-2 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-300 bg-white/90 text-primary shadow-sm">
+                <Banknote className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="font-display text-xl font-black text-foreground">Caja</h1>
+                <p className="text-sm text-muted-foreground">La jornada ya esta abierta. Falta preparar la caja para cobrar.</p>
+              </div>
+            </div>
+            {!canOperateCaja && (
+              <span className="relative inline-flex rounded-full border border-border bg-white/80 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+                Solo consulta
+              </span>
+            )}
+          </div>
+
+          <div className="rounded-[28px] border border-orange-200 bg-white/90 p-5 shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+            {shift.caja_status === "UNOPENED" ? (
+              <OpenShiftForm
+                denominations={denominations}
+                onOpen={({ counts }) => openCashRegister.mutate({ counts })}
+                opening={openCashRegister.isPending}
+                readOnly={!canOperateCaja}
+                title="Abrir Caja"
+                description={`Ingresa el conteo inicial de caja. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`}
+              />
+            ) : (
+              <div className="mx-auto max-w-md text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+                  <Banknote className="h-7 w-7 text-primary" />
+                </div>
+                <h2 className="font-display text-xl font-bold text-foreground">Caja cerrada</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  La caja de este turno ya fue cerrada. Para volver a cobrar necesitas abrir una nueva jornada desde Administracion.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -91,8 +143,8 @@ const Caja = () => {
         <ShiftSummary
           shift={shift}
           methodSummary={completedPaymentsMethodSummary}
-          onClose={(notes) => closeShift.mutate(notes)}
-          closing={closeShift.isPending}
+          onClose={(notes) => closeCashRegister.mutate(notes)}
+          closing={closeCashRegister.isPending}
           readOnly={!canOperateCaja}
         />
       </div>

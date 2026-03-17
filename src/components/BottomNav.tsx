@@ -121,6 +121,7 @@ const BottomNav = () => {
   const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
   const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
   const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && (Boolean(shiftGateQuery.data?.userEnabled) || canAccessAdmin);
+  const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || canAccessAdmin;
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (isGlobalAdminWithoutBranches) {
@@ -135,9 +136,28 @@ const BottomNav = () => {
       return true;
     }
 
-    if (item.to !== "/despacho") return item.visible(permissions);
     if (!item.visible(permissions)) return false;
-    return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
+
+    if (item.to === "/mesas" || item.to === "/ordenes") {
+      return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
+    }
+
+    if (item.to === "/productos") {
+      return hasSupervisorBypass
+        || Boolean(shiftGateQuery.data?.canServeTables)
+        || Boolean(shiftGateQuery.data?.canDispatchOrders);
+    }
+
+    if (item.to === "/caja") {
+      return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canUseCaja);
+    }
+
+    if (item.to === "/despacho") {
+      if (!(hasSupervisorBypass || Boolean(shiftGateQuery.data?.canDispatchOrders))) return false;
+      return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
+    }
+
+    return true;
   });
 
   if (visibleItems.length === 0) {

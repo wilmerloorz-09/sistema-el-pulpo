@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, UtensilsCrossed, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle } from "lucide-react";
+import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
-import TablesCrud from "@/components/admin/TablesCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
@@ -104,13 +103,6 @@ const TABS: AdminTab[] = [
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
-    value: "tables",
-    label: "Mesas",
-    icon: <UtensilsCrossed className="h-4 w-4" />,
-    component: TablesCrud,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
-  },
-  {
     value: "payment-methods",
     label: "Metodos de Pago",
     icon: <CreditCard className="h-4 w-4" />,
@@ -185,7 +177,7 @@ const Admin = () => {
           <Button
             type="button"
             variant="outline"
-            className="h-11 w-full justify-between gap-2 rounded-2xl sm:w-auto md:hidden"
+            className="h-11 w-full justify-between gap-2 rounded-2xl sm:hidden"
             onClick={() => setMobileTabsOpen((open) => !open)}
           >
             {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
@@ -208,7 +200,7 @@ const Admin = () => {
         </div>
       ) : (
         <>
-          <div className="md:hidden">
+          <div className="sm:hidden">
             {mobileTabsOpen && (
               <div className="rounded-[24px] border border-orange-200 bg-white/85 p-2 shadow-[0_18px_40px_-34px_rgba(249,115,22,0.55)]">
                 <div className="grid gap-2">
@@ -232,7 +224,7 @@ const Admin = () => {
             )}
           </div>
 
-          <div className="-mx-4 hidden overflow-x-auto px-4 pb-2 md:block">
+          <div className="-mx-2 hidden overflow-x-auto px-2 pb-2 sm:block sm:px-0">
             <div className="inline-flex gap-2 rounded-[28px] border border-orange-200 bg-white/80 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
               {visibleTabs.map((tab) => (
                 <Button

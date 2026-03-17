@@ -118,7 +118,27 @@ const HomeRedirect = () => {
     }
   }
 
-  return <Navigate to="/mesas" replace />;
+  const gate = shiftGateQuery.data;
+  const canAccessAdmin = isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
+  const hasSupervisorBypass = Boolean(gate?.isSupervisor) || canAccessAdmin;
+
+  if (hasSupervisorBypass || gate?.canServeTables) {
+    return <Navigate to="/mesas" replace />;
+  }
+
+  if (hasSupervisorBypass || gate?.canDispatchOrders) {
+    return <Navigate to="/despacho" replace />;
+  }
+
+  if (hasSupervisorBypass || gate?.canUseCaja) {
+    return <Navigate to="/caja" replace />;
+  }
+
+  if (canAccessAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  return <Navigate to="/reportes" replace />;
 };
 
 const SyncInit = () => {
@@ -255,7 +275,7 @@ const App = () => (
                 <Route
                   path="/mesas"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
                       <Mesas />
                     </ProtectedRoute>
                   }
@@ -263,7 +283,7 @@ const App = () => (
                 <Route
                   path="/ordenes"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift>
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
                       <Ordenes />
                     </ProtectedRoute>
                   }
@@ -271,7 +291,7 @@ const App = () => (
                 <Route
                   path="/despacho"
                   element={
-                    <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift>
+                    <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift requiredShiftRoles={["canDispatchOrders"]}>
                       <Despacho />
                     </ProtectedRoute>
                   }
@@ -279,7 +299,7 @@ const App = () => (
                 <Route
                   path="/productos"
                   element={
-                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift>
+                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift requiredShiftRoles={["canServeTables", "canDispatchOrders"]}>
                       <Productos />
                     </ProtectedRoute>
                   }
@@ -287,7 +307,7 @@ const App = () => (
                 <Route
                   path="/caja"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "caja", level: "VIEW" }} requiresOpenShift>
+                    <ProtectedRoute requiredPermission={{ module: "caja", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canUseCaja"]}>
                       <Caja />
                     </ProtectedRoute>
                   }

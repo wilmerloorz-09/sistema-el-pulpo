@@ -61,7 +61,7 @@ function buildCardSummary(items: OrderItemSummary[]) {
     );
     const visibleModifiers = validModifiers.slice(0, visibleModifierCount);
 
-    remainingModifierBudget = Math.max(0, remainingModifierBudget - visibleModifiers.length);
+    remainingModifierBudget = Math.max(0, Number(remainingModifierBudget) - visibleModifiers.length);
 
     visibleItems.push({
       ...item,
@@ -81,6 +81,7 @@ interface OrderCardBaseProps {
   showEyeIcon?: boolean;
   onEyeClick?: () => void;
   readOnly?: boolean;
+  canAuthorizeCancel?: boolean;
 }
 
 export function OrderCardBase({
@@ -90,6 +91,7 @@ export function OrderCardBase({
   showEyeIcon = false,
   onEyeClick,
   readOnly = false,
+  canAuthorizeCancel = true, // Default true to avoid breaking previous usages without roles
 }: OrderCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
@@ -98,6 +100,7 @@ export function OrderCardBase({
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
+  const isCancelRequested = !!order.cancel_requested_at;
 
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
   const timeDisplay = isSentToKitchen ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime);
@@ -147,6 +150,12 @@ export function OrderCardBase({
           )}
         </div>
       </div>
+
+      {isCancelRequested && order.status !== "CANCELLED" && (
+        <div className="bg-amber-100/80 px-4 py-2 text-center text-xs font-bold text-amber-900 shadow-inner border-y border-amber-200">
+          Anulación solicitada
+        </div>
+      )}
 
       <div className="px-4 py-3">
         <div className="space-y-3">
@@ -223,11 +232,21 @@ export function OrderCardBase({
         <div className="border-t border-border px-4 py-3">
           <Button
             onClick={() => onCancel(order)}
-            variant="destructive"
-            className="h-10 w-full rounded-xl font-display font-semibold gap-2"
+            variant={isCancelRequested && canAuthorizeCancel ? "default" : isCancelRequested ? "secondary" : "destructive"}
+            className={cn(
+              "h-10 w-full rounded-xl font-display font-semibold gap-2",
+              isCancelRequested && canAuthorizeCancel && "bg-amber-600 text-white hover:bg-amber-700",
+              isCancelRequested && !canAuthorizeCancel && "opacity-50 pointer-events-none"
+            )}
           >
             <Ban className="h-4 w-4" />
-            Cancelar pedido
+            {isCancelRequested && canAuthorizeCancel
+              ? "Autorizar anulación"
+              : isCancelRequested
+                ? "Respuesta pendiente"
+                : canAuthorizeCancel
+                  ? "Anular pedido"
+                  : "Solicitar anulación"}
           </Button>
         </div>
       )}

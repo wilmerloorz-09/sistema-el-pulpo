@@ -12,14 +12,16 @@ function resolveInitialView(availableViews: DispatchView[], storageKey: string):
   if (availableViews.length === 0) return null;
 
   const saved = localStorage.getItem(storageKey);
-  if ((saved === "TABLE" || saved === "TAKEOUT") && availableViews.includes(saved)) {
+  if ((saved === "ALL" || saved === "TABLE" || saved === "TAKEOUT") && availableViews.includes(saved as DispatchView)) {
     return saved;
   }
 
+  if (availableViews.includes("ALL")) return "ALL";
   return availableViews.includes("TABLE") ? "TABLE" : availableViews[0];
 }
 
 function getViewIcon(view: DispatchView) {
+  if (view === "ALL") return Truck;
   return view === "TABLE" ? UtensilsCrossed : ShoppingBag;
 }
 
@@ -157,7 +159,9 @@ const Despacho = () => {
             <Truck className="mb-3 h-12 w-12 text-muted-foreground/40" />
             <p className="font-display text-lg font-bold text-foreground">Sin ordenes pendientes</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Las ordenes de {getViewLabel(scope).toLowerCase()} listas para despachar apareceran aqui
+              {scope === "ALL"
+                ? "Las ordenes listas para despachar apareceran aqui"
+                : `Las ordenes de ${getViewLabel(scope).toLowerCase()} listas para despachar apareceran aqui`}
             </p>
           </div>
         ) : (

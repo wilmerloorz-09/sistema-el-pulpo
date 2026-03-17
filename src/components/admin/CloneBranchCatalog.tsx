@@ -14,11 +14,9 @@ interface Branch {
   id: string;
   name: string;
   branch_code: string;
-  reference_table_count?: number;
 }
 
 const CATALOG_ITEMS = [
-  { key: "tables", label: "Mesas" },
   { key: "categories", label: "Categorias, subcategorias y productos" },
   { key: "modifiers", label: "Modificadores" },
   { key: "payment_methods", label: "Metodos de pago" },
@@ -80,30 +78,6 @@ async function cloneCatalogDirectly(
       const { error } = await supabase.from("denominations").delete().eq("branch_id", targetBranchId);
       if (error) throw error;
     }
-  }
-
-  if (selectedItems.has("tables")) {
-    const { data: sourceBranch, error: sourceBranchError } = await supabase
-      .from("branches")
-      .select("reference_table_count")
-      .eq("id", sourceBranchId)
-      .single();
-    if (sourceBranchError) throw sourceBranchError;
-
-    const referenceCount = Number(sourceBranch.reference_table_count ?? 0);
-    const { error: updateBranchError } = await supabase
-      .from("branches")
-      .update({ reference_table_count: referenceCount })
-      .eq("id", targetBranchId);
-    if (updateBranchError) throw updateBranchError;
-
-    const { error: ensureTablesError } = await supabase.rpc("ensure_branch_table_capacity", {
-      p_branch_id: targetBranchId,
-      p_requested_count: referenceCount,
-    });
-    if (ensureTablesError) throw ensureTablesError;
-
-    stats.mesas = referenceCount;
   }
 
   if (selectedItems.has("modifiers")) {
@@ -234,7 +208,7 @@ const CloneBranchCatalog = () => {
   const { data: branches = [] } = useQuery({
     queryKey: ["clone-branches"],
     queryFn: async () => {
-      const { data } = await supabase.from("branches").select("id, name, branch_code, reference_table_count").eq("is_active", true).order("name");
+      const { data } = await supabase.from("branches").select("id, name, branch_code").eq("is_active", true).order("name");
       return (data ?? []) as Branch[];
     },
   });
