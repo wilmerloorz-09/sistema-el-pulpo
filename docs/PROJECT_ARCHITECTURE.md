@@ -142,7 +142,16 @@
   - `useDispatchOrders`
   - `useKitchenOrders`
   - `useCaja`
+- La capa frontend que consume ese snapshot debe aceptar temporalmente ambas firmas:
+  - firma nueva con `quantity_dispatched_total` y `quantity_dispatched_available`
+  - firma legacy con `quantity_dispatched`
+- Esa tolerancia evita que una orden despachada desaparezca de las vistas operativas cuando la BD remota aun no aplico la migracion mas reciente.
+- Ademas, si una orden parcial conserva `orders.status` y timestamps operativos validos pero el snapshot no devuelve cantidad visible para esa etapa, la UI de `Ordenes` debe usar un fallback acotado por etapa para no ocultar la linea activa restante.
 - La arquitectura operativa de estados debe considerar ese snapshot como lectura principal para UI cross-modulo.
+- Las solicitudes de anulacion pendientes forman ahora una vista operativa propia en `Ordenes`:
+  - la fuente visible es `orders.cancel_requested_at`
+  - mientras exista esa marca, la orden sale de las tabs operativas normales y pasa a `Pendiente de anulacion`
+  - la resolucion final sigue dependiendo del flujo de autorizacion/cancelacion, no de la mera solicitud
 - Ese snapshot ahora tambien debe distinguir:
   - `quantity_dispatched_total`
   - `quantity_dispatched_available`

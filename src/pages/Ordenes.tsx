@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
@@ -35,7 +35,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeBranchId, permissions } = useBranch();
+  const { activeBranchId, branches, permissions, setActiveBranch } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -50,6 +50,7 @@ const Ordenes = () => {
   const [showDeleteSplitConfirm, setShowDeleteSplitConfirm] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const syncedOrderBranchRef = useRef<string | null>(null);
 
   const canOperateOrders = canOperate(permissions, "ordenes");
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
@@ -58,6 +59,24 @@ const Ordenes = () => {
     canManage(permissions, "admin_global")
     || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
     || Boolean(shiftGateQuery.data?.isSupervisor);
+
+  useEffect(() => {
+    if (!orderId || !order?.branch_id || !activeBranchId) return;
+    if (order.branch_id === activeBranchId) return;
+    if (syncedOrderBranchRef.current === order.branch_id) return;
+
+    const matchingBranch = branches.find((branch) => branch.id === order.branch_id);
+    if (!matchingBranch) {
+      toast.error("Esta orden pertenece a una sucursal que no esta disponible en tu contexto actual.");
+      syncedOrderBranchRef.current = order.branch_id;
+      return;
+    }
+
+    syncedOrderBranchRef.current = order.branch_id;
+    void setActiveBranch(matchingBranch).then(() => {
+      toast.info("Se cambio la sucursal activa para mostrar la orden en su contexto correcto.");
+    });
+  }, [orderId, order?.branch_id, activeBranchId, branches, setActiveBranch]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
 

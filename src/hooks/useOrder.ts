@@ -36,6 +36,7 @@ interface Order {
   order_code: string | null;
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";
+  branch_id: string;
   table_id: string | null;
   split_id: string | null;
   table_name?: string;
@@ -94,7 +95,7 @@ export function useOrder(orderId: string | null) {
 
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, status, order_type, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, status, order_type, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;

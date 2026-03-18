@@ -77,7 +77,9 @@ function buildCardSummary(items: OrderItemSummary[]) {
 interface OrderCardBaseProps {
   order: OrderSummary;
   onCancel?: (order: OrderSummary) => void;
+  onRejectCancel?: (order: OrderSummary) => void;
   showCancelButton?: boolean;
+  showRejectButton?: boolean;
   showEyeIcon?: boolean;
   onEyeClick?: () => void;
   readOnly?: boolean;
@@ -87,11 +89,13 @@ interface OrderCardBaseProps {
 export function OrderCardBase({
   order,
   onCancel,
+  onRejectCancel,
   showCancelButton = true,
+  showRejectButton = false,
   showEyeIcon = false,
   onEyeClick,
   readOnly = false,
-  canAuthorizeCancel = true, // Default true to avoid breaking previous usages without roles
+  canAuthorizeCancel = true,
 }: OrderCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
@@ -152,8 +156,8 @@ export function OrderCardBase({
       </div>
 
       {isCancelRequested && order.status !== "CANCELLED" && (
-        <div className="bg-amber-100/80 px-4 py-2 text-center text-xs font-bold text-amber-900 shadow-inner border-y border-amber-200">
-          Anulación solicitada
+        <div className="border-y border-amber-200 bg-amber-100/80 px-4 py-2 text-center text-xs font-bold text-amber-900 shadow-inner">
+          Anulacion solicitada
         </div>
       )}
 
@@ -228,26 +232,40 @@ export function OrderCardBase({
         </div>
       )}
 
-      {!readOnly && showCancelButton && order.status !== "PAID" && onCancel && (
+      {!readOnly && order.status !== "PAID" && ((showCancelButton && onCancel) || (showRejectButton && onRejectCancel)) && (
         <div className="border-t border-border px-4 py-3">
-          <Button
-            onClick={() => onCancel(order)}
-            variant={isCancelRequested && canAuthorizeCancel ? "default" : isCancelRequested ? "secondary" : "destructive"}
-            className={cn(
-              "h-10 w-full rounded-xl font-display font-semibold gap-2",
-              isCancelRequested && canAuthorizeCancel && "bg-amber-600 text-white hover:bg-amber-700",
-              isCancelRequested && !canAuthorizeCancel && "opacity-50 pointer-events-none"
+          <div className={cn("flex gap-2", showRejectButton ? "flex-col sm:flex-row" : "flex-col")}>
+            {showRejectButton && isCancelRequested && canAuthorizeCancel && onRejectCancel && (
+              <Button
+                onClick={() => onRejectCancel(order)}
+                variant="outline"
+                className="h-10 w-full rounded-xl border-amber-300 font-display font-semibold text-amber-800 hover:bg-amber-50"
+              >
+                Negar anulacion
+              </Button>
             )}
-          >
-            <Ban className="h-4 w-4" />
-            {isCancelRequested && canAuthorizeCancel
-              ? "Autorizar anulación"
-              : isCancelRequested
-                ? "Respuesta pendiente"
-                : canAuthorizeCancel
-                  ? "Anular pedido"
-                  : "Solicitar anulación"}
-          </Button>
+
+            {showCancelButton && onCancel && (
+              <Button
+                onClick={() => onCancel(order)}
+                variant={isCancelRequested && canAuthorizeCancel ? "default" : isCancelRequested ? "secondary" : "destructive"}
+                className={cn(
+                  "h-10 w-full rounded-xl font-display font-semibold gap-2",
+                  isCancelRequested && canAuthorizeCancel && "bg-amber-600 text-white hover:bg-amber-700",
+                  isCancelRequested && !canAuthorizeCancel && "opacity-50 pointer-events-none"
+                )}
+              >
+                <Ban className="h-4 w-4" />
+                {isCancelRequested && canAuthorizeCancel
+                  ? "Autorizar anulacion"
+                  : isCancelRequested
+                    ? "Respuesta pendiente"
+                    : canAuthorizeCancel
+                      ? "Anular pedido"
+                      : "Solicitar anulacion"}
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -4,12 +4,13 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useCancellation } from "@/hooks/useCancellation";
 import OrderCard from "./OrderCard";
 import { Loader2, ClipboardList, Clock, CheckCircle2, Truck, Ban, CircleDollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type TabType = "sent" | "ready" | "dispatched" | "cancelled" | "paid";
+type TabType = "sent" | "ready" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
 
 interface TabInfo {
   key: TabType;
@@ -46,6 +47,14 @@ const tabs: TabInfo[] = [
     icon: <Truck className="h-4 w-4" />,
   },
   {
+    key: "pendingCancellation",
+    label: "Pendiente de anulacion",
+    status: "PENDING_CANCELLATION",
+    showCancel: true,
+    helperText: "Aqui ves las ordenes cuya anulacion fue solicitada y aun esperan autorizacion.",
+    icon: <Ban className="h-4 w-4" />,
+  },
+  {
     key: "cancelled",
     label: "Canceladas",
     status: "CANCELLED",
@@ -73,6 +82,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
   const { activeBranchId, isGlobalAdmin } = useBranch();
   const qc = useQueryClient();
   const shiftGateQuery = useBranchShiftGate();
+  const { rejectCancellationRequestMutation } = useCancellation();
   const canAuthorizeCancel = isGlobalAdmin || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel) || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {
@@ -169,6 +179,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
   const readyOrders = useOrdersByStatus("READY");
   const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED");
+  const pendingCancellationOrders = useOrdersByStatus("PENDING_CANCELLATION");
   const cancelledOrders = useOrdersByStatus("CANCELLED");
   const paidOrders = useOrdersByStatus("PAID");
 
@@ -180,6 +191,8 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
         return readyOrders;
       case "dispatched":
         return dispatchedOrders;
+      case "pendingCancellation":
+        return pendingCancellationOrders;
       case "cancelled":
         return cancelledOrders;
       case "paid":
@@ -219,7 +232,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
             )}
           </div>
 
-          <div className="grid flex-1 grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid-cols-5">
+          <div className="grid flex-1 grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid-cols-6">
         {tabs.map((tab) => {
           const count = getTabCount(tab.key);
           const isActive = activeTab === tab.key;
@@ -268,7 +281,9 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
               key={order.id}
               order={order}
               onCancel={onCancelOrder}
+              onRejectCancel={activeTab === "pendingCancellation" ? (order) => rejectCancellationRequestMutation.mutate({ orderId: order.id }) : undefined}
               showCancelButton={currentTab.showCancel && !readOnly}
+              showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
               readOnly={readOnly}
               canAuthorizeCancel={canAuthorizeCancel}
             />

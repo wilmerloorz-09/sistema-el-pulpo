@@ -64,9 +64,17 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - No reintroducir una UI de "plato de cocina" por fila salvo cambio funcional explicito.
 - Si una categoria raiz no tiene productos aun, igual debe aparecer en el listado si sigue siendo una categoria activa valida.
 
+### 7.3) Solicitudes pendientes de anulacion
+- Si un mesero o usuario sin autorizacion solicita una anulacion, la orden debe moverse a una pestana propia `Pendiente de anulacion`.
+- No dejar esas ordenes mezcladas en las tabs operativas normales mientras `cancel_requested_at` siga activo.
+- El usuario autorizado debe resolverlas desde esa cola, manteniendo visible que se trata de una solicitud y no de una anulacion ya aplicada.
+- Debe existir tambien la accion `Negar anulacion`; negar una solicitud limpia la marca pendiente y devuelve la orden a su estado operativo previo, sin aplicar cancelacion real sobre items.
+
 ### 8) Snapshot operativo compartido
 - Si una pantalla clasifica estados de orden (`Enviada`, `Lista`, `Despachada`, `Por cobrar`), preferir snapshot operativo compartido sobre lecturas parciales.
 - No reconstruir reglas operativas criticas desde una sola tabla si ya existe un snapshot consolidado.
+- Si el frontend consume `get_order_operational_snapshot`, mantener compatibilidad temporal con la firma legacy mientras haya riesgo de bases remotas sin la migracion mas reciente; una orden despachada no debe desaparecer solo por cambio de nombres de columnas del RPC.
+- Si una orden parcial sigue activa y `orders.status` indica una etapa operativa valida (`SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED`) pero el snapshot no devuelve cantidad visible para esa etapa, no ocultarla del tablero: aplicar fallback controlado antes de dejarla fuera de todas las pestanas.
 
 ## Convenciones de Implementacion
 

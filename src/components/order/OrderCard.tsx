@@ -6,7 +6,9 @@ import { OrderSummary } from "@/hooks/useOrdersByStatus";
 interface OrderCardProps {
   order: OrderSummary;
   onCancel?: (order: OrderSummary) => void;
+  onRejectCancel?: (order: OrderSummary) => void;
   showCancelButton?: boolean;
+  showRejectButton?: boolean;
   readOnly?: boolean;
   canAuthorizeCancel?: boolean;
 }
@@ -14,7 +16,9 @@ interface OrderCardProps {
 export default function OrderCard({
   order,
   onCancel,
+  onRejectCancel,
   showCancelButton = true,
+  showRejectButton = false,
   readOnly = false,
   canAuthorizeCancel = true,
 }: OrderCardProps) {
@@ -25,7 +29,9 @@ export default function OrderCard({
       <OrderCardBase
         order={order}
         onCancel={onCancel}
+        onRejectCancel={onRejectCancel}
         showCancelButton={showCancelButton}
+        showRejectButton={showRejectButton}
         showEyeIcon={true}
         onEyeClick={() => setIsDrawerOpen(true)}
         readOnly={readOnly}

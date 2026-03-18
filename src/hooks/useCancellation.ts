@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import type { CancellationData } from "@/types/cancellation";
+import { generateUUID } from "@/lib/uuid";
 
 interface CancelItemParams {
   itemId: string;
@@ -49,6 +50,18 @@ function isMissingRelationError(error: unknown, relationName: string) {
     code === "PGRST204" ||
     message.includes(`Could not find the table 'public.${relationName}'`) ||
     message.includes(`Could not find the '${"branch_id"}' column of '${relationName}'`)
+  );
+}
+
+function isMissingRpcFunctionError(error: unknown, functionName: string) {
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: string }).code) : "";
+  const message = typeof error === "object" && error !== null && "message" in error ? String((error as { message?: string }).message) : "";
+
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    message.includes(`Could not find the function public.${functionName}`) ||
+    message.includes(`function public.${functionName}`)
   );
 }
 
@@ -151,6 +164,142 @@ export function useCancellation() {
     }
   };
 
+  const requestOrderCancellationFallback = async (orderId: string, userId: string) => {
+    const now = new Date().toISOString();
+
+    try {
+      const { error } = await (supabase.from("orders") as any)
+        .update({
+          cancel_requested_by: userId,
+          cancel_requested_at: now,
+        })
+        .eq("id", orderId);
+
+      if (!error) return;
+
+      const { error: retryError } = await (supabase.from("orders") as any)
+        .update({
+          cancel_requested_at: now,
+        })
+        .eq("id", orderId);
+
+      if (retryError) throw retryError;
+    } catch (fallbackError) {
+      throw fallbackError;
+    }
+  };
+
+  const createPendingCancellationDraft = async (
+    orderId: string,
+    userId: string,
+    reason: string,
+    notes: string | null | undefined,
+    items: CancelOrderItemSelection[],
+    cancellationType: "partial" | "total",
+  ) => {
+    const now = new Date().toISOString();
+    const draftId = generateUUID();
+
+    const { data: existingDrafts, error: existingDraftsError } = await supabase
+      .from("order_cancellations")
+      .select("id, notes, status")
+      .eq("order_id", orderId)
+      .eq("status", "VOIDED")
+      .ilike("notes", "[PENDING_REQUEST]%");
+    if (existingDraftsError) throw existingDraftsError;
+
+    const existingDraftIds = (existingDrafts ?? []).map((row) => row.id);
+    if (existingDraftIds.length > 0) {
+      await supabase.from("order_item_cancellations").delete().in("order_cancellation_id", existingDraftIds);
+      await supabase.from("order_cancellations").delete().in("id", existingDraftIds);
+    }
+
+    const { error: headerError } = await supabase.from("order_cancellations").insert({
+      id: draftId,
+      order_id: orderId,
+      cancellation_type: cancellationType,
+      reason,
+      notes: `[PENDING_REQUEST] ${notes?.trim() || ""}`.trim(),
+      created_by: userId,
+      status: "VOIDED",
+      created_at: now,
+    } as any);
+
+    if (headerError) throw headerError;
+
+    const detailRows = items
+      .filter((item) => item.quantity_cancelled > 0)
+      .flatMap((item) => {
+        const rows: any[] = [];
+
+        const pendingQty = Number(item.quantity_cancelled_pending ?? 0);
+        const readyQty = Number(item.quantity_cancelled_ready ?? 0);
+        const dispatchedQty = Number(item.quantity_cancelled_dispatched ?? 0);
+
+        if (pendingQty > 0) {
+          rows.push({
+            id: generateUUID(),
+            order_cancellation_id: draftId,
+            order_id: orderId,
+            order_item_id: item.order_item_id,
+            quantity_cancelled: pendingQty,
+            unit_price: item.unit_price,
+            total_amount: Math.round(pendingQty * item.unit_price * 100) / 100,
+            source_stage: "PENDING",
+            created_at: now,
+          });
+        }
+
+        if (readyQty > 0) {
+          rows.push({
+            id: generateUUID(),
+            order_cancellation_id: draftId,
+            order_id: orderId,
+            order_item_id: item.order_item_id,
+            quantity_cancelled: readyQty,
+            unit_price: item.unit_price,
+            total_amount: Math.round(readyQty * item.unit_price * 100) / 100,
+            source_stage: "READY",
+            created_at: now,
+          });
+        }
+
+        if (dispatchedQty > 0) {
+          rows.push({
+            id: generateUUID(),
+            order_cancellation_id: draftId,
+            order_id: orderId,
+            order_item_id: item.order_item_id,
+            quantity_cancelled: dispatchedQty,
+            unit_price: item.unit_price,
+            total_amount: Math.round(dispatchedQty * item.unit_price * 100) / 100,
+            source_stage: "DISPATCHED",
+            created_at: now,
+          });
+        }
+
+        if (rows.length === 0) {
+          rows.push({
+            id: generateUUID(),
+            order_cancellation_id: draftId,
+            order_id: orderId,
+            order_item_id: item.order_item_id,
+            quantity_cancelled: item.quantity_cancelled,
+            unit_price: item.unit_price,
+            total_amount: Math.round(item.quantity_cancelled * item.unit_price * 100) / 100,
+            created_at: now,
+          });
+        }
+
+        return rows;
+      });
+
+    if (detailRows.length > 0) {
+      const { error: detailError } = await supabase.from("order_item_cancellations").insert(detailRows as any);
+      if (detailError) throw detailError;
+    }
+  };
+
   const cancelItemMutation = useMutation({
     mutationFn: async (params: CancelItemParams) => {
       const { itemId, orderId, currentStatus, quantity, unitPrice, userId, cancellationData } = params;
@@ -221,7 +370,22 @@ export function useCancellation() {
           p_user_id: userId,
         });
 
-        if (error) throw error;
+        if (error) {
+          if (!isMissingRpcFunctionError(error, "request_order_cancellation")) {
+            throw error;
+          }
+
+          await requestOrderCancellationFallback(orderId, userId);
+        }
+
+        await createPendingCancellationDraft(
+          orderId,
+          userId,
+          reason,
+          cancellationData?.notes ?? null,
+          items,
+          cancellationType,
+        );
 
         return {
           orderId,
@@ -295,9 +459,68 @@ export function useCancellation() {
     },
   });
 
+  const rejectCancellationRequestMutation = useMutation({
+    mutationFn: async ({ orderId }: { orderId: string }) => {
+      try {
+        const { error } = await (supabase.from("orders") as any)
+          .update({
+            cancel_requested_by: null,
+            cancel_requested_at: null,
+          })
+          .eq("id", orderId);
+
+        if (error) throw error;
+      } catch {
+        const { error: fallbackError } = await (supabase.from("orders") as any)
+          .update({
+            cancel_requested_at: null,
+          })
+          .eq("id", orderId);
+
+        if (fallbackError) throw fallbackError;
+      }
+
+      const { data: pendingDrafts } = await supabase
+        .from("order_cancellations")
+        .select("id")
+        .eq("order_id", orderId)
+        .eq("status", "VOIDED")
+        .ilike("notes", "[PENDING_REQUEST]%");
+
+      const pendingDraftIds = (pendingDrafts ?? []).map((row) => row.id);
+      if (pendingDraftIds.length > 0) {
+        await supabase.from("order_item_cancellations").delete().in("order_cancellation_id", pendingDraftIds);
+        await supabase.from("order_cancellations").delete().in("id", pendingDraftIds);
+      }
+
+      return { orderId };
+    },
+    onSuccess: async ({ orderId }) => {
+      qc.setQueryData(["order", orderId], (current: any) => {
+        if (!current) return current;
+        return {
+          ...current,
+          cancel_requested_at: null,
+        };
+      });
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      await qc.refetchQueries({ queryKey: ["orders"] });
+      toast.success("Solicitud de anulacion negada");
+    },
+    onError: (error: any) => {
+      console.error("Error negando solicitud de anulacion:", error);
+      toast.error("Error al negar la solicitud: " + (error?.message || "Error desconocido"));
+    },
+  });
+
   return {
     cancelItemMutation,
     cancelOrderMutation,
+    rejectCancellationRequestMutation,
   };
 }
 

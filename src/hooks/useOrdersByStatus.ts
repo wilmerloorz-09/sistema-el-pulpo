@@ -5,7 +5,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 
-type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
+type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "PENDING_CANCELLATION";
 
 export interface OrderItemSummary {
   id: string;
@@ -51,9 +51,10 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       const readyView = status === "READY";
       const dispatchedView = status === "KITCHEN_DISPATCHED";
       const paidView = status === "PAID";
+      const pendingCancellationView = status === "PENDING_CANCELLATION";
 
       const filters: any[] = (() => {
-        if (!status || cancelledView) return [];
+        if (!status || cancelledView || pendingCancellationView) return [];
         if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
         if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
         if (sentView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
@@ -83,6 +84,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       });
 
       let cancelledOrdersMeta: Record<string, { cancelled_at: string | null }> = {};
+      let pendingCancellationItemsByOrder: Record<string, Record<string, number>> = {};
 
       if (cancelledView) {
         const { data: cancellationHeaders, error: cancellationHeadersError } = await supabase
@@ -110,6 +112,51 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             cancelledOrderIds.has(order.id) ||
             (order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED")
         );
+      }
+
+      if (pendingCancellationView) {
+        orders = orders.filter(
+          (order) =>
+            !!order.cancel_requested_at &&
+            order.status !== "CANCELLED" &&
+            order.status !== "PAID",
+        );
+
+        const pendingOrderIds = orders.map((order) => order.id);
+        if (pendingOrderIds.length > 0) {
+          const { data: pendingHeaders, error: pendingHeadersError } = await supabase
+            .from("order_cancellations")
+            .select("id, order_id, status, notes, created_at")
+            .in("order_id", pendingOrderIds)
+            .eq("status", "VOIDED")
+            .ilike("notes", "[PENDING_REQUEST]%")
+            .order("created_at", { ascending: false });
+          if (pendingHeadersError) throw pendingHeadersError;
+
+          const latestPendingHeaderByOrder: Record<string, string> = {};
+          for (const header of pendingHeaders ?? []) {
+            if (!latestPendingHeaderByOrder[header.order_id]) {
+              latestPendingHeaderByOrder[header.order_id] = header.id;
+            }
+          }
+
+          const pendingHeaderIds = Object.values(latestPendingHeaderByOrder);
+          if (pendingHeaderIds.length > 0) {
+            const { data: pendingItems, error: pendingItemsError } = await supabase
+              .from("order_item_cancellations")
+              .select("order_cancellation_id, order_id, order_item_id, quantity_cancelled")
+              .in("order_cancellation_id", pendingHeaderIds);
+            if (pendingItemsError) throw pendingItemsError;
+
+            for (const row of pendingItems ?? []) {
+              const orderMap = pendingCancellationItemsByOrder[row.order_id] ?? {};
+              orderMap[row.order_item_id] = (orderMap[row.order_item_id] ?? 0) + Number(row.quantity_cancelled ?? 0);
+              pendingCancellationItemsByOrder[row.order_id] = orderMap;
+            }
+          }
+        }
+      } else {
+        orders = orders.filter((order) => !order.cancel_requested_at);
       }
 
       const orderIds = orders.map((order) => order.id);
@@ -184,26 +231,58 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
               const cancelledQuantity = Math.min(quantities.quantityOrdered, cancelledTotalMap[item.id] ?? quantities.quantityCancelledTotal);
+              const dispatchedQuantity = dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable;
+              const readyQuantity = quantities.quantityReadyAvailable;
+              const pendingQuantity = quantities.quantityPendingPrepare;
 
               const isTakeoutDispatchedOnCancelledTab =
                 cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
 
+              const shouldFallbackToOrderStage =
+                activeQuantity > 0 &&
+                !cancelledView &&
+                (
+                  (sentView && order.status === "SENT_TO_KITCHEN" && !!order.sent_to_kitchen_at && pendingQuantity <= 0) ||
+                  (readyView && order.status === "READY" && !!order.ready_at && readyQuantity <= 0) ||
+                  (dispatchedView && order.status === "KITCHEN_DISPATCHED" && !!order.dispatched_at && dispatchedQuantity <= 0)
+                );
+
+              const pendingRequestedItems = pendingCancellationView
+                ? pendingCancellationItemsByOrder[order.id] ?? null
+                : null;
+              const hasPendingRequestedItems = !!pendingRequestedItems && Object.keys(pendingRequestedItems).length > 0;
+              const pendingRequestedQuantity = pendingCancellationView
+                ? hasPendingRequestedItems
+                  ? pendingRequestedItems?.[item.id] ?? 0
+                  : activeQuantity
+                : 0;
+
               const displayQuantity = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
-                  ? quantities.quantityDispatchedAvailable
+                  ? dispatchedQuantity
                   : cancelledQuantity
+                : pendingCancellationView
+                  ? Math.max(0, Math.min(activeQuantity, pendingRequestedQuantity))
                 : readyView
-                  ? quantities.quantityReadyAvailable
+                  ? shouldFallbackToOrderStage
+                    ? activeQuantity
+                    : readyQuantity
                   : dispatchedView
-                    ? dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable
+                    ? shouldFallbackToOrderStage
+                      ? activeQuantity
+                      : dispatchedQuantity
                     : sentView
-                      ? quantities.quantityPendingPrepare
+                      ? shouldFallbackToOrderStage
+                        ? activeQuantity
+                        : pendingQuantity
                       : activeQuantity;
 
               const effectiveStatus = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
                   ? "DISPATCHED"
                   : "CANCELLED"
+                : pendingCancellationView
+                  ? "PENDING_CANCELLATION"
                 : readyView
                   ? "READY"
                   : dispatchedView
@@ -216,6 +295,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               return {
                 ...item,
+                activeQuantity,
                 quantity: displayQuantity,
                 total: computeLineAmount(displayQuantity, Number(item.unit_price ?? 0)),
                 status: effectiveStatus,
@@ -223,7 +303,53 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             })
             .filter((item) => item.status !== "DRAFT" && item.quantity > 0);
 
-          const formattedItems: OrderItemSummary[] = related.map((item) => ({
+          const fallbackStageItems = items
+            .filter((item) => item.order_id === order.id)
+            .map((item) => {
+              const quantities = computeOperationalQuantities({
+                quantityOrdered: Number(item.quantity ?? 0),
+                quantityReadyTotal: readyMap[item.id] ?? 0,
+                quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
+                quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
+                quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+                quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
+              });
+
+              const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+              if (activeQuantity <= 0) return null;
+
+              const fallbackStatus = dispatchedView
+                ? "DISPATCHED"
+                : readyView
+                  ? "READY"
+                  : sentView
+                    ? "SENT"
+                    : item.status ?? "SENT";
+
+              return {
+                ...item,
+                activeQuantity,
+                quantity: activeQuantity,
+                total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+                status: fallbackStatus,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => !!item && item.status !== "DRAFT" && item.quantity > 0);
+
+          const shouldUseOrderStageFallback =
+            !cancelledView &&
+            !paidView &&
+            related.length === 0 &&
+            fallbackStageItems.length > 0 &&
+            (
+              (sentView && order.status === "SENT_TO_KITCHEN" && !!order.sent_to_kitchen_at) ||
+              (readyView && order.status === "READY" && !!order.ready_at) ||
+              (dispatchedView && order.status === "KITCHEN_DISPATCHED" && !!order.dispatched_at)
+            );
+
+          const effectiveItems = shouldUseOrderStageFallback ? fallbackStageItems : related;
+
+          const formattedItems: OrderItemSummary[] = effectiveItems.map((item) => ({
             id: item.id,
             description_snapshot: item.description_snapshot,
             quantity: item.quantity,
@@ -233,8 +359,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             item_note: item.item_note ?? null,
           }));
 
-          const total = related.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
-          const item_count = related.reduce((count, item) => count + Number(item.quantity ?? 0), 0);
+          const total = effectiveItems.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+          const item_count = effectiveItems.reduce((count, item) => count + Number(item.quantity ?? 0), 0);
 
           const isTakeoutDispatchedOnCancelledTab =
             cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
@@ -243,6 +369,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             ? isTakeoutDispatchedOnCancelledTab
               ? "KITCHEN_DISPATCHED"
               : "CANCELLED"
+            : pendingCancellationView
+              ? "PENDING_CANCELLATION"
             : readyView
               ? "READY"
               : dispatchedView

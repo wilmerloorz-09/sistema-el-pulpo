@@ -189,6 +189,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - clasificar `Enviadas`, `Listas`, `Despachadas`
   - determinar que entra a `Por cobrar`
   - mantener consistencia entre `Ordenes`, `Despacho`, `Cocina` y `Caja`
+- Mientras existan bases remotas con despliegue parcial, el consumidor frontend debe tolerar dos variantes del RPC:
+  - nueva: `quantity_dispatched_total`, `quantity_dispatched_available`, `quantity_cancelled_dispatched`
+  - legacy: `quantity_dispatched`
+- Si esa compatibilidad no existe, una orden ya despachada puede quedar fuera de todas las vistas operativas aunque siga viva en `orders`.
 - El snapshot vigente debe contemplar tambien cancelaciones sobre cantidades despachadas:
   - `quantity_dispatched_total`
   - `quantity_dispatched_available`
@@ -211,6 +215,18 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Regla especial vigente:
   - la primera categoria raiz de la sucursal solo puede ser modificada por administrador general
 - La RPC/listado debe devolver todas las categorias nivel 0 activas, incluso si alguna aun no tiene productos, para no ocultar raices validas.
+
+## Solicitudes pendientes de anulacion
+- `orders.cancel_requested_at` identifica una orden con solicitud pendiente de anulacion.
+- `orders.cancel_requested_by` guarda quien la solicito cuando la columna esta disponible en la base remota.
+- Esa marca no convierte la orden en `CANCELLED`; solo la mueve a la cola visible `Pendiente de anulacion` en frontend.
+- Para reconstruir los items solicitados sin aplicar aun la anulacion real, el frontend puede persistir un borrador tecnico en:
+  - `order_cancellations` con marca de solicitud pendiente en `notes`
+  - `order_item_cancellations` asociados a ese borrador
+- Ese borrador no debe contarse como anulacion efectiva en snapshot operativo ni en historial aplicado.
+- Mientras la solicitud siga activa:
+  - no debe perderse la referencia a su etapa operativa original
+  - pero tampoco debe seguir mezclada en `Enviadas`, `Listas` o `Despachadas`
 
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.

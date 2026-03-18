@@ -8,6 +8,10 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-03-14)
 
+### 0) Compatibilidad defensiva del snapshot operativo en frontend
+- El frontend ahora debe tolerar tanto la version nueva de `get_order_operational_snapshot` (`quantity_dispatched_total`, `quantity_dispatched_available`, `quantity_cancelled_dispatched`) como la firma legacy que aun devuelve `quantity_dispatched`.
+- Si una base remota sigue en la firma anterior, las ordenes despachadas no deben desaparecer de `Ordenes`, `Despacho` o `Caja` por falta de normalizacion de campos.
+
 ### 1) Arbol de menu recursivo como nueva navegacion
 - Se introdujo `menu_nodes` como estructura jerarquica de profundidad indefinida.
 - `MenuNavigator` reemplaza la navegacion plana anterior en el modulo de Ordenes.
@@ -82,6 +86,12 @@
   - una cantidad `Despachada` pero aun no `Pagada` tambien puede ser anulable
   - la UI de anulacion, las tarjetas operativas y el backend deben hablar del mismo stock anulable
   - si una cancelacion afecta cantidades despachadas, el snapshot debe restarlas del total despachado visible y registrar esa porcion como merma/perdida operativa cuando corresponda
+- Cuando un usuario sin autorizacion solicita una anulacion, la orden ya no debe quedarse mezclada en `Enviadas`, `Listas` o `Despachadas`:
+  - debe aparecer en una pestana dedicada `Pendiente de anulacion`
+  - esa pestana lista ordenes con `cancel_requested_at` aun activo
+  - la tarjeta debe mostrar solo los items/cantidades incluidos en la solicitud pendiente, no todos los items activos de la orden
+  - desde ahi el supervisor/usuario autorizado resuelve la aprobacion o cancelacion final
+  - tambien debe existir la accion `Negar anulacion`; al negarla se elimina la solicitud pendiente y la orden vuelve a su flujo operativo previo sin alterar cantidades reales
 
 ### 4.6) Mesas: modelo hibrido nuevo
 - `restaurant_tables` no desaparece: sigue siendo la entidad interna real para FKs, ordenes y divisiones.

@@ -81,13 +81,37 @@ export interface OrderOperationalSnapshotRow {
   quantity_paid: number;
   quantity_ready_total: number;
   quantity_ready_available: number;
-  quantity_dispatched_total: number;
-  quantity_dispatched_available: number;
+  quantity_dispatched_total?: number | null;
+  quantity_dispatched_available?: number | null;
+  quantity_dispatched?: number | null;
   quantity_cancelled_pending: number;
   quantity_cancelled_ready: number;
-  quantity_cancelled_dispatched: number;
+  quantity_cancelled_dispatched?: number | null;
   quantity_cancelled_total: number;
   quantity_pending_prepare: number;
+}
+
+function normalizeSnapshotRow(row: OrderOperationalSnapshotRow) {
+  const quantityDispatchedTotal = asInt(
+    row.quantity_dispatched_total ?? row.quantity_dispatched ?? 0,
+  );
+  const quantityCancelledPending = asInt(row.quantity_cancelled_pending);
+  const quantityCancelledReady = asInt(row.quantity_cancelled_ready);
+  const quantityCancelledDispatched = asInt(row.quantity_cancelled_dispatched ?? 0);
+  const quantityCancelledTotal = asInt(row.quantity_cancelled_total);
+
+  return {
+    ...row,
+    quantity_dispatched_total: quantityDispatchedTotal,
+    quantity_dispatched_available: asInt(
+      row.quantity_dispatched_available ?? Math.max(0, quantityDispatchedTotal - quantityCancelledDispatched),
+    ),
+    quantity_cancelled_pending: quantityCancelledPending,
+    quantity_cancelled_ready: quantityCancelledReady,
+    quantity_cancelled_dispatched: quantityCancelledDispatched,
+    quantity_cancelled_total:
+      quantityCancelledTotal || quantityCancelledPending + quantityCancelledReady + quantityCancelledDispatched,
+  };
 }
 
 export interface OperationalMaps {
@@ -124,7 +148,7 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       }),
     );
 
-    const rows = snapshots.flat();
+    const rows = snapshots.flat().map(normalizeSnapshotRow);
 
     return {
       readyMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_total"),
