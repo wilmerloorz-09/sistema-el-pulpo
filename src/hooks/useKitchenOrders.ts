@@ -117,7 +117,7 @@ export function useKitchenOrders() {
         }
       }
 
-      const { readyMap, dispatchedMap, cancelledPendingMap, cancelledReadyMap } =
+      const { readyMap, dispatchedTotalMap, cancelledPendingMap, cancelledReadyMap, cancelledDispatchedMap } =
         await fetchOperationalMapsForOrders(orderIds);
 
       const cards = orders.flatMap((order) => {
@@ -127,9 +127,10 @@ export function useKitchenOrders() {
             const quantities = computeOperationalQuantities({
               quantityOrdered: Number(item.quantity ?? 0),
               quantityReadyTotal: readyMap[item.id] ?? 0,
-              quantityDispatched: dispatchedMap[item.id] ?? 0,
+              quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
               quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
               quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+              quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
             });
 
             return {
@@ -138,7 +139,7 @@ export function useKitchenOrders() {
               quantity_ordered: quantities.quantityOrdered,
               quantity_pending_prepare: quantities.quantityPendingPrepare,
               quantity_ready_available: quantities.quantityReadyAvailable,
-              quantity_dispatched: quantities.quantityDispatched,
+              quantity_dispatched: quantities.quantityDispatchedAvailable,
               quantity_cancelled: quantities.quantityCancelledTotal,
               item_note: item.item_note ?? null,
               modifiers: modsMap[item.id] ?? [],

@@ -138,7 +138,7 @@ export function useDispatchOrders(scope: DispatchView) {
         }
       }
 
-      const { readyMap, dispatchedMap, cancelledPendingMap, cancelledReadyMap } =
+      const { readyMap, dispatchedTotalMap, cancelledPendingMap, cancelledReadyMap, cancelledDispatchedMap } =
         await fetchOperationalMapsForOrders(orderIds);
 
       let filteredOrders = permittedOrders;
@@ -160,9 +160,10 @@ export function useDispatchOrders(scope: DispatchView) {
             const quantities = computeOperationalQuantities({
               quantityOrdered: Number(item.quantity ?? 0),
               quantityReadyTotal: readyMap[item.id] ?? 0,
-              quantityDispatched: dispatchedMap[item.id] ?? 0,
+              quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
               quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
               quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+              quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
             });
 
             const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
@@ -173,7 +174,7 @@ export function useDispatchOrders(scope: DispatchView) {
               quantity_ordered: quantities.quantityOrdered,
               quantity_pending_prepare: quantities.quantityPendingPrepare,
               quantity_ready_available: quantities.quantityReadyAvailable,
-              quantity_dispatched: quantities.quantityDispatched,
+              quantity_dispatched: quantities.quantityDispatchedAvailable,
               quantity_cancelled: quantities.quantityCancelledTotal,
               status: item.status ?? "SENT",
               total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),

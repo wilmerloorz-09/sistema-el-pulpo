@@ -23,10 +23,14 @@ export function useDispatchAccess() {
     const hasDispatchShiftAccess = isGlobalAdmin
       || Boolean(shiftGateQuery.data?.isSupervisor)
       || Boolean(shiftGateQuery.data?.canDispatchOrders);
-    const canViewTable = canView(permissions, "despacho_total") || canView(permissions, "despacho_mesa");
-    const canViewTakeout = canView(permissions, "despacho_total") || canView(permissions, "despacho_para_llevar");
-    const canOperateTable = canOperate(permissions, "despacho_total") || canOperate(permissions, "despacho_mesa");
-    const canOperateTakeout = canOperate(permissions, "despacho_total") || canOperate(permissions, "despacho_para_llevar");
+    const hasBaseViewTable = canView(permissions, "despacho_total") || canView(permissions, "despacho_mesa");
+    const hasBaseViewTakeout = canView(permissions, "despacho_total") || canView(permissions, "despacho_para_llevar");
+    const hasBaseOperateTable = canOperate(permissions, "despacho_total") || canOperate(permissions, "despacho_mesa");
+    const hasBaseOperateTakeout = canOperate(permissions, "despacho_total") || canOperate(permissions, "despacho_para_llevar");
+    const canViewTable = hasBaseViewTable || hasDispatchShiftAccess;
+    const canViewTakeout = hasBaseViewTakeout || hasDispatchShiftAccess;
+    const canOperateTable = hasBaseOperateTable || hasDispatchShiftAccess;
+    const canOperateTakeout = hasBaseOperateTakeout || hasDispatchShiftAccess;
 
     const tableEnabled = config?.table_enabled ?? true;
     const takeoutEnabled = config?.takeout_enabled ?? true;

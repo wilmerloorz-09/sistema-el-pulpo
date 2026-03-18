@@ -39,6 +39,60 @@ export interface CashShift {
   notes: string | null;
   active_tables_count: number;
   denoms: ShiftDenom[];
+  openingHistory: CashRegisterOpeningHistoryEntry[];
+}
+
+export interface CashRegisterOpeningHistoryEntry {
+  id: string;
+  shift_id: string;
+  status: "abierta" | "cerrada" | "anulada";
+  cashier_id: string;
+  cashier_name: string;
+  cashier_username: string;
+  opened_at: string;
+  closed_at: string | null;
+  initial_total: number;
+  notes: string | null;
+  anulada_por: string | null;
+  anulada_por_nombre: string | null;
+  anulada_por_username: string | null;
+  anulada_at: string | null;
+  motivo_anulacion: string | null;
+  is_current: boolean;
+  payment_count: number;
+}
+
+export interface CashRegisterMovement {
+  id: string;
+  shiftId: string;
+  branchId: string;
+  movementType: "entrada" | "salida" | "cambio_denominacion";
+  amount: number;
+  reason: string;
+  movementDetail: CashRegisterMovementDetail | null;
+  recordedBy: string;
+  recordedByName: string | null;
+  recordedByUsername: string | null;
+  createdAt: string;
+}
+
+export interface CashRegisterMovementDetailLine {
+  denomination_id: string;
+  label: string;
+  value: number;
+  qty: number;
+  total: number;
+  image_url?: string | null;
+}
+
+export interface CashRegisterMovementDetail {
+  kind: "cambio_denominacion";
+  from: CashRegisterMovementDetailLine[];
+  to: CashRegisterMovementDetailLine[];
+  totals: {
+    from: number;
+    to: number;
+  };
 }
 
 export interface PayableOrder {
@@ -366,6 +420,7 @@ function deriveOrderOperationalStatus(
     dispatchedQuantity?: number;
     cancelledPendingQuantity?: number;
     cancelledReadyQuantity?: number;
+    cancelledDispatchedQuantity?: number;
   }>,
   fallbackStatus: OrderStatus,
 ): OrderStatus {
@@ -379,14 +434,15 @@ function deriveOrderOperationalStatus(
     const quantities = computeOperationalQuantities({
       quantityOrdered: Number(item.quantity ?? 0),
       quantityReadyTotal: item.readyQuantity ?? 0,
-      quantityDispatched: item.dispatchedQuantity ?? 0,
+      quantityDispatchedTotal: item.dispatchedQuantity ?? 0,
       quantityCancelledPending: item.cancelledPendingQuantity ?? 0,
       quantityCancelledReady: item.cancelledReadyQuantity ?? 0,
+      quantityCancelledDispatched: item.cancelledDispatchedQuantity ?? 0,
     });
 
     pendingPrepare += quantities.quantityPendingPrepare;
     readyAvailable += quantities.quantityReadyAvailable;
-    dispatched += quantities.quantityDispatched;
+    dispatched += quantities.quantityDispatchedAvailable;
     cancelledTotal += quantities.quantityCancelledTotal;
     activeNotCancelled += Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
   }
@@ -406,7 +462,7 @@ function getPayableQuantityForOrderType(
     return Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
   }
 
-  return quantities.quantityDispatched;
+  return quantities.quantityDispatchedAvailable;
 }
 
 export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
@@ -479,9 +535,64 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         };
       });
 
-      return { ...data, denoms: enriched } as CashShift;
+      const { data: openingHistoryData, error: openingHistoryError } = await supabase.rpc(
+        "list_cash_register_openings" as never,
+        { p_shift_id: data.id } as never,
+      );
+      if (openingHistoryError) throw openingHistoryError;
+
+      const openingHistory = ((openingHistoryData ?? []) as any[]).map((row) => ({
+        id: row.id,
+        shift_id: row.shift_id,
+        status: row.status,
+        cashier_id: row.cashier_id,
+        cashier_name: row.cashier_name,
+        cashier_username: row.cashier_username,
+        opened_at: row.opened_at,
+        closed_at: row.closed_at,
+        initial_total: Number(row.initial_total ?? 0),
+        notes: row.notes ?? null,
+        anulada_por: row.anulada_por ?? null,
+        anulada_por_nombre: row.anulada_por_nombre ?? null,
+        anulada_por_username: row.anulada_por_username ?? null,
+        anulada_at: row.anulada_at ?? null,
+        motivo_anulacion: row.motivo_anulacion ?? null,
+        is_current: Boolean(row.is_current),
+        payment_count: Number(row.payment_count ?? 0),
+      })) as CashRegisterOpeningHistoryEntry[];
+
+      return { ...data, denoms: enriched, openingHistory } as CashShift;
     },
     enabled: !!activeBranchId && !!denomsQuery.data,
+  });
+
+  const movementsQuery = useQuery({
+    queryKey: ["cash-register-movements", shiftQuery.data?.id],
+    queryFn: async () => {
+      const shift = shiftQuery.data;
+      if (!shift) return [];
+
+      const { data, error } = await supabase.rpc(
+        "list_cash_register_movements" as never,
+        { p_turno_id: shift.id } as never,
+      );
+      if (error) throw error;
+
+      return ((data ?? []) as any[]).map((row) => ({
+        id: row.id,
+        shiftId: row.shift_id,
+        branchId: row.branch_id,
+        movementType: row.movement_type,
+        amount: Number(row.amount ?? 0),
+        reason: row.reason ?? "",
+        movementDetail: (row.movement_detail ?? null) as CashRegisterMovementDetail | null,
+        recordedBy: row.recorded_by,
+        recordedByName: row.recorded_by_name ?? null,
+        recordedByUsername: row.recorded_by_username ?? null,
+        createdAt: row.created_at,
+      })) as CashRegisterMovement[];
+    },
+    enabled: !!shiftQuery.data?.id && shiftQuery.data?.caja_status === "OPEN",
   });
 
   const ordersQuery = useQuery({
@@ -532,9 +643,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(i.quantity ?? 0),
                 quantityReadyTotal: operationalMaps.readyMap[i.id] ?? 0,
-                quantityDispatched: operationalMaps.dispatchedMap[i.id] ?? 0,
+                quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[i.id] ?? 0,
                 quantityCancelledPending: operationalMaps.cancelledPendingMap[i.id] ?? 0,
                 quantityCancelledReady: operationalMaps.cancelledReadyMap[i.id] ?? 0,
+                quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[i.id] ?? 0,
               });
 
               const payableQty = getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT", quantities);
@@ -1138,9 +1250,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const quantities = computeOperationalQuantities({
           quantityOrdered: Number(dbItem.quantity ?? 0),
           quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,
-          quantityDispatched: operationalMaps.dispatchedMap[itemSelection.itemId] ?? 0,
+          quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[itemSelection.itemId] ?? 0,
           quantityCancelledPending: operationalMaps.cancelledPendingMap[itemSelection.itemId] ?? 0,
           quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
+          quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[itemSelection.itemId] ?? 0,
         });
         const payableQty = getPayableQuantityForOrderType(orderData.order_type as "DINE_IN" | "TAKEOUT", quantities);
         const alreadyPaidQty = resolvePaidQuantity({
@@ -1257,9 +1370,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const quantities = computeOperationalQuantities({
           quantityOrdered: Number(orderItem.quantity ?? 0),
           quantityReadyTotal: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
-          quantityDispatched: operationalMapsAfter.dispatchedMap[orderItem.id] ?? 0,
+          quantityDispatchedTotal: operationalMapsAfter.dispatchedTotalMap[orderItem.id] ?? 0,
           quantityCancelledPending: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
           quantityCancelledReady: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
+          quantityCancelledDispatched: operationalMapsAfter.cancelledDispatchedMap[orderItem.id] ?? 0,
         });
         const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
         const paidQty = paidQtyMapAfter[orderItem.id] ?? 0;
@@ -1271,22 +1385,24 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const quantities = computeOperationalQuantities({
           quantityOrdered: Number(orderItem.quantity ?? 0),
           quantityReadyTotal: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
-          quantityDispatched: operationalMapsAfter.dispatchedMap[orderItem.id] ?? 0,
+          quantityDispatchedTotal: operationalMapsAfter.dispatchedTotalMap[orderItem.id] ?? 0,
           quantityCancelledPending: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
           quantityCancelledReady: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
+          quantityCancelledDispatched: operationalMapsAfter.cancelledDispatchedMap[orderItem.id] ?? 0,
         });
         const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
         return activeQty <= 0 || (paidQtyMapAfter[orderItem.id] ?? 0) >= activeQty;
       });
 
       const operationalStatusAfterPayment = deriveOrderOperationalStatus(
-        (orderItemsAfter ?? []).map((orderItem) => ({
-          quantity: Number(orderItem.quantity ?? 0),
-          readyQuantity: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
-          dispatchedQuantity: operationalMapsAfter.dispatchedMap[orderItem.id] ?? 0,
-          cancelledPendingQuantity: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
-          cancelledReadyQuantity: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
-        })),
+            (orderItemsAfter ?? []).map((orderItem) => ({
+              quantity: Number(orderItem.quantity ?? 0),
+              readyQuantity: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
+              dispatchedQuantity: operationalMapsAfter.dispatchedTotalMap[orderItem.id] ?? 0,
+              cancelledPendingQuantity: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
+              cancelledReadyQuantity: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
+              cancelledDispatchedQuantity: operationalMapsAfter.cancelledDispatchedMap[orderItem.id] ?? 0,
+            })),
         (orderData?.status ?? "SENT_TO_KITCHEN") as OrderStatus,
       );
 
@@ -1460,9 +1576,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           const quantities = computeOperationalQuantities({
             quantityOrdered: Number(orderItem.quantity ?? 0),
             quantityReadyTotal: operationalMaps.readyMap[orderItem.id] ?? 0,
-            quantityDispatched: operationalMaps.dispatchedMap[orderItem.id] ?? 0,
+            quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[orderItem.id] ?? 0,
             quantityCancelledPending: operationalMaps.cancelledPendingMap[orderItem.id] ?? 0,
             quantityCancelledReady: operationalMaps.cancelledReadyMap[orderItem.id] ?? 0,
+            quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[orderItem.id] ?? 0,
           });
           const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
           const isFullyPaid = activeQty <= 0 || (paidQtyMap[orderItem.id] ?? 0) >= activeQty;
@@ -1486,9 +1603,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             const quantities = computeOperationalQuantities({
               quantityOrdered: item.quantity,
               quantityReadyTotal: operationalMaps.readyMap[item.id] ?? 0,
-              quantityDispatched: operationalMaps.dispatchedMap[item.id] ?? 0,
+              quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[item.id] ?? 0,
               quantityCancelledPending: operationalMaps.cancelledPendingMap[item.id] ?? 0,
               quantityCancelledReady: operationalMaps.cancelledReadyMap[item.id] ?? 0,
+              quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[item.id] ?? 0,
             });
             const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
             return activeQty <= 0 || (paidQtyMap[item.id] ?? 0) >= activeQty;
@@ -1498,9 +1616,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             (itemsByOrder[order.id] ?? []).map((item) => ({
               quantity: item.quantity,
               readyQuantity: operationalMaps.readyMap[item.id] ?? 0,
-              dispatchedQuantity: operationalMaps.dispatchedMap[item.id] ?? 0,
+              dispatchedQuantity: operationalMaps.dispatchedTotalMap[item.id] ?? 0,
               cancelledPendingQuantity: operationalMaps.cancelledPendingMap[item.id] ?? 0,
               cancelledReadyQuantity: operationalMaps.cancelledReadyMap[item.id] ?? 0,
+              cancelledDispatchedQuantity: operationalMaps.cancelledDispatchedMap[item.id] ?? 0,
             })),
             order.status as OrderStatus,
           );
@@ -1586,6 +1705,60 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
       toast.success("Caja cerrada");
     },
+  });
+
+  const annulCashOpening = useMutation({
+    mutationFn: async ({ reason }: { reason: string }) => {
+      const shift = shiftQuery.data;
+      if (!shift) throw new Error("No hay turno abierto");
+
+      const { error } = await supabase.rpc("anular_apertura_caja" as never, {
+        p_turno_id: shift.id,
+        p_motivo: reason,
+      } as never);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      toast.success("Apertura de caja anulada");
+    },
+  });
+
+  const registerCashMovement = useMutation({
+    mutationFn: async ({
+      type,
+      amount,
+      reason,
+      detail,
+    }: {
+      type: "entrada" | "salida" | "cambio_denominacion";
+      amount: number;
+      reason: string;
+      detail?: CashRegisterMovementDetail | null;
+    }) => {
+      const shift = shiftQuery.data;
+      if (!shift) throw new Error("No hay turno abierto");
+
+      const { error } = await supabase.rpc("registrar_movimiento_caja" as never, {
+        p_turno_id: shift.id,
+        p_tipo: type,
+        p_monto: amount,
+        p_motivo: reason,
+        p_detail: detail ?? null,
+      } as never);
+      if (error) throw error;
+    },
+    onSuccess: (_, variables) => {
+      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      toast.success(
+        variables.type === "cambio_denominacion"
+          ? "Cambio de denominacion registrado"
+          : "Movimiento de caja registrado",
+      );
+    },
     onError: (err: any) => toast.error(err.message),
   });
 
@@ -1593,6 +1766,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     denominations: denomsQuery.data ?? [],
     shift: shiftQuery.data,
     isLoadingShift: shiftQuery.isLoading || denomsQuery.isLoading,
+    cashRegisterMovements: movementsQuery.data ?? [],
+    isLoadingCashRegisterMovements: movementsQuery.isLoading,
     payableOrders: ordersQuery.data ?? [],
     paymentMethods: methodsQuery.data ?? [],
     completedPayments: completedPaymentsQuery.data?.rows ?? [],
@@ -1608,6 +1783,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     reversePayment,
     approvePaymentReversal,
     closeCashRegister,
+    annulCashOpening,
+    registerCashMovement,
   };
 }
 

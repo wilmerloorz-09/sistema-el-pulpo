@@ -90,6 +90,20 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 
 ## Caja y pagos
 - `cash_shifts` + detalle de denominaciones siguen siendo la fuente de `Apertura`, `Actual` y `Diferencia`.
+- `cash_shifts` sigue representando el turno operativo; el historial real de aperturas/cierres/anulaciones de caja vive aparte.
+- Tabla nueva de historial: `cash_register_openings`
+  - `shift_id`
+  - `branch_id`
+  - `cashier_id`
+  - `status` (`abierta` | `cerrada` | `anulada`)
+  - `opened_at`
+  - `closed_at`
+  - `initial_total`
+  - `notes`
+  - `anulada_por`
+  - `anulada_at`
+  - `motivo_anulacion`
+- `cash_shifts.caja_status` queda como estado agregado de la caja actual del turno (`UNOPENED` | `OPEN` | `CLOSED`), no como historial completo.
 - La apertura de turno tambien fija `active_tables_count` como frontera operativa de mesas para ese turno.
 - La habilitacion de usuarios por turno ya no es implícita: vive en `cash_shift_users`.
 - `cash_shift_users` ya no es solo un flag binario:
@@ -99,6 +113,8 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `can_use_caja`
   - `can_authorize_order_cancel`
   - `is_supervisor`
+- Aun con ese modelo, administrador general y supervisor de sucursal deben poder abrir/cerrar caja por override administrativo usando `can_manage_branch_admin(...)`.
+- `close_cash_register(shift_id, cashier_id, branch_id, notes)` debe bloquearse si en la sucursal aun existen ordenes con estado distinto de `PAID` o `CANCELLED`.
 - `payment_entries` / tablas equivalentes de cobro son la fuente de `Recaudado` por metodo.
 - Regla funcional importante:
   - `Actual - Apertura` representa caja fisica
@@ -121,6 +137,42 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - crea `cash_shifts`, detalle de denominaciones, movimientos de apertura y mesas activas en una sola operacion
 - `close_cash_shift_with_tables(shift_id, branch_id, notes)`
   - cierra el turno y desactiva internamente las mesas del turno
+  - no debe permitir cierre si aun existen ordenes con estado distinto de `PAID` o `CANCELLED`
+  - debe seguir bloqueando tambien si la caja continua abierta
+- `list_cash_register_openings(shift_id)`
+  - devuelve el historial de aperturas de caja del turno
+  - incluye motivo y anulador cuando una apertura fue anulada
+  - expone `payment_count` de la apertura actual para bloquear anulacion si ya hubo ventas/cobros
+- `anular_apertura_caja(turno_id, motivo)`
+  - solo supervisor/admin
+  - exige motivo minimo
+  - no permite anular si existen cobros (`cash_movements` `PAYMENT_IN`) en el turno
+  - marca la apertura como `anulada` y devuelve la caja a estado `UNOPENED`
+- Tabla nueva: `cash_register_movements`
+  - `shift_id`
+  - `branch_id`
+  - `movement_type` (`entrada` | `salida` | `cambio_denominacion`)
+  - `amount`
+  - `reason`
+  - `recorded_by`
+  - `created_at`
+- Regla funcional:
+  - los movimientos de caja no alteran `cash_movements`
+  - `Cambio de denominacion` si altera `cash_shift_denoms.qty_current`
+  - el total debe permanecer igual, pero la composicion de denominaciones si cambia
+  - por eso `Actual` y `Desglose` deben reflejar el nuevo reparto de billetes/monedas
+  - existen para auditoria, historial y reporte operativo del turno
+- `list_cash_register_movements(turno_id)`
+  - devuelve el historial visible de movimientos del turno actual
+  - incluye nombre y usuario de quien lo registro
+- `registrar_movimiento_caja(turno_id, tipo, monto, motivo)`
+  - exige turno `OPEN` y `caja_status = OPEN`
+  - exige monto mayor a `0`
+  - exige motivo obligatorio
+  - permite registrar al usuario de caja habilitado o al override admin/supervisor
+  - para `cambio_denominacion` exige detalle origen/destino que cuadre exactamente
+  - las denominaciones que salen de caja deben existir con stock suficiente en `cash_shift_denoms.qty_current`
+  - suma denominaciones de entrada y resta denominaciones de salida sobre `cash_shift_denoms.qty_current`
 - `list_shift_users_for_branch(branch_id)`
   - devuelve los usuarios activos de la sucursal con su estado habilitado en el turno actual
 - `set_shift_user_enabled(shift_id, user_id, is_enabled)`
@@ -137,6 +189,16 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - clasificar `Enviadas`, `Listas`, `Despachadas`
   - determinar que entra a `Por cobrar`
   - mantener consistencia entre `Ordenes`, `Despacho`, `Cocina` y `Caja`
+- El snapshot vigente debe contemplar tambien cancelaciones sobre cantidades despachadas:
+  - `quantity_dispatched_total`
+  - `quantity_dispatched_available`
+  - `quantity_cancelled_dispatched`
+- `order_item_cancellations.source_stage` debe permitir:
+  - `PENDING`
+  - `READY`
+  - `DISPATCHED`
+- `cancel_order_quantities(...)` ya no debe limitarse a `Pendiente + Listo`; debe poder cancelar tambien `Despachado` mientras no exista pago sobre esa cantidad.
+- Si el dialogo de anulacion se abre desde una tarjeta filtrada, el frontend debe enviar solo el subconjunto visible/anulable de esa tarjeta; no debe intentar cancelar items que no forman parte de la vista desde donde se disparo la accion.
 
 ## Politica de cancelacion/anulacion directa por categoria
 - Tabla operativa: `branch_cancel_policy`
@@ -209,6 +271,39 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `supabase/migrations/20260317091500_fix_profile_user_code_counter.sql`
   - corrige el contador de `profiles.user_code`
   - evita colisiones silenciosas al crear usuarios nuevos
+- `supabase/migrations/20260317124500_cash_register_opening_annulment.sql`
+  - crea `cash_register_openings`
+  - adapta `open_cash_register` y `close_cash_register` al historial real de aperturas
+  - agrega `list_cash_register_openings`
+  - agrega `anular_apertura_caja`
+- `supabase/migrations/20260317133000_cash_register_movements.sql`
+  - crea `cash_register_movements`
+  - agrega indices por turno y sucursal
+  - agrega RLS de lectura/insert por sucursal activa y permisos de caja
+  - agrega `list_cash_register_movements`
+  - agrega `registrar_movimiento_caja`
+- `supabase/migrations/20260317140000_cash_register_movement_detail.sql`
+  - agrega `movement_detail` en formato jsonb
+  - permite guardar el desglose completo del cambio de denominaciones
+- `supabase/migrations/20260317143000_apply_cash_register_movement_to_denoms.sql`
+  - hace que `registrar_movimiento_caja` actualice `cash_shift_denoms.qty_current`
+  - asegura que el cambio de denominacion cuadre y se vea reflejado en `Desglose`
+- `supabase/migrations/20260317144500_fix_cash_register_movements_rls_ambiguity.sql`
+  - corrige la RLS de `cash_register_movements`
+  - evita ambiguedad de columnas en insercion/lectura bajo policies
+- `supabase/migrations/20260317145500_fix_registrar_movimiento_caja_ambiguity.sql`
+  - recrea `registrar_movimiento_caja` con aliases calificados
+  - evita ambiguedad de `shift_id`/`branch_id` dentro de la funcion
+- `supabase/migrations/20260317150500_block_cash_close_with_pending_orders.sql`
+  - bloquea `close_cash_register` si existen ordenes no `PAID` y no `CANCELLED`
+- `supabase/migrations/20260317152000_fix_branch_cancel_policy_defaults.sql`
+  - deja por defecto desactivada la primera categoria raiz
+  - deja activadas por defecto las categorias raiz restantes
+- `supabase/migrations/20260317161500_support_dispatched_cancellations.sql`
+  - habilita `source_stage = 'DISPATCHED'` en `order_item_cancellations`
+  - recrea `get_order_operational_snapshot` con cantidades despachadas disponibles
+  - ajusta `recompute_order_operational_state`
+  - extiende `cancel_order_quantities` para cancelar tambien cantidades despachadas no pagadas
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

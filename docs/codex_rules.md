@@ -84,6 +84,16 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - En `Caja`, diferenciar visualmente:
   - caja fisica
   - recaudacion por metodo
+- Si se implementa anulacion de apertura de caja, no anular el turno operativo: conservar historial separado de aperturas dentro del turno y regresar la caja a estado limpio.
+- La accion `Anular apertura` debe vivir dentro de `Resumen`, no en header ni sidebar.
+- Solo supervisor de sucursal o administrador general pueden verla/ejecutarla.
+- Si ya existen cobros en la caja actual, la anulacion debe bloquearse con mensaje claro al usuario.
+- `Cerrar Caja` tambien debe bloquearse si existen ordenes de la sucursal en cualquier estado distinto de `PAID` o `CANCELLED`.
+- Si se agregan `Movimientos de Caja`, no mezclarlos con `Recaudado`, pero si se trata de `Cambio de denominacion` deben reflejarse en `cash_shift_denoms` para que `Actual`/`Desglose` muestren la nueva composicion sin alterar el total.
+- El flujo visible de `Movimientos` debe vivir dentro de `Caja > ShiftSummary`, no en el sidebar izquierdo.
+- `Cambio de denominacion` debe exigir monto mayor a `0`, motivo obligatorio y dejar `Impacto en caja: $0.00`.
+- El flujo visible vigente de `Movimientos` abre directo al registro; si se necesita historial, debe quedar detras de `Ver historial` y no como paso previo obligatorio.
+- En `Cambio de denominacion`, las denominaciones que salen de caja nunca pueden superar el stock actual disponible.
 - En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
 - No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
 - En `Admin > Turno`, priorizar usabilidad movil:
@@ -93,6 +103,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - boton principal a ancho completo en telefono
 - En tablet, `Admin` ya debe comportarse con tabs horizontales; no dejarlo en modo dropdown de telefono si ya hay ancho suficiente.
 - `BranchCancelPolicyEditor`, `DispatchConfig`, `ShiftSetupAdmin` y `UsersCrud` deben revisarse juntos cuando se hagan cambios recientes de UX en Admin.
+- Si se toca `CancelOrderDialog`, `CashRegisterMovementsDialog` o modales de `ShiftSummary`, revisar tambien:
+  - ancho real en telefono (`calc(100vw - margen)`)
+  - scroll vertical controlado
+  - botones de footer apilados en telefono
+  - cards internas sin comprimir inputs o textos
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
@@ -110,6 +125,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - La disponibilidad operativa del modificador debe resolverse desde `menu_node_modifiers`.
 - Filtrar datos vacios o inconsistentes antes de renderizar.
 - Si se toca apertura/cierre de turno, validar tambien la consistencia de mesas activas; no dejar turnos medio abiertos ni mesas activas sin turno.
+- No permitir cierre de turno si quedan ordenes o cobros pendientes; esa regla debe vivir en BD y no solo en frontend.
+- Administrador general y supervisor de sucursal deben poder operar caja por override administrativo, aunque no tengan `can_use_caja` marcado como usuario comun del turno.
 - Si se toca creacion de usuarios, validar el circuito completo:
   - Auth
   - `profiles`
@@ -119,6 +136,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si se toca Ordenes o Despacho, revisar tambien:
   - RLS de tablas de eventos operativos
   - reflejo en vivo entre usuarios/sesiones
+- Si se toca cancelacion de ordenes, validar siempre contra el snapshot operativo completo:
+  - no asumir que cancelar = solo `Pendiente + Listo`
+  - considerar tambien `Despachado no pagado` cuando la regla de negocio lo permita
+  - la ventana de cancelacion, las tarjetas de `Despachadas` y los calculos de `Caja` deben seguir exactamente la misma cuenta operativa
+- Si la anulacion se dispara desde una tarjeta filtrada por pestana, el dialogo debe respetar exactamente los items visibles de esa tarjeta; no mezclar otros items de la orden completa.
 - Si se toca `Despacho`, validar tambien la unicidad de asignacion por usuario y la visibilidad final de tabs segun modo `SINGLE` / `SPLIT`.
 - Si se toca divisiones de mesa, validar tambien:
   - que la nueva division quede seleccionada

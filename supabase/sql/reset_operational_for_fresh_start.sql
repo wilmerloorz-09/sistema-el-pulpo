@@ -6,6 +6,7 @@
 -- - Elimina solo datos transaccionales y operativos
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
+-- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --
 -- IDEAL PARA:
@@ -35,10 +36,13 @@ DECLARE
 
     -- Pagos / caja
     'public.payment_items',
+    'public.cash_register_movements',
+    'public.cash_register_openings',
     'public.cash_movements',
     'public.cash_shift_denoms',
     'public.payments',
     'public.operational_losses',
+    'public.cash_shift_users',
     'public.cash_shifts',
 
     -- Ordenes
@@ -52,7 +56,6 @@ DECLARE
     -- Configuracion operativa por jornada/sucursal
     'public.dispatch_assignments',
     'public.dispatch_config',
-    'public.entity_counters',
 
     -- Auditoria y settings operativos
     'public.audit_log'
@@ -73,6 +76,17 @@ BEGIN
     SET is_active = false;
     RAISE NOTICE 'Mesas internas desactivadas para dejar el turno en limpio';
   END IF;
+
+  IF to_regclass('public.entity_counters') IS NOT NULL THEN
+    DELETE FROM public.entity_counters
+    WHERE entity_key IN (
+      'orders',
+      'cash_shifts',
+      'cash_register_openings',
+      'cash_register_movements'
+    );
+    RAISE NOTICE 'Se limpiaron solo contadores operativos, preservando perfiles/mesas/sucursales';
+  END IF;
 END $$;
 
 -- Reinicia secuencias legacy si existen.
@@ -86,6 +100,8 @@ COMMIT;
 -- - Sucursales intactas
 -- - Referencia de mesas intacta
 -- - Mesas internas intactas, pero desactivadas
+-- - Politicas de cancelacion/anulacion por categoria intactas
 -- - Catalogo intacto (incluye arbol menu y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/notificaciones/eventos
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
+-- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================

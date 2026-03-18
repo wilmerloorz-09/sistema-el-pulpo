@@ -110,6 +110,18 @@
   - pagos realizados (`CompletedPaymentsList`)
 - La apertura del turno ya no debe vivir aqui como flujo principal; queda en `Admin > Turno`.
 - `ShiftSummary` ya no expone totales de apertura/actual de forma permanente en la pantalla; usa un modal `Resumen` y otro modal `Desglose`.
+- La anulacion de apertura de caja se resuelve dentro de `ShiftSummary > Resumen`.
+- Para soportarla sin romper el turno operativo, el historial de aperturas de caja se separa conceptualmente del turno y se consulta como registros propios del turno actual.
+- Una anulacion vuelve la caja a estado limpio (`UNOPENED`) pero conserva la apertura anulada en historial con motivo y usuario responsable.
+- El cierre de caja debe validar tambien el estado operativo de `orders`: si la sucursal aun tiene ordenes no `PAID` y no `CANCELLED`, la caja no puede cerrarse.
+- `ShiftSummary` ahora expone tambien `Movimientos`, en un modal propio desde el header.
+- Los movimientos de caja se modelan como auditoria separada del total de caja: sirven para trazabilidad y reporte, pero no para recalcular `Actual`, `Diferencia` ni `Recaudado`.
+- El soporte inicial visible es `Cambio de denominacion`; el modelo queda preparado para futuras `Entradas` y `Salidas`.
+- La UX vigente de `Movimientos` es de un solo paso:
+  - al abrir el modal se entra directo al registro del cambio de denominacion
+  - el historial existente queda disponible detras de `Ver historial`
+  - el registro exige cuadrar `Sale de caja` vs `Ingresa a caja`
+  - las denominaciones que salen de caja no pueden exceder la cantidad fisica actual disponible
 - `PayableOrdersList` usa layout de dos columnas en desktop: KPIs verticales y listado operativo.
 - `PaymentDialog` contiene:
   - seleccion de cantidades a cobrar
@@ -131,6 +143,16 @@
   - `useKitchenOrders`
   - `useCaja`
 - La arquitectura operativa de estados debe considerar ese snapshot como lectura principal para UI cross-modulo.
+- Ese snapshot ahora tambien debe distinguir:
+  - `quantity_dispatched_total`
+  - `quantity_dispatched_available`
+  - `quantity_cancelled_dispatched`
+- La anulacion parcial/total puede consumir cantidades en este orden:
+  - `PENDING`
+  - `READY`
+  - `DISPATCHED` no pagado
+- Si la UI muestra una orden en `Despachadas`, la ventana de anulacion debe derivar sus cantidades anulables del mismo snapshot y no de una formula parcial distinta.
+- Ademas, si el dialogo se abre desde una tarjeta filtrada por pestana, el dialogo debe respetar exactamente ese subconjunto visible y no mezclar otros items de la orden completa.
 
 ### I) Apertura/cierre de turno como frontera operativa de mesas
 - Abrir turno debe ser transaccional respecto a `cash_shifts`, `cash_shift_denoms`, `cash_movements` y mesas activas.
@@ -175,6 +197,10 @@
   - telefono: selector colapsado por dropdown
   - tablet/desktop: tabs horizontales con scroll
 - `BranchCancelPolicyEditor` y `UsersCrud` tambien deben degradar a layouts tactiles reales, no a escritorio comprimido.
+- Los dialogos operativos recientes tambien forman parte de esta regla:
+  - `CancelOrderDialog` debe abrir en ancho real de telefono/tablet, con acciones apiladas y controles de cantidad legibles
+  - `CashRegisterMovementsDialog` debe degradar de 2 columnas a 1 cuando no hay ancho suficiente
+  - `ShiftSummary` debe mantener sus botones del header y modales usables sin asumir desktop
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

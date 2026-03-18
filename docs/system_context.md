@@ -75,6 +75,13 @@
 - La clasificacion de ordenes visibles entre `Enviadas`, `Listas`, `Despachadas` y `Por cobrar` ya no debe depender de lecturas parciales de eventos.
 - `Ordenes`, `Despacho`, `Cocina` y `Caja` deben apoyarse en el snapshot operativo (`get_order_operational_snapshot`) para evitar que una orden quede pegada en una pestana equivocada.
 - Al despachar una orden, `Caja` debe invalidar tambien `payable-orders` para reflejar enseguida lo cobrable.
+- La ventana de `Cancelar orden` ya no debe cargar la orden completa si se abre desde una tarjeta filtrada por pestana:
+  - debe usar el mismo subconjunto visible de items que la tarjeta desde donde se abrio
+  - si la tarjeta muestra solo una linea en `Despachadas`, el dialogo de cancelacion no debe mezclar items de otras etapas de esa misma orden
+- La anulacion de orden ya no debe asumir que solo se cancela `Pendiente + Listo`:
+  - una cantidad `Despachada` pero aun no `Pagada` tambien puede ser anulable
+  - la UI de anulacion, las tarjetas operativas y el backend deben hablar del mismo stock anulable
+  - si una cancelacion afecta cantidades despachadas, el snapshot debe restarlas del total despachado visible y registrar esa porcion como merma/perdida operativa cuando corresponda
 
 ### 4.6) Mesas: modelo hibrido nuevo
 - `restaurant_tables` no desaparece: sigue siendo la entidad interna real para FKs, ordenes y divisiones.
@@ -121,6 +128,7 @@
 - Si no hay turno abierto:
   - los modulos operativos deben quedar bloqueados
   - solo `Administracion` sigue accesible para abrir/configurar turno
+- Administrador general y supervisor de sucursal deben poder abrir/cerrar caja aunque no tengan marcada explicitamente la capacidad `Caja` en `cash_shift_users`.
 
 ### 4.7.1) Cancelacion/Anulacion directa de orden por categoria
 - La configuracion vive dentro de `Admin > Turno`.
@@ -151,6 +159,10 @@
   - filas y badges se apilan si falta ancho
   - selects y botones pasan a ancho completo en telefono cuando corresponde
   - acciones de formularios se vuelven verticales en telefono
+- Los dialogos operativos nuevos tambien deben seguir esta regla:
+  - `CancelOrderDialog` usa ancho real de telefono, botones apilados y cards de item con input abajo si falta ancho
+  - `CashRegisterMovementsDialog` usa un solo flujo de registro, con historial oculto detras de `Ver historial`
+  - `ShiftSummary` en `Caja` ya distribuye sus acciones en grilla tactil en telefono y modales con alto/scroll controlado
 - `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
@@ -162,6 +174,23 @@
   - `Recaudado`: cobrado total, efectivo, no efectivo y desglose por metodo
 - El desglose de `Resumen de Caja` puede sumar metodos no efectivos; la `Diferencia` solo representa dinero fisico en caja.
 - `Desglose de Caja` muestra denominaciones ordenadas por `display_order` ascendente y cada fila debe mostrar solo imagen, valor, cantidad y total.
+- La anulacion de apertura de caja no anula el turno operativo: se registra como historial de apertura dentro del turno y la caja vuelve a estado limpio para poder abrirse de nuevo.
+- La opcion `Anular apertura` vive dentro del modal `Resumen` de `Caja`, nunca en el header principal ni en el sidebar.
+- Solo debe mostrarse a administrador general o supervisor de sucursal.
+- Solo puede ejecutarse si la apertura activa no tiene cobros registrados; si ya existen ventas/cobros, la UI debe advertirlo y bloquear la confirmacion.
+- `Cerrar Caja` debe bloquearse si la sucursal aun tiene ordenes en cualquier estado distinto de `PAID` o `CANCELLED`, aunque no existan cobros pendientes.
+- El motivo de anulacion es obligatorio y debe tener al menos 10 caracteres.
+- Las aperturas anuladas deben seguir viendose en historial con badge rojo `Anulada`, motivo y usuario que realizo la anulacion.
+- `Caja` ahora incluye un cuarto boton en header: `Movimientos`.
+- `Movimientos` abre directamente la vista de registro de `Cambio de denominacion`.
+- El historial del turno no debe ensuciar la pantalla al abrir: queda detras del boton `Ver historial`.
+- El `Cambio de denominacion` no cambia el total de efectivo esperado: su impacto en caja siempre es `0.00`.
+- Aun asi, si cambia la composicion real de la caja:
+  - suma las denominaciones que ingresan
+  - resta las denominaciones que salen
+  - por eso `Desglose` y `Actual` deben reflejar el cambio inmediatamente.
+- Si una denominacion sale de caja durante el cambio, la cantidad ingresada no puede exceder el stock actual de esa denominacion en `cash_shift_denoms`.
+- Los movimientos deben aparecer tambien en `Resumen` del turno como parte del reporte operativo, sin mezclarse con `Diferencia`, `Apertura` o `Recaudado`.
 - En `PayableOrdersList`, la vista desktop usa dos columnas: izquierda con KPIs verticales y derecha con detalle operativo mas ancho.
 - En desktop las pestanas `Por cobrar` / `Pagos realizados` de Caja se colocan en una columna lateral estrecha; en movil permanecen compactas arriba.
 - En `PaymentDialog`, `Efectivo` y `Transferencia` se muestran como filas compactas.
@@ -214,6 +243,7 @@
 - La apertura/cierre de turno debe seguir siendo transaccional respecto a mesas activas:
   - abrir turno configura `active_tables_count` y activa internamente las mesas del turno
   - cerrar turno desactiva internamente las mesas visibles del turno
+- No debe permitirse cerrar un turno si aun existen ordenes o cobros pendientes en la sucursal.
 
 ## Riesgos Vigentes
 1. No asumir que crear un nodo `product` en `menu_nodes` reemplaza automaticamente toda la operacion: la venta real sigue cerrando sobre `products`.

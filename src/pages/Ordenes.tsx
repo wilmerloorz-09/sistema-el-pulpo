@@ -83,16 +83,17 @@ const Ordenes = () => {
           <OrdersList onCancelOrder={canCancelOrders ? setCancelOrder : undefined} readOnly={!canCancelOrders} />
         </div>
         {cancelOrder && user && canCancelOrders && (
-          <CancelOrderDialog
-            orderId={cancelOrder.id}
-            orderNumber={cancelOrder.order_number}
-            userId={user.id}
-            open={!!cancelOrder}
-            onOpenChange={(open) => !open && setCancelOrder(null)}
-            canAuthorizeCancel={canAuthorizeCancel}
-            isCancelRequested={!!cancelOrder.cancel_requested_at}
-          />
-        )}
+        <CancelOrderDialog
+          orderId={cancelOrder.id}
+          orderNumber={cancelOrder.order_number}
+          userId={user.id}
+          open={!!cancelOrder}
+          onOpenChange={(open) => !open && setCancelOrder(null)}
+          canAuthorizeCancel={canAuthorizeCancel}
+          isCancelRequested={!!cancelOrder.cancel_requested_at}
+          visibleItems={cancelOrder.items}
+        />
+      )}
       </div>
     );
   }

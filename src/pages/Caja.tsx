@@ -7,7 +7,7 @@ import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
 import { Loader2, Banknote, CreditCard, History } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { canOperate } from "@/lib/permissions";
+import { canManage, canOperate } from "@/lib/permissions";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   orderQuery: "",
@@ -21,15 +21,25 @@ const initialCompletedFilters: CompletedPaymentsFilters = {
 };
 
 const Caja = () => {
-  const { permissions } = useBranch();
+  const { permissions, isGlobalAdmin } = useBranch();
   const [activeTab, setActiveTab] = useState<"pending" | "completed">("pending");
   const [completedFilters, setCompletedFilters] = useState<CompletedPaymentsFilters>(initialCompletedFilters);
-  const canOperateCaja = canOperate(permissions, "caja");
+  const canOperateCaja =
+    canOperate(permissions, "caja")
+    || isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
+  const canAnnulOpening =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
 
   const {
     denominations,
     shift,
     isLoadingShift,
+    cashRegisterMovements,
+    isLoadingCashRegisterMovements,
     branchReferenceTableCount,
     payableOrders,
     paymentMethods,
@@ -45,6 +55,8 @@ const Caja = () => {
     reversePayment,
     approvePaymentReversal,
     closeCashRegister,
+    annulCashOpening,
+    registerCashMovement,
   } = useCaja(completedFilters);
 
   if (isLoadingShift) {
@@ -100,6 +112,7 @@ const Caja = () => {
                 readOnly={!canOperateCaja}
                 title="Abrir Caja"
                 description={`Ingresa el conteo inicial de caja. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`}
+                openingHistory={shift.openingHistory}
               />
             ) : (
               <div className="mx-auto max-w-md text-center">
@@ -143,8 +156,15 @@ const Caja = () => {
         <ShiftSummary
           shift={shift}
           methodSummary={completedPaymentsMethodSummary}
-          onClose={(notes) => closeCashRegister.mutate(notes)}
+          movements={cashRegisterMovements}
+          movementsLoading={isLoadingCashRegisterMovements}
+          onClose={(notes) => closeCashRegister.mutateAsync(notes)}
+          onAnnulOpen={(reason) => annulCashOpening.mutateAsync({ reason })}
+          onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
           closing={closeCashRegister.isPending}
+          annulling={annulCashOpening.isPending}
+          registeringMovement={registerCashMovement.isPending}
+          canAnnulOpen={canAnnulOpening}
           readOnly={!canOperateCaja}
         />
       </div>

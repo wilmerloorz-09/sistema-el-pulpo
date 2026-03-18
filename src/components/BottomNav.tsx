@@ -136,19 +136,20 @@ const BottomNav = () => {
       return true;
     }
 
-    if (!item.visible(permissions)) return false;
-
     if (item.to === "/mesas" || item.to === "/ordenes") {
+      if (!item.visible(permissions)) return false;
       return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
     }
 
     if (item.to === "/productos") {
+      if (!item.visible(permissions)) return false;
       return hasSupervisorBypass
         || Boolean(shiftGateQuery.data?.canServeTables)
         || Boolean(shiftGateQuery.data?.canDispatchOrders);
     }
 
     if (item.to === "/caja") {
+      if (!item.visible(permissions)) return false;
       return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canUseCaja);
     }
 
@@ -156,6 +157,8 @@ const BottomNav = () => {
       if (!(hasSupervisorBypass || Boolean(shiftGateQuery.data?.canDispatchOrders))) return false;
       return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
     }
+
+    if (!item.visible(permissions)) return false;
 
     return true;
   });

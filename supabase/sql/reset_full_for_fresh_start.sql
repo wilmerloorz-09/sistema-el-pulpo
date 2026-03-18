@@ -4,8 +4,10 @@
 --
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
+-- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 -- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
+-- - Elimina politicas por sucursal, como cancelacion/anulacion directa por categoria
 -- - Elimina usuarios no protegidos
 -- - Conserva solo el superadmin principal protegido
 -- - Preserva estructura base del sistema: modulos, roles, permisos, funciones, migraciones
@@ -42,6 +44,8 @@ DECLARE
 
     -- Pagos / caja
     'public.payment_items',
+    'public.cash_register_movements',
+    'public.cash_register_openings',
     'public.cash_movements',
     'public.cash_shift_denoms',
     'public.payments',
@@ -56,6 +60,9 @@ DECLARE
     'public.table_splits',
     'public.restaurant_tables',
 
+    -- Configuracion por sucursal
+    'public.branch_cancel_policy',
+
     -- Catalogos
     'public.menu_node_modifiers',
     'public.menu_nodes',
@@ -68,6 +75,7 @@ DECLARE
     'public.payment_methods',
 
     -- Caja / despacho / configuracion operativa por sucursal
+    'public.cash_shift_users',
     'public.cash_shifts',
     'public.dispatch_assignments',
     'public.dispatch_config',
@@ -201,13 +209,8 @@ COMMIT;
 -- - 0 sucursales
 -- - 0 referencias de mesas por sucursal
 -- - 0 mesas internas
+-- - 0 politicas de cancelacion/anulacion por categoria
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
--- - 0 ordenes/pagos/caja/notificaciones/eventos
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
-
-
-
-
-
-

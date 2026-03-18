@@ -4,9 +4,11 @@ export interface OperationalQuantitySnapshot {
   quantityOrdered: number;
   quantityReadyTotal: number;
   quantityReadyAvailable: number;
-  quantityDispatched: number;
+  quantityDispatchedTotal: number;
+  quantityDispatchedAvailable: number;
   quantityCancelledPending: number;
   quantityCancelledReady: number;
+  quantityCancelledDispatched: number;
   quantityCancelledTotal: number;
   quantityPendingPrepare: number;
 }
@@ -18,27 +20,32 @@ function asInt(value: unknown) {
 export function computeOperationalQuantities(input: {
   quantityOrdered: number;
   quantityReadyTotal?: number;
-  quantityDispatched?: number;
+  quantityDispatchedTotal?: number;
   quantityCancelledPending?: number;
   quantityCancelledReady?: number;
+  quantityCancelledDispatched?: number;
 }): OperationalQuantitySnapshot {
   const quantityOrdered = asInt(input.quantityOrdered);
   const quantityReadyTotal = asInt(input.quantityReadyTotal);
-  const quantityDispatched = asInt(input.quantityDispatched);
+  const quantityDispatchedTotal = asInt(input.quantityDispatchedTotal);
   const quantityCancelledPending = asInt(input.quantityCancelledPending);
   const quantityCancelledReady = asInt(input.quantityCancelledReady);
-  const quantityCancelledTotal = quantityCancelledPending + quantityCancelledReady;
+  const quantityCancelledDispatched = asInt(input.quantityCancelledDispatched);
+  const quantityCancelledTotal = quantityCancelledPending + quantityCancelledReady + quantityCancelledDispatched;
 
-  const quantityReadyAvailable = Math.max(0, quantityReadyTotal - quantityDispatched - quantityCancelledReady);
+  const quantityReadyAvailable = Math.max(0, quantityReadyTotal - quantityDispatchedTotal - quantityCancelledReady);
+  const quantityDispatchedAvailable = Math.max(0, quantityDispatchedTotal - quantityCancelledDispatched);
   const quantityPendingPrepare = Math.max(0, quantityOrdered - quantityReadyTotal - quantityCancelledPending);
 
   return {
     quantityOrdered,
     quantityReadyTotal,
     quantityReadyAvailable,
-    quantityDispatched,
+    quantityDispatchedTotal,
+    quantityDispatchedAvailable,
     quantityCancelledPending,
     quantityCancelledReady,
+    quantityCancelledDispatched,
     quantityCancelledTotal,
     quantityPendingPrepare,
   };
@@ -74,18 +81,22 @@ export interface OrderOperationalSnapshotRow {
   quantity_paid: number;
   quantity_ready_total: number;
   quantity_ready_available: number;
-  quantity_dispatched: number;
+  quantity_dispatched_total: number;
+  quantity_dispatched_available: number;
   quantity_cancelled_pending: number;
   quantity_cancelled_ready: number;
+  quantity_cancelled_dispatched: number;
   quantity_cancelled_total: number;
   quantity_pending_prepare: number;
 }
 
 export interface OperationalMaps {
   readyMap: Record<string, number>;
-  dispatchedMap: Record<string, number>;
+  dispatchedTotalMap: Record<string, number>;
+  dispatchedAvailableMap: Record<string, number>;
   cancelledPendingMap: Record<string, number>;
   cancelledReadyMap: Record<string, number>;
+  cancelledDispatchedMap: Record<string, number>;
   cancelledTotalMap: Record<string, number>;
 }
 
@@ -93,9 +104,11 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
   if (orderIds.length === 0) {
     return {
       readyMap: {},
-      dispatchedMap: {},
+      dispatchedTotalMap: {},
+      dispatchedAvailableMap: {},
       cancelledPendingMap: {},
       cancelledReadyMap: {},
+      cancelledDispatchedMap: {},
       cancelledTotalMap: {},
     };
   }
@@ -115,17 +128,21 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
 
     return {
       readyMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_total"),
-      dispatchedMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched"),
+      dispatchedTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_total"),
+      dispatchedAvailableMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_available"),
       cancelledPendingMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_pending"),
       cancelledReadyMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_ready"),
+      cancelledDispatchedMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_dispatched"),
       cancelledTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_total"),
     };
   } catch {
     return {
       readyMap: {},
-      dispatchedMap: {},
+      dispatchedTotalMap: {},
+      dispatchedAvailableMap: {},
       cancelledPendingMap: {},
       cancelledReadyMap: {},
+      cancelledDispatchedMap: {},
       cancelledTotalMap: {},
     };
   }

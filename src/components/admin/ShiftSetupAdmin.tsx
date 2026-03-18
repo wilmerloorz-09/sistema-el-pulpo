@@ -93,6 +93,31 @@ function showShiftSetupError(
     return;
   }
 
+  if (rawMessage.startsWith("No puedes cerrar el turno porque aun existen ordenes o cobros pendientes")) {
+    const detail = rawMessage.replace(
+      "No puedes cerrar el turno porque aun existen ordenes o cobros pendientes.",
+      "",
+    ).trim();
+
+    setWarningDialog({
+      open: true,
+      title: "No se puede cerrar el turno",
+      description: detail
+        ? `Todavia quedan ordenes o cobros pendientes en esta sucursal.${detail}`
+        : "Todavia quedan ordenes o cobros pendientes en esta sucursal. Finaliza o cobra esas ordenes primero.",
+    });
+    return;
+  }
+
+  if (rawMessage.startsWith("No puedes cerrar el turno porque la caja esta abierta")) {
+    setWarningDialog({
+      open: true,
+      title: "No se puede cerrar el turno",
+      description: "La caja sigue abierta. Cierra la caja en el modulo Caja y luego vuelve a intentar cerrar el turno.",
+    });
+    return;
+  }
+
   setWarningDialog({
     open: true,
     title: "Revisa la configuracion del turno",
@@ -183,13 +208,28 @@ const ShiftSetupAdmin = () => {
         p_branch_id: activeBranchId,
       } as never);
       if (error) throw error;
-      return ((data ?? []) as BranchCancelPolicyDraftRow[]).map((row) => ({
+      const normalizedRows = ((data ?? []) as BranchCancelPolicyDraftRow[]).map((row) => ({
         ...row,
         descendant_product_count: Number(row.descendant_product_count ?? 0),
         is_primary_root_category: Boolean(row.is_primary_root_category),
         is_kitchen_plate: Boolean(row.is_kitchen_plate),
         allow_direct_cancel: Boolean(row.allow_direct_cancel),
       }));
+
+      const shouldForcePrimaryRootOff =
+        normalizedRows.length > 0
+        && normalizedRows.every((row) => row.allow_direct_cancel)
+        && normalizedRows.some((row) => row.is_primary_root_category);
+
+      if (!shouldForcePrimaryRootOff) {
+        return normalizedRows;
+      }
+
+      return normalizedRows.map((row) =>
+        row.is_primary_root_category
+          ? { ...row, allow_direct_cancel: false }
+          : row,
+      );
     },
     enabled: !!activeBranchId,
   });
@@ -214,6 +254,25 @@ const ShiftSetupAdmin = () => {
   const persistedCancelPolicies = useMemo(
     () => cancelPolicyQuery.data ?? [],
     [cancelPolicyQuery.data],
+  );
+  const comparableCancelPolicies = useMemo(
+    () => {
+      const normalizePolicies = (rows: BranchCancelPolicyDraftRow[]) =>
+        rows
+          .filter((row) => isGlobalAdmin || !row.is_primary_root_category)
+          .map((policy) => ({
+            menu_node_id: policy.menu_node_id,
+            is_kitchen_plate: policy.is_kitchen_plate,
+            allow_direct_cancel: policy.allow_direct_cancel,
+          }))
+          .sort((a, b) => a.menu_node_id.localeCompare(b.menu_node_id));
+
+      return {
+        current: normalizePolicies(cancelPolicyState),
+        persisted: normalizePolicies(persistedCancelPolicies),
+      };
+    },
+    [cancelPolicyState, isGlobalAdmin, persistedCancelPolicies],
   );
   const availableUsersToAdd = useMemo(
     () => allBranchUsers.filter((branchUser) => !enabledUserIds.includes(branchUser.user_id)),
@@ -338,24 +397,8 @@ const ShiftSetupAdmin = () => {
         .sort((a, b) => `${a.user_id}-${a.dispatch_type}`.localeCompare(`${b.user_id}-${b.dispatch_type}`)),
     );
   const cancelPoliciesChanged =
-    JSON.stringify(
-      [...cancelPolicyState]
-        .map((policy) => ({
-          menu_node_id: policy.menu_node_id,
-          is_kitchen_plate: policy.is_kitchen_plate,
-          allow_direct_cancel: policy.allow_direct_cancel,
-        }))
-        .sort((a, b) => a.menu_node_id.localeCompare(b.menu_node_id)),
-    ) !==
-    JSON.stringify(
-      [...persistedCancelPolicies]
-        .map((policy) => ({
-          menu_node_id: policy.menu_node_id,
-          is_kitchen_plate: policy.is_kitchen_plate,
-          allow_direct_cancel: policy.allow_direct_cancel,
-        }))
-        .sort((a, b) => a.menu_node_id.localeCompare(b.menu_node_id)),
-    );
+    JSON.stringify(comparableCancelPolicies.current)
+    !== JSON.stringify(comparableCancelPolicies.persisted);
   const hasLocalChanges =
     activeTablesCount !== persistedTablesCount ||
     !sameMembers(shiftUsersState.map(u => u.user_id), persistedEnabledUserIds) ||
@@ -499,12 +542,18 @@ const ShiftSetupAdmin = () => {
 
   const persistCancelPolicyDraft = async () => {
     if (!activeBranchId) throw new Error("No hay sucursal activa");
+    if (!cancelPoliciesChanged && !cancelPoliciesDirty) return;
 
-    const payload = cancelPolicyState.map((row) => ({
-      menu_node_id: row.menu_node_id,
-      is_kitchen_plate: row.is_kitchen_plate,
-      allow_direct_cancel: row.allow_direct_cancel,
-    }));
+    const validPolicyIds = new Set(persistedCancelPolicies.map((row) => row.menu_node_id));
+
+    const payload = cancelPolicyState
+      .filter((row) => validPolicyIds.has(row.menu_node_id))
+      .filter((row) => isGlobalAdmin || !row.is_primary_root_category)
+      .map((row) => ({
+        menu_node_id: row.menu_node_id,
+        is_kitchen_plate: row.is_kitchen_plate,
+        allow_direct_cancel: row.allow_direct_cancel,
+      }));
 
     const { error } = await supabase.rpc("save_branch_cancel_policy" as never, {
       p_branch_id: activeBranchId,
@@ -684,7 +733,7 @@ const ShiftSetupAdmin = () => {
       invalidateShiftState();
       toast.success("Turno cerrado correctamente");
     },
-    onError: (err: any) => toast.error(err.message || "No se pudo cerrar el turno"),
+    onError: (err: any) => showShiftSetupError(err, setWarningDialog),
   });
 
   if (!activeBranchId) {

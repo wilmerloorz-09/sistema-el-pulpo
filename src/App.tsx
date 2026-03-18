@@ -291,7 +291,7 @@ const App = () => (
                 <Route
                   path="/despacho"
                   element={
-                    <ProtectedRoute allowedModules={["despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift requiredShiftRoles={["canDispatchOrders"]}>
+                    <ProtectedRoute requiresOpenShift requiredShiftRoles={["canDispatchOrders"]}>
                       <Despacho />
                     </ProtectedRoute>
                   }

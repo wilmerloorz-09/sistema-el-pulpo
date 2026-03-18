@@ -129,8 +129,15 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
-      const { readyMap, dispatchedMap, cancelledPendingMap, cancelledReadyMap, cancelledTotalMap } =
-        await fetchOperationalMapsForOrders(orderIds);
+      const {
+        readyMap,
+        dispatchedTotalMap,
+        dispatchedAvailableMap,
+        cancelledPendingMap,
+        cancelledReadyMap,
+        cancelledDispatchedMap,
+        cancelledTotalMap,
+      } = await fetchOperationalMapsForOrders(orderIds);
       const itemIds = items.map((item) => item.id);
 
       const modsMap: Record<string, { description: string }[]> = {};
@@ -169,9 +176,10 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(item.quantity ?? 0),
                 quantityReadyTotal: readyMap[item.id] ?? 0,
-                quantityDispatched: dispatchedMap[item.id] ?? 0,
+                quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
                 quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
                 quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+                quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
               });
 
               const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
@@ -182,12 +190,12 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               const displayQuantity = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
-                  ? quantities.quantityDispatched
+                  ? quantities.quantityDispatchedAvailable
                   : cancelledQuantity
                 : readyView
                   ? quantities.quantityReadyAvailable
                   : dispatchedView
-                    ? quantities.quantityDispatched
+                    ? dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable
                     : sentView
                       ? quantities.quantityPendingPrepare
                       : activeQuantity;

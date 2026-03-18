@@ -26,6 +26,9 @@ interface CancelOrderItemSelection {
   status: string;
   description_snapshot: string;
   unit_price: number;
+  quantity_cancelled_pending?: number;
+  quantity_cancelled_ready?: number;
+  quantity_cancelled_dispatched?: number;
 }
 
 interface CancelOrderParams {
@@ -41,7 +44,12 @@ function isMissingRelationError(error: unknown, relationName: string) {
   const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: string }).code) : "";
   const message = typeof error === "object" && error !== null && "message" in error ? String((error as { message?: string }).message) : "";
 
-  return code === "PGRST205" || message.includes(`Could not find the table 'public.${relationName}'`);
+  return (
+    code === "PGRST205" ||
+    code === "PGRST204" ||
+    message.includes(`Could not find the table 'public.${relationName}'`) ||
+    message.includes(`Could not find the '${"branch_id"}' column of '${relationName}'`)
+  );
 }
 
 function applyCancellationToOrderCache(
@@ -94,11 +102,13 @@ export function useCancellation() {
   ) => {
     if (!activeBranchId) return;
 
-    const dispatchedSelections = selections.filter((item) => item.status === "DISPATCHED" && item.quantity_cancelled > 0);
-    const sentSelections = selections.filter((item) => item.status === "SENT" && item.quantity_cancelled > 0);
+    const dispatchedSelections = selections.filter((item) => (item.quantity_cancelled_dispatched ?? 0) > 0);
+    const sentSelections = selections.filter(
+      (item) => ((item.quantity_cancelled_pending ?? 0) + (item.quantity_cancelled_ready ?? 0)) > 0,
+    );
 
     for (const item of dispatchedSelections) {
-      const amount = Math.round(item.quantity_cancelled * item.unit_price * 100) / 100;
+      const amount = Math.round((item.quantity_cancelled_dispatched ?? 0) * item.unit_price * 100) / 100;
       try {
         await recordOperationalLoss(orderId, item.order_item_id, amount, reason, userId, activeBranchId);
       } catch (error) {
@@ -251,6 +261,9 @@ export function useCancellation() {
         selections: (cancellationType === "total" ? items : selectedItems).map((item) => ({
           order_item_id: item.order_item_id,
           quantity_cancelled: item.quantity_cancelled,
+          quantity_cancelled_pending: item.quantity_cancelled_pending,
+          quantity_cancelled_ready: item.quantity_cancelled_ready,
+          quantity_cancelled_dispatched: item.quantity_cancelled_dispatched,
         })),
         cancellationType,
       };
