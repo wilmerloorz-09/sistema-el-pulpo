@@ -6,7 +6,6 @@ import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye, Ban } fr
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 const CARD_SUMMARY_LIMITS = {
-  maxItems: 3,
   maxModifiersPerItem: 2,
   maxModifiersTotal: 4,
 } as const;
@@ -43,15 +42,9 @@ function formatEventTimeWithLabel(iso: string | null | undefined): string {
 function buildCardSummary(items: OrderItemSummary[]) {
   const activeItems = items.filter((item) => item.status !== "DRAFT");
   const visibleItems: CardItemSummary[] = [];
-  let hiddenItemsCount = 0;
   let remainingModifierBudget = CARD_SUMMARY_LIMITS.maxModifiersTotal;
 
   for (const item of activeItems) {
-    if (visibleItems.length >= CARD_SUMMARY_LIMITS.maxItems) {
-      hiddenItemsCount += 1;
-      continue;
-    }
-
     const validModifiers = (item.modifiers ?? []).filter(
       (modifier) => String(modifier.description ?? "").trim().length > 0,
     );
@@ -71,7 +64,7 @@ function buildCardSummary(items: OrderItemSummary[]) {
     });
   }
 
-  return { visibleItems, hiddenItemsCount };
+  return { visibleItems };
 }
 
 interface OrderCardBaseProps {
@@ -99,7 +92,7 @@ export function OrderCardBase({
 }: OrderCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
-  const { visibleItems, hiddenItemsCount } = buildCardSummary(order.items ?? []);
+  const { visibleItems } = buildCardSummary(order.items ?? []);
   const isTakeout = order.order_type === "TAKEOUT";
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
@@ -161,7 +154,7 @@ export function OrderCardBase({
         </div>
       )}
 
-      <div className="px-4 py-3">
+      <div className="max-h-[19rem] overflow-y-auto px-4 py-3 pr-3">
         <div className="space-y-3">
           {visibleItems.map((item) => (
             <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
@@ -206,12 +199,6 @@ export function OrderCardBase({
               </span>
             </div>
           ))}
-
-          {hiddenItemsCount > 0 && (
-            <div className="rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-              +{hiddenItemsCount} item{hiddenItemsCount !== 1 ? "s" : ""} mas
-            </div>
-          )}
         </div>
       </div>
 

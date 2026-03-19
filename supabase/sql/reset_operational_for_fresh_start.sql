@@ -105,3 +105,4 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+

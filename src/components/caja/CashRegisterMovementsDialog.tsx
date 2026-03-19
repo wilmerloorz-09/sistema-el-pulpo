@@ -40,6 +40,7 @@ interface CashRegisterMovementsListProps {
   loading?: boolean;
   emptyMessage?: string;
   className?: string;
+  compact?: boolean;
 }
 
 interface CashRegisterMovementsDialogProps {
@@ -135,26 +136,26 @@ function DenominationEditorSection({
   onChange: (denominationId: string, nextQty: number) => void;
 }) {
   return (
-    <div className={cn("rounded-2xl border p-3 shadow-sm", accentClasses.border, accentClasses.background)}>
-      <div className="mb-3">
+    <div className={cn("rounded-xl border p-2.5 shadow-sm sm:rounded-2xl sm:p-3", accentClasses.border, accentClasses.background)}>
+      <div className="mb-2.5">
         <p className={cn("text-sm font-semibold", accentClasses.title)}>{title}</p>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5 sm:space-y-2">
         {options.map((option) => (
           <div
             key={option.id}
-            className="grid grid-cols-[auto_minmax(0,1fr)_64px_72px] items-center gap-2 rounded-xl border border-orange-200 bg-white px-2 py-2 sm:grid-cols-[auto_minmax(0,1fr)_72px_84px]"
+            className="grid grid-cols-[auto_minmax(0,1fr)_56px_64px] items-center gap-2 rounded-lg border border-orange-200 bg-white px-2 py-1.5 sm:grid-cols-[auto_minmax(0,1fr)_64px_72px] sm:rounded-xl sm:py-2"
           >
             <DenominationVisual
               label={option.label}
               imageUrl={option.imageUrl}
-              className="h-10 w-10 rounded-xl"
-              iconClassName="h-4 w-4"
+              className="h-9 w-9 rounded-lg sm:h-10 sm:w-10 sm:rounded-xl"
+              iconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
             />
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-foreground">{option.label}</p>
+              <p className="truncate text-xs font-semibold text-foreground sm:text-sm">{option.label}</p>
               <p className="text-xs font-medium text-red-600">${option.value.toFixed(2)}</p>
               {showAvailable && (
                 <p className="text-[11px] text-muted-foreground">Disponible: {option.currentQty}</p>
@@ -170,10 +171,10 @@ function DenominationEditorSection({
               max={enforceAvailable ? option.currentQty : undefined}
               onChange={(event) => onChange(option.id, Number.parseInt(event.target.value || "0", 10))}
               onBlur={(event) => onChange(option.id, Number.parseInt(event.target.value || "0", 10))}
-              className="h-9 rounded-lg px-2 text-center text-sm font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="h-8 rounded-lg px-1.5 text-center text-xs font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none sm:h-9 sm:px-2 sm:text-sm"
             />
 
-            <span className="text-right text-xs font-bold text-foreground sm:text-sm">
+            <span className="text-right text-[11px] font-bold text-foreground sm:text-sm">
               ${((counts[option.id] ?? 0) * option.value).toFixed(2)}
             </span>
           </div>
@@ -188,6 +189,7 @@ export function CashRegisterMovementsList({
   loading = false,
   emptyMessage = "Sin movimientos en este turno",
   className,
+  compact = false,
 }: CashRegisterMovementsListProps) {
   if (loading) {
     return (
@@ -211,7 +213,7 @@ export function CashRegisterMovementsList({
   }
 
   return (
-    <div className={cn("space-y-2", className)}>
+    <div className={cn(compact ? "max-h-[240px] space-y-1.5 overflow-y-auto pr-1" : "space-y-2", className)}>
       {movements.map((movement) => {
         const meta = movementMeta(movement.movementType);
         const movementDetail = movement.movementDetail;
@@ -219,10 +221,13 @@ export function CashRegisterMovementsList({
         return (
           <div
             key={movement.id}
-            className="rounded-2xl border border-orange-200 bg-white p-3 shadow-[0_16px_40px_-34px_rgba(249,115,22,0.5)]"
+            className={cn(
+              "border border-orange-200 bg-white shadow-[0_16px_40px_-34px_rgba(249,115,22,0.5)]",
+              compact ? "rounded-xl p-2.5" : "rounded-2xl p-3",
+            )}
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 space-y-2">
+            <div className={`flex flex-col ${compact ? "gap-1.5" : "gap-2"} sm:flex-row sm:items-start sm:justify-between`}>
+              <div className={cn("min-w-0", compact ? "space-y-1.5" : "space-y-2")}>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className={cn("font-semibold", meta.badgeClassName)}>
                     {meta.label}
@@ -234,7 +239,10 @@ export function CashRegisterMovementsList({
                 <p className="text-sm leading-6 text-foreground">{movement.reason}</p>
 
                 {movementDetail?.kind === "cambio_denominacion" && (
-                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                  <div className={cn(
+                    "border border-sky-200 bg-sky-50 text-xs text-sky-900",
+                    compact ? "rounded-lg px-2.5 py-1.5" : "rounded-xl px-3 py-2",
+                  )}>
                     <p>
                       <span className="font-semibold">Sale:</span> {formatBreakdown(movementDetail.from)}
                     </p>
@@ -245,7 +253,7 @@ export function CashRegisterMovementsList({
                 )}
               </div>
 
-              <div className="flex shrink-0 items-center justify-between gap-4 sm:flex-col sm:items-end">
+              <div className={cn("flex shrink-0 items-center justify-between sm:flex-col sm:items-end", compact ? "gap-3" : "gap-4")}>
                 <span className={cn("font-display text-lg font-black", meta.amountClassName)}>
                   ${movement.amount.toFixed(2)}
                 </span>
@@ -363,7 +371,7 @@ export default function CashRegisterMovementsDialog({
         }
       }}
     >
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-5xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] lg:max-w-6xl">
         <DialogHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -395,7 +403,7 @@ export default function CashRegisterMovementsDialog({
             </div>
           )}
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-3.5 lg:grid-cols-2">
             <DenominationEditorSection
               title="Se cambia desde caja"
               description="Estas denominaciones salen de la caja actual y deben existir disponibles."

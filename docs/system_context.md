@@ -173,6 +173,7 @@
   - `CancelOrderDialog` usa ancho real de telefono, botones apilados y cards de item con input abajo si falta ancho
   - `CashRegisterMovementsDialog` usa un solo flujo de registro, con historial oculto detras de `Ver historial`
   - `ShiftSummary` en `Caja` ya distribuye sus acciones en grilla tactil en telefono y modales con alto/scroll controlado
+- En tablet estos dialogos deben abrir mas anchos y aprovechar 2 columnas cuando ya hay espacio horizontal suficiente.
 - `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
@@ -184,6 +185,10 @@
   - `Recaudado`: cobrado total, efectivo, no efectivo y desglose por metodo
 - El desglose de `Resumen de Caja` puede sumar metodos no efectivos; la `Diferencia` solo representa dinero fisico en caja.
 - `Desglose de Caja` muestra denominaciones ordenadas por `display_order` ascendente y cada fila debe mostrar solo imagen, valor, cantidad y total.
+- `Resumen de Caja` ya no debe sentirse como una ventana alta y angosta:
+  - en desktop y tablet ancha se distribuye como tablero horizontal
+  - en tablet aprovecha 2 columnas antes de degradar a una sola
+  - historial y movimientos usan scroll interno, no scroll de toda la ventana
 - La anulacion de apertura de caja no anula el turno operativo: se registra como historial de apertura dentro del turno y la caja vuelve a estado limpio para poder abrirse de nuevo.
 - La opcion `Anular apertura` vive dentro del modal `Resumen` de `Caja`, nunca en el header principal ni en el sidebar.
 - Solo debe mostrarse a administrador general o supervisor de sucursal.
@@ -199,6 +204,10 @@
   - suma las denominaciones que ingresan
   - resta las denominaciones que salen
   - por eso `Desglose` y `Actual` deben reflejar el cambio inmediatamente.
+- Los cobros en efectivo nuevos tambien deben mover la composicion fisica real de caja:
+  - cada billete/moneda recibida entra como `PAYMENT_IN`
+  - cada billete/moneda entregada como cambio sale como `CHANGE_OUT`
+  - `Desglose` no debe quedarse igual que en la apertura si ya hubo cobros efectivos
 - Si una denominacion sale de caja durante el cambio, la cantidad ingresada no puede exceder el stock actual de esa denominacion en `cash_shift_denoms`.
 - Los movimientos deben aparecer tambien en `Resumen` del turno como parte del reporte operativo, sin mezclarse con `Diferencia`, `Apertura` o `Recaudado`.
 - En `PayableOrdersList`, la vista desktop usa dos columnas: izquierda con KPIs verticales y derecha con detalle operativo mas ancho.

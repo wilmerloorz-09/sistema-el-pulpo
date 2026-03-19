@@ -89,6 +89,7 @@ export default function PaymentDialog({
   const cashMethod = useMemo(() => getCashPaymentMethod(paymentMethods), [paymentMethods]);
 
   const [payQuantities, setPayQuantities] = useState<Record<string, number>>({});
+  const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplitDraft[]>([]);
   const [received, setReceived] = useState<Record<string, number>>({});
   const [cashDraftReceived, setCashDraftReceived] = useState<Record<string, number>>({});
@@ -110,6 +111,13 @@ export default function PaymentDialog({
     }
 
     setPayQuantities(nextQuantities);
+    setSelectedRows(
+      Object.fromEntries(
+        order.items
+          .filter((item) => item.quantity_pending > 0)
+          .map((item) => [item.id, true]),
+      ),
+    );
     setPaymentSplits(buildInitialPaymentSplits(paymentMethods, cashMethod?.id ?? null, defaultMethodId ?? null, initialTotal));
     setReceived({});
     setCashDraftReceived({});
@@ -119,8 +127,8 @@ export default function PaymentDialog({
   }, [order?.id, order?.items, defaultMethodId, cashMethod?.id, paymentMethods]);
 
   const selectedItems = useMemo(
-    () => unpaidItems.filter((item) => (payQuantities[item.id] ?? 0) > 0),
-    [unpaidItems, payQuantities],
+    () => unpaidItems.filter((item) => (selectedRows[item.id] ?? false) && (payQuantities[item.id] ?? 0) > 0),
+    [unpaidItems, payQuantities, selectedRows],
   );
 
   const selectedTotal = useMemo(
@@ -247,26 +255,58 @@ export default function PaymentDialog({
   const availableMethodIds = useMemo(() => new Set(paymentMethods.map((method) => method.id)), [paymentMethods]);
   const setItemQty = (itemId: string, qty: number, maxQty: number) => {
     const normalized = Number.isFinite(qty) ? Math.floor(qty) : 0;
+    const nextQty = clampQty(normalized, 0, maxQty);
     setPayQuantities((prev) => ({
       ...prev,
-      [itemId]: clampQty(normalized, 0, maxQty),
+      [itemId]: nextQty,
+    }));
+    setSelectedRows((prev) => ({
+      ...prev,
+      [itemId]: nextQty > 0,
     }));
   };
 
   const fillAllPending = () => {
     const next: Record<string, number> = {};
+    const nextSelected: Record<string, boolean> = {};
     for (const item of unpaidItems) {
       next[item.id] = item.quantity_pending;
+      nextSelected[item.id] = true;
     }
     setPayQuantities(next);
+    setSelectedRows(nextSelected);
   };
 
   const clearAllSelection = () => {
     const next: Record<string, number> = {};
+    const nextSelected: Record<string, boolean> = {};
     for (const item of unpaidItems) {
       next[item.id] = 0;
+      nextSelected[item.id] = false;
     }
     setPayQuantities(next);
+    setSelectedRows(nextSelected);
+  };
+
+  const toggleItemSelection = (itemId: string, checked: boolean, maxQty: number) => {
+    setSelectedRows((prev) => ({
+      ...prev,
+      [itemId]: checked,
+    }));
+
+    setPayQuantities((prev) => {
+      if (checked) {
+        return {
+          ...prev,
+          [itemId]: maxQty,
+        };
+      }
+
+      return {
+        ...prev,
+        [itemId]: 0,
+      };
+    });
   };
 
   const setSplitAmount = (splitId: string, amount: number) => {
@@ -558,14 +598,14 @@ export default function PaymentDialog({
 
   return (
     <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] flex-col overflow-hidden p-0 sm:max-h-[92vh] sm:max-w-6xl">
-        <DialogHeader className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
+      <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] flex-col overflow-hidden bg-white p-0 sm:max-h-[92vh] sm:max-w-7xl">
+        <DialogHeader className="shrink-0 border-b border-border bg-white px-4 py-3 sm:px-6">
           <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-xl">
             <span>
               {readOnly ? "Consulta de cobro" : "Cobrar"} {order?.order_code ?? `#${order?.order_number}`}
             </span>
             {order?.order_type === "DINE_IN" && order?.table_name && (
-              <span className="text-sm font-normal text-muted-foreground">- {order.table_name}</span>
+              <span className="text-lg font-semibold text-muted-foreground">- {order.table_name}</span>
             )}
             {order?.split_code && <span className="text-sm font-normal text-muted-foreground">({order.split_code})</span>}
           </DialogTitle>
@@ -573,7 +613,7 @@ export default function PaymentDialog({
 
         {order && (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-6 sm:py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-white px-3 py-3 sm:px-6 sm:py-4">
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)]">
                 <div className="space-y-4">
                   {readOnly && (
@@ -582,8 +622,8 @@ export default function PaymentDialog({
                     </div>
                   )}
 
-                  <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <section className="rounded-2xl border border-border bg-card p-3 shadow-sm sm:p-4">
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-foreground">Seleccion de cantidades a cobrar</p>
                         <p className="text-xs text-muted-foreground">
@@ -603,84 +643,99 @@ export default function PaymentDialog({
                     </div>
 
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <MetricCard
-                        title="Items pendientes"
-                        value={String(unpaidItems.length)}
-                        description="Lineas pendientes por cobrar"
-                        icon={<Clock3 className="h-5 w-5" />}
-                        tone="sky"
-                        className="py-2.5"
-                      />
-                      <MetricCard
-                        title="Items seleccionados"
-                        value={String(selectedItems.length)}
-                        description="Lineas incluidas en esta operacion"
-                        icon={<CreditCard className="h-5 w-5" />}
-                        tone="violet"
-                        className="py-2.5"
-                      />
-                      <MetricCard
-                        title="Total a cobrar ahora"
-                        value={`$${selectedTotal.toFixed(2)}`}
-                        description="Monto actual de esta operacion"
-                        icon={<BadgeDollarSign className="h-5 w-5" />}
-                        tone="emerald"
-                        className="py-2.5"
-                      />
+                      <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-sky-700">Items pendientes</p>
+                            <p className="mt-0.5 text-lg font-black leading-none text-sky-900">{unpaidItems.length}</p>
+                          </div>
+                          <div className="rounded-lg bg-white p-1 text-sky-600 shadow-sm">
+                            <Clock3 className="h-3 w-3" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-violet-700">Seleccionados</p>
+                            <p className="mt-0.5 text-lg font-black leading-none text-violet-900">{selectedItems.length}</p>
+                          </div>
+                          <div className="rounded-lg bg-white p-1 text-violet-600 shadow-sm">
+                            <CreditCard className="h-3 w-3" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-emerald-700">Total actual</p>
+                            <p className="mt-0.5 text-lg font-black leading-none text-emerald-900">${selectedTotal.toFixed(2)}</p>
+                          </div>
+                          <div className="rounded-lg bg-white p-1 text-emerald-600 shadow-sm">
+                            <BadgeDollarSign className="h-3 w-3" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="mt-4 space-y-2">
-                      {unpaidItems.map((item) => {
-                        const qtyToPay = payQuantities[item.id] ?? 0;
-                        const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
+                    <div className="mt-3 max-h-[46dvh] overflow-y-auto pr-1 sm:max-h-[48vh]">
+                      <div className="min-w-[600px]">
+                        <div className="sticky top-0 z-10 mb-1 grid grid-cols-[28px_minmax(0,2.05fr)_80px_64px_82px_80px] gap-2 rounded-xl border border-border bg-white/95 px-3 py-2 backdrop-blur">
+                          <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Sel.</p>
+                          <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Producto</p>
+                          <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">
+                            <span className="block">Precio</span>
+                            <span className="block">unitario</span>
+                          </p>
+                          <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Pendiente</p>
+                          <p className="text-center text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">
+                            <span className="block">Cobrar</span>
+                            <span className="block">ahora</span>
+                          </p>
+                          <p className="text-center text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Subtotal</p>
+                        </div>
 
-                        return (
-                          <div
-                            key={item.id}
-                            className={cn(
-                              "rounded-2xl border p-3 transition-colors",
-                              qtyToPay > 0 ? "border-primary/40 bg-primary/5 shadow-sm" : "border-border bg-background",
-                            )}
-                          >
-                            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-foreground">{item.description_snapshot}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  Despachado: {item.quantity} - Pagado: {item.quantity_paid} - Pendiente: {item.quantity_pending}
-                                </p>
-                              </div>
+                        <div className="space-y-1.5">
+                          {unpaidItems.map((item) => {
+                            const qtyToPay = payQuantities[item.id] ?? 0;
+                            const isSelected = selectedRows[item.id] ?? false;
+                            const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
 
-                              <div className="grid grid-cols-2 gap-2 xl:w-[420px]">
-                                <div className="rounded-xl bg-muted/50 p-2">
-                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Precio unit.</p>
-                                  <p className="mt-1 text-sm font-semibold text-foreground">${item.unit_price.toFixed(2)}</p>
-                                </div>
-                                <div className="rounded-xl bg-muted/50 p-2">
-                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Pendiente</p>
-                                  <p className="mt-1 text-sm font-semibold text-foreground">{item.quantity_pending}</p>
-                                </div>
-                                <div className="rounded-xl border border-border p-2">
-                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cobrar ahora</p>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    max={item.quantity_pending}
-                                    step={1}
-                                    value={qtyToPay}
-                                    onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
-                                    className="mt-1 h-9"
+                            return (
+                              <div
+                                key={item.id}
+                                className={cn(
+                                  "grid grid-cols-[28px_minmax(0,2.05fr)_80px_64px_82px_80px] items-center gap-2 rounded-lg px-3 py-2 transition-colors",
+                                  isSelected && qtyToPay > 0 ? "bg-primary/5" : "bg-transparent",
+                                )}
+                              >
+                                <div className="flex items-center justify-center">
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={(checked) => toggleItemSelection(item.id, checked === true, item.quantity_pending)}
                                     disabled={readOnly}
+                                    className="h-4 w-4 rounded-md"
                                   />
                                 </div>
-                                <div className="rounded-xl bg-muted/50 p-2">
-                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Subtotal</p>
-                                  <p className="mt-1 text-sm font-semibold text-foreground">${lineSubtotal.toFixed(2)}</p>
-                                </div>
+                                <p className="truncate text-xs font-semibold leading-tight text-foreground">{item.description_snapshot}</p>
+                                <p className="text-xs font-semibold leading-none text-foreground">${item.unit_price.toFixed(2)}</p>
+                                <p className="text-center text-xs font-semibold leading-none text-foreground">{item.quantity_pending}</p>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={item.quantity_pending}
+                                  step={1}
+                                  value={qtyToPay}
+                                  onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
+                                  className="h-8 w-[72px] text-xs"
+                                  disabled={readOnly}
+                                />
+                                <p className="text-right text-xs font-semibold leading-none text-foreground">${lineSubtotal.toFixed(2)}</p>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                            );
+                          })}
+                        </div>
+                      </div>
 
                       {paidItems.length > 0 && (
                         <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-3">
@@ -785,40 +840,49 @@ export default function PaymentDialog({
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-border bg-background/95 px-3 py-4 backdrop-blur sm:px-6">
+            <div className="shrink-0 border-t border-border bg-white px-3 py-3 sm:px-6">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
-                    <MetricCard
-                      title="Total seleccionado"
-                      value={`$${selectedTotal.toFixed(2)}`}
-                      description="Lo elegido para cobrar"
-                      icon={<CreditCard className="h-5 w-5" />}
-                      tone="sky"
-                      className="py-2.5"
-                    />
-                    <MetricCard
-                      title="Total recibido"
-                      value={`$${receivedSplitTotal.toFixed(2)}`}
-                      description="Monto recibido por metodos"
-                      icon={<Wallet className="h-5 w-5" />}
-                      tone="violet"
-                      className="py-2.5"
-                    />
-                    <MetricCard
-                      title={changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
-                      value={`$${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}`}
-                      description={
+                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-[620px]">
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-sky-700">Total seleccionado</p>
+                      <p className="mt-0.5 text-lg font-black leading-none text-sky-900">${selectedTotal.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-violet-700">Total recibido</p>
+                      <p className="mt-0.5 text-lg font-black leading-none text-violet-900">${receivedSplitTotal.toFixed(2)}</p>
+                    </div>
+                    <div
+                      className={cn(
+                        "rounded-xl border px-3 py-1.5",
                         changeAmount > 0
-                          ? "Excedente a devolver"
+                          ? "border-emerald-200 bg-emerald-50"
                           : shortageAmount > 0
-                            ? "Monto faltante por recibir"
-                            : "Cobro balanceado"
-                      }
-                      icon={changeAmount > 0 ? <BadgeDollarSign className="h-5 w-5" /> : <ArrowDown className="h-5 w-5" />}
-                      tone={changeAmount > 0 ? "emerald" : shortageAmount > 0 ? "amber" : "sky"}
-                      className="py-2.5"
-                    />
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-sky-200 bg-sky-50",
+                      )}
+                    >
+                      <p className={cn(
+                        "text-[10px] uppercase tracking-wide",
+                        changeAmount > 0
+                          ? "text-emerald-700"
+                          : shortageAmount > 0
+                            ? "text-amber-700"
+                            : "text-sky-700",
+                      )}>
+                        {changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
+                      </p>
+                      <p className={cn(
+                        "mt-0.5 text-lg font-black leading-none",
+                        changeAmount > 0
+                          ? "text-emerald-900"
+                          : shortageAmount > 0
+                            ? "text-amber-900"
+                            : "text-sky-900",
+                      )}>
+                        ${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}
+                      </p>
+                    </div>
                   </div>
 
                   {!readOnly ? (

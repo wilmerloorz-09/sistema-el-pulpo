@@ -173,6 +173,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - para `cambio_denominacion` exige detalle origen/destino que cuadre exactamente
   - las denominaciones que salen de caja deben existir con stock suficiente en `cash_shift_denoms.qty_current`
   - suma denominaciones de entrada y resta denominaciones de salida sobre `cash_shift_denoms.qty_current`
+- Los cobros en efectivo ya no deben depender de un `PAYMENT_IN` generico sin denominacion:
+  - cada billete/moneda recibida y cada denominacion de cambio deben registrarse con `denomination_id`
+  - ese registro debe mover `cash_shift_denoms.qty_current`
+  - `Desglose de Caja` debe reconstruirse desde esos valores persistidos
 - `list_shift_users_for_branch(branch_id)`
   - devuelve los usuarios activos de la sucursal con su estado habilitado en el turno actual
 - `set_shift_user_enabled(shift_id, user_id, is_enabled)`
@@ -320,6 +324,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - recrea `get_order_operational_snapshot` con cantidades despachadas disponibles
   - ajusta `recompute_order_operational_state`
   - extiende `cancel_order_quantities` para cancelar tambien cantidades despachadas no pagadas
+- `supabase/migrations/20260318110000_register_cash_movement_operational_rpc.sql`
+  - agrega RPC operacional segura para registrar movimientos de caja sin depender de insert directo bloqueado por RLS
+- `supabase/migrations/20260318123000_apply_cash_payment_denoms_via_cash_movements.sql`
+  - hace que cobros en efectivo y cambios entregados muevan `cash_shift_denoms.qty_current` via `cash_movements`
+  - deja trazabilidad por `denomination_id`
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

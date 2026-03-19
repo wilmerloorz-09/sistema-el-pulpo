@@ -12,6 +12,7 @@ interface DispatchCardBaseProps {
   showEyeIcon?: boolean;
   onEyeClick?: () => void;
   readOnly?: boolean;
+  expanded?: boolean;
 }
 
 function useElapsed(since: string | null | undefined) {
@@ -71,6 +72,7 @@ export function DispatchCardBase({
   showEyeIcon = false,
   onEyeClick,
   readOnly = false,
+  expanded = false,
 }: DispatchCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.updated_at;
   const { elapsed } = useElapsed(since);
@@ -89,8 +91,6 @@ export function DispatchCardBase({
   const previewableItems = order.items.filter(
     (item) => item.quantity_pending_prepare > 0 || item.quantity_ready_available > 0 || item.quantity_dispatched > 0,
   );
-  const previewItems = previewableItems.slice(0, 3);
-  const hiddenCount = Math.max(0, previewableItems.length - previewItems.length);
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
 
   const summaryParts: string[] = [];
@@ -103,6 +103,7 @@ export function DispatchCardBase({
     <div
       className={cn(
         "flex self-start flex-col overflow-hidden rounded-2xl border-2 transition-colors",
+        expanded ? "min-h-[36rem]" : "",
         isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
@@ -147,30 +148,30 @@ export function DispatchCardBase({
         </div>
       </div>
 
-      <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">{summaryText}</div>
+      <div className={cn("border-b border-border text-muted-foreground", expanded ? "px-5 py-3 text-sm" : "px-4 py-2 text-xs")}>{summaryText}</div>
 
-      <div className="space-y-2 px-4 py-3">
-        {previewItems.map((item) => (
-          <div key={item.id} className="rounded-xl border border-border px-3 py-2 text-sm">
+      <div className={cn("space-y-2 overflow-y-auto", expanded ? "max-h-[28rem] px-5 py-4 pr-4" : "max-h-[19rem] px-4 py-3 pr-3")}>
+        {previewableItems.map((item) => (
+          <div key={item.id} className={cn("rounded-xl border border-border", expanded ? "px-4 py-3 text-base" : "px-3 py-2 text-sm")}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
-                  <p className="truncate font-medium text-foreground">{item.description_snapshot}</p>
+                  <p className={cn("font-medium text-foreground", expanded ? "text-[15px]" : "truncate")}>{item.description_snapshot}</p>
                 </div>
                 {item.modifiers.length > 0 && (
-                  <div className="mt-1 flex flex-col gap-1 pl-[18px]">
+                  <div className={cn("mt-1 flex flex-col gap-1", expanded ? "pl-[20px]" : "pl-[18px]")}>
                     {item.modifiers.filter((mod) => String(mod.description ?? "").trim().length > 0).map((mod, idx) => (
                       <p
                         key={idx}
-                        className="w-fit rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700"
+                        className={cn("w-fit rounded-md border border-red-200 bg-red-50 px-2 py-1 font-bold text-red-700", expanded ? "text-sm" : "text-xs")}
                       >
                         - {mod.description}
                       </p>
                     ))}
                   </div>
                 )}
-                <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px]">
+                <div className={cn("mt-2 flex flex-wrap gap-1.5", expanded ? "pl-[20px]" : "pl-[18px]")}>
                   {item.quantity_pending_prepare > 0 ? (
                     <StageChip label="Pend" quantity={item.quantity_pending_prepare} tone="pending" />
                   ) : null}
@@ -182,33 +183,27 @@ export function DispatchCardBase({
                   ) : null}
                 </div>
               </div>
-              <span className="rounded-md bg-primary/12 px-2.5 py-1 text-sm font-bold text-primary">
+              <span className={cn("rounded-md bg-primary/12 font-bold text-primary", expanded ? "px-3 py-1.5 text-base" : "px-2.5 py-1 text-sm")}>
                 x{item.quantity_ordered}
               </span>
             </div>
           </div>
         ))}
-
-        {hiddenCount > 0 && (
-          <div className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
-            +{hiddenCount} item{hiddenCount !== 1 ? "s" : ""} mas
-          </div>
-        )}
       </div>
 
       {(canMarkReady || canDispatch || readOnly) && (
-        <div className="space-y-2 border-t border-border bg-muted/30 px-4 py-3">
-          {readOnly ? <div className="text-center text-xs text-muted-foreground">Modo consulta: no puedes ejecutar acciones de despacho.</div> : null}
+        <div className={cn("space-y-2 border-t border-border bg-muted/30", expanded ? "mt-auto px-5 py-4" : "px-4 py-3")}>
+          {readOnly ? <div className={cn("text-center text-muted-foreground", expanded ? "text-sm" : "text-xs")}>Modo consulta: no puedes ejecutar acciones de despacho.</div> : null}
 
           {!readOnly && canMarkReady && (
-            <Button onClick={() => onOpenReadyDialog(order)} variant="info" className="w-full gap-2" size="sm">
+            <Button onClick={() => onOpenReadyDialog(order)} variant="info" className="w-full gap-2" size={expanded ? "default" : "sm"}>
               <CheckCircle2 className="h-4 w-4" />
               Marcar listo
             </Button>
           )}
 
           {!readOnly && canDispatch && (
-            <Button onClick={() => onOpenDispatchDialog(order)} variant="success" className="w-full gap-2" size="sm">
+            <Button onClick={() => onOpenDispatchDialog(order)} variant="success" className="w-full gap-2" size={expanded ? "default" : "sm"}>
               <Truck className="h-4 w-4" />
               Despachar
             </Button>

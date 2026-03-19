@@ -7,6 +7,7 @@ interface Props {
   title?: string;
   description?: string;
   className?: string;
+  compact?: boolean;
 }
 
 function formatDateTime(value: string | null) {
@@ -37,11 +38,12 @@ export default function CashRegisterOpeningHistory({
   title = "Historial de aperturas de caja",
   description = "Aqui ves las aperturas registradas en este turno.",
   className = "",
+  compact = false,
 }: Props) {
   if (entries.length === 0) return null;
 
   return (
-    <div className={`space-y-3 rounded-2xl border border-rose-100 bg-white/85 p-3 shadow-sm ${className}`.trim()}>
+    <div className={`${compact ? "space-y-2 rounded-xl border border-rose-100 bg-white/90 p-2.5 shadow-sm" : "space-y-3 rounded-2xl border border-rose-100 bg-white/85 p-3 shadow-sm"} ${className}`.trim()}>
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-foreground">{title}</p>
@@ -50,11 +52,11 @@ export default function CashRegisterOpeningHistory({
         <span className="text-xs text-muted-foreground">{entries.length} registro(s)</span>
       </div>
 
-      <div className="space-y-2">
+      <div className={compact ? "max-h-[240px] space-y-1.5 overflow-y-auto pr-1" : "space-y-2"}>
         {entries.map((entry) => (
           <div
             key={entry.id}
-            className={`rounded-2xl border px-3 py-3 ${
+            className={`${compact ? "rounded-xl border px-2.5 py-2" : "rounded-2xl border px-3 py-3"} ${
               entry.status === "anulada"
                 ? "border-rose-200 bg-gradient-to-r from-white via-rose-50 to-orange-50"
                 : entry.status === "abierta"
@@ -62,7 +64,7 @@ export default function CashRegisterOpeningHistory({
                   : "border-slate-200 bg-gradient-to-r from-white via-slate-50 to-slate-100"
             }`}
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className={`flex flex-col ${compact ? "gap-1.5" : "gap-2"} sm:flex-row sm:items-start sm:justify-between`}>
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   {statusBadge(entry.status)}
@@ -83,14 +85,14 @@ export default function CashRegisterOpeningHistory({
                 </p>
               </div>
 
-              <div className="rounded-xl border border-white/60 bg-white/80 px-3 py-2 text-right shadow-sm">
+              <div className={`${compact ? "rounded-lg border border-white/70 bg-white/90 px-2.5 py-1.5 text-right shadow-sm" : "rounded-xl border border-white/60 bg-white/80 px-3 py-2 text-right shadow-sm"}`}>
                 <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Monto inicial</p>
                 <p className="font-display text-base font-black text-foreground">${entry.initial_total.toFixed(2)}</p>
               </div>
             </div>
 
             {entry.status === "anulada" && (
-              <div className="mt-3 space-y-2 rounded-xl border border-rose-200 bg-rose-50/80 p-3">
+              <div className={`${compact ? "mt-2 space-y-1.5 rounded-lg border border-rose-200 bg-rose-50/80 p-2.5" : "mt-3 space-y-2 rounded-xl border border-rose-200 bg-rose-50/80 p-3"}`}>
                 <p className="flex items-center gap-2 text-sm font-semibold text-rose-700">
                   <ShieldAlert className="h-4 w-4" />
                   Apertura anulada

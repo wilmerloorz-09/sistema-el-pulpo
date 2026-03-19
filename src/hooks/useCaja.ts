@@ -305,6 +305,16 @@ function buildMarker(prefix: string, userId: string, reason: string): string {
   return `${prefix}:${new Date().toISOString()}:${userId}:${encodedReason}`;
 }
 
+function isMissingRpcSignature(error: any, functionName: string) {
+  const message = String(error?.message ?? "");
+  return message.includes("schema cache") || message.includes(`Could not find the function public.${functionName}`);
+}
+
+function isRowLevelSecurityError(error: any) {
+  const message = String(error?.message ?? "");
+  return message.toLowerCase().includes("row-level security");
+}
+
 type PaymentItemRow = {
   id: string;
   payment_id: string;
@@ -517,10 +527,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (error) throw error;
       if (!data) return null;
 
-      const denoms = await dbSelect<any>("cash_shift_denoms", {
-        select: "id, denomination_id, qty_initial, qty_current",
-        filters: [{ column: "shift_id", op: "eq", value: data.id }],
-      });
+      const { data: denoms, error: denomsError } = await supabase
+        .from("cash_shift_denoms")
+        .select("id, denomination_id, qty_initial, qty_current")
+        .eq("shift_id", data.id);
+      if (denomsError) throw denomsError;
 
       const allDenoms = denomsQuery.data ?? [];
       const enriched: ShiftDenom[] = (denoms ?? []).map((d: any) => {
@@ -1288,10 +1299,57 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const paymentGroupId = generateUUID();
       const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
       let anchorPaymentId = null;
+      let cashPaymentId: string | null = null;
+
+      const insertCashMovementCompat = async (payload: {
+        shift_id: string;
+        movement_type: "OPENING" | "PAYMENT_IN" | "CHANGE_OUT";
+        qty_delta: number;
+        payment_id?: string | null;
+        denomination_id?: string | null;
+        created_at?: string | null;
+      }) => {
+        const { error: rpcError } = await supabase.rpc("registrar_movimiento_caja_operativo" as never, {
+          p_shift_id: payload.shift_id,
+          p_movement_type: payload.movement_type,
+          p_qty_delta: payload.qty_delta,
+          p_payment_id: payload.payment_id ?? null,
+          p_denomination_id: payload.denomination_id ?? null,
+          p_created_at: payload.created_at ?? null,
+        });
+
+        if (!rpcError) return;
+
+        if (!isMissingRpcSignature(rpcError, "registrar_movimiento_caja_operativo")) {
+          throw rpcError;
+        }
+
+        try {
+          await dbInsert("cash_movements", {
+            id: generateUUID(),
+            shift_id: payload.shift_id,
+            payment_id: payload.payment_id ?? null,
+            denomination_id: payload.denomination_id ?? null,
+            movement_type: payload.movement_type,
+            qty_delta: payload.qty_delta,
+            created_at: payload.created_at ?? now,
+          });
+        } catch (legacyInsertError: any) {
+          if (isRowLevelSecurityError(legacyInsertError)) {
+            throw new Error(
+              "La base de datos aun no esta alineada para registrar movimientos de cobro en caja. Aplica la migracion mas reciente de cash_movements."
+            );
+          }
+          throw legacyInsertError;
+        }
+      };
 
       for (const [index, paymentSplit] of paymentSplits.entries()) {
         const paymentId = generateUUID();
         if (index === 0) anchorPaymentId = paymentId;
+        if (cashMethodId && paymentSplit.methodId === cashMethodId) {
+          cashPaymentId = paymentId;
+        }
 
         await dbInsert("payments", {
           id: paymentId,
@@ -1300,15 +1358,6 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           amount: paymentSplit.amount,
           notes: `GROUP:${paymentGroupId}|ITEMS_ANCHOR:${index === 0 ? 1 : 0}|TENDERED:${(tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount).toFixed(2)}|APPLIED:${Number(paymentSplit.amount).toFixed(2)}`,
           created_by: user.id,
-          created_at: now,
-        });
-
-        await dbInsert("cash_movements", {
-          id: generateUUID(),
-          shift_id: shift.id,
-          payment_id: paymentId,
-          movement_type: "PAYMENT_IN",
-          qty_delta: 1,
           created_at: now,
         });
       }
@@ -1327,32 +1376,59 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         });
       }
 
-      const denomChanges = {};
-      for (const rd of effectiveCashReceivedDenoms) {
-        denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
-      }
-      for (const cd of effectiveCashChangeDenoms) {
-        denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
-      }
-      for (const [denomId, delta] of Object.entries(denomChanges)) {
-        if (delta === 0) continue;
-        const existing = shift.denoms.find((d) => d.denomination_id === denomId);
-        if (existing) {
-          await dbUpdate("cash_shift_denoms", existing.id, {
-            qty_current: existing.qty_current + delta,
+      const denomChanges: Record<string, number> = {};
+      if (cashPaymentId) {
+        for (const rd of effectiveCashReceivedDenoms) {
+          denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
+          await insertCashMovementCompat({
+            shift_id: shift.id,
+            payment_id: cashPaymentId,
+            denomination_id: rd.denomination_id,
+            movement_type: "PAYMENT_IN",
+            qty_delta: rd.qty,
+            created_at: now,
           });
+        }
+
+        for (const cd of effectiveCashChangeDenoms) {
+          denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
+          await insertCashMovementCompat({
+            shift_id: shift.id,
+            denomination_id: cd.denomination_id,
+            movement_type: "CHANGE_OUT",
+            qty_delta: cd.qty,
+            created_at: now,
+          });
+        }
+      } else {
+        for (const rd of effectiveCashReceivedDenoms) {
+          denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
+        }
+        for (const cd of effectiveCashChangeDenoms) {
+          denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
         }
       }
 
-      for (const cd of effectiveCashChangeDenoms) {
-        await dbInsert("cash_movements", {
-          id: generateUUID(),
-          shift_id: shift.id,
-          denomination_id: cd.denomination_id,
-          movement_type: "CHANGE_OUT",
-          qty_delta: cd.qty,
-          created_at: now,
-        });
+      const { data: refreshedShiftDenoms, error: refreshedShiftDenomsError } = await supabase
+        .from("cash_shift_denoms")
+        .select("denomination_id, qty_current")
+        .eq("shift_id", shift.id);
+      if (refreshedShiftDenomsError) throw refreshedShiftDenomsError;
+
+      const refreshedShiftDenomsMap = Object.fromEntries(
+        (refreshedShiftDenoms ?? []).map((row) => [
+          row.denomination_id,
+          Number(row.qty_current ?? 0),
+        ]),
+      );
+
+      const refreshMatchesExpected = Object.entries(denomChanges).every(([denomId, delta]) => {
+        const currentQty = shift.denoms.find((denom) => denom.denomination_id === denomId)?.qty_current ?? 0;
+        return refreshedShiftDenomsMap[denomId] === currentQty + delta;
+      });
+
+      if (Object.keys(denomChanges).length > 0 && !refreshMatchesExpected) {
+        throw new Error("La caja no pudo actualizar sus denominaciones fisicas. Verifica la migracion mas reciente de movimientos de caja.");
       }
 
       const { data: orderItemsAfter, error: orderItemsAfterError } = await supabase
@@ -1422,15 +1498,50 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const nextStatus = orderData?.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : operationalStatusAfterPayment;
         await dbUpdate("orders", orderId, { status: nextStatus, paid_at: null });
       }
+
+      return {
+        denomChanges,
+        refreshedShiftDenoms: (refreshedShiftDenoms ?? []).map((row) => ({
+          denomination_id: row.denomination_id,
+          qty_current: Number(row.qty_current ?? 0),
+        })),
+      };
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      qc.invalidateQueries({ queryKey: ["current-shift"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    onSuccess: async (result) => {
+      if (activeBranchId && result?.refreshedShiftDenoms) {
+        const refreshedQtyMap = Object.fromEntries(
+          result.refreshedShiftDenoms.map((row) => [row.denomination_id, row.qty_current]),
+        );
+        qc.setQueryData(["current-shift", activeBranchId], (current: CashShift | null | undefined) => {
+          if (!current) return current;
+
+          return {
+            ...current,
+            denoms: current.denoms.map((denom) => ({
+              ...denom,
+              qty_current:
+                refreshedQtyMap[denom.denomination_id] ?? Number(denom.qty_current ?? 0),
+            })),
+          };
+        });
+      }
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["current-shift"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
+      ]);
+
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ["payable-orders"], exact: false, type: "active" }),
+        qc.refetchQueries({ queryKey: ["current-shift"], exact: false, type: "active" }),
+        qc.refetchQueries({ queryKey: ["orders"], exact: false, type: "active" }),
+      ]);
+
       toast.success("Pago registrado");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1748,7 +1859,19 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         p_motivo: reason,
         p_detail: detail ?? null,
       } as never);
-      if (error) throw error;
+      if (!error) return;
+
+      if (!isMissingRpcSignature(error, "registrar_movimiento_caja")) {
+        throw error;
+      }
+
+      const { error: legacyError } = await supabase.rpc("registrar_movimiento_caja" as never, {
+        p_turno_id: shift.id,
+        p_tipo: type,
+        p_monto: amount,
+        p_motivo: reason,
+      } as never);
+      if (legacyError) throw legacyError;
     },
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: ["cash-register-movements"] });

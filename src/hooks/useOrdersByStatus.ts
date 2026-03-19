@@ -17,6 +17,23 @@ export interface OrderItemSummary {
   item_note?: string | null;
 }
 
+function parsePaymentNotes(notes: string | null) {
+  const segments = String(notes ?? "")
+    .split("|")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  let reversed = false;
+  let voided = false;
+
+  for (const segment of segments) {
+    if (segment.startsWith("REVERSED:")) reversed = true;
+    if (segment.startsWith("VOIDED:")) voided = true;
+  }
+
+  return { reversed, voided };
+}
+
 export interface OrderSummary {
   id: string;
   order_number: number;
@@ -58,6 +75,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
         if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
         if (sentView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
+        if (paidView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID"] }];
         return [{ column: "status", op: "eq", value: status }];
       })();
 
@@ -171,8 +189,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         unit_price?: number;
         total: number;
         status: string;
+        paid_at?: string | null;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, item_note, quantity, unit_price, total, status",
+        select: "id, order_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
@@ -180,12 +199,47 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         readyMap,
         dispatchedTotalMap,
         dispatchedAvailableMap,
+        paidMap,
         cancelledPendingMap,
         cancelledReadyMap,
         cancelledDispatchedMap,
         cancelledTotalMap,
       } = await fetchOperationalMapsForOrders(orderIds);
       const itemIds = items.map((item) => item.id);
+      const paidQuantityByItem: Record<string, number> = {};
+
+      if (itemIds.length > 0) {
+        const { data: paymentItems, error: paymentItemsError } = await supabase
+          .from("payment_items")
+          .select("payment_id, order_item_id, quantity_paid")
+          .in("order_item_id", itemIds);
+        if (paymentItemsError) throw paymentItemsError;
+
+        const paymentIds = [...new Set((paymentItems ?? []).map((row) => row.payment_id).filter(Boolean))];
+        let blockedPaymentIds = new Set<string>();
+
+        if (paymentIds.length > 0) {
+          const { data: payments, error: paymentsError } = await supabase
+            .from("payments")
+            .select("id, notes")
+            .in("id", paymentIds);
+          if (paymentsError) throw paymentsError;
+
+          blockedPaymentIds = new Set(
+            (payments ?? [])
+              .filter((payment) => {
+                const meta = parsePaymentNotes(payment.notes);
+                return meta.reversed || meta.voided;
+              })
+              .map((payment) => payment.id),
+          );
+        }
+
+        for (const row of paymentItems ?? []) {
+          if (blockedPaymentIds.has(row.payment_id)) continue;
+          paidQuantityByItem[row.order_item_id] = (paidQuantityByItem[row.order_item_id] ?? 0) + Number(row.quantity_paid ?? 0);
+        }
+      }
 
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
@@ -234,18 +288,26 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               const dispatchedQuantity = dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable;
               const readyQuantity = quantities.quantityReadyAvailable;
               const pendingQuantity = quantities.quantityPendingPrepare;
+              const effectivePaidQuantity = Math.max(
+                0,
+                paidQuantityByItem[item.id] ??
+                  paidMap[item.id] ??
+                  (item.paid_at ? activeQuantity : 0),
+              );
+              const payableBaseQuantity =
+                order.order_type === "TAKEOUT"
+                  ? activeQuantity
+                  : Math.max(0, readyQuantity + dispatchedQuantity + pendingQuantity);
+              const paidDisplayQuantity = Math.max(0, Math.min(payableBaseQuantity, effectivePaidQuantity));
+              const unpaidDispatchedQuantity = Math.max(0, dispatchedQuantity - effectivePaidQuantity);
+              const paidAfterDispatched = Math.max(0, effectivePaidQuantity - dispatchedQuantity);
+              const unpaidReadyQuantity = Math.max(0, readyQuantity - paidAfterDispatched);
+              const paidAfterReady = Math.max(0, paidAfterDispatched - readyQuantity);
+              const unpaidPendingQuantity = Math.max(0, pendingQuantity - paidAfterReady);
+              const unpaidActiveQuantity = Math.max(0, activeQuantity - effectivePaidQuantity);
 
               const isTakeoutDispatchedOnCancelledTab =
                 cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
-
-              const shouldFallbackToOrderStage =
-                activeQuantity > 0 &&
-                !cancelledView &&
-                (
-                  (sentView && order.status === "SENT_TO_KITCHEN" && !!order.sent_to_kitchen_at && pendingQuantity <= 0) ||
-                  (readyView && order.status === "READY" && !!order.ready_at && readyQuantity <= 0) ||
-                  (dispatchedView && order.status === "KITCHEN_DISPATCHED" && !!order.dispatched_at && dispatchedQuantity <= 0)
-                );
 
               const pendingRequestedItems = pendingCancellationView
                 ? pendingCancellationItemsByOrder[order.id] ?? null
@@ -259,23 +321,19 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               const displayQuantity = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
-                  ? dispatchedQuantity
+                  ? unpaidDispatchedQuantity
                   : cancelledQuantity
                 : pendingCancellationView
-                  ? Math.max(0, Math.min(activeQuantity, pendingRequestedQuantity))
+                  ? Math.max(0, Math.min(unpaidActiveQuantity, pendingRequestedQuantity))
+                : paidView
+                  ? paidDisplayQuantity
                 : readyView
-                  ? shouldFallbackToOrderStage
-                    ? activeQuantity
-                    : readyQuantity
-                  : dispatchedView
-                    ? shouldFallbackToOrderStage
-                      ? activeQuantity
-                      : dispatchedQuantity
-                    : sentView
-                      ? shouldFallbackToOrderStage
-                        ? activeQuantity
-                        : pendingQuantity
-                      : activeQuantity;
+                  ? unpaidReadyQuantity
+                : dispatchedView
+                    ? unpaidDispatchedQuantity
+                  : sentView
+                      ? unpaidPendingQuantity
+                      : unpaidActiveQuantity;
 
               const effectiveStatus = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
@@ -283,9 +341,11 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
                   : "CANCELLED"
                 : pendingCancellationView
                   ? "PENDING_CANCELLATION"
+                : paidView
+                  ? "PAID"
                 : readyView
                   ? "READY"
-                  : dispatchedView
+                : dispatchedView
                     ? "DISPATCHED"
                     : sentView
                       ? "SENT"
@@ -316,7 +376,25 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               });
 
               const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-              if (activeQuantity <= 0) return null;
+              const dispatchedQuantity = dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable;
+              const readyQuantity = quantities.quantityReadyAvailable;
+              const pendingQuantity = quantities.quantityPendingPrepare;
+              const effectivePaidQuantity = Math.max(0, paidMap[item.id] ?? 0);
+              const unpaidDispatchedQuantity = Math.max(0, dispatchedQuantity - effectivePaidQuantity);
+              const paidAfterDispatched = Math.max(0, effectivePaidQuantity - dispatchedQuantity);
+              const unpaidReadyQuantity = Math.max(0, readyQuantity - paidAfterDispatched);
+              const paidAfterReady = Math.max(0, paidAfterDispatched - readyQuantity);
+              const unpaidPendingQuantity = Math.max(0, pendingQuantity - paidAfterReady);
+              const unpaidActiveQuantity = Math.max(0, activeQuantity - effectivePaidQuantity);
+              const fallbackQuantity = dispatchedView
+                ? unpaidDispatchedQuantity
+                : readyView
+                  ? unpaidReadyQuantity
+                  : sentView
+                    ? unpaidPendingQuantity
+                    : unpaidActiveQuantity;
+
+              if (fallbackQuantity <= 0) return null;
 
               const fallbackStatus = dispatchedView
                 ? "DISPATCHED"
@@ -328,9 +406,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               return {
                 ...item,
-                activeQuantity,
-                quantity: activeQuantity,
-                total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+                activeQuantity: unpaidActiveQuantity,
+                quantity: fallbackQuantity,
+                total: computeLineAmount(fallbackQuantity, Number(item.unit_price ?? 0)),
                 status: fallbackStatus,
               };
             })

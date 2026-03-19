@@ -118,6 +118,7 @@ export interface OperationalMaps {
   readyMap: Record<string, number>;
   dispatchedTotalMap: Record<string, number>;
   dispatchedAvailableMap: Record<string, number>;
+  paidMap: Record<string, number>;
   cancelledPendingMap: Record<string, number>;
   cancelledReadyMap: Record<string, number>;
   cancelledDispatchedMap: Record<string, number>;
@@ -130,6 +131,7 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       readyMap: {},
       dispatchedTotalMap: {},
       dispatchedAvailableMap: {},
+      paidMap: {},
       cancelledPendingMap: {},
       cancelledReadyMap: {},
       cancelledDispatchedMap: {},
@@ -154,6 +156,7 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       readyMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_total"),
       dispatchedTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_total"),
       dispatchedAvailableMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_available"),
+      paidMap: sumRowsByItem(rows, "order_item_id", "quantity_paid"),
       cancelledPendingMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_pending"),
       cancelledReadyMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_ready"),
       cancelledDispatchedMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_dispatched"),
@@ -164,6 +167,7 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       readyMap: {},
       dispatchedTotalMap: {},
       dispatchedAvailableMap: {},
+      paidMap: {},
       cancelledPendingMap: {},
       cancelledReadyMap: {},
       cancelledDispatchedMap: {},

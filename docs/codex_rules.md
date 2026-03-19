@@ -98,6 +98,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si ya existen cobros en la caja actual, la anulacion debe bloquearse con mensaje claro al usuario.
 - `Cerrar Caja` tambien debe bloquearse si existen ordenes de la sucursal en cualquier estado distinto de `PAID` o `CANCELLED`.
 - Si se agregan `Movimientos de Caja`, no mezclarlos con `Recaudado`, pero si se trata de `Cambio de denominacion` deben reflejarse en `cash_shift_denoms` para que `Actual`/`Desglose` muestren la nueva composicion sin alterar el total.
+- Si se toca cobro en efectivo, no confiar en recalculos solo del cliente:
+  - las denominaciones recibidas y el cambio entregado deben persistirse en backend
+  - `Desglose de Caja` debe reflejar los nuevos billetes/monedas reales del turno
 - El flujo visible de `Movimientos` debe vivir dentro de `Caja > ShiftSummary`, no en el sidebar izquierdo.
 - `Cambio de denominacion` debe exigir monto mayor a `0`, motivo obligatorio y dejar `Impacto en caja: $0.00`.
 - El flujo visible vigente de `Movimientos` abre directo al registro; si se necesita historial, debe quedar detras de `Ver historial` y no como paso previo obligatorio.
@@ -116,6 +119,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - scroll vertical controlado
   - botones de footer apilados en telefono
   - cards internas sin comprimir inputs o textos
+  - en tablet, preferir usar el ancho extra para 2 columnas antes que dejar una ventana muy alta
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.

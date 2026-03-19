@@ -122,6 +122,9 @@
   - el historial existente queda disponible detras de `Ver historial`
   - el registro exige cuadrar `Sale de caja` vs `Ingresa a caja`
   - las denominaciones que salen de caja no pueden exceder la cantidad fisica actual disponible
+- La caja fisica ya no debe depender solo de snapshots locales del frontend:
+  - los cobros en efectivo y cambios de denominacion deben actualizar `cash_shift_denoms.qty_current`
+  - `Desglose de Caja` y `Resumen` deben leer el estado real persistido del turno
 - `PayableOrdersList` usa layout de dos columnas en desktop: KPIs verticales y listado operativo.
 - `PaymentDialog` contiene:
   - seleccion de cantidades a cobrar
@@ -209,7 +212,11 @@
 - Los dialogos operativos recientes tambien forman parte de esta regla:
   - `CancelOrderDialog` debe abrir en ancho real de telefono/tablet, con acciones apiladas y controles de cantidad legibles
   - `CashRegisterMovementsDialog` debe degradar de 2 columnas a 1 cuando no hay ancho suficiente
-  - `ShiftSummary` debe mantener sus botones del header y modales usables sin asumir desktop
+- `ShiftSummary` debe mantener sus botones del header y modales usables sin asumir desktop
+- `ShiftSummary`, `CashRegisterMovementsDialog` y `CancelOrderDialog` deben escalar asi:
+  - telefono: una columna, footer apilado, inputs a ancho completo
+  - tablet: modales mas anchos y grids de 2 columnas cuando haya espacio
+  - desktop: dashboard horizontal sin depender de scroll de toda la ventana
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

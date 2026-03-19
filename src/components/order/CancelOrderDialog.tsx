@@ -212,7 +212,7 @@ export default function CancelOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[94vw] lg:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Cancelar orden</DialogTitle>
           <DialogDescription>Orden #{orderNumber}</DialogDescription>
@@ -258,17 +258,17 @@ export default function CancelOrderDialog({
           ) : (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Seleccion de cantidades a cancelar</Label>
-              <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-border p-2">
+              <div className="max-h-[46dvh] space-y-2 overflow-y-auto rounded-lg border border-border p-2 sm:max-h-72">
                 {items.map((item) => (
                   <div key={item.order_item_id} className="rounded-md border border-border p-2">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-2.5 md:grid md:grid-cols-[minmax(0,1fr)_96px] md:items-start">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{item.description_snapshot}</p>
                         <p className="text-xs leading-5 text-muted-foreground">
                           Ord: {item.quantity_ordered} | Pend: {item.quantity_pending_prepare} | Listo: {item.quantity_ready_available} | Desp: {item.quantity_dispatched_available} | Canc: {item.quantity_cancelled_total} | Pag: {item.quantity_paid}
                         </p>
                       </div>
-                      <div className="w-full sm:w-24">
+                      <div className="w-full md:w-24">
                         <Label htmlFor={`qty-${item.order_item_id}`} className="text-[11px] text-muted-foreground">
                           Cant. cancelar
                         </Label>

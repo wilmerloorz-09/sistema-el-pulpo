@@ -56,6 +56,15 @@ const extractEdgeFunctionError = async (err: any) => {
   return err.message || "Error desconocido";
 };
 
+const isAlreadyExistsAssignmentError = (error: any) => {
+  const message = String(error?.message ?? "").toLowerCase();
+  return (
+    message.includes("duplicate key") ||
+    message.includes("already exists") ||
+    message.includes("ya existe")
+  );
+};
+
 const UsersCrud = () => {
   const qc = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
@@ -217,6 +226,67 @@ const UsersCrud = () => {
       const res = await supabase.functions.invoke("create-user", { body: payload });
       if (res.error) throw new Error(await extractEdgeFunctionError(res.error));
       if (res.data?.error) throw new Error(res.data.error);
+
+      let createdUserId: string | null = typeof res.data?.id === "string" ? res.data.id : null;
+
+      if (!createdUserId) {
+        const { data: createdProfileByEmail, error: profileLookupByEmailError } = await supabase
+          .from("profiles")
+          .select("id")
+          .ilike("email", normalizedEmail)
+          .limit(1)
+          .maybeSingle();
+
+        if (profileLookupByEmailError) throw profileLookupByEmailError;
+        createdUserId = createdProfileByEmail?.id ?? null;
+      }
+
+      if (!createdUserId) {
+        const { data: createdProfileByUsername, error: profileLookupByUsernameError } = await supabase
+          .from("profiles")
+          .select("id")
+          .ilike("username", newUser.username.trim())
+          .limit(1)
+          .maybeSingle();
+
+        if (profileLookupByUsernameError) throw profileLookupByUsernameError;
+        createdUserId = createdProfileByUsername?.id ?? null;
+      }
+
+      if (!createdUserId) {
+        throw new Error("El usuario se creo, pero no se pudo resolver su perfil para completar la asignacion inicial.");
+      }
+
+      if (newUser.branch_id && newUser.role_code) {
+        const { error: assignBranchRoleError } = await supabase.rpc("assign_user_branch_role" as never, {
+          p_target_user_id: createdUserId,
+          p_branch_id: newUser.branch_id,
+          p_role_code: newUser.role_code,
+          p_reason: "Asignacion inicial al crear usuario",
+        } as never);
+
+        if (assignBranchRoleError && !isAlreadyExistsAssignmentError(assignBranchRoleError)) {
+          throw assignBranchRoleError;
+        }
+
+        const { error: activeBranchError } = await supabase.rpc("set_user_active_branch", {
+          p_target_user_id: createdUserId,
+          p_new_branch_id: newUser.branch_id,
+          p_reason: "Sucursal inicial al crear usuario",
+        });
+        if (activeBranchError) throw activeBranchError;
+      }
+
+      if (newUser.is_admin) {
+        const { error: assignGlobalRoleError } = await supabase.rpc("assign_user_global_role" as never, {
+          p_target_user_id: createdUserId,
+          p_role_code: "administrador",
+        } as never);
+
+        if (assignGlobalRoleError && !isAlreadyExistsAssignmentError(assignGlobalRoleError)) {
+          throw assignGlobalRoleError;
+        }
+      }
     },
     onSuccess: () => {
       refreshAll();

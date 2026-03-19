@@ -214,3 +214,4 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+

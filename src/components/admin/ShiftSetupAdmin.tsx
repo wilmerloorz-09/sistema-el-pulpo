@@ -74,6 +74,13 @@ function sameMembers(left: string[], right: string[]) {
   return leftSorted.every((value, index) => value === rightSorted[index]);
 }
 
+function isMissingFunctionOrSchemaError(error: any, functionName?: string) {
+  const message = String(error?.message ?? "");
+  if (message.includes("schema cache")) return true;
+  if (functionName && message.includes(`Could not find the function public.${functionName}`)) return true;
+  return false;
+}
+
 function showShiftSetupError(
   error: any,
   setWarningDialog: React.Dispatch<React.SetStateAction<{ open: boolean; title: string; description: string }>>,
@@ -560,7 +567,40 @@ const ShiftSetupAdmin = () => {
       p_policies: payload,
     } as never);
 
-    if (error) throw error;
+    if (!error) return;
+
+    if (!isMissingFunctionOrSchemaError(error, "save_branch_cancel_policy")) {
+      throw error;
+    }
+
+    for (const row of cancelPolicyState) {
+      if (!validPolicyIds.has(row.menu_node_id)) continue;
+      if (!isGlobalAdmin && row.is_primary_root_category) continue;
+
+      if (!row.is_kitchen_plate && !row.allow_direct_cancel) {
+        const { error: deleteError } = await (supabase
+          .from("branch_cancel_policy" as never)
+          .delete()
+          .eq("branch_id", activeBranchId)
+          .eq("menu_node_id", row.menu_node_id) as any);
+        if (deleteError) throw deleteError;
+        continue;
+      }
+
+      const { error: upsertError } = await (supabase
+        .from("branch_cancel_policy" as never)
+        .upsert({
+          branch_id: activeBranchId,
+          menu_node_id: row.menu_node_id,
+          is_kitchen_plate: row.is_kitchen_plate,
+          allow_direct_cancel: row.allow_direct_cancel,
+          updated_by: user?.id ?? null,
+        } as never, {
+          onConflict: "branch_id,menu_node_id",
+          ignoreDuplicates: false,
+        }) as any);
+      if (upsertError) throw upsertError;
+    }
   };
 
   const setShiftUserEnabledCompat = async (params: {
@@ -627,6 +667,83 @@ const ShiftSetupAdmin = () => {
     if (deleteError) throw deleteError;
   };
 
+  const resolveCurrentOpenShiftId = async () => {
+    if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+    const { data, error } = await supabase
+      .from("cash_shifts")
+      .select("id")
+      .eq("branch_id", activeBranchId)
+      .eq("status", "OPEN")
+      .order("opened_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data?.id) throw new Error("No se pudo resolver el turno abierto recien creado");
+    return data.id as string;
+  };
+
+  const openShiftCompat = async () => {
+    if (!user) throw new Error("No hay usuario autenticado");
+    if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+    const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
+    const enabledUsersJson = shiftUsersState.map((u) => ({
+      user_id: u.user_id,
+      can_serve_tables: u.can_serve_tables,
+      can_dispatch_orders: u.can_dispatch_orders,
+      can_use_caja: u.can_use_caja,
+      can_authorize_order_cancel: u.can_authorize_order_cancel,
+      is_supervisor: u.is_supervisor,
+    }));
+
+    const { data, error } = await supabase.rpc("open_cash_shift_with_tables" as never, {
+      p_cashier_id: user.id,
+      p_branch_id: activeBranchId,
+      p_active_tables_count: normalizedCount,
+      p_enabled_users: enabledUsersJson,
+    } as never);
+
+    if (!error) {
+      return (data as string | null) ?? (await resolveCurrentOpenShiftId());
+    }
+
+    if (!isMissingFunctionOrSchemaError(error, "open_cash_shift_with_tables")) {
+      throw error;
+    }
+
+    const legacyUserIds = enabledUsersJson.map((entry) => entry.user_id);
+    const { data: legacyData, error: legacyError } = await supabase.rpc("open_cash_shift_with_tables" as never, {
+      p_cashier_id: user.id,
+      p_branch_id: activeBranchId,
+      p_active_tables_count: normalizedCount,
+      p_denoms: [],
+      p_enabled_user_ids: legacyUserIds,
+    } as never);
+
+    if (legacyError) throw legacyError;
+
+    const shiftId = (legacyData as string | null) ?? (await resolveCurrentOpenShiftId());
+
+    await Promise.all(
+      shiftUsersState.map((entry) =>
+        setShiftUserEnabledCompat({
+          shiftId,
+          userId: entry.user_id,
+          isEnabled: true,
+          canServeTables: entry.can_serve_tables,
+          canDispatchOrders: entry.can_dispatch_orders,
+          canUseCaja: entry.can_use_caja,
+          canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
+          isSupervisor: entry.is_supervisor,
+        }),
+      ),
+    );
+
+    return shiftId;
+  };
+
   const openShiftMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("No hay usuario autenticado");
@@ -634,24 +751,7 @@ const ShiftSetupAdmin = () => {
       validateSetup();
       await persistDispatchDraft();
       await persistCancelPolicyDraft();
-
-      const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
-      const enabledUsersJson = shiftUsersState.map((u) => ({
-        user_id: u.user_id,
-        can_serve_tables: u.can_serve_tables,
-        can_dispatch_orders: u.can_dispatch_orders,
-        can_use_caja: u.can_use_caja,
-        can_authorize_order_cancel: u.can_authorize_order_cancel,
-        is_supervisor: u.is_supervisor,
-      }));
-
-      const { error } = await supabase.rpc("open_cash_shift_with_tables" as never, {
-        p_cashier_id: user.id,
-        p_branch_id: activeBranchId,
-        p_active_tables_count: normalizedCount,
-        p_enabled_users: enabledUsersJson,
-      } as never);
-      if (error) throw error;
+      await openShiftCompat();
     },
     onSuccess: () => {
       invalidateShiftState();

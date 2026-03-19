@@ -13,7 +13,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { MetricCard } from "@/components/ui/metric-card";
 import { AlertTriangle, Clock, Coins, DollarSign, History, Loader2, Lock, ShieldAlert } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
@@ -148,7 +147,7 @@ export default function ShiftSummary({
               </p>
             </div>
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-4 md:gap-2.5 lg:w-auto lg:grid-cols-none lg:flex lg:flex-wrap lg:items-center">
             {!readOnly && (
               <Button
                 variant="outline"
@@ -198,114 +197,161 @@ export default function ShiftSummary({
       </div>
 
       <Dialog open={showTotals} onOpenChange={setShowTotals}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-md">
+        <DialogContent className="flex max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.45)] sm:max-w-[1180px] xl:max-w-[1320px]">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-primary" /> Resumen de Caja
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">Caja fisica</p>
-              <span className="text-xs text-muted-foreground">Dinero real en caja</span>
-            </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="grid h-full gap-2.5 lg:grid-cols-[1.18fr_0.92fr]">
+              <div className="flex min-h-0 flex-col gap-2.5">
+                <div className="rounded-xl border border-border bg-muted/20 p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">Caja fisica</p>
+                    <span className="text-xs text-muted-foreground">Dinero real en caja</span>
+                  </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <MetricCard title="Apertura" value={`$${totalInitial.toFixed(2)}`} description="Base inicial del turno" icon={<Lock className="h-5 w-5" />} tone="sky" />
-              <MetricCard title="Actual" value={`$${totalCurrent.toFixed(2)}`} description="Dinero fisico en caja" icon={<DollarSign className="h-5 w-5" />} tone="violet" />
-            </div>
-
-            <MetricCard title="Diferencia" value={`$${(totalCurrent - totalInitial).toFixed(2)}`} description="Actual menos apertura" icon={<Coins className="h-5 w-5" />} tone="emerald" />
-          </div>
-
-          <div className="space-y-3 rounded-2xl border border-border bg-card p-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">Recaudado</p>
-              <span className="text-xs text-muted-foreground">Cobros registrados por metodo</span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <MetricCard title="Cobrado total" value={`$${totalCollected.toFixed(2)}`} description="Todos los metodos sumados" icon={<DollarSign className="h-5 w-5" />} tone="sky" />
-              <MetricCard title="En efectivo" value={`$${totalCashCollected.toFixed(2)}`} description="Ingreso fisico registrado" icon={<Coins className="h-5 w-5" />} tone="emerald" />
-              <MetricCard title="No efectivo" value={`$${totalNonCashCollected.toFixed(2)}`} description="Transferencias y otros medios" icon={<Lock className="h-5 w-5" />} tone="amber" />
-            </div>
-
-            <div className="space-y-2 rounded-xl border border-border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-foreground">Cobrado por metodo</p>
-                <span className="text-xs text-muted-foreground">{methodSummary.length} metodo(s)</span>
-              </div>
-
-              {methodSummary.length > 0 ? (
-                <div className="space-y-1.5">
-                  {methodSummary.map((method) => (
-                    <div key={method.methodId} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">{method.methodName}</p>
-                        <p className="text-xs text-muted-foreground">{method.paymentCount} cobro(s)</p>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="rounded-xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white px-3 py-2.5">
+                      <div className="mb-1.5 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">Apertura</p>
+                          <p className="font-display mt-1 text-[26px] font-black leading-none text-slate-900">${totalInitial.toFixed(2)}</p>
+                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700 shadow-sm">
+                          <Lock className="h-4 w-4" />
+                        </div>
                       </div>
-                      <span className="font-display text-base font-bold text-foreground">${method.amount.toFixed(2)}</span>
+                      <p className="text-xs text-slate-600">Base inicial del turno</p>
                     </div>
-                  ))}
+
+                    <div className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-white px-3 py-2.5">
+                      <div className="mb-1.5 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.22em] text-violet-700">Actual</p>
+                          <p className="font-display mt-1 text-[26px] font-black leading-none text-violet-900">${totalCurrent.toFixed(2)}</p>
+                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm">
+                          <DollarSign className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600">Dinero fisico en caja</p>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5">
+                      <div className="mb-1.5 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-700">Diferencia</p>
+                          <p className="font-display mt-1 text-[26px] font-black leading-none text-emerald-900">${(totalCurrent - totalInitial).toFixed(2)}</p>
+                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
+                          <Coins className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600">Actual menos apertura</p>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-                  Todavia no hay cobros registrados en este turno.
+
+                <div className="rounded-xl border border-border bg-card p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">Recaudado</p>
+                    <span className="text-xs text-muted-foreground">Cobros por metodo</span>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white px-3 py-2.5">
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">Cobrado total</p>
+                      <p className="font-display mt-1.5 text-[23px] font-black leading-none text-slate-900">${totalCollected.toFixed(2)}</p>
+                      <p className="mt-1.5 text-xs text-slate-600">Todos los metodos sumados</p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5">
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-700">En efectivo</p>
+                      <p className="font-display mt-1.5 text-[23px] font-black leading-none text-emerald-900">${totalCashCollected.toFixed(2)}</p>
+                      <p className="mt-1.5 text-xs text-slate-600">Ingreso fisico registrado</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-white px-3 py-2.5">
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-amber-700">No efectivo</p>
+                      <p className="font-display mt-1.5 text-[23px] font-black leading-none text-amber-900">${totalNonCashCollected.toFixed(2)}</p>
+                      <p className="mt-1.5 text-xs text-slate-600">Transferencias y otros medios</p>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {methodSummary.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                La diferencia de caja corresponde al efectivo. Los demas metodos no incrementan el dinero fisico en caja.
-              </p>
-            )}
-          </div>
+                <div className="min-h-0 rounded-xl border border-border bg-card p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">Cobrado por metodo</p>
+                    <span className="text-xs text-muted-foreground">{methodSummary.length} metodo(s)</span>
+                  </div>
 
-          <CashRegisterOpeningHistory
-            entries={shift.openingHistory}
-            description="Las aperturas anuladas muestran motivo y usuario responsable."
-          />
-
-          <div className="space-y-3 rounded-2xl border border-border bg-card p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Movimientos de caja</p>
-                <p className="text-xs text-muted-foreground">
-                  Se incluyen en el reporte del turno, pero no cambian el total esperado de efectivo.
-                </p>
+                  {methodSummary.length > 0 ? (
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {methodSummary.map((method) => (
+                        <div key={method.methodId} className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+                          <p className="truncate text-sm font-semibold text-foreground">{method.methodName}</p>
+                          <div className="mt-1.5 flex items-end justify-between gap-2">
+                            <p className="text-xs text-muted-foreground">{method.paymentCount} cobro(s)</p>
+                            <span className="font-display text-lg font-black text-foreground">${method.amount.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+                      Todavia no hay cobros registrados en este turno.
+                    </div>
+                  )}
+                </div>
               </div>
-              <Badge variant="outline" className="border-orange-200 bg-orange-50/90 text-foreground">
-                {movements.length} movimiento(s)
-              </Badge>
-            </div>
 
-            <CashRegisterMovementsList
-              movements={movements}
-              loading={movementsLoading}
-              emptyMessage="Sin movimientos en este turno"
-            />
-          </div>
+              <div className="flex min-h-0 flex-col gap-2.5">
+                <CashRegisterOpeningHistory
+                  entries={shift.openingHistory}
+                  description="Aperturas, cierres y anulaciones de esta jornada."
+                  compact
+                  className="min-h-0 flex-1"
+                />
 
-          {canAnnulOpen && currentOpening && currentOpening.status === "abierta" && (
-            <div className="rounded-2xl border border-rose-200 bg-gradient-to-r from-white via-rose-50 to-orange-50 p-3 shadow-sm">
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-rose-800">Anulacion de apertura</p>
-                <p className="text-xs leading-5 text-rose-900/80">
-                  Si esta apertura no tiene ventas registradas, puedes anularla para volver a la pantalla limpia de apertura de caja.
-                </p>
+                <div className="min-h-0 rounded-xl border border-border bg-card p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Movimientos de caja</p>
+                      <p className="text-xs text-muted-foreground">
+                        No alteran el total esperado del turno.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="border-orange-200 bg-orange-50/90 text-foreground">
+                      {movements.length} mov.
+                    </Badge>
+                  </div>
+
+                  <CashRegisterMovementsList
+                    movements={movements}
+                    loading={movementsLoading}
+                    emptyMessage="Sin movimientos en este turno"
+                    compact
+                  />
+                </div>
+
+                {canAnnulOpen && currentOpening && currentOpening.status === "abierta" && (
+                  <div className="rounded-xl border border-rose-200 bg-gradient-to-r from-white via-rose-50 to-orange-50 p-2.5 shadow-sm">
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-semibold text-rose-800">Anulacion de apertura</p>
+                      <p className="text-xs leading-5 text-rose-900/80">
+                        Si esta apertura no tiene ventas registradas, puedes anularla y volver a la pantalla limpia de apertura.
+                      </p>
+                    </div>
+                    <Button variant="destructive" className="mt-2.5 w-full" onClick={() => setShowAnnul(true)}>
+                      <ShieldAlert className="h-4 w-4" />
+                      Anular apertura
+                    </Button>
+                  </div>
+                )}
               </div>
-              <Button
-                variant="destructive"
-                className="mt-3 w-full sm:w-auto"
-                onClick={() => setShowAnnul(true)}
-              >
-                <ShieldAlert className="h-4 w-4" />
-                Anular apertura
-              </Button>
             </div>
-          )}
+          </div>
         </DialogContent>
       </Dialog>
 

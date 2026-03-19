@@ -50,8 +50,6 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
   const previewableItems = order.items.filter(
     (item) => item.quantity_pending_prepare > 0 || item.quantity_ready_available > 0 || item.quantity_dispatched > 0,
   );
-  const previewItems = previewableItems.slice(0, 3);
-  const hiddenCount = Math.max(0, previewableItems.length - previewItems.length);
 
   const summaryParts = [] as string[];
   if (pendingCount > 0) summaryParts.push(`${pendingCount} pendientes`);
@@ -97,8 +95,8 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
         {summaryParts.join(" - ") || "Sin pendientes por preparar"}
       </div>
 
-      <div className="space-y-2 px-4 py-3">
-        {previewItems.map((item) => (
+      <div className="max-h-[19rem] space-y-2 overflow-y-auto px-4 py-3 pr-3">
+        {previewableItems.map((item) => (
           <div key={item.id} className="rounded-xl border border-border px-3 py-2">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
@@ -136,12 +134,6 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
             </div>
           </div>
         ))}
-
-        {hiddenCount > 0 && (
-          <div className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
-            +{hiddenCount} item{hiddenCount !== 1 ? "s" : ""} mas
-          </div>
-        )}
       </div>
 
       <div className="border-t border-border px-4 py-3">

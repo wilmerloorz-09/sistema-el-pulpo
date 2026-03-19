@@ -21,7 +21,7 @@ export default function DispatchOrderDrawer({
 }: DispatchOrderDrawerProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[94dvh] w-[min(96vw,56rem)] max-w-[56rem] overflow-y-auto px-5 py-5 sm:px-6">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
             {order?.order_code ?? `#${order?.order_number}`}
@@ -34,6 +34,7 @@ export default function DispatchOrderDrawer({
             onOpenDispatchDialog={onOpenDispatchDialog}
             showEyeIcon={false}
             readOnly={readOnly}
+            expanded
           />
         </div>
       </DialogContent>
