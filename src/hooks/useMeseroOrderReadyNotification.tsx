@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RealtimeChannel } from "@supabase/supabase-js";
-import { Bell, X } from "lucide-react";
+import { Bell, Smartphone, Volume2, X } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useBranch } from "@/contexts/BranchContext";
@@ -36,6 +36,17 @@ type ReadyOrderRow = {
 
 let notificationAudioContext: AudioContext | null = null;
 let audioUnlockBound = false;
+const AUDIO_PREF_KEY = "order-ready-audio-enabled";
+
+function readAudioPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(AUDIO_PREF_KEY) === "true";
+}
+
+function writeAudioPreference(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(AUDIO_PREF_KEY, enabled ? "true" : "false");
+}
 
 function getAudioContextClass():
   | (new () => AudioContext)
@@ -107,6 +118,17 @@ export async function playNotificationSound(): Promise<void> {
   const startAt = context.currentTime + 0.02;
   await playBeepAt(context, startAt, 130, 880);
   await playBeepAt(context, startAt + 0.2, 130, 988);
+}
+
+export async function activateNotificationAudio(): Promise<boolean> {
+  const context = await ensureNotificationAudioContext();
+  if (!context) return false;
+
+  const startAt = context.currentTime + 0.02;
+  await playBeepAt(context, startAt, 120, 740);
+  await playBeepAt(context, startAt + 0.18, 120, 880);
+  writeAudioPreference(true);
+  return true;
 }
 
 export function vibrateDevice(): void {
@@ -288,6 +310,8 @@ export function OrderReadyAlertCenter() {
   const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const [notification, setNotification] = useState<OrderReadyNotification | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(readAudioPreference);
+  const [armingAudio, setArmingAudio] = useState(false);
 
   const enabled = Boolean(activeBranchId) && (
     isGlobalAdmin
@@ -305,5 +329,45 @@ export function OrderReadyAlertCenter() {
     enabled,
   });
 
-  return <OrderReadyNotificationBanner notification={notification} duration={0} />;
+  return (
+    <>
+      {enabled && !audioEnabled && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-40 z-50 px-3 sm:bottom-24 sm:right-4 sm:left-auto sm:max-w-md">
+          <Alert className="pointer-events-auto border-orange-300 bg-white text-foreground shadow-lg">
+            <div className="flex items-start gap-3">
+              <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <AlertDescription className="font-semibold text-sm">
+                  Activa el sonido de alertas en este movil
+                </AlertDescription>
+                <AlertDescription className="mt-1 text-xs text-muted-foreground">
+                  Toca el boton una vez para habilitar y probar el audio de orden lista.
+                </AlertDescription>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setArmingAudio(true);
+                      const activated = await activateNotificationAudio().catch(() => false);
+                      if (activated) {
+                        vibrateDevice();
+                        setAudioEnabled(true);
+                      }
+                      setArmingAudio(false);
+                    }}
+                    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-2xl border border-primary/70 bg-gradient-to-r from-primary via-orange-500 to-amber-400 px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[0_18px_36px_-22px_hsl(var(--primary)/0.95)]"
+                    disabled={armingAudio}
+                  >
+                    <Volume2 className="h-4 w-4" />
+                    {armingAudio ? "Activando..." : "Activar sonido"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Alert>
+        </div>
+      )}
+      <OrderReadyNotificationBanner notification={notification} duration={0} />
+    </>
+  );
 }
