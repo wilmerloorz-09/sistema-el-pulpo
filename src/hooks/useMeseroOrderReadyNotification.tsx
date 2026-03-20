@@ -34,6 +34,7 @@ type ReadyOrderRow = {
   split_id: string | null;
   table_id: string | null;
   ready_at: string | null;
+  status?: string | null;
 };
 
 let notificationAudioContext: AudioContext | null = null;
@@ -76,16 +77,23 @@ async function ensureNotificationAudioContext(): Promise<AudioContext | null> {
   return notificationAudioContext;
 }
 
-async function playBeepAt(context: AudioContext, startAt: number, durationMs: number, frequency: number) {
+async function playBeepAt(
+  context: AudioContext,
+  startAt: number,
+  durationMs: number,
+  frequency: number,
+  peakGain = 0.52,
+  waveType: OscillatorType = "square",
+) {
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   const durationSeconds = durationMs / 1000;
   const releaseAt = startAt + durationSeconds;
 
-  oscillator.type = "sine";
+  oscillator.type = waveType;
   oscillator.frequency.setValueAtTime(frequency, startAt);
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(0.22, startAt + 0.01);
+  gain.gain.exponentialRampToValueAtTime(peakGain, startAt + 0.01);
   gain.gain.exponentialRampToValueAtTime(0.0001, releaseAt);
 
   oscillator.connect(gain);
@@ -118,8 +126,9 @@ export async function playNotificationSound(): Promise<void> {
   if (!context) return;
 
   const startAt = context.currentTime + 0.02;
-  await playBeepAt(context, startAt, 130, 880);
-  await playBeepAt(context, startAt + 0.2, 130, 988);
+  await playBeepAt(context, startAt, 220, 1040, 0.58, "square");
+  await playBeepAt(context, startAt + 0.28, 220, 1320, 0.62, "square");
+  await playBeepAt(context, startAt + 0.56, 280, 1480, 0.68, "sawtooth");
 }
 
 export async function activateNotificationAudio(): Promise<boolean> {
@@ -127,8 +136,8 @@ export async function activateNotificationAudio(): Promise<boolean> {
   if (!context) return false;
 
   const startAt = context.currentTime + 0.02;
-  await playBeepAt(context, startAt, 120, 740);
-  await playBeepAt(context, startAt + 0.18, 120, 880);
+  await playBeepAt(context, startAt, 180, 820, 0.46, "square");
+  await playBeepAt(context, startAt + 0.24, 180, 1100, 0.52, "square");
   writeAudioPreference(true);
   return true;
 }
@@ -216,6 +225,17 @@ async function fetchOrderReadyNotificationFromRow(
     split_code: splitResult.data?.split_code ?? null,
     created_at: order.ready_at ?? new Date().toISOString(),
   };
+}
+
+async function isOrderStillReady(orderId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .single();
+
+  if (error || !data) return false;
+  return data.status === "READY";
 }
 
 export function useMeseroOrderReadyNotification(
@@ -429,6 +449,7 @@ export function OrderReadyAlertCenter() {
   const [notification, setNotification] = useState<OrderReadyNotification | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(readAudioPreference);
   const [armingAudio, setArmingAudio] = useState(false);
+  const [activeAlarmOrderId, setActiveAlarmOrderId] = useState<string | null>(null);
 
   const enabled = Boolean(activeBranchId) && (
     isGlobalAdmin
@@ -441,10 +462,41 @@ export function OrderReadyAlertCenter() {
 
   useMeseroOrderReadyNotification((nextNotification) => {
     setNotification(nextNotification);
+    setActiveAlarmOrderId(nextNotification.order_id);
   }, {
     activeBranchId,
     enabled,
   });
+
+  useEffect(() => {
+    if (!enabled || !audioEnabled || !activeAlarmOrderId) return;
+
+    let cancelled = false;
+
+    const tickAlarm = async () => {
+      const stillReady = await isOrderStillReady(activeAlarmOrderId);
+      if (cancelled) return;
+
+      if (!stillReady) {
+        setActiveAlarmOrderId((current) => (current === activeAlarmOrderId ? null : current));
+        setNotification((current) => (current?.order_id === activeAlarmOrderId ? null : current));
+        return;
+      }
+
+      void playNotificationSound();
+      vibrateDevice();
+    };
+
+    void tickAlarm();
+    const interval = window.setInterval(() => {
+      void tickAlarm();
+    }, 3500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeAlarmOrderId, audioEnabled, enabled]);
 
   return (
     <>
