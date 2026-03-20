@@ -27,11 +27,13 @@ interface NotificationHookOptions {
 }
 
 type ReadyOrderRow = {
+  id: string;
   branch_id: string;
   order_number: number;
   order_type: "DINE_IN" | "TAKEOUT";
   split_id: string | null;
   table_id: string | null;
+  ready_at: string | null;
 };
 
 let notificationAudioContext: AudioContext | null = null;
@@ -185,6 +187,37 @@ async function fetchOrderReadyNotification(
   };
 }
 
+async function fetchOrderReadyNotificationFromRow(
+  order: ReadyOrderRow,
+): Promise<OrderReadyNotification | null> {
+  const [tableResult, splitResult] = await Promise.all([
+    order.table_id
+      ? supabase
+          .from("restaurant_tables")
+          .select("name")
+          .eq("id", order.table_id)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+    order.split_id
+      ? supabase
+          .from("table_splits")
+          .select("split_code")
+          .eq("id", order.split_id)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  return {
+    order_id: order.id,
+    order_number: order.order_number,
+    order_type: order.order_type,
+    branch_id: order.branch_id,
+    table_name: tableResult.data?.name ?? null,
+    split_code: splitResult.data?.split_code ?? null,
+    created_at: order.ready_at ?? new Date().toISOString(),
+  };
+}
+
 export function useMeseroOrderReadyNotification(
   onNotification: NotificationCallback,
   options?: NotificationHookOptions,
@@ -193,6 +226,7 @@ export function useMeseroOrderReadyNotification(
   const enabled = options?.enabled ?? true;
   const handledNotificationsRef = useRef<Set<string>>(new Set());
   const onNotificationRef = useRef(onNotification);
+  const lastPolledReadyAtRef = useRef<string | null>(null);
 
   useEffect(() => {
     onNotificationRef.current = onNotification;
@@ -250,6 +284,89 @@ export function useMeseroOrderReadyNotification(
       void orderReadyChannel.unsubscribe();
     };
   }, [activeBranchId, channelFactory, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !activeBranchId) return;
+
+    let cancelled = false;
+
+    const initializeCursor = async () => {
+      const { data } = await supabase
+        .from("orders")
+        .select("ready_at")
+        .eq("branch_id", activeBranchId)
+        .eq("status", "READY")
+        .not("ready_at", "is", null)
+        .order("ready_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!cancelled) {
+        lastPolledReadyAtRef.current = data?.ready_at ?? new Date().toISOString();
+      }
+    };
+
+    void initializeCursor();
+
+    return () => {
+      cancelled = true;
+      lastPolledReadyAtRef.current = null;
+    };
+  }, [activeBranchId, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !activeBranchId) return;
+
+    let cancelled = false;
+
+    const pollReadyOrders = async () => {
+      const cursor = lastPolledReadyAtRef.current;
+      if (!cursor) return;
+
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id, branch_id, order_number, order_type, table_id, split_id, ready_at")
+        .eq("branch_id", activeBranchId)
+        .eq("status", "READY")
+        .gt("ready_at", cursor)
+        .order("ready_at", { ascending: true })
+        .limit(20);
+
+      if (cancelled || error || !data || data.length === 0) return;
+
+      for (const rawOrder of data as ReadyOrderRow[]) {
+        const notificationId = `${rawOrder.id}:${rawOrder.ready_at ?? ""}`;
+        if (handledNotificationsRef.current.has(notificationId)) continue;
+
+        const notification = await fetchOrderReadyNotificationFromRow(rawOrder);
+        if (!notification || cancelled) continue;
+
+        handledNotificationsRef.current.add(notificationId);
+        if (handledNotificationsRef.current.size > 100) {
+          const firstKey = handledNotificationsRef.current.values().next().value;
+          if (firstKey) handledNotificationsRef.current.delete(firstKey);
+        }
+
+        void playNotificationSound();
+        vibrateDevice();
+        onNotificationRef.current(notification);
+      }
+
+      const newestReadyAt = data[data.length - 1]?.ready_at;
+      if (newestReadyAt) {
+        lastPolledReadyAtRef.current = newestReadyAt;
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void pollReadyOrders();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeBranchId, enabled]);
 }
 
 interface OrderReadyNotificationBannerProps {
