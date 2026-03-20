@@ -7,16 +7,18 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import MenuNavigator from "@/components/order/MenuNavigator";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
 import ThermalReceipt from "@/components/order/ThermalReceipt";
 import OrdersList from "@/components/order/OrdersList";
 import CancelOrderDialog from "@/components/order/CancelOrderDialog";
+import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign, Trash2, Menu } from "lucide-react";
+import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
@@ -40,14 +42,16 @@ const Ordenes = () => {
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
-  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen } = useOrder(orderId);
+  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable } = useOrder(orderId);
   const menu = useMenuData();
+  const tablesQuery = useTablesWithStatus();
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [removingSplit, setRemovingSplit] = useState(false);
   const [showDeleteSplitConfirm, setShowDeleteSplitConfirm] = useState(false);
+  const [showChangeTableDialog, setShowChangeTableDialog] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
@@ -154,6 +158,12 @@ const Ordenes = () => {
     !order.sent_to_kitchen_at &&
     !order.ready_at &&
     !order.dispatched_at &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED";
+  const canChangeTable =
+    canOperateOrders &&
+    order.order_type === "DINE_IN" &&
+    !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED";
   const canEditItems = canOperateOrders && order.status !== "PAID" && order.status !== "CANCELLED";
@@ -272,8 +282,40 @@ const Ordenes = () => {
 
     setRemovingSplit(true);
     try {
+      const sourceTableId = order.table_id;
       await supabase.from("orders").delete().eq("id", order.id);
       await supabase.from("table_splits").update({ is_active: false }).eq("id", order.split_id);
+
+      if (sourceTableId) {
+        const { data: remainingOrders, error: remainingOrdersError } = await supabase
+          .from("orders")
+          .select("id, split_id, status, order_items(id)")
+          .eq("table_id", sourceTableId)
+          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]);
+
+        if (remainingOrdersError) throw remainingOrdersError;
+
+        const activeRemainingOrders = (remainingOrders ?? []).filter((candidate) => {
+          const hasItems = Array.isArray(candidate.order_items) && candidate.order_items.length > 0;
+          return candidate.status !== "DRAFT" || hasItems;
+        });
+
+        if (activeRemainingOrders.length === 1 && activeRemainingOrders[0].split_id) {
+          const remaining = activeRemainingOrders[0];
+
+          const { error: collapseOrderError } = await supabase
+            .from("orders")
+            .update({ split_id: null })
+            .eq("id", remaining.id);
+          if (collapseOrderError) throw collapseOrderError;
+
+          const { error: deactivateSplitError } = await supabase
+            .from("table_splits")
+            .update({ is_active: false })
+            .eq("id", remaining.split_id);
+          if (deactivateSplitError) throw deactivateSplitError;
+        }
+      }
 
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
@@ -293,6 +335,19 @@ const Ordenes = () => {
       setRemovingSplit(false);
       setShowDeleteSplitConfirm(false);
     }
+  };
+
+  const handleChangeTable = (destinationTableId: string) => {
+    moveToTable.mutate(destinationTableId, {
+      onSuccess: (result) => {
+        setShowChangeTableDialog(false);
+        toast.success(
+          result.destination_was_occupied
+            ? `Orden movida. Se creo ${result.split_code ?? "una nueva division"} en la mesa destino.`
+            : "Orden movida directamente a la mesa destino.",
+        );
+      },
+    });
   };
 
   const menuPanel = canEditItems ? (
@@ -427,6 +482,25 @@ const Ordenes = () => {
             )}
             {order.table_id && (
               <>
+                <Button
+                  variant={canChangeTable ? "outline" : "ghost"}
+                  size="sm"
+                  className={cn(
+                    "h-11 gap-1 rounded-lg px-3 text-xs 2xl:h-7",
+                    !canChangeTable && "text-muted-foreground",
+                  )}
+                  onClick={() => setShowChangeTableDialog(true)}
+                  disabled={!canChangeTable || moveToTable.isPending}
+                  title={
+                    !canChangeTable
+                      ? "Solo puedes cambiar de mesa ordenes DINE_IN activas"
+                      : "Cambiar esta orden de mesa"
+                  }
+                >
+                  {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
+                  Cambiar mesa
+                </Button>
+
                 <Button
                   variant={canSplit ? "default" : "ghost"}
                   size="sm"
@@ -570,6 +644,17 @@ const Ordenes = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ChangeTableDialog
+        open={showChangeTableDialog}
+        onOpenChange={setShowChangeTableDialog}
+        currentTableId={order.table_id}
+        currentTableName={order.table_name}
+        currentSplitCode={order.split_code}
+        tables={tablesQuery.data}
+        moving={moveToTable.isPending}
+        onConfirm={handleChangeTable}
+      />
 
       <style>{`
         @media (max-width: 768px) {

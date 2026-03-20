@@ -6,7 +6,7 @@ import type { Database } from "@/integrations/supabase/types";
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
-interface TableWithStatus {
+export interface TableWithStatus {
   id: string;
   name: string;
   visual_order: number;

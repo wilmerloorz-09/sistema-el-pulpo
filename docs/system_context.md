@@ -75,6 +75,24 @@
   - no esta pagada
   - no esta cancelada
 
+### 4.4.1) Ordenes: cambio de mesa para `DINE_IN`
+- El flujo reutiliza el modelo actual:
+  - `restaurant_tables`
+  - `table_splits`
+  - `orders.table_id`
+  - `orders.split_id`
+- No se introducen tablas nuevas para mover una orden entre mesas.
+- Regla operativa exacta:
+  - mesa destino libre: la orden se mueve directo actualizando `orders.table_id`
+  - si la orden ya estaba en una division, deja de ser division en destino: `orders.split_id` debe quedar `NULL`
+  - mesa destino ocupada: no se fusionan grupos en una misma division
+  - en ese caso se crea una division nueva en la mesa destino y la orden origen pasa a esa division
+- Si la mesa destino ya tenia una orden ocupando la mesa base sin `split_id`, el backend debe materializarla primero como division propia antes de agregar la orden movida, para que ambas convivan como grupos separados.
+- Los borradores vacios remanentes en una mesa destino libre no deben forzar una falsa ocupacion del destino ni dejar dos ordenes activas compitiendo por la misma mesa.
+- Si despues de mover o eliminar una division solo queda un grupo activo en la mesa origen, esa mesa debe colapsar de nuevo a mesa base:
+  - la orden remanente queda con `orders.split_id = NULL`
+  - ya no debe verse como `3A` o `3B`, sino como `Mesa 3`
+
 ### 4.5) Ordenes/Caja/Despacho: snapshot operativo unificado
 - La clasificacion de ordenes visibles entre `Enviadas`, `Listas`, `Despachadas` y `Por cobrar` ya no debe depender de lecturas parciales de eventos.
 - `Ordenes`, `Despacho`, `Cocina` y `Caja` deben apoyarse en el snapshot operativo (`get_order_operational_snapshot`) para evitar que una orden quede pegada en una pestana equivocada.

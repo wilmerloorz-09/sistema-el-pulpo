@@ -73,6 +73,14 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Regla operativa vigente:
   - una division nueva solo debe crearse cuando las divisiones existentes ya tienen al menos un item
   - una division no debe eliminarse si ya tiene rastro operativo de cocina/listo/despacho/pago/cancelacion
+- Cambio de mesa `DINE_IN`:
+  - no crea tablas nuevas ni rompe la FK actual
+  - si el destino esta libre, la orden se mueve con update directo de `orders.table_id`
+  - si la orden ya tenia division y el destino esta libre, `orders.split_id` debe quedar `NULL` y la division origen se desactiva
+  - si el destino esta ocupado, se crea un nuevo `table_splits` en la mesa destino y `orders.split_id` pasa a apuntar a esa division nueva
+  - si el destino estaba ocupado por una orden base sin `split_id`, primero debe materializarse como division propia antes de anexar el grupo movido
+  - los borradores vacios en destino pueden limpiarse para no contar como ocupacion real ni dejar ordenes fantasma en una mesa libre
+  - si despues del movimiento o de eliminar una division solo queda una orden activa en la mesa origen, esa orden remanente debe colapsar a mesa base con `split_id = NULL`
 - Para que esa validacion sea consistente, la lectura de orden debe incluir:
   - `sent_to_kitchen_at`
   - `ready_at`
@@ -329,6 +337,13 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `supabase/migrations/20260318123000_apply_cash_payment_denoms_via_cash_movements.sql`
   - hace que cobros en efectivo y cambios entregados muevan `cash_shift_denoms.qty_current` via `cash_movements`
   - deja trazabilidad por `denomination_id`
+- `supabase/migrations/20260319103000_move_dine_in_orders_between_tables.sql`
+  - agrega la RPC `move_dine_in_order_to_table`
+  - agrega el helper `normalize_single_remaining_split_for_table`
+  - aplica la regla `destino libre -> mover directo`
+  - aplica la regla `destino ocupado -> crear division nueva y mover`
+  - materializa divisiones faltantes en la mesa destino cuando ya habia una orden base sin `split_id`
+  - colapsa la mesa origen a base si despues del cambio solo queda una orden activa
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

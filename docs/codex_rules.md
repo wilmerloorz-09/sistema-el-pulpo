@@ -56,6 +56,12 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si no hay turno abierto, los modulos operativos deben quedar bloqueados y solo `Admin` debe seguir accesible para administradores/supervisores.
 - En `Admin > Turno`, la UX vigente de usuarios es `combo + agregar + tarjetas`; no volver al modelo de "todos visibles y luego desmarcar".
 - En `Admin > Turno`, `Despacho` ya no debe exponer switches manuales de vistas activas; `Mesa` se deriva de mesas activas y `Para llevar` queda disponible.
+- Si se implementa o toca `Cambiar mesa` para una orden `DINE_IN`, mantener siempre esta regla:
+  - destino libre: mover directo actualizando `orders.table_id`
+  - si la orden ya tenia division y el destino esta libre, debe salir de esa division y quedar con `orders.split_id = NULL`
+  - destino ocupado: crear nueva division en destino y mover la orden a esa division
+- No dejar una mesa compartida con un grupo en `split_id = null` y otro grupo con `split_id` distinto; si el destino ya estaba ocupado por una orden base, convertirla primero en division propia.
+- Si despues de mover o eliminar una division solo queda una orden activa en la mesa, esa orden debe colapsar a mesa base y dejar de mostrarse como `3A` o `3B`.
 
 ### 7.2) Cancelacion/Anulacion directa por categoria
 - La configuracion visible vive en `Admin > Turno`.

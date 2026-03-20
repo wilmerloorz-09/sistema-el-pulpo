@@ -1111,6 +1111,19 @@ export type Database = {
         }
         Returns: string
       }
+      move_dine_in_order_to_table: {
+        Args: {
+          p_destination_table_id: string
+          p_order_id: string
+        }
+        Returns: {
+          destination_was_occupied: boolean
+          order_id: string
+          split_code: string | null
+          split_id: string | null
+          table_id: string
+        }[]
+      }
       has_any_role: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {

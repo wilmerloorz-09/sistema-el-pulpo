@@ -30,6 +30,36 @@ interface SiblingOrder {
   item_count: number;
 }
 
+function getSplitSortValue(splitCode: string): { prefix: string; rank: number; rawSuffix: string } {
+  const normalized = String(splitCode ?? "").trim();
+  const match = normalized.match(/^(.*?)(?:\s+([A-Z]|\d+))?$/i);
+  const prefix = String(match?.[1] ?? normalized).trim().toUpperCase();
+  const rawSuffix = String(match?.[2] ?? "").trim().toUpperCase();
+
+  if (!rawSuffix) {
+    return { prefix, rank: 0, rawSuffix };
+  }
+
+  if (/^\d+$/.test(rawSuffix)) {
+    return { prefix, rank: Number(rawSuffix), rawSuffix };
+  }
+
+  const charCode = rawSuffix.charCodeAt(0);
+  if (charCode >= 65 && charCode <= 90) {
+    return { prefix, rank: charCode - 64, rawSuffix };
+  }
+
+  return { prefix, rank: Number.MAX_SAFE_INTEGER, rawSuffix };
+}
+
+export interface MoveTableResult {
+  order_id: string;
+  table_id: string;
+  split_id: string | null;
+  split_code: string | null;
+  destination_was_occupied: boolean;
+}
+
 interface Order {
   id: string;
   order_number: number;
@@ -39,6 +69,7 @@ interface Order {
   branch_id: string;
   table_id: string | null;
   split_id: string | null;
+  split_code?: string | null;
   table_name?: string;
   created_at: string;
   sent_to_kitchen_at?: string | null;
@@ -110,6 +141,16 @@ export function useOrder(orderId: string | null) {
         table_name = table?.name;
       }
 
+      let split_code: string | null = null;
+      if (order.split_id) {
+        const { data: split } = await supabase
+          .from("table_splits")
+          .select("split_code")
+          .eq("id", order.split_id)
+          .single();
+        split_code = split?.split_code ?? null;
+      }
+
       const items = await dbSelect<any>("order_items", {
         select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status",
         filters: [{ column: "order_id", op: "eq", value: orderId }],
@@ -169,18 +210,38 @@ export function useOrder(orderId: string | null) {
             .select("id, split_code")
             .in("id", splitIds);
 
-          siblings = siblingOrders.map((sibling) => ({
-            id: sibling.id,
-            order_number: sibling.order_number,
-            order_code: (sibling as any).order_code ?? null,
-            split_code: splits?.find((split) => split.id === sibling.split_id)?.split_code ?? "",
-            item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
-          }));
+          siblings = siblingOrders
+            .map((sibling) => ({
+              id: sibling.id,
+              order_number: sibling.order_number,
+              order_code: (sibling as any).order_code ?? null,
+              split_code: splits?.find((split) => split.id === sibling.split_id)?.split_code ?? "",
+              item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
+            }))
+            .sort((left, right) => {
+              const leftSort = getSplitSortValue(left.split_code);
+              const rightSort = getSplitSortValue(right.split_code);
+
+              if (leftSort.prefix !== rightSort.prefix) {
+                return leftSort.prefix.localeCompare(rightSort.prefix, "es");
+              }
+
+              if (leftSort.rank !== rightSort.rank) {
+                return leftSort.rank - rightSort.rank;
+              }
+
+              if (leftSort.rawSuffix !== rightSort.rawSuffix) {
+                return leftSort.rawSuffix.localeCompare(rightSort.rawSuffix, "es");
+              }
+
+              return left.order_number - right.order_number;
+            });
         }
       }
 
       return {
         ...order,
+        split_code,
         table_name,
         items: enrichedItems,
         siblings,
@@ -305,6 +366,37 @@ export function useOrder(orderId: string | null) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const moveToTable = useMutation({
+    mutationFn: async (destinationTableId: string): Promise<MoveTableResult> => {
+      if (!orderId) {
+        throw new Error("No se encontro la orden a mover");
+      }
+
+      const { data, error } = await supabase.rpc("move_dine_in_order_to_table", {
+        p_order_id: orderId,
+        p_destination_table_id: destinationTableId,
+      });
+
+      if (error) throw error;
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) {
+        throw new Error("No se pudo completar el cambio de mesa");
+      }
+
+      return row as MoveTableResult;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   return {
     order: query.data,
     isLoading: query.isLoading,
@@ -312,6 +404,7 @@ export function useOrder(orderId: string | null) {
     removeItem,
     updateQuantity,
     sendToKitchen,
+    moveToTable,
   };
 }
 

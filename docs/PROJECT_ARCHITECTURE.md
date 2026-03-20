@@ -68,6 +68,12 @@
   - una division nueva solo puede crearse si todas las divisiones anteriores tienen al menos un item
   - la nueva division creada debe quedar seleccionada automaticamente
   - la eliminacion de division solo aplica antes de cocina/listo/despacho/pago/cancelacion
+- El cambio de mesa para `DINE_IN` tambien vive sobre estas mismas entidades, sin tablas nuevas:
+  - destino libre: update directo de `orders.table_id`
+  - si la orden movida ya tenia `split_id`, al pasar a una mesa libre deja de ser division y `orders.split_id` debe quedar `NULL`
+  - destino ocupado: se crea una division nueva en la mesa destino y la orden movida pasa a esa nueva division
+- Si la mesa destino estaba ocupada por una orden aun sin `split_id`, esa orden debe convertirse primero en su propia division para no mezclar grupos ni romper la vista de siblings por mesa.
+- Si despues de mover o eliminar una division solo queda una orden activa en una mesa, esa orden debe volver a representar la mesa base y perder su `split_id`.
 
 ### Usuarios y alta administrativa
 - `UsersCrud` sigue siendo la superficie de administracion de usuarios.
