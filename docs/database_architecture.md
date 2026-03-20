@@ -216,6 +216,15 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `cancel_order_quantities(...)` ya no debe limitarse a `Pendiente + Listo`; debe poder cancelar tambien `Despachado` mientras no exista pago sobre esa cantidad.
 - Si el dialogo de anulacion se abre desde una tarjeta filtrada, el frontend debe enviar solo el subconjunto visible/anulable de esa tarjeta; no debe intentar cancelar items que no forman parte de la vista desde donde se disparo la accion.
 
+## Notificacion de orden lista
+- La tabla/evento `order_ready_notifications` sigue siendo el disparador realtime cuando una orden entra a estado `READY`.
+- El frontend no debe asumir que el payload realtime ya trae todos los datos enriquecidos; puede necesitar completar:
+  - sucursal
+  - mesa
+  - division
+  - tipo de orden
+- Para uso real en movil del mesero, la alerta debe poder resolverse y sonar desde una capa global del layout operativo, no solo desde una pagina puntual.
+
 ## Politica de cancelacion/anulacion directa por categoria
 - Tabla operativa: `branch_cancel_policy`
 - Unidad visible actual: categoria `nivel 0` de `menu_nodes`

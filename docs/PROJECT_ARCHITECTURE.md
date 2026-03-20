@@ -223,6 +223,7 @@
   - telefono: una columna, footer apilado, inputs a ancho completo
   - tablet: modales mas anchos y grids de 2 columnas cuando haya espacio
   - desktop: dashboard horizontal sin depender de scroll de toda la ventana
+- La notificacion de `orden lista` para mesero/despacho debe vivir a nivel de layout operativo y no solo dentro de `Despacho`, para que el movil pueda seguir alertando aunque el usuario este en `Mesas` u otra vista operativa.
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

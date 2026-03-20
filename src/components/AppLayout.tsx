@@ -4,6 +4,7 @@ import BottomNav from "./BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { OrderReadyAlertCenter } from "@/hooks/useMeseroOrderReadyNotification";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -81,6 +82,7 @@ const AppLayout = () => {
         <Outlet />
       </main>
 
+      <OrderReadyAlertCenter />
       <BottomNav />
 
       <Dialog open={userMenuOpen} onOpenChange={setUserMenuOpen}>

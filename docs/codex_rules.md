@@ -113,6 +113,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - En `Cambio de denominacion`, las denominaciones que salen de caja nunca pueden superar el stock actual disponible.
 - En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
 - No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
+- Si existe una alerta operativa para el mesero como `orden lista`, no montarla solo en la pagina de `Despacho`; debe vivir en una capa global del layout operativo para que siga funcionando en movil mientras el usuario navega por otras vistas.
 - En `Admin > Turno`, priorizar usabilidad movil:
   - bloques verticales
   - resumen adaptable a 1 o 2 columnas

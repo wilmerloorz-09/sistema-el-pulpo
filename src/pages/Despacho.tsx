@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDispatchOrders, type DispatchOrder } from "@/hooks/useDispatchOrders";
 import { useDispatchAccess, type DispatchView } from "@/hooks/useDispatchAccess";
-import { useMeseroOrderReadyNotification, OrderReadyNotificationBanner } from "@/hooks/useMeseroOrderReadyNotification";
 import DispatchCard from "@/components/dispatch/DispatchCard";
 import OperationDialog from "@/components/order/OperationDialog";
 import { Loader2, Truck, AlertCircle, ShoppingBag, UtensilsCrossed } from "lucide-react";
@@ -28,7 +27,6 @@ function getViewIcon(view: DispatchView) {
 const Despacho = () => {
   const { activeBranchId } = useBranch();
   const { availableViews, showTabs, hasAccess, isLoading: accessLoading, getViewLabel, canOperateView } = useDispatchAccess();
-  const [notification, setNotification] = useState(null);
   const [readyOrder, setReadyOrder] = useState<DispatchOrder | null>(null);
   const [dispatchOrder, setDispatchOrder] = useState<DispatchOrder | null>(null);
   const [activeView, setActiveView] = useState<DispatchView | null>(null);
@@ -51,10 +49,6 @@ const Despacho = () => {
   const resolvedView = activeView && availableViews.includes(activeView) ? activeView : resolveInitialView(availableViews, storageKey);
   const scope = resolvedView ?? "TABLE";
   const { orders, isLoading, isError, applyReadyOperation, applyDispatchOperation } = useDispatchOrders(scope);
-
-  useMeseroOrderReadyNotification((_notification: any) => {
-    setNotification(_notification);
-  });
 
   if (accessLoading) {
     return (
@@ -177,8 +171,6 @@ const Despacho = () => {
             ))}
           </div>
         )}
-
-        <OrderReadyNotificationBanner notification={notification} duration={0} />
       </div>
 
       <OperationDialog

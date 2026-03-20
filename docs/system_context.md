@@ -270,6 +270,9 @@
 - En `Despacho`, la visibilidad final de tabs debe depender del modo configurado y del tipo asignado al usuario del turno:
   - `SINGLE`: puede ver `Todos`, `Mesa` y `Para llevar` segun vistas disponibles
   - `SPLIT`: ve solo el/los tipos asignados; si tiene ambos, tambien puede ver `Todos`
+- La alerta de `orden lista` para el mesero ya no debe depender de una sola pantalla:
+  - debe poder recibirse desde la app operativa mientras el usuario este dentro de su sucursal activa
+  - en movil debe intentar sonido y vibracion, no solo banner visual
 - Modificadores siguen usando el modelo estructurado:
   - catalogo base por `modifiers`
   - disponibilidad por `menu_node_modifiers`
