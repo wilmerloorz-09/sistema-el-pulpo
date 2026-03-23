@@ -28,6 +28,10 @@ interface CancelOrderDialogProps {
   canAuthorizeCancel?: boolean;
   isCancelRequested?: boolean;
   visibleItems?: OrderItemSummary[];
+  initialCancellationType?: "partial" | "total";
+  initialCancelQtyByItem?: Record<string, number>;
+  compactPresetMode?: boolean;
+  requiresAuthorizationOverride?: boolean;
 }
 
 interface SnapshotItem {
@@ -55,15 +59,24 @@ export default function CancelOrderDialog({
   canAuthorizeCancel = true,
   isCancelRequested = false,
   visibleItems = [],
+  initialCancellationType = "partial",
+  initialCancelQtyByItem = {},
+  compactPresetMode = false,
+  requiresAuthorizationOverride,
 }: CancelOrderDialogProps) {
   const [reason, setReason] = useState<CancellationReason | "">("");
   const [notes, setNotes] = useState("");
-  const [cancellationType, setCancellationType] = useState<"partial" | "total">("partial");
+  const [cancellationType, setCancellationType] = useState<"partial" | "total">(initialCancellationType);
   const [items, setItems] = useState<SnapshotItem[]>([]);
   const [cancelQtyByItem, setCancelQtyByItem] = useState<Record<string, number>>({});
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
 
   const { cancelOrderMutation } = useCancellation();
+
+  useEffect(() => {
+    if (!open) return;
+    setCancellationType(initialCancellationType);
+  }, [open, initialCancellationType]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,7 +136,14 @@ export default function CancelOrderDialog({
 
         const initialQty: Record<string, number> = {};
         for (const item of snapshot) {
-          initialQty[item.order_item_id] = cancellationType === "total" ? item.quantity_cancellable : 0;
+          const requestedQty = Math.max(
+            0,
+            Math.min(item.quantity_cancellable, Math.floor(initialCancelQtyByItem[item.order_item_id] ?? 0)),
+          );
+          initialQty[item.order_item_id] =
+            cancellationType === "total"
+              ? item.quantity_cancellable
+              : requestedQty;
         }
         setCancelQtyByItem(initialQty);
       } finally {
@@ -132,7 +152,7 @@ export default function CancelOrderDialog({
     };
 
     loadSnapshot();
-  }, [open, orderId, cancellationType, visibleItems]);
+  }, [open, orderId, cancellationType, visibleItems, initialCancelQtyByItem]);
 
   const selectedItems = useMemo(
     () =>
@@ -163,6 +183,8 @@ export default function CancelOrderDialog({
     () => selectedItems.reduce((sum, item) => sum + item.selected_cancel_qty * item.unit_price, 0),
     [selectedItems],
   );
+
+  const requiresAuthorization = requiresAuthorizationOverride ?? (!canAuthorizeCancel && !isCancelRequested);
 
   const canSubmit = !!reason && !loadingSnapshot && !cancelOrderMutation.isPending && selectedItems.length > 0;
 
@@ -196,14 +218,14 @@ export default function CancelOrderDialog({
           notes,
           cancelledBy: userId,
         },
-        requiresAuthorization: !canAuthorizeCancel && !isCancelRequested,
+        requiresAuthorization,
       },
       {
         onSuccess: () => {
           onOpenChange(false);
           setReason("");
           setNotes("");
-          setCancellationType("partial");
+          setCancellationType(initialCancellationType);
           setCancelQtyByItem({});
         },
       },
@@ -212,38 +234,42 @@ export default function CancelOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[94vw] lg:max-w-4xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[92vw] md:max-w-2xl lg:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Cancelar orden</DialogTitle>
           <DialogDescription>Orden #{orderNumber}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="flex flex-col gap-2 rounded-lg border border-border p-2 sm:flex-row sm:items-center">
-            <Button
-              type="button"
-              variant={cancellationType === "partial" ? "default" : "outline"}
-              onClick={() => setCancellationType("partial")}
-              className="h-9 w-full sm:h-8 sm:w-auto"
-            >
-              Cancelacion parcial
-            </Button>
-            <Button
-              type="button"
-              variant={cancellationType === "total" ? "default" : "outline"}
-              onClick={() => setCancellationType("total")}
-              className="h-9 w-full sm:h-8 sm:w-auto"
-            >
-              Cancelacion total
-            </Button>
-          </div>
+          {!compactPresetMode && (
+            <div className="flex flex-col gap-2 rounded-lg border border-border p-2 sm:flex-row sm:items-center">
+              <Button
+                type="button"
+                variant={cancellationType === "partial" ? "default" : "outline"}
+                onClick={() => setCancellationType("partial")}
+                className="h-9 w-full sm:h-8 sm:w-auto"
+              >
+                Cancelacion parcial
+              </Button>
+              <Button
+                type="button"
+                variant={cancellationType === "total" ? "default" : "outline"}
+                onClick={() => setCancellationType("total")}
+                className="h-9 w-full sm:h-8 sm:w-auto"
+              >
+                Cancelacion total
+              </Button>
+            </div>
+          )}
 
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Aqui aparecen las cantidades que todavia se pueden anular. Si una linea ya fue despachada pero aun no esta pagada, tambien se mostrara como anulable.
-            </AlertDescription>
-          </Alert>
+          {!compactPresetMode && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Aqui aparecen las cantidades que todavia se pueden anular. Si una linea ya fue despachada pero aun no esta pagada, tambien se mostrara como anulable.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {loadingSnapshot ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -257,33 +283,41 @@ export default function CancelOrderDialog({
             </Alert>
           ) : (
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Seleccion de cantidades a cancelar</Label>
-              <div className="max-h-[46dvh] space-y-2 overflow-y-auto rounded-lg border border-border p-2 sm:max-h-72">
+              <Label className="text-sm font-medium">
+                {compactPresetMode ? "Detalle de anulacion" : "Seleccion de cantidades a cancelar"}
+              </Label>
+              <div className="max-h-[46dvh] space-y-2 overflow-y-auto rounded-lg border border-border p-2 sm:max-h-72 md:max-h-[52dvh]">
                 {items.map((item) => (
                   <div key={item.order_item_id} className="rounded-md border border-border p-2">
-                    <div className="flex flex-col gap-2.5 md:grid md:grid-cols-[minmax(0,1fr)_96px] md:items-start">
+                    <div className={`flex flex-col gap-2.5 ${compactPresetMode ? "md:grid md:grid-cols-[minmax(0,1fr)_220px] md:items-center" : "md:grid md:grid-cols-[minmax(0,1fr)_96px] md:items-start"}`}>
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{item.description_snapshot}</p>
                         <p className="text-xs leading-5 text-muted-foreground">
                           Ord: {item.quantity_ordered} | Pend: {item.quantity_pending_prepare} | Listo: {item.quantity_ready_available} | Desp: {item.quantity_dispatched_available} | Canc: {item.quantity_cancelled_total} | Pag: {item.quantity_paid}
                         </p>
                       </div>
-                      <div className="w-full md:w-24">
-                        <Label htmlFor={`qty-${item.order_item_id}`} className="text-[11px] text-muted-foreground">
-                          Cant. cancelar
-                        </Label>
-                        <Input
-                          id={`qty-${item.order_item_id}`}
-                          type="number"
-                          min={0}
-                          max={item.quantity_cancellable}
-                          step={1}
-                          disabled={cancellationType === "total" || item.quantity_cancellable <= 0}
-                          value={cancelQtyByItem[item.order_item_id] ?? 0}
-                          onChange={(e) => handleChangeQty(item.order_item_id, e.target.value, item.quantity_cancellable)}
-                          className="h-9"
-                        />
-                      </div>
+                      {compactPresetMode ? (
+                        <div className="rounded-md bg-muted px-3 py-2 text-sm md:text-right">
+                          Cantidad a anular: <span className="font-semibold">{cancelQtyByItem[item.order_item_id] ?? 0}</span>
+                        </div>
+                      ) : (
+                        <div className="w-full md:w-24">
+                          <Label htmlFor={`qty-${item.order_item_id}`} className="text-[11px] text-muted-foreground">
+                            Cant. cancelar
+                          </Label>
+                          <Input
+                            id={`qty-${item.order_item_id}`}
+                            type="number"
+                            min={0}
+                            max={item.quantity_cancellable}
+                            step={1}
+                            disabled={cancellationType === "total" || item.quantity_cancellable <= 0}
+                            value={cancelQtyByItem[item.order_item_id] ?? 0}
+                            onChange={(e) => handleChangeQty(item.order_item_id, e.target.value, item.quantity_cancellable)}
+                            className="h-9"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -305,25 +339,29 @@ export default function CancelOrderDialog({
             </RadioGroup>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="order-notes" className="text-sm font-medium">
-              Notas adicionales (opcional)
-            </Label>
-            <Textarea
-              id="order-notes"
-              placeholder="Detalle adicional de la cancelacion..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="h-20"
-            />
-          </div>
+          {!compactPresetMode && (
+            <div className="space-y-2">
+              <Label htmlFor="order-notes" className="text-sm font-medium">
+                Notas adicionales (opcional)
+              </Label>
+              <Textarea
+                id="order-notes"
+                placeholder="Detalle adicional de la cancelacion..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="h-20"
+              />
+            </div>
+          )}
 
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Se cancela primero la cantidad pendiente, luego la cantidad lista y, si todavia hace falta, la cantidad ya despachada que siga sin pagarse. Las cantidades pagadas nunca se cancelan.
-            </AlertDescription>
-          </Alert>
+          {!compactPresetMode && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Se cancela primero la cantidad pendiente, luego la cantidad lista y, si todavia hace falta, la cantidad ya despachada que siga sin pagarse. Las cantidades pagadas nunca se cancelan.
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="rounded-lg bg-muted p-3 text-sm">
             <p className="text-muted-foreground">Items seleccionados: {selectedItems.length}</p>

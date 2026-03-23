@@ -96,6 +96,7 @@ export function OrderCardBase({
   const isTakeout = order.order_type === "TAKEOUT";
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
+  const isDispatchedView = order.status === "KITCHEN_DISPATCHED";
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
   const isCancelRequested = !!order.cancel_requested_at;
 
@@ -161,10 +162,10 @@ export function OrderCardBase({
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
                   <Badge className="min-w-[2.35rem] justify-center rounded-md border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-0.5 text-[11px] font-black leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
-                    {item.quantity || 1}x
+                    {(isDispatchedView ? item.quantity : (item.quantity_total || item.quantity)) || 1}x
                   </Badge>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
+                    <p className="break-words whitespace-normal text-sm font-medium text-foreground">
                       {item.description_snapshot || "Item sin nombre"}
                     </p>
 
@@ -191,6 +192,11 @@ export function OrderCardBase({
                     {item.hasNote && (
                       <p className="mt-1 pl-2 text-xs italic text-muted-foreground">Nota adicional</p>
                     )}
+
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>Despachado: {item.quantity_dispatched ?? 0}</span>
+                      <span>Falta: {item.quantity_remaining ?? 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>

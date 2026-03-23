@@ -96,6 +96,11 @@
 ### 4.5) Ordenes/Caja/Despacho: snapshot operativo unificado
 - La clasificacion de ordenes visibles entre `Enviadas`, `Listas`, `Despachadas` y `Por cobrar` ya no debe depender de lecturas parciales de eventos.
 - `Ordenes`, `Despacho`, `Cocina` y `Caja` deben apoyarse en el snapshot operativo (`get_order_operational_snapshot`) para evitar que una orden quede pegada en una pestana equivocada.
+- En `Despacho`, `Listo` y `Despachar` ya no son etapas dependientes entre si:
+  - `Listo` solo dispara la alerta global al mesero
+  - `Despachar` opera por item y por cantidad, consumiendo unidades disponibles en `PENDING` y/o `READY`
+- En el snapshot operativo, `quantity_dispatched_available` ya representa las unidades actualmente despachables (`quantity_pending_prepare + quantity_ready_available`), no el historico neto ya despachado.
+- Una orden debe seguir visible en `Despacho` mientras conserve al menos una unidad en `PENDING` o `READY`; solo sale cuando ya no quedan unidades despachables.
 - Al despachar una orden, `Caja` debe invalidar tambien `payable-orders` para reflejar enseguida lo cobrable.
 - La ventana de `Cancelar orden` ya no debe cargar la orden completa si se abre desde una tarjeta filtrada por pestana:
   - debe usar el mismo subconjunto visible de items que la tarjeta desde donde se abrio
@@ -110,6 +115,15 @@
   - la tarjeta debe mostrar solo los items/cantidades incluidos en la solicitud pendiente, no todos los items activos de la orden
   - desde ahi el supervisor/usuario autorizado resuelve la aprobacion o cancelacion final
   - tambien debe existir la accion `Negar anulacion`; al negarla se elimina la solicitud pendiente y la orden vuelve a su flujo operativo previo sin alterar cantidades reales
+- En `Ordenes`, la anulacion desde una linea individual ya no debe abrir el flujo largo de seleccion:
+  - el usuario elige cantidad directamente en la tarjeta del item
+  - el boton `Anular` abre un dialogo compacto con el detalle ya preseleccionado
+  - ese flujo siempre debe cancelar como `partial`, aunque se anule el 100% de la linea
+  - nunca debe reinterpretarse como anulacion total de la orden completa
+- La anulacion directa por item tambien debe respetar la politica operativa del turno:
+  - supervisor/admin o usuario con `can_authorize_order_cancel`: aplica directo
+  - mesero comun: solo aplica directo si la categoria raiz del producto tiene `allow_direct_cancel = true`
+  - si la categoria no permite anulacion directa, el mismo flujo debe generar solicitud y no aplicar la anulacion real
 
 ### 4.6) Mesas: modelo hibrido nuevo
 - `restaurant_tables` no desaparece: sigue siendo la entidad interna real para FKs, ordenes y divisiones.
@@ -192,6 +206,9 @@
   - `CashRegisterMovementsDialog` usa un solo flujo de registro, con historial oculto detras de `Ver historial`
   - `ShiftSummary` en `Caja` ya distribuye sus acciones en grilla tactil en telefono y modales con alto/scroll controlado
 - En tablet estos dialogos deben abrir mas anchos y aprovechar 2 columnas cuando ya hay espacio horizontal suficiente.
+- El flujo compacto de anulacion por item debe degradar asi:
+  - telefono: tarjeta del item en columna, stepper y boton `Anular` a ancho util, dialogo compacto sin selector repetido de cantidad/tipo
+  - tablet: el dialogo compacto usa mas ancho y puede mostrar detalle + cantidad seleccionada en dos columnas
 - `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.

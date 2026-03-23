@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
-import type { DispatchOrder } from "@/hooks/useDispatchOrders";
+import { useEffect, useMemo, useState } from "react";
+import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle2, UtensilsCrossed, ShoppingBag, Eye, Truck } from "lucide-react";
+import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, Eye } from "lucide-react";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 interface DispatchCardBaseProps {
   order: DispatchOrder;
-  onOpenReadyDialog: (order: DispatchOrder) => void;
-  onOpenDispatchDialog: (order: DispatchOrder) => void;
+  onMarkOrderReady: (order: DispatchOrder) => void;
+  onMarkItemReady: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
+  onDispatchItem: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
+  isMarkingOrderReady?: boolean;
+  isMarkingReady?: boolean;
+  isDispatching?: boolean;
   showEyeIcon?: boolean;
   onEyeClick?: () => void;
   readOnly?: boolean;
@@ -50,25 +53,118 @@ function formatEventTimeWithLabel(iso: string | null | undefined, status: string
   }
 }
 
-function StageChip({ label, quantity, tone }: { label: string; quantity: number; tone: "pending" | "ready" | "dispatched" }) {
-  const toneClass =
-    tone === "pending"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : tone === "ready"
-        ? "border-blue-200 bg-blue-50 text-blue-700"
-        : "border-green-200 bg-green-50 text-green-700";
+function QuantityStepper({
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+  compact = false,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (next: number) => void;
+  compact?: boolean;
+}) {
+  const canDecrease = !disabled && value > min;
+  const canIncrease = !disabled && value < max;
+  const [draftValue, setDraftValue] = useState(String(value));
+
+  useEffect(() => {
+    setDraftValue(String(value));
+  }, [value]);
+
+  const commitDraft = () => {
+    const parsed = Number(draftValue);
+    if (!Number.isFinite(parsed)) {
+      setDraftValue(String(value));
+      return;
+    }
+
+    const normalized = Math.max(min, Math.min(max, Math.floor(parsed)));
+    setDraftValue(String(normalized));
+    if (normalized !== value) {
+      onChange(normalized);
+    }
+  };
+
+  const handleDraftChange = (rawValue: string) => {
+    if (rawValue === "") {
+      setDraftValue("");
+      return;
+    }
+
+    const sanitized = rawValue.replace(/[^\d]/g, "");
+    if (!sanitized) {
+      setDraftValue(String(min));
+      return;
+    }
+
+    const parsed = Math.floor(Number(sanitized));
+    const normalized = Math.max(min, Math.min(max, parsed));
+    setDraftValue(String(normalized));
+  };
 
   return (
-    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", toneClass)}>
-      {label} {quantity}
-    </span>
+    <div className={cn("flex items-center rounded-xl border border-border bg-background/90", compact ? "h-8" : "h-10")}>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-full items-center justify-center text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+          compact ? "w-6" : "w-9",
+        )}
+        onClick={() => canDecrease && onChange(value - 1)}
+        disabled={!canDecrease}
+        aria-label="Disminuir cantidad"
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        step={1}
+        value={draftValue}
+        disabled={disabled}
+        onChange={(event) => handleDraftChange(event.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur();
+          }
+        }}
+        className={cn(
+          "dispatch-qty-input bg-transparent text-center font-mono text-sm font-semibold text-foreground outline-none",
+          compact ? "w-8 px-0" : "w-10 px-1",
+        )}
+      />
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-full items-center justify-center text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+          compact ? "w-6" : "w-9",
+        )}
+        onClick={() => canIncrease && onChange(value + 1)}
+        disabled={!canIncrease}
+        aria-label="Aumentar cantidad"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 
 export function DispatchCardBase({
   order,
-  onOpenReadyDialog,
-  onOpenDispatchDialog,
+  onMarkOrderReady,
+  onMarkItemReady,
+  onDispatchItem,
+  isMarkingOrderReady = false,
+  isMarkingReady = false,
+  isDispatching = false,
   showEyeIcon = false,
   onEyeClick,
   readOnly = false,
@@ -77,6 +173,23 @@ export function DispatchCardBase({
   const since = order.sent_to_kitchen_at || order.updated_at;
   const { elapsed } = useElapsed(since);
   const isTakeout = order.order_type === "TAKEOUT";
+  const [qtyByItem, setQtyByItem] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setQtyByItem((current) => {
+      const next: Record<string, number> = {};
+      for (const item of order.items) {
+        if (item.quantity_dispatchable <= 0) continue;
+        const currentValue = current[item.id];
+        if (typeof currentValue === "number" && Number.isFinite(currentValue)) {
+          next[item.id] = Math.max(1, Math.min(item.quantity_dispatchable, currentValue));
+        } else {
+          next[item.id] = Math.max(1, item.quantity_dispatchable);
+        }
+      }
+      return next;
+    });
+  }, [order.items]);
 
   const shouldShowTimer = order.status === "SENT_TO_KITCHEN" || order.status === "READY";
   const isWarning = shouldShowTimer && elapsed > 10 * 60;
@@ -86,10 +199,16 @@ export function DispatchCardBase({
   const timeDisplay = shouldShowTimer ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime, order.status);
 
   const label = order.split_code ?? order.table_name ?? "Para llevar";
-  const canMarkReady = order.pending_prepare_count > 0;
-  const canDispatch = order.ready_available_count > 0;
-  const previewableItems = order.items.filter(
-    (item) => item.quantity_pending_prepare > 0 || item.quantity_ready_available > 0 || item.quantity_dispatched > 0,
+  const canMarkAnyReady = order.pending_prepare_count > 0;
+  const canDispatchAny = order.dispatchable_count > 0;
+  const previewableItems = useMemo(
+    () =>
+      order.items.filter(
+        (item) =>
+          item.quantity_pending_prepare > 0
+          || item.quantity_ready_available > 0,
+      ),
+    [order.items],
   );
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
 
@@ -102,19 +221,21 @@ export function DispatchCardBase({
   return (
     <div
       className={cn(
-        "flex self-start flex-col overflow-hidden rounded-2xl border-2 transition-colors",
+        "flex w-full min-w-0 justify-self-stretch flex-col overflow-hidden rounded-2xl border-2 transition-colors",
         expanded ? "min-h-[36rem]" : "",
         isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
             ? "border-warning/50 shadow-md shadow-warning/10"
-            : canDispatch
+            : canDispatchAny
               ? "border-green-500/50 shadow-md shadow-green-500/10"
-              : "border-border",
+              : canMarkAnyReady
+                ? "border-blue-500/40 shadow-md shadow-blue-500/10"
+                : "border-border",
       )}
     >
-      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
+      <div className={cn("flex items-center justify-between border-b border-border px-3 py-3 sm:px-4", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="flex min-w-0 items-center gap-2">
           {order.order_type === "TAKEOUT" ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
@@ -125,6 +246,19 @@ export function DispatchCardBase({
           <span className="shrink-0 font-display text-xs text-muted-foreground">{order.order_code ?? String(order.order_number)}</span>
         </div>
         <div className="flex items-center gap-2">
+          {!readOnly ? (
+            <Button
+              type="button"
+              variant="info"
+              size="sm"
+              className="h-8 gap-1.5 rounded-xl px-3"
+              disabled={isMarkingOrderReady || isMarkingReady || isDispatching}
+              onClick={() => onMarkOrderReady(order)}
+            >
+              <Check className="h-3.5 w-3.5" />
+              Listo
+            </Button>
+          ) : null}
           <div
             className={cn(
               "flex shrink-0 items-center gap-1 font-mono text-xs font-semibold",
@@ -148,68 +282,103 @@ export function DispatchCardBase({
         </div>
       </div>
 
-      <div className={cn("border-b border-border text-muted-foreground", expanded ? "px-5 py-3 text-sm" : "px-4 py-2 text-xs")}>{summaryText}</div>
+      <div className={cn("border-b border-border text-muted-foreground", expanded ? "px-5 py-3 text-sm" : "px-3 py-2 text-xs sm:px-4")}>{summaryText}</div>
 
-      <div className={cn("space-y-2 overflow-y-auto", expanded ? "max-h-[28rem] px-5 py-4 pr-4" : "max-h-[19rem] px-4 py-3 pr-3")}>
-        {previewableItems.map((item) => (
-          <div key={item.id} className={cn("rounded-xl border border-border", expanded ? "px-4 py-3 text-base" : "px-3 py-2 text-sm")}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start gap-2">
-                  <span className="mt-0.5 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
-                  <p className={cn("font-medium text-foreground", expanded ? "text-[15px]" : "truncate")}>{item.description_snapshot}</p>
-                </div>
-                {item.modifiers.length > 0 && (
-                  <div className={cn("mt-1 flex flex-col gap-1", expanded ? "pl-[20px]" : "pl-[18px]")}>
-                    {item.modifiers.filter((mod) => String(mod.description ?? "").trim().length > 0).map((mod, idx) => (
-                      <p
-                        key={idx}
-                        className={cn("w-fit rounded-md border border-red-200 bg-red-50 px-2 py-1 font-bold text-red-700", expanded ? "text-sm" : "text-xs")}
-                      >
-                        - {mod.description}
-                      </p>
-                    ))}
+      <div className={cn("space-y-2 overflow-y-auto", expanded ? "max-h-[28rem] px-5 py-4 pr-4" : "max-h-[19rem] px-3 py-3 pr-2 sm:px-4 sm:pr-3")}>
+        {previewableItems.map((item) => {
+          const selectedQty = Math.max(1, Math.min(item.quantity_dispatchable || 1, qtyByItem[item.id] ?? 1));
+          const canDispatch = item.quantity_dispatchable > 0;
+          const remainingToDispatch = item.quantity_dispatchable;
+          const dispatchedQuantity = item.quantity_dispatched;
+
+          return (
+            <div key={item.id} className={cn("rounded-xl border border-border bg-white/70", expanded ? "px-4 py-3 text-base" : "px-3 py-2.5 text-sm sm:px-3.5")}>
+              <div className="flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
+                    {item.quantity_ordered}X
                   </div>
-                )}
-                <div className={cn("mt-2 flex flex-wrap gap-1.5", expanded ? "pl-[20px]" : "pl-[18px]")}>
-                  {item.quantity_pending_prepare > 0 ? (
-                    <StageChip label="Pend" quantity={item.quantity_pending_prepare} tone="pending" />
-                  ) : null}
-                  {item.quantity_ready_available > 0 ? (
-                    <StageChip label="Listo" quantity={item.quantity_ready_available} tone="ready" />
-                  ) : null}
-                  {item.quantity_dispatched > 0 ? (
-                    <StageChip label="Desp" quantity={item.quantity_dispatched} tone="dispatched" />
-                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("break-words whitespace-normal font-medium leading-tight text-foreground", expanded ? "text-[15px]" : "text-sm md:text-[15px]")}>
+                      {item.description_snapshot}
+                    </p>
+                    {item.modifiers.length > 0 ? (
+                      <div className="mt-1 flex flex-col gap-1">
+                        {item.modifiers
+                          .filter((mod) => String(mod.description ?? "").trim().length > 0)
+                          .map((mod, idx) => (
+                            <p
+                              key={idx}
+                              className={cn(
+                                "break-words whitespace-normal font-semibold text-red-700",
+                                expanded ? "text-sm" : "text-xs md:text-[13px]",
+                              )}
+                            >
+                              - {mod.description}
+                            </p>
+                          ))}
+                      </div>
+                    ) : null}
+                    {item.item_note ? (
+                      <p className={cn("break-words whitespace-normal text-muted-foreground", expanded ? "text-sm" : "text-xs md:text-[13px]")}>
+                        Nota: {item.item_note}
+                      </p>
+                    ) : null}
+                    <div className={cn("mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground", expanded ? "text-sm" : "text-[11px] md:text-[13px]")}>
+                      <span className="shrink-0">Env: {item.quantity_ordered}</span>
+                      <span className="shrink-0">Desp: {dispatchedQuantity}</span>
+                      <span className="shrink-0">Falt: {remainingToDispatch}</span>
+                      <span className="shrink-0">Canc: {item.quantity_cancelled}</span>
+                    </div>
+                  </div>
                 </div>
+
+                {!readOnly && canDispatch ? (
+                  <div className="flex shrink-0 items-center gap-2 md:justify-end">
+                    <QuantityStepper
+                      value={selectedQty}
+                      min={1}
+                      max={Math.max(1, item.quantity_dispatchable)}
+                      disabled={isMarkingReady || isDispatching}
+                      onChange={(next) => {
+                        setQtyByItem((current) => ({ ...current, [item.id]: next }));
+                      }}
+                      compact={!expanded}
+                    />
+
+                    {canDispatch && (
+                      <Button
+                        type="button"
+                        variant="success"
+                        size={expanded ? "default" : "sm"}
+                        className="min-w-[6.5rem] gap-1.5 px-3 md:min-w-[7rem]"
+                        disabled={isDispatching || isMarkingReady}
+                        onClick={() => {
+                          const remainingQty = Math.max(0, item.quantity_dispatchable - selectedQty);
+                          setQtyByItem((current) => ({
+                            ...current,
+                            [item.id]: Math.max(1, remainingQty),
+                          }));
+                          onDispatchItem(order, item, selectedQty);
+                        }}
+                      >
+                        <Truck className="h-3.5 w-3.5" />
+                        Despachar
+                      </Button>
+                    )}
+                  </div>
+                ) : null}
               </div>
-              <span className={cn("rounded-md bg-primary/12 font-bold text-primary", expanded ? "px-3 py-1.5 text-base" : "px-2.5 py-1 text-sm")}>
-                x{item.quantity_ordered}
-              </span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {(canMarkReady || canDispatch || readOnly) && (
-        <div className={cn("space-y-2 border-t border-border bg-muted/30", expanded ? "mt-auto px-5 py-4" : "px-4 py-3")}>
-          {readOnly ? <div className={cn("text-center text-muted-foreground", expanded ? "text-sm" : "text-xs")}>Modo consulta: no puedes ejecutar acciones de despacho.</div> : null}
-
-          {!readOnly && canMarkReady && (
-            <Button onClick={() => onOpenReadyDialog(order)} variant="info" className="w-full gap-2" size={expanded ? "default" : "sm"}>
-              <CheckCircle2 className="h-4 w-4" />
-              Marcar listo
-            </Button>
-          )}
-
-          {!readOnly && canDispatch && (
-            <Button onClick={() => onOpenDispatchDialog(order)} variant="success" className="w-full gap-2" size={expanded ? "default" : "sm"}>
-              <Truck className="h-4 w-4" />
-              Despachar
-            </Button>
-          )}
+      {readOnly ? (
+        <div className={cn("border-t border-border bg-muted/30 text-center text-muted-foreground", expanded ? "mt-auto px-5 py-4 text-sm" : "px-4 py-3 text-xs")}>
+          Modo consulta: no puedes ejecutar acciones de despacho.
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

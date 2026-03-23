@@ -6,11 +6,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useCancellation } from "@/hooks/useCancellation";
 import OrderCard from "./OrderCard";
-import { Loader2, ClipboardList, Clock, CheckCircle2, Truck, Ban, CircleDollarSign } from "lucide-react";
+import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type TabType = "sent" | "ready" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
+type TabType = "sent" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
 
 interface TabInfo {
   key: TabType;
@@ -29,14 +29,6 @@ const tabs: TabInfo[] = [
     showCancel: true,
     helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
     icon: <Clock className="h-4 w-4" />,
-  },
-  {
-    key: "ready",
-    label: "Listas",
-    status: "READY",
-    showCancel: true,
-    helperText: "Aqui ves solo las cantidades que ya estan listas para entregar o despachar.",
-    icon: <CheckCircle2 className="h-4 w-4" />,
   },
   {
     key: "dispatched",
@@ -177,7 +169,6 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
   }, [activeBranchId, qc]);
 
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
-  const readyOrders = useOrdersByStatus("READY");
   const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED");
   const pendingCancellationOrders = useOrdersByStatus("PENDING_CANCELLATION");
   const cancelledOrders = useOrdersByStatus("CANCELLED");
@@ -187,8 +178,6 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
     switch (tab) {
       case "sent":
         return sentOrders;
-      case "ready":
-        return readyOrders;
       case "dispatched":
         return dispatchedOrders;
       case "pendingCancellation":
@@ -232,7 +221,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
             )}
           </div>
 
-          <div className="grid flex-1 grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid-cols-6">
+          <div className="grid flex-1 grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid-cols-5">
         {tabs.map((tab) => {
           const count = getTabCount(tab.key);
           const isActive = activeTab === tab.key;

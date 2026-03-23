@@ -247,6 +247,7 @@ export function useMeseroOrderReadyNotification(
   const handledNotificationsRef = useRef<Set<string>>(new Set());
   const onNotificationRef = useRef(onNotification);
   const lastPolledReadyAtRef = useRef<string | null>(null);
+  const lastPolledNotificationAtRef = useRef<string | null>(null);
 
   useEffect(() => {
     onNotificationRef.current = onNotification;
@@ -331,6 +332,7 @@ export function useMeseroOrderReadyNotification(
     return () => {
       cancelled = true;
       lastPolledReadyAtRef.current = null;
+      lastPolledNotificationAtRef.current = null;
     };
   }, [activeBranchId, enabled]);
 
@@ -387,6 +389,88 @@ export function useMeseroOrderReadyNotification(
       window.clearInterval(interval);
     };
   }, [activeBranchId, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !activeBranchId) return;
+
+    let cancelled = false;
+
+    const initializeNotificationCursor = async () => {
+      const { data } = await (supabase as any)
+        .from("order_ready_notifications")
+        .select("created_at")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!cancelled) {
+        lastPolledNotificationAtRef.current = data?.created_at ?? new Date().toISOString();
+      }
+    };
+
+    void initializeNotificationCursor();
+
+    return () => {
+      cancelled = true;
+      lastPolledNotificationAtRef.current = null;
+    };
+  }, [activeBranchId, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !activeBranchId) return;
+
+    let cancelled = false;
+
+    const pollNotificationTable = async () => {
+      const cursor = lastPolledNotificationAtRef.current;
+      if (!cursor) return;
+
+      const { data, error } = await (supabase as any)
+        .from("order_ready_notifications")
+        .select("id, order_id, created_at")
+        .gt("created_at", cursor)
+        .order("created_at", { ascending: true })
+        .limit(20);
+
+      if (cancelled || error || !data || data.length === 0) return;
+
+      for (const rawNotification of data as Array<{ id?: string; order_id?: string; created_at?: string }>) {
+        const notificationId = String(rawNotification.id ?? `${rawNotification.order_id ?? "unknown"}:${rawNotification.created_at ?? ""}`);
+        if (handledNotificationsRef.current.has(notificationId)) continue;
+
+        const orderId = String(rawNotification.order_id ?? "").trim();
+        if (!orderId) continue;
+
+        const notification = await fetchOrderReadyNotification(orderId, rawNotification.created_at ?? new Date().toISOString());
+        if (!notification || cancelled) continue;
+        if (notification.branch_id !== activeBranchId) continue;
+
+        handledNotificationsRef.current.add(notificationId);
+        if (handledNotificationsRef.current.size > 100) {
+          const firstKey = handledNotificationsRef.current.values().next().value;
+          if (firstKey) handledNotificationsRef.current.delete(firstKey);
+        }
+
+        void playNotificationSound();
+        vibrateDevice();
+        onNotificationRef.current(notification);
+      }
+
+      const newestCreatedAt = data[data.length - 1]?.created_at;
+      if (newestCreatedAt) {
+        lastPolledNotificationAtRef.current = newestCreatedAt;
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void pollNotificationTable();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeBranchId, enabled]);
 }
 
 interface OrderReadyNotificationBannerProps {
@@ -416,7 +500,7 @@ export function OrderReadyNotificationBanner({
     : notification.split_code?.trim() || notification.table_name?.trim() || "Mesa";
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 px-3 sm:bottom-6 sm:right-4 sm:left-auto sm:max-w-md">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[5.75rem] z-50 px-3 sm:bottom-6 sm:right-4 sm:left-auto sm:max-w-md">
       <Alert className="pointer-events-auto border-green-700 bg-green-600 text-white shadow-lg">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -501,7 +585,7 @@ export function OrderReadyAlertCenter() {
   return (
     <>
       {enabled && !audioEnabled && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-40 z-50 px-3 sm:bottom-24 sm:right-4 sm:left-auto sm:max-w-md">
+        <div className="pointer-events-none fixed inset-x-0 bottom-[9rem] z-50 px-3 sm:bottom-24 sm:right-4 sm:left-auto sm:max-w-md">
           <Alert className="pointer-events-auto border-orange-300 bg-white text-foreground shadow-lg">
             <div className="flex items-start gap-3">
               <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" />

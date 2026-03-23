@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { useDispatchOrders, type DispatchOrder } from "@/hooks/useDispatchOrders";
+import { useDispatchOrders } from "@/hooks/useDispatchOrders";
 import { useDispatchAccess, type DispatchView } from "@/hooks/useDispatchAccess";
 import DispatchCard from "@/components/dispatch/DispatchCard";
-import OperationDialog from "@/components/order/OperationDialog";
 import { Loader2, Truck, AlertCircle, ShoppingBag, UtensilsCrossed } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useBranch } from "@/contexts/BranchContext";
@@ -27,8 +26,6 @@ function getViewIcon(view: DispatchView) {
 const Despacho = () => {
   const { activeBranchId } = useBranch();
   const { availableViews, showTabs, hasAccess, isLoading: accessLoading, getViewLabel, canOperateView } = useDispatchAccess();
-  const [readyOrder, setReadyOrder] = useState<DispatchOrder | null>(null);
-  const [dispatchOrder, setDispatchOrder] = useState<DispatchOrder | null>(null);
   const [activeView, setActiveView] = useState<DispatchView | null>(null);
   const storageKey = `dispatch:last-view:${activeBranchId ?? "global"}`;
 
@@ -48,7 +45,7 @@ const Despacho = () => {
 
   const resolvedView = activeView && availableViews.includes(activeView) ? activeView : resolveInitialView(availableViews, storageKey);
   const scope = resolvedView ?? "TABLE";
-  const { orders, isLoading, isError, applyReadyOperation, applyDispatchOperation } = useDispatchOrders(scope);
+  const { orders, isLoading, isError, applyReadyOperation, markItemReady, dispatchItem } = useDispatchOrders(scope);
 
   if (accessLoading) {
     return (
@@ -94,8 +91,8 @@ const Despacho = () => {
 
   return (
     <>
-      <div className="p-4">
-        <div className="surface-glow mb-4 px-5 py-4">
+      <div className="px-2 py-3 sm:px-4 md:px-5 md:py-4 lg:px-6">
+        <div className="surface-glow mb-4 px-3 py-3 sm:px-5 sm:py-4">
           <div className="relative flex flex-wrap items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
               <Truck className="h-5 w-5" />
@@ -159,45 +156,42 @@ const Despacho = () => {
             </p>
           </div>
         ) : (
-          <div className="grid auto-rows-max grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid auto-rows-max grid-cols-1 items-start gap-3 md:grid-cols-2 md:gap-4 2xl:grid-cols-3">
             {orders.map((order) => (
               <DispatchCard
                 key={order.card_id}
                 order={order}
-                onOpenReadyDialog={setReadyOrder}
-                onOpenDispatchDialog={setDispatchOrder}
+                onMarkOrderReady={(currentOrder) => {
+                  const items = currentOrder.items
+                    .filter((item) => item.quantity_pending_prepare > 0)
+                    .map((item) => ({
+                      order_item_id: item.id,
+                      quantity_ready: item.quantity_pending_prepare,
+                    }));
+
+                  if (items.length === 0) return;
+
+                  applyReadyOperation.mutate({
+                    orderId: currentOrder.id,
+                    operationType: "partial",
+                    items,
+                  });
+                }}
+                onMarkItemReady={(_, item, qty) => {
+                  markItemReady.mutate({ orderId: order.id, itemId: item.id, qty });
+                }}
+                onDispatchItem={(_, item, qty) => {
+                  dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
+                }}
+                isMarkingOrderReady={applyReadyOperation.isPending}
+                isMarkingReady={markItemReady.isPending}
+                isDispatching={dispatchItem.isPending}
                 readOnly={readOnly}
               />
             ))}
           </div>
         )}
       </div>
-
-      <OperationDialog
-        open={!!readyOrder}
-        onOpenChange={(open) => !open && setReadyOrder(null)}
-        order={readyOrder}
-        mode="ready"
-        processing={applyReadyOperation.isPending}
-        onConfirm={(payload) => {
-          applyReadyOperation.mutate(payload, {
-            onSuccess: () => setReadyOrder(null),
-          });
-        }}
-      />
-
-      <OperationDialog
-        open={!!dispatchOrder}
-        onOpenChange={(open) => !open && setDispatchOrder(null)}
-        order={dispatchOrder}
-        mode="dispatch"
-        processing={applyDispatchOperation.isPending}
-        onConfirm={(payload) => {
-          applyDispatchOperation.mutate(payload, {
-            onSuccess: () => setDispatchOrder(null),
-          });
-        }}
-      />
     </>
   );
 };

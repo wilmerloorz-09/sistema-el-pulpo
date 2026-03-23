@@ -116,6 +116,8 @@ function normalizeSnapshotRow(row: OrderOperationalSnapshotRow) {
 
 export interface OperationalMaps {
   readyMap: Record<string, number>;
+  readyAvailableMap: Record<string, number>;
+  pendingPrepareMap: Record<string, number>;
   dispatchedTotalMap: Record<string, number>;
   dispatchedAvailableMap: Record<string, number>;
   paidMap: Record<string, number>;
@@ -129,6 +131,8 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
   if (orderIds.length === 0) {
     return {
       readyMap: {},
+      readyAvailableMap: {},
+      pendingPrepareMap: {},
       dispatchedTotalMap: {},
       dispatchedAvailableMap: {},
       paidMap: {},
@@ -154,6 +158,8 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
 
     return {
       readyMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_total"),
+      readyAvailableMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_available"),
+      pendingPrepareMap: sumRowsByItem(rows, "order_item_id", "quantity_pending_prepare"),
       dispatchedTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_total"),
       dispatchedAvailableMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_available"),
       paidMap: sumRowsByItem(rows, "order_item_id", "quantity_paid"),
@@ -165,6 +171,8 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
   } catch {
     return {
       readyMap: {},
+      readyAvailableMap: {},
+      pendingPrepareMap: {},
       dispatchedTotalMap: {},
       dispatchedAvailableMap: {},
       paidMap: {},

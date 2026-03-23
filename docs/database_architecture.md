@@ -218,6 +218,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 
 ## Notificacion de orden lista
 - La tabla/evento `order_ready_notifications` sigue siendo el disparador realtime cuando una orden entra a estado `READY`.
+- Desde el rediseño de `Despacho`, `mark_order_quantities_ready` tambien debe insertar en `order_ready_notifications` cuando se marca un item como `Listo` desde despacho, aunque la orden completa no cambie todavia a estado `READY`.
 - El frontend no debe asumir que el payload realtime ya trae todos los datos enriquecidos; puede necesitar completar:
   - sucursal
   - mesa
@@ -236,6 +237,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Regla especial vigente:
   - la primera categoria raiz de la sucursal solo puede ser modificada por administrador general
 - La RPC/listado debe devolver todas las categorias nivel 0 activas, incluso si alguna aun no tiene productos, para no ocultar raices validas.
+- La resolucion operativa por producto se hace con `get_branch_cancel_policy_for_product(branch_id, product_id)`:
+  - busca el ancestro raiz (`depth = 0`) del producto dentro de `menu_nodes`
+  - devuelve `allow_direct_cancel`
+  - ese valor se combina en frontend con `can_authorize_order_cancel` / supervisor / admin para decidir si la anulacion aplica directo o pasa a solicitud
 
 ## Solicitudes pendientes de anulacion
 - `orders.cancel_requested_at` identifica una orden con solicitud pendiente de anulacion.
@@ -248,6 +253,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Mientras la solicitud siga activa:
   - no debe perderse la referencia a su etapa operativa original
   - pero tampoco debe seguir mezclada en `Enviadas`, `Listas` o `Despachadas`
+- Importante para anulacion por item:
+  - si el usuario dispara una anulacion desde una sola linea de orden, el backend debe seguir recibiendo `p_cancellation_type = 'partial'`
+  - anular el 100% de una linea no significa `total` de la orden
+  - `total` se reserva para anulacion integral de la orden completa
 
 ## Consultas Correctas para Modificadores
 - No leer descripcion desde `order_item_modifiers` como fuente principal.
@@ -341,6 +350,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - recrea `get_order_operational_snapshot` con cantidades despachadas disponibles
   - ajusta `recompute_order_operational_state`
   - extiende `cancel_order_quantities` para cancelar tambien cantidades despachadas no pagadas
+- `supabase/migrations/20260320110000_dispatch_from_pending_or_ready.sql`
+  - agrega `source_stage` a `order_item_dispatch_events` y marca el historico existente como `READY`
+  - redefine `dispatch_order_quantities` para consumir cantidades desde `PENDING` y/o `READY`
+  - redefine `get_order_operational_snapshot` para que `quantity_dispatched_available = quantity_pending_prepare + quantity_ready_available`
+  - ajusta `recompute_order_operational_state`, `mark_order_quantities_ready` y `cancel_order_quantities` a la nueva semantica operativa
 - `supabase/migrations/20260318110000_register_cash_movement_operational_rpc.sql`
   - agrega RPC operacional segura para registrar movimientos de caja sin depender de insert directo bloqueado por RLS
 - `supabase/migrations/20260318123000_apply_cash_payment_denoms_via_cash_movements.sql`

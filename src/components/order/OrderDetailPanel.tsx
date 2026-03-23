@@ -9,6 +9,9 @@ interface OrderItem {
   id: string;
   description_snapshot: string;
   quantity: number;
+  quantity_total?: number;
+  quantity_dispatched?: number;
+  quantity_remaining?: number;
   status: string;
   total?: number;
   modifiers?: Array<{ description: string }>;
@@ -81,6 +84,7 @@ export default function OrderDetailPanel({
   }, [since]);
 
   const shouldShowTimer = order.status === "SENT_TO_KITCHEN";
+  const isDispatchedView = order.status === "KITCHEN_DISPATCHED";
   const isWarning = shouldShowTimer && elapsed > 10 * 60;
   const isUrgent = shouldShowTimer && elapsed > 15 * 60;
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
@@ -137,7 +141,7 @@ export default function OrderDetailPanel({
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div key={item.id} className="flex items-start gap-2 rounded-xl bg-background px-2 py-2">
             <Badge className="min-w-[2.9rem] shrink-0 justify-center rounded-lg border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-2 py-1.5 text-sm font-black leading-none text-white shadow-[0_12px_22px_-18px_rgba(249,115,22,0.95)]">
-              {item.quantity || 1}x
+              {(isDispatchedView ? item.quantity : (item.quantity_total || item.quantity)) || 1}x
             </Badge>
 
             <div className="min-w-0 flex-1">
@@ -154,6 +158,10 @@ export default function OrderDetailPanel({
               {item.item_note && (
                 <p className="mt-0.5 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
               )}
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>Despachado: {item.quantity_dispatched ?? 0}</span>
+                <span>Falta: {item.quantity_remaining ?? 0}</span>
+              </div>
             </div>
             <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
               ${item.total ? item.total.toFixed(2) : "0.00"}

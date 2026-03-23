@@ -1,11 +1,15 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import DispatchCardBase from "./DispatchCardBase";
-import type { DispatchOrder } from "@/hooks/useDispatchOrders";
+import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 
 interface DispatchOrderDrawerProps {
   order: DispatchOrder;
-  onOpenReadyDialog: (order: DispatchOrder) => void;
-  onOpenDispatchDialog: (order: DispatchOrder) => void;
+  onMarkOrderReady: (order: DispatchOrder) => void;
+  onMarkItemReady: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
+  onDispatchItem: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
+  isMarkingOrderReady?: boolean;
+  isMarkingReady?: boolean;
+  isDispatching?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   readOnly?: boolean;
@@ -13,8 +17,12 @@ interface DispatchOrderDrawerProps {
 
 export default function DispatchOrderDrawer({
   order,
-  onOpenReadyDialog,
-  onOpenDispatchDialog,
+  onMarkOrderReady,
+  onMarkItemReady,
+  onDispatchItem,
+  isMarkingOrderReady = false,
+  isMarkingReady = false,
+  isDispatching = false,
   open,
   onOpenChange,
   readOnly = false,
@@ -30,8 +38,12 @@ export default function DispatchOrderDrawer({
         <div className="mt-4">
           <DispatchCardBase
             order={order}
-            onOpenReadyDialog={onOpenReadyDialog}
-            onOpenDispatchDialog={onOpenDispatchDialog}
+            onMarkOrderReady={onMarkOrderReady}
+            onMarkItemReady={onMarkItemReady}
+            onDispatchItem={onDispatchItem}
+            isMarkingOrderReady={isMarkingOrderReady}
+            isMarkingReady={isMarkingReady}
+            isDispatching={isDispatching}
             showEyeIcon={false}
             readOnly={readOnly}
             expanded

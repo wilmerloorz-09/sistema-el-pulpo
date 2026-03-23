@@ -8,6 +8,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 export interface KitchenOrderItem {
   id: string;
   description_snapshot: string;
+  created_at?: string | null;
   quantity_ordered: number;
   quantity_pending_prepare: number;
   quantity_ready_available: number;
@@ -94,9 +95,11 @@ export function useKitchenOrders() {
         quantity: number;
         item_note?: string | null;
         sent_to_kitchen_at: string | null;
+        created_at?: string | null;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, quantity, item_note, status, sent_to_kitchen_at",
+        select: "id, order_id, description_snapshot, quantity, item_note, status, sent_to_kitchen_at, created_at",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
+        orderBy: { column: "created_at", ascending: true },
       });
 
       const itemIds = items.map((item) => item.id);
@@ -136,6 +139,7 @@ export function useKitchenOrders() {
             return {
               id: item.id,
               description_snapshot: item.description_snapshot,
+              created_at: item.created_at ?? null,
               quantity_ordered: quantities.quantityOrdered,
               quantity_pending_prepare: quantities.quantityPendingPrepare,
               quantity_ready_available: quantities.quantityReadyAvailable,
@@ -156,6 +160,12 @@ export function useKitchenOrders() {
         }
 
         return Array.from(batches.entries()).map(([sentAt, batchItems]) => {
+          const sortedBatchItems = [...batchItems].sort((left, right) => {
+            const leftTime = new Date(left.created_at ?? sentAt).getTime();
+            const rightTime = new Date(right.created_at ?? sentAt).getTime();
+            if (leftTime !== rightTime) return leftTime - rightTime;
+            return left.id.localeCompare(right.id, "es");
+          });
           const pendingPrepareCount = batchItems.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
 
           return {
@@ -168,7 +178,7 @@ export function useKitchenOrders() {
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             sent_at: sentAt,
             pending_prepare_count: pendingPrepareCount,
-            items: batchItems,
+            items: sortedBatchItems,
           };
         });
       });

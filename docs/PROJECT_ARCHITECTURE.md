@@ -165,12 +165,19 @@
   - `quantity_dispatched_total`
   - `quantity_dispatched_available`
   - `quantity_cancelled_dispatched`
+- Para el flujo nuevo de `Despacho`, `quantity_dispatched_available` representa la cantidad actualmente despachable (`PENDING + READY`) y no el neto historico ya despachado.
+- Para que ese calculo siga siendo exacto cuando un item se despacha directo desde `PENDING`, `order_item_dispatch_events` ahora debe registrar `source_stage` (`PENDING` o `READY`) y el snapshot debe recomponer `quantity_pending_prepare` y `quantity_ready_available` desde esa desagregacion.
 - La anulacion parcial/total puede consumir cantidades en este orden:
   - `PENDING`
   - `READY`
   - `DISPATCHED` no pagado
 - Si la UI muestra una orden en `Despachadas`, la ventana de anulacion debe derivar sus cantidades anulables del mismo snapshot y no de una formula parcial distinta.
 - Ademas, si el dialogo se abre desde una tarjeta filtrada por pestana, el dialogo debe respetar exactamente ese subconjunto visible y no mezclar otros items de la orden completa.
+- En `Ordenes`, el flujo de anulacion por linea ya no es una variante del dialogo general de cancelacion:
+  - la cantidad se define primero en la propia tarjeta del item
+  - el dialogo posterior funciona como confirmacion compacta
+  - la operacion enviada al backend siempre es `partial` a nivel de orden, aunque la linea quede anulada por completo
+  - esto evita que una anulacion total de una sola linea se convierta accidentalmente en anulacion total de la orden
 
 ### I) Apertura/cierre de turno como frontera operativa de mesas
 - Abrir turno debe ser transaccional respecto a `cash_shifts`, `cash_shift_denoms`, `cash_movements` y mesas activas.
@@ -197,6 +204,12 @@
   - modo `SINGLE`: tabs `Todos`, `Mesa`, `Para llevar`
   - modo `SPLIT`: cada usuario ve solo el tipo asignado
   - si un usuario queda con ambos tipos, tambien puede ver `Todos`
+- El card operativo de `Despacho` ya no usa un solo boton global por orden:
+  - cada item expone su stepper de cantidad
+  - `Listo` es solo una senal para el mesero
+  - `Despachar` consume desde `PENDING` y/o `READY` sin requerir `READY` previo
+  - ambos botones deben coexistir visualmente y apilarse en movil si no caben en una fila
+- `useDispatchOrders` conserva las operaciones globales para compatibilidad, pero la UX principal ya vive en acciones por item (`markItemReady` y `dispatchItem`).
 - Una asignacion de despachador debe ser unica por usuario; no se permiten duplicados del mismo usuario.
 
 ### G) Admin movil
@@ -224,6 +237,10 @@
   - tablet: modales mas anchos y grids de 2 columnas cuando haya espacio
   - desktop: dashboard horizontal sin depender de scroll de toda la ventana
 - La notificacion de `orden lista` para mesero/despacho debe vivir a nivel de layout operativo y no solo dentro de `Despacho`, para que el movil pueda seguir alertando aunque el usuario este en `Mesas` u otra vista operativa.
+- `OrderItemsList` en `Ordenes` tambien debe seguir esta regla:
+  - telefono: descripcion arriba y controles de anulacion debajo, sin comprimir la linea del producto
+  - tablet: descripcion a la izquierda y controles a la derecha cuando ya haya ancho util
+- `CancelOrderDialog` en modo compacto debe aprovechar tablet con layout mas ancho y, cuando hay espacio, con detalle del item y cantidad preseleccionada en dos columnas.
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

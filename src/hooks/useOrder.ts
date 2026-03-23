@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 import { generateUUID } from "@/lib/uuid";
 import { computeLineAmount } from "@/lib/paymentQuantity";
+import { fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -14,11 +15,18 @@ interface OrderItem {
   description_snapshot: string;
   item_note?: string | null;
   quantity: number;
+  quantity_ordered?: number;
   original_quantity?: number;
   cancelled_quantity?: number;
   unit_price: number;
   total: number;
   status: string;
+  quantity_sent?: number;
+  quantity_ready_available?: number;
+  quantity_dispatched?: number;
+  quantity_remaining?: number;
+  quantity_cancelled?: number;
+  quantity_cancellable?: number;
   modifiers: { id: string; modifier_id: string; description: string }[];
 }
 
@@ -159,6 +167,19 @@ export function useOrder(orderId: string | null) {
 
       const itemIds = items.map((item: any) => item.id);
       const cancelledQtyMap = await fetchAppliedCancelledQuantityByOrderItem(itemIds);
+      const { data: snapshotRows } = await (supabase as any).rpc("get_order_operational_snapshot", {
+        p_order_id: orderId,
+      });
+      const snapshotMap = Object.fromEntries(
+        ((snapshotRows ?? []) as any[]).map((row) => [String(row.order_item_id), row]),
+      );
+      const {
+        readyAvailableMap,
+        pendingPrepareMap,
+        dispatchedTotalMap,
+        cancelledDispatchedMap,
+        cancelledTotalMap,
+      } = await fetchOperationalMapsForOrders([orderId]);
 
       let modifiersData: any[] = [];
       if (itemIds.length > 0) {
@@ -171,18 +192,54 @@ export function useOrder(orderId: string | null) {
 
       const enrichedItems: OrderItem[] = items
         .map((item: any) => {
+          const snapshotRow = snapshotMap[item.id];
           const originalQuantity = Number(item.quantity ?? 0);
-          const cancelledQuantity = Math.min(originalQuantity, cancelledQtyMap[item.id] ?? 0);
+          const cancelledQuantity = Math.min(
+            Number(snapshotRow?.quantity_ordered ?? originalQuantity),
+            Number(snapshotRow?.quantity_cancelled_total ?? cancelledQtyMap[item.id] ?? 0),
+          );
+          const quantityOrdered = Math.max(
+            originalQuantity,
+            Number(snapshotRow?.quantity_ordered ?? originalQuantity),
+          );
           const activeQuantity = Math.max(0, originalQuantity - cancelledQuantity);
           const effectiveStatus = activeQuantity <= 0 ? "CANCELLED" : (item.status ?? "DRAFT");
+          const quantitySent = effectiveStatus === "DRAFT" ? 0 : quantityOrdered;
+          const quantityDispatched = Math.max(
+            0,
+            Number(dispatchedTotalMap[item.id] ?? 0) - Number(cancelledDispatchedMap[item.id] ?? 0),
+          );
+          const quantityCancelled = Math.max(
+            cancelledQuantity,
+            Number(cancelledTotalMap[item.id] ?? cancelledQuantity),
+          );
+          const quantityCancellable = Math.max(
+            0,
+            Number(pendingPrepareMap[item.id] ?? 0)
+              + Number(readyAvailableMap[item.id] ?? 0)
+              + quantityDispatched,
+          );
 
           return {
             ...item,
             quantity: activeQuantity,
+            quantity_ordered: quantityOrdered,
             original_quantity: originalQuantity,
             cancelled_quantity: cancelledQuantity,
             total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
             status: effectiveStatus,
+            quantity_sent: quantitySent,
+            quantity_ready_available: Math.max(0, readyAvailableMap[item.id] ?? 0),
+            quantity_dispatched: quantityDispatched,
+            quantity_remaining:
+              effectiveStatus === "DRAFT"
+                ? Math.max(0, activeQuantity)
+                : Math.max(
+                    0,
+                    Number(pendingPrepareMap[item.id] ?? 0) + Number(readyAvailableMap[item.id] ?? 0),
+                  ),
+            quantity_cancelled: quantityCancelled,
+            quantity_cancellable: quantityCancellable,
             modifiers: modifiersData
               .filter((modifier: any) => modifier.order_item_id === item.id)
               .map((modifier: any) => ({

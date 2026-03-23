@@ -122,6 +122,17 @@
   button {
     transition: all 180ms ease;
   }
+
+  .dispatch-qty-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .dispatch-qty-input::-webkit-outer-spin-button,
+  .dispatch-qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 }
 
 @layer utilities {

@@ -12,9 +12,11 @@ import type { DispatchView } from "@/hooks/useDispatchAccess";
 export interface DispatchOrderItem {
   id: string;
   description_snapshot: string;
+  created_at?: string | null;
   quantity_ordered: number;
   quantity_pending_prepare: number;
   quantity_ready_available: number;
+  quantity_dispatchable: number;
   quantity_dispatched: number;
   quantity_cancelled: number;
   status: string;
@@ -41,6 +43,7 @@ export interface DispatchOrder {
   cancelled_at: string | null;
   pending_prepare_count: number;
   ready_available_count: number;
+  dispatchable_count: number;
   items: DispatchOrderItem[];
 }
 
@@ -115,7 +118,7 @@ export function useDispatchOrders(scope: DispatchView) {
       const orderIds = permittedOrders.map((order) => order.id);
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
-        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, status, sent_to_kitchen_at")
+        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, status, sent_to_kitchen_at, created_at")
         .in("order_id", orderIds);
       if (itemsError) throw itemsError;
 
@@ -138,7 +141,15 @@ export function useDispatchOrders(scope: DispatchView) {
         }
       }
 
-      const { readyMap, dispatchedTotalMap, cancelledPendingMap, cancelledReadyMap, cancelledDispatchedMap } =
+      const {
+        readyMap,
+        readyAvailableMap,
+        pendingPrepareMap,
+        dispatchedTotalMap,
+        cancelledPendingMap,
+        cancelledReadyMap,
+        cancelledDispatchedMap,
+      } =
         await fetchOperationalMapsForOrders(orderIds);
 
       let filteredOrders = permittedOrders;
@@ -166,14 +177,19 @@ export function useDispatchOrders(scope: DispatchView) {
               quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
             });
 
+            const quantityPendingPrepare = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
+            const quantityReadyAvailable = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
+
             const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
 
             return {
               id: item.id,
               description_snapshot: item.description_snapshot,
+              created_at: item.created_at ?? null,
               quantity_ordered: quantities.quantityOrdered,
-              quantity_pending_prepare: quantities.quantityPendingPrepare,
-              quantity_ready_available: quantities.quantityReadyAvailable,
+              quantity_pending_prepare: quantityPendingPrepare,
+              quantity_ready_available: quantityReadyAvailable,
+              quantity_dispatchable: quantityPendingPrepare + quantityReadyAvailable,
               quantity_dispatched: quantities.quantityDispatchedAvailable,
               quantity_cancelled: quantities.quantityCancelledTotal,
               status: item.status ?? "SENT",
@@ -193,8 +209,15 @@ export function useDispatchOrders(scope: DispatchView) {
         }
 
         return Array.from(batches.entries()).map(([sentAt, batchItems]) => {
+          const sortedBatchItems = [...batchItems].sort((left, right) => {
+            const leftTime = new Date(left.created_at ?? sentAt).getTime();
+            const rightTime = new Date(right.created_at ?? sentAt).getTime();
+            if (leftTime !== rightTime) return leftTime - rightTime;
+            return left.id.localeCompare(right.id, "es");
+          });
           const pendingPrepareCount = batchItems.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
           const readyAvailableCount = batchItems.reduce((sum, item) => sum + item.quantity_ready_available, 0);
+          const dispatchableCount = batchItems.reduce((sum, item) => sum + item.quantity_dispatchable, 0);
 
           return {
             card_id: `${order.id}:${sentAt}`,
@@ -213,7 +236,8 @@ export function useDispatchOrders(scope: DispatchView) {
             cancelled_at: order.cancelled_at ?? null,
             pending_prepare_count: pendingPrepareCount,
             ready_available_count: readyAvailableCount,
-            items: batchItems,
+            dispatchable_count: dispatchableCount,
+            items: sortedBatchItems,
           };
         });
       });
@@ -269,11 +293,57 @@ export function useDispatchOrders(scope: DispatchView) {
     },
   });
 
+  const markItemReady = useMutation({
+    mutationFn: async ({ orderId, itemId, qty }: { orderId: string; itemId: string; qty: number }) => {
+      if (!user?.id) throw new Error("Usuario no autenticado");
+      const { error } = await (supabase as any).rpc("mark_order_quantities_ready", {
+        p_order_id: orderId,
+        p_ready_by: user.id,
+        p_items: [{ order_item_id: itemId, quantity_ready: qty }],
+        p_operation_type: "partial",
+        p_source_module: "dispatch",
+        p_notes: null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      invalidateOperationalQueries(qc);
+      toast.success("Item marcado como listo");
+    },
+    onError: (error: any) => {
+      toast.error(`Error al marcar listo: ${error?.message || "Error desconocido"}`);
+    },
+  });
+
+  const dispatchItem = useMutation({
+    mutationFn: async ({ orderId, itemId, qty }: { orderId: string; itemId: string; qty: number }) => {
+      if (!user?.id) throw new Error("Usuario no autenticado");
+      const { error } = await (supabase as any).rpc("dispatch_order_quantities", {
+        p_order_id: orderId,
+        p_dispatched_by: user.id,
+        p_items: [{ order_item_id: itemId, quantity_dispatched: qty }],
+        p_operation_type: "partial",
+        p_source_module: "dispatch",
+        p_notes: null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      invalidateOperationalQueries(qc);
+      toast.success("Item despachado");
+    },
+    onError: (error: any) => {
+      toast.error(`Error al despachar item: ${error?.message || "Error desconocido"}`);
+    },
+  });
+
   return {
     orders: query.data || [],
     isLoading: query.isLoading,
     isError: query.isError,
     applyReadyOperation,
     applyDispatchOperation,
+    markItemReady,
+    dispatchItem,
   };
 }

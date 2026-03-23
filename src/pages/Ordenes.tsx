@@ -21,7 +21,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { OrderSummary } from "@/hooks/useOrdersByStatus";
+import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import type { MenuNode } from "@/hooks/useMenuTree";
 
@@ -53,6 +53,11 @@ const Ordenes = () => {
   const [showDeleteSplitConfirm, setShowDeleteSplitConfirm] = useState(false);
   const [showChangeTableDialog, setShowChangeTableDialog] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
+  const [inlineCancelOpen, setInlineCancelOpen] = useState(false);
+  const [inlineCancelVisibleItems, setInlineCancelVisibleItems] = useState<OrderItemSummary[]>([]);
+  const [inlineCancelQtyByItem, setInlineCancelQtyByItem] = useState<Record<string, number>>({});
+  const [inlineCancellationType, setInlineCancellationType] = useState<"partial" | "total">("partial");
+  const [inlineRequiresAuthorization, setInlineRequiresAuthorization] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
 
@@ -350,6 +355,68 @@ const Ordenes = () => {
     });
   };
 
+  const handleRequestInlineCancel = async (
+    item: {
+      id: string;
+      product_id?: string;
+      description_snapshot: string;
+      quantity: number;
+      quantity_ordered?: number;
+      quantity_dispatched?: number;
+      quantity_remaining?: number;
+      quantity_cancellable?: number;
+      total: number;
+      status: string;
+      modifiers: { id: string; description: string }[];
+      item_note?: string | null;
+    },
+    qty: number,
+  ) => {
+    const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
+    if (maxQty <= 0) {
+      toast.error("Este item ya no tiene cantidad anulable.");
+      return;
+    }
+
+    const normalizedQty = Math.max(1, Math.min(maxQty, Math.floor(qty)));
+    let requiresAuthorization = !canAuthorizeCancel;
+
+    if (!canAuthorizeCancel && activeBranchId && item.product_id) {
+      try {
+        const { data, error } = await (supabase as any).rpc("get_branch_cancel_policy_for_product", {
+          p_branch_id: activeBranchId,
+          p_product_id: item.product_id,
+        });
+        if (error) throw error;
+
+        const policyRow = Array.isArray(data) ? data[0] : data;
+        requiresAuthorization = !Boolean(policyRow?.allow_direct_cancel);
+      } catch (error: any) {
+        toast.error(error?.message || "No se pudo validar la politica de anulacion para este producto.");
+        return;
+      }
+    }
+
+    setInlineCancelVisibleItems([
+      {
+        id: item.id,
+        description_snapshot: item.description_snapshot,
+        quantity: maxQty,
+        quantity_total: item.quantity_ordered ?? item.quantity,
+        quantity_dispatched: item.quantity_dispatched ?? 0,
+        quantity_remaining: item.quantity_remaining ?? 0,
+        total: item.total,
+        status: item.status,
+        modifiers: item.modifiers.map((modifier) => ({ description: modifier.description })),
+        item_note: item.item_note ?? null,
+      },
+    ]);
+    setInlineCancelQtyByItem({ [item.id]: normalizedQty });
+    setInlineCancellationType("partial");
+    setInlineRequiresAuthorization(requiresAuthorization);
+    setInlineCancelOpen(true);
+  };
+
   const menuPanel = canEditItems ? (
     <MenuNavigator
       includeInactive={true}
@@ -388,7 +455,9 @@ const Ordenes = () => {
           items={order.items}
           onRemove={(id) => removeItem.mutate(id)}
           onUpdateQty={(id, qty, price) => updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price })}
-          disabled={!canEditItems}
+          onRequestCancel={handleRequestInlineCancel}
+          disableDraftEditing={!canEditItems}
+          disableOperationalCancel={order.status === "PAID"}
         />
       </div>
 
@@ -655,6 +724,31 @@ const Ordenes = () => {
         moving={moveToTable.isPending}
         onConfirm={handleChangeTable}
       />
+
+      {user && canCancelOrders && (
+        <CancelOrderDialog
+          orderId={order.id}
+          orderNumber={order.order_number}
+          userId={user.id}
+          open={inlineCancelOpen}
+          onOpenChange={(open) => {
+            setInlineCancelOpen(open);
+            if (!open) {
+              setInlineCancelVisibleItems([]);
+              setInlineCancelQtyByItem({});
+              setInlineCancellationType("partial");
+              setInlineRequiresAuthorization(false);
+            }
+          }}
+          canAuthorizeCancel={canAuthorizeCancel}
+          isCancelRequested={!!order.cancel_requested_at}
+          visibleItems={inlineCancelVisibleItems}
+          initialCancellationType={inlineCancellationType}
+          initialCancelQtyByItem={inlineCancelQtyByItem}
+          compactPresetMode={true}
+          requiresAuthorizationOverride={inlineRequiresAuthorization}
+        />
+      )}
 
       <style>{`
         @media (max-width: 768px) {

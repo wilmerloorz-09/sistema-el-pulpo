@@ -69,6 +69,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - La primera categoria raiz queda reservada al administrador general.
 - No reintroducir una UI de "plato de cocina" por fila salvo cambio funcional explicito.
 - Si una categoria raiz no tiene productos aun, igual debe aparecer en el listado si sigue siendo una categoria activa valida.
+- Si se toca anulacion por item en `Ordenes`, respetar siempre esta regla:
+  - usuario con `can_authorize_order_cancel`, supervisor o admin: anulacion directa
+  - mesero normal: solo anulacion directa cuando `get_branch_cancel_policy_for_product(...)` devuelva `allow_direct_cancel = true`
+  - si no, el mismo flujo debe generar solicitud de anulacion y no aplicar cancelacion real
 
 ### 7.3) Solicitudes pendientes de anulacion
 - Si un mesero o usuario sin autorizacion solicita una anulacion, la orden debe moverse a una pestana propia `Pendiente de anulacion`.
@@ -127,6 +131,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - botones de footer apilados en telefono
   - cards internas sin comprimir inputs o textos
   - en tablet, preferir usar el ancho extra para 2 columnas antes que dejar una ventana muy alta
+- Si se toca `OrderItemsList` en `Ordenes`, mantener comportamiento responsive explicito:
+  - telefono: descripcion y detalle primero; stepper/boton debajo
+  - tablet: controles a la derecha cuando haya ancho suficiente
+  - no volver a layouts donde el nombre del producto compita con stepper y accion en una sola fila angosta
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
@@ -160,6 +168,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - considerar tambien `Despachado no pagado` cuando la regla de negocio lo permita
   - la ventana de cancelacion, las tarjetas de `Despachadas` y los calculos de `Caja` deben seguir exactamente la misma cuenta operativa
 - Si la anulacion se dispara desde una tarjeta filtrada por pestana, el dialogo debe respetar exactamente los items visibles de esa tarjeta; no mezclar otros items de la orden completa.
+- Si la anulacion se dispara desde una sola linea:
+  - la cantidad elegida en la tarjeta debe viajar al dialogo ya preseleccionada
+  - el dialogo compacto no debe volver a pedir tipo de cancelacion ni cantidad
+  - aunque la cantidad elegida coincida con todo lo anulable de esa linea, la operacion sigue siendo `partial`
 - Si se toca `Despacho`, validar tambien la unicidad de asignacion por usuario y la visibilidad final de tabs segun modo `SINGLE` / `SPLIT`.
 - Si se toca divisiones de mesa, validar tambien:
   - que la nueva division quede seleccionada

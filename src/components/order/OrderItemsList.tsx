@@ -1,15 +1,23 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Ban, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 interface OrderItem {
   id: string;
+  product_id?: string;
   description_snapshot: string;
   item_note?: string | null;
   quantity: number;
+  quantity_ordered?: number;
+  quantity_sent?: number;
+  quantity_ready_available?: number;
+  quantity_dispatched?: number;
+  quantity_remaining?: number;
+  quantity_cancelled?: number;
+  quantity_cancellable?: number;
   unit_price: number;
   total: number;
   status: string;
@@ -20,10 +28,23 @@ interface Props {
   items: OrderItem[];
   onRemove: (id: string) => void;
   onUpdateQty: (id: string, qty: number, unit_price: number) => void;
-  disabled?: boolean;
+  onRequestCancel?: (item: OrderItem, qty: number) => void;
+  disableDraftEditing?: boolean;
+  disableOperationalCancel?: boolean;
 }
 
-const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
+function formatLineTotal(unitPrice: number, quantity: number) {
+  return (Number(unitPrice ?? 0) * Number(quantity ?? 0)).toFixed(2);
+}
+
+const OrderItemsList = ({
+  items,
+  onRemove,
+  onUpdateQty,
+  onRequestCancel,
+  disableDraftEditing = false,
+  disableOperationalCancel = false,
+}: Props) => {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
@@ -34,90 +55,184 @@ const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
   }
 
   const total = items.reduce((sum, i) => sum + i.total, 0);
+  const [operationalQtyByItem, setOperationalQtyByItem] = useState<Record<string, number>>({});
+
+  const buildDefaultOperationalQty = (item: OrderItem) => {
+    const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
+    return maxQty > 0 ? maxQty : 0;
+  };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
-        const itemDisabled = disabled || !isPending;
+        const canCancelOperational = !isPending && !!onRequestCancel && !disableOperationalCancel;
+        const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
+        const draftDisabled = isPending && disableDraftEditing;
+        const operationalDisabled = !isPending && disableOperationalCancel;
+        const controlDisabled = isPending ? draftDisabled : false;
+        const operationalControlClass = !isPending && !operationalDisabled
+          ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)] hover:border-orange-300 hover:bg-orange-50"
+          : "border-border bg-background";
+        const displayQuantity = isPending ? item.quantity : Math.max(1, item.quantity_sent ?? item.quantity_ordered ?? item.quantity);
+        const requestedOperationalQty = (operationalQtyByItem[item.id] ?? buildDefaultOperationalQty(item)) || 1;
+        const selectedOperationalQty = Math.max(
+          1,
+          Math.min(
+            maxOperationalQty || displayQuantity || 1,
+            requestedOperationalQty,
+          ),
+        );
 
         return (
           <div
             key={item.id}
             className={cn(
-              "flex items-start gap-2 rounded-xl border p-2.5 transition-all",
+              "rounded-2xl border bg-white px-3 py-3 transition-all",
               isPending
-                ? "border-orange-400 bg-orange-50 dark:bg-orange-950/20"
-                : "border-border bg-card opacity-60"
+                ? "border-orange-200 shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
+                : operationalDisabled
+                  ? "border-border opacity-60"
+                  : "border-border"
             )}
           >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground truncate">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start">
+              <div className="flex min-w-0 items-start gap-3">
+                <Badge className="mt-0.5 min-w-[2.35rem] shrink-0 justify-center rounded-lg border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-1 text-[11px] font-black uppercase leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
+                  {displayQuantity}x
+                </Badge>
+
+                <div className="min-w-0 flex-1">
+                <p className="break-words whitespace-normal text-sm font-medium text-foreground">
                   {item.description_snapshot}
                 </p>
-                {isPending && (
-                  <Badge className="text-[10px] font-medium" variant="secondary">
-                    Pendiente
-                  </Badge>
+
+                {item.modifiers.length > 0 && (
+                  <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
+                    {item.modifiers
+                      .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
+                      .map((modifier) => (
+                        <p key={modifier.id} className="break-words whitespace-normal">
+                          - {modifier.description}
+                        </p>
+                      ))}
+                  </div>
                 )}
+
+                {item.item_note && (
+                  <p className="mt-1 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
+                )}
+
+                <p className="mt-1 text-xs text-muted-foreground">
+                  ${item.unit_price.toFixed(2)} x {displayQuantity} ={" "}
+                  <span className="font-semibold text-foreground">${formatLineTotal(item.unit_price, displayQuantity)}</span>
+                </p>
+
+                <div className="mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-[11px] text-muted-foreground sm:text-xs">
+                  <span className="shrink-0">Env: {item.quantity_sent ?? 0}</span>
+                  <span className="shrink-0">Desp: {item.quantity_dispatched ?? 0}</span>
+                  <span className="shrink-0">Falt: {item.quantity_remaining ?? 0}</span>
+                  <span className="shrink-0">Canc: {item.quantity_cancelled ?? 0}</span>
+                </div>
+                </div>
               </div>
 
-              {item.modifiers.length > 0 && (
-                <div className="mt-1 space-y-0.5 text-xs text-red-600">
-                  {item.modifiers.filter((modifier) => String(modifier.description ?? "").trim().length > 0).map((modifier) => (
-                    <p key={modifier.id}>- {modifier.description}</p>
-                  ))}
+              <div className="flex shrink-0 flex-col gap-2 md:ml-auto md:min-w-[8.5rem] md:items-end">
+                <div className="flex items-center justify-end gap-1 self-end">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
+                    disabled={controlDisabled}
+                    onClick={() => {
+                      if (isPending) {
+                        if (item.quantity > 1) {
+                          onUpdateQty(item.id, item.quantity - 1, item.unit_price);
+                        }
+                        return;
+                      }
+
+                      if (canCancelOperational && selectedOperationalQty > 1) {
+                        setOperationalQtyByItem((prev) => ({
+                          ...prev,
+                          [item.id]: selectedOperationalQty - 1,
+                        }));
+                      }
+                    }}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+
+                  <QuantityInput
+                    key={`${item.id}-${isPending ? "draft" : "cancel"}-${isPending ? displayQuantity : selectedOperationalQty}`}
+                    initialQuantity={isPending ? displayQuantity : selectedOperationalQty}
+                    disabled={controlDisabled}
+                    className={!isPending && !operationalDisabled ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)]" : undefined}
+                    onUpdate={(newQty) => {
+                      if (isPending) {
+                        if (newQty <= 0) {
+                          onRemove(item.id);
+                        } else if (newQty !== item.quantity) {
+                          onUpdateQty(item.id, newQty, item.unit_price);
+                        }
+                        return;
+                      }
+
+                      if (canCancelOperational) {
+                        const normalized = Math.max(1, Math.min(maxOperationalQty || displayQuantity || 1, newQty));
+                        setOperationalQtyByItem((prev) => ({
+                          ...prev,
+                          [item.id]: normalized,
+                        }));
+                      }
+                    }}
+                  />
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
+                    disabled={controlDisabled}
+                    onClick={() => {
+                      if (isPending) {
+                        onUpdateQty(item.id, item.quantity + 1, item.unit_price);
+                        return;
+                      }
+
+                      if (canCancelOperational && selectedOperationalQty < (maxOperationalQty || displayQuantity || 1)) {
+                        setOperationalQtyByItem((prev) => ({
+                          ...prev,
+                          [item.id]: selectedOperationalQty + 1,
+                        }));
+                      }
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-              )}
 
-              {item.item_note && (
-                <p className="mt-1 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
-              )}
+                <Button
+                  variant="destructive"
+                  className={cn(
+                    "h-9 w-full rounded-xl px-4 font-display text-sm font-semibold md:w-auto",
+                    !isPending && !operationalDisabled && "opacity-100 saturate-100",
+                  )}
+                  disabled={controlDisabled}
+                  onClick={() => {
+                    if (isPending) {
+                      onRemove(item.id);
+                      return;
+                    }
 
-              <p className="mt-1 text-xs text-muted-foreground">
-                ${item.unit_price} x {item.quantity} = <span className="font-semibold text-foreground">${item.total.toFixed(2)}</span>
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1 shrink-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 sm:h-9 sm:w-9"
-                disabled={itemDisabled}
-                onClick={() => {
-                  if (item.quantity <= 1) {
-                    onRemove(item.id);
-                  } else {
-                    onUpdateQty(item.id, item.quantity - 1, item.unit_price);
-                  }
-                }}
-              >
-                {item.quantity <= 1 ? <Trash2 className="h-3.5 w-3.5 text-destructive sm:h-4 sm:w-4" /> : <Minus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
-              </Button>
-              
-              <QuantityInput
-                initialQuantity={item.quantity}
-                disabled={itemDisabled}
-                onUpdate={(newQty) => {
-                  if (newQty <= 0) {
-                    onRemove(item.id);
-                  } else if (newQty !== item.quantity) {
-                    onUpdateQty(item.id, newQty, item.unit_price);
-                  }
-                }}
-              />
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 sm:h-9 sm:w-9"
-                disabled={itemDisabled}
-                onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
-              >
-                <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              </Button>
+                    if (onRequestCancel && !disableOperationalCancel) {
+                      onRequestCancel(item, selectedOperationalQty);
+                    }
+                  }}
+                >
+                  <Ban className="h-4 w-4" />
+                  Anular
+                </Button>
+              </div>
             </div>
           </div>
         );
@@ -134,10 +249,12 @@ const OrderItemsList = ({ items, onRemove, onUpdateQty, disabled }: Props) => {
 const QuantityInput = ({
   initialQuantity,
   disabled,
+  className,
   onUpdate,
 }: {
   initialQuantity: number;
   disabled?: boolean;
+  className?: string;
   onUpdate: (val: number) => void;
 }) => {
   const [value, setValue] = useState(initialQuantity.toString());
@@ -163,7 +280,10 @@ const QuantityInput = ({
     <Input
       type="number"
       inputMode="numeric"
-      className="h-7 w-12 text-center text-sm font-bold px-1 sm:h-9 sm:w-14 sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      className={cn(
+        "h-8 w-11 rounded-xl border-border bg-background px-1 text-center text-sm font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+        className,
+      )}
       value={value}
       disabled={disabled}
       onChange={(e) => {

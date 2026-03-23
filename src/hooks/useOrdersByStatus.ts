@@ -11,6 +11,9 @@ export interface OrderItemSummary {
   id: string;
   description_snapshot: string;
   quantity: number;
+  quantity_total?: number;
+  quantity_dispatched?: number;
+  quantity_remaining?: number;
   total: number;
   status: string;
   modifiers: { description: string }[];
@@ -197,8 +200,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       const {
         readyMap,
+        readyAvailableMap,
+        pendingPrepareMap,
         dispatchedTotalMap,
-        dispatchedAvailableMap,
         paidMap,
         cancelledPendingMap,
         cancelledReadyMap,
@@ -285,9 +289,12 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
               const cancelledQuantity = Math.min(quantities.quantityOrdered, cancelledTotalMap[item.id] ?? quantities.quantityCancelledTotal);
-              const dispatchedQuantity = dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable;
-              const readyQuantity = quantities.quantityReadyAvailable;
-              const pendingQuantity = quantities.quantityPendingPrepare;
+              const dispatchedQuantity = Math.max(
+                0,
+                (dispatchedTotalMap[item.id] ?? quantities.quantityDispatchedTotal) - (cancelledDispatchedMap[item.id] ?? 0),
+              );
+              const readyQuantity = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
+              const pendingQuantity = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
               const effectivePaidQuantity = Math.max(
                 0,
                 paidQuantityByItem[item.id] ??
@@ -376,9 +383,12 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               });
 
               const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-              const dispatchedQuantity = dispatchedAvailableMap[item.id] ?? quantities.quantityDispatchedAvailable;
-              const readyQuantity = quantities.quantityReadyAvailable;
-              const pendingQuantity = quantities.quantityPendingPrepare;
+              const dispatchedQuantity = Math.max(
+                0,
+                (dispatchedTotalMap[item.id] ?? quantities.quantityDispatchedTotal) - (cancelledDispatchedMap[item.id] ?? 0),
+              );
+              const readyQuantity = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
+              const pendingQuantity = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
               const effectivePaidQuantity = Math.max(0, paidMap[item.id] ?? 0);
               const unpaidDispatchedQuantity = Math.max(0, dispatchedQuantity - effectivePaidQuantity);
               const paidAfterDispatched = Math.max(0, effectivePaidQuantity - dispatchedQuantity);
@@ -431,6 +441,15 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             id: item.id,
             description_snapshot: item.description_snapshot,
             quantity: item.quantity,
+            quantity_total: Number((item as any).activeQuantity ?? item.quantity ?? 0),
+            quantity_dispatched: Math.max(
+              0,
+              (dispatchedTotalMap[item.id] ?? 0) - (cancelledDispatchedMap[item.id] ?? 0),
+            ),
+            quantity_remaining: Math.max(
+              0,
+              (pendingPrepareMap[item.id] ?? 0) + (readyAvailableMap[item.id] ?? 0),
+            ),
             total: Number(item.total ?? 0),
             status: item.status,
             modifiers: modsMap[item.id] || [],

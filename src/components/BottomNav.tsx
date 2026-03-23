@@ -168,18 +168,18 @@ const BottomNav = () => {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-orange-200/80 bg-white safe-bottom md:bottom-0 dark:border-border dark:bg-card">
-      <div className="mx-auto flex max-w-6xl items-center justify-start gap-3 overflow-x-auto px-2 py-2 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden sm:gap-6 sm:px-4 md:gap-8">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 overflow-hidden border-t border-orange-200/80 bg-white safe-bottom md:bottom-0 dark:border-border dark:bg-card">
+      <div className="mx-auto flex max-w-6xl items-center justify-start gap-3 overflow-x-auto px-2 py-2 [scrollbar-width:none] snap-x snap-mandatory sm:gap-6 sm:px-4 md:gap-8 [&::-webkit-scrollbar]:hidden">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={cn(
-              "group flex min-w-[4.8rem] shrink-0 snap-start flex-col items-center gap-1 rounded-[20px] border border-white/70 bg-white/82 px-2.5 py-2 text-muted-foreground shadow-[0_14px_28px_-24px_rgba(15,23,42,0.28)] transition-all sm:min-w-[5rem] sm:gap-1.5 sm:px-3",
+              "group flex min-w-[4.8rem] shrink-0 snap-start flex-col items-center gap-1 rounded-[20px] border border-white/70 bg-white/82 px-2.5 py-2 text-muted-foreground transition-all sm:min-w-[5rem] sm:gap-1.5 sm:px-3",
               item.tone.idle,
             )}
             activeClassName={cn(
-              "border-white/20 bg-gradient-to-b text-white shadow-[0_18px_35px_-24px_rgba(15,23,42,0.45)] [&>span:first-child]:bg-white/15 [&>span:first-child]:text-white",
+              "border-white/20 bg-gradient-to-b text-white [&>span:first-child]:bg-white/15 [&>span:first-child]:text-white",
               item.tone.active,
             )}
           >
