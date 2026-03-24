@@ -294,25 +294,9 @@ export function useMeseroOrderReadyNotification(
   useEffect(() => {
     if (!enabled || !activeBranchId) return;
 
-    let cancelled = false;
-
-    const initializeNotificationCursor = async () => {
-      const { data } = await (supabase as any)
-        .from("order_ready_notifications")
-        .select("created_at")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!cancelled) {
-        lastPolledNotificationAtRef.current = data?.created_at ?? new Date().toISOString();
-      }
-    };
-
-    void initializeNotificationCursor();
+    lastPolledNotificationAtRef.current = new Date().toISOString();
 
     return () => {
-      cancelled = true;
       lastPolledNotificationAtRef.current = null;
     };
   }, [activeBranchId, enabled]);
@@ -366,7 +350,7 @@ export function useMeseroOrderReadyNotification(
 
     const interval = window.setInterval(() => {
       void pollNotificationTable();
-    }, 5000);
+    }, 2000);
 
     return () => {
       cancelled = true;
