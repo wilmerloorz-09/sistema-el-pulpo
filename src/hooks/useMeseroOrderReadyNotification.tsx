@@ -4,6 +4,7 @@ import { Bell, Smartphone, Volume2, X } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useBranch } from "@/contexts/BranchContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { canManage } from "@/lib/permissions";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -14,6 +15,7 @@ export interface OrderReadyNotification {
   order_number: number;
   order_type: "DINE_IN" | "TAKEOUT";
   branch_id: string;
+  created_by: string;
   table_name?: string | null;
   split_code?: string | null;
   created_at: string;
@@ -23,6 +25,7 @@ type NotificationCallback = (notification: OrderReadyNotification) => void;
 
 interface NotificationHookOptions {
   activeBranchId?: string | null;
+  currentUserId?: string | null;
   enabled?: boolean;
 }
 
@@ -31,6 +34,7 @@ type ReadyOrderRow = {
   branch_id: string;
   order_number: number;
   order_type: "DINE_IN" | "TAKEOUT";
+  created_by: string;
   split_id: string | null;
   table_id: string | null;
   ready_at: string | null;
@@ -158,7 +162,7 @@ async function fetchOrderReadyNotification(
 ): Promise<OrderReadyNotification | null> {
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("branch_id, order_number, order_type, table_id, split_id")
+    .select("branch_id, order_number, order_type, created_by, table_id, split_id")
     .eq("id", orderId)
     .single();
 
@@ -190,6 +194,7 @@ async function fetchOrderReadyNotification(
     order_number: typedOrder.order_number,
     order_type: typedOrder.order_type,
     branch_id: typedOrder.branch_id,
+    created_by: typedOrder.created_by,
     table_name: tableResult.data?.name ?? null,
     split_code: splitResult.data?.split_code ?? null,
     created_at: createdAt,
@@ -221,13 +226,14 @@ async function fetchOrderReadyNotificationFromRow(
     order_number: order.order_number,
     order_type: order.order_type,
     branch_id: order.branch_id,
+    created_by: order.created_by,
     table_name: tableResult.data?.name ?? null,
     split_code: splitResult.data?.split_code ?? null,
     created_at: order.ready_at ?? new Date().toISOString(),
   };
 }
 
-async function isOrderStillReady(orderId: string): Promise<boolean> {
+async function shouldKeepOrderReadyAlarm(orderId: string, readyNotificationAt: string): Promise<boolean> {
   const { data, error } = await supabase
     .from("orders")
     .select("status")
@@ -235,7 +241,17 @@ async function isOrderStillReady(orderId: string): Promise<boolean> {
     .single();
 
   if (error || !data) return false;
-  return data.status === "READY";
+  if (data.status !== "READY") return false;
+
+  const { data: dispatchEvents, error: dispatchEventsError } = await supabase
+    .from("order_dispatch_events")
+    .select("id")
+    .eq("order_id", orderId)
+    .gt("created_at", readyNotificationAt)
+    .limit(1);
+
+  if (dispatchEventsError) return true;
+  return (dispatchEvents ?? []).length === 0;
 }
 
 export function useMeseroOrderReadyNotification(
@@ -243,6 +259,7 @@ export function useMeseroOrderReadyNotification(
   options?: NotificationHookOptions,
 ) {
   const activeBranchId = options?.activeBranchId ?? null;
+  const currentUserId = options?.currentUserId ?? null;
   const enabled = options?.enabled ?? true;
   const handledNotificationsRef = useRef<Set<string>>(new Set());
   const onNotificationRef = useRef(onNotification);
@@ -287,6 +304,7 @@ export function useMeseroOrderReadyNotification(
           const notification = await fetchOrderReadyNotification(orderId, payload.new.created_at ?? new Date().toISOString());
           if (!notification) return;
           if (activeBranchId && notification.branch_id !== activeBranchId) return;
+          if (currentUserId && notification.created_by !== currentUserId) return;
 
           handledNotificationsRef.current.add(notificationId);
           if (handledNotificationsRef.current.size > 100) {
@@ -304,7 +322,7 @@ export function useMeseroOrderReadyNotification(
     return () => {
       void orderReadyChannel.unsubscribe();
     };
-  }, [activeBranchId, channelFactory, enabled]);
+  }, [activeBranchId, channelFactory, currentUserId, enabled]);
 
   useEffect(() => {
     if (!enabled || !activeBranchId) return;
@@ -316,6 +334,7 @@ export function useMeseroOrderReadyNotification(
         .from("orders")
         .select("ready_at")
         .eq("branch_id", activeBranchId)
+        .eq("created_by", currentUserId ?? "")
         .eq("status", "READY")
         .not("ready_at", "is", null)
         .order("ready_at", { ascending: false })
@@ -334,7 +353,7 @@ export function useMeseroOrderReadyNotification(
       lastPolledReadyAtRef.current = null;
       lastPolledNotificationAtRef.current = null;
     };
-  }, [activeBranchId, enabled]);
+  }, [activeBranchId, currentUserId, enabled]);
 
   useEffect(() => {
     if (!enabled || !activeBranchId) return;
@@ -347,8 +366,9 @@ export function useMeseroOrderReadyNotification(
 
       const { data, error } = await supabase
         .from("orders")
-        .select("id, branch_id, order_number, order_type, table_id, split_id, ready_at")
+        .select("id, branch_id, order_number, order_type, created_by, table_id, split_id, ready_at")
         .eq("branch_id", activeBranchId)
+        .eq("created_by", currentUserId ?? "")
         .eq("status", "READY")
         .gt("ready_at", cursor)
         .order("ready_at", { ascending: true })
@@ -388,7 +408,7 @@ export function useMeseroOrderReadyNotification(
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeBranchId, enabled]);
+  }, [activeBranchId, currentUserId, enabled]);
 
   useEffect(() => {
     if (!enabled || !activeBranchId) return;
@@ -444,6 +464,7 @@ export function useMeseroOrderReadyNotification(
         const notification = await fetchOrderReadyNotification(orderId, rawNotification.created_at ?? new Date().toISOString());
         if (!notification || cancelled) continue;
         if (notification.branch_id !== activeBranchId) continue;
+        if (currentUserId && notification.created_by !== currentUserId) continue;
 
         handledNotificationsRef.current.add(notificationId);
         if (handledNotificationsRef.current.size > 100) {
@@ -470,7 +491,7 @@ export function useMeseroOrderReadyNotification(
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeBranchId, enabled]);
+  }, [activeBranchId, currentUserId, enabled]);
 }
 
 interface OrderReadyNotificationBannerProps {
@@ -528,12 +549,13 @@ export function OrderReadyNotificationBanner({
 }
 
 export function OrderReadyAlertCenter() {
+  const { user } = useAuth();
   const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const [notification, setNotification] = useState<OrderReadyNotification | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(readAudioPreference);
   const [armingAudio, setArmingAudio] = useState(false);
-  const [activeAlarmOrderId, setActiveAlarmOrderId] = useState<string | null>(null);
+  const [activeAlarm, setActiveAlarm] = useState<{ orderId: string; createdAt: string } | null>(null);
 
   const enabled = Boolean(activeBranchId) && (
     isGlobalAdmin
@@ -546,24 +568,28 @@ export function OrderReadyAlertCenter() {
 
   useMeseroOrderReadyNotification((nextNotification) => {
     setNotification(nextNotification);
-    setActiveAlarmOrderId(nextNotification.order_id);
+    setActiveAlarm({
+      orderId: nextNotification.order_id,
+      createdAt: nextNotification.created_at,
+    });
   }, {
     activeBranchId,
+    currentUserId: user?.id ?? null,
     enabled,
   });
 
   useEffect(() => {
-    if (!enabled || !audioEnabled || !activeAlarmOrderId) return;
+    if (!enabled || !audioEnabled || !activeAlarm) return;
 
     let cancelled = false;
 
     const tickAlarm = async () => {
-      const stillReady = await isOrderStillReady(activeAlarmOrderId);
+      const stillReady = await shouldKeepOrderReadyAlarm(activeAlarm.orderId, activeAlarm.createdAt);
       if (cancelled) return;
 
       if (!stillReady) {
-        setActiveAlarmOrderId((current) => (current === activeAlarmOrderId ? null : current));
-        setNotification((current) => (current?.order_id === activeAlarmOrderId ? null : current));
+        setActiveAlarm((current) => (current?.orderId === activeAlarm.orderId ? null : current));
+        setNotification((current) => (current?.order_id === activeAlarm.orderId ? null : current));
         return;
       }
 
@@ -580,7 +606,7 @@ export function OrderReadyAlertCenter() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeAlarmOrderId, audioEnabled, enabled]);
+  }, [activeAlarm, audioEnabled, enabled]);
 
   return (
     <>
