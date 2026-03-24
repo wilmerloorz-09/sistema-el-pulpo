@@ -30,6 +30,7 @@ interface SubcategoryRecord {
 
 interface ProductRecord {
   id: string;
+  subcategory_id?: string | null;
   display_order: number | null;
 }
 
@@ -126,9 +127,20 @@ const upsertMenuNodeInList = (items: AdminMenuNode[], nextNode: AdminMenuNode) =
   return sortMenuNodes([...filtered, nextNode]);
 };
 
-const MenuNodesCrud = () => {
+interface MenuNodesCrudProps {
+  menuScope?: "TABLE" | "TAKEOUT";
+  title?: string;
+  showCopyFromTableButton?: boolean;
+}
+
+const MenuNodesCrud = ({
+  menuScope = "TABLE",
+  title = "Arbol de menu",
+  showCopyFromTableButton = false,
+}: MenuNodesCrudProps) => {
   const { activeBranchId } = useBranch();
   const queryClient = useQueryClient();
+  const isTableScope = menuScope === "TABLE";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -137,12 +149,13 @@ const MenuNodesCrud = () => {
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
 
   const query = useQuery({
-    queryKey: ["admin-menu-nodes", activeBranchId],
+    queryKey: ["admin-menu-nodes", activeBranchId, menuScope],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("menu_nodes" as never)
         .select("*")
         .eq("branch_id", activeBranchId!)
+        .eq("menu_scope", menuScope)
         .order("depth", { ascending: true })
         .order("display_order", { ascending: true })
         .order("name", { ascending: true });
@@ -157,9 +170,9 @@ const MenuNodesCrud = () => {
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
 
   useEffect(() => {
-    if (!activeBranchId || nodes.length === 0) return;
+      if (!activeBranchId || nodes.length === 0) return;
 
-    const storageKey = getCollapsedNodesStorageKey(activeBranchId);
+    const storageKey = `${getCollapsedNodesStorageKey(activeBranchId)}:${menuScope}`;
     const availableNodeIds = new Set(nodes.map((node) => node.id));
     const defaultCollapsedIds = nodes.filter((node) => node.parent_id !== null).map((node) => node.id);
 
@@ -181,12 +194,12 @@ const MenuNodesCrud = () => {
     } catch {
       setCollapsedIds(defaultCollapsedIds);
     }
-  }, [activeBranchId, nodes]);
+  }, [activeBranchId, menuScope, nodes]);
 
   useEffect(() => {
     if (!activeBranchId) return;
-    localStorage.setItem(getCollapsedNodesStorageKey(activeBranchId), JSON.stringify(collapsedIds));
-  }, [activeBranchId, collapsedIds]);
+    localStorage.setItem(`${getCollapsedNodesStorageKey(activeBranchId)}:${menuScope}`, JSON.stringify(collapsedIds));
+  }, [activeBranchId, collapsedIds, menuScope]);
 
   useEffect(() => {
     if (!selectedImageFile) {
@@ -250,6 +263,23 @@ const MenuNodesCrud = () => {
       currentId = current?.parent_id ?? null;
     }
     return null;
+  };
+
+  const getCategoryLineage = (nodeId: string) => {
+    const lineage: Array<{ name: string; displayOrder: number }> = [];
+    let current = nodesById.get(nodeId) ?? null;
+
+    while (current) {
+      if (current.node_type === "category") {
+        lineage.unshift({
+          name: current.name.trim().toLowerCase(),
+          displayOrder: Number(current.display_order ?? 0),
+        });
+      }
+      current = current.parent_id ? nodesById.get(current.parent_id) ?? null : null;
+    }
+
+    return lineage;
   };
 
   const selectedNode = selectedId ? nodesById.get(selectedId) ?? null : null;
@@ -359,6 +389,70 @@ const MenuNodesCrud = () => {
     return categoryNodeId;
   };
 
+  const resolveTableLegacySubcategoryId = async (takeoutCategoryId: string) => {
+    if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+    const lineage = getCategoryLineage(takeoutCategoryId);
+    if (lineage.length === 0) {
+      throw new Error("No se pudo resolver la categoria equivalente en Arbol Menu Mesa.");
+    }
+
+    const { data: tableCategories, error: tableCategoriesError } = await supabase
+      .from("menu_nodes" as never)
+      .select("id, parent_id, name, node_type, display_order")
+      .eq("branch_id", activeBranchId)
+      .eq("menu_scope", "TABLE")
+      .eq("node_type", "category");
+    if (tableCategoriesError) throw tableCategoriesError;
+
+    const tableCategoryList = ((tableCategories ?? []) as unknown as AdminMenuNode[]).filter(
+      (node) => node.node_type === "category",
+    );
+    const tableCategoryMap = new Map(tableCategoryList.map((node) => [node.id, node]));
+
+    const buildTableLineage = (nodeId: string) => {
+      const chain: Array<{ name: string; displayOrder: number }> = [];
+      let current = tableCategoryMap.get(nodeId) ?? null;
+
+      while (current) {
+        chain.unshift({
+          name: current.name.trim().toLowerCase(),
+          displayOrder: Number(current.display_order ?? 0),
+        });
+        current = current.parent_id ? tableCategoryMap.get(current.parent_id) ?? null : null;
+      }
+
+      return chain;
+    };
+
+    const exactMatch = tableCategoryList.find((candidate) => {
+      const candidateLineage = buildTableLineage(candidate.id);
+      return (
+        candidateLineage.length === lineage.length &&
+        candidateLineage.every(
+          (segment, index) =>
+            segment.name === lineage[index]?.name && segment.displayOrder === lineage[index]?.displayOrder,
+        )
+      );
+    });
+
+    if (exactMatch) return exactMatch.id;
+
+    const nameOnlyMatch = tableCategoryList.find((candidate) => {
+      const candidateLineage = buildTableLineage(candidate.id);
+      return (
+        candidateLineage.length === lineage.length &&
+        candidateLineage.every((segment, index) => segment.name === lineage[index]?.name)
+      );
+    });
+
+    if (nameOnlyMatch) return nameOnlyMatch.id;
+
+    throw new Error(
+      "El producto para llevar no tiene categoria equivalente en Arbol Menu Mesa. Copia el arbol desde Mesa o crea primero esa categoria en Mesa.",
+    );
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!activeBranchId) throw new Error("No hay sucursal activa");
@@ -417,6 +511,7 @@ const MenuNodesCrud = () => {
           .upsert({
             id,
             branch_id: activeBranchId,
+            menu_scope: menuScope,
             parent_id: form.parent_id,
             name,
             node_type: form.node_type,
@@ -426,13 +521,19 @@ const MenuNodesCrud = () => {
             price,
             description: form.description.trim() || null,
             image_url: imageUrlToPersist || null,
+            legacy_product_id:
+              form.node_type === "product"
+                ? (form.id ? (nodesById.get(form.id)?.legacy_product_id ?? form.id) : id)
+                : null,
           } as never)
           .select("*")
           .single();
         if (menuNodeError) throw menuNodeError;
 
         if (form.node_type === "category") {
-          await ensureLegacyCategoryMirror(id, name, form.parent_id, displayOrder > 0 ? displayOrder : 1, form.is_active);
+          if (isTableScope) {
+            await ensureLegacyCategoryMirror(id, name, form.parent_id, displayOrder > 0 ? displayOrder : 1, form.is_active);
+          }
         } else {
           const nearestCategoryAncestorId = findNearestCategoryAncestorId(form.parent_id);
           if (!nearestCategoryAncestorId) throw new Error("El producto debe colgar de una categoria valida.");
@@ -440,13 +541,31 @@ const MenuNodesCrud = () => {
           const ancestorCategory = nodesById.get(nearestCategoryAncestorId);
           if (!ancestorCategory) throw new Error("No se pudo resolver la categoria ancestro del producto.");
 
-          const legacySubcategoryId = await ensureLegacyCategoryMirror(
-            ancestorCategory.id,
-            ancestorCategory.name,
-            ancestorCategory.parent_id,
-            Number(ancestorCategory.display_order ?? 1) || 1,
-            true,
-          );
+          const existingLegacyProductId =
+            !isTableScope && form.id ? (nodesById.get(form.id)?.legacy_product_id ?? null) : null;
+
+          let legacySubcategoryId: string | null = null;
+          if (!isTableScope && existingLegacyProductId) {
+            const { data: existingLegacyProduct, error: existingLegacyProductError } = await supabase
+              .from("products")
+              .select("subcategory_id")
+              .eq("id", existingLegacyProductId)
+              .maybeSingle();
+            if (existingLegacyProductError) throw existingLegacyProductError;
+            legacySubcategoryId = existingLegacyProduct?.subcategory_id ?? null;
+          }
+
+          if (!legacySubcategoryId) {
+            legacySubcategoryId = isTableScope
+              ? await ensureLegacyCategoryMirror(
+                  ancestorCategory.id,
+                  ancestorCategory.name,
+                  ancestorCategory.parent_id,
+                  Number(ancestorCategory.display_order ?? 1) || 1,
+                  true,
+                )
+              : await resolveTableLegacySubcategoryId(ancestorCategory.id);
+          }
 
           const { data: siblingProducts, error: siblingProductsError } = await supabase
             .from("products")
@@ -454,10 +573,14 @@ const MenuNodesCrud = () => {
             .eq("subcategory_id", legacySubcategoryId);
           if (siblingProductsError) throw siblingProductsError;
 
+          const legacyProductId =
+            isTableScope
+              ? id
+              : (form.id ? (nodesById.get(form.id)?.legacy_product_id ?? generateUUID()) : generateUUID());
           const rows = (siblingProducts ?? []) as ProductRecord[];
-          const existingProduct = rows.find((product) => product.id === id) ?? null;
+          const existingProduct = rows.find((product) => product.id === legacyProductId) ?? null;
           const usedOrders = rows
-            .filter((product) => product.id !== id)
+            .filter((product) => product.id !== legacyProductId)
             .map((product) => Number(product.display_order) || 0);
 
           const productDisplayOrder = existingProduct
@@ -465,7 +588,7 @@ const MenuNodesCrud = () => {
             : nextAvailableOrder(usedOrders, displayOrder > 0 ? displayOrder : 1);
 
           const { error: productError } = await supabase.from("products").upsert({
-            id,
+            id: legacyProductId,
             subcategory_id: legacySubcategoryId,
             description: name,
             unit_price: price,
@@ -474,6 +597,14 @@ const MenuNodesCrud = () => {
             is_active: form.is_active,
           });
           if (productError) throw productError;
+
+          if (!isTableScope) {
+            const { error: syncLegacyRefError } = await supabase
+              .from("menu_nodes" as never)
+              .update({ legacy_product_id: legacyProductId } as never)
+              .eq("id", id);
+            if (syncLegacyRefError) throw syncLegacyRefError;
+          }
         }
 
         const nextManagedImagePath = uploadedImagePath ?? extractManagedImagePath(imageUrlToPersist);
@@ -506,10 +637,10 @@ const MenuNodesCrud = () => {
     onSuccess: (savedNode) => {
       toast.success("Nodo guardado");
       if (savedNode && activeBranchId) {
-        queryClient.setQueryData(["admin-menu-nodes", activeBranchId], (current: AdminMenuNode[] | undefined) =>
+        queryClient.setQueryData(["admin-menu-nodes", activeBranchId, menuScope], (current: AdminMenuNode[] | undefined) =>
           upsertMenuNodeInList(current ?? [], savedNode),
         );
-        queryClient.setQueryData(["menu-tree", activeBranchId], (current: MenuNode[] | undefined) =>
+        queryClient.setQueryData(["menu-tree", activeBranchId, menuScope, false], (current: MenuNode[] | undefined) =>
           upsertMenuNodeInList((current ?? []) as AdminMenuNode[], savedNode),
         );
       }
@@ -542,9 +673,10 @@ const MenuNodesCrud = () => {
       if (menuNodeError) throw menuNodeError;
 
       if (node.node_type === "product") {
-        const { error: productError } = await supabase.from("products").update({ is_active: nextIsActive }).eq("id", node.id);
+        const legacyProductId = node.legacy_product_id ?? node.id;
+        const { error: productError } = await supabase.from("products").update({ is_active: nextIsActive }).eq("id", legacyProductId);
         if (productError) throw productError;
-      } else {
+      } else if (isTableScope) {
         if (node.parent_id === null) {
           const { error: categoryError } = await supabase.from("categories").update({ is_active: nextIsActive }).eq("id", node.id);
           if (categoryError) throw categoryError;
@@ -558,6 +690,37 @@ const MenuNodesCrud = () => {
     onSuccess: (_didToggle, node) => {
       if (!_didToggle) return;
       toast.success(node.is_active ? "Nodo desactivado" : "Nodo activado");
+      queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-products"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+      resetForm();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const copyFromTableMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+      const confirmed = window.confirm(
+        "Se reemplazara completamente el arbol Para Llevar actual con una copia del arbol Mesa. Esta accion no afecta ordenes historicas.",
+      );
+      if (!confirmed) return false;
+
+      const { error } = await supabase.rpc("copy_menu_scope_tree", {
+        p_branch_id: activeBranchId,
+        p_source_scope: "TABLE",
+        p_target_scope: "TAKEOUT",
+      });
+      if (error) throw error;
+
+      return true;
+    },
+    onSuccess: (didCopy) => {
+      if (!didCopy) return;
+      toast.success("Arbol Para Llevar copiado desde Arbol Menu Mesa");
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
@@ -670,10 +833,22 @@ const MenuNodesCrud = () => {
       <div className="rounded-3xl border border-border bg-card p-4">
         <div className="mb-4 flex items-center justify-between gap-2">
           <div>
-            <h2 className="font-display text-base font-bold">Arbol de menu</h2>
+            <h2 className="font-display text-base font-bold">{title}</h2>
             <p className="text-xs text-muted-foreground">Vista colapsable de la jerarquia completa de menu_nodes.</p>
           </div>
           <div className="flex gap-2">
+            {showCopyFromTableButton ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => copyFromTableMutation.mutate()}
+                disabled={copyFromTableMutation.isPending}
+              >
+                <FolderTree className="mr-1.5 h-4 w-4" />
+                Copiar desde Mesa
+              </Button>
+            ) : null}
             <Button size="sm" variant="outline" className="rounded-xl" onClick={() => resetForm(null)}>
               <Plus className="mr-1.5 h-4 w-4" />
               Nueva raiz
@@ -837,7 +1012,10 @@ const MenuNodesCrud = () => {
           </div>
 
           <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">
-            El nivel 1 es el unico obligatorio para navegar y los productos pueden colgar desde el nivel 2 en adelante. El arbol sincroniza automaticamente la estructura legacy necesaria para que esos productos puedan venderse en ordenes.
+            El nivel 1 es el unico obligatorio para navegar y los productos pueden colgar desde el nivel 2 en adelante.
+            {isTableScope
+              ? " Este arbol sincroniza automaticamente la estructura legacy base para ventas en ordenes."
+              : " Este arbol opera como catalogo visual/operativo independiente para llevar y puede copiarse desde Mesa."}
           </div>
 
           <div className="space-y-1.5">

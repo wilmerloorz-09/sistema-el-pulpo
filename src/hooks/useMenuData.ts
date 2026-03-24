@@ -17,6 +17,7 @@ interface Subcategory {
 
 interface Product {
   id: string;
+  menu_node_id: string;
   description: string;
   subcategory_id: string;
   display_order: number;
@@ -45,7 +46,7 @@ interface Modifier {
   display_order: number;
 }
 
-export function useMenuData() {
+export function useMenuData(menuScope: "TABLE" | "TAKEOUT" = "TABLE") {
   const { activeBranchId } = useBranch();
 
   const categories = useQuery({
@@ -78,24 +79,68 @@ export function useMenuData() {
   });
 
   const products = useQuery({
-    queryKey: ["menu-products", activeBranchId],
-    queryFn: () => {
-      const subIds = subcategories.data?.map((s) => s.id) ?? [];
-      if (subIds.length === 0) return Promise.resolve([]);
-      return dbSelect<Product>("products", {
+    queryKey: ["menu-products", activeBranchId, menuScope],
+    queryFn: async () => {
+      if (!activeBranchId) return [];
+
+      const { data: productNodes, error: productNodesError } = await supabase
+        .from("menu_nodes" as never)
+        .select("id, legacy_product_id, name, price, display_order, is_active")
+        .eq("branch_id", activeBranchId)
+        .eq("menu_scope", menuScope)
+        .eq("node_type", "product")
+        .eq("is_active", true);
+
+      if (productNodesError) throw productNodesError;
+
+      const nodeRows = (productNodes ?? []) as Array<{
+        id: string;
+        legacy_product_id?: string | null;
+        name: string;
+        price?: number | null;
+        display_order?: number | null;
+        is_active?: boolean | null;
+      }>;
+      const productIds = [
+        ...new Set(
+          nodeRows
+            .map((node) => node.legacy_product_id ?? node.id)
+            .filter(Boolean),
+        ),
+      ] as string[];
+      if (productIds.length === 0) return [];
+
+      const legacyProducts = await dbSelect<Omit<Product, "menu_node_id">>("products", {
         select: "id, description, subcategory_id, display_order, unit_price, price_mode",
         filters: [
-          { column: "is_active", op: "eq", value: true },
-          { column: "subcategory_id", op: "in", value: subIds },
+          { column: "id", op: "in", value: productIds },
         ],
         orderBy: { column: "display_order" },
       });
+
+      const legacyProductsById = new Map(legacyProducts.map((product) => [product.id, product]));
+
+      return nodeRows.flatMap((node) => {
+        const legacyId = node.legacy_product_id ?? node.id;
+        const legacyProduct = legacyProductsById.get(legacyId);
+        if (!legacyProduct) return [];
+
+        return [{
+          ...legacyProduct,
+          id: legacyId,
+          menu_node_id: node.id,
+          description: node.name || legacyProduct.description,
+          display_order: Number(node.display_order ?? legacyProduct.display_order ?? 0),
+          unit_price: node.price == null ? legacyProduct.unit_price : Number(node.price),
+          is_active: Boolean(node.is_active ?? true),
+        }];
+      });
     },
-    enabled: !!activeBranchId && !!subcategories.data,
+    enabled: !!activeBranchId,
   });
 
   const modifiers = useQuery({
-    queryKey: ["menu-modifiers", activeBranchId, products.data?.length ?? 0],
+    queryKey: ["menu-modifiers", activeBranchId, menuScope, products.data?.length ?? 0],
     queryFn: async () => {
       if (!activeBranchId) return [];
 
@@ -106,6 +151,7 @@ export function useMenuData() {
         .from("menu_nodes" as never)
         .select("id, parent_id, node_type")
         .eq("branch_id", activeBranchId)
+        .eq("menu_scope", menuScope)
         .eq("is_active", true);
 
       if (menuNodesError) throw menuNodesError;
@@ -147,7 +193,7 @@ export function useMenuData() {
       const modsById = Object.fromEntries(mods.map((mod) => [mod.id, mod]));
 
       return activeProducts.flatMap((product) => {
-        const startNodeId = nodesById.has(product.id) ? product.id : product.subcategory_id;
+        const startNodeId = nodesById.has(product.menu_node_id) ? product.menu_node_id : product.subcategory_id;
         const seenModifierIds = new Set<string>();
         const effectiveModifiers: Modifier[] = [];
 
@@ -165,7 +211,7 @@ export function useMenuData() {
             effectiveModifiers.push({
               id: mod.id,
               description: mod.description,
-              node_id: product.id,
+              node_id: product.menu_node_id,
               display_order: Number(link.display_order ?? 0),
             });
             seenModifierIds.add(link.modifier_id);

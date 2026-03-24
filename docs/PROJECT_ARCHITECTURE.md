@@ -26,9 +26,15 @@
 
 ### Catalogo
 - Fuente de navegacion actual: `menu_nodes`.
+- El catalogo visual ya trabaja con dos alcances:
+  - `TABLE`
+  - `TAKEOUT`
 - Fuente operativa legacy aun activa: `categories`, `subcategories`, `products`.
 - `MenuNodesCrud` es la interfaz principal para administrar la estructura del menu.
 - La compatibilidad con `products` sigue viva a nivel operativo, pero la administracion del catalogo ya no expone una pestana separada de `Productos`; el punto principal de mantenimiento visible es `Arbol Menu`.
+- En `Admin` ahora existen dos superficies hermanas:
+  - `Arbol Menu Mesa`
+  - `Arbol Menu Para Llevar`
 
 ### Modificadores
 - `modifiers` se mantiene como catalogo base por sucursal.
@@ -40,6 +46,9 @@
 - La navegacion de seleccion usa `MenuNavigator` + `useMenuTree`.
 - El unico nivel obligatorio para navegar es L1.
 - La persistencia del item sigue usando `order_items.product_id`, por lo que `products` aun es obligatorio.
+- `orders.menu_scope` determina que arbol usar en la orden activa.
+- `TAKEOUT` usa siempre `menu_scope = 'TAKEOUT'`.
+- `DINE_IN` puede alternar entre `TABLE` y `TAKEOUT` desde la UI de `Ordenes`.
 - La disponibilidad de modificadores en el dialogo de producto debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
 - La disponibilidad/agotado de productos tambien se resuelve desde `menu_nodes.is_active`; un producto agotado puede seguir existiendo en legacy, pero `Ordenes` no debe permitir venderlo.
 - La visibilidad de estados operativos entre usuarios depende de dos capas:
@@ -74,6 +83,11 @@
   - destino ocupado: se crea una division nueva en la mesa destino y la orden movida pasa a esa nueva division
 - Si la mesa destino estaba ocupada por una orden aun sin `split_id`, esa orden debe convertirse primero en su propia division para no mezclar grupos ni romper la vista de siblings por mesa.
 - Si despues de mover o eliminar una division solo queda una orden activa en una mesa, esa orden debe volver a representar la mesa base y perder su `split_id`.
+- El mosaico principal de `Mesas` ahora expone tambien saldo pendiente visible por tarjeta:
+  - total unico abajo a la derecha cuando no hay divisiones visibles
+  - hasta 2 etiquetas inferiores cuando hay divisiones
+  - sin montos si hay mas de 2 divisiones activas
+- El `split_code` visible debe formatearse como `2A`, `2B`, etc., sin espacio intermedio.
 
 ### Usuarios y alta administrativa
 - `UsersCrud` sigue siendo la superficie de administracion de usuarios.
@@ -100,13 +114,18 @@
 
 ### C) Admin orientado al arbol
 - Se retiraron de `Admin` las pestanas de `Categorias`, `Subcategorias` y `Productos`.
-- `Arbol Menu` es la fuente principal para construir la jerarquia del catalogo y usa subida de imagen a Storage como mecanismo visible de administracion.
+- `Arbol Menu` se divide ahora en dos alcances:
+  - `Arbol Menu Mesa`
+  - `Arbol Menu Para Llevar`
+- `Arbol Menu Para Llevar` incorpora `Copiar desde Mesa` como accion de bootstrap.
 - Los productos se permiten desde Nivel 2 en adelante.
 - Las asignaciones de modificadores tambien viven en `Arbol Menu`; la pestana `Modificadores` queda solo para el catalogo base.
 
 ### D) Capa de compatibilidad legacy
 - Al guardar nodos del arbol, se replica la estructura minima necesaria en tablas legacy.
 - Los nodos `product` se sincronizan hacia `products` para que puedan entrar a `order_items`.
+- En alcance `TAKEOUT`, las categorias ya no deben crear/editar `subcategories` legacy.
+- Los productos `TAKEOUT` siguen necesitando espejo en `products`, pero deben resolver la categoria legacy equivalente sin fabricar ramas nuevas fuera del arbol `Mesa`.
 - Esta capa debe tratarse como compatibilidad transitoria, no como arquitectura destino.
 
 ### E) Caja: composicion actual del flujo de cobro
@@ -241,6 +260,9 @@
   - telefono: descripcion arriba y controles de anulacion debajo, sin comprimir la linea del producto
   - tablet: descripcion a la izquierda y controles a la derecha cuando ya haya ancho util
 - `CancelOrderDialog` en modo compacto debe aprovechar tablet con layout mas ancho y, cuando hay espacio, con detalle del item y cantidad preseleccionada en dos columnas.
+- `Mesas` tambien debe seguir esta regla:
+  - telefono: badges de total/split con ancho acotado y truncado visual
+  - tablet: mismas esquinas inferiores, pero con mayor padding y texto mas legible
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

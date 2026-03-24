@@ -24,9 +24,11 @@ import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import type { MenuNode } from "@/hooks/useMenuTree";
+import { formatSplitCodeLabel } from "@/lib/splitCode";
 
 interface SelectedProduct {
   id: string;
+  menu_node_id: string;
   description: string;
   subcategory_id: string;
   unit_price: number | null;
@@ -42,8 +44,9 @@ const Ordenes = () => {
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
-  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable } = useOrder(orderId);
-  const menu = useMenuData();
+  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope } = useOrder(orderId);
+  const currentMenuScope = order?.order_type === "TAKEOUT" ? "TAKEOUT" : (order?.menu_scope ?? "TABLE");
+  const menu = useMenuData(currentMenuScope);
   const tablesQuery = useTablesWithStatus();
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
@@ -65,7 +68,8 @@ const Ordenes = () => {
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   const canCancelOrders = canOperateOrders || canManageOrders;
   const canAuthorizeCancel =
-    canManage(permissions, "admin_global")
+    canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global")
     || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
@@ -93,12 +97,32 @@ const Ordenes = () => {
     window.print();
   }, []);
 
-  const handleSelectMenuProduct = useCallback((node: MenuNode) => {
-    const legacyProduct = menu.products.find((product) => product.id === node.id);
+  const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
+    const legacyProductId = node.legacy_product_id ?? node.id;
+    let legacyProduct = menu.products.find(
+      (product) => product.menu_node_id === node.id || product.id === legacyProductId,
+    );
 
     if (!legacyProduct) {
-      toast.error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
-      return;
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, description, subcategory_id, unit_price, price_mode")
+        .eq("id", node.id)
+        .single();
+
+      if (error) {
+        toast.error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+        return;
+      }
+
+      legacyProduct = {
+        id: data.id,
+        menu_node_id: node.id,
+        description: data.description ?? node.name,
+        subcategory_id: data.subcategory_id,
+        unit_price: data.unit_price == null ? (node.price ?? null) : Number(data.unit_price),
+        price_mode: data.price_mode,
+      };
     }
 
     setSelectedProduct(legacyProduct);
@@ -174,7 +198,7 @@ const Ordenes = () => {
   const canEditItems = canOperateOrders && order.status !== "PAID" && order.status !== "CANCELLED";
   const tableWatermark =
     order.order_type === "DINE_IN"
-      ? (order.split_code ?? order.table_name ?? "").trim()
+      ? formatSplitCodeLabel(order.split_code) || (order.table_name ?? "").trim()
       : "PARA LLEVAR";
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
@@ -213,14 +237,14 @@ const Ordenes = () => {
       if (!hasSiblings) {
         const { data: splitA, error: errA } = await supabase
           .from("table_splits")
-          .insert({ table_id: order.table_id, split_code: `${tableName} A` })
+          .insert({ table_id: order.table_id, split_code: `${tableName}A` })
           .select("id")
           .single();
         if (errA) throw errA;
 
         const { data: splitB, error: errB } = await supabase
           .from("table_splits")
-          .insert({ table_id: order.table_id, split_code: `${tableName} B` })
+          .insert({ table_id: order.table_id, split_code: `${tableName}B` })
           .select("id")
           .single();
         if (errB) throw errB;
@@ -234,6 +258,7 @@ const Ordenes = () => {
           table_id: order.table_id,
           split_id: splitB.id,
           order_type: "DINE_IN" as const,
+          menu_scope: order.menu_scope ?? "TABLE",
           created_by: user.id,
           status: "DRAFT" as const,
           branch_id: activeBranchId!,
@@ -250,7 +275,7 @@ const Ordenes = () => {
 
         const { data: newSplit, error: splitErr } = await supabase
           .from("table_splits")
-          .insert({ table_id: order.table_id, split_code: `${tableName} ${nextLetter}` })
+          .insert({ table_id: order.table_id, split_code: `${tableName}${nextLetter}` })
           .select("id")
           .single();
         if (splitErr) throw splitErr;
@@ -261,6 +286,7 @@ const Ordenes = () => {
           table_id: order.table_id,
           split_id: newSplit.id,
           order_type: "DINE_IN" as const,
+          menu_scope: order.menu_scope ?? "TABLE",
           created_by: user.id,
           status: "DRAFT" as const,
           branch_id: activeBranchId!,
@@ -269,7 +295,7 @@ const Ordenes = () => {
           .single();
         if (newOrderError || !newOrder) throw newOrderError ?? new Error("No se pudo crear la nueva division");
 
-        toast.success(`Sub-mesa ${tableName} ${nextLetter} creada`);
+        toast.success(`Sub-mesa ${tableName}${nextLetter} creada`);
         navigate(`/ordenes?order=${newOrder.id}`, { replace: true });
       }
 
@@ -366,6 +392,7 @@ const Ordenes = () => {
       quantity_remaining?: number;
       quantity_cancellable?: number;
       total: number;
+      unit_price?: number;
       status: string;
       modifiers: { id: string; description: string }[];
       item_note?: string | null;
@@ -379,9 +406,15 @@ const Ordenes = () => {
     }
 
     const normalizedQty = Math.max(1, Math.min(maxQty, Math.floor(qty)));
+    const unitPrice =
+      Number(item.unit_price ?? 0) > 0
+        ? Number(item.unit_price ?? 0)
+        : maxQty > 0
+          ? Number(item.total ?? 0) / maxQty
+          : 0;
     let requiresAuthorization = !canAuthorizeCancel;
 
-    if (!canAuthorizeCancel && activeBranchId && item.product_id) {
+    if (activeBranchId && item.product_id) {
       try {
         const { data, error } = await (supabase as any).rpc("get_branch_cancel_policy_for_product", {
           p_branch_id: activeBranchId,
@@ -390,7 +423,8 @@ const Ordenes = () => {
         if (error) throw error;
 
         const policyRow = Array.isArray(data) ? data[0] : data;
-        requiresAuthorization = !Boolean(policyRow?.allow_direct_cancel);
+        const allowDirectByCategory = Boolean(policyRow?.allow_direct_cancel);
+        requiresAuthorization = !(canAuthorizeCancel && allowDirectByCategory);
       } catch (error: any) {
         toast.error(error?.message || "No se pudo validar la politica de anulacion para este producto.");
         return;
@@ -401,11 +435,11 @@ const Ordenes = () => {
       {
         id: item.id,
         description_snapshot: item.description_snapshot,
-        quantity: maxQty,
+        quantity: normalizedQty,
         quantity_total: item.quantity_ordered ?? item.quantity,
         quantity_dispatched: item.quantity_dispatched ?? 0,
         quantity_remaining: item.quantity_remaining ?? 0,
-        total: item.total,
+        total: Math.round(normalizedQty * unitPrice * 100) / 100,
         status: item.status,
         modifiers: item.modifiers.map((modifier) => ({ description: modifier.description })),
         item_note: item.item_note ?? null,
@@ -418,17 +452,42 @@ const Ordenes = () => {
   };
 
   const menuPanel = canEditItems ? (
-    <MenuNavigator
-      includeInactive={true}
-      onSelectProduct={handleSelectMenuProduct}
-      renderNodeAction={(node) =>
-        !node.is_active && node.node_type === "product" ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-bold text-red-700">
-            Producto agotado
-          </div>
-        ) : null
-      }
-    />
+    <div className="space-y-3">
+      {order.order_type === "DINE_IN" ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={currentMenuScope === "TABLE" ? "default" : "outline"}
+            className="rounded-xl"
+            onClick={() => updateMenuScope.mutate("TABLE")}
+            disabled={updateMenuScope.isPending}
+          >
+            Arbol Menu Mesa
+          </Button>
+          <Button
+            type="button"
+            variant={currentMenuScope === "TAKEOUT" ? "default" : "outline"}
+            className="rounded-xl"
+            onClick={() => updateMenuScope.mutate("TAKEOUT")}
+            disabled={updateMenuScope.isPending}
+          >
+            Arbol Menu Para Llevar
+          </Button>
+        </div>
+      ) : null}
+      <MenuNavigator
+        includeInactive={true}
+        menuScope={currentMenuScope}
+        onSelectProduct={handleSelectMenuProduct}
+        renderNodeAction={(node) =>
+          !node.is_active && node.node_type === "product" ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-bold text-red-700">
+              Producto agotado
+            </div>
+          ) : null
+        }
+      />
+    </div>
   ) : (
     <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
       Modo consulta: puedes ver la orden, pero no agregar ni editar items.
@@ -635,7 +694,7 @@ const Ordenes = () => {
         <div className="flex gap-1 overflow-x-auto border-b border-border bg-muted/30 px-4 py-2">
           {order.siblings.map((sib) => (
             <Button key={sib.id} variant={sib.id === order.id ? "default" : "outline"} size="sm" className="h-11 shrink-0 gap-1.5 rounded-lg px-3 text-xs 2xl:h-8" onClick={() => navigate(`/ordenes?order=${sib.id}`, { replace: true })}>
-              {sib.split_code}
+              {formatSplitCodeLabel(sib.split_code)}
               <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{sib.item_count}</Badge>
             </Button>
           ))}
@@ -674,7 +733,7 @@ const Ordenes = () => {
 
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
-        modifiers={selectedProduct ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.id) : []}
+        modifiers={selectedProduct ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.menu_node_id) : []}
         open={canEditItems && !!selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onConfirm={(data) => {

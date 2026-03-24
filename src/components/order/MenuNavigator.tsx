@@ -7,6 +7,7 @@ import { useMenuTree, type MenuNode } from "@/hooks/useMenuTree";
 interface MenuNavigatorProps {
   onSelectProduct?: (node: MenuNode) => void;
   includeInactive?: boolean;
+  menuScope?: "TABLE" | "TAKEOUT";
   renderNodeAction?: (node: MenuNode) => ReactNode;
 }
 
@@ -123,7 +124,7 @@ const NodeCard = ({
   );
 };
 
-const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAction }: MenuNavigatorProps) => {
+const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "TABLE", renderNodeAction }: MenuNavigatorProps) => {
   const {
     visibleNodes,
     breadcrumb,
@@ -136,7 +137,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, renderNodeAct
     countDescendantDepth,
     loading,
     error,
-  } = useMenuTree({ includeInactive });
+  } = useMenuTree({ includeInactive, menuScope });
 
   const panelRef = useRef<HTMLDivElement>(null);
   const searchPanelRef = useRef<HTMLDivElement>(null);

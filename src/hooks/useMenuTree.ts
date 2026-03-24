@@ -6,6 +6,7 @@ import { useBranch } from "@/contexts/BranchContext";
 export interface MenuNode {
   id: string;
   branch_id: string;
+  menu_scope: "TABLE" | "TAKEOUT";
   parent_id: string | null;
   name: string;
   node_type: "category" | "product";
@@ -16,10 +17,12 @@ export interface MenuNode {
   price?: number | null;
   description?: string | null;
   image_url?: string | null;
+  legacy_product_id?: string | null;
 }
 
 interface UseMenuTreeOptions {
   includeInactive?: boolean;
+  menuScope?: "TABLE" | "TAKEOUT";
 }
 
 interface UseMenuTreeReturn {
@@ -47,14 +50,16 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
   const { activeBranchId } = useBranch();
   const [pathIds, setPathIds] = useState<string[]>([]);
   const includeInactive = options.includeInactive ?? false;
+  const menuScope = options.menuScope ?? "TABLE";
 
   const query = useQuery({
-    queryKey: ["menu-tree", activeBranchId, includeInactive],
+    queryKey: ["menu-tree", activeBranchId, menuScope, includeInactive],
     queryFn: async () => {
       let queryBuilder = supabase
         .from("menu_nodes" as never)
         .select("*")
         .eq("branch_id", activeBranchId!)
+        .eq("menu_scope", menuScope)
         .order("depth", { ascending: true })
         .order("display_order", { ascending: true })
         .order("name", { ascending: true });

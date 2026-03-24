@@ -5,6 +5,7 @@ import { OrderSummary } from "@/hooks/useOrdersByStatus";
 interface OrderDetailDrawerProps {
   order: OrderSummary;
   onCancel?: (order: OrderSummary) => void;
+  onApproveCancellation?: (order: OrderSummary) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   readOnly?: boolean;
@@ -13,6 +14,7 @@ interface OrderDetailDrawerProps {
 export default function OrderDetailDrawer({
   order,
   onCancel,
+  onApproveCancellation,
   open,
   onOpenChange,
   readOnly = false,
@@ -29,6 +31,7 @@ export default function OrderDetailDrawer({
           <OrderDetailPanel
             order={order}
             onCancel={onCancel}
+            onApproveCancellation={onApproveCancellation}
             showCancelButton={!readOnly}
             moduleType="orders"
             readOnly={readOnly}

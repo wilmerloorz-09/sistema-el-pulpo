@@ -70,6 +70,7 @@ function buildCardSummary(items: OrderItemSummary[]) {
 interface OrderCardBaseProps {
   order: OrderSummary;
   onCancel?: (order: OrderSummary) => void;
+  onApproveCancellation?: (order: OrderSummary) => void;
   onRejectCancel?: (order: OrderSummary) => void;
   showCancelButton?: boolean;
   showRejectButton?: boolean;
@@ -82,6 +83,7 @@ interface OrderCardBaseProps {
 export function OrderCardBase({
   order,
   onCancel,
+  onApproveCancellation,
   onRejectCancel,
   showCancelButton = true,
   showRejectButton = false,
@@ -97,8 +99,11 @@ export function OrderCardBase({
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
   const isDispatchedView = order.status === "KITCHEN_DISPATCHED";
+  const isPendingCancellationView = order.status === "PENDING_CANCELLATION";
+  const isCancelledView = order.status === "CANCELLED";
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
-  const isCancelRequested = !!order.cancel_requested_at;
+  const isCancelRequested = isPendingCancellationView;
+  const footerItemCount = isPendingCancellationView ? visibleItems.length : (order.item_count || 0);
 
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
   const timeDisplay = isSentToKitchen ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime);
@@ -162,7 +167,15 @@ export function OrderCardBase({
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
                   <Badge className="min-w-[2.35rem] justify-center rounded-md border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-0.5 text-[11px] font-black leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
-                    {(isDispatchedView ? item.quantity : (item.quantity_total || item.quantity)) || 1}x
+                    {(
+                      isPendingCancellationView
+                        ? item.quantity_requested
+                        : isCancelledView
+                          ? item.quantity
+                        : isDispatchedView
+                          ? item.quantity
+                          : (item.quantity_total || item.quantity)
+                    ) || 1}x
                   </Badge>
                   <div className="min-w-0 flex-1">
                     <p className="break-words whitespace-normal text-sm font-medium text-foreground">
@@ -211,7 +224,7 @@ export function OrderCardBase({
       <div className="mt-2 flex items-center justify-between border-t border-border px-4 py-3 text-sm">
         <div className="flex items-center gap-1 text-muted-foreground">
           <Package className="h-4 w-4" />
-          <span>{order.item_count || 0} item{(order.item_count || 0) !== 1 ? "s" : ""}</span>
+          <span>{footerItemCount} item{footerItemCount !== 1 ? "s" : ""}</span>
         </div>
         <div className="flex items-center gap-1 font-semibold text-primary">
           <DollarSign className="h-4 w-4" />
@@ -225,7 +238,7 @@ export function OrderCardBase({
         </div>
       )}
 
-      {!readOnly && order.status !== "PAID" && ((showCancelButton && onCancel) || (showRejectButton && onRejectCancel)) && (
+      {!readOnly && order.status !== "PAID" && ((showCancelButton && (onCancel || onApproveCancellation)) || (showRejectButton && onRejectCancel)) && (
         <div className="border-t border-border px-4 py-3">
           <div className={cn("flex gap-2", showRejectButton ? "flex-col sm:flex-row" : "flex-col")}>
             {showRejectButton && isCancelRequested && canAuthorizeCancel && onRejectCancel && (
@@ -238,9 +251,15 @@ export function OrderCardBase({
               </Button>
             )}
 
-            {showCancelButton && onCancel && (
+            {showCancelButton && (onCancel || onApproveCancellation) && (
               <Button
-                onClick={() => onCancel(order)}
+                onClick={() => {
+                  if (isPendingCancellationView && onApproveCancellation) {
+                    onApproveCancellation(order);
+                    return;
+                  }
+                  onCancel?.(order);
+                }}
                 variant={isCancelRequested && canAuthorizeCancel ? "default" : isCancelRequested ? "secondary" : "destructive"}
                 className={cn(
                   "h-10 w-full rounded-xl font-display font-semibold gap-2",

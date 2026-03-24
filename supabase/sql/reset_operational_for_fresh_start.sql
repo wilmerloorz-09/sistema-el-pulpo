@@ -5,8 +5,11 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
--- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
+-- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base`r`n-- - Conserva ambos arboles operativos de menu_nodes:`r`n--   - `TABLE``r`n--   - `TAKEOUT`
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
+-- - Conserva configuracion estructural de despacho por sucursal:
+--   - dispatch_config
+--   - dispatch_assignments
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --
 -- IDEAL PARA:
@@ -53,10 +56,6 @@ DECLARE
     -- Divisiones de mesa operativas
     'public.table_splits',
 
-    -- Configuracion operativa por jornada/sucursal
-    'public.dispatch_assignments',
-    'public.dispatch_config',
-
     -- Auditoria y settings operativos
     'public.audit_log'
   ];
@@ -101,8 +100,12 @@ COMMIT;
 -- - Referencia de mesas intacta
 -- - Mesas internas intactas, pero desactivadas
 -- - Politicas de cancelacion/anulacion por categoria intactas
--- - Catalogo intacto (incluye arbol menu y asignaciones por nodo)
+-- - Configuracion y asignaciones de despacho intactas
+-- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
+
+
 

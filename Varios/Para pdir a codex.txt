@@ -21,3 +21,7 @@ docs/system_context.md
 docs/PROJECT_ARCHITECTURE.md
 docs/database_architecture.md
 docs/codex_rules.md
+
+3. Actualiza estos archivos:
+reset_full_for_fresh_start
+reset_operational_for_fresh_start

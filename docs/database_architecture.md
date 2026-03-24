@@ -13,6 +13,7 @@
 - Campos clave esperados:
   - `id`
   - `branch_id`
+  - `menu_scope` (`TABLE` | `TAKEOUT`)
   - `parent_id`
   - `name`
   - `node_type`
@@ -23,6 +24,7 @@
   - `image_url` (URL publica final generada desde Storage para la imagen del nodo)
   - `description`
   - `price`
+  - `legacy_product_id` (solo para nodos `product`, referencia al espejo en `products`)
 
 ### Modelo legacy que sigue vivo
 - `categories`
@@ -40,6 +42,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 
 ## Persistencia de Ordenes
 - `order_items.product_id` sigue con FK hacia `products(id)`.
+- `orders.menu_scope` define con que arbol se opero visualmente la orden.
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
 - `menu_nodes.is_active` pasa a tener impacto operativo real en UI:
@@ -55,6 +58,9 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - cuidar unicidad de orden visual legacy
   - no romper FK historicas
   - no asumir columnas inexistentes en el esquema real
+- Regla adicional por alcance:
+  - `TABLE`: puede seguir sincronizando la estructura legacy minima de categorias/subcategorias/productos
+  - `TAKEOUT`: las categorias no deben escribir en `subcategories`; los productos deben resolver/reutilizar el espejo legacy necesario sin abrir una rama paralela nueva
 
 ## Modificadores
 - `modifiers`: catalogo base de modificadores por sucursal.
@@ -87,6 +93,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `dispatched_at`
   - `paid_at`
   - `cancelled_at`
+- `table_splits.split_code` puede seguir guardado con formato historico, pero la capa visual debe normalizarlo a `2A`, `2B`, etc.
 
 ## Denominaciones
 - `denominations` ahora soporta `image_url` para representar visualmente monedas y billetes.
@@ -132,6 +139,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - desactivar `Efectivo` debe limpiar denominaciones temporales para no contaminar el cierre o el total actual
 - Si `Recibido >= Aplicado` y el usuario agrega mas denominaciones, la UI debe pedir confirmacion antes de aceptar excedente.
 - La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
+- El mosaico de `Mesas` no debe leer un total inventado: debe mostrar saldo pendiente calculado con la misma base operativa de cantidades activas, anuladas y pagadas por `order_item`.
 
 ## Funciones operativas nuevas para mesas por turno
 - `ensure_branch_table_capacity(branch_id, requested_count)`
@@ -367,6 +375,12 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - aplica la regla `destino ocupado -> crear division nueva y mover`
   - materializa divisiones faltantes en la mesa destino cuando ya habia una orden base sin `split_id`
   - colapsa la mesa origen a base si despues del cambio solo queda una orden activa
+- `supabase/migrations/20260323213000_dual_menu_trees_table_takeout.sql`
+  - agrega `menu_nodes.menu_scope`
+  - agrega `menu_nodes.legacy_product_id`
+  - agrega `orders.menu_scope`
+  - crea la RPC `copy_menu_scope_tree(...)`
+  - permite coexistencia explicita entre `Arbol Menu Mesa` y `Arbol Menu Para Llevar`
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

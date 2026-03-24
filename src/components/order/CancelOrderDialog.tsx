@@ -109,14 +109,22 @@ export default function CancelOrderDialog({
             quantity_paid: Number(item.quantity_paid ?? 0),
             quantity_ready_available: Number(item.quantity_ready_available ?? 0),
             quantity_dispatched_total: Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0),
-            quantity_dispatched_available: Number(item.quantity_dispatched_available ?? item.quantity_dispatched ?? 0),
+            quantity_dispatched_available: Math.max(
+              0,
+              Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0)
+                - Number(item.quantity_cancelled_dispatched ?? 0),
+            ),
             quantity_cancelled_total: Number(item.quantity_cancelled_total ?? 0),
             quantity_cancelled_dispatched: Number(item.quantity_cancelled_dispatched ?? 0),
             quantity_pending_prepare: Number(item.quantity_pending_prepare ?? 0),
             quantity_cancellable:
               Number(item.quantity_pending_prepare ?? 0)
               + Number(item.quantity_ready_available ?? 0)
-              + Number(item.quantity_dispatched_available ?? item.quantity_dispatched ?? 0),
+              + Math.max(
+                0,
+                Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0)
+                  - Number(item.quantity_cancelled_dispatched ?? 0),
+              ),
             unit_price: Number(item.unit_price ?? 0),
           }))
           .filter((item) => visibleItemsById.size === 0 || visibleItemsById.has(item.order_item_id))

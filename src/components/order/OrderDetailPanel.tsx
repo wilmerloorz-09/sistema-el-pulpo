@@ -48,6 +48,7 @@ interface OrderDetailPanelProps {
   order: Order | OrderSummary | null;
   onClose?: () => void;
   onCancel?: (order: Order | OrderSummary) => void;
+  onApproveCancellation?: (order: Order | OrderSummary) => void;
   onMarkReady?: (orderId: string) => void;
   onMarkDispatched?: (orderId: string) => void;
   showCancelButton?: boolean;
@@ -59,6 +60,7 @@ export default function OrderDetailPanel({
   order,
   onClose,
   onCancel,
+  onApproveCancellation,
   onMarkReady,
   onMarkDispatched,
   showCancelButton = true,
@@ -85,6 +87,7 @@ export default function OrderDetailPanel({
 
   const shouldShowTimer = order.status === "SENT_TO_KITCHEN";
   const isDispatchedView = order.status === "KITCHEN_DISPATCHED";
+  const isPendingCancellationView = order.status === "PENDING_CANCELLATION";
   const isWarning = shouldShowTimer && elapsed > 10 * 60;
   const isUrgent = shouldShowTimer && elapsed > 15 * 60;
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
@@ -95,7 +98,7 @@ export default function OrderDetailPanel({
       : "--:--";
 
   const canDispatch = !readOnly && moduleType === "dispatch";
-  const canCancel = !readOnly && moduleType === "orders" && showCancelButton && order.status !== "PAID" && !!onCancel;
+  const canCancel = !readOnly && moduleType === "orders" && showCancelButton && order.status !== "PAID" && (!!onCancel || !!onApproveCancellation);
 
   return (
     <div className="flex h-full flex-col">
@@ -210,12 +213,18 @@ export default function OrderDetailPanel({
 
         {canCancel && (
           <Button
-            onClick={() => onCancel?.(order)}
+            onClick={() => {
+              if (isPendingCancellationView && onApproveCancellation) {
+                onApproveCancellation(order);
+                return;
+              }
+              onCancel?.(order);
+            }}
             variant="destructive"
             className="h-10 w-full rounded-xl font-display font-semibold gap-2"
           >
             <Ban className="h-4 w-4" />
-            Cancelar pedido
+            {isPendingCancellationView ? "Autorizar anulacion" : "Cancelar pedido"}
           </Button>
         )}
       </div>

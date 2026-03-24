@@ -5,9 +5,12 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
--- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
+-- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores`r`n--   - incluye ambos alcances de menu_nodes: `TABLE` y `TAKEOUT`
 -- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
--- - Elimina politicas por sucursal, como cancelacion/anulacion directa por categoria
+-- - Elimina politicas/configuraciones por sucursal:
+--   - cancelacion/anulacion directa por categoria
+--   - configuracion de despacho por sucursal
+--   - asignaciones de despacho
 -- - Elimina usuarios no protegidos
 -- - Conserva solo el superadmin principal protegido
 -- - Preserva estructura base del sistema: modulos, roles, permisos, funciones, migraciones
@@ -18,7 +21,7 @@
 -- ADVERTENCIA:
 -- - ESTE SCRIPT ES DESTRUCTIVO
 -- - NO LO EJECUTES SI QUIERES CONSERVAR HISTORIAL
--- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
+-- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO`r`n-- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR, AMBOS QUEDAN VACIOS
 -- ============================================================
 
 BEGIN;
@@ -210,8 +213,11 @@ COMMIT;
 -- - 0 referencias de mesas por sucursal
 -- - 0 mesas internas
 -- - 0 politicas de cancelacion/anulacion por categoria
--- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
+-- - 0 configuraciones/asignaciones de despacho
+-- - 0 nodos de menu/categorias/subcategorias/productos/modificadores`r`n-- - 0 arbol menu mesa / 0 arbol menu para llevar
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
+
 

@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useCancellation } from "@/hooks/useCancellation";
+import { canManage } from "@/lib/permissions";
 import OrderCard from "./OrderCard";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -71,11 +74,18 @@ interface OrdersListProps {
 
 export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersListProps) {
   const [activeTab, setActiveTab] = useState<TabType>("sent");
-  const { activeBranchId, isGlobalAdmin } = useBranch();
+  const [approvalTarget, setApprovalTarget] = useState<OrderSummary | null>(null);
+  const { user } = useAuth();
+  const { activeBranchId, isGlobalAdmin, permissions } = useBranch();
   const qc = useQueryClient();
   const shiftGateQuery = useBranchShiftGate();
-  const { rejectCancellationRequestMutation } = useCancellation();
-  const canAuthorizeCancel = isGlobalAdmin || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel) || Boolean(shiftGateQuery.data?.isSupervisor);
+  const { rejectCancellationRequestMutation, approveCancellationRequestMutation } = useCancellation();
+  const canAuthorizeCancel =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global")
+    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {
     if (!activeBranchId) return;
@@ -269,7 +279,8 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
             <OrderCard
               key={order.id}
               order={order}
-              onCancel={onCancelOrder}
+              onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
+              onApproveCancellation={activeTab === "pendingCancellation" ? (order) => setApprovalTarget(order) : undefined}
               onRejectCancel={activeTab === "pendingCancellation" ? (order) => rejectCancellationRequestMutation.mutate({ orderId: order.id }) : undefined}
               showCancelButton={currentTab.showCancel && !readOnly}
               showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
@@ -279,6 +290,39 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
           ))
         )}
       </div>
+
+      <AlertDialog open={!!approvalTarget} onOpenChange={(open) => !open && setApprovalTarget(null)}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Autorizar anulacion</AlertDialogTitle>
+            <AlertDialogDescription>
+              {approvalTarget
+                ? `Vas a autorizar la solicitud de anulacion de ${approvalTarget.order_code ?? `#${approvalTarget.order_number}`}.`
+                : "Confirma si deseas autorizar esta solicitud de anulacion."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={approveCancellationRequestMutation.isPending}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={approveCancellationRequestMutation.isPending || !approvalTarget || !user?.id}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!approvalTarget || !user?.id) return;
+                approveCancellationRequestMutation.mutate(
+                  { orderId: approvalTarget.id, userId: user.id },
+                  {
+                    onSuccess: () => setApprovalTarget(null),
+                  },
+                );
+              }}
+            >
+              {approveCancellationRequestMutation.isPending ? "Autorizando..." : "Confirmar autorizacion"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

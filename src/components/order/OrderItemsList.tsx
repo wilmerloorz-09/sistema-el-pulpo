@@ -70,11 +70,11 @@ const OrderItemsList = ({
         const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
         const draftDisabled = isPending && disableDraftEditing;
         const operationalDisabled = !isPending && disableOperationalCancel;
-        const controlDisabled = isPending ? draftDisabled : false;
+        const controlDisabled = isPending ? draftDisabled : operationalDisabled;
         const operationalControlClass = !isPending && !operationalDisabled
           ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)] hover:border-orange-300 hover:bg-orange-50"
           : "border-border bg-background";
-        const displayQuantity = isPending ? item.quantity : Math.max(1, item.quantity_sent ?? item.quantity_ordered ?? item.quantity);
+        const displayQuantity = Math.max(1, item.quantity);
         const requestedOperationalQty = (operationalQtyByItem[item.id] ?? buildDefaultOperationalQty(item)) || 1;
         const selectedOperationalQty = Math.max(
           1,
@@ -166,7 +166,10 @@ const OrderItemsList = ({
                   <QuantityInput
                     key={`${item.id}-${isPending ? "draft" : "cancel"}-${isPending ? displayQuantity : selectedOperationalQty}`}
                     initialQuantity={isPending ? displayQuantity : selectedOperationalQty}
+                    min={1}
+                    max={isPending ? Math.max(1, item.quantity) : Math.max(1, maxOperationalQty || displayQuantity || 1)}
                     disabled={controlDisabled}
+                    updateOnChange={!isPending}
                     className={!isPending && !operationalDisabled ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)]" : undefined}
                     onUpdate={(newQty) => {
                       if (isPending) {
@@ -178,13 +181,11 @@ const OrderItemsList = ({
                         return;
                       }
 
-                      if (canCancelOperational) {
-                        const normalized = Math.max(1, Math.min(maxOperationalQty || displayQuantity || 1, newQty));
-                        setOperationalQtyByItem((prev) => ({
-                          ...prev,
-                          [item.id]: normalized,
-                        }));
-                      }
+                      const normalized = Math.max(1, Math.min(maxOperationalQty || displayQuantity || 1, newQty));
+                      setOperationalQtyByItem((prev) => ({
+                        ...prev,
+                        [item.id]: normalized,
+                      }));
                     }}
                   />
 
@@ -211,27 +212,24 @@ const OrderItemsList = ({
                   </Button>
                 </div>
 
-                <Button
-                  variant="destructive"
-                  className={cn(
-                    "h-9 w-full rounded-xl px-4 font-display text-sm font-semibold md:w-auto",
-                    !isPending && !operationalDisabled && "opacity-100 saturate-100",
-                  )}
-                  disabled={controlDisabled}
-                  onClick={() => {
-                    if (isPending) {
-                      onRemove(item.id);
-                      return;
-                    }
-
-                    if (onRequestCancel && !disableOperationalCancel) {
-                      onRequestCancel(item, selectedOperationalQty);
-                    }
-                  }}
-                >
-                  <Ban className="h-4 w-4" />
-                  Anular
-                </Button>
+                {!isPending && (
+                  <Button
+                    variant="destructive"
+                    className={cn(
+                      "h-9 w-full rounded-xl px-4 font-display text-sm font-semibold md:w-auto",
+                      !operationalDisabled && "opacity-100 saturate-100",
+                    )}
+                    disabled={operationalDisabled}
+                    onClick={() => {
+                      if (onRequestCancel && !disableOperationalCancel) {
+                        onRequestCancel(item, selectedOperationalQty);
+                      }
+                    }}
+                  >
+                    <Ban className="h-4 w-4" />
+                    Anular
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -248,12 +246,18 @@ const OrderItemsList = ({
 
 const QuantityInput = ({
   initialQuantity,
+  min = 1,
+  max,
   disabled,
+  updateOnChange = false,
   className,
   onUpdate,
 }: {
   initialQuantity: number;
+  min?: number;
+  max?: number;
   disabled?: boolean;
+  updateOnChange?: boolean;
   className?: string;
   onUpdate: (val: number) => void;
 }) => {
@@ -271,8 +275,9 @@ const QuantityInput = ({
     if (isNaN(parsed)) {
       setValue(initialQuantity.toString());
     } else {
-      setValue(parsed.toString());
-      onUpdate(parsed);
+      const normalized = Math.max(min, Math.min(max ?? parsed, parsed));
+      setValue(normalized.toString());
+      onUpdate(normalized);
     }
   };
 
@@ -280,6 +285,8 @@ const QuantityInput = ({
     <Input
       type="number"
       inputMode="numeric"
+      min={min}
+      max={max}
       className={cn(
         "h-8 w-11 rounded-xl border-border bg-background px-1 text-center text-sm font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
         className,
@@ -288,7 +295,24 @@ const QuantityInput = ({
       disabled={disabled}
       onChange={(e) => {
         setIsEditing(true);
-        setValue(e.target.value);
+        const rawValue = e.target.value;
+        if (rawValue === "") {
+          setValue("");
+          return;
+        }
+
+        const sanitized = rawValue.replace(/[^\d]/g, "");
+        if (!sanitized) {
+          setValue(String(min));
+          return;
+        }
+
+        const parsed = Math.floor(Number(sanitized));
+        const normalized = Math.max(min, Math.min(max ?? parsed, parsed));
+        setValue(String(normalized));
+        if (updateOnChange) {
+          onUpdate(normalized);
+        }
       }}
       onBlur={handleCommit}
       onKeyDown={(e) => {

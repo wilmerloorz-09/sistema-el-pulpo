@@ -15,6 +15,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ### 3) Arbol de menu como fuente principal de estructura
 - La construccion jerarquica del menu se administra desde `Admin > Arbol Menu`.
+- Considerar siempre los dos alcances actuales del arbol:
+  - `Arbol Menu Mesa`
+  - `Arbol Menu Para Llevar`
 - No volver a depender de pantallas separadas de `Categorias`, `Subcategorias` o `Productos` para la estructura principal.
 - Nivel 1 es el unico nivel obligatorio y la unica capa fija para navegar en Ordenes; desde Nivel 2 en adelante no deben existir tratamientos especiales por nivel.
 - Los productos pueden existir desde Nivel 2 en adelante.
@@ -22,6 +25,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 ### 4) Compatibilidad legacy obligatoria mientras siga la FK actual
 - Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
 - Cualquier cambio en `MenuNodesCrud`, `useMenuTree` o `MenuNavigator` debe considerar el espejo operativo en legacy.
+- Regla adicional:
+  - en `TAKEOUT`, no escribir categorias/subcategorias legacy por reflejo automatico
+  - en `TAKEOUT`, si se crea/edita producto, resolver el espejo en `products` sin fabricar subcategorias nuevas fuera del arbol `Mesa`
 
 ### 4.1) Productos agotados deben reflejarse en venta
 - Si un nodo o producto se desactiva desde `Productos`, `Ordenes` debe reflejarlo como agotado.
@@ -62,6 +68,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - destino ocupado: crear nueva division en destino y mover la orden a esa division
 - No dejar una mesa compartida con un grupo en `split_id = null` y otro grupo con `split_id` distinto; si el destino ya estaba ocupado por una orden base, convertirla primero en division propia.
 - Si despues de mover o eliminar una division solo queda una orden activa en la mesa, esa orden debe colapsar a mesa base y dejar de mostrarse como `3A` o `3B`.
+- Visualmente, los `split_code` deben mostrarse normalizados como `3A`, `3B`, etc., sin espacio entre numero y letra.
 
 ### 7.2) Cancelacion/Anulacion directa por categoria
 - La configuracion visible vive en `Admin > Turno`.
@@ -117,6 +124,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - En `Cambio de denominacion`, las denominaciones que salen de caja nunca pueden superar el stock actual disponible.
 - En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
 - No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
+- En `Mesas`, si se muestran totales o divisiones en la tarjeta:
+  - telefono: usar badges compactos, con truncado si hace falta
+  - tablet: aumentar padding/tipografia sin romper la regla de esquinas
 - Si existe una alerta operativa para el mesero como `orden lista`, no montarla solo en la pagina de `Despacho`; debe vivir en una capa global del layout operativo para que siga funcionando en movil mientras el usuario navega por otras vistas.
 - En `Admin > Turno`, priorizar usabilidad movil:
   - bloques verticales
@@ -138,6 +148,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
+- Cuando se toque `Admin > Arbol Menu`, validar tambien:
+  - `Arbol Menu Mesa`
+  - `Arbol Menu Para Llevar`
+  - boton `Copiar desde Mesa`
 - `image_url` es la representacion visual principal del nodo y debe llenarse desde la subida de archivo a Storage.
 - El campo `icon` ya no debe exponerse en `Admin > Arbol Menu`; si persiste en BD, tratarlo solo como remanente legacy.
 - La pestana `Modificadores` solo administra el catalogo base; la asignacion a nodos debe hacerse en `Arbol Menu`.

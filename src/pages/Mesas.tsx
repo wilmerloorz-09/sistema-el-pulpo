@@ -9,6 +9,8 @@ import { Loader2, Plus, Users, CircleDollarSign, ShoppingBag, LayoutGrid, Sparkl
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { canOperate } from "@/lib/permissions";
+import { roundMoney } from "@/lib/paymentQuantity";
+import { formatSplitCodeLabel } from "@/lib/splitCode";
 
 const STATUS_CONFIG = {
   free: {
@@ -39,6 +41,8 @@ const STATUS_CONFIG = {
     artIcon: <CircleDollarSign className="h-8 w-8" />,
   },
 };
+
+const formatCurrency = (value: number) => `$${roundMoney(value).toFixed(2)}`;
 
 const Mesas = () => {
   const { data: tables, isLoading } = useTablesWithStatus();
@@ -102,6 +106,7 @@ const Mesas = () => {
         .from("orders")
         .insert({
           order_type: "TAKEOUT" as const,
+          menu_scope: "TAKEOUT",
           created_by: user.id,
           status: "DRAFT" as const,
           branch_id: activeBranchId,
@@ -133,6 +138,7 @@ const Mesas = () => {
           .insert({
             table_id: table.id,
             order_type: "DINE_IN" as const,
+            menu_scope: "TABLE",
             created_by: user.id,
             status: "DRAFT" as const,
             branch_id: activeBranchId!,
@@ -231,6 +237,9 @@ const Mesas = () => {
           const config = STATUS_CONFIG[table.status];
           const isCreating = creating === table.id;
           const isFreeAndReadonly = table.status === "free" && !canOperateMesas;
+          const visibleSplitTotals =
+            table.splitTotals.length > 0 && table.splitTotals.length <= 2 ? table.splitTotals.slice(0, 2) : [];
+          const showSingleTotal = table.totalDue > 0 && visibleSplitTotals.length === 0;
 
           return (
             <motion.button
@@ -244,6 +253,7 @@ const Mesas = () => {
                 "relative flex min-h-[130px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-3 sm:rounded-[28px] sm:p-5",
                 config.bg,
                 config.border,
+                table.totalDue > 0 && "pb-7 sm:pb-10",
                 table.status === "free" && canOperateMesas && "hover:border-primary/30 hover:bg-primary/5",
                 isFreeAndReadonly && "cursor-default opacity-70",
               )}
@@ -269,6 +279,25 @@ const Mesas = () => {
                     <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[8px] font-semibold text-sky-700 shadow-sm sm:text-[10px] dark:border-sky-800 dark:bg-card/85 dark:text-sky-400">
                       <Sparkles className="h-3 w-3" />
                       Lista para abrir
+                    </div>
+                  )}
+                  {showSingleTotal && (
+                    <div className="absolute bottom-2 right-2 max-w-[46%] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-xs font-black text-amber-800 shadow-sm sm:bottom-3 sm:right-3 sm:max-w-none sm:px-3.5 sm:py-2 sm:text-sm">
+                      {formatCurrency(table.totalDue)}
+                    </div>
+                  )}
+                  {visibleSplitTotals[0] && (
+                    <div className="absolute bottom-2 left-2 max-w-[46%] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-[10px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:left-3 sm:max-w-none sm:px-3 sm:py-2 sm:text-xs">
+                      <span className="truncate">
+                        {formatSplitCodeLabel(visibleSplitTotals[0].splitCode) || table.name} {formatCurrency(visibleSplitTotals[0].totalDue)}
+                      </span>
+                    </div>
+                  )}
+                  {visibleSplitTotals[1] && (
+                    <div className="absolute bottom-2 right-2 max-w-[46%] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-[10px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:right-3 sm:max-w-none sm:px-3 sm:py-2 sm:text-xs">
+                      <span className="truncate">
+                        {formatSplitCodeLabel(visibleSplitTotals[1].splitCode) || table.name} {formatCurrency(visibleSplitTotals[1].totalDue)}
+                      </span>
                     </div>
                   )}
                   {table.splitCount > 0 && (

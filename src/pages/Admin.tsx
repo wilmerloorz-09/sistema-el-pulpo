@@ -21,6 +21,14 @@ interface AdminTab {
   visible: (permissions: Record<string, any>, isGlobalAdmin: boolean) => boolean;
 }
 
+const MenuNodesCrudTable = () => (
+  <MenuNodesCrud menuScope="TABLE" title="Arbol Menu Mesa" />
+);
+
+const MenuNodesCrudTakeout = () => (
+  <MenuNodesCrud menuScope="TAKEOUT" title="Arbol Menu Para Llevar" showCopyFromTableButton />
+);
+
 interface AdminErrorBoundaryProps {
   activeTabLabel: string;
   children: React.ReactNode;
@@ -89,10 +97,17 @@ const TABS: AdminTab[] = [
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_global"),
   },
   {
-    value: "menu-tree",
-    label: "Arbol Menu",
+    value: "menu-tree-table",
+    label: "Arbol Menu Mesa",
     icon: <FolderTree className="h-4 w-4" />,
-    component: MenuNodesCrud,
+    component: MenuNodesCrudTable,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+  },
+  {
+    value: "menu-tree-takeout",
+    label: "Arbol Menu Para Llevar",
+    icon: <FolderTree className="h-4 w-4" />,
+    component: MenuNodesCrudTakeout,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {

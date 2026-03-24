@@ -74,6 +74,7 @@ interface Order {
   order_code: string | null;
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";
+  menu_scope: "TABLE" | "TAKEOUT";
   branch_id: string;
   table_id: string | null;
   split_id: string | null;
@@ -134,7 +135,7 @@ export function useOrder(orderId: string | null) {
 
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, status, order_type, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, status, order_type, menu_scope, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;
@@ -454,6 +455,18 @@ export function useOrder(orderId: string | null) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const updateMenuScope = useMutation({
+    mutationFn: async (menuScope: "TABLE" | "TAKEOUT") => {
+      await dbUpdate("orders", orderId!, { menu_scope: menuScope });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   return {
     order: query.data,
     isLoading: query.isLoading,
@@ -462,6 +475,7 @@ export function useOrder(orderId: string | null) {
     updateQuantity,
     sendToKitchen,
     moveToTable,
+    updateMenuScope,
   };
 }
 

@@ -8,6 +8,31 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-03-14)
 
+### 0.1) Arbol dual de menu: Mesa vs Para Llevar
+- `Admin` ya no debe tratar `Arbol Menu` como una sola fuente visual.
+- Existen dos pestanas operativas separadas:
+  - `Arbol Menu Mesa`
+  - `Arbol Menu Para Llevar`
+- `Arbol Menu Para Llevar` reutiliza el mismo CRUD base del arbol, pero incorpora la accion `Copiar desde Mesa`.
+- El arbol `Para Llevar` debe ser funcionalmente identico al de `Mesa`; la diferencia visible principal es ese boton de copia.
+- Las ordenes `TAKEOUT` deben navegar siempre con `menu_scope = 'TAKEOUT'`.
+- Las ordenes `DINE_IN` nacen con `menu_scope = 'TABLE'`, pero desde `Ordenes` puede elegirse cualquiera de los dos arboles.
+- En `TAKEOUT`, los nodos categoria no deben escribir en `categories/subcategories` legacy.
+- Los productos `TAKEOUT` siguen necesitando espejo en `products` porque `order_items.product_id` aun depende de legacy.
+
+### 0.2) Mesas: totales visibles en mosaico principal
+- En `Mesas`, cada tarjeta debe mostrar el valor pendiente de cobro directamente en el mosaico principal.
+- La regla visible actual es:
+  - orden activa sin divisiones o con una sola cuenta visible: total abajo a la derecha
+  - mesa con hasta 2 divisiones visibles: una etiqueta abajo a la izquierda y otra abajo a la derecha
+  - mesa con mas de 2 divisiones: no mostrar montos en el mosaico
+- El total visible de `Mesas` debe aparecer desde `SENT_TO_KITCHEN` en adelante; no esperar a `KITCHEN_DISPATCHED`.
+- Ese monto debe descontar anulaciones y pagos ya aplicados para cuadrar con el saldo real.
+- Los `split_code` visibles deben renderizarse sin espacio entre numero y letra:
+  - `2A`
+  - `2B`
+  - no `2 A`
+
 ### 0) Compatibilidad defensiva del snapshot operativo en frontend
 - El frontend ahora debe tolerar tanto la version nueva de `get_order_operational_snapshot` (`quantity_dispatched_total`, `quantity_dispatched_available`, `quantity_cancelled_dispatched`) como la firma legacy que aun devuelve `quantity_dispatched`.
 - Si una base remota sigue en la firma anterior, las ordenes despachadas no deben desaparecer de `Ordenes`, `Despacho` o `Caja` por falta de normalizacion de campos.
@@ -136,6 +161,10 @@
 - La configuracion operativa de mesas ya no se resuelve creando/eliminando registros visibles uno por uno desde Admin.
 - `Mesas` ya no debe aparecer como pestana visible dentro de `Admin`.
 - En `Duplicar catalogo`, ya no debe existir una opcion separada para copiar `Mesas`.
+- La tarjeta de `Mesas` debe degradar bien en movil/tablet:
+  - etiquetas de total compactas en esquinas inferiores
+  - truncado visual si una etiqueta de split queda muy larga en telefono
+  - en tablet horizontal debe aprovechar el ancho extra sin cambiar la regla de esquinas
 
 ### 4.7) Turno operativo: nueva superficie en Administracion
 - La apertura del turno ya no debe hacerse desde `Caja`.
@@ -269,6 +298,9 @@
 - Para no romper el flujo actual, `MenuNodesCrud` sincroniza:
   - nodos raiz/categoria hacia estructura legacy minima
   - nodos `product` hacia `products`
+- En el arbol `TAKEOUT`, esa sincronizacion debe ser mas estricta:
+  - categorias `TAKEOUT` no deben crear/editar `subcategories`
+  - productos `TAKEOUT` deben reutilizar `subcategory_id` legacy existente o resolver la categoria equivalente del arbol `Mesa`
 - Esta compatibilidad sigue siendo necesaria mientras Ordenes, Cocina, Despacho y Ticket dependan del catalogo legacy.
 
 ## Estado Operativo que Debe Preservarse
