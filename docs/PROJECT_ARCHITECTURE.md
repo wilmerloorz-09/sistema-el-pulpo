@@ -49,6 +49,9 @@
 - `orders.menu_scope` determina que arbol usar en la orden activa.
 - `TAKEOUT` usa siempre `menu_scope = 'TAKEOUT'`.
 - `DINE_IN` puede alternar entre `TABLE` y `TAKEOUT` desde la UI de `Ordenes`.
+- En `OrderItemsList`, movil y tablet ya no deben forzar el mismo layout:
+  - telefono: descripcion/producto a la izquierda y columna fija de cantidad/anulacion a la derecha si cabe
+  - tablet: la misma composicion aprovecha mejor el ancho y mantiene controles alineados a la derecha
 - La disponibilidad de modificadores en el dialogo de producto debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
 - La disponibilidad/agotado de productos tambien se resuelve desde `menu_nodes.is_active`; un producto agotado puede seguir existiendo en legacy, pero `Ordenes` no debe permitir venderlo.
 - La visibilidad de estados operativos entre usuarios depende de dos capas:
@@ -229,6 +232,12 @@
   - `Despachar` consume desde `PENDING` y/o `READY` sin requerir `READY` previo
   - ambos botones deben coexistir visualmente y apilarse en movil si no caben en una fila
 - `useDispatchOrders` conserva las operaciones globales para compatibilidad, pero la UX principal ya vive en acciones por item (`markItemReady` y `dispatchItem`).
+- El `Listo` del encabezado de tarjeta en `Despacho` ya no debe depender de `mark_order_quantities_ready`; su arquitectura final es alerta pura para mesero y se soporta sobre:
+  - `emit_order_ready_alert(...)`
+  - `get_mesero_ready_alerts(...)`
+  - `order_has_dispatch_after(...)`
+- La alerta se filtra por `orders.created_by` para no sonar en sesiones de otros usuarios de la misma sucursal.
+- La alarma debe repetirse hasta detectar cualquier despacho posterior de la orden.
 - Una asignacion de despachador debe ser unica por usuario; no se permiten duplicados del mismo usuario.
 
 ### G) Admin movil
@@ -257,12 +266,15 @@
   - desktop: dashboard horizontal sin depender de scroll de toda la ventana
 - La notificacion de `orden lista` para mesero/despacho debe vivir a nivel de layout operativo y no solo dentro de `Despacho`, para que el movil pueda seguir alertando aunque el usuario este en `Mesas` u otra vista operativa.
 - `OrderItemsList` en `Ordenes` tambien debe seguir esta regla:
-  - telefono: descripcion arriba y controles de anulacion debajo, sin comprimir la linea del producto
+  - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
   - tablet: descripcion a la izquierda y controles a la derecha cuando ya haya ancho util
 - `CancelOrderDialog` en modo compacto debe aprovechar tablet con layout mas ancho y, cuando hay espacio, con detalle del item y cantidad preseleccionada en dos columnas.
 - `Mesas` tambien debe seguir esta regla:
   - telefono: badges de total/split con ancho acotado y truncado visual
   - tablet: mismas esquinas inferiores, pero con mayor padding y texto mas legible
+- `Ordenes` tambien debe seguir esta regla:
+  - telefono: item con descripcion a la izquierda y stepper/boton a la derecha, evitando mandar los controles al pie de la card
+  - tablet: mantener la misma columna fija de controles con mejor aprovechamiento horizontal
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

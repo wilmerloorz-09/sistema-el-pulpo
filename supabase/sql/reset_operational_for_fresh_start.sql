@@ -5,7 +5,11 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
--- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base`r`n-- - Conserva ambos arboles operativos de menu_nodes:`r`n--   - `TABLE``r`n--   - `TAKEOUT`
+-- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
+-- - Conserva ambos arboles operativos de menu_nodes:
+--   - `TABLE`
+--   - `TAKEOUT`
+-- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 -- - Conserva configuracion estructural de despacho por sucursal:
 --   - dispatch_config

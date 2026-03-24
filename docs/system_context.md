@@ -8,6 +8,17 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-03-14)
 
+### 0.0) Alerta `Listo` para mesero: aviso puro por usuario creador
+- En `Despacho`, el boton `Listo` del encabezado ya no debe depender de mover cantidades operativas.
+- Su funcion es exclusivamente emitir una alerta para el mesero que creo la orden.
+- La alerta debe resolverse solo para el equipo/sesion del usuario autenticado que coincide con `orders.created_by`.
+- La alerta puede dispararse repetidas veces sobre la misma orden: cada clic nuevo en `Listo` debe volver a generar aviso.
+- La alarma debe mantenerse activa hasta que exista al menos un despacho posterior de esa misma orden.
+- Para evitar depender de lecturas directas fragiles sobre tablas de eventos, el frontend ya debe apoyarse en RPCs de lectura:
+  - `get_mesero_ready_alerts(...)`
+  - `order_has_dispatch_after(...)`
+  - `emit_order_ready_alert(...)`
+
 ### 0.1) Arbol dual de menu: Mesa vs Para Llevar
 - `Admin` ya no debe tratar `Arbol Menu` como una sola fuente visual.
 - Existen dos pestanas operativas separadas:
@@ -236,7 +247,7 @@
   - `ShiftSummary` en `Caja` ya distribuye sus acciones en grilla tactil en telefono y modales con alto/scroll controlado
 - En tablet estos dialogos deben abrir mas anchos y aprovechar 2 columnas cuando ya hay espacio horizontal suficiente.
 - El flujo compacto de anulacion por item debe degradar asi:
-  - telefono: tarjeta del item en columna, stepper y boton `Anular` a ancho util, dialogo compacto sin selector repetido de cantidad/tipo
+  - telefono: la tarjeta de item en `Ordenes` mantiene descripcion a la izquierda y una columna fija de stepper + `Anular` a la derecha si el ancho alcanza
   - tablet: el dialogo compacto usa mas ancho y puede mostrar detalle + cantidad seleccionada en dos columnas
 - `AdminTable` ya no debe renderizar tablas comprimidas en movil; los CRUD administrativos deben verse como tarjetas apiladas para evitar campos montados.
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
@@ -322,6 +333,7 @@
 - La alerta de `orden lista` para el mesero ya no debe depender de una sola pantalla:
   - debe poder recibirse desde la app operativa mientras el usuario este dentro de su sucursal activa
   - en movil debe intentar sonido y vibracion, no solo banner visual
+  - `Listo` en `Despacho` es alerta pura; ya no debe inferirse como cambio de etapa ni como consumo de cantidades
 - Modificadores siguen usando el modelo estructurado:
   - catalogo base por `modifiers`
   - disponibilidad por `menu_node_modifiers`

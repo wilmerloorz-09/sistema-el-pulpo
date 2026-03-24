@@ -128,6 +128,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - telefono: usar badges compactos, con truncado si hace falta
   - tablet: aumentar padding/tipografia sin romper la regla de esquinas
 - Si existe una alerta operativa para el mesero como `orden lista`, no montarla solo en la pagina de `Despacho`; debe vivir en una capa global del layout operativo para que siga funcionando en movil mientras el usuario navega por otras vistas.
+- Si se toca la alerta de `Listo`, respetar siempre esta regla:
+  - `Listo` del encabezado en `Despacho` es alerta pura
+  - no debe depender de mover cantidades a `READY`
+  - debe poder sonar varias veces sobre la misma orden
+  - debe detenerse apenas exista cualquier despacho posterior de esa orden
 - En `Admin > Turno`, priorizar usabilidad movil:
   - bloques verticales
   - resumen adaptable a 1 o 2 columnas
@@ -142,8 +147,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - cards internas sin comprimir inputs o textos
   - en tablet, preferir usar el ancho extra para 2 columnas antes que dejar una ventana muy alta
 - Si se toca `OrderItemsList` en `Ordenes`, mantener comportamiento responsive explicito:
-  - telefono: descripcion y detalle primero; stepper/boton debajo
-  - tablet: controles a la derecha cuando haya ancho suficiente
+  - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
+  - tablet: mantener controles a la derecha y aprovechar el ancho extra sin empujar acciones al pie
   - no volver a layouts donde el nombre del producto compita con stepper y accion en una sola fila angosta
 
 ### Admin

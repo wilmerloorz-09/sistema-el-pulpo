@@ -400,6 +400,20 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `get_my_branch_shift_gate(branch_id)` debe seguir devolviendo tambien `active_tables_count` para que usuarios operativos sin permisos de Caja puedan ver `Mesas` correctamente.
 - Si la base remota todavia conserva la firma vieja de `set_shift_user_enabled`, el frontend puede necesitar compatibilidad temporal; el objetivo final sigue siendo alinear la RPC extendida en BD remota.
 
+## Addendum 2026-03-24
+- La alerta de `Listo` para mesero ya no debe modelarse solo como cambio de estado a `READY`.
+- `order_ready_events` pasa a ser la fuente operativa confiable para registrar cada clic nuevo en `Listo`.
+- En `Despacho` deben coexistir estos dos caminos:
+  - `mark_order_quantities_ready(...)`: cuando realmente se mueven cantidades a `READY`
+  - `emit_order_ready_alert(...)`: cuando `Listo` solo debe emitir aviso al mesero sin alterar cantidades
+- El frontend ya no debe depender de lecturas directas fragiles sobre tablas de eventos para esta alerta; debe apoyarse en:
+  - `get_mesero_ready_alerts(branch_id, created_by, limit)`
+  - `order_has_dispatch_after(order_id, after_ts)`
+- La alerta debe filtrarse por `orders.created_by`.
+- La alarma debe mantenerse hasta detectar cualquier fila posterior en `order_dispatch_events` para esa orden.
+- Migracion nueva relacionada:
+  - `supabase/migrations/20260324173000_waiter_ready_alert_rpcs.sql`
+
 
 
 

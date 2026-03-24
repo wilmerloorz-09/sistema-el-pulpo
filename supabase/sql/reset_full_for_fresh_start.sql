@@ -5,7 +5,8 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
--- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores`r`n--   - incluye ambos alcances de menu_nodes: `TABLE` y `TAKEOUT`
+-- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
+--   - incluye ambos alcances de menu_nodes: `TABLE` y `TAKEOUT`
 -- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
 -- - Elimina politicas/configuraciones por sucursal:
 --   - cancelacion/anulacion directa por categoria
@@ -21,7 +22,9 @@
 -- ADVERTENCIA:
 -- - ESTE SCRIPT ES DESTRUCTIVO
 -- - NO LO EJECUTES SI QUIERES CONSERVAR HISTORIAL
--- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO`r`n-- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR, AMBOS QUEDAN VACIOS
+-- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
+-- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR, AMBOS QUEDAN VACIOS
+-- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (`emit_order_ready_alert`, `get_mesero_ready_alerts`, `order_has_dispatch_after`)
 -- ============================================================
 
 BEGIN;
@@ -214,7 +217,8 @@ COMMIT;
 -- - 0 mesas internas
 -- - 0 politicas de cancelacion/anulacion por categoria
 -- - 0 configuraciones/asignaciones de despacho
--- - 0 nodos de menu/categorias/subcategorias/productos/modificadores`r`n-- - 0 arbol menu mesa / 0 arbol menu para llevar
+-- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
+-- - 0 arbol menu mesa / 0 arbol menu para llevar
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
