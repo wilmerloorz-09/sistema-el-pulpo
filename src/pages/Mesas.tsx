@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
-import { formatSplitCodeLabel } from "@/lib/splitCode";
 
 const STATUS_CONFIG = {
   free: {
@@ -290,14 +289,14 @@ const Mesas = () => {
                   {visibleSplitTotals[0] && (
                     <div className="absolute bottom-2 left-1.5 max-w-[calc(50%-0.4rem)] rounded-full border border-amber-300 bg-white/95 px-2 py-1 text-[8px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:left-3 sm:max-w-none sm:px-3 sm:py-2 sm:text-xs">
                       <span className="block truncate">
-                        {formatSplitCodeLabel(visibleSplitTotals[0].splitCode) || table.name} {formatCurrency(visibleSplitTotals[0].totalDue)}
+                        {formatCurrency(visibleSplitTotals[0].totalDue)}
                       </span>
                     </div>
                   )}
                   {visibleSplitTotals[1] && (
                     <div className="absolute bottom-2 right-1.5 max-w-[calc(50%-0.4rem)] rounded-full border border-amber-300 bg-white/95 px-2 py-1 text-[8px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:right-3 sm:max-w-none sm:px-3 sm:py-2 sm:text-xs">
                       <span className="block truncate">
-                        {formatSplitCodeLabel(visibleSplitTotals[1].splitCode) || table.name} {formatCurrency(visibleSplitTotals[1].totalDue)}
+                        {formatCurrency(visibleSplitTotals[1].totalDue)}
                       </span>
                     </div>
                   )}
