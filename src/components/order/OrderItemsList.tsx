@@ -96,7 +96,7 @@ const OrderItemsList = ({
                   : "border-border"
             )}
           >
-            <div className="flex flex-col gap-3 md:flex-row md:items-start">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
               <div className="flex min-w-0 items-start gap-3">
                 <Badge className="mt-0.5 min-w-[2.35rem] shrink-0 justify-center rounded-lg border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-1 text-[11px] font-black uppercase leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
                   {displayQuantity}x
@@ -137,8 +137,8 @@ const OrderItemsList = ({
                 </div>
               </div>
 
-              <div className="flex shrink-0 flex-col gap-2 md:ml-auto md:min-w-[8.5rem] md:items-end">
-                <div className="flex items-center justify-end gap-1 self-end">
+              <div className="flex shrink-0 flex-col items-end gap-2 self-start">
+                <div className="flex items-center justify-end gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -216,7 +216,7 @@ const OrderItemsList = ({
                   <Button
                     variant="destructive"
                     className={cn(
-                      "h-9 w-full rounded-xl px-4 font-display text-sm font-semibold md:w-auto",
+                      "h-9 min-w-[6.75rem] rounded-xl px-4 font-display text-sm font-semibold",
                       !operationalDisabled && "opacity-100 saturate-100",
                     )}
                     disabled={operationalDisabled}
