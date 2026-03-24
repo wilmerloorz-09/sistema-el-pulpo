@@ -6,8 +6,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { canManage } from "@/lib/permissions";
-import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 
 export interface OrderReadyNotification {
   id?: string;
@@ -285,9 +283,30 @@ export function useMeseroOrderReadyNotification(
   useEffect(() => {
     if (!enabled || !activeBranchId) return;
 
-    lastPolledNotificationAtRef.current = new Date().toISOString();
+    let cancelled = false;
+
+    const initializeCursor = async () => {
+      const { data, error } = await (supabase as any)
+        .from("order_ready_notifications")
+        .select("created_at")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        lastPolledNotificationAtRef.current = null;
+        return;
+      }
+
+      lastPolledNotificationAtRef.current = data?.created_at ?? null;
+    };
+
+    void initializeCursor();
 
     return () => {
+      cancelled = true;
       lastPolledNotificationAtRef.current = null;
     };
   }, [activeBranchId, enabled]);
@@ -299,14 +318,18 @@ export function useMeseroOrderReadyNotification(
 
     const pollNotificationTable = async () => {
       const cursor = lastPolledNotificationAtRef.current;
-      if (!cursor) return;
 
-      const { data, error } = await (supabase as any)
+      let query = (supabase as any)
         .from("order_ready_notifications")
         .select("id, order_id, created_at")
-        .gt("created_at", cursor)
         .order("created_at", { ascending: true })
         .limit(20);
+
+      if (cursor) {
+        query = query.gt("created_at", cursor);
+      }
+
+      const { data, error } = await query;
 
       if (cancelled || error || !data || data.length === 0) return;
 
@@ -406,21 +429,13 @@ export function OrderReadyNotificationBanner({
 
 export function OrderReadyAlertCenter() {
   const { user } = useAuth();
-  const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
-  const shiftGateQuery = useBranchShiftGate();
+  const { activeBranchId } = useBranch();
   const [notification, setNotification] = useState<OrderReadyNotification | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(readAudioPreference);
   const [armingAudio, setArmingAudio] = useState(false);
   const [activeAlarm, setActiveAlarm] = useState<{ orderId: string; createdAt: string } | null>(null);
 
-  const enabled = Boolean(activeBranchId) && (
-    isGlobalAdmin
-    || canManage(permissions, "admin_sucursal")
-    || canManage(permissions, "admin_global")
-    || Boolean(shiftGateQuery.data?.isSupervisor)
-    || Boolean(shiftGateQuery.data?.canServeTables)
-    || Boolean(shiftGateQuery.data?.canDispatchOrders)
-  );
+  const enabled = Boolean(activeBranchId && user?.id);
 
   useMeseroOrderReadyNotification((nextNotification) => {
     setNotification(nextNotification);
