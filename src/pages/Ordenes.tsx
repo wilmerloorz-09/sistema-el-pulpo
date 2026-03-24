@@ -18,7 +18,7 @@ import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ChefHat, ArrowLeft, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -96,6 +96,12 @@ const Ordenes = () => {
   const printReceipt = useCallback(() => {
     window.print();
   }, []);
+
+  const handleMobileBackToMesas = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      navigate(-1);
+    }
+  }, [navigate]);
 
   const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
     const legacyProductId = node.legacy_product_id ?? node.id;
@@ -585,24 +591,26 @@ const Ordenes = () => {
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
-        <Button variant="ghost" size="icon" className="h-11 w-11 2xl:h-8 2xl:w-8" onClick={() => navigate("/mesas")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {order.table_name ? (
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-extrabold text-sky-800 shadow-sm dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-400">
+              <button
+                type="button"
+                onClick={handleMobileBackToMesas}
+                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-extrabold text-sky-800 shadow-sm transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-400 dark:hover:bg-sky-950/60"
+              >
                 {order.table_name}
-              </span>
+              </button>
             ) : isTakeout ? (
-              <span className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-extrabold text-emerald-800 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
+              <button
+                type="button"
+                onClick={handleMobileBackToMesas}
+                className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-extrabold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-950/60"
+              >
                 <ShoppingBag className="h-4 w-4" />
                 Para llevar
-              </span>
+              </button>
             ) : null}
-            <Badge variant="outline" className={cn("text-[10px] font-bold shadow-sm", statusColor[order.status])}>
-              {statusLabel[order.status]}
-            </Badge>
             {!canOperateOrders && (
               <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                 Solo consulta
