@@ -296,22 +296,38 @@ export function useDispatchOrders(scope: DispatchView) {
   const markItemReady = useMutation({
     mutationFn: async ({ orderId, itemId, qty }: { orderId: string; itemId: string; qty: number }) => {
       if (!user?.id) throw new Error("Usuario no autenticado");
-      const { error } = await (supabase as any).rpc("mark_order_quantities_ready", {
+      const { error } = await (supabase as any).rpc("emit_order_ready_alert", {
         p_order_id: orderId,
-        p_ready_by: user.id,
-        p_items: [{ order_item_id: itemId, quantity_ready: qty }],
-        p_operation_type: "partial",
+        p_emitted_by: user.id,
         p_source_module: "dispatch",
-        p_notes: null,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       invalidateOperationalQueries(qc);
-      toast.success("Item marcado como listo");
+      toast.success("Alerta de listo enviada");
     },
     onError: (error: any) => {
       toast.error(`Error al marcar listo: ${error?.message || "Error desconocido"}`);
+    },
+  });
+
+  const sendOrderReadyAlert = useMutation({
+    mutationFn: async ({ orderId }: { orderId: string }) => {
+      if (!user?.id) throw new Error("Usuario no autenticado");
+      const { error } = await (supabase as any).rpc("emit_order_ready_alert", {
+        p_order_id: orderId,
+        p_emitted_by: user.id,
+        p_source_module: "dispatch",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      invalidateOperationalQueries(qc);
+      toast.success("Alerta de listo enviada");
+    },
+    onError: (error: any) => {
+      toast.error(`Error al emitir alerta: ${error?.message || "Error desconocido"}`);
     },
   });
 
@@ -344,6 +360,7 @@ export function useDispatchOrders(scope: DispatchView) {
     applyReadyOperation,
     applyDispatchOperation,
     markItemReady,
+    sendOrderReadyAlert,
     dispatchItem,
   };
 }

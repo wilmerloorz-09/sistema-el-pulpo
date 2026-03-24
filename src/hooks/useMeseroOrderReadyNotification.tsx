@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { RealtimeChannel } from "@supabase/supabase-js";
+import { useEffect, useRef, useState } from "react";
 import { Bell, Smartphone, Volume2, X } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -28,15 +27,15 @@ interface NotificationHookOptions {
 }
 
 type ReadyOrderRow = {
-  id: string;
-  branch_id: string;
+  notification_id: string;
+  order_id: string;
   order_number: number;
   order_type: "DINE_IN" | "TAKEOUT";
+  branch_id: string;
   created_by: string;
-  split_id: string | null;
-  table_id: string | null;
-  ready_at: string | null;
-  status?: string | null;
+  table_name: string | null;
+  split_code: string | null;
+  created_at: string;
 };
 
 let notificationAudioContext: AudioContext | null = null;
@@ -154,61 +153,39 @@ export function vibrateDevice(): void {
   }
 }
 
-async function fetchOrderReadyNotification(
-  orderId: string,
-  createdAt: string,
-): Promise<OrderReadyNotification | null> {
-  const { data: order, error: orderError } = await supabase
-    .from("orders")
-    .select("branch_id, order_number, order_type, created_by, table_id, split_id")
-    .eq("id", orderId)
-    .single();
+async function fetchMeseroReadyAlerts(
+  branchId: string,
+  createdBy: string,
+): Promise<OrderReadyNotification[]> {
+  const { data, error } = await (supabase as any).rpc("get_mesero_ready_alerts", {
+    p_branch_id: branchId,
+    p_created_by: createdBy,
+    p_limit: 20,
+  });
 
-  if (orderError || !order) {
-    return null;
-  }
+  if (error || !Array.isArray(data)) return [];
 
-  const typedOrder = order as ReadyOrderRow;
-
-  const [tableResult, splitResult] = await Promise.all([
-    typedOrder.table_id
-      ? supabase
-          .from("restaurant_tables")
-          .select("name")
-          .eq("id", typedOrder.table_id)
-          .single()
-      : Promise.resolve({ data: null, error: null }),
-    typedOrder.split_id
-      ? supabase
-          .from("table_splits")
-          .select("split_code")
-          .eq("id", typedOrder.split_id)
-          .single()
-      : Promise.resolve({ data: null, error: null }),
-  ]);
-
-  return {
-    order_id: orderId,
-    order_number: typedOrder.order_number,
-    order_type: typedOrder.order_type,
-    branch_id: typedOrder.branch_id,
-    created_by: typedOrder.created_by,
-    table_name: tableResult.data?.name ?? null,
-    split_code: splitResult.data?.split_code ?? null,
-    created_at: createdAt,
-  };
+  return (data as ReadyOrderRow[]).map((row) => ({
+    id: row.notification_id,
+    order_id: row.order_id,
+    order_number: row.order_number,
+    order_type: row.order_type,
+    branch_id: row.branch_id,
+    created_by: row.created_by,
+    table_name: row.table_name ?? null,
+    split_code: row.split_code ?? null,
+    created_at: row.created_at,
+  }));
 }
 
 async function shouldKeepOrderReadyAlarm(orderId: string, readyNotificationAt: string): Promise<boolean> {
-  const { data: dispatchEvents, error: dispatchEventsError } = await supabase
-    .from("order_dispatch_events")
-    .select("id")
-    .eq("order_id", orderId)
-    .gt("created_at", readyNotificationAt)
-    .limit(1);
+  const { data, error } = await (supabase as any).rpc("order_has_dispatch_after", {
+    p_order_id: orderId,
+    p_after: readyNotificationAt,
+  });
 
-  if (dispatchEventsError) return true;
-  return (dispatchEvents ?? []).length === 0;
+  if (error) return true;
+  return !Boolean(data);
 }
 
 export function useMeseroOrderReadyNotification(
@@ -220,132 +197,51 @@ export function useMeseroOrderReadyNotification(
   const enabled = options?.enabled ?? true;
   const handledNotificationsRef = useRef<Set<string>>(new Set());
   const onNotificationRef = useRef(onNotification);
-  const lastPolledNotificationAtRef = useRef<string | null>(null);
 
   useEffect(() => {
     onNotificationRef.current = onNotification;
   }, [onNotification]);
 
-  const channelFactory = useCallback((): RealtimeChannel => {
-    return supabase.channel(`order-ready-notifications:${activeBranchId ?? "all"}`);
-  }, [activeBranchId]);
-
   useEffect(() => {
-    if (!enabled) return;
-
-    bindAudioUnlockListeners();
-    const orderReadyChannel = channelFactory();
-
-    orderReadyChannel
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "order_ready_notifications",
-        },
-        async (payload: {
-          new: {
-            id?: string;
-            order_id?: string;
-            created_at?: string;
-          };
-        }) => {
-          const notificationId = String(payload.new.id ?? `${payload.new.order_id ?? "unknown"}:${payload.new.created_at ?? ""}`);
-          if (handledNotificationsRef.current.has(notificationId)) return;
-
-          const orderId = String(payload.new.order_id ?? "").trim();
-          if (!orderId) return;
-
-          const notification = await fetchOrderReadyNotification(orderId, payload.new.created_at ?? new Date().toISOString());
-          if (!notification) return;
-          if (activeBranchId && notification.branch_id !== activeBranchId) return;
-          if (currentUserId && notification.created_by !== currentUserId) return;
-
-          handledNotificationsRef.current.add(notificationId);
-          if (handledNotificationsRef.current.size > 100) {
-            const firstKey = handledNotificationsRef.current.values().next().value;
-            if (firstKey) handledNotificationsRef.current.delete(firstKey);
-          }
-
-          void playNotificationSound();
-          vibrateDevice();
-          onNotificationRef.current(notification);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void orderReadyChannel.unsubscribe();
-    };
-  }, [activeBranchId, channelFactory, currentUserId, enabled]);
-
-  useEffect(() => {
-    if (!enabled || !activeBranchId) return;
+    if (!enabled || !activeBranchId || !currentUserId) return;
 
     let cancelled = false;
 
-    const initializeCursor = async () => {
-      const { data, error } = await (supabase as any)
-        .from("order_ready_notifications")
-        .select("created_at")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
+    const initializeHandledNotifications = async () => {
+      const data = await fetchMeseroReadyAlerts(activeBranchId, currentUserId);
       if (cancelled) return;
+      if (!data.length) return;
 
-      if (error) {
-        lastPolledNotificationAtRef.current = null;
-        return;
-      }
-
-      lastPolledNotificationAtRef.current = data?.created_at ?? null;
+      handledNotificationsRef.current = new Set(
+        data.map((row) =>
+          String(row.id ?? `${row.order_id}:${row.created_at}`),
+        ),
+      );
     };
 
-    void initializeCursor();
+    void initializeHandledNotifications();
 
     return () => {
       cancelled = true;
-      lastPolledNotificationAtRef.current = null;
+      handledNotificationsRef.current = new Set();
     };
-  }, [activeBranchId, enabled]);
+  }, [activeBranchId, currentUserId, enabled]);
 
   useEffect(() => {
-    if (!enabled || !activeBranchId) return;
+    if (!enabled || !activeBranchId || !currentUserId) return;
 
     let cancelled = false;
 
     const pollNotificationTable = async () => {
-      const cursor = lastPolledNotificationAtRef.current;
+      const data = await fetchMeseroReadyAlerts(activeBranchId, currentUserId);
+      if (cancelled || data.length === 0) return;
 
-      let query = (supabase as any)
-        .from("order_ready_notifications")
-        .select("id, order_id, created_at")
-        .order("created_at", { ascending: true })
-        .limit(20);
-
-      if (cursor) {
-        query = query.gt("created_at", cursor);
-      }
-
-      const { data, error } = await query;
-
-      if (cancelled || error || !data || data.length === 0) return;
-
-      for (const rawNotification of data as Array<{ id?: string; order_id?: string; created_at?: string }>) {
-        const notificationId = String(rawNotification.id ?? `${rawNotification.order_id ?? "unknown"}:${rawNotification.created_at ?? ""}`);
+      for (const notification of [...data].reverse()) {
+        const notificationId = String(notification.id ?? `${notification.order_id}:${notification.created_at}`);
         if (handledNotificationsRef.current.has(notificationId)) continue;
-
-        const orderId = String(rawNotification.order_id ?? "").trim();
-        if (!orderId) continue;
-
-        const notification = await fetchOrderReadyNotification(orderId, rawNotification.created_at ?? new Date().toISOString());
-        if (!notification || cancelled) continue;
-        if (notification.branch_id !== activeBranchId) continue;
-        if (currentUserId && notification.created_by !== currentUserId) continue;
-
         handledNotificationsRef.current.add(notificationId);
+        if (cancelled) continue;
+
         if (handledNotificationsRef.current.size > 100) {
           const firstKey = handledNotificationsRef.current.values().next().value;
           if (firstKey) handledNotificationsRef.current.delete(firstKey);
@@ -354,11 +250,6 @@ export function useMeseroOrderReadyNotification(
         void playNotificationSound();
         vibrateDevice();
         onNotificationRef.current(notification);
-      }
-
-      const newestCreatedAt = data[data.length - 1]?.created_at;
-      if (newestCreatedAt) {
-        lastPolledNotificationAtRef.current = newestCreatedAt;
       }
     };
 

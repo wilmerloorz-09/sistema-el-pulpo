@@ -45,7 +45,7 @@ const Despacho = () => {
 
   const resolvedView = activeView && availableViews.includes(activeView) ? activeView : resolveInitialView(availableViews, storageKey);
   const scope = resolvedView ?? "TABLE";
-  const { orders, isLoading, isError, applyReadyOperation, markItemReady, dispatchItem } = useDispatchOrders(scope);
+  const { orders, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem } = useDispatchOrders(scope);
 
   if (accessLoading) {
     return (
@@ -162,19 +162,8 @@ const Despacho = () => {
                 key={order.card_id}
                 order={order}
                 onMarkOrderReady={(currentOrder) => {
-                  const items = currentOrder.items
-                    .filter((item) => item.quantity_pending_prepare > 0)
-                    .map((item) => ({
-                      order_item_id: item.id,
-                      quantity_ready: item.quantity_pending_prepare,
-                    }));
-
-                  if (items.length === 0) return;
-
-                  applyReadyOperation.mutate({
+                  sendOrderReadyAlert.mutate({
                     orderId: currentOrder.id,
-                    operationType: "partial",
-                    items,
                   });
                 }}
                 onMarkItemReady={(_, item, qty) => {
@@ -183,7 +172,7 @@ const Despacho = () => {
                 onDispatchItem={(_, item, qty) => {
                   dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
                 }}
-                isMarkingOrderReady={applyReadyOperation.isPending}
+                isMarkingOrderReady={sendOrderReadyAlert.isPending}
                 isMarkingReady={markItemReady.isPending}
                 isDispatching={dispatchItem.isPending}
                 readOnly={readOnly}
