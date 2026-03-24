@@ -202,15 +202,6 @@ async function fetchOrderReadyNotification(
 }
 
 async function shouldKeepOrderReadyAlarm(orderId: string, readyNotificationAt: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("status")
-    .eq("id", orderId)
-    .single();
-
-  if (error || !data) return false;
-  if (data.status !== "READY") return false;
-
   const { data: dispatchEvents, error: dispatchEventsError } = await supabase
     .from("order_dispatch_events")
     .select("id")
@@ -449,10 +440,10 @@ export function OrderReadyAlertCenter() {
     let cancelled = false;
 
     const tickAlarm = async () => {
-      const stillReady = await shouldKeepOrderReadyAlarm(activeAlarm.orderId, activeAlarm.createdAt);
+      const shouldKeep = await shouldKeepOrderReadyAlarm(activeAlarm.orderId, activeAlarm.createdAt);
       if (cancelled) return;
 
-      if (!stillReady) {
+      if (!shouldKeep) {
         setActiveAlarm((current) => (current?.orderId === activeAlarm.orderId ? null : current));
         setNotification((current) => (current?.order_id === activeAlarm.orderId ? null : current));
         return;
