@@ -154,6 +154,10 @@
   - los cobros en efectivo y cambios de denominacion deben actualizar `cash_shift_denoms.qty_current`
   - `Desglose de Caja` y `Resumen` deben leer el estado real persistido del turno
 - `PayableOrdersList` usa layout de dos columnas en desktop: KPIs verticales y listado operativo.
+- La navegacion entre `Por cobrar` y `Pagos realizados` ya no es exclusivamente interna a la pagina:
+  - en desktop/tablet se expone como subnavegacion del item `Caja` en la `sidebar`
+  - en movil se mantiene como conmutador compacto dentro de `Caja`
+  - la seleccion actual se persiste en la URL (`?tab=completed`) para que el shell pueda controlarla
 - `PaymentDialog` contiene:
   - seleccion de cantidades a cobrar
   - metodos de pago compactos
@@ -278,11 +282,12 @@
 
 ### K) Shell adaptativo de navegacion
 - `AppLayout` pasa a ser el shell responsivo comun del sistema.
-- En `>= 768px`, la arquitectura visible del shell usa `sidebar` izquierda fija de 68px y el contenido vive en la segunda columna.
+- En `>= 768px`, la arquitectura visible del shell usa `sidebar` izquierda ancha con contexto de sucursal y subnavegacion contextual cuando aplica.
 - En `< 768px`, la arquitectura visible del shell usa `bottom nav` fija con padding inferior compensado en `main`.
 - La logica de visibilidad de modulos no se duplico por layout: `sidebar` y `bottom nav` comparten la misma resolucion de items visibles segun permisos, turno y acceso a despacho.
 - El tema visual ya no debe depender de un provider externo no montado; la arquitectura actual usa un hook propio que sincroniza `data-theme`, clase `dark` y consumidores visuales como `Sonner`.
 - En `Mesas`, el panel de detalle es arquitectonicamente una lectura auxiliar del mismo dataset de `useTablesWithStatus`; no introduce queries nuevas ni cambia handlers de apertura/navegacion.
+- En `sidebar`, la arquitectura actual fija header y footer y deja scroll solo en la lista central para evitar cortes verticales al final del menu.
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

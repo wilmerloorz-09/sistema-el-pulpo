@@ -419,6 +419,12 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - La version actual del tema se resuelve en el `html root` (`data-theme` + clase `dark`) para compatibilidad con estilos existentes.
 - No debe asumirse aun persistencia remota en `profiles` para el tema mientras no exista tipado/frontend alineado y una decision explicita de backend.
 
+## Addendum 2026-03-25
+- La subnavegacion visible de `Caja` (`Por cobrar` / `Pagos realizados`) ahora puede resolverse desde la URL (`/caja` y `/caja?tab=completed`).
+- Este cambio es solo de frontend/shell y no introduce tablas nuevas, RPCs nuevas ni cambios de RLS.
+- Los scripts de reset no necesitan limpiar nada adicional por esta navegacion, porque el estado activo de la tab no se persiste en BD.
+- Los scripts de reset pueden documentar este punto para evitar asumir que existe persistencia adicional.
+
 
 
 

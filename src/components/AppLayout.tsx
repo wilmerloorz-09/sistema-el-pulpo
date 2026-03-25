@@ -18,14 +18,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { signOut, profile } = useAuth();
-  const { activeBranch, activeBranchId, branches, setActiveBranch, isGlobalAdmin, loading } = useBranch();
+  const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
   const { isOnline } = useNetwork();
   const { isDesktop } = useBreakpoint();
   const { isDark, toggle } = useTheme();
 
   return (
     <>
-      <div className="min-h-dvh bg-transparent md:grid md:grid-cols-[68px_minmax(0,1fr)]">
+      <div className="min-h-dvh bg-transparent md:grid md:grid-cols-[248px_minmax(0,1fr)]">
         {isDesktop ? <SidebarNav isDark={isDark} onToggleTheme={toggle} onOpenAccount={() => setUserMenuOpen(true)} /> : null}
 
         <div className="flex min-h-dvh min-w-0 flex-col">
@@ -33,7 +33,7 @@ const AppLayout = () => {
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 {!isDesktop ? <img src="/logo.png" alt="El Pulpo" className="h-8 w-auto shrink-0 object-contain sm:h-11" /> : null}
-                {activeBranch && branches.length > 1 ? (
+                {!isDesktop && activeBranch && branches.length > 1 ? (
                   <Select
                     value={activeBranchId ?? undefined}
                     onValueChange={(value) => {
@@ -55,16 +55,11 @@ const AppLayout = () => {
                       ))}
                     </SelectContent>
                   </Select>
-                ) : activeBranch ? (
+                ) : !isDesktop && activeBranch ? (
                   <span className="ml-0 inline-flex min-h-[38px] max-w-full flex-1 items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm sm:flex-none">
                     <span className="truncate">{activeBranch.name}</span>
                   </span>
                 ) : null}
-                {isGlobalAdmin && (
-                  <span className="hidden min-h-[38px] items-center rounded-2xl border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-primary shadow-sm sm:inline-flex">
-                    Admin global
-                  </span>
-                )}
               </div>
 
               {!isOnline ? (

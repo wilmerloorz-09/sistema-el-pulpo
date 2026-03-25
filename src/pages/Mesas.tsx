@@ -145,6 +145,10 @@ const Mesas = () => {
     }
   };
 
+  const handleSpecialOrder = () => {
+    toast.info("Orden Especial aun no tiene un flujo operativo propio en esta version.");
+  };
+
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
     if (table.status === "free") {
       if (!canOperateMesas) return;
@@ -206,29 +210,78 @@ const Mesas = () => {
 
   return (
     <div className="pb-8">
-      <div className="sticky top-[57px] z-30 bg-background px-2.5 pb-4 pt-2.5 sm:top-[65px] sm:px-4 sm:pt-4">
-        <div className="surface-glow px-4 py-4 sm:px-5">
+      <section className="px-2.5 pb-2 pt-0.5 sm:px-4 sm:pt-1">
+        {!canOperateMesas && (
+          <div className="mb-2 flex justify-end">
+            <span className="rounded-full border border-border bg-white/85 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
+              Solo consulta
+            </span>
+          </div>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0 }}
+              onClick={handleTakeout}
+              disabled={creatingTakeout || !canOperateMesas}
+              className={cn(
+                "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(16,185,129,0.55)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
+                "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-emerald-100 dark:border-emerald-800 dark:from-emerald-950/20 dark:via-card dark:to-emerald-950/30",
+                canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
+              )}
+            >
+              {creatingTakeout ? (
+                <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-accent" />
+              ) : (
+                <ShoppingBag className="h-4.5 w-4.5 shrink-0 text-accent" />
+              )}
+              <span className="block min-w-0 pr-7 font-display text-sm font-black text-accent sm:text-base">Para Llevar</span>
+              {canOperateMesas && !creatingTakeout && (
+                <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-accent/70" />
+              )}
+            </motion.button>
+
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.04 }}
+              onClick={handleSpecialOrder}
+              disabled={!canOperateMesas}
+              className={cn(
+                "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(249,115,22,0.32)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
+                "border-orange-300 bg-gradient-to-br from-orange-50 via-white to-amber-100 dark:border-orange-800 dark:from-orange-950/20 dark:via-card dark:to-amber-950/25",
+                canOperateMesas ? "hover:border-primary/45 hover:bg-primary/5" : "cursor-not-allowed opacity-60",
+              )}
+            >
+              <Sparkles className="h-4.5 w-4.5 shrink-0 text-primary" />
+              <span className="block min-w-0 pr-7 font-display text-sm font-black text-primary sm:text-base">Orden Especial</span>
+              {canOperateMesas && (
+                <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary/70" />
+              )}
+            </motion.button>
+        </div>
+      </section>
+
+      <div className="sticky top-[57px] z-30 bg-background px-2.5 pb-3 pt-2 sm:top-[65px] sm:px-4 sm:pt-3">
+        <div className="surface-glow px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-xl font-bold text-foreground">Mesas</h1>
-              {!canOperateMesas && (
-                <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
-                  Solo consulta
-                </span>
-              )}
+              <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Mesas</h1>
             </div>
-            <div className="menu-scroll -mx-1 flex gap-2 overflow-x-auto px-1 text-xs font-medium [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
-              <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-3 py-1 text-muted-foreground shadow-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
+            <div className="menu-scroll -mx-1 flex gap-1.5 overflow-x-auto px-1 text-[11px] font-medium [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+              <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-2.5 py-0.5 text-muted-foreground shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
                 {freeCount} libres
               </span>
-              <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-primary shadow-sm dark:border-primary/30 dark:bg-orange-950/40">
-                <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+              <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-primary shadow-sm dark:border-primary/30 dark:bg-orange-950/40">
+                <span className="h-2 w-2 rounded-full bg-primary" />
                 {occupiedCount} ocupadas
               </span>
               {toPayCount > 0 && (
-                <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-warning shadow-sm dark:border-warning/30 dark:bg-amber-950/40">
-                  <span className="h-2.5 w-2.5 rounded-full bg-warning" />
+                <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-warning shadow-sm dark:border-warning/30 dark:bg-amber-950/40">
+                  <span className="h-2 w-2 rounded-full bg-warning" />
                   {toPayCount} por pagar
                 </span>
               )}
@@ -237,36 +290,18 @@ const Mesas = () => {
         </div>
       </div>
 
-      <div className={cn("px-2.5 sm:px-4", showDetailPanel && "grid grid-cols-[minmax(0,1fr)_320px] items-start gap-4")}>
+      <div
+        className={cn(
+          "px-2.5 sm:px-4",
+          showDetailPanel && "grid grid-cols-[minmax(0,1fr)_minmax(280px,320px)] items-start gap-4",
+        )}
+      >
         <div className="min-w-0">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-4">
-            <motion.button
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0 }}
-              onClick={handleTakeout}
-              disabled={creatingTakeout || !canOperateMesas}
-              className={cn(
-                "relative flex min-h-[130px] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[20px] border-2 p-2.5 text-center shadow-[0_22px_45px_-30px_rgba(16,185,129,0.55)] transition-all active:scale-95 sm:min-h-[180px] sm:gap-2 sm:rounded-[28px] sm:p-5",
-                "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-emerald-100 dark:border-emerald-800 dark:from-emerald-950/20 dark:via-card dark:to-emerald-950/30",
-                canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
-              )}
-            >
-              {creatingTakeout ? (
-                <Loader2 className="h-6 w-6 animate-spin text-accent" />
-              ) : (
-                <>
-                  <ShoppingBag className="h-5 w-5 text-accent sm:h-6 sm:w-6" />
-                  <span className="font-display text-sm font-bold text-accent sm:text-lg">Para llevar</span>
-                  {canOperateMesas && (
-                    <div className="absolute right-2 top-2 rounded-full bg-accent/10 p-1">
-                      <Plus className="h-3.5 w-3.5 text-accent" />
-                    </div>
-                  )}
-                </>
-              )}
-            </motion.button>
-
+          <div
+            className={cn(
+              "grid grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]",
+            )}
+          >
             {tables?.map((table, index) => {
               const config = STATUS_CONFIG[table.status];
               const isCreating = creating === table.id;
@@ -354,7 +389,7 @@ const Mesas = () => {
         </div>
 
         {showDetailPanel && selectedTable && selectedConfig ? (
-          <aside className="sticky top-[5.9rem] min-w-0">
+          <aside className="sticky top-[5.9rem] min-w-0 self-start">
             <div className="surface-glow p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

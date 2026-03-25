@@ -10,6 +10,7 @@
 --   - `TABLE`
 --   - `TAKEOUT`
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero
+-- - Conserva intactos los cambios frontend de shell responsivo y tabs de Caja por URL, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 -- - Conserva configuracion estructural de despacho por sucursal:
 --   - dispatch_config
@@ -109,6 +110,8 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
+
 
 
 

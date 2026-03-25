@@ -25,6 +25,7 @@
 -- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
 -- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR, AMBOS QUEDAN VACIOS
 -- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (`emit_order_ready_alert`, `get_mesero_ready_alerts`, `order_has_dispatch_after`)
+-- - LOS AJUSTES RECIENTES DE NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
 
 BEGIN;
@@ -222,6 +223,8 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
+
 
 
 

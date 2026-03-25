@@ -138,6 +138,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - `< 768px`: usar `bottom nav` fija
   - ambas navegaciones deben compartir la misma logica de visibilidad por permisos/turno
   - el contenido principal debe dejar espacio inferior real para la barra movil
+  - si un modulo necesita subnavegacion contextual en desktop/tablet, integrarla en la `sidebar` antes de crear una segunda barra lateral dentro de la pagina
+  - en `Caja`, `Por cobrar` / `Pagos realizados` deben vivir en la `sidebar` para desktop/tablet y quedarse en la pagina solo para movil
+  - si esa subnavegacion necesita persistencia visual entre clics, preferir `query params` antes que estado local oculto
 - Si se toca el tema visual:
   - escribir `data-theme` en `document.documentElement`
   - mantener compatibilidad con la clase `dark` existente
@@ -232,6 +235,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - efectivo controlado por denominaciones
   - transferencia/no efectivo como monto editable
   - resumen de turno separado de recaudacion por metodo
+  - subnavegacion desktop/tablet resuelta desde el shell y no desde una columna lateral duplicada dentro de la pagina
 
 ## 9) Autonomía de Asistentes IA
 - **Aplicación Directa:** Los asistentes de IA (como Windsurf, Cursor, Gemini, etc.) tienen permitido y se les requiere aplicar los cambios de código directamente a los archivos del proyecto, omitiendo los pasos intermedios de pedir permiso o confirmación para proceder con la escritura de código, a menos que el flujo requiera revisión humana crítica de arquitectura o se rompa un sistema en producción.

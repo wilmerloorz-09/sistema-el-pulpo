@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 const DESKTOP_BREAKPOINT = 768;
-const DETAIL_BREAKPOINT = 900;
+const DETAIL_BREAKPOINT = 1280;
 
 type BreakpointState = {
   isDesktop: boolean;

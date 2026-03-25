@@ -258,10 +258,21 @@
 - Desde `768px` en adelante, la app debe usar `sidebar` vertical izquierda como navegacion principal.
 - Debajo de `768px`, la app debe usar `bottom nav` fija con soporte de `safe-area`.
 - El `bottom nav` debe quedar por debajo de modales (`z-50`) y el contenido principal debe dejar padding inferior suficiente para no quedar tapado.
+- En desktop/tablet, la `sidebar` ya no es solo iconica:
+  - muestra selector o badge de sucursal activa en la cabecera
+  - puede alojar subopciones contextuales del modulo activo, como `Caja`
+- En `Caja`, la seleccion entre `Por cobrar` y `Pagos realizados` ya no debe depender solo de estado local:
+  - desktop/tablet: esas subopciones viven dentro de la `sidebar` izquierda
+  - movil: esas subopciones permanecen dentro de la propia pagina como botones compactos superiores
+  - la vista activa se resuelve por `query param` (`/caja` y `/caja?tab=completed`)
 - El cambio de tema ya debe escribir `data-theme` en `document.documentElement` y sincronizar tambien la clase `dark` para no romper estilos existentes basados en Tailwind.
 - El toggle de tema debe estar disponible en ambas navegaciones (`sidebar` y `bottom nav`).
 - En `Mesas`, el mosaico principal debe degradar a 2 columnas en telefono y exponer un panel de detalle solo cuando exista ancho suficiente (`showDetailPanel`).
 - El panel de detalle de `Mesas` no debe alterar la logica operativa de abrir mesa o entrar a la orden; es una superficie complementaria de lectura/accion rapida.
+- La `sidebar` desktop debe comportarse como columna completa de viewport:
+  - header y footer fijos
+  - lista central con scroll propio
+  - evitar que `Tema` / `Mi cuenta` queden cortados al final de la columna
 
 ### 4.2) Caja: UX y reglas operativas nuevas
 - La pantalla principal de `Caja` ya no debe ensuciarse con datos redundantes; el resumen `Apertura / Actual / Diferencia` vive en un modal `Resumen`.
@@ -296,7 +307,10 @@
 - Si una denominacion sale de caja durante el cambio, la cantidad ingresada no puede exceder el stock actual de esa denominacion en `cash_shift_denoms`.
 - Los movimientos deben aparecer tambien en `Resumen` del turno como parte del reporte operativo, sin mezclarse con `Diferencia`, `Apertura` o `Recaudado`.
 - En `PayableOrdersList`, la vista desktop usa dos columnas: izquierda con KPIs verticales y derecha con detalle operativo mas ancho.
-- En desktop las pestanas `Por cobrar` / `Pagos realizados` de Caja se colocan en una columna lateral estrecha; en movil permanecen compactas arriba.
+- La arquitectura visible actual de tabs en `Caja` queda asi:
+  - desktop/tablet (`>= 768px`): `Por cobrar` / `Pagos realizados` se controlan desde subopciones dentro de la `sidebar` izquierda del shell
+  - movil (`< 768px`): esas tabs permanecen compactas arriba de la pagina
+- En tablet horizontal, la cabecera/resumen de `Caja` ya debe aprovechar dos columnas antes que en telefono, sin depender de llegar a un breakpoint desktop grande.
 - En `PaymentDialog`, `Efectivo` y `Transferencia` se muestran como filas compactas.
 - `Efectivo` queda activo por defecto, muestra `0.00` al iniciar, no es editable manualmente y solo cambia al aceptar `Monedas y billetes`.
 - `Transferencia` queda visible pero desactivada por defecto.
