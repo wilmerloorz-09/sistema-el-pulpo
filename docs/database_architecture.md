@@ -414,6 +414,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Migracion nueva relacionada:
   - `supabase/migrations/20260324173000_waiter_ready_alert_rpcs.sql`
 
+## Addendum 2026-03-24B
+- La navegacion adaptativa (`sidebar` vs `bottom nav`) y el toggle visual de tema introducidos en frontend no agregan tablas nuevas ni cambian RLS.
+- La version actual del tema se resuelve en el `html root` (`data-theme` + clase `dark`) para compatibilidad con estilos existentes.
+- No debe asumirse aun persistencia remota en `profiles` para el tema mientras no exista tipado/frontend alineado y una decision explicita de backend.
+
 
 
 

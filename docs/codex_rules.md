@@ -133,6 +133,15 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - no debe depender de mover cantidades a `READY`
   - debe poder sonar varias veces sobre la misma orden
   - debe detenerse apenas exista cualquier despacho posterior de esa orden
+- Si se toca el shell de navegacion:
+  - `>= 768px`: usar `sidebar` izquierda
+  - `< 768px`: usar `bottom nav` fija
+  - ambas navegaciones deben compartir la misma logica de visibilidad por permisos/turno
+  - el contenido principal debe dejar espacio inferior real para la barra movil
+- Si se toca el tema visual:
+  - escribir `data-theme` en `document.documentElement`
+  - mantener compatibilidad con la clase `dark` existente
+  - no introducir persistencia nueva en BD por intuicion; solo si el circuito remoto ya esta definido
 - En `Admin > Turno`, priorizar usabilidad movil:
   - bloques verticales
   - resumen adaptable a 1 o 2 columnas

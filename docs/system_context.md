@@ -253,6 +253,16 @@
 - La instalacion no depende solo del navegador: para ofrecerse en movil debe servirse en modo produccion y bajo origen confiable (`https` o `localhost`).
 - La app muestra un prompt propio de instalacion cuando el navegador emite `beforeinstallprompt`, y en iPhone/Safari muestra una guia breve para `Agregar a pantalla de inicio`.
 
+### 4.1.1) Navegacion adaptativa y tema en shell operativo
+- El shell principal ya no debe asumir una sola navegacion inferior para todos los dispositivos.
+- Desde `768px` en adelante, la app debe usar `sidebar` vertical izquierda como navegacion principal.
+- Debajo de `768px`, la app debe usar `bottom nav` fija con soporte de `safe-area`.
+- El `bottom nav` debe quedar por debajo de modales (`z-50`) y el contenido principal debe dejar padding inferior suficiente para no quedar tapado.
+- El cambio de tema ya debe escribir `data-theme` en `document.documentElement` y sincronizar tambien la clase `dark` para no romper estilos existentes basados en Tailwind.
+- El toggle de tema debe estar disponible en ambas navegaciones (`sidebar` y `bottom nav`).
+- En `Mesas`, el mosaico principal debe degradar a 2 columnas en telefono y exponer un panel de detalle solo cuando exista ancho suficiente (`showDetailPanel`).
+- El panel de detalle de `Mesas` no debe alterar la logica operativa de abrir mesa o entrar a la orden; es una superficie complementaria de lectura/accion rapida.
+
 ### 4.2) Caja: UX y reglas operativas nuevas
 - La pantalla principal de `Caja` ya no debe ensuciarse con datos redundantes; el resumen `Apertura / Actual / Diferencia` vive en un modal `Resumen`.
 - En `Resumen de Caja` deben distinguirse visualmente dos temas:

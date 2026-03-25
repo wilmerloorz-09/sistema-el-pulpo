@@ -1,194 +1,75 @@
+import { UserRound } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useBranch } from "@/contexts/BranchContext";
-import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { canView } from "@/lib/permissions";
-import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { cn } from "@/lib/utils";
-import {
-  LayoutGrid,
-  UtensilsCrossed,
-  ChefHat,
-  Package,
-  CircleDollarSign,
-  BarChart3,
-  Settings,
-} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import ThemeToggle from "@/components/nav/ThemeToggle";
+import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: React.ReactNode;
-  tone: {
-    active: string;
-    idle: string;
-    iconIdle: string;
-  };
-  visible: (permissions: Record<string, any>) => boolean;
+interface BottomNavProps {
+  isDark: boolean;
+  onToggleTheme: () => void;
+  onOpenAccount: () => void;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  {
-    to: "/mesas",
-    label: "Mesas",
-    icon: <LayoutGrid className="h-5 w-5" />,
-    tone: {
-      active: "from-sky-500 to-cyan-400",
-      idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
-      iconIdle: "bg-sky-50 text-sky-600",
-    },
-    visible: (permissions) => canView(permissions, "mesas"),
-  },
-  {
-    to: "/ordenes",
-    label: "Ordenes",
-    icon: <UtensilsCrossed className="h-5 w-5" />,
-    tone: {
-      active: "from-orange-500 to-amber-400",
-      idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
-      iconIdle: "bg-orange-50 text-orange-600",
-    },
-    visible: (permissions) => canView(permissions, "ordenes"),
-  },
-  {
-    to: "/despacho",
-    label: "Despacho",
-    icon: <ChefHat className="h-5 w-5" />,
-    tone: {
-      active: "from-rose-500 to-pink-400",
-      idle: "hover:border-rose-200 hover:bg-rose-50/90 hover:text-rose-700",
-      iconIdle: "bg-rose-50 text-rose-600",
-    },
-    visible: (permissions) =>
-      canView(permissions, "despacho_total") ||
-      canView(permissions, "despacho_mesa") ||
-      canView(permissions, "despacho_para_llevar"),
-  },
-  {
-    to: "/productos",
-    label: "Productos",
-    icon: <Package className="h-5 w-5" />,
-    tone: {
-      active: "from-teal-500 to-cyan-400",
-      idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
-      iconIdle: "bg-teal-50 text-teal-600",
-    },
-    visible: (permissions) =>
-      canView(permissions, "ordenes") ||
-      canView(permissions, "despacho_total") ||
-      canView(permissions, "despacho_mesa") ||
-      canView(permissions, "despacho_para_llevar"),
-  },
-  {
-    to: "/caja",
-    label: "Caja",
-    icon: <CircleDollarSign className="h-5 w-5" />,
-    tone: {
-      active: "from-emerald-500 to-lime-400",
-      idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
-      iconIdle: "bg-emerald-50 text-emerald-600",
-    },
-    visible: (permissions) => canView(permissions, "caja"),
-  },
-  {
-    to: "/reportes",
-    label: "Reportes",
-    icon: <BarChart3 className="h-5 w-5" />,
-    tone: {
-      active: "from-violet-500 to-fuchsia-400",
-      idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
-      iconIdle: "bg-violet-50 text-violet-600",
-    },
-    visible: (permissions) => canView(permissions, "reportes_sucursal") || canView(permissions, "reportes_globales"),
-  },
-  {
-    to: "/admin",
-    label: "Admin",
-    icon: <Settings className="h-5 w-5" />,
-    tone: {
-      active: "from-slate-700 to-slate-500",
-      idle: "hover:border-slate-200 hover:bg-slate-50/90 hover:text-slate-700",
-      iconIdle: "bg-slate-100 text-slate-600",
-    },
-    visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
-  },
-];
+function getInitials(name?: string | null) {
+  const clean = String(name ?? "").trim();
+  if (!clean) return null;
 
-const BottomNav = () => {
-  const { permissions, isGlobalAdmin, branches } = useBranch();
-  const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
-  const shiftGateQuery = useBranchShiftGate();
+  const parts = clean.split(/\s+/).slice(0, 2);
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+}
 
-  const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
-  const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
-  const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && (Boolean(shiftGateQuery.data?.userEnabled) || canAccessAdmin);
-  const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || canAccessAdmin;
-
-  const visibleItems = NAV_ITEMS.filter((item) => {
-    if (isGlobalAdminWithoutBranches) {
-      return item.to === "/admin";
-    }
-
-    if (!hasOperationalShift) {
-      return item.to === "/admin" && canAccessAdmin;
-    }
-
-    if (item.to === "/admin" && isGlobalAdmin) {
-      return true;
-    }
-
-    if (item.to === "/mesas" || item.to === "/ordenes") {
-      if (!item.visible(permissions)) return false;
-      return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
-    }
-
-    if (item.to === "/productos") {
-      if (!item.visible(permissions)) return false;
-      return hasSupervisorBypass
-        || Boolean(shiftGateQuery.data?.canServeTables)
-        || Boolean(shiftGateQuery.data?.canDispatchOrders);
-    }
-
-    if (item.to === "/caja") {
-      if (!item.visible(permissions)) return false;
-      return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canUseCaja);
-    }
-
-    if (item.to === "/despacho") {
-      if (!(hasSupervisorBypass || Boolean(shiftGateQuery.data?.canDispatchOrders))) return false;
-      return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
-    }
-
-    if (!item.visible(permissions)) return false;
-
-    return true;
-  });
+const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => {
+  const { visibleItems } = useVisibleNavItems();
+  const { profile } = useAuth();
+  const initials = getInitials(profile?.full_name);
 
   if (visibleItems.length === 0) {
     return null;
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 overflow-hidden border-t border-orange-200/80 bg-white safe-bottom md:bottom-0 dark:border-border dark:bg-card">
-      <div className="mx-auto flex max-w-6xl items-center justify-start gap-3 overflow-x-auto px-2 py-2 [scrollbar-width:none] snap-x snap-mandatory sm:gap-6 sm:px-4 md:gap-8 [&::-webkit-scrollbar]:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-50 overflow-hidden border-t border-orange-200/80 bg-white/96 shadow-[0_-18px_35px_-28px_rgba(15,23,42,0.4)] backdrop-blur-md safe-bottom dark:border-border dark:bg-card/96 md:hidden">
+      <div className="mx-auto flex h-[60px] max-w-6xl items-center gap-2 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={cn(
-              "group flex min-w-[4.8rem] shrink-0 snap-start flex-col items-center gap-1 rounded-[20px] border border-white/70 bg-white/82 px-2.5 py-2 text-muted-foreground transition-all sm:min-w-[5rem] sm:gap-1.5 sm:px-3",
+              "group flex min-w-[4.65rem] shrink-0 snap-start flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all",
               item.tone.idle,
             )}
             activeClassName={cn(
-              "border-white/20 bg-gradient-to-b text-white [&>span:first-child]:bg-white/15 [&>span:first-child]:text-white",
+              "border-white/20 bg-gradient-to-b text-white shadow-[0_16px_34px_-24px_rgba(249,115,22,0.92)] [&>span:first-child]:bg-white/15 [&>span:first-child]:text-white",
               item.tone.active,
             )}
           >
-            <span className={cn("flex h-8 w-8 items-center justify-center rounded-2xl transition-all group-hover:scale-105 sm:h-9 sm:w-9", item.tone.iconIdle)}>
+            <span className={cn("flex h-9 w-9 items-center justify-center rounded-2xl transition-transform group-hover:scale-105", item.tone.iconIdle)}>
               {item.icon}
             </span>
-            <span className="max-w-[4.8rem] text-center text-[10px] font-semibold leading-tight sm:max-w-[5rem]">{item.label}</span>
+            <span className="max-w-[4.5rem] truncate text-center leading-none">{item.label}</span>
           </NavLink>
         ))}
+
+        <ThemeToggle
+          isDark={isDark}
+          onToggle={onToggleTheme}
+          label="Tema"
+          className="group flex min-w-[4.65rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all hover:border-orange-200 hover:bg-orange-50/90 hover:text-primary dark:hover:border-border dark:hover:bg-muted"
+          iconClassName="h-5 w-5"
+        />
+
+        <button
+          type="button"
+          onClick={onOpenAccount}
+          className="group flex min-w-[4.65rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all hover:border-orange-200 hover:bg-orange-50/90 hover:text-primary dark:hover:border-border dark:hover:bg-muted"
+          aria-label="Mi cuenta"
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-muted text-foreground transition-transform group-hover:scale-105">
+            {initials ? <span className="text-xs font-black tracking-wide">{initials}</span> : <UserRound className="h-5 w-5" />}
+          </span>
+          <span className="max-w-[4.5rem] truncate text-center leading-none">Cuenta</span>
+        </button>
       </div>
     </nav>
   );

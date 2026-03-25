@@ -5,7 +5,9 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  :root,
+  [data-theme="light"] {
+    --theme: light;
     --background: 30 25% 97%;
     --foreground: 20 20% 12%;
 
@@ -50,7 +52,9 @@
     --info: 210 80% 55%;
   }
 
-  .dark {
+  .dark,
+  [data-theme="dark"] {
+    --theme: dark;
     --background: 20 20% 8%;
     --foreground: 30 20% 95%;
 
@@ -109,6 +113,14 @@
     background-attachment: fixed;
   }
 
+  .dark body,
+  [data-theme="dark"] body {
+    background-image:
+      radial-gradient(circle at top left, rgba(249, 115, 22, 0.12), transparent 24%),
+      radial-gradient(circle at top right, rgba(20, 184, 166, 0.1), transparent 26%),
+      linear-gradient(180deg, rgba(11, 15, 23, 0.96), rgba(11, 15, 23, 0.96));
+  }
+
   #root {
     min-height: 100vh;
   }
@@ -155,7 +167,7 @@
   }
 
   .glass-panel {
-    @apply rounded-[24px] border border-white/70 bg-white/78 shadow-[0_18px_45px_-36px_rgba(15,23,42,0.18)] backdrop-blur-md dark:border-border dark:bg-card/80 dark:shadow-none;
+    @apply rounded-[24px] border border-white/70 bg-white/80 shadow-[0_18px_45px_-36px_rgba(15,23,42,0.18)] backdrop-blur-md dark:border-border dark:bg-card/80 dark:shadow-none;
   }
 
   .soft-ring {

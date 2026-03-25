@@ -276,6 +276,14 @@
   - telefono: item con descripcion a la izquierda y stepper/boton a la derecha, evitando mandar los controles al pie de la card
   - tablet: mantener la misma columna fija de controles con mejor aprovechamiento horizontal
 
+### K) Shell adaptativo de navegacion
+- `AppLayout` pasa a ser el shell responsivo comun del sistema.
+- En `>= 768px`, la arquitectura visible del shell usa `sidebar` izquierda fija de 68px y el contenido vive en la segunda columna.
+- En `< 768px`, la arquitectura visible del shell usa `bottom nav` fija con padding inferior compensado en `main`.
+- La logica de visibilidad de modulos no se duplico por layout: `sidebar` y `bottom nav` comparten la misma resolucion de items visibles segun permisos, turno y acceso a despacho.
+- El tema visual ya no debe depender de un provider externo no montado; la arquitectura actual usa un hook propio que sincroniza `data-theme`, clase `dark` y consumidores visuales como `Sonner`.
+- En `Mesas`, el panel de detalle es arquitectonicamente una lectura auxiliar del mismo dataset de `useTablesWithStatus`; no introduce queries nuevas ni cambia handlers de apertura/navegacion.
+
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`
 - `src/hooks/useMenuData.ts`
