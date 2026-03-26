@@ -8,6 +8,25 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-03-14)
 
+### 0.0.1) Caja y catalogo: ajuste movil/tablet de la jornada 2026-03-26
+- `Caja` ya no debe tratar desktop, tablet y telefono como el mismo layout reducido.
+- La lista `Ordenes por cobrar` puede seguir siendo tabla suave en desktop, pero sus detalles expandidos deben apilar cantidades/subtotales en telefono para no comprimir columnas.
+- El modal principal de cobro (`PaymentDialog`) debe degradar asi:
+  - telefono: una sola columna por bloque, filas de items mas compactas, headers simplificados y metodos de pago apilados
+  - tablet: dos columnas reales para `Items pendientes` y `Items a cobrar ahora`, con footer de cobro aun visible
+  - desktop: mantener el ancho amplio y el layout de doble columna
+- En el modal de cobro normal:
+  - la orden empieza sin items preseleccionados
+  - el usuario mueve cantidades entre columnas (`pendientes` -> `a cobrar ahora`)
+  - el cobro parcial no debe cerrar el modal mientras la orden siga con saldo pendiente
+- `Caja` ya reutiliza la imagen real del producto en el modal cuando existe en `menu_nodes.image_url`; el fallback de icono solo aplica si no existe imagen enlazada.
+- `MenuNavigator` mantiene cards para categorias/subniveles, pero los nodos `product` ya deben renderizarse como lista:
+  - fila completa
+  - icono/imagen a la izquierda
+  - descripcion y precio centrados verticalmente
+  - sin etiqueta textual `Producto`
+- En telefono, el grid general del catalogo debe bajar a 2 columnas para niveles no-producto y dejar los productos como filas a ancho completo.
+
 ### 0.0) Alerta `Listo` para mesero: aviso puro por usuario creador
 - En `Despacho`, el boton `Listo` del encabezado ya no debe depender de mover cantidades operativas.
 - Su funcion es exclusivamente emitir una alerta para el mesero que creo la orden.
@@ -391,5 +410,20 @@
    - modificadores heredados/propios disponibles en el dialogo del producto
 4. Si un producto del arbol no entra a la orden, revisar primero su espejo en `products`.
 5. Si una mesa nueva choca por `uq_restaurant_tables_branch_table_number`, revisar trigger/contador remoto antes de culpar al frontend.
+
+## Addendum 2026-03-25B
+- `Orden Especial` ya opera como modalidad de `orders`, no como un `order_type` nuevo.
+- La regla vigente es:
+  - sigue usando flujo operativo de orden normal
+  - puede navegar `Arbol Menu Mesa` y `Arbol Menu Para Llevar`
+  - conserva items reales y total real derivado de `order_items`
+  - cobra contra un total manual definido en la cabecera de la orden
+- En `Mesas` puede abrirse una `Orden Especial` nueva y tambien convertir una orden `DINE_IN` activa en orden especial para liberar la mesa.
+- En `Caja`, una orden especial:
+  - muestra total real y total especial
+  - descuenta pagos contra `orders.special_total_manual`
+  - no debe forzar distribucion por `payment_items`
+- Si una orden especial se reversa, su estado no debe recalcularse con logica exclusiva de pago por item; debe reevaluarse contra el total manual pendiente.
+- Si una orden `DINE_IN` ya despachada recibe items nuevos y se vuelven a enviar a cocina, la cabecera debe volver a `SENT_TO_KITCHEN` para reabrir visibilidad en `Cocina` y `Despacho`.
 
 

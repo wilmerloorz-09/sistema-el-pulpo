@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, Clock, Coins, DollarSign, History, Loader2, Lock, ShieldAlert } from "lucide-react";
+import { AlertTriangle, BarChart3, Clock, Coins, DollarSign, History, Loader2, Lock, ShieldAlert, WalletCards } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { isCashPaymentMethodName } from "@/lib/paymentMethods";
@@ -130,69 +130,41 @@ export default function ShiftSummary({
 
   return (
     <>
-      <div className="relative overflow-hidden rounded-[28px] border border-emerald-200 bg-gradient-to-r from-white via-emerald-50 to-sky-50 p-4 shadow-[0_22px_55px_-42px_rgba(16,185,129,0.7)]">
-        <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-200/35 blur-2xl" />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-300 bg-white/90 shadow-sm">
-              <DollarSign className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-foreground">
-                {shift.caja_status === "OPEN" ? "Caja Activa" : "Turno Activo"}
-              </p>
-              <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                {hours}h {mins}m
-              </p>
-            </div>
-          </div>
-          <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-4 md:gap-2.5 lg:w-auto lg:grid-cols-none lg:flex lg:flex-wrap lg:items-center">
-            {!readOnly && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-10 w-full gap-1.5 rounded-2xl border-rose-200 bg-gradient-to-r from-white via-rose-50 to-white px-3 text-xs font-semibold text-rose-700 shadow-[0_12px_30px_-24px_rgba(244,63,94,0.8)] hover:border-rose-300 hover:from-rose-50 hover:to-white sm:w-auto"
-                onClick={() => setShowClose(true)}
-              >
-                <Lock className="h-3.5 w-3.5" />
-                Cerrar Caja
-              </Button>
-            )}
-              <Button
-              variant="outline"
-              size="sm"
-              className="h-10 w-full gap-1.5 rounded-2xl border-violet-200 bg-gradient-to-r from-white via-violet-50 to-white px-3 text-xs font-semibold text-violet-700 shadow-[0_12px_30px_-24px_rgba(139,92,246,0.8)] hover:border-violet-300 hover:from-violet-50 hover:to-white sm:w-auto"
-              onClick={() => setShowTotals(true)}
-            >
-              <DollarSign className="h-3.5 w-3.5" />
-              Resumen
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 w-full gap-1.5 rounded-2xl border-sky-200 bg-gradient-to-r from-white via-sky-50 to-white px-3 text-xs font-semibold text-sky-700 shadow-[0_12px_30px_-24px_rgba(14,165,233,0.8)] hover:border-sky-300 hover:from-sky-50 hover:to-white sm:w-auto"
-              onClick={() => setShowDenoms(true)}
-            >
-              <Coins className="h-3.5 w-3.5" />
-              Desglose
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 w-full gap-1.5 rounded-2xl border-amber-200 bg-gradient-to-r from-white via-amber-50 to-white px-3 text-xs font-semibold text-amber-700 shadow-[0_12px_30px_-24px_rgba(245,158,11,0.8)] hover:border-amber-300 hover:from-amber-50 hover:to-white sm:w-auto"
-              onClick={() => setShowMovements(true)}
-            >
-              <History className="h-3.5 w-3.5" />
-              Movimientos
-            </Button>
-          </div>
-        </div>
-
-        {readOnly && (
-          <div className="rounded-2xl border border-border bg-white/80 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-            Modo consulta: puedes ver la caja, pero no cerrarla.
-          </div>
+      <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+          onClick={() => setShowTotals(true)}
+        >
+          <BarChart3 className="h-4 w-4" />
+          Resumen
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+          onClick={() => setShowDenoms(true)}
+        >
+          <Coins className="h-4 w-4" />
+          Desglose
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
+          onClick={() => setShowMovements(true)}
+        >
+          <History className="h-4 w-4" />
+          Movimientos
+        </button>
+        {!readOnly && (
+          <Button
+            type="button"
+            size="sm"
+            className="h-11 rounded-full border-0 bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#115e59]"
+            onClick={() => setShowClose(true)}
+          >
+            <WalletCards className="h-4 w-4" />
+            Cerrar caja
+          </Button>
         )}
       </div>
 

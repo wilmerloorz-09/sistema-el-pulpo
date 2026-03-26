@@ -7,7 +7,7 @@ import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
-import { Loader2, Banknote, CreditCard, History } from "lucide-react";
+import { CreditCard, History, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
 
@@ -22,8 +22,16 @@ const initialCompletedFilters: CompletedPaymentsFilters = {
   pageSize: 20,
 };
 
+const formatElapsed = (openedAt: string) => {
+  const opened = new Date(openedAt);
+  const elapsed = Math.max(0, Math.floor((Date.now() - opened.getTime()) / 60000));
+  const hours = Math.floor(elapsed / 60);
+  const minutes = elapsed % 60;
+  return `${hours}h ${minutes}m`;
+};
+
 const Caja = () => {
-  const { permissions, isGlobalAdmin } = useBranch();
+  const { permissions, isGlobalAdmin, activeBranch } = useBranch();
   const { isDesktop } = useBreakpoint();
   const [searchParams, setSearchParams] = useSearchParams();
   const [completedFilters, setCompletedFilters] = useState<CompletedPaymentsFilters>(initialCompletedFilters);
@@ -83,8 +91,8 @@ const Caja = () => {
 
   if (!shift) {
     return (
-      <div className="p-4 pt-8">
-        <div className="mx-auto max-w-md rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+      <div className="bg-slate-50 px-4 py-8 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-md rounded-[28px] border border-slate-200 bg-white p-6 text-center shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
           <h2 className="font-display text-xl font-black text-foreground">No hay turno abierto</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             La apertura del turno ahora se realiza desde Administracion en la pestana Turno.
@@ -96,28 +104,18 @@ const Caja = () => {
 
   if (shift.caja_status !== "OPEN") {
     return (
-      <div className="space-y-4 p-2.5 sm:p-4">
-        <div className="grid gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] lg:items-stretch">
-          <div className="relative overflow-hidden rounded-[28px] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-5 py-4 shadow-[0_20px_60px_-40px_rgba(249,115,22,0.55)]">
-            <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-orange-200/35 blur-2xl" />
-            <div className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl" />
-            <div className="relative mb-2 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-300 bg-white/90 text-primary shadow-sm">
-                <Banknote className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="font-display text-xl font-black text-foreground">Caja</h1>
-                <p className="text-sm text-muted-foreground">La jornada ya esta abierta. Falta preparar la caja para cobrar.</p>
-              </div>
-            </div>
-            {!canOperateCaja && (
-              <span className="relative inline-flex rounded-full border border-border bg-white/80 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
-                Solo consulta
-              </span>
-            )}
+      <div className="bg-slate-50 px-4 py-2 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-6xl space-y-6">
+          <div className="border-b border-slate-200 pb-4">
+            <h1 className="text-[2.2rem] font-semibold tracking-[-0.04em] text-slate-950">
+              Caja · {activeBranch?.name ?? "Sucursal"}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              La jornada ya esta abierta. Falta preparar la caja para cobrar.
+            </p>
           </div>
 
-          <div className="rounded-[28px] border border-orange-200 bg-white/90 p-5 shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
             {shift.caja_status === "UNOPENED" ? (
               <OpenShiftForm
                 denominations={denominations}
@@ -130,9 +128,6 @@ const Caja = () => {
               />
             ) : (
               <div className="mx-auto max-w-md text-center">
-                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-                  <Banknote className="h-7 w-7 text-primary" />
-                </div>
                 <h2 className="font-display text-xl font-bold text-foreground">Caja cerrada</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
                   La caja de este turno ya fue cerrada. Para volver a cobrar necesitas abrir una nueva jornada desde Administracion.
@@ -145,43 +140,49 @@ const Caja = () => {
     );
   }
 
-  return (
-    <div className="space-y-4 p-2.5 sm:p-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] lg:items-stretch">
-        <div className="relative overflow-hidden rounded-[28px] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-5 py-4 shadow-[0_20px_60px_-40px_rgba(249,115,22,0.55)] dark:border-border dark:from-card dark:via-card dark:to-card dark:shadow-none">
-          <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-orange-200/35 blur-2xl" />
-          <div className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl" />
-          <div className="relative mb-2 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-300 bg-white/90 text-primary shadow-sm dark:border-primary/20 dark:bg-primary/10">
-              <Banknote className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="font-display text-xl font-black text-foreground">Caja</h1>
-              <p className="text-sm text-muted-foreground">Control de cobros, turno y movimientos del dia.</p>
-            </div>
-          </div>
-          {!canOperateCaja && (
-            <span className="relative inline-flex rounded-full border border-border bg-white/80 px-3 py-1 text-[11px] text-muted-foreground shadow-sm dark:bg-card/80">
-              Solo consulta
-            </span>
-          )}
-        </div>
+  const shiftElapsed = formatElapsed(shift.opened_at);
 
-        <ShiftSummary
-          shift={shift}
-          methodSummary={completedPaymentsMethodSummary}
-          movements={cashRegisterMovements}
-          movementsLoading={isLoadingCashRegisterMovements}
-          onClose={(notes) => closeCashRegister.mutateAsync(notes)}
-          onAnnulOpen={(reason) => annulCashOpening.mutateAsync({ reason })}
-          onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
-          closing={closeCashRegister.isPending}
-          annulling={annulCashOpening.isPending}
-          registeringMovement={registerCashMovement.isPending}
-          canAnnulOpen={canAnnulOpening}
-          readOnly={!canOperateCaja}
-        />
-      </div>
+  return (
+    <div className="min-h-full bg-slate-50 px-4 pt-3 pb-0 sm:px-6 sm:pt-4 lg:px-10">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="border-b border-slate-200 pb-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h1 className="text-[1.72rem] font-semibold tracking-[-0.035em] text-slate-950 sm:text-[1.95rem]">
+                Caja · {activeBranch?.name ?? "Sucursal"}
+              </h1>
+              <div className="mt-3 space-y-1">
+                <p className="text-sm text-slate-500">
+                  Turno abierto hace {shiftElapsed}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-2 w-2 rounded-full bg-[#0f766e]" />
+                  <span className="text-sm text-slate-700">Caja abierta</span>
+                  {!canOperateCaja && (
+                    <span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-500">
+                      Solo consulta
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <ShiftSummary
+              shift={shift}
+              methodSummary={completedPaymentsMethodSummary}
+              movements={cashRegisterMovements}
+              movementsLoading={isLoadingCashRegisterMovements}
+              onClose={(notes) => closeCashRegister.mutateAsync(notes)}
+              onAnnulOpen={(reason) => annulCashOpening.mutateAsync({ reason })}
+              onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
+              closing={closeCashRegister.isPending}
+              annulling={annulCashOpening.isPending}
+              registeringMovement={registerCashMovement.isPending}
+              canAnnulOpen={canAnnulOpening}
+              readOnly={!canOperateCaja}
+            />
+          </div>
+        </div>
 
       {!isDesktop ? (
         <div className="space-y-4">
@@ -230,7 +231,7 @@ const Caja = () => {
           </div>
 
           {activeTab === "pending" ? (
-            <div className="rounded-[28px] border border-orange-200 bg-gradient-to-br from-white via-orange-50/55 to-white p-4 shadow-[0_22px_55px_-42px_rgba(249,115,22,0.65)] dark:border-border dark:from-card dark:via-card dark:to-card dark:shadow-none">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
               <PayableOrdersList
                 orders={payableOrders}
                 paymentMethods={paymentMethods}
@@ -241,7 +242,7 @@ const Caja = () => {
               />
             </div>
           ) : (
-            <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-white via-violet-50/55 to-white p-4 shadow-[0_22px_55px_-42px_rgba(139,92,246,0.55)] dark:border-border dark:from-card dark:via-card dark:to-card dark:shadow-none">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
               <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
               <CompletedPaymentsList
                 payments={completedPayments}
@@ -269,7 +270,7 @@ const Caja = () => {
           )}
         </div>
       ) : activeTab === "pending" ? (
-        <div className="rounded-[28px] border border-orange-200 bg-gradient-to-br from-white via-orange-50/55 to-white p-4 shadow-[0_22px_55px_-42px_rgba(249,115,22,0.65)] dark:border-border dark:from-card dark:via-card dark:to-card dark:shadow-none">
+        <div>
           <PayableOrdersList
             orders={payableOrders}
             paymentMethods={paymentMethods}
@@ -280,7 +281,7 @@ const Caja = () => {
           />
         </div>
       ) : (
-        <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-white via-violet-50/55 to-white p-4 shadow-[0_22px_55px_-42px_rgba(139,92,246,0.55)] dark:border-border dark:from-card dark:via-card dark:to-card dark:shadow-none">
+        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
           <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
           <CompletedPaymentsList
             payments={completedPayments}
@@ -306,6 +307,7 @@ const Caja = () => {
           />
         </div>
       )}
+      </div>
     </div>
   );
 };

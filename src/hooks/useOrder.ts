@@ -75,6 +75,9 @@ interface Order {
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";
   menu_scope: "TABLE" | "TAKEOUT";
+  is_special: boolean;
+  special_total_manual: number | null;
+  special_marked_at?: string | null;
   branch_id: string;
   table_id: string | null;
   split_id: string | null;
@@ -135,7 +138,7 @@ export function useOrder(orderId: string | null) {
 
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, status, order_type, menu_scope, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;
@@ -391,15 +394,26 @@ export function useOrder(orderId: string | null) {
         )
       );
 
-      if (order.status === "DRAFT") {
+      const shouldReopenDineInFlow =
+        order.order_type === "DINE_IN"
+        && order.status !== "CANCELLED"
+        && order.status !== "DRAFT";
+
+      if (order.status === "DRAFT" || shouldReopenDineInFlow) {
         const newStatus: OrderStatus = order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
-        const orderUpdate: Record<string, unknown> = { status: newStatus };
+        const orderUpdate: Record<string, unknown> = {
+          status: newStatus,
+          updated_at: now,
+        };
+
         if (newStatus === "SENT_TO_KITCHEN") {
           orderUpdate.sent_to_kitchen_at = now;
         }
-        if (newStatus === "KITCHEN_DISPATCHED") {
+
+        if (newStatus === "KITCHEN_DISPATCHED" && order.status === "DRAFT") {
           orderUpdate.dispatched_at = now;
         }
+
         await dbUpdate("orders", orderId!, orderUpdate);
       }
     },
@@ -409,6 +423,7 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
 
       const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
       const message = order?.order_type === "TAKEOUT"
@@ -467,6 +482,55 @@ export function useOrder(orderId: string | null) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const updateSpecialTotal = useMutation({
+    mutationFn: async (specialTotalManual: number | null) => {
+      await dbUpdate("orders", orderId!, {
+        special_total_manual: specialTotalManual,
+        updated_at: new Date().toISOString(),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["completed-payments"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const convertToSpecial = useMutation({
+    mutationFn: async (specialTotalManual: number | null) => {
+      if (!orderId) {
+        throw new Error("No se encontro la orden a convertir");
+      }
+
+      const { data, error } = await supabase.rpc("convert_order_to_special", {
+        p_order_id: orderId,
+        p_special_total_manual: specialTotalManual,
+      });
+
+      if (error) throw error;
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) {
+        throw new Error("No se pudo convertir la orden a especial");
+      }
+
+      return row;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      toast.success("La orden ahora opera como orden especial");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   return {
     order: query.data,
     isLoading: query.isLoading,
@@ -476,8 +540,8 @@ export function useOrder(orderId: string | null) {
     sendToKitchen,
     moveToTable,
     updateMenuScope,
+    updateSpecialTotal,
+    convertToSpecial,
   };
 }
-
-
 

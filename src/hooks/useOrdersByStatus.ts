@@ -67,6 +67,8 @@ export interface OrderSummary {
   split_code?: string | null;
   status: OrderStatus;
   order_type: string;
+  is_special: boolean;
+  special_total_manual?: number | null;
   table_id: string | null;
   table_name: string | null;
   created_at: string;
@@ -111,6 +113,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         order_code: string | null;
         status: OrderStatus;
         order_type: string;
+        is_special: boolean | null;
+        special_total_manual: number | null;
         table_id: string | null;
         created_at: string;
         sent_to_kitchen_at: string | null;
@@ -121,7 +125,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         cancel_requested_at: string | null;
         total: number;
       }>("orders", {
-        select: "id, order_number, order_code, status, order_type, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+        select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
         branchId: activeBranchId,
         filters,
         orderBy: { column: "created_at", ascending: false },
@@ -534,6 +538,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
           return {
             ...order,
+            is_special: Boolean(order.is_special),
+            special_total_manual: order.special_total_manual ?? null,
             status: effectiveOrderStatus,
             cancelled_at: cancelledView && !isTakeoutDispatchedOnCancelledTab
               ? (order.cancelled_at ?? cancelledOrdersMeta[order.id]?.cancelled_at ?? null)

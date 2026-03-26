@@ -12,6 +12,7 @@ interface ReceiptItem {
 interface ThermalReceiptProps {
   orderNumber: string | number;
   orderType: string;
+  isSpecial?: boolean;
   tableName?: string;
   items: ReceiptItem[];
   total: number;
@@ -19,7 +20,7 @@ interface ThermalReceiptProps {
 }
 
 const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
-  ({ orderNumber, orderType, tableName, items, total, createdAt }, ref) => {
+  ({ orderNumber, orderType, isSpecial = false, tableName, items, total, createdAt }, ref) => {
     const date = new Date(createdAt);
     const dateStr = date.toLocaleDateString("es-MX", {
       day: "2-digit",
@@ -47,7 +48,7 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         <div style={{ textAlign: "center", marginBottom: "8px" }}>
           <div style={{ fontSize: "16px", fontWeight: "bold" }}>ORDEN {orderNumber}</div>
           <div style={{ fontSize: "14px", fontWeight: "bold", marginTop: "4px" }}>
-            {orderType === "TAKEOUT" ? "PARA LLEVAR" : tableName ?? "MESA"}
+            {isSpecial ? "ORDEN ESPECIAL" : orderType === "TAKEOUT" ? "PARA LLEVAR" : tableName ?? "MESA"}
           </div>
           <div style={{ fontSize: "11px", marginTop: "2px" }}>
             {dateStr} {timeStr}

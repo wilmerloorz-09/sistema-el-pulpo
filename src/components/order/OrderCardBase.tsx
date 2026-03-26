@@ -3,6 +3,7 @@ import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye, Ban } from "lucide-react";
+import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 const CARD_SUMMARY_LIMITS = {
@@ -95,7 +96,9 @@ export function OrderCardBase({
   const since = order.sent_to_kitchen_at || order.created_at;
   const { elapsed } = useElapsed(since);
   const { visibleItems } = buildCardSummary(order.items ?? []);
-  const isTakeout = order.order_type === "TAKEOUT";
+  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special });
+  const isTakeout = orderKind === "takeout";
+  const isSpecial = orderKind === "special";
 
   const isSentToKitchen = order.status === "SENT_TO_KITCHEN";
   const isDispatchedView = order.status === "KITCHEN_DISPATCHED";
@@ -104,6 +107,8 @@ export function OrderCardBase({
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
   const isCancelRequested = isPendingCancellationView;
   const footerItemCount = isPendingCancellationView ? visibleItems.length : (order.item_count || 0);
+  const specialManualTotal = isSpecial ? Number(order.special_total_manual ?? 0) : null;
+  const realTotal = Number(order.total || 0);
 
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
   const timeDisplay = isSentToKitchen ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime);
@@ -112,19 +117,26 @@ export function OrderCardBase({
     <div
       className={cn(
         "flex self-start flex-col overflow-hidden rounded-2xl border-2 bg-card transition-colors",
-        isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
+        isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isWarning ? "border-warning/50 shadow-md shadow-warning/10" : "border-border",
       )}
     >
-      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
+      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="min-w-0 flex items-center gap-2">
-          {order.order_type === "TAKEOUT" ? (
+          {isTakeout ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
+          ) : isSpecial ? (
+            <DollarSign className="h-4 w-4 shrink-0 text-orange-700" />
           ) : (
             <UtensilsCrossed className="h-4 w-4 shrink-0 text-sky-700" />
           )}
           <span className="truncate font-display text-sm font-bold">
-            {order.split_code ?? order.table_name ?? "Para llevar"}
+            {getOrderOriginLabel({
+              orderType: order.order_type,
+              tableName: order.table_name,
+              splitCode: order.split_code,
+              isSpecial: order.is_special,
+            })}
           </span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">
             {order.order_code ?? String(order.order_number)}
@@ -226,10 +238,20 @@ export function OrderCardBase({
           <Package className="h-4 w-4" />
           <span>{footerItemCount} item{footerItemCount !== 1 ? "s" : ""}</span>
         </div>
-        <div className="flex items-center gap-1 font-semibold text-primary">
-          <DollarSign className="h-4 w-4" />
-          <span>{(order.total || 0).toFixed(2)}</span>
-        </div>
+        {isSpecial ? (
+          <div className="text-right">
+            <div className="flex items-center justify-end gap-1 font-semibold text-primary">
+              <DollarSign className="h-4 w-4" />
+              <span>{(specialManualTotal ?? 0).toFixed(2)}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Real: ${realTotal.toFixed(2)}</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 font-semibold text-primary">
+            <DollarSign className="h-4 w-4" />
+            <span>{realTotal.toFixed(2)}</span>
+          </div>
+        )}
       </div>
 
       {readOnly && (

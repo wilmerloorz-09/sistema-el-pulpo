@@ -443,16 +443,25 @@ export type Database = {
       orders: {
         Row: {
           branch_id: string
+          cancel_requested_at: string | null
+          cancel_requested_by: string | null
           cancelled_at: string | null
           created_at: string
           created_by: string
           dispatched_at: string | null
           id: string
+          is_special: boolean
+          menu_scope: string
           order_code: string | null
           order_number: number
           order_type: Database["public"]["Enums"]["order_type"]
           paid_at: string | null
           ready_at: string | null
+          special_marked_at: string | null
+          special_marked_by: string | null
+          special_origin_split_id: string | null
+          special_origin_table_id: string | null
+          special_total_manual: number | null
           sent_to_kitchen_at: string | null
           split_id: string | null
           status: Database["public"]["Enums"]["order_status"]
@@ -461,16 +470,25 @@ export type Database = {
         }
         Insert: {
           branch_id: string
+          cancel_requested_at?: string | null
+          cancel_requested_by?: string | null
           cancelled_at?: string | null
           created_at?: string
           created_by: string
           dispatched_at?: string | null
           id?: string
+          is_special?: boolean
+          menu_scope?: string
           order_code?: string | null
           order_number?: number
           order_type: Database["public"]["Enums"]["order_type"]
           paid_at?: string | null
           ready_at?: string | null
+          special_marked_at?: string | null
+          special_marked_by?: string | null
+          special_origin_split_id?: string | null
+          special_origin_table_id?: string | null
+          special_total_manual?: number | null
           sent_to_kitchen_at?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -479,16 +497,25 @@ export type Database = {
         }
         Update: {
           branch_id?: string
+          cancel_requested_at?: string | null
+          cancel_requested_by?: string | null
           cancelled_at?: string | null
           created_at?: string
           created_by?: string
           dispatched_at?: string | null
           id?: string
+          is_special?: boolean
+          menu_scope?: string
           order_code?: string | null
           order_number?: number
           order_type?: Database["public"]["Enums"]["order_type"]
           paid_at?: string | null
           ready_at?: string | null
+          special_marked_at?: string | null
+          special_marked_by?: string | null
+          special_origin_split_id?: string | null
+          special_origin_table_id?: string | null
+          special_total_manual?: number | null
           sent_to_kitchen_at?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -1111,6 +1138,19 @@ export type Database = {
         }
         Returns: string
       }
+      convert_order_to_special: {
+        Args: {
+          p_order_id: string
+          p_special_total_manual?: number | null
+        }
+        Returns: {
+          is_special: boolean
+          order_id: string
+          source_split_id: string | null
+          source_table_id: string | null
+          special_total_manual: number | null
+        }[]
+      }
       move_dine_in_order_to_table: {
         Args: {
           p_destination_table_id: string
@@ -1291,7 +1331,6 @@ export const Constants = {
     },
   },
 } as const
-
 
 
 

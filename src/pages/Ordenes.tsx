@@ -17,6 +17,8 @@ import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +27,7 @@ import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import type { MenuNode } from "@/hooks/useMenuTree";
 import { formatSplitCodeLabel } from "@/lib/splitCode";
+import { getOrderOriginLabel } from "@/lib/orderPresentation";
 
 interface SelectedProduct {
   id: string;
@@ -44,7 +47,7 @@ const Ordenes = () => {
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
 
-  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope } = useOrder(orderId);
+  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope, updateSpecialTotal, convertToSpecial } = useOrder(orderId);
   const currentMenuScope = order?.order_type === "TAKEOUT" ? "TAKEOUT" : (order?.menu_scope ?? "TABLE");
   const menu = useMenuData(currentMenuScope);
   const tablesQuery = useTablesWithStatus();
@@ -61,6 +64,9 @@ const Ordenes = () => {
   const [inlineCancelQtyByItem, setInlineCancelQtyByItem] = useState<Record<string, number>>({});
   const [inlineCancellationType, setInlineCancellationType] = useState<"partial" | "total">("partial");
   const [inlineRequiresAuthorization, setInlineRequiresAuthorization] = useState(false);
+  const [specialTotalInput, setSpecialTotalInput] = useState("");
+  const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
+  const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
 
@@ -90,6 +96,17 @@ const Ordenes = () => {
       toast.info("Se cambio la sucursal activa para mostrar la orden en su contexto correcto.");
     });
   }, [orderId, order?.branch_id, activeBranchId, branches, setActiveBranch]);
+
+  useEffect(() => {
+    if (!order?.is_special) {
+      setSpecialTotalInput("");
+      return;
+    }
+
+    setSpecialTotalInput(
+      order.special_total_manual == null ? "" : Number(order.special_total_manual).toFixed(2),
+    );
+  }, [order?.id, order?.is_special, order?.special_total_manual]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
 
@@ -174,6 +191,8 @@ const Ordenes = () => {
 
   const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
   const total = order.items.reduce((s, i) => s + i.total, 0);
+  const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
+  const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
   const hasDraftItems = order.items.some((i) => i.status === "DRAFT");
   const hasSentItems = order.items.some((i) => i.status !== "DRAFT");
   const isSent = order.status === "SENT_TO_KITCHEN";
@@ -202,10 +221,25 @@ const Ordenes = () => {
     order.status !== "PAID" &&
     order.status !== "CANCELLED";
   const canEditItems = canOperateOrders && order.status !== "PAID" && order.status !== "CANCELLED";
+  const canConvertToSpecial =
+    canOperateOrders &&
+    order.order_type === "DINE_IN" &&
+    !order.is_special &&
+    !!order.table_id &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED";
+  const orderOriginLabel = getOrderOriginLabel({
+    orderType: order.order_type,
+    tableName: order.table_name,
+    splitCode: order.split_code,
+    isSpecial: order.is_special,
+  });
   const tableWatermark =
-    order.order_type === "DINE_IN"
-      ? formatSplitCodeLabel(order.split_code) || (order.table_name ?? "").trim()
-      : "PARA LLEVAR";
+    order.is_special
+      ? "ORDEN ESPECIAL"
+      : order.order_type === "DINE_IN"
+        ? formatSplitCodeLabel(order.split_code) || (order.table_name ?? "").trim()
+        : "PARA LLEVAR";
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
     SENT_TO_KITCHEN: "En cocina",
@@ -387,6 +421,41 @@ const Ordenes = () => {
     });
   };
 
+  const handleSaveSpecialTotal = () => {
+    const rawValue = specialTotalInput.trim().replace(",", ".");
+    if (!rawValue) {
+      updateSpecialTotal.mutate(null, {
+        onSuccess: () => toast.success("Total especial limpiado"),
+      });
+      return;
+    }
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error("Ingresa un total especial valido");
+      return;
+    }
+
+    updateSpecialTotal.mutate(Math.round(parsed * 100) / 100, {
+      onSuccess: () => toast.success("Total especial actualizado"),
+    });
+  };
+
+  const handleConvertToSpecial = () => {
+    const rawValue = convertSpecialTotalInput.trim().replace(",", ".");
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error("Ingresa un total especial valido");
+      return;
+    }
+
+    convertToSpecial.mutate(Math.round(parsed * 100) / 100, {
+      onSuccess: () => {
+        setConvertSpecialDialogOpen(false);
+      },
+    });
+  };
+
   const handleRequestInlineCancel = async (
     item: {
       id: string;
@@ -516,6 +585,65 @@ const Ordenes = () => {
       </div>
 
       <div className={cn("min-h-0", mobile && "flex-1")}>
+        {order.is_special && (
+          <div className="mb-4 rounded-[24px] border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-50 p-4 shadow-[0_18px_42px_-30px_rgba(249,115,22,0.35)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-display text-base font-black text-foreground">Orden Especial</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  El total manual manda en caja, pero el total real de los items sigue visible como referencia.
+                </p>
+              </div>
+              <Badge variant="outline" className="border-orange-300 bg-white/90 text-orange-800">
+                Cobro manual
+              </Badge>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Total real</p>
+                <p className="mt-1 font-display text-2xl font-black text-sky-900">${total.toFixed(2)}</p>
+              </div>
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">Total especial</p>
+                <p className="mt-1 font-display text-2xl font-black text-orange-900">
+                  {specialTotalManual == null ? "--" : `$${specialTotalManual.toFixed(2)}`}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Diferencia</p>
+                <p className="mt-1 font-display text-2xl font-black text-amber-900">
+                  {specialDifference == null ? "--" : `$${specialDifference.toFixed(2)}`}
+                </p>
+              </div>
+            </div>
+
+            {canEditItems ? (
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <Input
+                  inputMode="decimal"
+                  value={specialTotalInput}
+                  onChange={(event) => setSpecialTotalInput(event.target.value)}
+                  placeholder="Ingresa el total manual"
+                  className="h-11 rounded-xl"
+                />
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl"
+                  disabled={updateSpecialTotal.isPending}
+                  onClick={handleSaveSpecialTotal}
+                >
+                  {updateSpecialTotal.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar total especial"}
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
+                Solo consulta: el total especial se administra desde una sesion con permisos operativos.
+              </div>
+            )}
+          </div>
+        )}
+
         <OrderItemsList
           items={order.items}
           onRemove={(id) => removeItem.mutate(id)}
@@ -593,7 +721,15 @@ const Ordenes = () => {
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            {order.table_name ? (
+            {order.is_special ? (
+              <button
+                type="button"
+                onClick={handleMobileBackToMesas}
+                className="flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-sm font-extrabold text-orange-800 shadow-sm transition-colors hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-400 dark:hover:bg-orange-950/60"
+              >
+                Orden Especial
+              </button>
+            ) : order.table_name ? (
               <button
                 type="button"
                 onClick={handleMobileBackToMesas}
@@ -615,6 +751,19 @@ const Ordenes = () => {
               <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                 Solo consulta
               </span>
+            )}
+            {canConvertToSpecial && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 rounded-lg px-3 text-xs 2xl:h-7"
+                onClick={() => {
+                  setConvertSpecialTotalInput(total.toFixed(2));
+                  setConvertSpecialDialogOpen(true);
+                }}
+              >
+                Convertir en orden especial
+              </Button>
             )}
             {order.table_id && (
               <>
@@ -757,6 +906,7 @@ const Ordenes = () => {
           ref={receiptRef}
           orderNumber={order.order_code ?? `#${order.order_number}`}
           orderType={order.order_type}
+          isSpecial={order.is_special}
           tableName={order.table_name}
           items={order.items}
           total={total}
@@ -791,6 +941,53 @@ const Ordenes = () => {
         moving={moveToTable.isPending}
         onConfirm={handleChangeTable}
       />
+
+      <Dialog open={convertSpecialDialogOpen} onOpenChange={setConvertSpecialDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl font-black text-foreground">Convertir en orden especial</DialogTitle>
+            <DialogDescription>
+              La mesa se liberara y esta cuenta pasara a cobrarse con un total manual. El total real de items seguira visible como referencia.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Origen</p>
+                <p className="mt-1 font-display text-lg font-black text-sky-900">{orderOriginLabel}</p>
+              </div>
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">Total real actual</p>
+                <p className="mt-1 font-display text-lg font-black text-orange-900">${total.toFixed(2)}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Total especial manual</label>
+              <Input
+                inputMode="decimal"
+                value={convertSpecialTotalInput}
+                onChange={(event) => setConvertSpecialTotalInput(event.target.value)}
+                placeholder="Ingresa el total a cobrar"
+                className="h-11 rounded-xl"
+              />
+              <p className="text-xs text-muted-foreground">
+                Puedes usar el total real como base y luego ajustarlo si el cliente deja una parte pendiente o se acuerda un cobro distinto.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setConvertSpecialDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleConvertToSpecial} disabled={convertToSpecial.isPending}>
+              {convertToSpecial.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Convertir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {user && canCancelOrders && (
         <CancelOrderDialog

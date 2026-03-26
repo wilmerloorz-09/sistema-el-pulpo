@@ -54,6 +54,10 @@
   - tablet: la misma composicion aprovecha mejor el ancho y mantiene controles alineados a la derecha
 - La disponibilidad de modificadores en el dialogo de producto debe resolverse por nodo efectivo del arbol, no por `subcategory_id` legacy.
 - La disponibilidad/agotado de productos tambien se resuelve desde `menu_nodes.is_active`; un producto agotado puede seguir existiendo en legacy, pero `Ordenes` no debe permitir venderlo.
+- Visualmente, `MenuNavigator` ya separa responsabilidades por tipo de nodo:
+  - categorias/subniveles: cards
+  - productos: filas de lista a ancho completo
+- Esa lista de productos se comparte entre `Mesa`, `Para llevar` y `Orden especial`, por lo que cualquier cambio visual en el render de producto debe validarse en los tres flujos.
 - La visibilidad de estados operativos entre usuarios depende de dos capas:
   - RLS correcto sobre tablas de eventos operativos
   - suscripciones en vivo en frontend para invalidar listas cuando cambia `orders`, `order_items` y eventos asociados
@@ -154,14 +158,26 @@
   - los cobros en efectivo y cambios de denominacion deben actualizar `cash_shift_denoms.qty_current`
   - `Desglose de Caja` y `Resumen` deben leer el estado real persistido del turno
 - `PayableOrdersList` usa layout de dos columnas en desktop: KPIs verticales y listado operativo.
+- En movil/tablet:
+  - la lista principal puede seguir siendo tabla suave en desktop
+  - los detalles expandidos deben degradar a bloques apilados si el ancho no alcanza
 - La navegacion entre `Por cobrar` y `Pagos realizados` ya no es exclusivamente interna a la pagina:
   - en desktop/tablet se expone como subnavegacion del item `Caja` en la `sidebar`
   - en movil se mantiene como conmutador compacto dentro de `Caja`
   - la seleccion actual se persiste en la URL (`?tab=completed`) para que el shell pueda controlarla
 - `PaymentDialog` contiene:
-  - seleccion de cantidades a cobrar
-  - metodos de pago compactos
+  - seleccion de cantidades a cobrar con dos columnas (`Items pendientes` y `Items a cobrar ahora`) para ordenes normales
+  - metodos de pago compactos en una franja inferior
   - modal dedicado para `Monedas y billetes`
+- Para ordenes normales:
+  - la seleccion inicia en cero
+  - el usuario mueve unidades entre columnas con acciones por item
+  - el subtotal real visible se calcula por cantidad movida
+  - el modal no debe cerrarse automaticamente en un pago parcial mientras la orden siga vigente
+- Para ordenes especiales:
+  - se mantiene el flujo de monto manual
+  - el total real de items sigue visible como referencia
+- `useCaja` enriquece ahora cada item cobrable con `menu_node_id`, `image_url` e `icon` cuando puede resolverlos desde `menu_nodes`, permitiendo que `PaymentDialog` use la imagen real del producto.
 - La regla de efectivo en arquitectura actual es:
   - monto de efectivo controlado por denominaciones
   - no editable manualmente
@@ -327,3 +343,29 @@
 5. Mantener `modifiers` como catalogo reutilizable y mover la disponibilidad a relaciones por nodo, no al CRUD base.
 6. En Caja, diferenciar siempre `caja fisica` de `recaudacion por metodo`; no mezclar ambos conceptos en el mismo resumen sin rotulacion clara.
 7. Si un flujo necesita el estado real de una orden, preferir snapshot operativo compartido antes que reconstrucciones parciales ad hoc.
+
+## Addendum 2026-03-25B
+### Orden Especial
+- `Orden Especial` no abre un modulo paralelo: reutiliza `Mesas`, `Ordenes` y `Caja`.
+- `src/pages/Mesas.tsx` ahora puede:
+  - abrir una orden especial nueva
+  - reutilizar un borrador especial del usuario si aun no tiene envio operativo
+- `src/pages/Ordenes.tsx` ahora resuelve tres capacidades:
+  - una orden especial puede navegar ambos arboles visuales (`TABLE` y `TAKEOUT`)
+  - el usuario puede editar `total especial manual`
+  - una orden de mesa activa puede convertirse en especial liberando `table_id` y `split_id`
+- `src/hooks/useOrder.ts` centraliza las mutaciones nuevas:
+  - `updateSpecialTotal`
+  - `convertToSpecial`
+- `src/components/caja/PayableOrdersList.tsx` y `src/components/caja/PaymentDialog.tsx` ya distinguen entre:
+  - cobro normal por items/cantidades
+  - cobro especial por monto manual pendiente
+- `src/hooks/useCaja.ts` mantiene ambos modelos coexistiendo:
+  - orden normal sigue usando `payment_items`
+  - orden especial usa `payments.amount` contra `orders.special_total_manual`
+- La presentacion visual de origen de orden ya no puede inferirse solo por `table_name`; debe contemplar `is_special`.
+- `src/pages/Despacho.tsx` y `src/hooks/useDispatchAccess.ts` ahora exponen una vista explicita `Orden especial`.
+- En despacho:
+  - `Mesa` muestra solo `DINE_IN` no especiales
+  - `Orden especial` muestra solo `orders.is_special = true`
+  - `Para llevar` sigue mostrando solo `TAKEOUT`

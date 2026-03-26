@@ -707,6 +707,8 @@ export type Database = {
       orders: {
         Row: {
           branch_id: string
+          cancel_requested_at: string | null
+          cancel_requested_by: string | null
           cancellation_reason: string | null
           cancelled_at: string | null
           cancelled_by: string | null
@@ -716,11 +718,18 @@ export type Database = {
           created_by: string
           dispatched_at: string | null
           id: string
+          is_special: boolean
+          menu_scope: string
           order_code: string | null
           order_number: number
           order_type: Database["public"]["Enums"]["order_type"]
           paid_at: string | null
           ready_at: string | null
+          special_marked_at: string | null
+          special_marked_by: string | null
+          special_origin_split_id: string | null
+          special_origin_table_id: string | null
+          special_total_manual: number | null
           sent_to_kitchen_at: string | null
           split_id: string | null
           status: Database["public"]["Enums"]["order_status"]
@@ -730,6 +739,8 @@ export type Database = {
         }
         Insert: {
           branch_id: string
+          cancel_requested_at?: string | null
+          cancel_requested_by?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
@@ -739,11 +750,18 @@ export type Database = {
           created_by: string
           dispatched_at?: string | null
           id?: string
+          is_special?: boolean
+          menu_scope?: string
           order_code?: string | null
           order_number?: number
           order_type: Database["public"]["Enums"]["order_type"]
           paid_at?: string | null
           ready_at?: string | null
+          special_marked_at?: string | null
+          special_marked_by?: string | null
+          special_origin_split_id?: string | null
+          special_origin_table_id?: string | null
+          special_total_manual?: number | null
           sent_to_kitchen_at?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -753,6 +771,8 @@ export type Database = {
         }
         Update: {
           branch_id?: string
+          cancel_requested_at?: string | null
+          cancel_requested_by?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
@@ -762,11 +782,18 @@ export type Database = {
           created_by?: string
           dispatched_at?: string | null
           id?: string
+          is_special?: boolean
+          menu_scope?: string
           order_code?: string | null
           order_number?: number
           order_type?: Database["public"]["Enums"]["order_type"]
           paid_at?: string | null
           ready_at?: string | null
+          special_marked_at?: string | null
+          special_marked_by?: string | null
+          special_origin_split_id?: string | null
+          special_origin_table_id?: string | null
+          special_total_manual?: number | null
           sent_to_kitchen_at?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]

@@ -45,6 +45,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `orders.menu_scope` define con que arbol se opero visualmente la orden.
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
+- La capa de Caja sigue cobrando desde `orders` + `order_items`, pero ahora puede enriquecer visualmente cada item enlazando:
+  - `order_items.product_id`
+  - `menu_nodes.legacy_product_id`
+  - `menu_nodes.image_url` / `menu_nodes.icon`
+- Ese enlace es solo de lectura visual para UI; no cambia la persistencia real del item vendido.
 - `menu_nodes.is_active` pasa a tener impacto operativo real en UI:
   - si un producto/nodo esta agotado, debe bloquear venta en `Ordenes`
   - la activacion/desactivacion puede originarse desde el modulo `Productos`
@@ -83,6 +88,30 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - no crea tablas nuevas ni rompe la FK actual
   - si el destino esta libre, la orden se mueve con update directo de `orders.table_id`
   - si la orden ya tenia division y el destino esta libre, `orders.split_id` debe quedar `NULL` y la division origen se desactiva
+
+## Addendum 2026-03-25B: Orden Especial
+- `public.orders` ahora incorpora metadatos de orden especial:
+  - `is_special boolean not null default false`
+  - `special_total_manual numeric(10,2) null`
+  - `special_marked_at timestamptz null`
+  - `special_marked_by uuid null`
+  - `special_origin_table_id uuid null`
+  - `special_origin_split_id uuid null`
+- `Orden Especial` no cambia `order_type`; sigue conviviendo con `DINE_IN` / `TAKEOUT`.
+- El total real de una orden sigue derivandose de `SUM(order_items.total)`.
+- El total manual excepcional vive en `orders.special_total_manual`.
+- Regla de cobro vigente:
+  - orden normal: deuda y cuadre por `payment_items` + `payments`
+  - orden especial: deuda por `orders.special_total_manual` menos `SUM(payments.amount activos)`
+- Los pagos especiales se identifican en `payments.notes` con `SPECIAL_ORDER:1`.
+- Para cobros especiales no se requiere persistir filas en `payment_items`.
+- Nueva RPC:
+  - `convert_order_to_special(p_order_id uuid, p_special_total_manual numeric default null)`
+- Esa RPC debe:
+  - validar que la orden siga activa y autorizada
+  - guardar mesa/division origen en columnas de auditoria
+  - limpiar `orders.table_id` y `orders.split_id`
+  - normalizar la mesa/division origen
   - si el destino esta ocupado, se crea un nuevo `table_splits` en la mesa destino y `orders.split_id` pasa a apuntar a esa division nueva
   - si el destino estaba ocupado por una orden base sin `split_id`, primero debe materializarse como division propia antes de anexar el grupo movido
   - los borradores vacios en destino pueden limpiarse para no contar como ocupacion real ni dejar ordenes fantasma en una mesa libre
@@ -137,9 +166,23 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - En el flujo de cobro:
   - `cashReceivedDenoms` y `cashChangeDenoms` solo deben persistirse si realmente participa un metodo efectivo
   - desactivar `Efectivo` debe limpiar denominaciones temporales para no contaminar el cierre o el total actual
+- El modal de cobro normal no introduce tablas nuevas:
+  - la separacion `Items pendientes` / `Items a cobrar ahora` es una construccion de frontend sobre `order_items.quantity_pending`
+  - el pago parcial sigue persistiendo por `payments` + `payment_items`
+- El uso de imagen real del producto en Caja tampoco agrega columnas nuevas en `order_items`; reutiliza `menu_nodes.image_url` cuando el producto legacy puede vincularse por `legacy_product_id`.
 - Si `Recibido >= Aplicado` y el usuario agrega mas denominaciones, la UI debe pedir confirmacion antes de aceptar excedente.
 - La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
 - El mosaico de `Mesas` no debe leer un total inventado: debe mostrar saldo pendiente calculado con la misma base operativa de cantidades activas, anuladas y pagadas por `order_item`.
+
+## Scripts de reset operativo
+- `supabase/sql/reset_full_for_fresh_start.sql`
+  - elimina tambien `orders` especiales porque `is_special` y `special_total_manual` viven dentro de `public.orders`
+  - vacia ambos arboles `menu_nodes` (`TABLE` y `TAKEOUT`)
+  - deja intactas funciones/RPCs, incluidas las de alerta de mesero y las de conversion a orden especial
+- `supabase/sql/reset_operational_for_fresh_start.sql`
+  - elimina datos transaccionales (`orders`, `order_items`, `payments`, eventos, caja)
+  - conserva catalogo, `menu_nodes`, imagenes y la relacion visual `legacy_product_id`
+  - por eso despues del reset operativo siguen disponibles las imagenes reales de producto en `Ordenes` y `Caja`
 
 ## Funciones operativas nuevas para mesas por turno
 - `ensure_branch_table_capacity(branch_id, requested_count)`

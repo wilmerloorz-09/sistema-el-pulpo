@@ -4,12 +4,14 @@
 --
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
+--   - incluye ordenes especiales y sus pagos parciales/manuales
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Conserva ambos arboles operativos de menu_nodes:
 --   - `TABLE`
 --   - `TAKEOUT`
--- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero
+-- - Conserva tambien `menu_nodes.image_url` / `legacy_product_id`, por lo que Caja y Ordenes siguen pudiendo resolver imagen real de producto
+-- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero y las de orden especial
 -- - Conserva intactos los cambios frontend de shell responsivo y tabs de Caja por URL, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 -- - Conserva configuracion estructural de despacho por sucursal:
@@ -106,10 +108,11 @@ COMMIT;
 -- - Mesas internas intactas, pero desactivadas
 -- - Politicas de cancelacion/anulacion por categoria intactas
 -- - Configuracion y asignaciones de despacho intactas
--- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
+-- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, imagenes de producto y asignaciones por nodo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
 
 
 

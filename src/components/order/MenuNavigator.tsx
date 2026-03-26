@@ -54,6 +54,46 @@ const NodeCard = ({
   const isProduct = node.node_type === "product";
   const isDisabledNode = !node.is_active && !nodeAction;
 
+  if (isProduct) {
+    return (
+      <div
+        role="button"
+        tabIndex={isDisabledNode ? -1 : 0}
+        onClick={onClick}
+        onKeyDown={(event) => {
+          if (isDisabledNode) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick();
+          }
+        }}
+        className={cn(
+          "group relative col-span-full flex min-h-[72px] items-center gap-2.5 rounded-[1.15rem] border border-emerald-300/80 bg-white px-3 py-2.5 text-left transition-all md:min-h-[78px] md:gap-3 md:px-4 md:py-3",
+          !node.is_active && "opacity-70 saturate-75",
+          !isDisabledNode && "cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/40",
+          isDisabledNode && "cursor-not-allowed",
+        )}
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50 ring-1 ring-emerald-200/70 md:h-12 md:w-12">
+          {renderNodeVisual(node)}
+        </div>
+
+        <div className="min-w-0 flex flex-1 items-center justify-between gap-3">
+          <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
+          <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">${Number(node.price ?? 0).toFixed(2)}</p>
+        </div>
+
+        {!node.is_active && (
+          <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+            Agotado
+          </span>
+        )}
+
+        {nodeAction ? <div className="shrink-0">{nodeAction}</div> : null}
+      </div>
+    );
+  }
+
   return (
     <div
       role="button"
@@ -68,9 +108,7 @@ const NodeCard = ({
       }}
       className={cn(
         "group relative flex min-h-[146px] flex-col rounded-[1.4rem] p-3 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:rounded-3xl md:p-4",
-        isProduct
-          ? "border border-emerald-400/95 bg-gradient-to-br from-emerald-200 via-teal-100 to-cyan-200 shadow-[0_22px_46px_-32px_rgba(16,185,129,0.58)] hover:-translate-y-0.5 hover:border-emerald-500 hover:shadow-[0_20px_34px_-20px_rgba(16,185,129,0.58)]"
-          : "border border-dashed border-orange-400/95 bg-gradient-to-br from-orange-200 via-amber-100 to-yellow-200 shadow-[0_22px_46px_-32px_rgba(249,115,22,0.52)] hover:-translate-y-0.5 hover:border-orange-500 hover:shadow-[0_20px_34px_-20px_rgba(249,115,22,0.5)]",
+        "border border-dashed border-orange-400/95 bg-gradient-to-br from-orange-200 via-amber-100 to-yellow-200 shadow-[0_22px_46px_-32px_rgba(249,115,22,0.52)] hover:-translate-y-0.5 hover:border-orange-500 hover:shadow-[0_20px_34px_-20px_rgba(249,115,22,0.5)]",
         !node.is_active && "opacity-70 saturate-75",
         !isDisabledNode && "cursor-pointer",
         isDisabledNode && "cursor-not-allowed",
@@ -79,47 +117,31 @@ const NodeCard = ({
       <div
         className={cn(
           "pointer-events-none absolute inset-0 rounded-[inherit]",
-          isProduct
-            ? "bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,0.26),transparent_24%)] md:bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,0.26),transparent_22%)]"
-            : "bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(250,204,21,0.28),transparent_24%)] md:bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(250,204,21,0.28),transparent_22%)]",
+          "bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(250,204,21,0.28),transparent_24%)] md:bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(250,204,21,0.28),transparent_22%)]",
         )}
       />
       <div className="mb-2 flex justify-center md:mb-4">{renderNodeVisual(node)}</div>
       <div className="flex-1">
         <p className="line-clamp-2 text-[0.82rem] font-semibold leading-tight text-foreground md:text-sm">{node.name}</p>
-        {isProduct ? (
-          <div className="mt-1.5 flex items-center justify-between gap-2">
-            <span />
-            <p className="text-sm font-bold text-red-600 md:text-sm">${Number(node.price ?? 0).toFixed(2)}</p>
-            {!node.is_active && (
-              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
-                Agotado
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="mt-1.5 flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground md:text-xs">{childCount} items</p>
-            {!node.is_active && (
-              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
-                Agotado
-              </span>
-            )}
-          </div>
-        )}
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground md:text-xs">{childCount} items</p>
+          {!node.is_active && (
+            <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+              Agotado
+            </span>
+          )}
+        </div>
       </div>
 
       {nodeAction ? <div className="mt-2">{nodeAction}</div> : null}
 
-      {!isProduct && additionalDepth > 0 && (
+      {additionalDepth > 0 && (
         <span className="absolute bottom-2.5 right-2.5 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
           +{additionalDepth} nivel{additionalDepth === 1 ? "" : "es"}
         </span>
       )}
 
-      {!isProduct && (
-        <ChevronRight className="absolute right-4 top-4 h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
-      )}
+      <ChevronRight className="absolute right-4 top-4 h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
     </div>
   );
 };
@@ -415,7 +437,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "
       )}
 
       <div ref={panelRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="grid grid-cols-3 gap-2 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3 px-1 pb-4">
+        <div className="grid grid-cols-2 gap-2 px-1 pb-4 sm:grid-cols-3 md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] md:gap-3">
           {displayNodes.map((node) => (
             <NodeCard
               key={node.id}

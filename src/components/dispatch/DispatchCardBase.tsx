@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
 import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, Eye } from "lucide-react";
+import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 interface DispatchCardBaseProps {
@@ -172,7 +173,9 @@ export function DispatchCardBase({
 }: DispatchCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.updated_at;
   const { elapsed } = useElapsed(since);
-  const isTakeout = order.order_type === "TAKEOUT";
+  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special });
+  const isTakeout = orderKind === "takeout";
+  const isSpecial = orderKind === "special";
   const [qtyByItem, setQtyByItem] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -198,7 +201,12 @@ export function DispatchCardBase({
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
   const timeDisplay = shouldShowTimer ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime, order.status);
 
-  const label = order.split_code ?? order.table_name ?? "Para llevar";
+  const label = getOrderOriginLabel({
+    orderType: order.order_type,
+    tableName: order.table_name,
+    splitCode: order.split_code,
+    isSpecial: order.is_special,
+  });
   const canMarkAnyReady = order.pending_prepare_count > 0;
   const canDispatchAny = order.dispatchable_count > 0;
   const previewableItems = useMemo(
@@ -223,7 +231,7 @@ export function DispatchCardBase({
       className={cn(
         "flex w-full min-w-0 justify-self-stretch flex-col overflow-hidden rounded-2xl border-2 transition-colors",
         expanded ? "min-h-[36rem]" : "",
-        isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
+        isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
@@ -235,10 +243,12 @@ export function DispatchCardBase({
                 : "border-border",
       )}
     >
-      <div className={cn("flex items-center justify-between border-b border-border px-3 py-3 sm:px-4", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
+      <div className={cn("flex items-center justify-between border-b border-border px-3 py-3 sm:px-4", isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="flex min-w-0 items-center gap-2">
-          {order.order_type === "TAKEOUT" ? (
+          {isTakeout ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
+          ) : isSpecial ? (
+            <Truck className="h-4 w-4 shrink-0 text-orange-700" />
           ) : (
             <UtensilsCrossed className="h-4 w-4 shrink-0 text-sky-700" />
           )}

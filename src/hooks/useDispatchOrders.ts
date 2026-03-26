@@ -32,6 +32,7 @@ export interface DispatchOrder {
   order_number: number;
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
+  is_special: boolean;
   table_name: string | null;
   split_code: string | null;
   status: OrderStatus;
@@ -71,6 +72,7 @@ function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updat
 
 function matchesScope(orderType: string, scope: DispatchView) {
   if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT";
+  if (scope === "SPECIAL") return false;
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE";
   return orderType === "TAKEOUT";
 }
@@ -90,7 +92,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, order_type, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, order_type, is_special, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("branch_id", activeBranchId)
         .in("status", ["SENT_TO_KITCHEN", "READY"])
         .order("updated_at", { ascending: true });
@@ -98,7 +100,11 @@ export function useDispatchOrders(scope: DispatchView) {
       if (ordersError) throw ordersError;
       if (!orders || orders.length === 0) return [];
 
-      const permittedOrders = orders.filter((order) => matchesScope(order.order_type, scope));
+      const permittedOrders = orders.filter((order) => {
+        if (scope === "SPECIAL") return Boolean(order.is_special);
+        if (scope === "TABLE") return matchesScope(order.order_type, scope) && !Boolean(order.is_special);
+        return matchesScope(order.order_type, scope);
+      });
       if (permittedOrders.length === 0) return [];
 
       const tableIds = [...new Set(permittedOrders.map((order) => order.table_id).filter(Boolean))] as string[];
@@ -225,6 +231,7 @@ export function useDispatchOrders(scope: DispatchView) {
             order_number: order.order_number,
             order_code: order.order_code,
             order_type: order.order_type as "DINE_IN" | "TAKEOUT",
+            is_special: Boolean(order.is_special),
             table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             status: order.status,

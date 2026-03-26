@@ -5,11 +5,12 @@ import { canOperate, canView } from "@/lib/permissions";
 import { useDispatchConfig } from "@/hooks/useDispatchConfig";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 
-export type DispatchView = "ALL" | "TABLE" | "TAKEOUT";
+export type DispatchView = "ALL" | "TABLE" | "SPECIAL" | "TAKEOUT";
 
 export const DISPATCH_VIEW_LABELS: Record<DispatchView, string> = {
   ALL: "Todos",
   TABLE: "Mesa",
+  SPECIAL: "Orden especial",
   TAKEOUT: "Para llevar",
 };
 
@@ -34,9 +35,10 @@ export function useDispatchAccess() {
 
     const tableEnabled = config?.table_enabled ?? true;
     const takeoutEnabled = config?.takeout_enabled ?? true;
-    const baseViews: Array<Extract<DispatchView, "TABLE" | "TAKEOUT">> = [];
+    const baseViews: Array<Extract<DispatchView, "TABLE" | "SPECIAL" | "TAKEOUT">> = [];
     if (hasDispatchShiftAccess && canViewTable && tableEnabled) baseViews.push("TABLE");
     if (hasDispatchShiftAccess && canViewTakeout && takeoutEnabled) baseViews.push("TAKEOUT");
+    if (hasDispatchShiftAccess && canViewTable && tableEnabled) baseViews.push("SPECIAL");
 
     const userAssignedTypes = new Set(
       (assignments ?? [])
@@ -93,6 +95,8 @@ export function useDispatchAccess() {
         ? access.canOperateAll
         : view === "TABLE"
           ? access.canOperateTable
+          : view === "SPECIAL"
+            ? access.canOperateTable
           : access.canOperateTakeout
     ),
   };

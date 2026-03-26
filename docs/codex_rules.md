@@ -124,6 +124,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - En `Cambio de denominacion`, las denominaciones que salen de caja nunca pueden superar el stock actual disponible.
 - En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
 - No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
+- Si se toca `MenuNavigator`:
+  - categorias/subniveles pueden seguir como cards
+  - productos deben mantenerse como filas de lista a ancho completo
+  - ese render de producto aplica por igual a `Mesa`, `Para llevar` y `Orden especial`
+  - en telefono, el grid general debe poder bajar a 2 columnas para niveles no-producto sin romper las filas de producto
 - En `Mesas`, si se muestran totales o divisiones en la tarjeta:
   - telefono: usar badges compactos, con truncado si hace falta
   - tablet: aumentar padding/tipografia sin romper la regla de esquinas
@@ -158,6 +163,13 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - botones de footer apilados en telefono
   - cards internas sin comprimir inputs o textos
   - en tablet, preferir usar el ancho extra para 2 columnas antes que dejar una ventana muy alta
+- Si se toca `PaymentDialog`, mantener estas reglas:
+  - orden normal: dos columnas visibles (`Items pendientes` y `Items a cobrar ahora`) desde tablet en adelante
+  - telefono: permitir una sola columna estable o bloques apilados antes que comprimir filas hasta hacerlas ilegibles
+  - no volver a seleccionar automaticamente todo el pendiente al abrir
+  - el pago parcial no debe cerrar el modal mientras la orden siga existiendo en `Por cobrar`
+  - los metodos de pago deben compactarse sin montarse entre si; si no caben en una sola linea, apilarlos
+  - usar la imagen real del producto desde `menu_nodes.image_url` cuando exista; fallback a icono generico solo cuando falte
 - Si se toca `OrderItemsList` en `Ordenes`, mantener comportamiento responsive explicito:
   - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
   - tablet: mantener controles a la derecha y aprovechar el ancho extra sin empujar acciones al pie
@@ -220,9 +232,13 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
-5. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
+5. Si se tocaron scripts de reset (`reset_full_for_fresh_start` / `reset_operational_for_fresh_start`), actualizar tambien sus comentarios para reflejar:
+   - orden especial
+   - arbol dual `TABLE` / `TAKEOUT`
+   - alertas/listas operativas nuevas que siguen existiendo como funciones
+6. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
 
-6. Si se toco una Edge Function o una RPC critica, confirmar si requiere deploy o migracion remota antes de dar por cerrado el cambio.
+7. Si se toco una Edge Function o una RPC critica, confirmar si requiere deploy o migracion remota antes de dar por cerrado el cambio.
 
 ## Estado Base que Debe Mantenerse
 - Login con email o username.
@@ -236,6 +252,23 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - transferencia/no efectivo como monto editable
   - resumen de turno separado de recaudacion por metodo
   - subnavegacion desktop/tablet resuelta desde el shell y no desde una columna lateral duplicada dentro de la pagina
+
+## 8.1) Regla vigente para Orden Especial
+- No introducir `SPECIAL` como nuevo `order_type` mientras el flujo operativo pueda resolverse con metadatos en `orders`.
+- El valor comercial real de la orden no se sobreescribe:
+  - se conserva en `order_items`
+  - el cobro excepcional se modela aparte en `orders.special_total_manual`
+- Si una orden especial se cobra en Caja:
+  - no forzar `payment_items`
+  - calcular saldo pendiente contra pagos activos de la cabecera
+- Si una orden `DINE_IN` se convierte en especial:
+  - preservar historial operativo
+  - liberar mesa/division actual
+  - guardar origen para auditoria
+- Si se muestra una orden en UI, no inferir automaticamente `Para llevar` solo porque `table_id` o `table_name` sea `NULL`; revisar `is_special`.
+- Si una orden de mesa ya tenia items despachados y se agregan items nuevos:
+  - al reenviarlos a cocina debe reabrirse la cabecera a `SENT_TO_KITCHEN`
+  - no dejar la orden congelada en `KITCHEN_DISPATCHED`, porque eso la saca de `Cocina` y `Despacho`
 
 ## 9) Autonomía de Asistentes IA
 - **Aplicación Directa:** Los asistentes de IA (como Windsurf, Cursor, Gemini, etc.) tienen permitido y se les requiere aplicar los cambios de código directamente a los archivos del proyecto, omitiendo los pasos intermedios de pedir permiso o confirmación para proceder con la escritura de código, a menos que el flujo requiera revisión humana crítica de arquitectura o se rompa un sistema en producción.

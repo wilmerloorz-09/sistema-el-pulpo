@@ -56,6 +56,7 @@ const Mesas = () => {
   const { showDetailPanel } = useBreakpoint();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingTakeout, setCreatingTakeout] = useState(false);
+  const [creatingSpecial, setCreatingSpecial] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const canOperateMesas = canOperate(permissions, "mesas");
 
@@ -145,8 +146,79 @@ const Mesas = () => {
     }
   };
 
-  const handleSpecialOrder = () => {
-    toast.info("Orden Especial aun no tiene un flujo operativo propio en esta version.");
+  const handleSpecialOrder = async () => {
+    if (!user || !activeBranchId || !canOperateMesas) return;
+    setCreatingSpecial(true);
+    try {
+      const { data: draftCandidates, error: existingDraftError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("branch_id", activeBranchId)
+        .eq("created_by", user.id)
+        .eq("order_type", "DINE_IN")
+        .eq("is_special", true)
+        .eq("status", "DRAFT")
+        .order("updated_at", { ascending: false })
+        .limit(10);
+
+      if (existingDraftError) throw existingDraftError;
+
+      const candidateIds = (draftCandidates ?? []).map((candidate) => candidate.id);
+      let reusableDraftId: string | null = null;
+
+      if (candidateIds.length > 0) {
+        const { data: candidateItems, error: candidateItemsError } = await supabase
+          .from("order_items")
+          .select("order_id, status")
+          .in("order_id", candidateIds);
+
+        if (candidateItemsError) throw candidateItemsError;
+
+        const itemsByOrder = new Map<string, string[]>();
+        for (const orderId of candidateIds) {
+          itemsByOrder.set(orderId, []);
+        }
+
+        for (const item of candidateItems ?? []) {
+          const bucket = itemsByOrder.get(item.order_id) ?? [];
+          bucket.push(String(item.status ?? "DRAFT"));
+          itemsByOrder.set(item.order_id, bucket);
+        }
+
+        reusableDraftId = candidateIds.find((orderId) => {
+          const statuses = itemsByOrder.get(orderId) ?? [];
+          return statuses.every((status) => status === "DRAFT");
+        }) ?? null;
+      }
+
+      if (reusableDraftId) {
+        navigate(`/ordenes?order=${reusableDraftId}`);
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("orders")
+        .insert({
+          order_type: "DINE_IN" as const,
+          menu_scope: "TABLE",
+          created_by: user.id,
+          status: "DRAFT" as const,
+          branch_id: activeBranchId,
+          is_special: true,
+          special_marked_at: now,
+          special_marked_by: user.id,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      toast.success("Orden especial creada");
+      navigate(`/ordenes?order=${data.id}`);
+    } catch (err: any) {
+      toast.error(err.message || "Error al abrir orden especial");
+    } finally {
+      setCreatingSpecial(false);
+    }
   };
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
@@ -248,16 +320,20 @@ const Mesas = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.04 }}
               onClick={handleSpecialOrder}
-              disabled={!canOperateMesas}
+              disabled={creatingSpecial || !canOperateMesas}
               className={cn(
                 "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(249,115,22,0.32)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
                 "border-orange-300 bg-gradient-to-br from-orange-50 via-white to-amber-100 dark:border-orange-800 dark:from-orange-950/20 dark:via-card dark:to-amber-950/25",
                 canOperateMesas ? "hover:border-primary/45 hover:bg-primary/5" : "cursor-not-allowed opacity-60",
               )}
             >
-              <Sparkles className="h-4.5 w-4.5 shrink-0 text-primary" />
+              {creatingSpecial ? (
+                <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-primary" />
+              ) : (
+                <Sparkles className="h-4.5 w-4.5 shrink-0 text-primary" />
+              )}
               <span className="block min-w-0 pr-7 font-display text-sm font-black text-primary sm:text-base">Orden Especial</span>
-              {canOperateMesas && (
+              {canOperateMesas && !creatingSpecial && (
                 <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary/70" />
               )}
             </motion.button>

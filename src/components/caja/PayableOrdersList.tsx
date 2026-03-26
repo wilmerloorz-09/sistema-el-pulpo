@@ -1,9 +1,8 @@
-﻿import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
-import { Badge } from "@/components/ui/badge";
-import { MetricCard } from "@/components/ui/metric-card";
-import { CreditCard, ShoppingBag, UtensilsCrossed } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, UtensilsCrossed } from "lucide-react";
 import PaymentDialog from "./PaymentDialog";
 
 interface Props {
@@ -15,6 +14,14 @@ interface Props {
   readOnly?: boolean;
 }
 
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("es-EC", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
 export default function PayableOrdersList({
   orders,
   paymentMethods,
@@ -24,120 +31,222 @@ export default function PayableOrdersList({
   readOnly = false,
 }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
-  if (orders.length === 0) {
-    return (
-      <div className="py-10 text-center">
-        <CreditCard className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
-        <p className="text-sm font-medium text-muted-foreground">Sin ordenes por cobrar</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!selectedOrder) return;
 
-  const pendingUnits = (order: PayableOrder) => order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
-  const paidUnits = (order: PayableOrder) => order.items.reduce((sum, item) => sum + item.quantity_paid, 0);
+    const refreshedOrder = orders.find((order) => order.id === selectedOrder.id) ?? null;
+    if (!refreshedOrder) {
+      setSelectedOrder(null);
+      return;
+    }
+
+    setSelectedOrder(refreshedOrder);
+  }, [orders, selectedOrder]);
+
+  const pendingUnits = (order: PayableOrder) =>
+    order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
+
   const totalPendingAmount = orders.reduce(
-    (sum, order) => sum + order.items.reduce((orderSum, item) => orderSum + item.pending_total, 0),
+    (sum, order) =>
+      sum
+      + (
+        order.is_special
+          ? order.special_pending_amount
+          : order.items.reduce((orderSum, item) => orderSum + item.pending_total, 0)
+      ),
     0,
   );
   const totalPendingUnits = orders.reduce((sum, order) => sum + pendingUnits(order), 0);
 
   return (
     <>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        {readOnly && (
-          <div className="rounded-2xl border border-border bg-white/80 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-            Modo consulta: puedes revisar las ordenes pendientes, pero no cobrar.
+      <section className="space-y-6">
+        <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_48px_-42px_rgba(15,23,42,0.38)]">
+          <div className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-3 sm:gap-0 sm:px-8 sm:py-5">
+            <div className="sm:px-4">
+              <p className="inline-flex items-center gap-2 text-sm text-slate-500">
+                <ReceiptText className="h-4 w-4 text-slate-400" />
+                <span>Ordenes por cobrar: <span className="font-semibold text-slate-950">{orders.length}</span></span>
+              </p>
+            </div>
+            <div className="sm:border-l sm:border-r sm:border-slate-200 sm:px-6">
+              <p className="inline-flex items-center gap-2 text-sm text-slate-500">
+                <UtensilsCrossed className="h-4 w-4 text-slate-400" />
+                <span>Unidades pendientes: <span className="font-semibold text-slate-950">{totalPendingUnits}</span></span>
+              </p>
+            </div>
+            <div className="sm:px-6">
+              <p className="inline-flex items-center gap-2 text-sm text-slate-500">
+                <CreditCard className="h-4 w-4 text-slate-400" />
+                <span>Total: <span className="font-semibold text-slate-950">{formatCurrency(totalPendingAmount)}</span></span>
+              </p>
+            </div>
           </div>
-        )}
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="space-y-3">
-          <MetricCard title="Ordenes por cobrar" value={String(orders.length)} description="Cuentas pendientes de caja" icon={<CreditCard className="h-5 w-5" />} tone="sky" className="min-h-[132px]" />
-          <MetricCard title="Unidades pendientes" value={String(totalPendingUnits)} description="Items aun no cobrados" icon={<UtensilsCrossed className="h-5 w-5" />} tone="violet" className="min-h-[132px]" />
-          <MetricCard title="Total pendiente" value={`$${totalPendingAmount.toFixed(2)}`} description="Monto total por cobrar" icon={<ShoppingBag className="h-5 w-5" />} tone="emerald" className="min-h-[132px]" />
         </div>
 
-        <div className="min-h-[430px] rounded-[28px] border border-orange-200 bg-white/40 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
-          <div className="grid auto-rows-max grid-cols-1 items-start gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-          {orders.map((order) => {
-            const label = order.order_type === "TAKEOUT" ? "Para llevar" : order.split_code ?? order.table_name ?? "Mesa";
-            const pending = pendingUnits(order);
-            const paid = paidUnits(order);
-            const pendingTotal = order.items.reduce((sum, item) => sum + item.pending_total, 0);
-            const isTakeout = order.order_type === "TAKEOUT";
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[1.35rem] font-semibold tracking-[-0.025em] text-slate-950 sm:text-[1.5rem]">Ordenes por cobrar</h2>
+              {readOnly && (
+                <p className="mt-1 text-sm text-slate-500">
+                  Modo consulta. Puedes revisar pendientes, pero no registrar cobros.
+                </p>
+              )}
+            </div>
+          </div>
 
-            return (
-              <button
-                key={order.id}
-                onClick={() => setSelectedOrder(order)}
-                className={cn(
-                  "relative h-auto self-start overflow-hidden flex w-full items-start gap-3 rounded-[24px] border p-3 text-left shadow-[0_18px_45px_-36px_rgba(249,115,22,0.75)] transition-all",
-                  readOnly
-                    ? isTakeout
-                      ? "border-fuchsia-400 bg-gradient-to-r from-fuchsia-50 via-rose-50 to-white"
-                      : "border-sky-200 bg-gradient-to-r from-white via-sky-50/70 to-white"
-                    : isTakeout
-                      ? "border-fuchsia-500 bg-gradient-to-r from-fuchsia-100 via-rose-50 to-white hover:border-fuchsia-600 hover:shadow-[0_24px_50px_-34px_rgba(217,70,239,0.55)]"
-                      : "border-sky-300 bg-gradient-to-r from-white via-sky-50/85 to-white hover:border-sky-400 hover:shadow-[0_24px_50px_-34px_rgba(14,165,233,0.45)]",
-                )}
-              >
-                <div className={cn("pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full blur-2xl", isTakeout ? "bg-fuchsia-300/45" : "bg-sky-200/35")} />
-                <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border bg-white/95 shadow-sm", isTakeout ? "border-fuchsia-400 ring-2 ring-fuchsia-100" : "border-sky-200")}>
-                  {order.order_type === "TAKEOUT" ? (
-                    <ShoppingBag className="h-4 w-4 text-fuchsia-700" />
-                  ) : (
-                    <UtensilsCrossed className="h-4 w-4 text-sky-700" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-black text-foreground">{label}</span>
-                    <Badge variant="secondary" className="rounded-full bg-white/90 text-[10px] shadow-sm">
-                      {order.order_code ?? `#${order.order_number}`}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "rounded-full text-[10px]",
-                        isTakeout
-                          ? "border-fuchsia-400 bg-fuchsia-100 text-fuchsia-800"
-                          : "border-sky-200 bg-sky-50 text-sky-700",
+          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
+            {orders.length === 0 ? (
+              <div className="px-6 py-16 text-center">
+                <p className="text-base font-medium text-slate-900">Sin ordenes por cobrar</p>
+                <p className="mt-2 text-sm text-slate-500">Cuando haya cuentas pendientes, apareceran aqui para cobrarlas rapido.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {orders.map((order, index) => {
+                  const label = getOrderOriginLabel({
+                    orderType: order.order_type,
+                    tableName: order.table_name,
+                    splitCode: order.split_code,
+                    isSpecial: order.is_special,
+                  });
+                  const orderKind = getOrderKind({
+                    orderType: order.order_type,
+                    isSpecial: order.is_special,
+                  });
+                  const pending = pendingUnits(order);
+                  const pendingTotal = order.is_special
+                    ? order.special_pending_amount
+                    : order.items.reduce((sum, item) => sum + item.pending_total, 0);
+                  const pendingUnitsText = `${pending} ${pending === 1 ? "unidad pendiente" : "unidades pendientes"}`;
+                  const rowCode = order.order_code ?? `#${order.order_number}`;
+                  const isExpanded = expandedOrderId === order.id;
+
+                  return (
+                    <div key={order.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/75"}>
+                      <div
+                        className="grid gap-3 px-5 py-3.5 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center sm:px-8"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                          aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
+                        >
+                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </button>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                              {orderKind === "takeout" ? (
+                                <ShoppingBag className="h-4 w-4" />
+                              ) : orderKind === "special" ? (
+                                <CreditCard className="h-4 w-4" />
+                              ) : (
+                                <UtensilsCrossed className="h-4 w-4" />
+                              )}
+                            </span>
+                            <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
+                              {label}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="truncate font-mono text-sm tracking-[0.08em] text-slate-500">
+                            {rowCode}
+                          </p>
+                        </div>
+
+                        <div className="sm:text-right">
+                          <p className="text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">
+                            {formatCurrency(pendingTotal)}
+                          </p>
+                          {order.is_special && (
+                            <p className="text-xs text-slate-500">
+                              Real {formatCurrency(order.special_real_total)}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="sm:text-right">
+                          <p className="text-sm text-slate-500">{pendingUnitsText}</p>
+                        </div>
+
+                        <div className="sm:justify-self-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={readOnly}
+                            onClick={() => setSelectedOrder(order)}
+                            className="h-9 rounded-full border border-[#15803d] bg-[#15803d] px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
+                          >
+                            <CreditCard className="h-4 w-4" />
+                            Cobrar
+                          </Button>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
+                          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                            <div className="hidden grid-cols-[minmax(0,1.8fr)_90px_110px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:grid">
+                              <span>Detalle</span>
+                              <span className="text-right">Cant.</span>
+                              <span className="text-right">Pend.</span>
+                              <span className="text-right">Subtotal</span>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {order.items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] sm:gap-3"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium text-slate-900">{item.description_snapshot}</p>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                      {formatCurrency(item.unit_price)} c/u
+                                    </p>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 text-xs sm:contents sm:text-sm">
+                                    <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                      <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span>
+                                      {item.quantity}
+                                    </span>
+                                    <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                      <span className="mr-1 font-medium text-slate-500 sm:hidden">Pend.</span>
+                                      {item.quantity_pending}
+                                    </span>
+                                    <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                      <span className="mr-1 font-medium text-slate-500 sm:hidden">Subtotal</span>
+                                      {formatCurrency(item.pending_total)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    >
-                      {pending} pendiente{pending === 1 ? "" : "s"}
-                    </Badge>
-                    {readOnly && (
-                      <Badge variant="outline" className="rounded-full text-[10px]">
-                        Consulta
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs font-medium text-muted-foreground">
-                    {pending} unidad(es) pendiente(s)
-                    {paid > 0 && ` - ${paid} unidad(es) pagada(s)`}
-                  </p>
-                </div>
-                <div className={cn("ml-auto rounded-2xl border bg-white/95 px-3 py-2 text-right shadow-sm", isTakeout ? "border-fuchsia-400 ring-2 ring-fuchsia-100" : "border-sky-200")}>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Por cobrar</p>
-                  <span className={cn("font-display text-lg font-black", isTakeout ? "text-fuchsia-800" : "text-foreground")}>${pendingTotal.toFixed(2)}</span>
-                </div>
-              </button>
-            );
-          })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        </section>
+      </section>
 
       <PaymentDialog
         order={selectedOrder}
         paymentMethods={paymentMethods}
         shiftDenoms={shiftDenoms}
-        onPay={(params) => {
-          onPay(params);
-          setSelectedOrder(null);
-        }}
+        onPay={onPay}
         paying={paying}
         onClose={() => setSelectedOrder(null)}
         readOnly={readOnly}

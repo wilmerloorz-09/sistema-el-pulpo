@@ -3,6 +3,7 @@ import type { KitchenOrder } from "@/hooks/useKitchenOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag } from "lucide-react";
+import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 function useElapsed(since: string) {
@@ -40,10 +41,17 @@ interface Props {
 
 export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
   const { elapsed } = useElapsed(order.sent_at);
-  const isTakeout = order.order_type === "TAKEOUT";
+  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special });
+  const isTakeout = orderKind === "takeout";
+  const isSpecial = orderKind === "special";
   const isUrgent = elapsed > 15 * 60;
   const isWarning = elapsed > 8 * 60;
-  const label = order.split_code ?? order.table_name ?? "Para llevar";
+  const label = getOrderOriginLabel({
+    orderType: order.order_type,
+    tableName: order.table_name,
+    splitCode: order.split_code,
+    isSpecial: order.is_special,
+  });
   const pendingCount = order.items.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
   const readyCount = order.items.reduce((sum, item) => sum + item.quantity_ready_available, 0);
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
@@ -60,7 +68,7 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
     <div
       className={cn(
         "flex self-start flex-col overflow-hidden rounded-2xl border-2 transition-colors",
-        isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
+        isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
@@ -68,10 +76,12 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
             : "border-border",
       )}
     >
-      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
+      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="flex min-w-0 items-center gap-2">
-          {order.order_type === "TAKEOUT" ? (
+          {isTakeout ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
+          ) : isSpecial ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-orange-700" />
           ) : (
             <UtensilsCrossed className="h-4 w-4 shrink-0 text-sky-700" />
           )}

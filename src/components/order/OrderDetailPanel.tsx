@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, X, Ban } from "lucide-react";
+import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 interface OrderItem {
@@ -23,6 +24,7 @@ interface Order {
   order_code: string;
   order_number?: number;
   order_type: "DINE_IN" | "TAKEOUT" | "TABLE";
+  is_special?: boolean;
   status: string;
   table_name?: string;
   split_code?: string;
@@ -69,7 +71,13 @@ export default function OrderDetailPanel({
 }: OrderDetailPanelProps) {
   if (!order) return null;
 
-  const label = order.table_name ?? "Para llevar";
+  const label = getOrderOriginLabel({
+    orderType: order.order_type,
+    tableName: order.table_name,
+    splitCode: order.split_code,
+    isSpecial: order.is_special,
+  });
+  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special });
   const since = order.sent_to_kitchen_at || order.created_at;
   const [elapsed, setElapsed] = useState(() => {
     if (!since) return 0;
@@ -104,7 +112,7 @@ export default function OrderDetailPanel({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
         <div className="min-w-0 flex items-center gap-2">
-          {order.order_type === "TAKEOUT" ? (
+          {orderKind === "takeout" ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-muted-foreground" />
           ) : (
             <UtensilsCrossed className="h-4 w-4 shrink-0 text-muted-foreground" />

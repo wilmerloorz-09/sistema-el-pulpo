@@ -4,9 +4,11 @@
 --
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
+--   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 --   - incluye ambos alcances de menu_nodes: `TABLE` y `TAKEOUT`
+--   - incluye imagenes/referencias visuales de productos en `menu_nodes.image_url`
 -- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
 -- - Elimina politicas/configuraciones por sucursal:
 --   - cancelacion/anulacion directa por categoria
@@ -25,6 +27,7 @@
 -- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
 -- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR, AMBOS QUEDAN VACIOS
 -- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (`emit_order_ready_alert`, `get_mesero_ready_alerts`, `order_has_dispatch_after`)
+-- - TAMBIEN PERMANECEN INTACTAS LAS RPCS DE ORDEN ESPECIAL Y DEMAS FLUJOS OPERATIVOS; SOLO SE BORRAN LOS DATOS
 -- - LOS AJUSTES RECIENTES DE NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
 
@@ -220,9 +223,10 @@ COMMIT;
 -- - 0 configuraciones/asignaciones de despacho
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
 -- - 0 arbol menu mesa / 0 arbol menu para llevar
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
 
 
 

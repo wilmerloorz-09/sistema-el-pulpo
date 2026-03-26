@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useDispatchOrders } from "@/hooks/useDispatchOrders";
 import { useDispatchAccess, type DispatchView } from "@/hooks/useDispatchAccess";
 import DispatchCard from "@/components/dispatch/DispatchCard";
-import { Loader2, Truck, AlertCircle, ShoppingBag, UtensilsCrossed } from "lucide-react";
+import { Loader2, Truck, AlertCircle, ShoppingBag, UtensilsCrossed, CreditCard } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useBranch } from "@/contexts/BranchContext";
 
@@ -10,7 +10,7 @@ function resolveInitialView(availableViews: DispatchView[], storageKey: string):
   if (availableViews.length === 0) return null;
 
   const saved = localStorage.getItem(storageKey);
-  if ((saved === "ALL" || saved === "TABLE" || saved === "TAKEOUT") && availableViews.includes(saved as DispatchView)) {
+  if ((saved === "ALL" || saved === "TABLE" || saved === "SPECIAL" || saved === "TAKEOUT") && availableViews.includes(saved as DispatchView)) {
     return saved;
   }
 
@@ -20,7 +20,9 @@ function resolveInitialView(availableViews: DispatchView[], storageKey: string):
 
 function getViewIcon(view: DispatchView) {
   if (view === "ALL") return Truck;
-  return view === "TABLE" ? UtensilsCrossed : ShoppingBag;
+  if (view === "TABLE") return UtensilsCrossed;
+  if (view === "SPECIAL") return CreditCard;
+  return ShoppingBag;
 }
 
 const Despacho = () => {

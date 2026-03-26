@@ -288,7 +288,7 @@ export function OrderReadyNotificationBanner({
 
   const label = notification.order_type === "TAKEOUT"
     ? "Para llevar"
-    : notification.split_code?.trim() || notification.table_name?.trim() || "Mesa";
+    : notification.split_code?.trim() || notification.table_name?.trim() || "Orden Especial";
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[5.75rem] z-50 px-3 sm:bottom-6 sm:right-4 sm:left-auto sm:max-w-md">

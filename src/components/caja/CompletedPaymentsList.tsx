@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
 import type { CompletedPayment, CompletedPaymentsFilters, CompletedPaymentsMethodSummary, PaymentMethod } from "@/hooks/useCaja";
+import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import {
   ChevronDown,
@@ -37,6 +38,7 @@ interface PaymentGroup {
     number: number;
     code: string | null;
     type: "DINE_IN" | "TAKEOUT";
+    is_special: boolean;
     table_name: string | null;
     split_code: string | null;
     total: number;
@@ -90,7 +92,12 @@ function exportCsv(rows: CompletedPayment[]) {
     const hora = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
     const orden = row.order_code ?? `#${row.order_number}`;
     const tipo = row.order_type;
-    const mesaSplit = row.split_code ?? row.table_name ?? "Para llevar";
+    const mesaSplit = getOrderOriginLabel({
+      orderType: row.order_type,
+      tableName: row.table_name,
+      splitCode: row.split_code,
+      isSpecial: row.is_special,
+    });
     const metodo = row.method_name;
     const item = row.item_description ?? "";
     const monto = row.amount.toFixed(2);
@@ -184,6 +191,7 @@ export default function CompletedPaymentsList({
             number: row.order_number,
             code: row.order_code,
             type: row.order_type,
+            is_special: row.is_special,
             table_name: row.table_name,
             split_code: row.split_code,
             total: row.order_total,
@@ -243,7 +251,12 @@ export default function CompletedPaymentsList({
 
   const openModalForPayment = (payment: PaymentGroup, mode: "request" | "execute") => {
     const methods = [...new Set(payment.items.map((item) => item.method_name))].join(", ");
-    const tableLabel = payment.order.type === "TAKEOUT" ? "Para llevar" : payment.order.split_code ?? payment.order.table_name ?? "Mesa";
+    const tableLabel = getOrderOriginLabel({
+      orderType: payment.order.type,
+      tableName: payment.order.table_name,
+      splitCode: payment.order.split_code,
+      isSpecial: payment.order.is_special,
+    });
 
     setModalState({
       open: true,
@@ -370,14 +383,33 @@ export default function CompletedPaymentsList({
                 <h3 className="font-display text-sm font-bold text-foreground">Resumen de cuenta</h3>
                 <select value={selectedOrder.id} onChange={(e) => setSelectedOrderId(e.target.value)} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs shadow-sm">
                   {orderSummaries.map((order) => (
-                    <option key={order.id} value={order.id}>{order.code ?? `#${order.number}`} - {order.split_code ?? order.table_name ?? "Para llevar"}</option>
+                    <option key={order.id} value={order.id}>
+                      {order.code ?? `#${order.number}`} - {getOrderOriginLabel({
+                        orderType: order.type,
+                        tableName: order.table_name,
+                        splitCode: order.split_code,
+                        isSpecial: order.is_special,
+                      })}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
                 <MetricCard title="Orden" value={selectedOrder.code ?? `#${selectedOrder.number}`} description="Cuenta seleccionada" icon={<History className="h-5 w-5" />} tone="slate" className="py-2.5" />
-                <MetricCard title="Mesa" value={selectedOrder.split_code ?? selectedOrder.table_name ?? "Para llevar"} description="Origen de la orden" icon={selectedOrder.type === "TAKEOUT" ? <ShoppingBag className="h-5 w-5" /> : <UtensilsCrossed className="h-5 w-5" />} tone="sky" className="py-2.5" />
+                <MetricCard
+                  title={selectedOrder.is_special ? "Origen" : "Mesa"}
+                  value={getOrderOriginLabel({
+                    orderType: selectedOrder.type,
+                    tableName: selectedOrder.table_name,
+                    splitCode: selectedOrder.split_code,
+                    isSpecial: selectedOrder.is_special,
+                  })}
+                  description="Origen de la orden"
+                  icon={selectedOrder.is_special ? <CreditCard className="h-5 w-5" /> : selectedOrder.type === "TAKEOUT" ? <ShoppingBag className="h-5 w-5" /> : <UtensilsCrossed className="h-5 w-5" />}
+                  tone="sky"
+                  className="py-2.5"
+                />
                 <MetricCard title="Total cuenta" value={`$${selectedOrder.total.toFixed(2)}`} description="Importe completo" icon={<CreditCard className="h-5 w-5" />} tone="violet" className="py-2.5" />
                 <MetricCard title="Total pagado" value={`$${selectedOrder.paid.toFixed(2)}`} description="Pagos aplicados" icon={<ShieldCheck className="h-5 w-5" />} tone="emerald" className="py-2.5" />
                 <MetricCard title="Saldo pendiente" value={`$${selectedOrder.pending.toFixed(2)}`} description="Monto aun por cobrar" icon={<Clock3 className="h-5 w-5" />} tone="amber" className="py-2.5" />
@@ -388,7 +420,16 @@ export default function CompletedPaymentsList({
           <div className="space-y-2">
             {filteredGroups.map((payment) => {
               const expanded = expandedPaymentId === payment.paymentId;
-              const label = payment.order.type === "TAKEOUT" ? "Para llevar" : payment.order.split_code ?? payment.order.table_name ?? "Mesa";
+              const label = getOrderOriginLabel({
+                orderType: payment.order.type,
+                tableName: payment.order.table_name,
+                splitCode: payment.order.split_code,
+                isSpecial: payment.order.is_special,
+              });
+              const orderKind = getOrderKind({
+                orderType: payment.order.type,
+                isSpecial: payment.order.is_special,
+              });
               const blockedByState = payment.status === "REVERSED" || payment.status === "VOIDED";
               const withinWindow = canCashierReverseDirectly(payment.created_at, cashierReverseWindowMinutes);
               const canExecute = permissionFlags.canManageAdmin || (permissionFlags.canOperateCaja && withinWindow);
@@ -399,7 +440,7 @@ export default function CompletedPaymentsList({
                 <div key={payment.paymentId} className="space-y-2 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/45 to-white p-3 shadow-[0_16px_40px_-36px_rgba(139,92,246,0.55)]">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm">
-                      {payment.order.type === "TAKEOUT" ? <ShoppingBag className="h-4 w-4 text-violet-600" /> : <UtensilsCrossed className="h-4 w-4 text-violet-600" />}
+                      {orderKind === "takeout" ? <ShoppingBag className="h-4 w-4 text-violet-600" /> : orderKind === "special" ? <CreditCard className="h-4 w-4 text-violet-600" /> : <UtensilsCrossed className="h-4 w-4 text-violet-600" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
