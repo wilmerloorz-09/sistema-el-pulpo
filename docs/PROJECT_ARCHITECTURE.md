@@ -35,6 +35,7 @@
 - En `Admin` ahora existen dos superficies hermanas:
   - `Arbol Menu Mesa`
   - `Arbol Menu Para Llevar`
+- A nivel de categoria, `menu_nodes.manual_price_enabled` permite que una rama opere con precios manuales heredables hacia sus productos descendientes.
 
 ### Modificadores
 - `modifiers` se mantiene como catalogo base por sucursal.
@@ -111,7 +112,7 @@
 ## Cambios Arquitectonicos de Esta Jornada
 
 ### A) Arbol recursivo de profundidad indefinida
-- Se agrego `menu_nodes` con `parent_id`, `depth`, `node_type`, `display_order`, `image_url`, `price` e `is_active`; la columna `icon` queda como remanente legacy y ya no se expone en el editor principal.
+- Se agrego `menu_nodes` con `parent_id`, `depth`, `node_type`, `display_order`, `image_url`, `price`, `is_active` y `manual_price_enabled`; la columna `icon` queda como remanente legacy y ya no se expone en el editor principal.
 - La UI de Ordenes ya trabaja sobre esa jerarquia en memoria, sin consultas por cada nivel.
 
 ### B) Navegacion con L1 como unica obligatoriedad
@@ -127,6 +128,7 @@
 - `Arbol Menu Para Llevar` incorpora `Copiar desde Mesa` como accion de bootstrap.
 - Los productos se permiten desde Nivel 2 en adelante.
 - Las asignaciones de modificadores tambien viven en `Arbol Menu`; la pestana `Modificadores` queda solo para el catalogo base.
+- Cuando el nodo es `category`, el editor tambien expone `Precios manuales`; esa decision se guarda en el propio nodo y la carga operativa del catalogo puede heredarla hacia productos descendientes.
 
 ### D) Capa de compatibilidad legacy
 - Al guardar nodos del arbol, se replica la estructura minima necesaria en tablas legacy.
@@ -169,6 +171,7 @@
   - seleccion de cantidades a cobrar con dos columnas (`Items pendientes` y `Items a cobrar ahora`) para ordenes normales
   - metodos de pago compactos en una franja inferior
   - modal dedicado para `Monedas y billetes`
+- La lista visible de metodos debe deduplicar nombres equivalentes (`Efectivo`, etc.) para no repetir opciones en pantalla.
 - Para ordenes normales:
   - la seleccion inicia en cero
   - el usuario mueve unidades entre columnas con acciones por item
@@ -182,6 +185,7 @@
   - monto de efectivo controlado por denominaciones
   - no editable manualmente
   - transferencia/no efectivo editable por input
+- `Monedas y billetes` solo debe habilitarse cuando ya exista al menos un item seleccionado en `Items a cobrar ahora`.
 - El modal de efectivo se comporta como subflujo especializado:
   - agrupa `Monedas` y `Billetes`
   - permite cantidad manual por denominacion
@@ -304,6 +308,7 @@
 - El tema visual ya no debe depender de un provider externo no montado; la arquitectura actual usa un hook propio que sincroniza `data-theme`, clase `dark` y consumidores visuales como `Sonner`.
 - En `Mesas`, el panel de detalle es arquitectonicamente una lectura auxiliar del mismo dataset de `useTablesWithStatus`; no introduce queries nuevas ni cambia handlers de apertura/navegacion.
 - En `sidebar`, la arquitectura actual fija header y footer y deja scroll solo en la lista central para evitar cortes verticales al final del menu.
+- Cuando una navegacion hacia `Ordenes` se dispara desde `Mesas`, la arquitectura visible del shell debe poder conservar `Mesas` como item activo mediante contexto de origen (`from=mesas`), aunque la ruta real sea `/ordenes`.
 
 ## Componentes Impactados
 - `src/hooks/useMenuTree.ts`

@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -36,6 +36,8 @@ interface SelectedProduct {
   subcategory_id: string;
   unit_price: number | null;
   price_mode: "FIXED" | "MANUAL";
+  icon?: string | null;
+  image_url?: string | null;
 }
 
 const Ordenes = () => {
@@ -46,6 +48,7 @@ const Ordenes = () => {
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
+  const fromMesas = searchParams.get("from") === "mesas";
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope, updateSpecialTotal, convertToSpecial } = useOrder(orderId);
   const currentMenuScope = order?.order_type === "TAKEOUT" ? "TAKEOUT" : (order?.menu_scope ?? "TABLE");
@@ -197,6 +200,7 @@ const Ordenes = () => {
   const hasSentItems = order.items.some((i) => i.status !== "DRAFT");
   const isSent = order.status === "SENT_TO_KITCHEN";
   const hasSiblings = order.siblings.length > 0;
+  const hasOrderItems = order.items.length > 0;
   const allExistingSplitsHaveItems = !hasSiblings || order.siblings.every((sibling) => sibling.item_count > 0);
   const canSplit =
     order.order_type === "DINE_IN" &&
@@ -214,20 +218,22 @@ const Ordenes = () => {
     !order.dispatched_at &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED";
-  const canChangeTable =
+  const canShowChangeTable =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED";
+  const canChangeTable = canShowChangeTable && hasOrderItems;
   const canEditItems = canOperateOrders && order.status !== "PAID" && order.status !== "CANCELLED";
-  const canConvertToSpecial =
+  const canShowConvertToSpecial =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
     !order.is_special &&
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED";
+  const canConvertToSpecial = canShowConvertToSpecial && hasOrderItems;
   const orderOriginLabel = getOrderOriginLabel({
     orderType: order.order_type,
     tableName: order.table_name,
@@ -308,7 +314,7 @@ const Ordenes = () => {
         if (newOrderError || !newOrder) throw newOrderError ?? new Error("No se pudo crear la nueva division");
 
         toast.success("Mesa dividida en A y B");
-        navigate(`/ordenes?order=${newOrder.id}`, { replace: true });
+        navigate(`/ordenes?order=${newOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
       } else {
         const nextIndex = order.siblings.length;
         const nextLetter = letters[nextIndex] ?? `${nextIndex + 1}`;
@@ -336,7 +342,7 @@ const Ordenes = () => {
         if (newOrderError || !newOrder) throw newOrderError ?? new Error("No se pudo crear la nueva division");
 
         toast.success(`Sub-mesa ${tableName}${nextLetter} creada`);
-        navigate(`/ordenes?order=${newOrder.id}`, { replace: true });
+        navigate(`/ordenes?order=${newOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
       }
 
       qc.invalidateQueries({ queryKey: ["order", orderId] });
@@ -396,7 +402,7 @@ const Ordenes = () => {
       toast.success("Division eliminada");
 
       if (remainingSibling) {
-        navigate(`/ordenes?order=${remainingSibling.id}`, { replace: true });
+        navigate(`/ordenes?order=${remainingSibling.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
       } else {
         navigate("/mesas", { replace: true });
       }
@@ -529,25 +535,57 @@ const Ordenes = () => {
   const menuPanel = canEditItems ? (
     <div className="space-y-3">
       {order.order_type === "DINE_IN" ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
+          <button
             type="button"
-            variant={currentMenuScope === "TABLE" ? "default" : "outline"}
-            className="rounded-xl"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
             onClick={() => updateMenuScope.mutate("TABLE")}
             disabled={updateMenuScope.isPending}
+            aria-pressed={currentMenuScope === "TABLE"}
           >
-            Arbol Menu Mesa
-          </Button>
-          <Button
+            <span
+              className={cn(
+                "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
+                currentMenuScope === "TABLE" ? "border-primary" : "border-muted-foreground/50",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full transition-colors",
+                  currentMenuScope === "TABLE" ? "bg-primary" : "bg-transparent",
+                )}
+              />
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <ChefHat className="h-4 w-4" />
+              Menu Mesas
+            </span>
+          </button>
+          <button
             type="button"
-            variant={currentMenuScope === "TAKEOUT" ? "default" : "outline"}
-            className="rounded-xl"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
             onClick={() => updateMenuScope.mutate("TAKEOUT")}
             disabled={updateMenuScope.isPending}
+            aria-pressed={currentMenuScope === "TAKEOUT"}
           >
-            Arbol Menu Para Llevar
-          </Button>
+            <span
+              className={cn(
+                "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
+                currentMenuScope === "TAKEOUT" ? "border-primary" : "border-muted-foreground/50",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full transition-colors",
+                  currentMenuScope === "TAKEOUT" ? "bg-primary" : "bg-transparent",
+                )}
+              />
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <ShoppingBag className="h-4 w-4" />
+              Menu Para Llevar
+            </span>
+          </button>
         </div>
       ) : null}
       <MenuNavigator
@@ -707,90 +745,62 @@ const Ordenes = () => {
 
   return (
     <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
-      {tableWatermark && (
-        <div className="pointer-events-none fixed inset-x-0 top-[7.5rem] bottom-24 z-0 overflow-hidden md:top-[6.5rem]">
-          <div className="absolute left-[34%] bottom-6 h-56 w-56 -translate-x-1/2 rounded-full bg-gradient-to-br from-orange-200/18 via-amber-100/12 to-transparent blur-3xl md:left-[32%] md:bottom-8 md:h-72 md:w-72" />
-          <div className="absolute bottom-4 left-[34%] -translate-x-1/2 select-none font-display text-[3rem] font-black uppercase tracking-[0.18em] text-orange-300/10 md:left-[32%] md:bottom-6 md:text-[4.8rem]">
-            {tableWatermark}
-          </div>
-          <div className="absolute bottom-4 left-[34%] -translate-x-1/2 select-none font-display text-[3rem] font-black uppercase tracking-[0.18em] text-transparent [-webkit-text-stroke:1px_rgba(251,146,60,0.14)] md:left-[32%] md:bottom-6 md:text-[4.8rem]">
-            {tableWatermark}
-          </div>
-        </div>
-      )}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {order.is_special ? (
-              <button
-                type="button"
-                onClick={handleMobileBackToMesas}
-                className="flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-sm font-extrabold text-orange-800 shadow-sm transition-colors hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-400 dark:hover:bg-orange-950/60"
-              >
-                Orden Especial
-              </button>
-            ) : order.table_name ? (
-              <button
-                type="button"
-                onClick={handleMobileBackToMesas}
-                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-extrabold text-sky-800 shadow-sm transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-400 dark:hover:bg-sky-950/60"
-              >
-                {order.table_name}
-              </button>
-            ) : isTakeout ? (
-              <button
-                type="button"
-                onClick={handleMobileBackToMesas}
-                className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-extrabold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-950/60"
-              >
-                <ShoppingBag className="h-4 w-4" />
-                Para llevar
-              </button>
-            ) : null}
-            {!canOperateOrders && (
-              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                Solo consulta
-              </span>
-            )}
-            {canConvertToSpecial && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-11 rounded-lg px-3 text-xs 2xl:h-7"
-                onClick={() => {
-                  setConvertSpecialTotalInput(total.toFixed(2));
-                  setConvertSpecialDialogOpen(true);
-                }}
-              >
-                Convertir en orden especial
-              </Button>
-            )}
-            {order.table_id && (
-              <>
-                <Button
-                  variant={canChangeTable ? "outline" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-11 gap-1 rounded-lg px-3 text-xs 2xl:h-7",
-                    !canChangeTable && "text-muted-foreground",
-                  )}
-                  onClick={() => setShowChangeTableDialog(true)}
-                  disabled={!canChangeTable || moveToTable.isPending}
-                  title={
-                    !canChangeTable
-                      ? "Solo puedes cambiar de mesa ordenes DINE_IN activas"
-                      : "Cambiar esta orden de mesa"
-                  }
+      <div className="flex flex-wrap items-start gap-1 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
+        <div className="min-w-0 w-full space-y-2">
+          <div className="flex items-center justify-between gap-1">
+            <div className="min-w-0 flex flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button
+                  type="button"
+                  onClick={handleMobileBackToMesas}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Volver a Mesas"
                 >
-                  {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
-                  Cambiar mesa
-                </Button>
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                {order.is_special ? (
+                  <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
+                    <Sparkles className="h-4 w-4" />
+                    Orden Especial
+                  </div>
+                ) : order.table_name ? (
+                  <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
+                    {order.table_name}
+                  </div>
+                ) : isTakeout ? (
+                  <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-emerald-800 dark:text-emerald-400">
+                    <ShoppingBag className="h-4 w-4" />
+                    Para llevar
+                  </div>
+                ) : null}
+                {!canOperateOrders && (
+                  <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                    Solo consulta
+                  </span>
+                )}
+                {hasSiblings &&
+                  order.siblings.map((sib) => (
+                    <Button
+                      key={sib.id}
+                      variant={sib.id === order.id ? "default" : "outline"}
+                      size="sm"
+                      className="h-8 shrink-0 gap-1 rounded-lg px-2.5 text-[11px]"
+                      onClick={() => navigate(`/ordenes?order=${sib.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true })}
+                    >
+                      {formatSplitCodeLabel(sib.split_code)}
+                      <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                        {sib.item_count}
+                      </Badge>
+                    </Button>
+                  ))}
+            </div>
 
+            {order.table_id && (
+              <div className="ml-auto flex shrink-0 items-center gap-1">
                 <Button
                   variant={canSplit ? "default" : "ghost"}
                   size="sm"
                   className={cn(
-                    "h-11 gap-1 rounded-lg px-3 text-xs 2xl:h-7",
+                    "h-9 w-9 shrink-0 rounded-lg p-0 2xl:h-7 2xl:w-7",
                     canSplit
                       ? "shadow-[0_14px_28px_-18px_rgba(249,115,22,0.8)]"
                       : "text-muted-foreground",
@@ -810,7 +820,6 @@ const Ordenes = () => {
                   }
                 >
                   {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Split className="h-3.5 w-3.5" />}
-                  Dividir
                 </Button>
 
                 {hasSiblings && (
@@ -818,7 +827,7 @@ const Ordenes = () => {
                     variant={canDeleteSplit ? "destructive" : "ghost"}
                     size="sm"
                     className={cn(
-                      "h-11 gap-1 rounded-lg px-3 text-xs 2xl:h-7",
+                      "h-9 w-9 shrink-0 rounded-lg p-0 2xl:h-7 2xl:w-7",
                       !canDeleteSplit && "text-muted-foreground",
                     )}
                     onClick={() => setShowDeleteSplitConfirm(true)}
@@ -830,33 +839,71 @@ const Ordenes = () => {
                     }
                   >
                     {removingSplit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    Eliminar division
                   </Button>
                 )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {canShowConvertToSpecial && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:h-7"
+                onClick={() => {
+                  setConvertSpecialTotalInput(total.toFixed(2));
+                  setConvertSpecialDialogOpen(true);
+                }}
+                disabled={!canConvertToSpecial}
+                title={!canConvertToSpecial ? "La orden debe tener al menos un item" : "Convertir en orden especial"}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Convertir Ord. Espec.
+              </Button>
+            )}
+            {order.table_id && (
+              <>
+                <Button
+                  variant={canChangeTable ? "outline" : "ghost"}
+                  size="sm"
+                  className={cn(
+                    "h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:h-7",
+                    !canChangeTable && "text-muted-foreground",
+                  )}
+                  onClick={() => setShowChangeTableDialog(true)}
+                  disabled={!canChangeTable || moveToTable.isPending}
+                  title={
+                    !canChangeTable
+                      ? hasOrderItems
+                        ? "Solo puedes cambiar de mesa ordenes DINE_IN activas"
+                        : "La orden debe tener al menos un item"
+                      : "Cambiar esta orden de mesa"
+                  }
+                >
+                  {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
+                  Cambiar mesa
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="relative ml-auto h-11 min-w-[52px] shrink-0 rounded-xl px-3 2xl:hidden"
+                  onClick={() => setShowCart(!showCart)}
+                >
+                  <ShoppingBag className="h-4 w-4" />
+                  {itemCount > 0 && (
+                    <span className="absolute right-1 top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">
+                      {itemCount}
+                    </span>
+                  )}
+                </Button>
+
               </>
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="relative ml-auto h-11 rounded-xl gap-1.5 2xl:hidden" onClick={() => setShowCart(!showCart)}>
-          <ShoppingBag className="h-4 w-4" />
-          {itemCount > 0 && (
-            <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-              {itemCount}
-            </span>
-          )}
-        </Button>
       </div>
-
-      {hasSiblings && (
-        <div className="flex gap-1 overflow-x-auto border-b border-border bg-muted/30 px-4 py-2">
-          {order.siblings.map((sib) => (
-            <Button key={sib.id} variant={sib.id === order.id ? "default" : "outline"} size="sm" className="h-11 shrink-0 gap-1.5 rounded-lg px-3 text-xs 2xl:h-8" onClick={() => navigate(`/ordenes?order=${sib.id}`, { replace: true })}>
-              {formatSplitCodeLabel(sib.split_code)}
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{sib.item_count}</Badge>
-            </Button>
-          ))}
-        </div>
-      )}
 
       <div className="relative z-10 flex flex-1 overflow-hidden 2xl:hidden">
         <div className={cn("flex-1 overflow-y-auto p-3 pb-24", showCart && "hidden")}>

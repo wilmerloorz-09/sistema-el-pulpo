@@ -22,6 +22,7 @@ import {
   getCashPaymentMethod,
   getDefaultPaymentMethodId,
   isCashPaymentMethodName,
+  normalizePaymentMethodName,
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
@@ -230,12 +231,20 @@ export default function PaymentDialog({
   }, [cashDetailOpen, received]);
 
   const orderedPaymentMethods = useMemo(() => {
-    if (!cashMethod) return paymentMethods;
-
-    return [
+    const ordered = !cashMethod
+      ? paymentMethods
+      : [
       cashMethod,
       ...paymentMethods.filter((method) => method.id !== cashMethod.id),
     ];
+
+    const seenNames = new Set<string>();
+    return ordered.filter((method) => {
+      const key = normalizePaymentMethodName(method.name);
+      if (seenNames.has(key)) return false;
+      seenNames.add(key);
+      return true;
+    });
   }, [cashMethod, paymentMethods]);
 
 
@@ -885,7 +894,7 @@ export default function PaymentDialog({
                 No hay metodos de pago activos para esta sucursal.
               </div>
             ) : (
-              <div className="flex flex-col gap-3 md:grid md:grid-cols-2 md:gap-3 xl:flex xl:flex-row xl:flex-wrap xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-3 md:gap-3 xl:flex xl:flex-row xl:flex-wrap xl:items-center xl:justify-between">
                 {orderedPaymentMethods.map((method) => {
                   const split = paymentSplits.find((row) => row.methodId === method.id) ?? null;
                   const isSelected = !!split;
@@ -895,8 +904,8 @@ export default function PaymentDialog({
                     <div
                       key={method.id}
                       className={cn(
-                        "flex flex-wrap items-center gap-2 sm:gap-3",
-                        isCash ? "w-full xl:w-[420px]" : "w-full md:w-auto xl:w-[280px]",
+                        "flex items-center gap-2 sm:gap-3",
+                        isCash ? "w-full xl:w-[420px]" : "w-full xl:w-[280px]",
                       )}
                     >
                       <Checkbox
@@ -928,8 +937,9 @@ export default function PaymentDialog({
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-9 shrink-0 rounded-full border-stone-200 bg-white px-4 text-slate-700"
+                          className="h-9 shrink-0 whitespace-nowrap rounded-full border-stone-200 bg-white px-4 text-slate-700"
                           onClick={() => openCashDetail(method.id, isSelected)}
+                          disabled={!isSelected || selectedItemsForNow.length === 0}
                         >
                           <Coins className="h-4 w-4" />
                           Monedas y billetes
@@ -992,6 +1002,7 @@ export default function PaymentDialog({
           </div>
         </div>
       </div>
+
     </div>
   );
 

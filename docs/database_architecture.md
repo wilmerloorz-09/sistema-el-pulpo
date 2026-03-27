@@ -24,6 +24,7 @@
   - `image_url` (URL publica final generada desde Storage para la imagen del nodo)
   - `description`
   - `price`
+  - `manual_price_enabled` (solo operativo para nodos `category`; habilita precios manuales heredables en la rama)
   - `legacy_product_id` (solo para nodos `product`, referencia al espejo en `products`)
 
 ### Modelo legacy que sigue vivo
@@ -45,6 +46,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `orders.menu_scope` define con que arbol se opero visualmente la orden.
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
+- El modo de precio manual no vive en `products`: se resuelve desde ancestros de `menu_nodes` y hoy se hereda en frontend al cargar el catalogo.
 - La capa de Caja sigue cobrando desde `orders` + `order_items`, pero ahora puede enriquecer visualmente cada item enlazando:
   - `order_items.product_id`
   - `menu_nodes.legacy_product_id`
@@ -169,6 +171,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - El modal de cobro normal no introduce tablas nuevas:
   - la separacion `Items pendientes` / `Items a cobrar ahora` es una construccion de frontend sobre `order_items.quantity_pending`
   - el pago parcial sigue persistiendo por `payments` + `payment_items`
+- La deduplicacion visual de metodos (`Efectivo` repetido, etc.) es solo de frontend; no implica cambios de esquema ni consolidacion fisica de `payment_methods`.
 - El uso de imagen real del producto en Caja tampoco agrega columnas nuevas en `order_items`; reutiliza `menu_nodes.image_url` cuando el producto legacy puede vincularse por `legacy_product_id`.
 - Si `Recibido >= Aplicado` y el usuario agrega mas denominaciones, la UI debe pedir confirmacion antes de aceptar excedente.
 - La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
@@ -177,11 +180,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 ## Scripts de reset operativo
 - `supabase/sql/reset_full_for_fresh_start.sql`
   - elimina tambien `orders` especiales porque `is_special` y `special_total_manual` viven dentro de `public.orders`
-  - vacia ambos arboles `menu_nodes` (`TABLE` y `TAKEOUT`)
+  - vacia ambos arboles `menu_nodes` (`TABLE` y `TAKEOUT`) junto con cualquier configuracion de `manual_price_enabled`
   - deja intactas funciones/RPCs, incluidas las de alerta de mesero y las de conversion a orden especial
 - `supabase/sql/reset_operational_for_fresh_start.sql`
   - elimina datos transaccionales (`orders`, `order_items`, `payments`, eventos, caja)
-  - conserva catalogo, `menu_nodes`, imagenes y la relacion visual `legacy_product_id`
+  - conserva catalogo, `menu_nodes`, imagenes, `manual_price_enabled` y la relacion visual `legacy_product_id`
   - por eso despues del reset operativo siguen disponibles las imagenes reales de producto en `Ordenes` y `Caja`
 
 ## Funciones operativas nuevas para mesas por turno
@@ -424,6 +427,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - agrega `orders.menu_scope`
   - crea la RPC `copy_menu_scope_tree(...)`
   - permite coexistencia explicita entre `Arbol Menu Mesa` y `Arbol Menu Para Llevar`
+- `supabase/migrations/20260326190000_add_manual_price_enabled_to_menu_nodes.sql`
+  - agrega `menu_nodes.manual_price_enabled`
+  - deja el valor por defecto en `false`
+  - habilita la configuracion de precios manuales por categoria en el arbol
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

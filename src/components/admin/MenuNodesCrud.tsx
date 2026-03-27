@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -39,6 +40,7 @@ interface FormState {
   name: string;
   node_type: "category" | "product";
   parent_id: string | null;
+  manual_price_enabled: boolean;
   price: string;
   display_order: string;
   description: string;
@@ -56,6 +58,7 @@ const emptyForm = (parentId: string | null = null): FormState => ({
   name: "",
   node_type: "category",
   parent_id: parentId,
+  manual_price_enabled: false,
   price: "",
   display_order: "0",
   description: "",
@@ -314,6 +317,7 @@ const MenuNodesCrud = ({
       name: node.name,
       node_type: node.node_type,
       parent_id: node.parent_id,
+      manual_price_enabled: Boolean(node.manual_price_enabled),
       price: node.price == null ? "" : String(node.price),
       display_order: String(node.display_order ?? 0),
       description: node.description ?? "",
@@ -521,6 +525,7 @@ const MenuNodesCrud = ({
             price,
             description: form.description.trim() || null,
             image_url: imageUrlToPersist || null,
+            manual_price_enabled: form.node_type === "category" ? form.manual_price_enabled : false,
             legacy_product_id:
               form.node_type === "product"
                 ? (form.id ? (nodesById.get(form.id)?.legacy_product_id ?? form.id) : id)
@@ -829,14 +834,14 @@ const MenuNodesCrud = ({
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_380px]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.95fr)] xl:grid-cols-[minmax(0,0.96fr)_minmax(480px,1fr)]">
       <div className="rounded-3xl border border-border bg-card p-4">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <div>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <h2 className="font-display text-base font-bold">{title}</h2>
             <p className="text-xs text-muted-foreground">Vista colapsable de la jerarquia completa de menu_nodes.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap justify-start gap-2 sm:w-auto sm:justify-end">
             {showCopyFromTableButton ? (
               <Button
                 size="sm"
@@ -881,8 +886,8 @@ const MenuNodesCrud = ({
       </div>
 
       <div className="rounded-3xl border border-border bg-card p-4">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <div>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <h2 className="font-display text-base font-bold">Editor de nodo</h2>
             <p className="text-xs text-muted-foreground">Crear, editar y desactivar sin borrar historico.</p>
           </div>
@@ -904,109 +909,135 @@ const MenuNodesCrud = ({
         </div>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Nombre</Label>
-            <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} className="rounded-xl" />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Tipo</Label>
-              <Select value={form.node_type} onValueChange={(value: "category" | "product") => setForm((prev) => ({ ...prev, node_type: value, price: value === "product" ? prev.price : "" }))}>
-                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="category">Categoria</SelectItem>
-                  <SelectItem value="product">Producto</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Padre</Label>
-              <Select value={form.parent_id ?? "ROOT"} onValueChange={(value) => setForm((prev) => ({ ...prev, parent_id: value === "ROOT" ? null : value }))}>
-                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ROOT">Sin padre (raiz)</SelectItem>
-                  {parentOptions.map((node) => (
-                    <SelectItem key={node.id} value={node.id}>
-                      {"  ".repeat(node.depth)}{node.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Orden</Label>
-              <Input value={form.display_order} onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))} className="rounded-xl" inputMode="numeric" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Precio</Label>
-              <Input
-                value={form.price}
-                onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
-                className="rounded-xl"
-                inputMode="decimal"
-                disabled={form.node_type === "category"}
-                placeholder={form.node_type === "product" ? "0.00" : "Solo para productos"}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
-            <div className="space-y-1.5">
-              <Label>Imagen</Label>
-              <input
-                id="menu-node-image-input"
-                type="file"
-                accept={ACCEPTED_IMAGE_TYPES.join(",")}
-                onChange={handleImageFileChange}
-                className="sr-only"
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <label
-                  htmlFor="menu-node-image-input"
-                  className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
-                >
-                  Seleccionar imagen
-                </label>
-                <span className="text-xs text-muted-foreground">
-                  {selectedImageFile ? selectedImageFile.name : "Ningun archivo seleccionado"}
-                </span>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Nombre</Label>
+                <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} className="rounded-xl" />
               </div>
-            </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" className="rounded-xl" onClick={clearSelectedUpload} disabled={!selectedImageFile}>
-                <Trash2 className="mr-1.5 h-4 w-4" />
-                Quitar archivo nuevo
-              </Button>
-              <Button type="button" variant="outline" className="rounded-xl" onClick={clearCurrentImage} disabled={!hasCurrentImage}>
-                <Trash2 className="mr-1.5 h-4 w-4" />
-                Quitar imagen actual
-              </Button>
-            </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Tipo</Label>
+                  <Select value={form.node_type} onValueChange={(value: "category" | "product") => setForm((prev) => ({ ...prev, node_type: value, price: value === "product" ? prev.price : "" }))}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="category">Categoria</SelectItem>
+                      <SelectItem value="product">Producto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_112px] sm:items-start">
-              <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">
-                La imagen del nodo se gestiona solo por archivo subido. Acepta JPG, PNG, WEBP o GIF hasta 2 MB.
-                {hasCurrentImage ? (
-                  <div className="mt-2 text-foreground">Este nodo ya tiene una imagen guardada.</div>
-                ) : null}
-                {selectedImageFile ? (
-                  <div className="mt-2 text-foreground">Archivo nuevo: {selectedImageFile.name}</div>
-                ) : null}
+                <div className="space-y-1.5">
+                  <Label>Padre</Label>
+                  <Select value={form.parent_id ?? "ROOT"} onValueChange={(value) => setForm((prev) => ({ ...prev, parent_id: value === "ROOT" ? null : value }))}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ROOT">Sin padre (raiz)</SelectItem>
+                      {parentOptions.map((node) => (
+                        <SelectItem key={node.id} value={node.id}>
+                          {"  ".repeat(node.depth)}{node.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex h-28 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background">
-                {imagePreviewUrl ? (
-                  <img src={imagePreviewUrl} alt="Vista previa del nodo" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-center text-xs text-muted-foreground">
-                    <ImageUp className="h-5 w-5" />
-                    <span>Sin imagen</span>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Orden</Label>
+                  <Input value={form.display_order} onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))} className="rounded-xl" inputMode="numeric" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Precio</Label>
+                  <Input
+                    value={form.price}
+                    onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+                    className="rounded-xl"
+                    inputMode="decimal"
+                    disabled={form.node_type === "category"}
+                    placeholder={form.node_type === "product" ? "0.00" : "Solo para productos"}
+                  />
+                </div>
+              </div>
+
+              {form.node_type === "category" && (
+                <label className="flex items-start gap-3 rounded-2xl border border-orange-200 bg-orange-50/60 px-3 py-3">
+                  <Checkbox
+                    checked={form.manual_price_enabled}
+                    onCheckedChange={(checked) => setForm((prev) => ({ ...prev, manual_price_enabled: checked === true }))}
+                    className="mt-0.5 h-5 w-5 rounded-md"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">Precios manuales</div>
+                    <div className="text-xs text-muted-foreground">
+                      Los productos dentro de esta categoria pediran precio manual al agregarlos a la orden.
+                    </div>
                   </div>
-                )}
+                </label>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Descripcion</Label>
+                <Textarea value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} className="min-h-28 rounded-2xl" />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
+              <div className="space-y-1.5">
+                <Label>Imagen</Label>
+                <input
+                  id="menu-node-image-input"
+                  type="file"
+                  accept={ACCEPTED_IMAGE_TYPES.join(",")}
+                  onChange={handleImageFileChange}
+                  className="sr-only"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor="menu-node-image-input"
+                    className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
+                  >
+                    Seleccionar imagen
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    {selectedImageFile ? selectedImageFile.name : "Ningun archivo seleccionado"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" className="rounded-xl" onClick={clearSelectedUpload} disabled={!selectedImageFile}>
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Quitar archivo nuevo
+                </Button>
+                <Button type="button" variant="outline" className="rounded-xl" onClick={clearCurrentImage} disabled={!hasCurrentImage}>
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Quitar imagen actual
+                </Button>
+              </div>
+
+              <div className="grid gap-3 pt-2 sm:grid-cols-1">
+                <div className="rounded-2xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                  La imagen del nodo se gestiona solo por archivo subido. Acepta JPG, PNG, WEBP o GIF hasta 2 MB.
+                  {hasCurrentImage ? (
+                    <div className="mt-2 text-foreground">Este nodo ya tiene una imagen guardada.</div>
+                  ) : null}
+                  {selectedImageFile ? (
+                    <div className="mt-2 text-foreground">Archivo nuevo: {selectedImageFile.name}</div>
+                  ) : null}
+                </div>
+                <div className="flex h-36 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background">
+                  {imagePreviewUrl ? (
+                    <img src={imagePreviewUrl} alt="Vista previa del nodo" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-center text-xs text-muted-foreground">
+                      <ImageUp className="h-5 w-5" />
+                      <span>Sin imagen</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1016,11 +1047,6 @@ const MenuNodesCrud = ({
             {isTableScope
               ? " Este arbol sincroniza automaticamente la estructura legacy base para ventas en ordenes."
               : " Este arbol opera como catalogo visual/operativo independiente para llevar y puede copiarse desde Mesa."}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Descripcion</Label>
-            <Textarea value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} className="min-h-24 rounded-2xl" />
           </div>
 
           <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">

@@ -24,12 +24,15 @@ interface Product {
   unit_price: number | null;
   price_mode: "FIXED" | "MANUAL";
   is_active: boolean;
+  icon?: string | null;
+  image_url?: string | null;
 }
 
 interface MenuNodeRef {
   id: string;
   parent_id: string | null;
   node_type: "category" | "product";
+  manual_price_enabled?: boolean | null;
 }
 
 interface MenuNodeModifierLink {
@@ -85,13 +88,22 @@ export function useMenuData(menuScope: "TABLE" | "TAKEOUT" = "TABLE") {
 
       const { data: productNodes, error: productNodesError } = await supabase
         .from("menu_nodes" as never)
-        .select("id, legacy_product_id, name, price, display_order, is_active")
+        .select("id, legacy_product_id, name, price, display_order, is_active, icon, image_url, parent_id")
         .eq("branch_id", activeBranchId)
         .eq("menu_scope", menuScope)
         .eq("node_type", "product")
         .eq("is_active", true);
 
       if (productNodesError) throw productNodesError;
+
+      const { data: menuNodes, error: menuNodesError } = await supabase
+        .from("menu_nodes" as never)
+        .select("id, parent_id, node_type, manual_price_enabled")
+        .eq("branch_id", activeBranchId)
+        .eq("menu_scope", menuScope)
+        .eq("is_active", true);
+
+      if (menuNodesError) throw menuNodesError;
 
       const nodeRows = (productNodes ?? []) as Array<{
         id: string;
@@ -100,7 +112,24 @@ export function useMenuData(menuScope: "TABLE" | "TAKEOUT" = "TABLE") {
         price?: number | null;
         display_order?: number | null;
         is_active?: boolean | null;
+        parent_id?: string | null;
+        icon?: string | null;
+        image_url?: string | null;
       }>;
+      const menuNodeMap = new Map(((menuNodes ?? []) as unknown as MenuNodeRef[]).map((node) => [node.id, node]));
+
+      const inheritsManualPrice = (startParentId: string | null | undefined) => {
+        let currentId = startParentId ?? null;
+        while (currentId) {
+          const currentNode = menuNodeMap.get(currentId);
+          if (!currentNode) break;
+          if (currentNode.node_type === "category" && Boolean(currentNode.manual_price_enabled)) {
+            return true;
+          }
+          currentId = currentNode.parent_id ?? null;
+        }
+        return false;
+      };
       const productIds = [
         ...new Set(
           nodeRows
@@ -132,7 +161,10 @@ export function useMenuData(menuScope: "TABLE" | "TAKEOUT" = "TABLE") {
           description: node.name || legacyProduct.description,
           display_order: Number(node.display_order ?? legacyProduct.display_order ?? 0),
           unit_price: node.price == null ? legacyProduct.unit_price : Number(node.price),
+          price_mode: inheritsManualPrice(node.parent_id) ? "MANUAL" : legacyProduct.price_mode,
           is_active: Boolean(node.is_active ?? true),
+          icon: node.icon ?? null,
+          image_url: node.image_url ?? null,
         }];
       });
     },

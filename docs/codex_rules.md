@@ -21,6 +21,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - No volver a depender de pantallas separadas de `Categorias`, `Subcategorias` o `Productos` para la estructura principal.
 - Nivel 1 es el unico nivel obligatorio y la unica capa fija para navegar en Ordenes; desde Nivel 2 en adelante no deben existir tratamientos especiales por nivel.
 - Los productos pueden existir desde Nivel 2 en adelante.
+- Si una categoria usa `manual_price_enabled`, preservar esa capacidad al editar nodos o al recalcular la carga del catalogo; no mover la regla a `products` por atajo.
 
 ### 4) Compatibilidad legacy obligatoria mientras siga la FK actual
 - Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
@@ -169,11 +170,17 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - no volver a seleccionar automaticamente todo el pendiente al abrir
   - el pago parcial no debe cerrar el modal mientras la orden siga existiendo en `Por cobrar`
   - los metodos de pago deben compactarse sin montarse entre si; si no caben en una sola linea, apilarlos
+  - si existen metodos duplicados por nombre visible, deduplicarlos en la UI antes de renderizar
+  - `Monedas y billetes` solo debe habilitarse cuando exista al menos un item en `Items a cobrar ahora`
   - usar la imagen real del producto desde `menu_nodes.image_url` cuando exista; fallback a icono generico solo cuando falte
 - Si se toca `OrderItemsList` en `Ordenes`, mantener comportamiento responsive explicito:
   - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
   - tablet: mantener controles a la derecha y aprovechar el ancho extra sin empujar acciones al pie
   - no volver a layouts donde el nombre del producto compita con stepper y accion en una sola fila angosta
+- Si se toca la navegacion entre `Mesas` y `Ordenes`, preservar el origen de apertura:
+  - abrir una mesa desde `Mesas` puede navegar a `/ordenes`
+  - pero la navegacion visible debe seguir marcando `Mesas` mientras el flujo provenga de ahi
+  - esta regla tambien aplica al dividir mesa o cambiar entre submesas
 
 ### Admin
 - `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
@@ -233,9 +240,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 5. Si se tocaron scripts de reset (`reset_full_for_fresh_start` / `reset_operational_for_fresh_start`), actualizar tambien sus comentarios para reflejar:
-   - orden especial
-   - arbol dual `TABLE` / `TAKEOUT`
-   - alertas/listas operativas nuevas que siguen existiendo como funciones
+  - orden especial
+  - arbol dual `TABLE` / `TAKEOUT`
+  - `manual_price_enabled` en `menu_nodes`
+  - alertas/listas operativas nuevas que siguen existiendo como funciones
 6. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
 
 7. Si se toco una Edge Function o una RPC critica, confirmar si requiere deploy o migracion remota antes de dar por cerrado el cambio.

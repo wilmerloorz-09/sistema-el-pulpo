@@ -9,6 +9,7 @@
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 --   - incluye ambos alcances de menu_nodes: `TABLE` y `TAKEOUT`
 --   - incluye imagenes/referencias visuales de productos en `menu_nodes.image_url`
+--   - incluye configuraciones de categoria como `manual_price_enabled`
 -- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
 -- - Elimina politicas/configuraciones por sucursal:
 --   - cancelacion/anulacion directa por categoria
@@ -222,10 +223,12 @@ COMMIT;
 -- - 0 politicas de cancelacion/anulacion por categoria
 -- - 0 configuraciones/asignaciones de despacho
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
+-- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
 
 
 

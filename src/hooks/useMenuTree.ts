@@ -13,6 +13,7 @@ export interface MenuNode {
   depth: number;
   display_order: number;
   is_active: boolean;
+  manual_price_enabled?: boolean;
   icon?: string | null;
   price?: number | null;
   description?: string | null;

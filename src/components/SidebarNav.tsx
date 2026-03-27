@@ -30,6 +30,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
   const initials = getInitials(profile?.full_name);
   const location = useLocation();
   const activeCajaTab = location.pathname === "/caja" && location.search.includes("tab=completed") ? "completed" : "pending";
+  const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
 
   if (visibleItems.length === 0) {
     return null;
@@ -84,6 +85,11 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
               <TooltipTrigger asChild>
                 <NavLink
                   to={item.to}
+                  forceActive={
+                    (item.to === "/mesas" && (location.pathname === "/mesas" || fromMesas))
+                    || (item.to === "/ordenes" && location.pathname === "/ordenes" && !fromMesas)
+                  }
+                  suppressActive={item.to === "/ordenes" && fromMesas}
                   className={cn(
                     "group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
                     "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",

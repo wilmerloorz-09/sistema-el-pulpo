@@ -11,6 +11,7 @@
 --   - `TABLE`
 --   - `TAKEOUT`
 -- - Conserva tambien `menu_nodes.image_url` / `legacy_product_id`, por lo que Caja y Ordenes siguen pudiendo resolver imagen real de producto
+-- - Conserva la configuracion `manual_price_enabled` en categorias de `menu_nodes`
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero y las de orden especial
 -- - Conserva intactos los cambios frontend de shell responsivo y tabs de Caja por URL, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
@@ -108,10 +109,11 @@ COMMIT;
 -- - Mesas internas intactas, pero desactivadas
 -- - Politicas de cancelacion/anulacion por categoria intactas
 -- - Configuracion y asignaciones de despacho intactas
--- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, imagenes de producto y asignaciones por nodo)
+-- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, imagenes de producto, precios manuales por categoria y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
 
 
 

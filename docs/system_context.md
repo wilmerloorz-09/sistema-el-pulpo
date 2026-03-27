@@ -8,6 +8,15 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-03-14)
 
+### 0.0.2) Menu / Mesas / Caja: cierre de jornada 2026-03-26
+- `Admin > Arbol Menu` ahora permite marcar categorias con `Precios manuales`.
+- Esa marca se persiste en `menu_nodes.manual_price_enabled`.
+- Si un producto cuelga de una categoria (o ancestro) con `manual_price_enabled = true`, `Ordenes` debe tratarlo como producto de precio manual al cargar el catalogo.
+- En `Mesas`, abrir una mesa, para llevar o una orden especial debe seguir entrando al flujo normal de `Ordenes`, pero la navegacion visual debe conservar seleccionado `Mesas` cuando la apertura proviene desde ese modulo.
+- En `Ordenes`, al dividir mesa o cambiar entre submesas tambien debe preservarse ese origen (`from=mesas`) para no resaltar `Ordenes` en la navegacion lateral/inferior.
+- En `Caja > PaymentDialog`, la lista de metodos de pago ya no debe duplicar metodos con el mismo nombre visible.
+- `Monedas y billetes` solo debe habilitarse cuando exista al menos un item en la columna `Items a cobrar ahora`.
+
 ### 0.0.1) Caja y catalogo: ajuste movil/tablet de la jornada 2026-03-26
 - `Caja` ya no debe tratar desktop, tablet y telefono como el mismo layout reducido.
 - La lista `Ordenes por cobrar` puede seguir siendo tabla suave en desktop, pero sus detalles expandidos deben apilar cantidades/subtotales en telefono para no comprimir columnas.
@@ -87,6 +96,7 @@
   - cambio de padre
   - cambio de orden
   - precio para nodos `product`
+  - check `Precios manuales` para nodos `category`
   - baja logica con `is_active=false`
 - La pestana `Modificadores` administra solo el catalogo base (`modifiers`).
 - `Admin > Denominaciones` ahora permite subir imagen por archivo; esa imagen se muestra en Caja al listar monedas/billetes y opciones de cambio.
@@ -395,7 +405,7 @@
 3. No hacer deletes fisicos en catalogo con historial operativo; usar desactivacion logica.
 
 ## Checklist Rapido para Continuar
-1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql`, `supabase/migrations/20260313143000_move_modifier_assignments_to_menu_nodes.sql` y `supabase/migrations/20260313170000_add_denomination_images.sql` esten aplicadas.
+1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql`, `supabase/migrations/20260313143000_move_modifier_assignments_to_menu_nodes.sql`, `supabase/migrations/20260313170000_add_denomination_images.sql` y `supabase/migrations/20260326190000_add_manual_price_enabled_to_menu_nodes.sql` esten aplicadas.
 2. Validar en `Admin > Arbol Menu`:
    - crear raiz
    - crear hijo

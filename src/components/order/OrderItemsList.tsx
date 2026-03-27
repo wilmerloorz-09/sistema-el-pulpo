@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Ban, Minus, Plus } from "lucide-react";
+import { Ban, Minus, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -139,6 +139,31 @@ const OrderItemsList = ({
 
               <div className="flex shrink-0 flex-col items-end gap-2 self-start">
                 <div className="flex items-center justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-8 w-8 rounded-xl",
+                      isPending
+                        ? "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100"
+                        : "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100",
+                    )}
+                    disabled={controlDisabled || (!isPending && (!canCancelOperational || maxOperationalQty <= 0))}
+                    onClick={() => {
+                      if (isPending) {
+                        onRemove(item.id);
+                        return;
+                      }
+
+                      if (onRequestCancel && !disableOperationalCancel) {
+                        onRequestCancel(item, maxOperationalQty || displayQuantity || 1);
+                      }
+                    }}
+                    title={isPending ? "Eliminar item" : "Anular todo el item"}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+
                   <Button
                     variant="ghost"
                     size="icon"

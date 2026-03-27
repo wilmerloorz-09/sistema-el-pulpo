@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Minus, Plus, ShoppingBag } from "lucide-react";
+import { ImageIcon, Minus, Plus, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Modifier {
@@ -17,6 +17,8 @@ interface Product {
   description: string;
   unit_price: number | null;
   price_mode: "FIXED" | "MANUAL";
+  icon?: string | null;
+  image_url?: string | null;
 }
 
 interface Props {
@@ -95,9 +97,30 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="max-w-sm rounded-[24px] p-5 shadow-xl sm:rounded-[28px] border-orange-200/40 bg-background">
         <DialogHeader className="mb-1 text-left">
-          <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
-            {product.description}
-          </DialogTitle>
+          <div className="flex items-start gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-100 text-primary shadow-sm">
+              {product.image_url ? (
+                <img src={product.image_url} alt={product.description} className="h-full w-full object-cover" />
+              ) : product.icon ? (
+                <span className="text-[1.5rem] leading-none">{product.icon}</span>
+              ) : (
+                <ImageIcon className="h-6 w-6 text-muted-foreground/60" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
+                {product.description}
+              </DialogTitle>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-800">
+                  Precio unitario
+                </span>
+                <span className="font-display text-lg font-black text-foreground">
+                  {isManual ? "$0.00" : `$${(product.unit_price ?? 0).toFixed(2)}`}
+                </span>
+              </div>
+            </div>
+          </div>
         </DialogHeader>
 
         <div className="space-y-5">
