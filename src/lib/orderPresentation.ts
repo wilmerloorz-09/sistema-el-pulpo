@@ -3,7 +3,12 @@ export function getOrderOriginLabel(params: {
   tableName?: string | null;
   splitCode?: string | null;
   isSpecial?: boolean | null | undefined;
+  isTrayOrder?: boolean | null | undefined;
 }) {
+  if (params.isTrayOrder) {
+    return "Orden Bandeja";
+  }
+
   if (params.isSpecial) {
     return "Orden Especial";
   }
@@ -18,7 +23,9 @@ export function getOrderOriginLabel(params: {
 export function getOrderKind(params: {
   orderType: string | null | undefined;
   isSpecial?: boolean | null | undefined;
+  isTrayOrder?: boolean | null | undefined;
 }) {
+  if (params.isTrayOrder) return "tray" as const;
   if (params.isSpecial) return "special" as const;
   if (params.orderType === "TAKEOUT") return "takeout" as const;
   return "table" as const;

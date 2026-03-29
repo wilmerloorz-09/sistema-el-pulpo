@@ -19,6 +19,8 @@ export interface DispatchOrderItem {
   quantity_dispatchable: number;
   quantity_dispatched: number;
   quantity_cancelled: number;
+  tray_item_type?: "A" | "B" | "C" | null;
+  tray_container_cost?: number;
   status: string;
   modifiers: { description: string }[];
   item_note?: string | null;
@@ -33,6 +35,7 @@ export interface DispatchOrder {
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
+  is_tray_order?: boolean;
   table_name: string | null;
   split_code: string | null;
   status: OrderStatus;
@@ -92,7 +95,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, order_type, is_special, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("branch_id", activeBranchId)
         .in("status", ["SENT_TO_KITCHEN", "READY"])
         .order("updated_at", { ascending: true });
@@ -124,7 +127,7 @@ export function useDispatchOrders(scope: DispatchView) {
       const orderIds = permittedOrders.map((order) => order.id);
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
-        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, status, sent_to_kitchen_at, created_at")
+        .select("id, order_id, description_snapshot, item_note, quantity, unit_price, tray_item_type, tray_container_cost, status, sent_to_kitchen_at, created_at")
         .in("order_id", orderIds);
       if (itemsError) throw itemsError;
 
@@ -198,6 +201,8 @@ export function useDispatchOrders(scope: DispatchView) {
               quantity_dispatchable: quantityPendingPrepare + quantityReadyAvailable,
               quantity_dispatched: quantities.quantityDispatchedAvailable,
               quantity_cancelled: quantities.quantityCancelledTotal,
+              tray_item_type: item.tray_item_type ?? null,
+              tray_container_cost: Number(item.tray_container_cost ?? 0),
               status: item.status ?? "SENT",
               total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
               modifiers: modifiersMap[item.id] ?? [],
@@ -232,6 +237,7 @@ export function useDispatchOrders(scope: DispatchView) {
             order_code: order.order_code,
             order_type: order.order_type as "DINE_IN" | "TAKEOUT",
             is_special: Boolean(order.is_special),
+            is_tray_order: Boolean(order.is_tray_order),
             table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             status: order.status,

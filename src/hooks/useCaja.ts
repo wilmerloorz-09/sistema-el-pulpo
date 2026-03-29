@@ -101,6 +101,7 @@ export interface PayableOrder {
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
+  is_tray_order?: boolean;
   special_total_manual: number | null;
   special_real_total: number;
   special_paid_amount: number;
@@ -108,6 +109,8 @@ export interface PayableOrder {
   table_name: string | null;
   split_code: string | null;
   total: number;
+  tray_products_total?: number;
+  tray_container_total?: number;
   items: {
     id: string;
     product_id: string;
@@ -118,6 +121,8 @@ export interface PayableOrder {
     quantity: number;
     unit_price: number;
     total: number;
+    tray_item_type?: "A" | "B" | "C" | null;
+    tray_container_cost?: number;
     paid_at: string | null;
     quantity_paid: number;
     quantity_pending: number;
@@ -651,7 +656,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const { data: orders, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, order_type, table_id, split_id, status, is_special, special_total_manual")
+        .select("id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, special_total_manual")
         .eq("branch_id", activeBranchId)
         .in("status", ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
         .order("updated_at");
@@ -675,7 +680,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const orderIds = orders.map((o) => o.id);
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
-        .select("id, order_id, product_id, description_snapshot, quantity, unit_price, total, paid_at")
+        .select("id, order_id, product_id, description_snapshot, quantity, unit_price, total, paid_at, tray_item_type, tray_container_cost")
         .in("order_id", orderIds);
       if (itemsError) throw itemsError;
 
@@ -747,17 +752,28 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 description_snapshot: i.description_snapshot,
                 quantity: payableQty,
                 unit_price: Number(i.unit_price),
-                total: computeLineAmount(payableQty, Number(i.unit_price)),
+                total: Number(i.total ?? computeLineAmount(payableQty, Number(i.unit_price))),
+                tray_item_type: (i.tray_item_type ?? null) as "A" | "B" | "C" | null,
+                tray_container_cost: Number(i.tray_container_cost ?? 0),
                 paid_at: i.paid_at,
                 quantity_paid: paidQty,
                 quantity_pending: pendingQty,
-                pending_total: computeLineAmount(pendingQty, Number(i.unit_price)),
+                pending_total: pendingQty <= 0
+                  ? 0
+                  : roundMoney(
+                      Math.max(0, Number(i.total ?? 0) - Number(i.tray_container_cost ?? 0))
+                      * (pendingQty / Math.max(1, payableQty))
+                      + (pendingQty > 0 ? Number(i.tray_container_cost ?? 0) : 0),
+                    ),
               };
             })
             .filter((item) => item.quantity > 0 || item.quantity_paid > 0 || item.quantity_pending > 0);
 
           const isSpecial = Boolean((o as { is_special?: boolean | null }).is_special);
+          const isTrayOrder = Boolean((o as { is_tray_order?: boolean | null }).is_tray_order);
           const specialRealTotal = roundMoney(mappedItems.reduce((sum, item) => sum + Number(item.total), 0));
+          const trayContainerTotal = roundMoney(mappedItems.reduce((sum, item) => sum + Number(item.tray_container_cost ?? 0), 0));
+          const trayProductsTotal = roundMoney(mappedItems.reduce((sum, item) => sum + Math.max(0, Number(item.total) - Number(item.tray_container_cost ?? 0)), 0));
           const specialManualTotal = isSpecial
             ? ((o as { special_total_manual?: number | null }).special_total_manual == null
                 ? null
@@ -775,6 +791,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             order_code: (o as any).order_code ?? null,
             order_type: o.order_type,
             is_special: isSpecial,
+            is_tray_order: isTrayOrder,
             special_total_manual: specialManualTotal,
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
@@ -782,6 +799,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
             split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,
             total: displayTotal,
+            tray_products_total: trayProductsTotal,
+            tray_container_total: trayContainerTotal,
             items: mappedItems,
           } as PayableOrder;
         })
@@ -2056,7 +2075,6 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     registerCashMovement,
   };
 }
-
 
 
 

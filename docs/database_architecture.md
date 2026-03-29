@@ -478,3 +478,13 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 
 
 
+- Nuevas columnas:
+- `orders.is_tray_order boolean not null default false`
+- `order_items.tray_item_type char(1)` con valores `A`, `B`, `C`
+- `order_items.tray_container_cost numeric(10,2) not null default 0`
+- `menu_nodes.is_tray_category boolean not null default false`
+- Nueva restriccion: `is_tray_category` solo puede ser `true` en categorias raiz (`depth = 0`) del arbol `TAKEOUT`.
+- Nuevas RPCs:
+- `create_tray_order(uuid, uuid)`
+- `add_tray_order_item(uuid, uuid, integer, numeric, char, numeric, text)`
+- `get_tray_menu_nodes(uuid)`

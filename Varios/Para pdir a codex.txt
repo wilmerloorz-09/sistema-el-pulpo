@@ -1,6 +1,6 @@
 AL INICIAR
 
-Lee primero los archivos:
+En el contexto del sistema POS que estoy desarrollando, lee primero los archivos:
 
 docs/system_context.md
 docs/PROJECT_ARCHITECTURE.md

@@ -2,13 +2,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, History, ImageIcon, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useMenuTree, type MenuNode } from "@/hooks/useMenuTree";
+import { useMenuTree, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 
 interface MenuNavigatorProps {
   onSelectProduct?: (node: MenuNode) => void;
   includeInactive?: boolean;
-  menuScope?: "TABLE" | "TAKEOUT";
+  menuScope?: MenuScope;
   renderNodeAction?: (node: MenuNode) => ReactNode;
+  trayMode?: boolean;
+  trayNodes?: MenuNode[];
 }
 
 const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
@@ -44,12 +46,14 @@ const NodeCard = ({
   additionalDepth,
   onClick,
   nodeAction,
+  trayMode = false,
 }: {
   node: MenuNode;
   childCount: number;
   additionalDepth: number;
   onClick: () => void;
   nodeAction?: ReactNode;
+  trayMode?: boolean;
 }) => {
   const isProduct = node.node_type === "product";
   const isDisabledNode = !node.is_active && !nodeAction;
@@ -80,7 +84,9 @@ const NodeCard = ({
 
         <div className="min-w-0 flex flex-1 items-center justify-between gap-3">
           <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
-          <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">${Number(node.price ?? 0).toFixed(2)}</p>
+          <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">
+            {trayMode ? "Manual" : `$${Number(node.price ?? 0).toFixed(2)}`}
+          </p>
         </div>
 
         {!node.is_active && (
@@ -146,7 +152,14 @@ const NodeCard = ({
   );
 };
 
-const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "TABLE", renderNodeAction }: MenuNavigatorProps) => {
+const MenuNavigator = ({
+  onSelectProduct,
+  includeInactive = false,
+  menuScope = "TABLE",
+  renderNodeAction,
+  trayMode = false,
+  trayNodes,
+}: MenuNavigatorProps) => {
   const {
     visibleNodes,
     breadcrumb,
@@ -159,7 +172,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "
     countDescendantDepth,
     loading,
     error,
-  } = useMenuTree({ includeInactive, menuScope });
+  } = useMenuTree({ includeInactive, menuScope, nodesOverride: trayMode && trayNodes ? trayNodes : null });
 
   const panelRef = useRef<HTMLDivElement>(null);
   const searchPanelRef = useRef<HTMLDivElement>(null);
@@ -223,9 +236,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const lowerQuery = searchQuery.trim().toLowerCase();
-    
-    const allProducts = getChildren(null, true).filter(n => n.node_type === "product");
-    
+
     const recursiveFind = (nodes: MenuNode[]): MenuNode[] => {
       let results: MenuNode[] = [];
       for (const node of nodes) {
@@ -315,6 +326,12 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
+      {trayMode && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Modo bandeja por monto: solo se muestran categorias bandeja y el precio se define manualmente.
+        </div>
+      )}
+
       <div className="relative mb-1">
         <div ref={searchPanelRef} className="relative">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -444,6 +461,7 @@ const MenuNavigator = ({ onSelectProduct, includeInactive = false, menuScope = "
               node={node}
               childCount={getChildren(node.id).length}
               additionalDepth={countDescendantDepth(node.id)}
+              trayMode={trayMode}
               onClick={() => {
                 if (!node.is_active && !renderNodeAction?.(node)) return;
                 if (searchQuery.trim()) {

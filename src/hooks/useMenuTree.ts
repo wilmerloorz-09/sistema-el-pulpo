@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 
+export type MenuScope = "TABLE" | "TAKEOUT" | "BULK";
+
 export interface MenuNode {
   id: string;
   branch_id: string;
-  menu_scope: "TABLE" | "TAKEOUT";
+  menu_scope: MenuScope;
   parent_id: string | null;
   name: string;
   node_type: "category" | "product";
@@ -19,11 +21,13 @@ export interface MenuNode {
   description?: string | null;
   image_url?: string | null;
   legacy_product_id?: string | null;
+  is_tray_category?: boolean;
 }
 
 interface UseMenuTreeOptions {
   includeInactive?: boolean;
-  menuScope?: "TABLE" | "TAKEOUT";
+  menuScope?: MenuScope;
+  nodesOverride?: MenuNode[] | null;
 }
 
 interface UseMenuTreeReturn {
@@ -52,9 +56,10 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
   const [pathIds, setPathIds] = useState<string[]>([]);
   const includeInactive = options.includeInactive ?? false;
   const menuScope = options.menuScope ?? "TABLE";
+  const overrideNodes = options.nodesOverride ?? null;
 
   const query = useQuery({
-    queryKey: ["menu-tree", activeBranchId, menuScope, includeInactive],
+    queryKey: ["menu-tree", activeBranchId, menuScope, includeInactive, overrideNodes ? "override" : "db"],
     queryFn: async () => {
       let queryBuilder = supabase
         .from("menu_nodes" as never)
@@ -74,10 +79,10 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
       if (error) throw error;
       return (data ?? []) as unknown as MenuNode[];
     },
-    enabled: !!activeBranchId,
+    enabled: !!activeBranchId && !overrideNodes,
   });
 
-  const nodes = query.data ?? [];
+  const nodes = overrideNodes ?? (query.data ?? []);
 
   const nodesById = useMemo(() => {
     const next = new Map<string, MenuNode>();
@@ -192,7 +197,7 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
     getChildren,
     hasChildren,
     countDescendantDepth,
-    loading: query.isLoading,
-    error: query.error instanceof Error ? query.error.message : null,
+    loading: overrideNodes ? false : query.isLoading,
+    error: overrideNodes ? null : query.error instanceof Error ? query.error.message : null,
   };
 }

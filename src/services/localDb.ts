@@ -86,6 +86,10 @@ export interface LocalOrder extends LocalRecord {
   order_number: number;
   order_code: string | null;
   order_type: string;
+  menu_scope?: string;
+  is_special?: boolean;
+  is_tray_order?: boolean;
+  special_total_manual?: number | null;
   status: string;
   table_id: string | null;
   split_id: string | null;
@@ -100,11 +104,17 @@ export interface LocalOrderItem extends LocalRecord {
   order_id: string;
   product_id: string;
   description_snapshot: string;
+  item_note?: string | null;
   quantity: number;
   unit_price: number;
   total: number;
+  status?: string | null;
+  sent_to_kitchen_at?: string | null;
+  ready_at?: string | null;
   dispatched_at: string | null;
   paid_at: string | null;
+  tray_item_type?: string | null;
+  tray_container_cost?: number;
   created_at: string;
 }
 

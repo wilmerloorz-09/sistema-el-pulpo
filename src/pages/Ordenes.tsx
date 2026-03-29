@@ -15,6 +15,7 @@ import ThermalReceipt from "@/components/order/ThermalReceipt";
 import OrdersList from "@/components/order/OrdersList";
 import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
+import { TrayItemChip } from "@/components/order/TrayItemChip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,9 +26,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
-import type { MenuNode } from "@/hooks/useMenuTree";
+import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
 import { formatSplitCodeLabel } from "@/lib/splitCode";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import type { TrayItemType } from "@/hooks/useTrayOrder";
 
 interface SelectedProduct {
   id: string;
@@ -49,9 +51,23 @@ const Ordenes = () => {
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
   const fromMesas = searchParams.get("from") === "mesas";
+  const [pendingTrayType, setPendingTrayType] = useState<TrayItemType | null>(null);
+  const effectiveTrayType: TrayItemType = pendingTrayType ?? "A";
+  const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<"TABLE" | "TAKEOUT" | null>(null);
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope, updateSpecialTotal, convertToSpecial } = useOrder(orderId);
-  const currentMenuScope = order?.order_type === "TAKEOUT" ? "TAKEOUT" : (order?.menu_scope ?? "TABLE");
+  const trayMenuScope: MenuScope =
+    effectiveTrayType === "A"
+      ? "TABLE"
+      : effectiveTrayType === "C"
+        ? "BULK"
+        : "TAKEOUT";
+  const persistedMenuScope: MenuScope = order?.menu_scope === "TAKEOUT" ? "TAKEOUT" : "TABLE";
+  const currentMenuScope: MenuScope = order?.is_tray_order
+    ? trayMenuScope
+    : order?.order_type === "TAKEOUT"
+      ? "TAKEOUT"
+      : persistedMenuScope;
   const menu = useMenuData(currentMenuScope);
   const tablesQuery = useTablesWithStatus();
 
@@ -81,6 +97,7 @@ const Ordenes = () => {
     || canManage(permissions, "admin_global")
     || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
     || Boolean(shiftGateQuery.data?.isSupervisor);
+  const isTrayOrder = Boolean(order?.is_tray_order);
 
   useEffect(() => {
     if (!orderId || !order?.branch_id || !activeBranchId) return;
@@ -111,7 +128,24 @@ const Ordenes = () => {
     );
   }, [order?.id, order?.is_special, order?.special_total_manual]);
 
+  useEffect(() => {
+    if (!isTrayOrder) {
+      setPendingTrayType(null);
+      return;
+    }
+
+    setPendingTrayType((current) => current ?? "A");
+  }, [isTrayOrder, order?.id]);
+
+  useEffect(() => {
+    setPendingMenuScopeSelection(null);
+  }, [order?.id, order?.menu_scope]);
+
   const isTakeout = order?.order_type === "TAKEOUT";
+  const interactiveMenuScope =
+    !isTrayOrder && pendingMenuScopeSelection
+      ? pendingMenuScopeSelection
+      : currentMenuScope;
 
   const printReceipt = useCallback(() => {
     window.print();
@@ -119,9 +153,19 @@ const Ordenes = () => {
 
   const handleMobileBackToMesas = useCallback(() => {
     if (typeof window !== "undefined" && window.innerWidth <= 768) {
-      navigate(-1);
+      if (fromMesas) {
+        navigate("/mesas", { replace: true });
+        return;
+      }
+
+      if (window.history.length > 1) {
+        navigate(-1);
+        return;
+      }
+
+      navigate("/ordenes", { replace: true });
     }
-  }, [navigate]);
+  }, [fromMesas, navigate]);
 
   const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
     const legacyProductId = node.legacy_product_id ?? node.id;
@@ -147,12 +191,19 @@ const Ordenes = () => {
         description: data.description ?? node.name,
         subcategory_id: data.subcategory_id,
         unit_price: data.unit_price == null ? (node.price ?? null) : Number(data.unit_price),
-        price_mode: data.price_mode,
+        price_mode: isTrayOrder
+          ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED")
+          : data.price_mode,
       };
     }
 
-    setSelectedProduct(legacyProduct);
-  }, [menu.products]);
+    setSelectedProduct({
+      ...legacyProduct,
+      price_mode: isTrayOrder
+        ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED")
+        : legacyProduct.price_mode,
+    });
+  }, [effectiveTrayType, isTrayOrder, menu.products]);
 
   if (!orderId) {
     return (
@@ -239,9 +290,12 @@ const Ordenes = () => {
     tableName: order.table_name,
     splitCode: order.split_code,
     isSpecial: order.is_special,
+    isTrayOrder: order.is_tray_order,
   });
   const tableWatermark =
-    order.is_special
+    order.is_tray_order
+      ? "ORDEN BANDEJA"
+      : order.is_special
       ? "ORDEN ESPECIAL"
       : order.order_type === "DINE_IN"
         ? formatSplitCodeLabel(order.split_code) || (order.table_name ?? "").trim()
@@ -534,25 +588,82 @@ const Ordenes = () => {
 
   const menuPanel = canEditItems ? (
     <div className="space-y-3">
+      {isTrayOrder ? (
+        <div className="rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 p-4 shadow-[0_18px_42px_-30px_rgba(245,158,11,0.3)]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {([
+              { value: "B", label: "Con Envase" },
+              { value: "A", label: "Sin envase" },
+              { value: "C", label: "A granel" },
+            ] as Array<{ value: TrayItemType; label: string }>).map((option) => {
+              const checked = effectiveTrayType === option.value;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    setPendingTrayType(option.value);
+                    setSelectedProduct(null);
+                  }}
+                  aria-pressed={checked}
+                  className={cn(
+                    "flex items-center gap-2 text-sm font-semibold transition",
+                    checked
+                      ? "text-amber-900"
+                      : "text-amber-800/90",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded-full border transition",
+                      checked
+                        ? "border-amber-600"
+                        : "border-amber-500/70",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full transition",
+                        checked ? "bg-amber-600" : "bg-transparent",
+                      )}
+                    />
+                  </span>
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+        </div>
+      ) : null}
+
       {order.order_type === "DINE_IN" ? (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
           <button
             type="button"
             className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
-            onClick={() => updateMenuScope.mutate("TABLE")}
+            onClick={() => {
+              if (interactiveMenuScope === "TABLE") return;
+              setPendingMenuScopeSelection("TABLE");
+              updateMenuScope.mutate("TABLE", {
+                onError: () => setPendingMenuScopeSelection(null),
+              });
+            }}
             disabled={updateMenuScope.isPending}
-            aria-pressed={currentMenuScope === "TABLE"}
+            aria-pressed={interactiveMenuScope === "TABLE"}
           >
             <span
               className={cn(
                 "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                currentMenuScope === "TABLE" ? "border-primary" : "border-muted-foreground/50",
+                interactiveMenuScope === "TABLE" ? "border-primary" : "border-muted-foreground/50",
               )}
             >
               <span
                 className={cn(
                   "h-2 w-2 rounded-full transition-colors",
-                  currentMenuScope === "TABLE" ? "bg-primary" : "bg-transparent",
+                  interactiveMenuScope === "TABLE" ? "bg-primary" : "bg-transparent",
                 )}
               />
             </span>
@@ -564,20 +675,26 @@ const Ordenes = () => {
           <button
             type="button"
             className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
-            onClick={() => updateMenuScope.mutate("TAKEOUT")}
+            onClick={() => {
+              if (interactiveMenuScope === "TAKEOUT") return;
+              setPendingMenuScopeSelection("TAKEOUT");
+              updateMenuScope.mutate("TAKEOUT", {
+                onError: () => setPendingMenuScopeSelection(null),
+              });
+            }}
             disabled={updateMenuScope.isPending}
-            aria-pressed={currentMenuScope === "TAKEOUT"}
+            aria-pressed={interactiveMenuScope === "TAKEOUT"}
           >
             <span
               className={cn(
                 "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                currentMenuScope === "TAKEOUT" ? "border-primary" : "border-muted-foreground/50",
+                interactiveMenuScope === "TAKEOUT" ? "border-primary" : "border-muted-foreground/50",
               )}
             >
               <span
                 className={cn(
                   "h-2 w-2 rounded-full transition-colors",
-                  currentMenuScope === "TAKEOUT" ? "bg-primary" : "bg-transparent",
+                  interactiveMenuScope === "TAKEOUT" ? "bg-primary" : "bg-transparent",
                 )}
               />
             </span>
@@ -591,6 +708,7 @@ const Ordenes = () => {
       <MenuNavigator
         includeInactive={true}
         menuScope={currentMenuScope}
+        trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
         renderNodeAction={(node) =>
           !node.is_active && node.node_type === "product" ? (
@@ -757,7 +875,12 @@ const Ordenes = () => {
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                {order.is_special ? (
+                {order.is_tray_order ? (
+                  <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-amber-800 dark:text-amber-400">
+                    <ShoppingBag className="h-4 w-4" />
+                    Orden Bandeja
+                  </div>
+                ) : order.is_special ? (
                   <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
                     <Sparkles className="h-4 w-4" />
                     Orden Especial
@@ -937,12 +1060,31 @@ const Ordenes = () => {
 
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
-        modifiers={selectedProduct ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.menu_node_id) : []}
+        modifiers={
+          isTrayOrder
+            ? []
+            : selectedProduct
+              ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.menu_node_id)
+              : []
+        }
         open={canEditItems && !!selectedProduct}
-        onClose={() => setSelectedProduct(null)}
+        onClose={() => {
+          setSelectedProduct(null);
+        }}
+        priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
+        manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
+        confirmLabel={isTrayOrder ? "Agregar item bandeja" : "Agregar"}
+        extraContent={null}
         onConfirm={(data) => {
-          addItem.mutate(data, {
-            onSuccess: () => setSelectedProduct(null),
+          addItem.mutate({
+            ...data,
+            modifier_ids: isTrayOrder ? [] : data.modifier_ids,
+            tray_item_type: isTrayOrder ? effectiveTrayType : undefined,
+            tray_container_cost: 0,
+          }, {
+            onSuccess: () => {
+              setSelectedProduct(null);
+            },
           });
         }}
         adding={addItem.isPending}
@@ -954,6 +1096,7 @@ const Ordenes = () => {
           orderNumber={order.order_code ?? `#${order.order_number}`}
           orderType={order.order_type}
           isSpecial={order.is_special}
+          isTrayOrder={order.is_tray_order}
           tableName={order.table_name}
           items={order.items}
           total={total}

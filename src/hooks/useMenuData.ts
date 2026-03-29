@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
+import type { MenuScope } from "@/hooks/useMenuTree";
 
 interface Category {
   id: string;
@@ -49,7 +50,7 @@ interface Modifier {
   display_order: number;
 }
 
-export function useMenuData(menuScope: "TABLE" | "TAKEOUT" = "TABLE") {
+export function useMenuData(menuScope: MenuScope = "TABLE") {
   const { activeBranchId } = useBranch();
 
   const categories = useQuery({

@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle } from "lucide-react";
+import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -21,12 +21,18 @@ interface AdminTab {
   visible: (permissions: Record<string, any>, isGlobalAdmin: boolean) => boolean;
 }
 
+const MENU_TAB_VALUES = ["menu-tree-table", "menu-tree-takeout", "menu-tree-bulk"] as const;
+
 const MenuNodesCrudTable = () => (
-  <MenuNodesCrud menuScope="TABLE" title="Arbol Menu Mesa" />
+  <MenuNodesCrud menuScope="TABLE" title="Menu Mesa" />
 );
 
 const MenuNodesCrudTakeout = () => (
-  <MenuNodesCrud menuScope="TAKEOUT" title="Arbol Menu Para Llevar" showCopyFromTableButton />
+  <MenuNodesCrud menuScope="TAKEOUT" title="Menu Para Llevar" showCopyFromTableButton />
+);
+
+const MenuNodesCrudBulk = () => (
+  <MenuNodesCrud menuScope="BULK" title="A Granel" />
 );
 
 interface AdminErrorBoundaryProps {
@@ -98,16 +104,23 @@ const TABS: AdminTab[] = [
   },
   {
     value: "menu-tree-table",
-    label: "Arbol Menu Mesa",
-    icon: <FolderTree className="h-4 w-4" />,
+    label: "Menu Mesa",
+    icon: <UtensilsCrossed className="h-4 w-4" />,
     component: MenuNodesCrudTable,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
     value: "menu-tree-takeout",
-    label: "Arbol Menu Para Llevar",
-    icon: <FolderTree className="h-4 w-4" />,
+    label: "Menu Para Llevar",
+    icon: <ShoppingBag className="h-4 w-4" />,
     component: MenuNodesCrudTakeout,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+  },
+  {
+    value: "menu-tree-bulk",
+    label: "A Granel",
+    icon: <Scale className="h-4 w-4" />,
+    component: MenuNodesCrudBulk,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
@@ -151,11 +164,23 @@ const Admin = () => {
   const { permissions, branches, isGlobalAdmin } = useBranch();
   const [activeTab, setActiveTab] = useState("");
   const [mobileTabsOpen, setMobileTabsOpen] = useState(false);
+  const [menuTabsOpen, setMenuTabsOpen] = useState(false);
+  const desktopMenuRef = useRef<HTMLDivElement | null>(null);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const visibleTabs = useMemo(
     () => TABS.filter((tab) => tab.visible(permissions, isGlobalAdmin)),
     [permissions, isGlobalAdmin],
   );
+  const visibleMenuTabs = useMemo(
+    () => visibleTabs.filter((tab) => MENU_TAB_VALUES.includes(tab.value as typeof MENU_TAB_VALUES[number])),
+    [visibleTabs],
+  );
+  const visiblePrimaryTabs = useMemo(
+    () => visibleTabs.filter((tab) => !MENU_TAB_VALUES.includes(tab.value as typeof MENU_TAB_VALUES[number])),
+    [visibleTabs],
+  );
+  const isMenuActive = MENU_TAB_VALUES.includes(activeTab as typeof MENU_TAB_VALUES[number]);
 
   const defaultTab = isGlobalAdmin && branches.length === 0
     ? (visibleTabs.find((tab) => tab.value === "branches")?.value ?? visibleTabs[0]?.value ?? "branches")
@@ -171,6 +196,28 @@ const Admin = () => {
       setActiveTab(defaultTab);
     }
   }, [activeTab, defaultTab, visibleTabs]);
+
+  useEffect(() => {
+    if (visibleMenuTabs.length === 0) {
+      setMenuTabsOpen(false);
+    }
+  }, [visibleMenuTabs.length]);
+
+  useEffect(() => {
+    if (!menuTabsOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const clickedDesktopMenu = desktopMenuRef.current?.contains(target);
+      const clickedMobileMenu = mobileMenuRef.current?.contains(target);
+
+      if (clickedDesktopMenu || clickedMobileMenu) return;
+      setMenuTabsOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [menuTabsOpen]);
 
   const selectedTab = visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0] ?? null;
   const SelectedComponent = selectedTab?.component ?? null;
@@ -196,7 +243,7 @@ const Admin = () => {
             onClick={() => setMobileTabsOpen((open) => !open)}
           >
             {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            {selectedTab?.label ?? "Secciones"}
+            {isMenuActive ? "Menu" : (selectedTab?.label ?? "Secciones")}
             <ChevronDown className={cn("h-4 w-4 transition-transform", mobileTabsOpen && "rotate-180")} />
           </Button>
         )}
@@ -219,7 +266,7 @@ const Admin = () => {
             {mobileTabsOpen && (
               <div className="rounded-[24px] border border-orange-200 bg-white/85 p-2 shadow-[0_18px_40px_-34px_rgba(249,115,22,0.55)]">
                 <div className="grid gap-2">
-                  {visibleTabs.map((tab) => (
+                  {visiblePrimaryTabs.map((tab) => (
                     <Button
                       key={tab.value}
                       type="button"
@@ -228,36 +275,116 @@ const Admin = () => {
                       onClick={() => {
                         setActiveTab(tab.value);
                         setMobileTabsOpen(false);
+                        setMenuTabsOpen(false);
                       }}
                     >
                       {tab.icon}
                       <span>{tab.label}</span>
                     </Button>
                   ))}
+                  {visibleMenuTabs.length > 0 && (
+                    <div ref={mobileMenuRef} className="rounded-2xl border border-orange-200 bg-orange-50/70 p-2">
+                      <Button
+                        type="button"
+                        variant={isMenuActive ? "default" : "ghost"}
+                        className="h-11 w-full justify-between gap-2 rounded-2xl"
+                        onClick={() => setMenuTabsOpen((open) => !open)}
+                      >
+                        <span className="flex items-center gap-2">
+                          <FolderTree className="h-4 w-4" />
+                          <span>Menu</span>
+                        </span>
+                        <ChevronDown className={cn("h-4 w-4 transition-transform", menuTabsOpen && "rotate-180")} />
+                      </Button>
+                      {menuTabsOpen && (
+                        <div className="mt-2 grid gap-2">
+                          {visibleMenuTabs.map((tab) => (
+                            <Button
+                              key={tab.value}
+                              type="button"
+                              variant={tab.value === activeTab ? "default" : "ghost"}
+                              className="h-11 justify-start gap-2 rounded-2xl"
+                              onClick={() => {
+                                setActiveTab(tab.value);
+                                setMobileTabsOpen(false);
+                                setMenuTabsOpen(false);
+                              }}
+                            >
+                              {tab.icon}
+                              <span>{tab.label}</span>
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
-          <div className="-mx-2 hidden overflow-x-auto px-2 pb-2 sm:block sm:px-0">
-            <div className="inline-flex gap-2 rounded-[28px] border border-orange-200 bg-white/80 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
-              {visibleTabs.map((tab) => (
+          <div className="-mx-2 hidden overflow-visible px-2 pb-2 sm:block sm:px-0">
+            <div className="inline-flex overflow-visible gap-2 rounded-[28px] border border-orange-200 bg-white/80 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
+              {visiblePrimaryTabs.map((tab) => (
                 <Button
                   key={tab.value}
                   type="button"
-                  variant={tab.value === activeTab ? "default" : "outline"}
+                  variant={!menuTabsOpen && tab.value === activeTab ? "default" : "outline"}
                   className={cn(
                     "gap-2 whitespace-nowrap rounded-2xl px-4 py-2.5 text-xs font-semibold",
-                    tab.value === activeTab
+                    !menuTabsOpen && tab.value === activeTab
                       ? "shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
                       : "border-transparent bg-white/70 hover:border-orange-200 hover:bg-orange-50",
                   )}
-                  onClick={() => setActiveTab(tab.value)}
+                  onClick={() => {
+                    setActiveTab(tab.value);
+                    setMenuTabsOpen(false);
+                  }}
                 >
                   {tab.icon}
                   <span>{tab.label}</span>
                 </Button>
               ))}
+              {visibleMenuTabs.length > 0 && (
+                <div ref={desktopMenuRef} className="relative">
+                  <Button
+                    type="button"
+                    variant={isMenuActive || menuTabsOpen ? "default" : "outline"}
+                    className={cn(
+                      "gap-2 whitespace-nowrap rounded-2xl px-4 py-2.5 text-xs font-semibold",
+                      isMenuActive || menuTabsOpen
+                        ? "shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
+                        : "border-transparent bg-white/70 hover:border-orange-200 hover:bg-orange-50",
+                    )}
+                    onClick={() => setMenuTabsOpen((open) => !open)}
+                  >
+                    <FolderTree className="h-4 w-4" />
+                    <span>Menu</span>
+                    <ChevronDown className={cn("h-4 w-4 transition-transform", menuTabsOpen && "rotate-180")} />
+                  </Button>
+                  {menuTabsOpen && (
+                    <div className="absolute left-0 top-full z-20 mt-2 min-w-[220px] rounded-2xl border border-orange-200 bg-white p-2 shadow-[0_18px_40px_-28px_rgba(249,115,22,0.55)]">
+                      <div className="grid gap-2">
+                        {visibleMenuTabs.map((tab) => (
+                          <Button
+                            key={tab.value}
+                            type="button"
+                            variant={tab.value === activeTab ? "default" : "ghost"}
+                            className="h-11 justify-start gap-2 rounded-2xl"
+                            onClick={() => {
+                              setActiveTab(tab.value);
+                              setMenuTabsOpen(false);
+                            }}
+                          >
+                            {tab.icon}
+                            <span>{tab.label}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

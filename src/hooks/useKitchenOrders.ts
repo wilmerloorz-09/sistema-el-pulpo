@@ -14,6 +14,8 @@ export interface KitchenOrderItem {
   quantity_ready_available: number;
   quantity_dispatched: number;
   quantity_cancelled: number;
+  tray_item_type?: "A" | "B" | "C" | null;
+  tray_container_cost?: number;
   modifiers: { description: string }[];
   item_note?: string | null;
   sent_to_kitchen_at: string | null;
@@ -26,6 +28,7 @@ export interface KitchenOrder {
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
+  is_tray_order?: boolean;
   table_name: string | null;
   split_code: string | null;
   sent_at: string;
@@ -59,12 +62,13 @@ export function useKitchenOrders() {
         order_code: string | null;
         order_type: string;
         is_special: boolean | null;
+        is_tray_order?: boolean | null;
         table_id: string | null;
         split_id: string | null;
         updated_at: string;
         sent_to_kitchen_at: string | null;
       }>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, table_id, split_id, updated_at, sent_to_kitchen_at, status",
+        select: "id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, updated_at, sent_to_kitchen_at, status",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }],
         orderBy: { column: "updated_at", ascending: true },
@@ -96,10 +100,12 @@ export function useKitchenOrders() {
         description_snapshot: string;
         quantity: number;
         item_note?: string | null;
+        tray_item_type?: "A" | "B" | "C" | null;
+        tray_container_cost?: number | null;
         sent_to_kitchen_at: string | null;
         created_at?: string | null;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, quantity, item_note, status, sent_to_kitchen_at, created_at",
+        select: "id, order_id, description_snapshot, quantity, item_note, tray_item_type, tray_container_cost, status, sent_to_kitchen_at, created_at",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
         orderBy: { column: "created_at", ascending: true },
       });
@@ -147,6 +153,8 @@ export function useKitchenOrders() {
               quantity_ready_available: quantities.quantityReadyAvailable,
               quantity_dispatched: quantities.quantityDispatchedAvailable,
               quantity_cancelled: quantities.quantityCancelledTotal,
+              tray_item_type: item.tray_item_type ?? null,
+              tray_container_cost: Number(item.tray_container_cost ?? 0),
               item_note: item.item_note ?? null,
               modifiers: modsMap[item.id] ?? [],
               sent_to_kitchen_at: item.sent_to_kitchen_at ?? order.sent_to_kitchen_at,
@@ -177,6 +185,7 @@ export function useKitchenOrders() {
             order_code: order.order_code ?? null,
             order_type: order.order_type as "DINE_IN" | "TAKEOUT",
             is_special: Boolean(order.is_special),
+            is_tray_order: Boolean(order.is_tray_order),
             table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             sent_at: sentAt,

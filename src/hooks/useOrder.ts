@@ -21,6 +21,8 @@ interface OrderItem {
   unit_price: number;
   total: number;
   status: string;
+  tray_item_type?: "A" | "B" | "C" | null;
+  tray_container_cost?: number;
   quantity_sent?: number;
   quantity_ready_available?: number;
   quantity_dispatched?: number;
@@ -76,6 +78,7 @@ interface Order {
   order_type: "DINE_IN" | "TAKEOUT";
   menu_scope: "TABLE" | "TAKEOUT";
   is_special: boolean;
+  is_tray_order?: boolean;
   special_total_manual: number | null;
   special_marked_at?: string | null;
   branch_id: string;
@@ -138,7 +141,7 @@ export function useOrder(orderId: string | null) {
 
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
         .eq("id", orderId)
         .single();
       if (error) throw error;
@@ -164,7 +167,7 @@ export function useOrder(orderId: string | null) {
       }
 
       const items = await dbSelect<any>("order_items", {
-        select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status",
+        select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, tray_item_type, tray_container_cost",
         filters: [{ column: "order_id", op: "eq", value: orderId }],
         orderBy: { column: "created_at" },
       });
@@ -230,8 +233,10 @@ export function useOrder(orderId: string | null) {
             quantity_ordered: quantityOrdered,
             original_quantity: originalQuantity,
             cancelled_quantity: cancelledQuantity,
-            total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+            total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)) + (activeQuantity > 0 ? Number(item.tray_container_cost ?? 0) : 0),
             status: effectiveStatus,
+            tray_item_type: (item.tray_item_type ?? null) as "A" | "B" | "C" | null,
+            tray_container_cost: Number(item.tray_container_cost ?? 0),
             quantity_sent: quantitySent,
             quantity_ready_available: Math.max(0, readyAvailableMap[item.id] ?? 0),
             quantity_dispatched: quantityDispatched,
@@ -315,11 +320,27 @@ export function useOrder(orderId: string | null) {
     mutationFn: async (params: {
       product_id: string;
       description_snapshot: string;
-  item_note?: string | null;
+      item_note?: string | null;
       unit_price: number;
       quantity: number;
       modifier_ids: string[];
+      tray_item_type?: "A" | "B" | "C";
+      tray_container_cost?: number;
     }) => {
+      if (query.data?.is_tray_order || params.tray_item_type) {
+        const { error } = await supabase.rpc("add_tray_order_item", {
+          p_order_id: orderId!,
+          p_product_id: params.product_id,
+          p_quantity: params.quantity,
+          p_unit_price: params.unit_price,
+          p_tray_item_type: params.tray_item_type,
+          p_tray_container_cost: params.tray_container_cost ?? 0,
+          p_item_note: params.item_note ?? null,
+        });
+        if (error) throw error;
+        return;
+      }
+
       const total = params.unit_price * params.quantity;
       const itemId = generateUUID();
 
@@ -544,4 +565,3 @@ export function useOrder(orderId: string | null) {
     convertToSpecial,
   };
 }
-

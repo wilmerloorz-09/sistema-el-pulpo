@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
-import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, UtensilsCrossed } from "lucide-react";
+import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, Soup, UtensilsCrossed } from "lucide-react";
+import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
 
 interface Props {
@@ -112,10 +113,12 @@ export default function PayableOrdersList({
                     tableName: order.table_name,
                     splitCode: order.split_code,
                     isSpecial: order.is_special,
+                    isTrayOrder: order.is_tray_order,
                   });
                   const orderKind = getOrderKind({
                     orderType: order.order_type,
                     isSpecial: order.is_special,
+                    isTrayOrder: order.is_tray_order,
                   });
                   const pending = pendingUnits(order);
                   const pendingTotal = order.is_special
@@ -142,7 +145,9 @@ export default function PayableOrdersList({
                         <div className="min-w-0">
                           <div className="flex items-center gap-2.5">
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                              {orderKind === "takeout" ? (
+                              {orderKind === "tray" ? (
+                                <Soup className="h-4 w-4" />
+                              ) : orderKind === "takeout" ? (
                                 <ShoppingBag className="h-4 w-4" />
                               ) : orderKind === "special" ? (
                                 <CreditCard className="h-4 w-4" />
@@ -153,6 +158,11 @@ export default function PayableOrdersList({
                             <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
                               {label}
                             </p>
+                            {order.is_tray_order && (
+                              <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                BANDEJA
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -209,6 +219,14 @@ export default function PayableOrdersList({
                                 >
                                   <div className="min-w-0">
                                     <p className="truncate font-medium text-slate-900">{item.description_snapshot}</p>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
+                                      {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                                        <span className="text-[11px] font-semibold text-orange-600">
+                                          + {formatCurrency(Number(item.tray_container_cost ?? 0))} tarrina
+                                        </span>
+                                      ) : null}
+                                    </div>
                                     <p className="mt-0.5 text-xs text-slate-500">
                                       {formatCurrency(item.unit_price)} c/u
                                     </p>

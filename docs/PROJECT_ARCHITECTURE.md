@@ -374,3 +374,7 @@
   - `Mesa` muestra solo `DINE_IN` no especiales
   - `Orden especial` muestra solo `orders.is_special = true`
   - `Para llevar` sigue mostrando solo `TAKEOUT`
+- `Orden Bandeja` reutiliza el flujo operativo de `TAKEOUT` y se identifica con `orders.is_tray_order = true`.
+- `useTrayOrder` concentra la creacion de orden bandeja y la carga del arbol filtrado para `Tipo C`.
+- `MenuNavigator` ahora acepta `trayMode` opcional; si no se envia, mantiene el comportamiento previo.
+- `TrayItemTypeSelector` decide entre tipos `A/B/C` y `TrayItemChip` resume el tipo de entrega en Ordenes, Cocina, Despacho y Caja.

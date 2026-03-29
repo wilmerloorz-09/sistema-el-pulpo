@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,9 +35,24 @@ interface Props {
     item_note?: string | null;
   }) => void;
   adding?: boolean;
+  priceModeOverride?: "FIXED" | "MANUAL";
+  manualPriceLabel?: string;
+  confirmLabel?: string;
+  extraContent?: ReactNode;
 }
 
-const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }: Props) => {
+const AddItemDialog = ({
+  product,
+  modifiers,
+  open,
+  onClose,
+  onConfirm,
+  adding,
+  priceModeOverride,
+  manualPriceLabel = "Precio",
+  confirmLabel = "Agregar",
+  extraContent,
+}: Props) => {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState("1");
   const [manualPrice, setManualPrice] = useState("");
@@ -50,7 +65,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
 
   if (!product) return null;
 
-  const isManual = product.price_mode === "MANUAL";
+  const isManual = (priceModeOverride ?? product.price_mode) === "MANUAL";
   const price = isManual ? parseFloat(manualPrice) || 0 : (product.unit_price ?? 0);
   const canAdd = quantity > 0 && (!isManual || price > 0);
 
@@ -126,7 +141,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
         <div className="space-y-5">
           {isManual && (
             <div className="space-y-1.5 mt-2">
-              <Label className="text-sm font-semibold text-muted-foreground">Precio</Label>
+              <Label className="text-sm font-semibold text-muted-foreground">{manualPriceLabel}</Label>
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                 <Input
@@ -142,6 +157,8 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
               </div>
             </div>
           )}
+
+          {extraContent}
 
           <div className="space-y-1.5 mt-2">
             <Label className="text-sm font-semibold text-muted-foreground">Cantidad</Label>
@@ -223,7 +240,7 @@ const AddItemDialog = ({ product, modifiers, open, onClose, onConfirm, adding }:
               className="h-11 rounded-xl px-5 font-bold shadow-sm flex items-center gap-1.5"
             >
               <ShoppingBag className="h-4 w-4" />
-              Agregar
+              {confirmLabel}
             </Button>
           </div>
         </div>

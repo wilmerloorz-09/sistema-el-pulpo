@@ -6,14 +6,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
-import type { MenuNode } from "@/hooks/useMenuTree";
+import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
 import NodeModifiersPanel from "@/components/admin/NodeModifiersPanel";
 
 interface AdminMenuNode extends MenuNode {}
@@ -53,14 +52,14 @@ const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gi
 const MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const getCollapsedNodesStorageKey = (branchId: string) => `adminMenuNodesCollapsed:${branchId}`;
 
-const emptyForm = (parentId: string | null = null): FormState => ({
+const emptyForm = (parentId: string | null = null, displayOrder: string = "1"): FormState => ({
   id: null,
   name: "",
   node_type: "category",
   parent_id: parentId,
   manual_price_enabled: false,
   price: "",
-  display_order: "0",
+  display_order: displayOrder,
   description: "",
   image_url: "",
   is_active: true,
@@ -131,7 +130,7 @@ const upsertMenuNodeInList = (items: AdminMenuNode[], nextNode: AdminMenuNode) =
 };
 
 interface MenuNodesCrudProps {
-  menuScope?: "TABLE" | "TAKEOUT";
+  menuScope?: MenuScope;
   title?: string;
   showCopyFromTableButton?: boolean;
 }
@@ -144,6 +143,7 @@ const MenuNodesCrud = ({
   const { activeBranchId } = useBranch();
   const queryClient = useQueryClient();
   const isTableScope = menuScope === "TABLE";
+  const isBulkScope = menuScope === "BULK";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -291,21 +291,53 @@ const MenuNodesCrud = ({
   const hasCurrentImage = Boolean(normalizeImageUrl(form.image_url)) && !removeImage;
 
   const parentOptions = useMemo(
-    () =>
-      nodes.filter(
-        (node) =>
-          node.node_type === "category" &&
-          node.id !== form.id &&
-          !selectedDescendants.has(node.id),
-      ),
-    [form.id, nodes, selectedDescendants],
+    () => {
+      const flattenCategoryBranch = (parentId: string | null): AdminMenuNode[] =>
+        getChildren(parentId).flatMap((node) => {
+          if (
+            node.node_type !== "category" ||
+            node.id === form.id ||
+            selectedDescendants.has(node.id)
+          ) {
+            return [];
+          }
+
+          return [
+            node,
+            ...flattenCategoryBranch(node.id),
+          ];
+        });
+
+      return flattenCategoryBranch(null);
+    },
+    [form.id, getChildren, selectedDescendants],
+  );
+
+  const getSuggestedDisplayOrder = (parentId: string | null, _nodeType: "category" | "product") => {
+    const siblingOrders = nodes
+      .filter((node) => node.parent_id === parentId)
+      .map((node) => Number(node.display_order) || 0);
+
+    return String(nextAvailableOrder(siblingOrders, 1));
+  };
+
+  const renderParentOptionLabel = (node: AdminMenuNode) => (
+    <span className="flex items-center gap-2">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        {Array.from({ length: node.depth }).map((_, index) => (
+          <span key={`${node.id}-branch-${index}`} className="block h-px w-3 bg-orange-300" />
+        ))}
+        {node.depth > 0 ? <span className="text-xs">└</span> : null}
+      </span>
+      <span>{node.name}</span>
+    </span>
   );
 
   const resetForm = (nextParentId: string | null = null) => {
     setSelectedId(null);
     setSelectedImageFile(null);
     setRemoveImage(false);
-    setForm(emptyForm(nextParentId));
+    setForm(emptyForm(nextParentId, getSuggestedDisplayOrder(nextParentId, "category")));
   };
 
   const startEdit = (node: AdminMenuNode) => {
@@ -482,8 +514,10 @@ const MenuNodesCrud = ({
         let price: number | null = null;
         if (form.node_type === "product") {
           if (!form.parent_id) throw new Error("El producto debe crearse desde el nivel 2 en adelante.");
-          price = Number.parseFloat(form.price);
-          if (!Number.isFinite(price) || price < 0) throw new Error("El producto requiere un precio valido");
+          if (!isBulkScope) {
+            price = Number.parseFloat(form.price);
+            if (!Number.isFinite(price) || price < 0) throw new Error("El producto requiere un precio valido");
+          }
         }
 
         if (form.id) {
@@ -510,6 +544,11 @@ const MenuNodesCrud = ({
           imageUrlToPersist = getPublicImageUrl(uploadedImagePath);
         }
 
+        const currentLegacyProductId =
+          form.node_type === "product" && form.id
+            ? (nodesById.get(form.id)?.legacy_product_id ?? (isTableScope ? form.id : null))
+            : null;
+
         const { data: savedMenuNode, error: menuNodeError } = await supabase
           .from("menu_nodes" as never)
           .upsert({
@@ -528,7 +567,7 @@ const MenuNodesCrud = ({
             manual_price_enabled: form.node_type === "category" ? form.manual_price_enabled : false,
             legacy_product_id:
               form.node_type === "product"
-                ? (form.id ? (nodesById.get(form.id)?.legacy_product_id ?? form.id) : id)
+                ? currentLegacyProductId
                 : null,
           } as never)
           .select("*")
@@ -536,7 +575,7 @@ const MenuNodesCrud = ({
         if (menuNodeError) throw menuNodeError;
 
         if (form.node_type === "category") {
-          if (isTableScope) {
+          if (isTableScope || isBulkScope) {
             await ensureLegacyCategoryMirror(id, name, form.parent_id, displayOrder > 0 ? displayOrder : 1, form.is_active);
           }
         } else {
@@ -547,7 +586,7 @@ const MenuNodesCrud = ({
           if (!ancestorCategory) throw new Error("No se pudo resolver la categoria ancestro del producto.");
 
           const existingLegacyProductId =
-            !isTableScope && form.id ? (nodesById.get(form.id)?.legacy_product_id ?? null) : null;
+            !isTableScope && form.id ? currentLegacyProductId : null;
 
           let legacySubcategoryId: string | null = null;
           if (!isTableScope && existingLegacyProductId) {
@@ -561,7 +600,7 @@ const MenuNodesCrud = ({
           }
 
           if (!legacySubcategoryId) {
-            legacySubcategoryId = isTableScope
+            legacySubcategoryId = isTableScope || isBulkScope
               ? await ensureLegacyCategoryMirror(
                   ancestorCategory.id,
                   ancestorCategory.name,
@@ -580,8 +619,8 @@ const MenuNodesCrud = ({
 
           const legacyProductId =
             isTableScope
-              ? id
-              : (form.id ? (nodesById.get(form.id)?.legacy_product_id ?? generateUUID()) : generateUUID());
+              ? (currentLegacyProductId ?? id)
+              : (currentLegacyProductId ?? generateUUID());
           const rows = (siblingProducts ?? []) as ProductRecord[];
           const existingProduct = rows.find((product) => product.id === legacyProductId) ?? null;
           const usedOrders = rows
@@ -597,19 +636,17 @@ const MenuNodesCrud = ({
             subcategory_id: legacySubcategoryId,
             description: name,
             unit_price: price,
-            price_mode: "FIXED",
+            price_mode: isBulkScope ? "MANUAL" : "FIXED",
             display_order: productDisplayOrder,
             is_active: form.is_active,
           });
           if (productError) throw productError;
 
-          if (!isTableScope) {
-            const { error: syncLegacyRefError } = await supabase
-              .from("menu_nodes" as never)
-              .update({ legacy_product_id: legacyProductId } as never)
-              .eq("id", id);
-            if (syncLegacyRefError) throw syncLegacyRefError;
-          }
+          const { error: syncLegacyRefError } = await supabase
+            .from("menu_nodes" as never)
+            .update({ legacy_product_id: legacyProductId } as never)
+            .eq("id", id);
+          if (syncLegacyRefError) throw syncLegacyRefError;
         }
 
         const nextManagedImagePath = uploadedImagePath ?? extractManagedImagePath(imageUrlToPersist);
@@ -865,7 +902,8 @@ const MenuNodesCrud = ({
                 setSelectedId(null);
                 setSelectedImageFile(null);
                 setRemoveImage(false);
-                setForm(emptyForm(selectedNode?.node_type === "category" ? selectedNode.id : null));
+                const nextParentId = selectedNode?.node_type === "category" ? selectedNode.id : null;
+                setForm(emptyForm(nextParentId, getSuggestedDisplayOrder(nextParentId, "category")));
               }}
             >
               <Plus className="mr-1.5 h-4 w-4" />
@@ -919,7 +957,23 @@ const MenuNodesCrud = ({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Tipo</Label>
-                  <Select value={form.node_type} onValueChange={(value: "category" | "product") => setForm((prev) => ({ ...prev, node_type: value, price: value === "product" ? prev.price : "" }))}>
+                  <Select
+                    value={form.node_type}
+                    onValueChange={(value: "category" | "product") =>
+                      setForm((prev) => {
+                        if (prev.id) {
+                          return { ...prev, node_type: value, price: value === "product" ? prev.price : "" };
+                        }
+
+                        return {
+                          ...prev,
+                          node_type: value,
+                          price: value === "product" ? prev.price : "",
+                          display_order: getSuggestedDisplayOrder(prev.parent_id, value),
+                        };
+                      })
+                    }
+                  >
                     <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="category">Categoria</SelectItem>
@@ -930,13 +984,29 @@ const MenuNodesCrud = ({
 
                 <div className="space-y-1.5">
                   <Label>Padre</Label>
-                  <Select value={form.parent_id ?? "ROOT"} onValueChange={(value) => setForm((prev) => ({ ...prev, parent_id: value === "ROOT" ? null : value }))}>
+                  <Select
+                    value={form.parent_id ?? "ROOT"}
+                    onValueChange={(value) =>
+                      setForm((prev) => {
+                        const nextParentId = value === "ROOT" ? null : value;
+                        if (prev.id) {
+                          return { ...prev, parent_id: nextParentId };
+                        }
+
+                        return {
+                          ...prev,
+                          parent_id: nextParentId,
+                          display_order: getSuggestedDisplayOrder(nextParentId, prev.node_type),
+                        };
+                      })
+                    }
+                  >
                     <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="border-orange-200 bg-white">
                       <SelectItem value="ROOT">Sin padre (raiz)</SelectItem>
                       {parentOptions.map((node) => (
                         <SelectItem key={node.id} value={node.id}>
-                          {"  ".repeat(node.depth)}{node.name}
+                          {renderParentOptionLabel(node)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -949,34 +1019,27 @@ const MenuNodesCrud = ({
                   <Label>Orden</Label>
                   <Input value={form.display_order} onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))} className="rounded-xl" inputMode="numeric" />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Precio</Label>
-                  <Input
-                    value={form.price}
-                    onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
-                    className="rounded-xl"
-                    inputMode="decimal"
-                    disabled={form.node_type === "category"}
-                    placeholder={form.node_type === "product" ? "0.00" : "Solo para productos"}
-                  />
-                </div>
-              </div>
-
-              {form.node_type === "category" && (
-                <label className="flex items-start gap-3 rounded-2xl border border-orange-200 bg-orange-50/60 px-3 py-3">
-                  <Checkbox
-                    checked={form.manual_price_enabled}
-                    onCheckedChange={(checked) => setForm((prev) => ({ ...prev, manual_price_enabled: checked === true }))}
-                    className="mt-0.5 h-5 w-5 rounded-md"
-                  />
-                  <div>
-                    <div className="text-sm font-semibold text-foreground">Precios manuales</div>
-                    <div className="text-xs text-muted-foreground">
-                      Los productos dentro de esta categoria pediran precio manual al agregarlos a la orden.
+                {isBulkScope && form.node_type === "product" ? (
+                  <div className="space-y-1.5">
+                    <Label>Precio</Label>
+                    <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/60 px-3 py-2.5 text-sm text-muted-foreground">
+                      En A Granel el precio se ingresa manualmente al generar la orden.
                     </div>
                   </div>
-                </label>
-              )}
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label>Precio</Label>
+                    <Input
+                      value={form.price}
+                      onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+                      className="rounded-xl"
+                      inputMode="decimal"
+                      disabled={form.node_type === "category"}
+                      placeholder={form.node_type === "product" ? "0.00" : "Solo para productos"}
+                    />
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-1.5">
                 <Label>Descripcion</Label>

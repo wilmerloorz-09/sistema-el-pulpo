@@ -406,6 +406,10 @@
 
 ## Checklist Rapido para Continuar
 1. Confirmar que `supabase/migrations/20260312110000_add_menu_nodes_tree.sql`, `supabase/migrations/20260313143000_move_modifier_assignments_to_menu_nodes.sql`, `supabase/migrations/20260313170000_add_denomination_images.sql` y `supabase/migrations/20260326190000_add_manual_price_enabled_to_menu_nodes.sql` esten aplicadas.
+1. Confirmar tambien `supabase/migrations/20260328120000_add_tray_order_support.sql` para soporte de Orden Bandeja.
+1. `Orden Bandeja` reutiliza `TAKEOUT` y se reconoce por `orders.is_tray_order`.
+1. Los items bandeja agregan `order_items.tray_item_type` y `order_items.tray_container_cost`.
+1. `Tipo C` solo puede salir de ramas `TAKEOUT` con raiz `menu_nodes.is_tray_category = true`.
 2. Validar en `Admin > Arbol Menu`:
    - crear raiz
    - crear hijo

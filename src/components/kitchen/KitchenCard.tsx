@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
+import { TrayItemChip } from "@/components/order/TrayItemChip";
+import type { TrayItemType } from "@/hooks/useTrayOrder";
 
 function useElapsed(since: string) {
   const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - new Date(since).getTime()) / 1000));
@@ -41,9 +43,10 @@ interface Props {
 
 export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
   const { elapsed } = useElapsed(order.sent_at);
-  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special });
+  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special, isTrayOrder: order.is_tray_order });
   const isTakeout = orderKind === "takeout";
   const isSpecial = orderKind === "special";
+  const isTray = orderKind === "tray";
   const isUrgent = elapsed > 15 * 60;
   const isWarning = elapsed > 8 * 60;
   const label = getOrderOriginLabel({
@@ -51,6 +54,7 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
     tableName: order.table_name,
     splitCode: order.split_code,
     isSpecial: order.is_special,
+    isTrayOrder: order.is_tray_order,
   });
   const pendingCount = order.items.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
   const readyCount = order.items.reduce((sum, item) => sum + item.quantity_ready_available, 0);
@@ -68,7 +72,7 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
     <div
       className={cn(
         "flex self-start flex-col overflow-hidden rounded-2xl border-2 transition-colors",
-        isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
+        isTray ? "bg-gradient-to-br from-amber-50 via-white to-yellow-50" : isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
@@ -76,9 +80,11 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
             : "border-border",
       )}
     >
-      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
+      <div className={cn("flex items-center justify-between border-b border-border px-4 py-3", isTray ? "bg-amber-100/70" : isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="flex min-w-0 items-center gap-2">
-          {isTakeout ? (
+          {isTray ? (
+            <ShoppingBag className="h-4 w-4 shrink-0 text-amber-700" />
+          ) : isTakeout ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
           ) : isSpecial ? (
             <CheckCircle2 className="h-4 w-4 shrink-0 text-orange-700" />
@@ -89,6 +95,11 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
           <Badge variant="secondary" className="shrink-0 text-[10px]">
             {order.order_code ?? String(order.order_number)}
           </Badge>
+          {order.is_tray_order && (
+            <Badge className="shrink-0 border-amber-200 bg-amber-100 text-[10px] font-bold text-amber-800 hover:bg-amber-100">
+              BANDEJA
+            </Badge>
+          )}
         </div>
         <div
           className={cn(
@@ -113,6 +124,16 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
                   <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 pl-[18px]">
+                  {item.tray_item_type ? (
+                    <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
+                  ) : null}
+                  {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                    <span className="text-[11px] font-semibold text-orange-600">
+                      + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
+                    </span>
+                  ) : null}
                 </div>
                 {item.modifiers.length > 0 && (
                   <div className="mt-1 flex flex-col gap-1 pl-[18px]">

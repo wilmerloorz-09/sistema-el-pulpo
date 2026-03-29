@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Ban, Minus, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { TrayItemChip } from "@/components/order/TrayItemChip";
+import type { TrayItemType } from "@/hooks/useTrayOrder";
 
 interface OrderItem {
   id: string;
@@ -21,6 +23,8 @@ interface OrderItem {
   unit_price: number;
   total: number;
   status: string;
+  tray_item_type?: "A" | "B" | "C" | null;
+  tray_container_cost?: number;
   modifiers: { id: string; description: string }[];
 }
 
@@ -106,6 +110,17 @@ const OrderItemsList = ({
                 <p className="break-words whitespace-normal text-sm font-medium text-foreground">
                   {item.description_snapshot}
                 </p>
+
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {item.tray_item_type ? (
+                    <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
+                  ) : null}
+                  {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                    <span className="text-[11px] font-semibold text-orange-600">
+                      + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
+                    </span>
+                  ) : null}
+                </div>
 
                 {item.modifiers.length > 0 && (
                   <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">

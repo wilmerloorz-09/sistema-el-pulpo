@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CircleDollarSign, LayoutGrid, Loader2, Plus, ShoppingBag, Sparkles, Users } from "lucide-react";
+import { CircleDollarSign, LayoutGrid, Loader2, Plus, ShoppingBag, Sparkles, Soup, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useTrayOrder } from "@/hooks/useTrayOrder";
 import { cn } from "@/lib/utils";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
@@ -51,11 +53,15 @@ const Mesas = () => {
   const { data: tables, isLoading } = useTablesWithStatus();
   const { user } = useAuth();
   const { activeBranchId, permissions } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
+  const { createTrayOrder } = useTrayOrder();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingTakeout, setCreatingTakeout] = useState(false);
   const [creatingSpecial, setCreatingSpecial] = useState(false);
+  const [creatingTray, setCreatingTray] = useState(false);
   const canOperateMesas = canOperate(permissions, "mesas");
+  const canCreateTrayOrder = canOperateMesas;
 
   const handleTakeout = async () => {
     if (!user || !activeBranchId || !canOperateMesas) return;
@@ -124,6 +130,20 @@ const Mesas = () => {
       toast.error(err.message || "Error al abrir orden para llevar");
     } finally {
       setCreatingTakeout(false);
+    }
+  };
+
+  const handleTrayOrder = async () => {
+    if (!canCreateTrayOrder) return;
+    setCreatingTray(true);
+    try {
+      const orderId = await createTrayOrder.mutateAsync();
+      toast.success("Orden bandeja creada");
+      navigate(`/ordenes?order=${orderId}&from=mesas`);
+    } catch (error: any) {
+      toast.error(error?.message || "Error al abrir orden bandeja");
+    } finally {
+      setCreatingTray(false);
     }
   };
 
@@ -261,7 +281,7 @@ const Mesas = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <motion.button
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -289,6 +309,29 @@ const Mesas = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.04 }}
+              onClick={handleTrayOrder}
+              disabled={creatingTray || !canCreateTrayOrder}
+              className={cn(
+                "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(245,158,11,0.42)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
+                "border-amber-300 bg-gradient-to-br from-amber-50 via-white to-yellow-100 dark:border-amber-800 dark:from-amber-950/20 dark:via-card dark:to-yellow-950/25",
+                canCreateTrayOrder ? "hover:border-amber-400 hover:bg-amber-50" : "cursor-not-allowed opacity-60",
+              )}
+            >
+              {creatingTray ? (
+                <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-amber-700" />
+              ) : (
+                <Soup className="h-4.5 w-4.5 shrink-0 text-amber-700" />
+              )}
+              <span className="block min-w-0 pr-7 font-display text-sm font-black text-amber-700 sm:text-base">Bandeja</span>
+              {canCreateTrayOrder && !creatingTray && (
+                <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-700/70" />
+              )}
+            </motion.button>
+
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 }}
               onClick={handleSpecialOrder}
               disabled={creatingSpecial || !canOperateMesas}
               className={cn(

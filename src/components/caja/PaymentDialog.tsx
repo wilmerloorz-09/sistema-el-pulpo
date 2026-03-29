@@ -177,15 +177,36 @@ export default function PaymentDialog({
     [unpaidItems, payQuantities, selectedRows],
   );
 
-  const selectedTotal = useMemo(
-    () => roundMoney(selectedItems.reduce((sum, item) => sum + computeLineAmount(payQuantities[item.id] ?? 0, item.unit_price), 0)),
+  const selectedProductsTotal = useMemo(
+    () =>
+      roundMoney(
+        selectedItems.reduce(
+          (sum, item) => sum + computeLineAmount(payQuantities[item.id] ?? 0, item.unit_price),
+          0,
+        ),
+      ),
     [selectedItems, payQuantities],
+  );
+  const selectedContainerTotal = useMemo(
+    () =>
+      roundMoney(
+        selectedItems.reduce((sum, item) => {
+          const qty = payQuantities[item.id] ?? 0;
+          return sum + (qty > 0 ? Number(item.tray_container_cost ?? 0) : 0);
+        }, 0),
+      ),
+    [selectedItems, payQuantities],
+  );
+  const selectedTotal = useMemo(
+    () => roundMoney(selectedProductsTotal + selectedContainerTotal),
+    [selectedContainerTotal, selectedProductsTotal],
   );
   const specialChargeAmount = useMemo(
     () => roundMoney(Math.max(0, parseMoneyInput(specialAmountInput))),
     [specialAmountInput],
   );
   const currentChargeTotal = isSpecialOrder ? specialChargeAmount : selectedTotal;
+  const hasTrayContainerCosts = !isSpecialOrder && selectedContainerTotal > 0;
   const hasChargeSelection = isSpecialOrder ? currentChargeTotal > 0 : selectedItems.length > 0;
   const selectedCount = isSpecialOrder ? (hasChargeSelection ? 1 : 0) : selectedItems.length;
 
@@ -1021,6 +1042,7 @@ export default function PaymentDialog({
                   tableName: order.table_name,
                   splitCode: order.split_code,
                   isSpecial: order.is_special,
+                  isTrayOrder: order.is_tray_order,
                 })}
               </span>
             )}
@@ -1664,6 +1686,23 @@ export default function PaymentDialog({
                 <p className="mt-1 font-display text-base font-bold text-primary sm:text-xl">${changeAmount.toFixed(2)}</p>
               </div>
             </div>
+
+            {hasTrayContainerCosts && (
+              <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-3">
+                <div className="flex items-center justify-between text-sm text-slate-700">
+                  <span>Subtotal productos</span>
+                  <span>${selectedProductsTotal.toFixed(2)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-sm font-medium text-orange-700">
+                  <span>Costo tarrinas</span>
+                  <span>+ ${selectedContainerTotal.toFixed(2)}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t border-orange-200 pt-2 text-sm font-semibold text-slate-950">
+                  <span>Total</span>
+                  <span>${currentChargeTotal.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
 
             {isSpecialOrder && order ? (
               <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-3">

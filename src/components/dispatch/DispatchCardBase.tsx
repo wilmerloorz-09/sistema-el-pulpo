@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, Eye } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
+import { TrayItemChip } from "@/components/order/TrayItemChip";
+import type { TrayItemType } from "@/hooks/useTrayOrder";
 
 interface DispatchCardBaseProps {
   order: DispatchOrder;
@@ -173,9 +175,10 @@ export function DispatchCardBase({
 }: DispatchCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.updated_at;
   const { elapsed } = useElapsed(since);
-  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special });
+  const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special, isTrayOrder: order.is_tray_order });
   const isTakeout = orderKind === "takeout";
   const isSpecial = orderKind === "special";
+  const isTray = orderKind === "tray";
   const [qtyByItem, setQtyByItem] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -206,6 +209,7 @@ export function DispatchCardBase({
     tableName: order.table_name,
     splitCode: order.split_code,
     isSpecial: order.is_special,
+    isTrayOrder: order.is_tray_order,
   });
   const canMarkAnyReady = order.pending_prepare_count > 0;
   const canDispatchAny = order.dispatchable_count > 0;
@@ -231,7 +235,7 @@ export function DispatchCardBase({
       className={cn(
         "flex w-full min-w-0 justify-self-stretch flex-col overflow-hidden rounded-2xl border-2 transition-colors",
         expanded ? "min-h-[36rem]" : "",
-        isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
+        isTray ? "bg-gradient-to-br from-amber-50 via-white to-yellow-50" : isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
         isUrgent
           ? "border-destructive/60 shadow-lg shadow-destructive/10"
           : isWarning
@@ -243,9 +247,11 @@ export function DispatchCardBase({
                 : "border-border",
       )}
     >
-      <div className={cn("flex items-center justify-between border-b border-border px-3 py-3 sm:px-4", isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
+      <div className={cn("flex items-center justify-between border-b border-border px-3 py-3 sm:px-4", isTray ? "bg-amber-100/70" : isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
         <div className="flex min-w-0 items-center gap-2">
-          {isTakeout ? (
+          {isTray ? (
+            <ShoppingBag className="h-4 w-4 shrink-0 text-amber-700" />
+          ) : isTakeout ? (
             <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
           ) : isSpecial ? (
             <Truck className="h-4 w-4 shrink-0 text-orange-700" />
@@ -254,6 +260,11 @@ export function DispatchCardBase({
           )}
           <span className="truncate font-display text-sm font-bold">{label}</span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">{order.order_code ?? String(order.order_number)}</span>
+          {order.is_tray_order && (
+            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+              BANDEJA
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {!readOnly ? (
@@ -334,6 +345,16 @@ export function DispatchCardBase({
                         Nota: {item.item_note}
                       </p>
                     ) : null}
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {item.tray_item_type ? (
+                        <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
+                      ) : null}
+                      {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                        <span className="text-[11px] font-semibold text-orange-600">
+                          + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
+                        </span>
+                      ) : null}
+                    </div>
                     <div className={cn("mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground", expanded ? "text-sm" : "text-[11px] md:text-[13px]")}>
                       <span className="shrink-0">Env: {item.quantity_ordered}</span>
                       <span className="shrink-0">Desp: {dispatchedQuantity}</span>

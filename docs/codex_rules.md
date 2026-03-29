@@ -280,3 +280,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 
 ## 9) Autonomía de Asistentes IA
 - **Aplicación Directa:** Los asistentes de IA (como Windsurf, Cursor, Gemini, etc.) tienen permitido y se les requiere aplicar los cambios de código directamente a los archivos del proyecto, omitiendo los pasos intermedios de pedir permiso o confirmación para proceder con la escritura de código, a menos que el flujo requiera revisión humana crítica de arquitectura o se rompa un sistema en producción.
+- `Orden Bandeja` no crea un `order_type` nuevo; usar `orders.is_tray_order`.
+- `order_items.product_id` nunca puede ser `NULL`, tampoco para items bandeja `A/B/C`.
+- `is_tray_category` y `manual_price_enabled` son reglas independientes.
+- `Tipo C` exige precio manual mayor a `0` en frontend y en la RPC `add_tray_order_item`.
+- `trayMode` en `MenuNavigator` debe ser opcional y no romper el arbol normal.
