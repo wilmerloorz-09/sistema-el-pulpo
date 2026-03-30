@@ -29,6 +29,7 @@ interface CancelItemDialogProps {
   description: string;
   total: number;
   userId: string;
+  isBulkItem?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -41,6 +42,7 @@ export function CancelItemDialog({
   description,
   total,
   userId,
+  isBulkItem = false,
   open,
   onOpenChange,
 }: CancelItemDialogProps) {
@@ -88,7 +90,7 @@ export function CancelItemDialog({
         <DialogHeader>
           <DialogTitle>Cancelar Item</DialogTitle>
           <DialogDescription>
-            {quantity}x {description}
+            {isBulkItem ? description : `${quantity}x ${description}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -138,10 +140,12 @@ export function CancelItemDialog({
 
           {/* Resumen */}
           <div className="bg-muted rounded-lg p-3 space-y-2">
-            <div className="text-sm">
-              <p className="text-muted-foreground">Cantidad:</p>
-              <p className="font-semibold">{quantity} unidades</p>
-            </div>
+            {!isBulkItem && (
+              <div className="text-sm">
+                <p className="text-muted-foreground">Cantidad:</p>
+                <p className="font-semibold">{quantity} unidades</p>
+              </div>
+            )}
             <div className="text-sm">
               <p className="text-muted-foreground">Total a perder:</p>
               <p className="font-semibold text-red-600">${total.toFixed(2)}</p>

@@ -11,6 +11,7 @@ export interface ReversalPaymentItem {
   paymentEntryId: string;
   productName: string;
   quantity: number;
+  tray_item_type?: "A" | "B" | "C" | null;
   amount: number;
   methodName: string;
   status: CompletedPaymentStatus;
@@ -213,7 +214,7 @@ export default function PaymentReversalModal({
                         disabled={!allowPartial && selectableItems.length > 1}
                       />
                       <span className="text-sm text-foreground truncate">
-                        {item.quantity}x {item.productName}
+                        {item.tray_item_type === "C" ? item.productName : `${item.quantity}x ${item.productName}`}
                       </span>
                       <span className="text-sm text-muted-foreground">{item.methodName}</span>
                       <span className="text-sm text-muted-foreground">{item.status}</span>

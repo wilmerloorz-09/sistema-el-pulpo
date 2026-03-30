@@ -22,6 +22,14 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 
+function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
+  return getOrderOriginLabel({
+    ...params,
+    isTrayOrder: false,
+    orderType: params.isTrayOrder ? "TAKEOUT" : params.orderType,
+  });
+}
+
 type ActionType = "approve" | "reject";
 
 interface PaymentGroup {
@@ -51,6 +59,7 @@ interface PaymentGroup {
     paymentEntryId: string;
     product_name: string;
     quantity: number;
+    tray_item_type?: "A" | "B" | "C" | null;
     amount: number;
     method_name: string;
     status: CompletedPayment["status"];
@@ -92,11 +101,12 @@ function exportCsv(rows: CompletedPayment[]) {
     const hora = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
     const orden = row.order_code ?? `#${row.order_number}`;
     const tipo = row.order_type;
-    const mesaSplit = getOrderOriginLabel({
+    const mesaSplit = getCajaOrderOriginLabel({
       orderType: row.order_type,
       tableName: row.table_name,
       splitCode: row.split_code,
       isSpecial: row.is_special,
+      isTrayOrder: (row as { is_tray_order?: boolean | null }).is_tray_order,
     });
     const metodo = row.method_name;
     const item = row.item_description ?? "";
@@ -208,6 +218,7 @@ export default function CompletedPaymentsList({
         paymentEntryId: row.id,
         product_name: row.item_description ?? "Item no especificado",
         quantity: row.item_paid_quantity ?? row.item_quantity ?? 1,
+        tray_item_type: row.tray_item_type ?? null,
         amount: row.item_amount,
         method_name: row.method_name,
         status: row.status,
@@ -251,11 +262,12 @@ export default function CompletedPaymentsList({
 
   const openModalForPayment = (payment: PaymentGroup, mode: "request" | "execute") => {
     const methods = [...new Set(payment.items.map((item) => item.method_name))].join(", ");
-    const tableLabel = getOrderOriginLabel({
+    const tableLabel = getCajaOrderOriginLabel({
       orderType: payment.order.type,
       tableName: payment.order.table_name,
       splitCode: payment.order.split_code,
       isSpecial: payment.order.is_special,
+      isTrayOrder: (payment.order as { is_tray_order?: boolean | null }).is_tray_order,
     });
 
     setModalState({
@@ -273,14 +285,15 @@ export default function CompletedPaymentsList({
         status: payment.status,
         notes: payment.notes,
         methodsSummary: methods || payment.method_name,
-        items: payment.items.map((item) => ({
-          id: item.id,
-          paymentEntryId: item.paymentEntryId,
-          productName: item.product_name,
-          quantity: item.quantity,
-          amount: item.amount,
-          methodName: item.method_name,
-          status: item.status,
+          items: payment.items.map((item) => ({
+            id: item.id,
+            paymentEntryId: item.paymentEntryId,
+            productName: item.product_name,
+            quantity: item.quantity,
+            tray_item_type: item.tray_item_type ?? null,
+            amount: item.amount,
+            methodName: item.method_name,
+            status: item.status,
         })),
       },
     });
@@ -384,11 +397,12 @@ export default function CompletedPaymentsList({
                 <select value={selectedOrder.id} onChange={(e) => setSelectedOrderId(e.target.value)} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs shadow-sm">
                   {orderSummaries.map((order) => (
                     <option key={order.id} value={order.id}>
-                      {order.code ?? `#${order.number}`} - {getOrderOriginLabel({
+                      {order.code ?? `#${order.number}`} - {getCajaOrderOriginLabel({
                         orderType: order.type,
                         tableName: order.table_name,
                         splitCode: order.split_code,
                         isSpecial: order.is_special,
+                        isTrayOrder: (order as { is_tray_order?: boolean | null }).is_tray_order,
                       })}
                     </option>
                   ))}
@@ -399,11 +413,12 @@ export default function CompletedPaymentsList({
                 <MetricCard title="Orden" value={selectedOrder.code ?? `#${selectedOrder.number}`} description="Cuenta seleccionada" icon={<History className="h-5 w-5" />} tone="slate" className="py-2.5" />
                 <MetricCard
                   title={selectedOrder.is_special ? "Origen" : "Mesa"}
-                  value={getOrderOriginLabel({
+                  value={getCajaOrderOriginLabel({
                     orderType: selectedOrder.type,
                     tableName: selectedOrder.table_name,
                     splitCode: selectedOrder.split_code,
                     isSpecial: selectedOrder.is_special,
+                    isTrayOrder: (selectedOrder as { is_tray_order?: boolean | null }).is_tray_order,
                   })}
                   description="Origen de la orden"
                   icon={selectedOrder.is_special ? <CreditCard className="h-5 w-5" /> : selectedOrder.type === "TAKEOUT" ? <ShoppingBag className="h-5 w-5" /> : <UtensilsCrossed className="h-5 w-5" />}
@@ -420,11 +435,12 @@ export default function CompletedPaymentsList({
           <div className="space-y-2">
             {filteredGroups.map((payment) => {
               const expanded = expandedPaymentId === payment.paymentId;
-              const label = getOrderOriginLabel({
+              const label = getCajaOrderOriginLabel({
                 orderType: payment.order.type,
                 tableName: payment.order.table_name,
                 splitCode: payment.order.split_code,
                 isSpecial: payment.order.is_special,
+                isTrayOrder: (payment.order as { is_tray_order?: boolean | null }).is_tray_order,
               });
               const orderKind = getOrderKind({
                 orderType: payment.order.type,
@@ -469,7 +485,7 @@ export default function CompletedPaymentsList({
                         {payment.items.map((item) => (
                           <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-2xl border border-violet-100 bg-violet-50/45 p-3 text-sm xl:grid-cols-5">
                             <span className="font-medium text-foreground">{item.product_name}</span>
-                            <span className="text-muted-foreground">Cant: {item.quantity}</span>
+                            <span className="text-muted-foreground">{item.tray_item_type === "C" ? "A granel" : `Cant: ${item.quantity}`}</span>
                             <span className="text-muted-foreground">Metodo: {item.method_name}</span>
                             <span className="text-muted-foreground">Estado: {item.status}</span>
                             <span className="text-right font-semibold">${item.amount.toFixed(2)}</span>

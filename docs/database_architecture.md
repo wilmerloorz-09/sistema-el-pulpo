@@ -13,7 +13,7 @@
 - Campos clave esperados:
   - `id`
   - `branch_id`
-  - `menu_scope` (`TABLE` | `TAKEOUT`)
+  - `menu_scope` (`TABLE` | `TAKEOUT` | `BULK`)
   - `parent_id`
   - `name`
   - `node_type`
@@ -46,6 +46,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `orders.menu_scope` define con que arbol se opero visualmente la orden.
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
+- `BULK` no rompe esta regla: el item vendido sigue cerrando sobre `order_items.product_id`, aunque la entrega adicional se resuelva con tablas auxiliares y `item_note`.
 - El modo de precio manual no vive en `products`: se resuelve desde ancestros de `menu_nodes` y hoy se hereda en frontend al cargar el catalogo.
 - La capa de Caja sigue cobrando desde `orders` + `order_items`, pero ahora puede enriquecer visualmente cada item enlazando:
   - `order_items.product_id`
@@ -75,6 +76,16 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `order_item_modifiers`: seleccion real de modificadores por item.
 - `order_items.item_note`: nota opcional por item.
 - `subcategory_modifiers`: tabla legacy de asignacion previa por subcategoria; ya no debe ser la fuente principal para nuevos cambios.
+
+## Productos incluidos para A granel
+- `bulk_included_products`
+  - relaciona un producto principal de `menu_nodes` en alcance `BULK` con un producto incluido de `menu_nodes` en alcance `TABLE`
+- `bulk_included_product_ranges`
+  - define rangos de monto y cantidad de producto a entregar
+- Reglas vigentes:
+  - la UI administrativa expone `Desde` y `Entregar`
+  - `amount_to` se calcula automaticamente
+  - el trigger/funcion de validacion debe permitir `BULK -> TABLE` dentro de la misma sucursal
 
 ## Divisiones de mesa
 - `restaurant_tables` sigue siendo la entidad fisica interna que soporta `orders.table_id` y `table_splits.table_id`.
@@ -176,6 +187,9 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Si `Recibido >= Aplicado` y el usuario agrega mas denominaciones, la UI debe pedir confirmacion antes de aceptar excedente.
 - La visibilidad de pagos entre usuarios depende de leer correctamente las tablas de eventos y pagos bajo RLS de sucursal.
 - El mosaico de `Mesas` no debe leer un total inventado: debe mostrar saldo pendiente calculado con la misma base operativa de cantidades activas, anuladas y pagadas por `order_item`.
+- En ordenes `TAKEOUT` / bandeja totalmente cobradas:
+  - `paid_at` debe quedar informado
+  - el estado operativo puede mantenerse en `READY` para no sacar la orden del flujo de `Despacho` antes de la entrega real
 
 ## Scripts de reset operativo
 - `supabase/sql/reset_full_for_fresh_start.sql`
@@ -431,6 +445,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - agrega `menu_nodes.manual_price_enabled`
   - deja el valor por defecto en `false`
   - habilita la configuracion de precios manuales por categoria en el arbol
+- `supabase/migrations/20260329134000_add_bulk_included_products.sql`
+  - crea `bulk_included_products`
+  - crea `bulk_included_product_ranges`
+  - agrega validacion para asignar productos incluidos desde `TABLE` a productos origen `BULK`
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.

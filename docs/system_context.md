@@ -5,8 +5,31 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo y sucursal activa.
 - `profiles.active_branch_id` sigue siendo el pivote de sesion y contexto operativo.
 - El catalogo visible en Ordenes ya navega con arbol recursivo `menu_nodes`, pero la persistencia operativa de items sigue dependiendo de `products`.
+- El sistema ya contempla tambien el alcance `BULK` (`A granel`) como tercer arbol operativo del catalogo.
 
-## Cambios Aplicados en Esta Jornada (2026-03-14)
+## Cambios Aplicados en Esta Jornada (2026-03-29)
+
+### 0.0.3) A granel: productos incluidos, entrega por monto y ajuste cross-modulo
+- `Admin > Arbol Menu` ya incorpora el alcance `A granel` (`BULK`) con soporte de productos incluidos.
+- Solo en nodos `product` del arbol `BULK` aparece el bloque `Producto incluido`.
+- Ese bloque permite asignar uno o mas productos incluidos desde `Menu Mesa` y definir reglas de entrega por monto.
+- La tabla visible de reglas ya no expone `Hasta`; el administrador edita `Desde` y `Entregar`, y el sistema calcula `amount_to` automaticamente.
+- La configuracion se persiste en `bulk_included_products` y `bulk_included_product_ranges`.
+- La validacion de BD ya permite la relacion correcta:
+  - origen en `menu_scope = 'BULK'`
+  - incluido en `menu_scope = 'TABLE'`
+  - ambos nodos deben ser `product`
+- En `Ordenes`, al agregar un producto `A granel`:
+  - ya no se muestra cantidad visible de compra
+  - el item se maneja operativamente como una sola linea
+  - puede mostrar una vista previa de productos a entregar segun el monto ingresado
+  - guarda la indicacion en `item_note` con formato `Entregar: ...`
+- En las vistas operativas, cuando el item es `A granel`, ya no debe mostrarse como `x1` o `1 unidad(es)` en orden, cocina, caja, detalle, ticket o pagos realizados.
+- En `Despacho`, para `A granel`:
+  - no se muestra stepper de cantidad
+  - en su lugar aparece el valor del item (`$...`) como referencia de entrega
+- Las ordenes que antes se veian como `Orden Bandeja` ahora deben presentarse como `Para llevar` en `Caja` y `Despacho`.
+- Cuando una orden `Para llevar`/bandeja queda totalmente cobrada, `Caja` ya no debe sacarla del flujo logistico: conserva `paid_at`, pero pasa a `READY` para seguir entrando a `Despacho`.
 
 ### 0.0.2) Menu / Mesas / Caja: cierre de jornada 2026-03-26
 - `Admin > Arbol Menu` ahora permite marcar categorias con `Precios manuales`.
@@ -410,6 +433,9 @@
 1. `Orden Bandeja` reutiliza `TAKEOUT` y se reconoce por `orders.is_tray_order`.
 1. Los items bandeja agregan `order_items.tray_item_type` y `order_items.tray_container_cost`.
 1. `Tipo C` solo puede salir de ramas `TAKEOUT` con raiz `menu_nodes.is_tray_category = true`.
+1. Confirmar tambien `supabase/migrations/20260329134000_add_bulk_included_products.sql` para soporte de productos incluidos en `A granel`.
+1. `A granel` opera sobre `menu_scope = 'BULK'` y puede agregar instrucciones `Entregar: ...` en `order_items.item_note`.
+1. En `Caja` y `Despacho`, una orden de bandeja debe presentarse como `Para llevar`.
 2. Validar en `Admin > Arbol Menu`:
    - crear raiz
    - crear hijo

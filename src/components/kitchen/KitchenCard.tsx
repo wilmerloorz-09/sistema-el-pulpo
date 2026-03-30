@@ -117,7 +117,12 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
       </div>
 
       <div className="max-h-[19rem] space-y-2 overflow-y-auto px-4 py-3 pr-3">
-        {previewableItems.map((item) => (
+        {previewableItems.map((item) => {
+          const isBulkItem = item.tray_item_type === "C";
+          const trimmedItemNote = String(item.item_note ?? "").trim();
+          const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
+
+          return (
           <div key={item.id} className="rounded-xl border border-border px-3 py-2">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
@@ -147,6 +152,16 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
                     ))}
                   </div>
                 )}
+                {trimmedItemNote ? (
+                  <p className={cn(
+                    "mt-1 break-words whitespace-normal pl-[18px]",
+                    isDeliveryInstruction
+                      ? "text-sm font-semibold text-orange-700"
+                      : "text-xs text-muted-foreground",
+                  )}>
+                    {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
+                  </p>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px]">
                   {item.quantity_pending_prepare > 0 ? (
                     <StageChip label="Pend" quantity={item.quantity_pending_prepare} tone="pending" />
@@ -159,12 +174,14 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
                   ) : null}
                 </div>
               </div>
-              <span className="rounded-md bg-primary/12 px-2.5 py-1 text-sm font-bold text-primary">
-                x{item.quantity_ordered}
-              </span>
+              {!isBulkItem ? (
+                <span className="rounded-md bg-primary/12 px-2.5 py-1 text-sm font-bold text-primary">
+                  x{item.quantity_ordered}
+                </span>
+              ) : null}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       <div className="border-t border-border px-4 py-3">

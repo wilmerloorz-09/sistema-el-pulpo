@@ -5,6 +5,7 @@ interface ReceiptItem {
   quantity: number;
   unit_price: number;
   total: number;
+  tray_item_type?: "A" | "B" | "C" | null;
   modifiers: { description: string }[];
   item_note?: string | null;
 }
@@ -59,13 +60,16 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
 
         {items.map((item, idx) => {
-          const indentCh = `${String(item.quantity).length + 2}ch`;
+          const isBulkItem = item.tray_item_type === "C";
+          const indentCh = isBulkItem ? "0ch" : `${String(item.quantity).length + 2}ch`;
+          const trimmedItemNote = String(item.item_note ?? "").trim();
+          const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
 
           return (
             <div key={idx} style={{ marginBottom: "6px" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>
-                  {item.quantity}x {item.description_snapshot}
+                  {isBulkItem ? item.description_snapshot : `${item.quantity}x ${item.description_snapshot}`}
                 </span>
                 <span>${item.total.toFixed(2)}</span>
               </div>
@@ -76,9 +80,9 @@ const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
                     - {mod.description}
                   </div>
                 ))}
-              {item.item_note && (
-                <div style={{ paddingLeft: indentCh, fontSize: "11px", fontStyle: "italic" }}>
-                  Nota: {item.item_note}
+              {trimmedItemNote && (
+                <div style={{ paddingLeft: indentCh, fontSize: "11px", fontStyle: isDeliveryInstruction ? "normal" : "italic", fontWeight: isDeliveryInstruction ? 700 : 400 }}>
+                  {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
                 </div>
               )}
             </div>

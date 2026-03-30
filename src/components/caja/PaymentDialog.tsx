@@ -30,6 +30,14 @@ import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, Clock3, Coins, Credi
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 
+function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
+  return getOrderOriginLabel({
+    ...params,
+    isTrayOrder: false,
+    orderType: params.isTrayOrder ? "TAKEOUT" : params.orderType,
+  });
+}
+
 interface Props {
   order: PayableOrder | null;
   paymentMethods: PaymentMethodOption[];
@@ -789,15 +797,17 @@ export default function PaymentDialog({
                   </div>
                 ) : (
                         <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1 md:max-h-[320px]">
-                          {pendingItemsForNow.map((item) => (
+                          {pendingItemsForNow.map((item) => {
+                            const isBulkItem = item.tray_item_type === "C";
+                            return (
                       <div key={item.id} className="grid grid-cols-[44px_minmax(0,1fr)_64px_78px_78px] items-center gap-2 rounded-2xl border border-stone-200 bg-stone-50/50 px-2 py-2 sm:grid-cols-[52px_minmax(0,1fr)_72px_92px_86px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
-                        <span className="text-center text-sm font-semibold text-slate-900">{item.quantity_available_now}</span>
+                        <span className="text-center text-sm font-semibold text-slate-900">{isBulkItem ? "AG" : item.quantity_available_now}</span>
                         <div className="flex min-w-0 items-center gap-2.5">
                           <ProductAvatar description={item.description_snapshot} imageUrl={item.image_url} />
                           <div className="min-w-0">
                             <span className="block truncate text-sm font-medium text-slate-900">{item.description_snapshot}</span>
                             <span className="block text-[11px] text-slate-500 sm:hidden">
-                              ${item.unit_price.toFixed(2)} c/u
+                              {isBulkItem ? `$${item.unit_price.toFixed(2)}` : `$${item.unit_price.toFixed(2)} c/u`}
                             </span>
                           </div>
                         </div>
@@ -822,7 +832,8 @@ export default function PaymentDialog({
                           </button>
                         </div>
                       </div>
-                    ))}
+                            );
+                          })}
                   </div>
                 )}
               </div>
@@ -863,7 +874,9 @@ export default function PaymentDialog({
                   </div>
                 ) : (
                   <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1 md:max-h-[320px]">
-                    {selectedItemsForNow.map((item) => (
+                    {selectedItemsForNow.map((item) => {
+                      const isBulkItem = item.tray_item_type === "C";
+                      return (
                       <div key={item.id} className="grid grid-cols-[78px_44px_minmax(0,1fr)_64px_78px] items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/40 px-2 py-2 sm:grid-cols-[86px_52px_minmax(0,1fr)_72px_82px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
                         <div className="flex justify-start gap-2">
                           <button
@@ -883,20 +896,21 @@ export default function PaymentDialog({
                             <ArrowLeft className="h-4 w-4" />
                           </button>
                         </div>
-                        <span className="text-center text-sm font-semibold text-slate-900">{item.quantity_to_charge_now}</span>
+                        <span className="text-center text-sm font-semibold text-slate-900">{isBulkItem ? "AG" : item.quantity_to_charge_now}</span>
                         <div className="flex min-w-0 items-center gap-2.5">
                           <ProductAvatar description={item.description_snapshot} imageUrl={item.image_url} tone="selected" />
                           <div className="min-w-0">
                             <span className="block truncate text-sm font-medium text-slate-900">{item.description_snapshot}</span>
                             <span className="block text-[11px] text-slate-500 sm:hidden">
-                              ${item.unit_price.toFixed(2)} c/u
+                              {isBulkItem ? `$${item.unit_price.toFixed(2)}` : `$${item.unit_price.toFixed(2)} c/u`}
                             </span>
                           </div>
                         </div>
                         <span className="hidden text-right text-sm font-semibold text-slate-900 sm:block">${item.unit_price.toFixed(2)}</span>
                         <span className="text-right text-sm font-semibold text-slate-900">${computeLineAmount(item.quantity_to_charge_now, item.unit_price).toFixed(2)}</span>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1037,7 +1051,7 @@ export default function PaymentDialog({
             </span>
             {order && (
               <span className="text-base font-semibold text-muted-foreground sm:text-lg">
-                - {getOrderOriginLabel({
+                - {getCajaOrderOriginLabel({
                   orderType: order.order_type,
                   tableName: order.table_name,
                   splitCode: order.split_code,
@@ -1176,19 +1190,24 @@ export default function PaymentDialog({
                               </Badge>
                             </div>
                             <div className="space-y-2">
-                              {order.items.map((item) => (
+                              {order.items.map((item) => {
+                                const isBulkItem = item.tray_item_type === "C";
+                                return (
                                 <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
                                     <p className="text-xs text-muted-foreground">
-                                      {item.quantity} unidad(es) - pagadas {item.quantity_paid} - pendientes {item.quantity_pending}
+                                      {isBulkItem
+                                        ? `A granel - pagadas ${item.quantity_paid} - pendientes ${item.quantity_pending}`
+                                        : `${item.quantity} unidad(es) - pagadas ${item.quantity_paid} - pendientes ${item.quantity_pending}`}
                                     </p>
                                   </div>
                                   <span className="shrink-0 text-sm font-semibold text-foreground">
                                     ${item.total.toFixed(2)}
                                   </span>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -1215,6 +1234,7 @@ export default function PaymentDialog({
                                 const qtyToPay = payQuantities[item.id] ?? 0;
                                 const isSelected = selectedRows[item.id] ?? false;
                                 const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
+                                const isBulkItem = item.tray_item_type === "C";
 
                                 return (
                                   <div
@@ -1234,17 +1254,23 @@ export default function PaymentDialog({
                                     </div>
                                     <p className="truncate text-xs font-semibold leading-tight text-foreground">{item.description_snapshot}</p>
                                     <p className="text-xs font-semibold leading-none text-foreground">${item.unit_price.toFixed(2)}</p>
-                                    <p className="text-center text-xs font-semibold leading-none text-foreground">{item.quantity_pending}</p>
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      max={item.quantity_pending}
-                                      step={1}
-                                      value={qtyToPay}
-                                      onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
-                                      className="h-8 w-[72px] text-xs"
-                                      disabled={readOnly}
-                                    />
+                                    <p className="text-center text-xs font-semibold leading-none text-foreground">{isBulkItem ? "AG" : item.quantity_pending}</p>
+                                    {isBulkItem ? (
+                                      <div className="flex h-8 items-center justify-center text-[11px] font-semibold text-slate-500">
+                                        A granel
+                                      </div>
+                                    ) : (
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        max={item.quantity_pending}
+                                        step={1}
+                                        value={qtyToPay}
+                                        onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
+                                        className="h-8 w-[72px] text-xs"
+                                        disabled={readOnly}
+                                      />
+                                    )}
                                     <p className="text-right text-xs font-semibold leading-none text-foreground">${lineSubtotal.toFixed(2)}</p>
                                   </div>
                                 );
@@ -1264,7 +1290,7 @@ export default function PaymentDialog({
                                 {paidItems.map((item) => (
                                   <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
                                     <span className="min-w-0 flex-1 truncate text-sm text-foreground line-through">
-                                      {item.description_snapshot} - {item.quantity} unidad(es)
+                                      {item.tray_item_type === "C" ? item.description_snapshot : `${item.description_snapshot} - ${item.quantity} unidad(es)`}
                                     </span>
                                     <Badge variant="outline" className="text-[10px]">
                                       Pagado completo

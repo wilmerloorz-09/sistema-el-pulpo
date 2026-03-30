@@ -57,6 +57,7 @@ const NodeCard = ({
 }) => {
   const isProduct = node.node_type === "product";
   const isDisabledNode = !node.is_active && !nodeAction;
+  const showsManualPrice = trayMode || node.price == null;
 
   if (isProduct) {
     return (
@@ -85,7 +86,7 @@ const NodeCard = ({
         <div className="min-w-0 flex flex-1 items-center justify-between gap-3">
           <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
           <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">
-            {trayMode ? "Manual" : `$${Number(node.price ?? 0).toFixed(2)}`}
+            {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
           </p>
         </div>
 

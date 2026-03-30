@@ -18,6 +18,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Considerar siempre los dos alcances actuales del arbol:
   - `Arbol Menu Mesa`
   - `Arbol Menu Para Llevar`
+- Considerar tambien el arbol operativo de `A granel` cuando el flujo requiera productos por monto o entrega adicional.
 - No volver a depender de pantallas separadas de `Categorias`, `Subcategorias` o `Productos` para la estructura principal.
 - Nivel 1 es el unico nivel obligatorio y la unica capa fija para navegar en Ordenes; desde Nivel 2 en adelante no deben existir tratamientos especiales por nivel.
 - Los productos pueden existir desde Nivel 2 en adelante.
@@ -26,9 +27,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 ### 4) Compatibilidad legacy obligatoria mientras siga la FK actual
 - Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
 - Cualquier cambio en `MenuNodesCrud`, `useMenuTree` o `MenuNavigator` debe considerar el espejo operativo en legacy.
-- Regla adicional:
-  - en `TAKEOUT`, no escribir categorias/subcategorias legacy por reflejo automatico
-  - en `TAKEOUT`, si se crea/edita producto, resolver el espejo en `products` sin fabricar subcategorias nuevas fuera del arbol `Mesa`
+  - Regla adicional:
+    - en `TAKEOUT`, no escribir categorias/subcategorias legacy por reflejo automatico
+    - en `TAKEOUT`, si se crea/edita producto, resolver el espejo en `products` sin fabricar subcategorias nuevas fuera del arbol `Mesa`
+    - en `BULK`, preservar el circuito de productos incluidos (`BULK -> TABLE`) y la persistencia de instrucciones de entrega en `item_note`
 
 ### 4.1) Productos agotados deben reflejarse en venta
 - Si un nodo o producto se desactiva desde `Productos`, `Ordenes` debe reflejarlo como agotado.
@@ -93,6 +95,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - No reconstruir reglas operativas criticas desde una sola tabla si ya existe un snapshot consolidado.
 - Si el frontend consume `get_order_operational_snapshot`, mantener compatibilidad temporal con la firma legacy mientras haya riesgo de bases remotas sin la migracion mas reciente; una orden despachada no debe desaparecer solo por cambio de nombres de columnas del RPC.
 - Si una orden parcial sigue activa y `orders.status` indica una etapa operativa valida (`SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED`) pero el snapshot no devuelve cantidad visible para esa etapa, no ocultarla del tablero: aplicar fallback controlado antes de dejarla fuera de todas las pestanas.
+- Si una orden `TAKEOUT` / bandeja ya fue cobrada pero aun no fue entregada, no sacarla del flujo logistico: debe seguir entrando a `Despacho`.
+- Si una orden `TAKEOUT` / bandeja cambia de nombre visible en frontend, no alterar por eso su modelo operativo; en `Caja` y `Despacho` debe mostrarse como `Para llevar`.
 
 ## Convenciones de Implementacion
 
@@ -101,6 +105,13 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - Ordenes
   - Cocina
   - Despacho
+  - Ticket
+- Si cambia el flujo de `A granel`, revisar consistencia en:
+  - `Admin > Arbol Menu (BULK)`
+  - Ordenes
+  - Cocina
+  - Despacho
+  - Caja
   - Ticket
 - Si cambia disponibilidad/agotado, revisar tambien:
   - Productos
@@ -177,6 +188,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
   - tablet: mantener controles a la derecha y aprovechar el ancho extra sin empujar acciones al pie
   - no volver a layouts donde el nombre del producto compita con stepper y accion en una sola fila angosta
+- Si el item es `A granel`, no mostrar cantidad comprada (`x1`, stepper o unidad) en vistas operativas; en su lugar, resaltar la instruccion `Entregar: ...` cuando exista.
+- Si se toca `DispatchCardBase` para `A granel`, no reintroducir stepper/cantidad visible; mantener solo el valor del item y la instruccion de entrega cuando aplique.
 - Si se toca la navegacion entre `Mesas` y `Ordenes`, preservar el origen de apertura:
   - abrir una mesa desde `Mesas` puede navegar a `/ordenes`
   - pero la navegacion visible debe seguir marcando `Mesas` mientras el flujo provenga de ahi
@@ -241,8 +254,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
    - `docs/codex_rules.md`
 5. Si se tocaron scripts de reset (`reset_full_for_fresh_start` / `reset_operational_for_fresh_start`), actualizar tambien sus comentarios para reflejar:
   - orden especial
-  - arbol dual `TABLE` / `TAKEOUT`
+  - arboles `TABLE` / `TAKEOUT` / `BULK`
   - `manual_price_enabled` en `menu_nodes`
+  - productos incluidos para `A granel`
   - alertas/listas operativas nuevas que siguen existiendo como funciones
 6. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
 
@@ -255,6 +269,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Modificadores estructurados por nodo e item.
 - Navegacion del menu basada en arbol, con Nivel 1 como unica obligatoriedad.
 - Modulo `Productos` como superficie operativa para consulta y agotado/activacion.
+- `A granel` basado en `menu_scope = 'BULK'`, con productos incluidos provenientes de `TABLE` y reglas de entrega por monto.
 - Caja con:
   - efectivo controlado por denominaciones
   - transferencia/no efectivo como monto editable
@@ -281,7 +296,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 ## 9) Autonomía de Asistentes IA
 - **Aplicación Directa:** Los asistentes de IA (como Windsurf, Cursor, Gemini, etc.) tienen permitido y se les requiere aplicar los cambios de código directamente a los archivos del proyecto, omitiendo los pasos intermedios de pedir permiso o confirmación para proceder con la escritura de código, a menos que el flujo requiera revisión humana crítica de arquitectura o se rompa un sistema en producción.
 - `Orden Bandeja` no crea un `order_type` nuevo; usar `orders.is_tray_order`.
+- En `Caja` y `Despacho`, cuando la orden ya opera como entrega al cliente final, preferir la etiqueta visible `Para llevar`.
 - `order_items.product_id` nunca puede ser `NULL`, tampoco para items bandeja `A/B/C`.
 - `is_tray_category` y `manual_price_enabled` son reglas independientes.
 - `Tipo C` exige precio manual mayor a `0` en frontend y en la RPC `add_tray_order_item`.
 - `trayMode` en `MenuNavigator` debe ser opcional y no romper el arbol normal.
+- Los items `A granel` no deben volver a representarse como compra por unidades en vistas operativas; si se necesita referencia visual en `Despacho`, usar el valor del item, no un stepper de cantidad.
+

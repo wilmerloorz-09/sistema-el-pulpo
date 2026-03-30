@@ -6,6 +6,14 @@ import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, Soup, Ute
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
 
+function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
+  return getOrderOriginLabel({
+    ...params,
+    isTrayOrder: false,
+    orderType: params.isTrayOrder ? "TAKEOUT" : params.orderType,
+  });
+}
+
 interface Props {
   orders: PayableOrder[];
   paymentMethods: { id: string; name: string }[];
@@ -108,7 +116,7 @@ export default function PayableOrdersList({
             ) : (
               <div className="divide-y divide-slate-200">
                 {orders.map((order, index) => {
-                  const label = getOrderOriginLabel({
+                  const label = getCajaOrderOriginLabel({
                     orderType: order.order_type,
                     tableName: order.table_name,
                     splitCode: order.split_code,
@@ -212,7 +220,9 @@ export default function PayableOrdersList({
                               <span className="text-right">Subtotal</span>
                             </div>
                             <div className="divide-y divide-slate-100">
-                              {order.items.map((item) => (
+                              {order.items.map((item) => {
+                                const isBulkItem = item.tray_item_type === "C";
+                                return (
                                 <div
                                   key={item.id}
                                   className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] sm:gap-3"
@@ -228,17 +238,17 @@ export default function PayableOrdersList({
                                       ) : null}
                                     </div>
                                     <p className="mt-0.5 text-xs text-slate-500">
-                                      {formatCurrency(item.unit_price)} c/u
+                                      {isBulkItem ? formatCurrency(item.unit_price) : `${formatCurrency(item.unit_price)} c/u`}
                                     </p>
                                   </div>
                                   <div className="grid grid-cols-3 gap-2 text-xs sm:contents sm:text-sm">
                                     <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                                      <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span>
-                                      {item.quantity}
+                                      {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span> : null}
+                                      {isBulkItem ? "A granel" : item.quantity}
                                     </span>
                                     <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                                      <span className="mr-1 font-medium text-slate-500 sm:hidden">Pend.</span>
-                                      {item.quantity_pending}
+                                      {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Pend.</span> : null}
+                                      {isBulkItem ? "-" : item.quantity_pending}
                                     </span>
                                     <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
                                       <span className="mr-1 font-medium text-slate-500 sm:hidden">Subtotal</span>
@@ -246,7 +256,8 @@ export default function PayableOrdersList({
                                     </span>
                                   </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         </div>

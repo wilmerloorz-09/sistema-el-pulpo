@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
 import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
 import NodeModifiersPanel from "@/components/admin/NodeModifiersPanel";
+import BulkIncludedProductsPanel from "@/components/admin/BulkIncludedProductsPanel";
 
 interface AdminMenuNode extends MenuNode {}
 
@@ -1105,19 +1106,20 @@ const MenuNodesCrud = ({
             </div>
           </div>
 
-          <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">
-            El nivel 1 es el unico obligatorio para navegar y los productos pueden colgar desde el nivel 2 en adelante.
-            {isTableScope
-              ? " Este arbol sincroniza automaticamente la estructura legacy base para ventas en ordenes."
-              : " Este arbol opera como catalogo visual/operativo independiente para llevar y puede copiarse desde Mesa."}
-          </div>
-
-          <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">
-            Los nodos de tipo producto no pueden tener hijos. Si desactivas una categoria, su rama completa quedara fuera de la navegacion operativa.
-          </div>
-
           {selectedNode ? (
             <div className="space-y-3 border-t border-border pt-4">
+              {isBulkScope && selectedNode.node_type === "product" ? (
+                <div>
+                  <h3 className="font-display text-sm font-semibold">Producto incluido</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Configura productos adicionales a entregar para este producto de A Granel segun rangos de monto.
+                  </p>
+                  <div className="mt-3">
+                    <BulkIncludedProductsPanel nodeId={selectedNode.id} />
+                  </div>
+                </div>
+              ) : null}
+
               <div>
                 <h3 className="font-display text-sm font-semibold">Modificadores del nodo</h3>
                 <p className="text-xs text-muted-foreground">

@@ -28,7 +28,7 @@ const MenuNodesCrudTable = () => (
 );
 
 const MenuNodesCrudTakeout = () => (
-  <MenuNodesCrud menuScope="TAKEOUT" title="Menu Para Llevar" showCopyFromTableButton />
+  <MenuNodesCrud menuScope="TAKEOUT" title="Con envase" showCopyFromTableButton />
 );
 
 const MenuNodesCrudBulk = () => (
@@ -111,7 +111,7 @@ const TABS: AdminTab[] = [
   },
   {
     value: "menu-tree-takeout",
-    label: "Menu Para Llevar",
+    label: "Con envase",
     icon: <ShoppingBag className="h-4 w-4" />,
     component: MenuNodesCrudTakeout,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),

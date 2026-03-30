@@ -17,6 +17,7 @@ export interface OrderItemSummary {
   quantity_remaining?: number;
   total: number;
   status: string;
+  tray_item_type?: "A" | "B" | "C" | null;
   modifiers: { description: string }[];
   item_note?: string | null;
 }
@@ -246,8 +247,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         total: number;
         status: string;
         paid_at?: string | null;
+        tray_item_type?: "A" | "B" | "C" | null;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at",
+        select: "id, order_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
@@ -508,6 +510,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             ),
             total: Number(item.total ?? 0),
             status: item.status,
+            tray_item_type: item.tray_item_type ?? null,
             modifiers: modsMap[item.id] || [],
             item_note: item.item_note ?? null,
           }));

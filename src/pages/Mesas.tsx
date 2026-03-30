@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CircleDollarSign, LayoutGrid, Loader2, Plus, ShoppingBag, Sparkles, Soup, Users } from "lucide-react";
+import { CircleDollarSign, LayoutGrid, Loader2, Plus, ShoppingBag, Sparkles, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -57,81 +57,10 @@ const Mesas = () => {
   const { createTrayOrder } = useTrayOrder();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
-  const [creatingTakeout, setCreatingTakeout] = useState(false);
   const [creatingSpecial, setCreatingSpecial] = useState(false);
   const [creatingTray, setCreatingTray] = useState(false);
   const canOperateMesas = canOperate(permissions, "mesas");
   const canCreateTrayOrder = canOperateMesas;
-
-  const handleTakeout = async () => {
-    if (!user || !activeBranchId || !canOperateMesas) return;
-    setCreatingTakeout(true);
-    try {
-      const { data: draftCandidates, error: existingDraftError } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("branch_id", activeBranchId)
-        .eq("created_by", user.id)
-        .eq("order_type", "TAKEOUT")
-        .eq("status", "DRAFT")
-        .order("updated_at", { ascending: false })
-        .limit(10);
-
-      if (existingDraftError) throw existingDraftError;
-
-      const candidateIds = (draftCandidates ?? []).map((candidate) => candidate.id);
-      let reusableDraftId: string | null = null;
-
-      if (candidateIds.length > 0) {
-        const { data: candidateItems, error: candidateItemsError } = await supabase
-          .from("order_items")
-          .select("order_id, status")
-          .in("order_id", candidateIds);
-
-        if (candidateItemsError) throw candidateItemsError;
-
-        const itemsByOrder = new Map<string, string[]>();
-        for (const orderId of candidateIds) {
-          itemsByOrder.set(orderId, []);
-        }
-
-        for (const item of candidateItems ?? []) {
-          const bucket = itemsByOrder.get(item.order_id) ?? [];
-          bucket.push(String(item.status ?? "DRAFT"));
-          itemsByOrder.set(item.order_id, bucket);
-        }
-
-        reusableDraftId = candidateIds.find((orderId) => {
-          const statuses = itemsByOrder.get(orderId) ?? [];
-          return statuses.every((status) => status === "DRAFT");
-        }) ?? null;
-      }
-
-      if (reusableDraftId) {
-        navigate(`/ordenes?order=${reusableDraftId}&from=mesas`);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("orders")
-        .insert({
-          order_type: "TAKEOUT" as const,
-          menu_scope: "TAKEOUT",
-          created_by: user.id,
-          status: "DRAFT" as const,
-          branch_id: activeBranchId,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
-      toast.success("Orden para llevar creada");
-      navigate(`/ordenes?order=${data.id}&from=mesas`);
-    } catch (err: any) {
-      toast.error(err.message || "Error al abrir orden para llevar");
-    } finally {
-      setCreatingTakeout(false);
-    }
-  };
 
   const handleTrayOrder = async () => {
     if (!canCreateTrayOrder) return;
@@ -281,34 +210,11 @@ const Mesas = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <motion.button
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0 }}
-              onClick={handleTakeout}
-              disabled={creatingTakeout || !canOperateMesas}
-              className={cn(
-                "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(16,185,129,0.55)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
-                "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-emerald-100 dark:border-emerald-800 dark:from-emerald-950/20 dark:via-card dark:to-emerald-950/30",
-                canOperateMesas ? "hover:border-accent/60 hover:bg-accent/15" : "cursor-not-allowed opacity-60",
-              )}
-            >
-              {creatingTakeout ? (
-                <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-accent" />
-              ) : (
-                <ShoppingBag className="h-4.5 w-4.5 shrink-0 text-accent" />
-              )}
-              <span className="block min-w-0 pr-7 font-display text-sm font-black text-accent sm:text-base">Para Llevar</span>
-              {canOperateMesas && !creatingTakeout && (
-                <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-accent/70" />
-              )}
-            </motion.button>
-
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.04 }}
               onClick={handleTrayOrder}
               disabled={creatingTray || !canCreateTrayOrder}
               className={cn(
@@ -320,9 +226,9 @@ const Mesas = () => {
               {creatingTray ? (
                 <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-amber-700" />
               ) : (
-                <Soup className="h-4.5 w-4.5 shrink-0 text-amber-700" />
+                <ShoppingBag className="h-4.5 w-4.5 shrink-0 text-amber-700" />
               )}
-              <span className="block min-w-0 pr-7 font-display text-sm font-black text-amber-700 sm:text-base">Bandeja</span>
+              <span className="block min-w-0 pr-7 font-display text-sm font-black text-amber-700 sm:text-base">Para Llevar</span>
               {canCreateTrayOrder && !creatingTray && (
                 <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-700/70" />
               )}
@@ -331,7 +237,7 @@ const Mesas = () => {
             <motion.button
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 }}
+              transition={{ delay: 0.04 }}
               onClick={handleSpecialOrder}
               disabled={creatingSpecial || !canOperateMesas}
               className={cn(

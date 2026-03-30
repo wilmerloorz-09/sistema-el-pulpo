@@ -336,6 +336,7 @@ export function useOrder(orderId: string | null) {
           p_tray_item_type: params.tray_item_type,
           p_tray_container_cost: params.tray_container_cost ?? 0,
           p_item_note: params.item_note ?? null,
+          p_modifier_ids: params.modifier_ids,
         });
         if (error) throw error;
         return;

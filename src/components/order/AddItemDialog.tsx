@@ -38,7 +38,9 @@ interface Props {
   priceModeOverride?: "FIXED" | "MANUAL";
   manualPriceLabel?: string;
   confirmLabel?: string;
-  extraContent?: ReactNode;
+  hideQuantity?: boolean;
+  extraContent?: ReactNode | ((context: { unitPrice: number; quantity: number; isManual: boolean }) => ReactNode);
+  buildItemNote?: (context: { unitPrice: number; quantity: number; isManual: boolean }) => string | null;
 }
 
 const AddItemDialog = ({
@@ -51,7 +53,9 @@ const AddItemDialog = ({
   priceModeOverride,
   manualPriceLabel = "Precio",
   confirmLabel = "Agregar",
+  hideQuantity = false,
   extraContent,
+  buildItemNote,
 }: Props) => {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState("1");
@@ -67,7 +71,9 @@ const AddItemDialog = ({
 
   const isManual = (priceModeOverride ?? product.price_mode) === "MANUAL";
   const price = isManual ? parseFloat(manualPrice) || 0 : (product.unit_price ?? 0);
-  const canAdd = quantity > 0 && (!isManual || price > 0);
+  const effectiveQuantity = hideQuantity ? 1 : quantity;
+  const canAdd = effectiveQuantity > 0 && (!isManual || price > 0);
+  const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
 
   const handleConfirm = () => {
     if (!canAdd) return;
@@ -76,9 +82,9 @@ const AddItemDialog = ({
       product_id: product.id,
       description_snapshot: product.description,
       unit_price: price,
-      quantity,
+      quantity: effectiveQuantity,
       modifier_ids: selectedMods,
-      item_note: null,
+      item_note: buildItemNote?.(dialogContext) ?? null,
     });
 
     setQuantity(1);
@@ -158,45 +164,47 @@ const AddItemDialog = ({
             </div>
           )}
 
-          {extraContent}
+          {typeof extraContent === "function" ? extraContent(dialogContext) : extraContent}
 
-          <div className="space-y-1.5 mt-2">
-            <Label className="text-sm font-semibold text-muted-foreground">Cantidad</Label>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
-                onClick={() => {
-                  const nextQuantity = Math.max(0, quantity - 1);
-                  setQuantity(nextQuantity);
-                  setQuantityInput(String(nextQuantity));
-                }}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={quantityInput}
-                onChange={(event) => handleManualQuantityChange(event.target.value)}
-                className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
-                onClick={() => {
-                  const nextQuantity = quantity + 1;
-                  setQuantity(nextQuantity);
-                  setQuantityInput(String(nextQuantity));
-                }}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+          {!hideQuantity && (
+            <div className="space-y-1.5 mt-2">
+              <Label className="text-sm font-semibold text-muted-foreground">Cantidad</Label>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
+                  onClick={() => {
+                    const nextQuantity = Math.max(0, quantity - 1);
+                    setQuantity(nextQuantity);
+                    setQuantityInput(String(nextQuantity));
+                  }}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={quantityInput}
+                  onChange={(event) => handleManualQuantityChange(event.target.value)}
+                  className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
+                  onClick={() => {
+                    const nextQuantity = quantity + 1;
+                    setQuantity(nextQuantity);
+                    setQuantityInput(String(nextQuantity));
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
 
           {sortedModifiers.length > 0 && (
             <div className="space-y-2.5">
@@ -232,7 +240,7 @@ const AddItemDialog = ({
           <div className="flex items-center justify-between border-t border-border/60 pt-4 mt-2">
             <span className="text-[13px] text-muted-foreground font-medium flex flex-col">
               Total
-              <span className="font-display text-2xl font-black text-foreground">${(price * quantity).toFixed(2)}</span>
+              <span className="font-display text-2xl font-black text-foreground">${(price * effectiveQuantity).toFixed(2)}</span>
             </span>
             <Button 
               onClick={handleConfirm} 

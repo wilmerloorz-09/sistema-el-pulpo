@@ -187,6 +187,7 @@ export interface CompletedPayment {
   item_description: string | null;
   item_quantity: number | null;
   item_paid_quantity: number | null;
+  tray_item_type?: "A" | "B" | "C" | null;
   item_amount: number;
   reversal_requested: boolean;
 }
@@ -1083,9 +1084,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         splitIds.length > 0
           ? supabase.from("table_splits").select("id, split_code").in("id", splitIds)
           : Promise.resolve({ data: [] as { id: string; split_code: string }[] }),
-        itemIds.length > 0
-          ? supabase.from("order_items").select("id, description_snapshot, quantity, unit_price, total").in("id", itemIds)
-          : Promise.resolve({ data: [] as { id: string; description_snapshot: string; quantity: number; unit_price: number; total: number }[] }),
+          itemIds.length > 0
+            ? supabase.from("order_items").select("id, description_snapshot, quantity, unit_price, total, tray_item_type").in("id", itemIds)
+            : Promise.resolve({ data: [] as { id: string; description_snapshot: string; quantity: number; unit_price: number; total: number; tray_item_type?: "A" | "B" | "C" | null }[] }),
       ]);
 
       const ordersMap = Object.fromEntries(orders.map((o) => [o.id, o]));
@@ -1167,14 +1168,15 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               order_status: order.status,
               status,
               notes: payment.notes,
-              payment_item_id: paymentItem.id,
-              item_id: paymentItem.order_item_id,
-              item_description: item?.description_snapshot ?? null,
-              item_quantity: item?.quantity ?? null,
-              item_paid_quantity: paymentItem.quantity_paid,
-              item_amount: paymentItem.total_amount,
-              reversal_requested: meta.reversalRequested,
-            });
+                payment_item_id: paymentItem.id,
+                item_id: paymentItem.order_item_id,
+                item_description: item?.description_snapshot ?? null,
+                item_quantity: item?.quantity ?? null,
+                item_paid_quantity: paymentItem.quantity_paid,
+                tray_item_type: item?.tray_item_type ?? null,
+                item_amount: paymentItem.total_amount,
+                reversal_requested: meta.reversalRequested,
+              });
           }
         } else {
           const legacyItem = meta.itemId ? itemsMap[meta.itemId] : undefined;
@@ -1199,13 +1201,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             status,
             notes: payment.notes,
             payment_item_id: null,
-            item_id: meta.itemId,
-            item_description: isSpecialOrderNote(payment.notes) ? "Cobro especial" : legacyItem?.description_snapshot ?? null,
-            item_quantity: isSpecialOrderNote(payment.notes) ? null : legacyItem?.quantity ?? null,
-            item_paid_quantity: isSpecialOrderNote(payment.notes) ? null : legacyItem?.quantity ?? null,
-            item_amount: Number(payment.amount),
-            reversal_requested: meta.reversalRequested,
-          });
+              item_id: meta.itemId,
+              item_description: isSpecialOrderNote(payment.notes) ? "Cobro especial" : legacyItem?.description_snapshot ?? null,
+              item_quantity: isSpecialOrderNote(payment.notes) ? null : legacyItem?.quantity ?? null,
+              item_paid_quantity: isSpecialOrderNote(payment.notes) ? null : legacyItem?.quantity ?? null,
+              tray_item_type: isSpecialOrderNote(payment.notes) ? null : legacyItem?.tray_item_type ?? null,
+              item_amount: Number(payment.amount),
+              reversal_requested: meta.reversalRequested,
+            });
         }
       }
 
@@ -1354,11 +1357,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-      const { data: orderData, error: orderDataError } = await supabase
-        .from("orders")
-        .select("order_type, status, is_special, special_total_manual")
-        .eq("id", orderId)
-        .single();
+        const { data: orderData, error: orderDataError } = await supabase
+          .from("orders")
+          .select("order_type, status, is_special, is_tray_order, special_total_manual")
+          .eq("id", orderId)
+          .single();
       if (orderDataError) throw orderDataError;
 
       const orderIsSpecial = Boolean((orderData as { is_special?: boolean | null }).is_special);
@@ -1648,15 +1651,27 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         (orderData?.status ?? "SENT_TO_KITCHEN") as OrderStatus,
       );
 
-      if (allFullyPaid) {
-        await dbUpdate("orders", orderId, {
-          status: "PAID",
-          paid_at: now,
-        });
-      } else {
-        const nextStatus = orderData?.order_type === "TAKEOUT"
-          ? "KITCHEN_DISPATCHED"
+      const shouldKeepOperationalStatusAfterFullPayment =
+        orderData?.order_type === "TAKEOUT" || Boolean((orderData as { is_tray_order?: boolean | null } | null)?.is_tray_order);
+      const takeoutReadyStatus =
+        shouldKeepOperationalStatusAfterFullPayment && allFullyPaid
+          ? "READY"
           : operationalStatusAfterPayment;
+
+      if (allFullyPaid) {
+        if (shouldKeepOperationalStatusAfterFullPayment) {
+          await dbUpdate("orders", orderId, {
+            status: takeoutReadyStatus,
+            paid_at: now,
+          });
+        } else {
+          await dbUpdate("orders", orderId, {
+            status: "PAID",
+            paid_at: now,
+          });
+        }
+      } else {
+        const nextStatus = operationalStatusAfterPayment;
         await dbUpdate("orders", orderId, { status: nextStatus, paid_at: null });
       }
 
@@ -2075,10 +2090,6 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     registerCashMovement,
   };
 }
-
-
-
-
 
 
 

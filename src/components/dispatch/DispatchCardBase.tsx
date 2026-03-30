@@ -7,6 +7,14 @@ import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 
+function getDispatchOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
+  return getOrderOriginLabel({
+    ...params,
+    isTrayOrder: false,
+    orderType: params.isTrayOrder ? "TAKEOUT" : params.orderType,
+  });
+}
+
 interface DispatchCardBaseProps {
   order: DispatchOrder;
   onMarkOrderReady: (order: DispatchOrder) => void;
@@ -204,7 +212,7 @@ export function DispatchCardBase({
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
   const timeDisplay = shouldShowTimer ? formatElapsedHHMMSS(elapsed) : formatEventTimeWithLabel(eventTime, order.status);
 
-  const label = getOrderOriginLabel({
+  const label = getDispatchOrderOriginLabel({
     orderType: order.order_type,
     tableName: order.table_name,
     splitCode: order.split_code,
@@ -260,11 +268,6 @@ export function DispatchCardBase({
           )}
           <span className="truncate font-display text-sm font-bold">{label}</span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">{order.order_code ?? String(order.order_number)}</span>
-          {order.is_tray_order && (
-            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-              BANDEJA
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           {!readOnly ? (
@@ -307,6 +310,9 @@ export function DispatchCardBase({
 
       <div className={cn("space-y-2 overflow-y-auto", expanded ? "max-h-[28rem] px-5 py-4 pr-4" : "max-h-[19rem] px-3 py-3 pr-2 sm:px-4 sm:pr-3")}>
         {previewableItems.map((item) => {
+          const isBulkItem = item.tray_item_type === "C";
+          const trimmedItemNote = String(item.item_note ?? "").trim();
+          const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
           const selectedQty = Math.max(1, Math.min(item.quantity_dispatchable || 1, qtyByItem[item.id] ?? 1));
           const canDispatch = item.quantity_dispatchable > 0;
           const remainingToDispatch = item.quantity_dispatchable;
@@ -316,9 +322,11 @@ export function DispatchCardBase({
             <div key={item.id} className={cn("rounded-xl border border-border bg-white/70", expanded ? "px-4 py-3 text-base" : "px-3 py-2.5 text-sm sm:px-3.5")}>
               <div className="flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-3">
                 <div className="flex min-w-0 items-start gap-3">
-                  <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
-                    {item.quantity_ordered}X
-                  </div>
+                  {!isBulkItem ? (
+                    <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
+                      {item.quantity_ordered}X
+                    </div>
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     <p className={cn("break-words whitespace-normal font-medium leading-tight text-foreground", expanded ? "text-[15px]" : "text-sm md:text-[15px]")}>
                       {item.description_snapshot}
@@ -340,9 +348,15 @@ export function DispatchCardBase({
                           ))}
                       </div>
                     ) : null}
-                    {item.item_note ? (
-                      <p className={cn("break-words whitespace-normal text-muted-foreground", expanded ? "text-sm" : "text-xs md:text-[13px]")}>
-                        Nota: {item.item_note}
+                    {trimmedItemNote ? (
+                      <p className={cn(
+                        "break-words whitespace-normal",
+                        isDeliveryInstruction
+                          ? "font-semibold text-orange-700"
+                          : "text-muted-foreground",
+                        expanded ? "text-sm" : "text-xs md:text-[13px]",
+                      )}>
+                        {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
                       </p>
                     ) : null}
                     <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -356,7 +370,7 @@ export function DispatchCardBase({
                       ) : null}
                     </div>
                     <div className={cn("mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground", expanded ? "text-sm" : "text-[11px] md:text-[13px]")}>
-                      <span className="shrink-0">Env: {item.quantity_ordered}</span>
+                      {!isBulkItem ? <span className="shrink-0">Env: {item.quantity_ordered}</span> : null}
                       <span className="shrink-0">Desp: {dispatchedQuantity}</span>
                       <span className="shrink-0">Falt: {remainingToDispatch}</span>
                       <span className="shrink-0">Canc: {item.quantity_cancelled}</span>
@@ -366,16 +380,27 @@ export function DispatchCardBase({
 
                 {!readOnly && canDispatch ? (
                   <div className="flex shrink-0 items-center gap-2 md:justify-end">
-                    <QuantityStepper
-                      value={selectedQty}
-                      min={1}
-                      max={Math.max(1, item.quantity_dispatchable)}
-                      disabled={isMarkingReady || isDispatching}
-                      onChange={(next) => {
-                        setQtyByItem((current) => ({ ...current, [item.id]: next }));
-                      }}
-                      compact={!expanded}
-                    />
+                    {isBulkItem ? (
+                      <div
+                        className={cn(
+                          "flex items-center justify-center rounded-xl border border-orange-200 bg-orange-50 px-3 font-semibold text-orange-800",
+                          expanded ? "h-10 min-w-[5.5rem] text-sm" : "h-8 min-w-[4.5rem] text-xs",
+                        )}
+                      >
+                        ${Number(item.total ?? 0).toFixed(2)}
+                      </div>
+                    ) : (
+                      <QuantityStepper
+                        value={selectedQty}
+                        min={1}
+                        max={Math.max(1, item.quantity_dispatchable)}
+                        disabled={isMarkingReady || isDispatching}
+                        onChange={(next) => {
+                          setQtyByItem((current) => ({ ...current, [item.id]: next }));
+                        }}
+                        compact={!expanded}
+                      />
+                    )}
 
                     {canDispatch && (
                       <Button

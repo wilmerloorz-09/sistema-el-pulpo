@@ -12,6 +12,7 @@ interface ItemCancelButtonProps {
   description: string;
   total: number;
   userId: string;
+  isBulkItem?: boolean;
 }
 
 export function ItemCancelButton({
@@ -22,6 +23,7 @@ export function ItemCancelButton({
   description,
   total,
   userId,
+  isBulkItem = false,
 }: ItemCancelButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -50,6 +52,7 @@ export function ItemCancelButton({
         description={description}
         total={total}
         userId={userId}
+        isBulkItem={isBulkItem}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
       />

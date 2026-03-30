@@ -4,7 +4,7 @@ import { useOrder } from "@/hooks/useOrder";
 import { useMenuData } from "@/hooks/useMenuData";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -42,6 +42,24 @@ interface SelectedProduct {
   image_url?: string | null;
 }
 
+interface BulkIncludedPreviewAssignment {
+  id: string;
+  included_node_name: string;
+  ranges: Array<{
+    id: string;
+    amount_from: number;
+    amount_to: number;
+    included_quantity: number;
+    display_order: number | null;
+  }>;
+}
+
+interface BulkIncludedPreviewRow {
+  id: string;
+  included_node_name: string;
+  matched_quantity: number;
+}
+
 const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -52,8 +70,8 @@ const Ordenes = () => {
   const orderId = searchParams.get("order");
   const fromMesas = searchParams.get("from") === "mesas";
   const [pendingTrayType, setPendingTrayType] = useState<TrayItemType | null>(null);
-  const effectiveTrayType: TrayItemType = pendingTrayType ?? "A";
-  const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<"TABLE" | "TAKEOUT" | null>(null);
+  const effectiveTrayType: TrayItemType = pendingTrayType ?? "B";
+  const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope, updateSpecialTotal, convertToSpecial } = useOrder(orderId);
   const trayMenuScope: MenuScope =
@@ -65,6 +83,8 @@ const Ordenes = () => {
   const persistedMenuScope: MenuScope = order?.menu_scope === "TAKEOUT" ? "TAKEOUT" : "TABLE";
   const currentMenuScope: MenuScope = order?.is_tray_order
     ? trayMenuScope
+    : pendingMenuScopeSelection
+      ? pendingMenuScopeSelection
     : order?.order_type === "TAKEOUT"
       ? "TAKEOUT"
       : persistedMenuScope;
@@ -88,6 +108,7 @@ const Ordenes = () => {
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
+  const isBulkScopeSelection = currentMenuScope === "BULK";
 
   const canOperateOrders = canOperate(permissions, "ordenes");
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
@@ -134,12 +155,22 @@ const Ordenes = () => {
       return;
     }
 
-    setPendingTrayType((current) => current ?? "A");
+    setPendingTrayType((current) => current ?? "B");
   }, [isTrayOrder, order?.id]);
 
   useEffect(() => {
+    if (order?.is_tray_order) {
+      setPendingMenuScopeSelection(null);
+      return;
+    }
+
+    if (order?.order_type === "DINE_IN") {
+      setPendingMenuScopeSelection("TABLE");
+      return;
+    }
+
     setPendingMenuScopeSelection(null);
-  }, [order?.id, order?.menu_scope]);
+  }, [order?.id, order?.is_tray_order, order?.order_type]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
   const interactiveMenuScope =
@@ -152,20 +183,23 @@ const Ordenes = () => {
   }, []);
 
   const handleMobileBackToMesas = useCallback(() => {
-    if (typeof window !== "undefined" && window.innerWidth <= 768) {
-      if (fromMesas) {
-        navigate("/mesas", { replace: true });
-        return;
-      }
-
-      if (window.history.length > 1) {
-        navigate(-1);
-        return;
-      }
-
-      navigate("/ordenes", { replace: true });
+    if (fromMesas) {
+      navigate("/mesas", { replace: true });
+      return;
     }
-  }, [fromMesas, navigate]);
+
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+
+    if (order?.table_id || order?.is_tray_order || order?.order_type === "TAKEOUT") {
+      navigate("/mesas", { replace: true });
+      return;
+    }
+
+    navigate("/ordenes", { replace: true });
+  }, [fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
 
   const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
     const legacyProductId = node.legacy_product_id ?? node.id;
@@ -204,6 +238,92 @@ const Ordenes = () => {
         : legacyProduct.price_mode,
     });
   }, [effectiveTrayType, isTrayOrder, menu.products]);
+
+  const bulkIncludedPreviewQuery = useQuery({
+    queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id],
+    queryFn: async () => {
+      if (!activeBranchId || !selectedProduct?.menu_node_id || !isBulkScopeSelection) return [] as BulkIncludedPreviewAssignment[];
+
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from("bulk_included_products" as never)
+        .select("id, included_node_id, display_order")
+        .eq("menu_node_id", selectedProduct.menu_node_id)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+      if (assignmentsError) throw assignmentsError;
+
+      const assignmentRows = (assignments ?? []) as Array<{
+        id: string;
+        included_node_id: string;
+        display_order?: number | null;
+      }>;
+      if (assignmentRows.length === 0) return [];
+
+      const includedNodeIds = assignmentRows.map((row) => row.included_node_id);
+      const { data: includedNodes, error: includedNodesError } = await supabase
+        .from("menu_nodes" as never)
+        .select("id, name")
+        .in("id", includedNodeIds);
+      if (includedNodesError) throw includedNodesError;
+
+      const { data: ranges, error: rangesError } = await supabase
+        .from("bulk_included_product_ranges" as never)
+        .select("id, bulk_included_product_id, amount_from, amount_to, included_quantity, display_order")
+        .in("bulk_included_product_id", assignmentRows.map((row) => row.id))
+        .order("display_order", { ascending: true });
+      if (rangesError) throw rangesError;
+
+      const includedNodesById = new Map(
+        ((includedNodes ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name]),
+      );
+
+      return assignmentRows.map((assignment) => ({
+        id: assignment.id,
+        included_node_name: includedNodesById.get(assignment.included_node_id) ?? "Producto incluido",
+        ranges: ((ranges ?? []) as Array<{
+          id: string;
+          bulk_included_product_id: string;
+          amount_from: number | string;
+          amount_to: number | string;
+          included_quantity: number;
+          display_order?: number | null;
+        }>)
+          .filter((range) => range.bulk_included_product_id === assignment.id)
+          .map((range) => ({
+            id: range.id,
+            amount_from: Number(range.amount_from),
+            amount_to: Number(range.amount_to),
+            included_quantity: Number(range.included_quantity),
+            display_order: range.display_order ?? 0,
+          }))
+          .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0)),
+      }));
+    },
+    enabled: !!activeBranchId && !!selectedProduct?.menu_node_id && isBulkScopeSelection,
+  });
+
+  const resolveBulkIncludedPreview = useCallback((unitPrice: number, quantity: number) => {
+    const safeUnitPrice = Number.isFinite(unitPrice) ? unitPrice : 0;
+    const safeQuantity = Math.max(0, quantity);
+    const assignments = bulkIncludedPreviewQuery.data ?? [];
+
+    return assignments.flatMap((assignment) => {
+      const matchedRange = assignment.ranges.find((range) => safeUnitPrice >= range.amount_from && safeUnitPrice <= range.amount_to) ?? null;
+      if (!matchedRange || matchedRange.included_quantity <= 0 || safeQuantity <= 0) return [];
+
+      return [{
+        id: assignment.id,
+        included_node_name: assignment.included_node_name,
+        matched_quantity: matchedRange.included_quantity * safeQuantity,
+      } satisfies BulkIncludedPreviewRow];
+    });
+  }, [bulkIncludedPreviewQuery.data]);
+
+  const buildBulkIncludedItemNote = useCallback((unitPrice: number, quantity: number) => {
+    const previewRows = resolveBulkIncludedPreview(unitPrice, quantity);
+    if (previewRows.length === 0) return null;
+    return `Entregar: ${previewRows.map((row) => `${row.included_node_name} X${row.matched_quantity}`).join(", ")}`;
+  }, [resolveBulkIncludedPreview]);
 
   if (!orderId) {
     return (
@@ -517,21 +637,22 @@ const Ordenes = () => {
   };
 
   const handleRequestInlineCancel = async (
-    item: {
-      id: string;
-      product_id?: string;
-      description_snapshot: string;
-      quantity: number;
-      quantity_ordered?: number;
-      quantity_dispatched?: number;
-      quantity_remaining?: number;
-      quantity_cancellable?: number;
-      total: number;
-      unit_price?: number;
-      status: string;
-      modifiers: { id: string; description: string }[];
-      item_note?: string | null;
-    },
+      item: {
+        id: string;
+        product_id?: string;
+        description_snapshot: string;
+        quantity: number;
+        quantity_ordered?: number;
+        quantity_dispatched?: number;
+        quantity_remaining?: number;
+        quantity_cancellable?: number;
+        total: number;
+        unit_price?: number;
+        status: string;
+        tray_item_type?: "A" | "B" | "C" | null;
+        modifiers: { id: string; description: string }[];
+        item_note?: string | null;
+      },
     qty: number,
   ) => {
     const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
@@ -567,18 +688,19 @@ const Ordenes = () => {
     }
 
     setInlineCancelVisibleItems([
-      {
-        id: item.id,
-        description_snapshot: item.description_snapshot,
-        quantity: normalizedQty,
-        quantity_total: item.quantity_ordered ?? item.quantity,
-        quantity_dispatched: item.quantity_dispatched ?? 0,
-        quantity_remaining: item.quantity_remaining ?? 0,
-        total: Math.round(normalizedQty * unitPrice * 100) / 100,
-        status: item.status,
-        modifiers: item.modifiers.map((modifier) => ({ description: modifier.description })),
-        item_note: item.item_note ?? null,
-      },
+        {
+          id: item.id,
+          description_snapshot: item.description_snapshot,
+          quantity: normalizedQty,
+          quantity_total: item.quantity_ordered ?? item.quantity,
+          quantity_dispatched: item.quantity_dispatched ?? 0,
+          quantity_remaining: item.quantity_remaining ?? 0,
+          total: Math.round(normalizedQty * unitPrice * 100) / 100,
+          status: item.status,
+          tray_item_type: item.tray_item_type ?? null,
+          modifiers: item.modifiers.map((modifier) => ({ description: modifier.description })),
+          item_note: item.item_note ?? null,
+        },
     ]);
     setInlineCancelQtyByItem({ [item.id]: normalizedQty });
     setInlineCancellationType("partial");
@@ -700,13 +822,40 @@ const Ordenes = () => {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <ShoppingBag className="h-4 w-4" />
-              Menu Para Llevar
+              Con envase
+            </span>
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
+            onClick={() => {
+              if (interactiveMenuScope === "BULK") return;
+              setPendingMenuScopeSelection("BULK");
+            }}
+            disabled={updateMenuScope.isPending}
+            aria-pressed={interactiveMenuScope === "BULK"}
+          >
+            <span
+              className={cn(
+                "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
+                interactiveMenuScope === "BULK" ? "border-primary" : "border-muted-foreground/50",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full transition-colors",
+                  interactiveMenuScope === "BULK" ? "bg-primary" : "bg-transparent",
+                )}
+              />
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Scale className="h-4 w-4" />
+              A granel
             </span>
           </button>
         </div>
       ) : null}
       <MenuNavigator
-        includeInactive={true}
         menuScope={currentMenuScope}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
@@ -878,7 +1027,7 @@ const Ordenes = () => {
                 {order.is_tray_order ? (
                   <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-amber-800 dark:text-amber-400">
                     <ShoppingBag className="h-4 w-4" />
-                    Orden Bandeja
+                    Para Llevar
                   </div>
                 ) : order.is_special ? (
                   <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
@@ -1061,11 +1210,13 @@ const Ordenes = () => {
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
         modifiers={
-          isTrayOrder
-            ? []
-            : selectedProduct
-              ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.menu_node_id)
-              : []
+          selectedProduct
+            ? (
+              !isTrayOrder || effectiveTrayType !== "A"
+                ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.menu_node_id)
+                : []
+            )
+            : []
         }
         open={canEditItems && !!selectedProduct}
         onClose={() => {
@@ -1074,11 +1225,44 @@ const Ordenes = () => {
         priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
         manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
         confirmLabel={isTrayOrder ? "Agregar item bandeja" : "Agregar"}
-        extraContent={null}
+        hideQuantity={isBulkScopeSelection}
+        extraContent={({ unitPrice, quantity }) => {
+          if (!isBulkScopeSelection) return null;
+
+          const previewRows = resolveBulkIncludedPreview(unitPrice, quantity);
+          if (previewRows.length === 0) {
+            return (
+              <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                No hay productos adicionales a entregar para este monto.
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2 rounded-2xl border border-orange-200 bg-orange-50/70 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-orange-700">
+                Productos adicionales a entregar
+              </div>
+              <div className="space-y-1.5">
+                {previewRows.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-3 py-2 text-sm">
+                    <span className="font-medium text-foreground">{row.included_node_name}</span>
+                    <Badge className="rounded-lg bg-orange-500 text-white hover:bg-orange-500">
+                      x{row.matched_quantity}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }}
+        buildItemNote={({ unitPrice, quantity }) => (
+          isBulkScopeSelection ? buildBulkIncludedItemNote(unitPrice, quantity) : null
+        )}
         onConfirm={(data) => {
           addItem.mutate({
             ...data,
-            modifier_ids: isTrayOrder ? [] : data.modifier_ids,
+            modifier_ids: isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids,
             tray_item_type: isTrayOrder ? effectiveTrayType : undefined,
             tray_container_cost: 0,
           }, {

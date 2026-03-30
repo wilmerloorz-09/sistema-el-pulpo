@@ -29,6 +29,7 @@
 - El catalogo visual ya trabaja con dos alcances:
   - `TABLE`
   - `TAKEOUT`
+  - `BULK`
 - Fuente operativa legacy aun activa: `categories`, `subcategories`, `products`.
 - `MenuNodesCrud` es la interfaz principal para administrar la estructura del menu.
 - La compatibilidad con `products` sigue viva a nivel operativo, pero la administracion del catalogo ya no expone una pestana separada de `Productos`; el punto principal de mantenimiento visible es `Arbol Menu`.
@@ -50,6 +51,7 @@
 - `orders.menu_scope` determina que arbol usar en la orden activa.
 - `TAKEOUT` usa siempre `menu_scope = 'TAKEOUT'`.
 - `DINE_IN` puede alternar entre `TABLE` y `TAKEOUT` desde la UI de `Ordenes`.
+- `BULK` se usa para venta `A granel` y permite asociar productos incluidos con reglas de entrega por monto.
 - En `OrderItemsList`, movil y tablet ya no deben forzar el mismo layout:
   - telefono: descripcion/producto a la izquierda y columna fija de cantidad/anulacion a la derecha si cabe
   - tablet: la misma composicion aprovecha mejor el ancho y mantiene controles alineados a la derecha
@@ -136,6 +138,15 @@
 - En alcance `TAKEOUT`, las categorias ya no deben crear/editar `subcategories` legacy.
 - Los productos `TAKEOUT` siguen necesitando espejo en `products`, pero deben resolver la categoria legacy equivalente sin fabricar ramas nuevas fuera del arbol `Mesa`.
 - Esta capa debe tratarse como compatibilidad transitoria, no como arquitectura destino.
+
+### D.1) Productos incluidos para A granel
+- Los productos `BULK` pueden vincular productos incluidos desde el arbol `TABLE`.
+- Esa relacion se administra en frontend con `BulkIncludedProductsPanel` y `useBulkIncludedProducts`.
+- La persistencia vive en dos tablas auxiliares:
+  - `bulk_included_products`
+  - `bulk_included_product_ranges`
+- La UI administrativa ya trabaja con una tabla visible de `Desde` y `Entregar`; el `Hasta` se deriva automaticamente.
+- En tiempo de venta, la resolucion de entrega no cambia `order_items.product_id`; solo agrega una instruccion operativa en `order_items.item_note`.
 
 ### E) Caja: composicion actual del flujo de cobro
 - `Caja` se divide en:
@@ -378,3 +389,15 @@
 - `useTrayOrder` concentra la creacion de orden bandeja y la carga del arbol filtrado para `Tipo C`.
 - `MenuNavigator` ahora acepta `trayMode` opcional; si no se envia, mantiene el comportamiento previo.
 - `TrayItemTypeSelector` decide entre tipos `A/B/C` y `TrayItemChip` resume el tipo de entrega en Ordenes, Cocina, Despacho y Caja.
+- En la presentacion visible actual, una orden de bandeja puede seguir existiendo como `orders.is_tray_order = true`, pero en `Caja` y `Despacho` debe mostrarse como `Para llevar`.
+
+## Addendum 2026-03-29
+- `A granel` ya debe considerarse parte de la arquitectura operativa estable, no un experimento temporal de UI.
+- `OrderItemsList`, `OrderDetailPanel`, `KitchenCard`, `DispatchCardBase`, `ThermalReceipt`, `PayableOrdersList`, `PaymentDialog`, `CompletedPaymentsList` y `PaymentReversalModal` ya contemplan render especial para `tray_item_type = 'C'`.
+- La regla visible actual es:
+  - no representar el item `A granel` como compra por unidades
+  - usar la instruccion `Entregar: ...` como mensaje operativo destacado
+  - en `Despacho`, usar el valor del item en lugar del stepper
+- En `Caja`, al cobrar una orden `TAKEOUT`/bandeja por completo:
+  - se guarda `paid_at`
+  - pero el estado vuelve a `READY` para que el flujo logistico siga en `Despacho`

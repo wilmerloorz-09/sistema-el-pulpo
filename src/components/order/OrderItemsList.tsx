@@ -69,6 +69,7 @@ const OrderItemsList = ({
   return (
     <div className="flex flex-col gap-3">
       {items.map((item) => {
+        const isBulkItem = item.tray_item_type === "C";
         const isPending = item.status === "DRAFT";
         const canCancelOperational = !isPending && !!onRequestCancel && !disableOperationalCancel;
         const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
@@ -87,6 +88,8 @@ const OrderItemsList = ({
             requestedOperationalQty,
           ),
         );
+        const trimmedItemNote = String(item.item_note ?? "").trim();
+        const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
 
         return (
           <div
@@ -102,9 +105,11 @@ const OrderItemsList = ({
           >
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
               <div className="flex min-w-0 items-start gap-3">
-                <Badge className="mt-0.5 min-w-[2.35rem] shrink-0 justify-center rounded-lg border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-1 text-[11px] font-black uppercase leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
-                  {displayQuantity}x
-                </Badge>
+                {!isBulkItem ? (
+                  <Badge className="mt-0.5 min-w-[2.35rem] shrink-0 justify-center rounded-lg border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-1 text-[11px] font-black uppercase leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
+                    {displayQuantity}x
+                  </Badge>
+                ) : null}
 
                 <div className="min-w-0 flex-1">
                 <p className="break-words whitespace-normal text-sm font-medium text-foreground">
@@ -134,13 +139,28 @@ const OrderItemsList = ({
                   </div>
                 )}
 
-                {item.item_note && (
-                  <p className="mt-1 text-xs italic text-muted-foreground">Nota: {item.item_note}</p>
+                {trimmedItemNote && (
+                  <p
+                    className={cn(
+                      "mt-1 break-words whitespace-normal",
+                      isDeliveryInstruction
+                        ? "text-sm font-semibold text-orange-700"
+                        : "text-xs italic text-muted-foreground",
+                    )}
+                  >
+                    {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
+                  </p>
                 )}
 
                 <p className="mt-1 text-xs text-muted-foreground">
-                  ${item.unit_price.toFixed(2)} x {displayQuantity} ={" "}
-                  <span className="font-semibold text-foreground">${formatLineTotal(item.unit_price, displayQuantity)}</span>
+                  {isBulkItem ? (
+                    <span className="font-semibold text-foreground">${item.unit_price.toFixed(2)}</span>
+                  ) : (
+                    <>
+                      ${item.unit_price.toFixed(2)} x {displayQuantity} ={" "}
+                      <span className="font-semibold text-foreground">${formatLineTotal(item.unit_price, displayQuantity)}</span>
+                    </>
+                  )}
                 </p>
 
                 <div className="mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-[11px] text-muted-foreground sm:text-xs">
@@ -179,77 +199,81 @@ const OrderItemsList = ({
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
-                    disabled={controlDisabled}
-                    onClick={() => {
-                      if (isPending) {
-                        if (item.quantity > 1) {
-                          onUpdateQty(item.id, item.quantity - 1, item.unit_price);
-                        }
-                        return;
-                      }
+                  {!isBulkItem ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
+                        disabled={controlDisabled}
+                        onClick={() => {
+                          if (isPending) {
+                            if (item.quantity > 1) {
+                              onUpdateQty(item.id, item.quantity - 1, item.unit_price);
+                            }
+                            return;
+                          }
 
-                      if (canCancelOperational && selectedOperationalQty > 1) {
-                        setOperationalQtyByItem((prev) => ({
-                          ...prev,
-                          [item.id]: selectedOperationalQty - 1,
-                        }));
-                      }
-                    }}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
+                          if (canCancelOperational && selectedOperationalQty > 1) {
+                            setOperationalQtyByItem((prev) => ({
+                              ...prev,
+                              [item.id]: selectedOperationalQty - 1,
+                            }));
+                          }
+                        }}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
 
-                  <QuantityInput
-                    key={`${item.id}-${isPending ? "draft" : "cancel"}-${isPending ? displayQuantity : selectedOperationalQty}`}
-                    initialQuantity={isPending ? displayQuantity : selectedOperationalQty}
-                    min={1}
-                    max={isPending ? Math.max(1, item.quantity) : Math.max(1, maxOperationalQty || displayQuantity || 1)}
-                    disabled={controlDisabled}
-                    updateOnChange={!isPending}
-                    className={!isPending && !operationalDisabled ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)]" : undefined}
-                    onUpdate={(newQty) => {
-                      if (isPending) {
-                        if (newQty <= 0) {
-                          onRemove(item.id);
-                        } else if (newQty !== item.quantity) {
-                          onUpdateQty(item.id, newQty, item.unit_price);
-                        }
-                        return;
-                      }
+                      <QuantityInput
+                        key={`${item.id}-${isPending ? "draft" : "cancel"}-${isPending ? displayQuantity : selectedOperationalQty}`}
+                        initialQuantity={isPending ? displayQuantity : selectedOperationalQty}
+                        min={1}
+                        max={isPending ? Math.max(1, item.quantity) : Math.max(1, maxOperationalQty || displayQuantity || 1)}
+                        disabled={controlDisabled}
+                        updateOnChange={!isPending}
+                        className={!isPending && !operationalDisabled ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)]" : undefined}
+                        onUpdate={(newQty) => {
+                          if (isPending) {
+                            if (newQty <= 0) {
+                              onRemove(item.id);
+                            } else if (newQty !== item.quantity) {
+                              onUpdateQty(item.id, newQty, item.unit_price);
+                            }
+                            return;
+                          }
 
-                      const normalized = Math.max(1, Math.min(maxOperationalQty || displayQuantity || 1, newQty));
-                      setOperationalQtyByItem((prev) => ({
-                        ...prev,
-                        [item.id]: normalized,
-                      }));
-                    }}
-                  />
+                          const normalized = Math.max(1, Math.min(maxOperationalQty || displayQuantity || 1, newQty));
+                          setOperationalQtyByItem((prev) => ({
+                            ...prev,
+                            [item.id]: normalized,
+                          }));
+                        }}
+                      />
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
-                    disabled={controlDisabled}
-                    onClick={() => {
-                      if (isPending) {
-                        onUpdateQty(item.id, item.quantity + 1, item.unit_price);
-                        return;
-                      }
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
+                        disabled={controlDisabled}
+                        onClick={() => {
+                          if (isPending) {
+                            onUpdateQty(item.id, item.quantity + 1, item.unit_price);
+                            return;
+                          }
 
-                      if (canCancelOperational && selectedOperationalQty < (maxOperationalQty || displayQuantity || 1)) {
-                        setOperationalQtyByItem((prev) => ({
-                          ...prev,
-                          [item.id]: selectedOperationalQty + 1,
-                        }));
-                      }
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
+                          if (canCancelOperational && selectedOperationalQty < (maxOperationalQty || displayQuantity || 1)) {
+                            setOperationalQtyByItem((prev) => ({
+                              ...prev,
+                              [item.id]: selectedOperationalQty + 1,
+                            }));
+                          }
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
 
                 {!isPending && (

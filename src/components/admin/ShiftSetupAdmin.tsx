@@ -81,6 +81,14 @@ function isMissingFunctionOrSchemaError(error: any, functionName?: string) {
   return false;
 }
 
+function isRecoverableCancelPolicyRpcError(error: any) {
+  const message = String(error?.message ?? "");
+  return (
+    isMissingFunctionOrSchemaError(error, "save_branch_cancel_policy")
+    || message.includes("El nodo indicado no es una categoria raiz valida para esta sucursal")
+  );
+}
+
 function showShiftSetupError(
   error: any,
   setWarningDialog: React.Dispatch<React.SetStateAction<{ open: boolean; title: string; description: string }>>,
@@ -221,7 +229,7 @@ const ShiftSetupAdmin = () => {
         is_primary_root_category: Boolean(row.is_primary_root_category),
         is_kitchen_plate: Boolean(row.is_kitchen_plate),
         allow_direct_cancel: Boolean(row.allow_direct_cancel),
-      }));
+      })).filter((row) => row.descendant_product_count > 0);
 
       const shouldForcePrimaryRootOff =
         normalizedRows.length > 0
@@ -555,6 +563,7 @@ const ShiftSetupAdmin = () => {
 
     const payload = cancelPolicyState
       .filter((row) => validPolicyIds.has(row.menu_node_id))
+      .filter((row) => row.descendant_product_count > 0)
       .filter((row) => isGlobalAdmin || !row.is_primary_root_category)
       .map((row) => ({
         menu_node_id: row.menu_node_id,
@@ -569,12 +578,13 @@ const ShiftSetupAdmin = () => {
 
     if (!error) return;
 
-    if (!isMissingFunctionOrSchemaError(error, "save_branch_cancel_policy")) {
+    if (!isRecoverableCancelPolicyRpcError(error)) {
       throw error;
     }
 
     for (const row of cancelPolicyState) {
       if (!validPolicyIds.has(row.menu_node_id)) continue;
+      if (row.descendant_product_count <= 0) continue;
       if (!isGlobalAdmin && row.is_primary_root_category) continue;
 
       if (!row.is_kitchen_plate && !row.allow_direct_cancel) {

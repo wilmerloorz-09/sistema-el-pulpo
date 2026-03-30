@@ -37,6 +37,7 @@ interface CancelOrderDialogProps {
 interface SnapshotItem {
   order_item_id: string;
   description_snapshot: string;
+  tray_item_type?: "A" | "B" | "C" | null;
   item_status: string;
   quantity_ordered: number;
   quantity_paid: number;
@@ -96,6 +97,7 @@ export default function CancelOrderDialog({
             {
               quantity: Number(item.quantity ?? 0),
               description: item.description_snapshot,
+              tray_item_type: item.tray_item_type ?? null,
             },
           ]),
         );
@@ -135,6 +137,7 @@ export default function CancelOrderDialog({
             return {
               ...item,
               description_snapshot: visibleItem.description || item.description_snapshot,
+              tray_item_type: visibleItem.tray_item_type ?? null,
               quantity_cancellable: Math.max(0, Math.min(item.quantity_cancellable, visibleItem.quantity)),
             };
           })
@@ -301,7 +304,8 @@ export default function CancelOrderDialog({
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{item.description_snapshot}</p>
                         <p className="text-xs leading-5 text-muted-foreground">
-                          Ord: {item.quantity_ordered} | Pend: {item.quantity_pending_prepare} | Listo: {item.quantity_ready_available} | Desp: {item.quantity_dispatched_available} | Canc: {item.quantity_cancelled_total} | Pag: {item.quantity_paid}
+                          {item.tray_item_type !== "C" ? `Ord: ${item.quantity_ordered} | ` : ""}
+                          Pend: {item.quantity_pending_prepare} | Listo: {item.quantity_ready_available} | Desp: {item.quantity_dispatched_available} | Canc: {item.quantity_cancelled_total} | Pag: {item.quantity_paid}
                         </p>
                       </div>
                       {compactPresetMode ? (
