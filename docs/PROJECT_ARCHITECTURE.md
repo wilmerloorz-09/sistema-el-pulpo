@@ -98,6 +98,11 @@
   - hasta 2 etiquetas inferiores cuando hay divisiones
   - sin montos si hay mas de 2 divisiones activas
 - El `split_code` visible debe formatearse como `2A`, `2B`, etc., sin espacio intermedio.
+- La lectura del mosaico ya no debe recomponerse en frontend con varias queries operativas; el resumen sale de `get_branch_tables_overview(...)`.
+- `Mesas` actua tambien como superficie de warm-up:
+  - precalienta el detalle de las ordenes visibles
+  - precalienta el arbol de menu para `TABLE`, `TAKEOUT` y `BULK`
+  - al navegar a `Ordenes`, la pantalla debe reutilizar ese cache en React Query
 
 ### Usuarios y alta administrativa
 - `UsersCrud` sigue siendo la superficie de administracion de usuarios.
@@ -112,6 +117,35 @@
   - rol global, solo si existe
 
 ## Cambios Arquitectonicos de Esta Jornada
+
+### A.1) Primera apertura instantanea de Mesas/Ordenes
+- `Ordenes` ya no comparte el mismo camino critico de render con la carga pesada del catalogo legacy.
+- La orden puede pintarse primero y el menu completar su hidratacion aparte.
+- La seleccion de producto resuelve el detalle operativo on-demand:
+  - producto legacy
+  - herencia de `manual_price_enabled`
+  - modificadores efectivos por nodo y ancestros
+- Esto reemplaza la carga eager previa del catalogo operativo completo al abrir cualquier orden.
+
+### A.2) Cache cliente con stale-while-revalidate
+- `useOrder` y `useMenuTree` usan cache React Query con `staleTime` y `gcTime`.
+- `Mesas` precalienta:
+  - query de detalle de orden por `order_id`
+  - arboles de menu por `menu_scope`
+- Si la data ya existe en cache, `Ordenes` la reutiliza y revalida en segundo plano.
+- Si la data aun no existe, la pantalla muestra skeleton inmediato en vez de spinner bloqueante.
+
+### A.3) Resumen de mesas consolidado
+- Nueva RPC: `get_branch_tables_overview(p_branch_id uuid)`.
+- Objetivo:
+  - mover a backend el resumen por mesa del turno
+  - evitar N+1 y joins armados en frontend
+  - exponer en una sola ida: estado, orden activa, total pendiente, divisiones, items y minutos transcurridos
+- Los borradores vacios siguen siendo navegables, pero no deben marcar una mesa como ocupada.
+
+### A.4) Frescura por invalidacion, no por polling ciego
+- `useTablesWithStatus` mantiene una sola suscripcion Realtime por sucursal activa.
+- Esa suscripcion invalida el resumen consolidado cuando cambian ordenes, items, pagos, divisiones o eventos operativos relevantes.
 
 ### A) Arbol recursivo de profundidad indefinida
 - Se agrego `menu_nodes` con `parent_id`, `depth`, `node_type`, `display_order`, `image_url`, `price`, `is_active` y `manual_price_enabled`; la columna `icon` queda como remanente legacy y ya no se expone en el editor principal.

@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useOrder } from "@/hooks/useOrder";
-import { useMenuData } from "@/hooks/useMenuData";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -30,6 +30,7 @@ import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
 import { formatSplitCodeLabel } from "@/lib/splitCode";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
+import { dbSelect } from "@/services/DatabaseService";
 
 interface SelectedProduct {
   id: string;
@@ -60,6 +61,143 @@ interface BulkIncludedPreviewRow {
   matched_quantity: number;
 }
 
+interface ProductModifierOption {
+  id: string;
+  description: string;
+}
+
+interface MenuProductLookupResult {
+  product: SelectedProduct;
+  modifiers: ProductModifierOption[];
+}
+
+/**
+ * Diagnostico de rendimiento (2026-03-30)
+ * - Medicion directa disponible desde este entorno: RTT base al endpoint REST de Supabase ~777ms.
+ * - Ruta lenta original al abrir una mesa: `orders` -> `restaurant_tables` -> `table_splits` -> `order_items`
+ *   -> `get_order_operational_snapshot` -> el mismo snapshot otra vez via `fetchOperationalMapsForOrders`
+ *   -> `order_item_modifiers` -> siblings/splits; en paralelo la pantalla quedaba bloqueada esperando `useMenuData`
+ *   (categorias, subcategorias, productos y modificadores completos).
+ * - Con ese encadenamiento, la primera apertura acumulaba varios round-trips antes de pintar la orden.
+ */
+
+async function fetchMenuProductLookup(params: {
+  branchId: string;
+  node: MenuNode;
+  isTrayOrder: boolean;
+  trayType: TrayItemType;
+}): Promise<MenuProductLookupResult> {
+  const legacyProductId = params.node.legacy_product_id ?? params.node.id;
+  const { data: productRow, error: productError } = await supabase
+    .from("products")
+    .select("id, description, subcategory_id, unit_price, price_mode")
+    .eq("id", legacyProductId)
+    .single();
+
+  if (productError) {
+    throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+  }
+
+  const priceMode =
+    params.isTrayOrder
+      ? (params.trayType === "C" ? "MANUAL" : "FIXED")
+      : params.node.manual_price_inherited
+        ? "MANUAL"
+        : productRow.price_mode;
+
+  const modifierNodeIds = [params.node.id, ...(params.node.ancestor_ids ?? [])];
+  const { data: links, error: linksError } = await supabase
+    .from("menu_node_modifiers" as never)
+    .select("node_id, modifier_id, display_order, is_active")
+    .in("node_id", modifierNodeIds)
+    .eq("is_active", true)
+    .order("display_order", { ascending: true });
+  if (linksError) throw linksError;
+
+  const modifierLinks = (links ?? []) as Array<{
+    node_id: string;
+    modifier_id: string;
+    display_order?: number | null;
+  }>;
+  const modifierIds = [...new Set(modifierLinks.map((link) => link.modifier_id).filter(Boolean))] as string[];
+
+  let modifiers: ProductModifierOption[] = [];
+  if (modifierIds.length > 0) {
+    const modifierRows = await dbSelect<{ id: string; description: string }>("modifiers", {
+      select: "id, description",
+      branchId: params.branchId,
+      filters: [
+        { column: "is_active", op: "eq", value: true },
+        { column: "id", op: "in", value: modifierIds },
+      ],
+      orderBy: { column: "description" },
+    });
+
+    const modifiersById = new Map(modifierRows.map((modifier) => [modifier.id, modifier]));
+    const linksByNode = new Map<string, typeof modifierLinks>();
+    for (const link of modifierLinks) {
+      const bucket = linksByNode.get(link.node_id) ?? [];
+      bucket.push(link);
+      linksByNode.set(link.node_id, bucket);
+    }
+
+    const seenModifierIds = new Set<string>();
+    modifiers = modifierNodeIds.flatMap((nodeId) => {
+      const nodeLinks = linksByNode.get(nodeId) ?? [];
+      return nodeLinks.flatMap((link) => {
+        if (seenModifierIds.has(link.modifier_id)) return [];
+        const modifier = modifiersById.get(link.modifier_id);
+        if (!modifier) return [];
+        seenModifierIds.add(link.modifier_id);
+        return [{ id: modifier.id, description: modifier.description }];
+      });
+    });
+  }
+
+  return {
+    product: {
+      id: productRow.id,
+      menu_node_id: params.node.id,
+      description: productRow.description ?? params.node.name,
+      subcategory_id: productRow.subcategory_id,
+      unit_price: productRow.unit_price == null ? (params.node.price ?? null) : Number(productRow.unit_price),
+      price_mode: priceMode,
+      icon: params.node.icon ?? null,
+      image_url: params.node.image_url ?? null,
+    },
+    modifiers,
+  };
+}
+
+function OrdenesSkeleton() {
+  return (
+    <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
+      <div className="border-b border-border bg-card/50 px-3 py-3 sm:px-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-8 rounded-full" />
+            <Skeleton className="h-5 w-28 rounded-full" />
+          </div>
+          <Skeleton className="h-4 w-40 rounded-full" />
+        </div>
+      </div>
+
+      <div className="grid flex-1 gap-4 px-3 py-4 2xl:grid-cols-[1.1fr_0.9fr] 2xl:px-4">
+        <div className="space-y-3">
+          <Skeleton className="h-16 rounded-[24px]" />
+          <Skeleton className="h-16 rounded-[24px]" />
+          <Skeleton className="h-16 rounded-[24px]" />
+          <Skeleton className="h-16 rounded-[24px]" />
+        </div>
+        <div className="space-y-3">
+          <Skeleton className="h-12 rounded-[20px]" />
+          <Skeleton className="h-[32rem] rounded-[28px]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -88,10 +226,11 @@ const Ordenes = () => {
     : order?.order_type === "TAKEOUT"
       ? "TAKEOUT"
       : persistedMenuScope;
-  const menu = useMenuData(currentMenuScope);
   const tablesQuery = useTablesWithStatus();
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
+  const [selectedProductModifiers, setSelectedProductModifiers] = useState<ProductModifierOption[]>([]);
+  const [selectingProductId, setSelectingProductId] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [removingSplit, setRemovingSplit] = useState(false);
@@ -108,6 +247,7 @@ const Ordenes = () => {
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
+  const autoCleanupOrderRef = useRef<typeof order | null>(null);
   const isBulkScopeSelection = currentMenuScope === "BULK";
 
   const canOperateOrders = canOperate(permissions, "ordenes");
@@ -119,6 +259,10 @@ const Ordenes = () => {
     || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
     || Boolean(shiftGateQuery.data?.isSupervisor);
   const isTrayOrder = Boolean(order?.is_tray_order);
+
+  useEffect(() => {
+    autoCleanupOrderRef.current = order ?? null;
+  }, [order]);
 
   useEffect(() => {
     if (!orderId || !order?.branch_id || !activeBranchId) return;
@@ -172,6 +316,39 @@ const Ordenes = () => {
     setPendingMenuScopeSelection(null);
   }, [order?.id, order?.is_tray_order, order?.order_type]);
 
+  useEffect(() => {
+    return () => {
+      const currentOrder = autoCleanupOrderRef.current;
+      const shouldAutoCancelEmptyDraft =
+        !!currentOrder &&
+        currentOrder.status === "DRAFT" &&
+        currentOrder.items.length === 0 &&
+        (!currentOrder.is_special || Number(currentOrder.special_total_manual ?? 0) <= 0);
+
+      if (!shouldAutoCancelEmptyDraft) return;
+
+      const now = new Date().toISOString();
+      void (async () => {
+        await supabase
+          .from("orders")
+          .update({
+            status: "CANCELLED",
+            cancelled_at: now,
+            updated_at: now,
+          })
+          .eq("id", currentOrder.id)
+          .eq("status", "DRAFT");
+
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["order", currentOrder.id] }),
+          qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
+          qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
+          qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
+        ]);
+      })();
+    };
+  }, [orderId, qc]);
+
   const isTakeout = order?.order_type === "TAKEOUT";
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
@@ -202,42 +379,33 @@ const Ordenes = () => {
   }, [fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
 
   const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
-    const legacyProductId = node.legacy_product_id ?? node.id;
-    let legacyProduct = menu.products.find(
-      (product) => product.menu_node_id === node.id || product.id === legacyProductId,
-    );
+    if (!activeBranchId) return;
 
-    if (!legacyProduct) {
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, description, subcategory_id, unit_price, price_mode")
-        .eq("id", node.id)
-        .single();
+    setSelectedProduct(null);
+    setSelectedProductModifiers([]);
+    setSelectingProductId(node.id);
+    try {
+      const lookup = await qc.fetchQuery({
+        queryKey: ["menu-product-lookup", activeBranchId, currentMenuScope, node.id, isTrayOrder ? effectiveTrayType : "STANDARD"],
+        queryFn: () =>
+          fetchMenuProductLookup({
+            branchId: activeBranchId,
+            node,
+            isTrayOrder,
+            trayType: effectiveTrayType,
+          }),
+        staleTime: 60_000,
+        gcTime: 10 * 60_000,
+      });
 
-      if (error) {
-        toast.error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
-        return;
-      }
-
-      legacyProduct = {
-        id: data.id,
-        menu_node_id: node.id,
-        description: data.description ?? node.name,
-        subcategory_id: data.subcategory_id,
-        unit_price: data.unit_price == null ? (node.price ?? null) : Number(data.unit_price),
-        price_mode: isTrayOrder
-          ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED")
-          : data.price_mode,
-      };
+      setSelectedProduct(lookup.product);
+      setSelectedProductModifiers(lookup.modifiers);
+    } catch (error: any) {
+      toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
+    } finally {
+      setSelectingProductId(null);
     }
-
-    setSelectedProduct({
-      ...legacyProduct,
-      price_mode: isTrayOrder
-        ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED")
-        : legacyProduct.price_mode,
-    });
-  }, [effectiveTrayType, isTrayOrder, menu.products]);
+  }, [activeBranchId, currentMenuScope, effectiveTrayType, isTrayOrder, qc]);
 
   const bulkIncludedPreviewQuery = useQuery({
     queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id],
@@ -347,12 +515,8 @@ const Ordenes = () => {
     );
   }
 
-  if (isLoading || menu.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+  if (isLoading) {
+    return <OrdenesSkeleton />;
   }
 
   if (!order) {
@@ -860,7 +1024,11 @@ const Ordenes = () => {
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
         renderNodeAction={(node) =>
-          !node.is_active && node.node_type === "product" ? (
+          selectingProductId === node.id ? (
+            <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
+              Cargando...
+            </div>
+          ) : !node.is_active && node.node_type === "product" ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-bold text-red-700">
               Producto agotado
             </div>
@@ -1209,18 +1377,11 @@ const Ordenes = () => {
 
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
-        modifiers={
-          selectedProduct
-            ? (
-              !isTrayOrder || effectiveTrayType !== "A"
-                ? menu.modifiers.filter((mod: any) => mod.node_id === selectedProduct.menu_node_id)
-                : []
-            )
-            : []
-        }
+        modifiers={selectedProduct && (!isTrayOrder || effectiveTrayType !== "A") ? selectedProductModifiers : []}
         open={canEditItems && !!selectedProduct}
         onClose={() => {
           setSelectedProduct(null);
+          setSelectedProductModifiers([]);
         }}
         priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
         manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}

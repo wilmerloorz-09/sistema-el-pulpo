@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
-import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, Eye } from "lucide-react";
+import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -17,16 +17,16 @@ function getDispatchOrderOriginLabel(params: Parameters<typeof getOrderOriginLab
 
 interface DispatchCardBaseProps {
   order: DispatchOrder;
+  index: number;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
   onMarkOrderReady: (order: DispatchOrder) => void;
   onMarkItemReady: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
   onDispatchItem: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
   isMarkingOrderReady?: boolean;
   isMarkingReady?: boolean;
   isDispatching?: boolean;
-  showEyeIcon?: boolean;
-  onEyeClick?: () => void;
   readOnly?: boolean;
-  expanded?: boolean;
 }
 
 function useElapsed(since: string | null | undefined) {
@@ -170,16 +170,16 @@ function QuantityStepper({
 
 export function DispatchCardBase({
   order,
+  index,
+  isExpanded,
+  onToggleExpand,
   onMarkOrderReady,
   onMarkItemReady,
   onDispatchItem,
   isMarkingOrderReady = false,
   isMarkingReady = false,
   isDispatching = false,
-  showEyeIcon = false,
-  onEyeClick,
   readOnly = false,
-  expanded = false,
 }: DispatchCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.updated_at;
   const { elapsed } = useElapsed(since);
@@ -226,7 +226,8 @@ export function DispatchCardBase({
       order.items.filter(
         (item) =>
           item.quantity_pending_prepare > 0
-          || item.quantity_ready_available > 0,
+          || item.quantity_ready_available > 0
+          || item.quantity_dispatched > 0,
       ),
     [order.items],
   );
@@ -239,76 +240,85 @@ export function DispatchCardBase({
   const summaryText = summaryParts.length > 0 ? summaryParts.join(" - ") : "Sin acciones pendientes";
 
   return (
-    <div
-      className={cn(
-        "flex w-full min-w-0 justify-self-stretch flex-col overflow-hidden rounded-2xl border-2 transition-colors",
-        expanded ? "min-h-[36rem]" : "",
-        isTray ? "bg-gradient-to-br from-amber-50 via-white to-yellow-50" : isSpecial ? "bg-gradient-to-br from-orange-50 via-white to-amber-50" : isTakeout ? "bg-gradient-to-br from-emerald-50 via-white to-lime-50" : "bg-gradient-to-br from-sky-50 via-white to-cyan-50",
-        isUrgent
-          ? "border-destructive/60 shadow-lg shadow-destructive/10"
-          : isWarning
-            ? "border-warning/50 shadow-md shadow-warning/10"
-            : canDispatchAny
-              ? "border-green-500/50 shadow-md shadow-green-500/10"
-              : canMarkAnyReady
-                ? "border-blue-500/40 shadow-md shadow-blue-500/10"
-                : "border-border",
-      )}
-    >
-      <div className={cn("flex items-center justify-between border-b border-border px-3 py-3 sm:px-4", isTray ? "bg-amber-100/70" : isSpecial ? "bg-orange-100/55" : isTakeout ? "bg-emerald-100/55" : "bg-sky-100/55")}>
-        <div className="flex min-w-0 items-center gap-2">
-          {isTray ? (
-            <ShoppingBag className="h-4 w-4 shrink-0 text-amber-700" />
-          ) : isTakeout ? (
-            <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-700" />
-          ) : isSpecial ? (
-            <Truck className="h-4 w-4 shrink-0 text-orange-700" />
-          ) : (
-            <UtensilsCrossed className="h-4 w-4 shrink-0 text-sky-700" />
-          )}
-          <span className="truncate font-display text-sm font-bold">{label}</span>
-          <span className="shrink-0 font-display text-xs text-muted-foreground">{order.order_code ?? String(order.order_number)}</span>
+    <div className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
+      <div
+        onClick={onToggleExpand}
+        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center sm:px-8"
+      >
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
+          aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
+        >
+          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+              {isTray ? (
+                <ShoppingBag className="h-4 w-4" />
+              ) : isTakeout ? (
+                <ShoppingBag className="h-4 w-4" />
+              ) : isSpecial ? (
+                <CreditCard className="h-4 w-4" />
+              ) : (
+                <UtensilsCrossed className="h-4 w-4" />
+              )}
+            </span>
+            <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
+              {label}
+            </p>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
+            {order.order_code ?? `#${order.order_number}`}
+          </p>
+        </div>
+
+        <div className="sm:text-right">
+          <p className="text-sm font-semibold text-slate-950">
+            {summaryText}
+          </p>
+        </div>
+
+        <div className="sm:text-right">
+          <div className={cn(
+            "inline-flex items-center gap-1.5 font-mono text-sm font-semibold",
+            isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500"
+          )}>
+            <Clock className="h-4 w-4 shrink-0" />
+            {timeDisplay}
+          </div>
+        </div>
+
+        <div className="sm:justify-self-end">
           {!readOnly ? (
             <Button
               type="button"
               variant="info"
               size="sm"
-              className="h-8 gap-1.5 rounded-xl px-3"
               disabled={isMarkingOrderReady || isMarkingReady || isDispatching}
-              onClick={() => onMarkOrderReady(order)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkOrderReady(order);
+              }}
+              className="h-9 min-w-[6.5rem] gap-1.5 rounded-full px-4 text-sm font-semibold"
             >
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-4 w-4 shrink-0" />
               Listo
             </Button>
-          ) : null}
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 font-mono text-xs font-semibold",
-              isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-muted-foreground",
-            )}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            {timeDisplay}
-          </div>
-          {showEyeIcon && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-              title="Ver detalles"
-              onClick={onEyeClick}
-            >
-              <Eye className="h-3.5 w-3.5" />
-            </Button>
+          ) : (
+            <span className="px-4 text-xs text-muted-foreground">Solo consulta</span>
           )}
         </div>
       </div>
 
-      <div className={cn("border-b border-border text-muted-foreground", expanded ? "px-5 py-3 text-sm" : "px-3 py-2 text-xs sm:px-4")}>{summaryText}</div>
-
-      <div className={cn("space-y-2 overflow-y-auto", expanded ? "max-h-[28rem] px-5 py-4 pr-4" : "max-h-[19rem] px-3 py-3 pr-2 sm:px-4 sm:pr-3")}>
+      {isExpanded && (
+        <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50">
+            <div className="divide-y divide-slate-100">
         {previewableItems.map((item) => {
           const isBulkItem = item.tray_item_type === "C";
           const trimmedItemNote = String(item.item_note ?? "").trim();
@@ -317,9 +327,10 @@ export function DispatchCardBase({
           const canDispatch = item.quantity_dispatchable > 0;
           const remainingToDispatch = item.quantity_dispatchable;
           const dispatchedQuantity = item.quantity_dispatched;
+          const isFullyDispatched = item.quantity_pending_prepare === 0 && item.quantity_dispatchable === 0 && dispatchedQuantity > 0;
 
           return (
-            <div key={item.id} className={cn("rounded-xl border border-border bg-white/70", expanded ? "px-4 py-3 text-base" : "px-3 py-2.5 text-sm sm:px-3.5")}>
+            <div key={item.id} className={cn("bg-white/70 px-4 py-4 sm:px-6", isFullyDispatched && "opacity-50 grayscale transition-opacity")}>
               <div className="flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                   {!isBulkItem ? (
@@ -328,7 +339,7 @@ export function DispatchCardBase({
                     </div>
                   ) : null}
                   <div className="min-w-0 flex-1">
-                    <p className={cn("break-words whitespace-normal font-medium leading-tight text-foreground", expanded ? "text-[15px]" : "text-sm md:text-[15px]")}>
+                    <p className={cn("break-words whitespace-normal font-medium leading-tight text-[15px]", isFullyDispatched ? "text-slate-500 line-through" : "text-foreground")}>
                       {item.description_snapshot}
                     </p>
                     {item.modifiers.length > 0 ? (
@@ -338,10 +349,7 @@ export function DispatchCardBase({
                           .map((mod, idx) => (
                             <p
                               key={idx}
-                              className={cn(
-                                "break-words whitespace-normal font-semibold text-red-700",
-                                expanded ? "text-sm" : "text-xs md:text-[13px]",
-                              )}
+                              className="break-words whitespace-normal font-semibold text-red-700 text-sm"
                             >
                               - {mod.description}
                             </p>
@@ -350,11 +358,10 @@ export function DispatchCardBase({
                     ) : null}
                     {trimmedItemNote ? (
                       <p className={cn(
-                        "break-words whitespace-normal",
+                        "break-words whitespace-normal text-sm",
                         isDeliveryInstruction
                           ? "font-semibold text-orange-700"
                           : "text-muted-foreground",
-                        expanded ? "text-sm" : "text-xs md:text-[13px]",
                       )}>
                         {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
                       </p>
@@ -369,7 +376,7 @@ export function DispatchCardBase({
                         </span>
                       ) : null}
                     </div>
-                    <div className={cn("mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground", expanded ? "text-sm" : "text-[11px] md:text-[13px]")}>
+                    <div className="mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground text-sm">
                       {!isBulkItem ? <span className="shrink-0">Env: {item.quantity_ordered}</span> : null}
                       <span className="shrink-0">Desp: {dispatchedQuantity}</span>
                       <span className="shrink-0">Falt: {remainingToDispatch}</span>
@@ -382,10 +389,7 @@ export function DispatchCardBase({
                   <div className="flex shrink-0 items-center gap-2 md:justify-end">
                     {isBulkItem ? (
                       <div
-                        className={cn(
-                          "flex items-center justify-center rounded-xl border border-orange-200 bg-orange-50 px-3 font-semibold text-orange-800",
-                          expanded ? "h-10 min-w-[5.5rem] text-sm" : "h-8 min-w-[4.5rem] text-xs",
-                        )}
+                        className="flex items-center justify-center rounded-xl border border-orange-200 bg-orange-50 px-3 font-semibold text-orange-800 h-10 min-w-[5.5rem] text-sm"
                       >
                         ${Number(item.total ?? 0).toFixed(2)}
                       </div>
@@ -398,7 +402,7 @@ export function DispatchCardBase({
                         onChange={(next) => {
                           setQtyByItem((current) => ({ ...current, [item.id]: next }));
                         }}
-                        compact={!expanded}
+                        compact={false}
                       />
                     )}
 
@@ -406,7 +410,7 @@ export function DispatchCardBase({
                       <Button
                         type="button"
                         variant="success"
-                        size={expanded ? "default" : "sm"}
+                        size="default"
                         className="min-w-[6.5rem] gap-1.5 px-3 md:min-w-[7rem]"
                         disabled={isDispatching || isMarkingReady}
                         onClick={() => {
@@ -428,13 +432,10 @@ export function DispatchCardBase({
             </div>
           );
         })}
-      </div>
-
-      {readOnly ? (
-        <div className={cn("border-t border-border bg-muted/30 text-center text-muted-foreground", expanded ? "mt-auto px-5 py-4 text-sm" : "px-4 py-3 text-xs")}>
-          Modo consulta: no puedes ejecutar acciones de despacho.
+            </div>
+          </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

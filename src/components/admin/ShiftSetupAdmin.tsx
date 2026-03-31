@@ -225,6 +225,7 @@ const ShiftSetupAdmin = () => {
       if (error) throw error;
       const normalizedRows = ((data ?? []) as BranchCancelPolicyDraftRow[]).map((row) => ({
         ...row,
+        menu_scope: row.menu_scope ?? "TABLE",
         descendant_product_count: Number(row.descendant_product_count ?? 0),
         is_primary_root_category: Boolean(row.is_primary_root_category),
         is_kitchen_plate: Boolean(row.is_kitchen_plate),

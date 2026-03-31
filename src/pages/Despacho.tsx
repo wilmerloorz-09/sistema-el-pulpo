@@ -158,28 +158,31 @@ const Despacho = () => {
             </p>
           </div>
         ) : (
-          <div className="grid auto-rows-max grid-cols-1 items-start gap-3 md:grid-cols-2 md:gap-4 2xl:grid-cols-3">
-            {orders.map((order) => (
-              <DispatchCard
-                key={order.card_id}
-                order={order}
-                onMarkOrderReady={(currentOrder) => {
-                  sendOrderReadyAlert.mutate({
-                    orderId: currentOrder.id,
-                  });
-                }}
-                onMarkItemReady={(_, item, qty) => {
-                  markItemReady.mutate({ orderId: order.id, itemId: item.id, qty });
-                }}
-                onDispatchItem={(_, item, qty) => {
-                  dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
-                }}
-                isMarkingOrderReady={sendOrderReadyAlert.isPending}
-                isMarkingReady={markItemReady.isPending}
-                isDispatching={dispatchItem.isPending}
-                readOnly={readOnly}
-              />
-            ))}
+          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
+            <div className="divide-y divide-slate-200">
+              {orders.map((order, index) => (
+                <DispatchCard
+                  key={order.card_id}
+                  order={order}
+                  index={index}
+                  onMarkOrderReady={(currentOrder) => {
+                    sendOrderReadyAlert.mutate({
+                      orderId: currentOrder.id,
+                    });
+                  }}
+                  onMarkItemReady={(_, item, qty) => {
+                    markItemReady.mutate({ orderId: order.id, itemId: item.id, qty });
+                  }}
+                  onDispatchItem={(_, item, qty) => {
+                    dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
+                  }}
+                  isMarkingOrderReady={sendOrderReadyAlert.isPending}
+                  isMarkingReady={markItemReady.isPending}
+                  isDispatching={dispatchItem.isPending}
+                  readOnly={readOnly}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>

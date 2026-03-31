@@ -9,6 +9,34 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-03-29)
 
+### 0.0.4) Mesas/Ordenes: warm cache de primera apertura y resumen consolidado
+- La primera apertura de una mesa ya no debe depender de reconstruir el estado completo desde multiples queries cliente-servidor en el clic.
+- `Mesas` ahora debe precalentar en segundo plano:
+  - el arbol `menu_nodes` para `TABLE`, `TAKEOUT` y `BULK`
+  - el detalle de las ordenes activas visibles en el mosaico
+- El mosaico de `Mesas` ya no debe recomponerse en frontend con varias lecturas separadas (`restaurant_tables`, `orders`, `order_items`, `table_splits`, snapshot por orden, etc.).
+- Existe una RPC nueva de lectura:
+  - `get_branch_tables_overview(p_branch_id uuid)`
+- Esa RPC devuelve por mesa visible del turno:
+  - estado (`free`, `occupied`, `to_pay`)
+  - `active_order_id`
+  - `active_order_status`
+  - `split_count`
+  - `total_due`
+  - `split_totals`
+  - `item_count`
+  - `elapsed_minutes`
+- Los borradores vacios siguen siendo navegables para evitar duplicar ordenes, pero ya no cuentan como ocupacion real en el resumen.
+- `Ordenes` ya no debe bloquear el render completo esperando la carga pesada del catalogo legacy.
+- La pantalla muestra primero el detalle de la orden y deja que el menu termine de hidratarse aparte.
+- La seleccion de producto ya no precarga `categories`, `subcategories`, `products` y `modifiers` completos al abrir la orden:
+  - resuelve el producto legacy y los modificadores efectivos solo cuando el usuario toca un producto
+  - esos datos quedan cacheados en React Query
+- El hook `useOrder` ya no debe pedir dos veces el snapshot operativo ni consultar anulaciones aplicadas por una ruta paralela redundante.
+- La carga inicial de una orden debe apoyarse en cache con `stale-while-revalidate`:
+  - si ya existe cache para la orden, se pinta inmediato
+  - la revalidacion corre en segundo plano
+
 ### 0.0.3) A granel: productos incluidos, entrega por monto y ajuste cross-modulo
 - `Admin > Arbol Menu` ya incorpora el alcance `A granel` (`BULK`) con soporte de productos incluidos.
 - Solo en nodos `product` del arbol `BULK` aparece el bloque `Producto incluido`.

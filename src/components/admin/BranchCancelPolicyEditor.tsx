@@ -6,12 +6,19 @@ import { cn } from "@/lib/utils";
 export interface BranchCancelPolicyDraftRow {
   menu_node_id: string;
   menu_node_name: string;
+  menu_scope?: "TABLE" | "TAKEOUT" | "BULK" | null;
   parent_id: string | null;
   depth: number;
   descendant_product_count: number;
   is_primary_root_category: boolean;
   is_kitchen_plate: boolean;
   allow_direct_cancel: boolean;
+}
+
+function getMenuScopeLabel(menuScope?: "TABLE" | "TAKEOUT" | "BULK" | null) {
+  if (menuScope === "TAKEOUT") return "Menu para llevar";
+  if (menuScope === "BULK") return "Menu A Granel";
+  return "Menu mesa";
 }
 
 interface BranchCancelPolicyEditorProps {
@@ -91,6 +98,9 @@ export default function BranchCancelPolicyEditor({
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-foreground">
                         {row.menu_node_name}
+                        <span className="ml-2 text-xs font-medium text-slate-500">
+                          · {getMenuScopeLabel(row.menu_scope)}
+                        </span>
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {row.descendant_product_count} producto

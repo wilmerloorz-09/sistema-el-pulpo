@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -69,6 +69,10 @@ function parseMoneyInput(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatMoneyInput(value: number) {
+  return roundMoney(Math.max(0, Number(value) || 0)).toFixed(2);
+}
+
 function buildInitialPaymentSplits(
   paymentMethods: PaymentMethodOption[],
   cashMethodId: string | null,
@@ -133,6 +137,7 @@ export default function PaymentDialog({
   const [payQuantities, setPayQuantities] = useState<Record<string, number>>({});
   const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplitDraft[]>([]);
+  const [paymentSplitInputs, setPaymentSplitInputs] = useState<Record<string, string>>({});
   const [received, setReceived] = useState<Record<string, number>>({});
   const [cashDraftReceived, setCashDraftReceived] = useState<Record<string, number>>({});
   const [specialAmountInput, setSpecialAmountInput] = useState("");
@@ -140,6 +145,7 @@ export default function PaymentDialog({
   const [cashDetailOpen, setCashDetailOpen] = useState(false);
   const [cashOverpayConfirmOpen, setCashOverpayConfirmOpen] = useState(false);
   const [pendingCashDenominationId, setPendingCashDenominationId] = useState<string | null>(null);
+  const activePaymentSplitInputId = useRef<string | null>(null);
   const isSpecialOrder = Boolean(order?.is_special);
 
   useEffect(() => {
@@ -161,6 +167,7 @@ export default function PaymentDialog({
       ),
     );
     setPaymentSplits(buildInitialPaymentSplits(paymentMethods, cashMethod?.id ?? null, defaultMethodId ?? null, 0));
+    setPaymentSplitInputs({});
     setReceived({});
     setCashDraftReceived({});
     setCashDetailOpen(false);
@@ -241,6 +248,29 @@ export default function PaymentDialog({
       return next;
     });
   }, [currentChargeTotal, defaultMethodId, paymentMethods, paymentMethodMap]);
+
+  useEffect(() => {
+    setPaymentSplitInputs((prev) => {
+      const next: Record<string, string> = {};
+
+      for (const split of paymentSplits) {
+        if (activePaymentSplitInputId.current === split.id && prev[split.id] !== undefined) {
+          next[split.id] = prev[split.id];
+          continue;
+        }
+
+        next[split.id] = formatMoneyInput(split.amount);
+      }
+
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      const isSame =
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key]);
+
+      return isSame ? prev : next;
+    });
+  }, [paymentSplits]);
 
   const cashSplit = useMemo(
     () => paymentSplits.find((split) => isCashPaymentMethodName(paymentMethodMap[split.methodId]?.name ?? "")) ?? null,
@@ -562,12 +592,10 @@ export default function PaymentDialog({
           .map(([denomination_id, qty]) => ({ denomination_id, qty }))
       : [];
 
-    const cashChangeDenoms = cashSplit
-      ? changeDenomBreakdown.map((denomination) => ({
-          denomination_id: denomination.denomination_id,
-          qty: denomination.qty,
-        }))
-      : [];
+    const cashChangeDenoms = changeDenomBreakdown.map((denomination) => ({
+      denomination_id: denomination.denomination_id,
+      qty: denomination.qty,
+    }));
 
     setConfirmOpen(false);
     onPay({
@@ -707,6 +735,8 @@ export default function PaymentDialog({
 
   const acceptCashDetail = () => {
     setReceived(cashDraftReceived);
+    let shouldAutoConfirm = false;
+
     if (cashSplit) {
       const nextAmount = roundMoney(
         shiftDenoms.reduce(
@@ -715,8 +745,17 @@ export default function PaymentDialog({
         ),
       );
       setSplitAmount(cashSplit.id, nextAmount);
+
+      if (draftCashAppliedAmount > 0 && nextAmount + 0.001 >= draftCashAppliedAmount) {
+        shouldAutoConfirm = true;
+      }
     }
+    
     setCashDetailOpen(false);
+    
+    if (shouldAutoConfirm) {
+      setTimeout(() => setConfirmOpen(true), 150);
+    }
   };
 
   const renderDenominationButton = (denomination: ShiftDenom) => {
@@ -960,8 +999,26 @@ export default function PaymentDialog({
                       <Input
                         type="text"
                         inputMode="decimal"
-                        value={(split?.amount ?? 0).toFixed(2)}
-                        onChange={(e) => split && setSplitAmount(split.id, parseMoneyInput(e.target.value))}
+                        value={split ? (paymentSplitInputs[split.id] ?? formatMoneyInput(split.amount)) : formatMoneyInput(0)}
+                        onChange={(e) => {
+                          if (!split) return;
+                          const rawValue = e.target.value.replace(",", ".");
+                          setPaymentSplitInputs((prev) => ({ ...prev, [split.id]: rawValue }));
+                          setSplitAmount(split.id, parseMoneyInput(rawValue));
+                        }}
+                        onFocus={(e) => {
+                          if (!split) return;
+                          activePaymentSplitInputId.current = split.id;
+                          window.setTimeout(() => e.currentTarget.select(), 0);
+                        }}
+                        onBlur={() => {
+                          if (!split) return;
+                          activePaymentSplitInputId.current = null;
+                          setPaymentSplitInputs((prev) => ({
+                            ...prev,
+                            [split.id]: formatMoneyInput(split.amount),
+                          }));
+                        }}
                         className="h-10 min-w-[112px] flex-1 rounded-2xl border-stone-200 bg-white sm:w-[126px] sm:flex-none"
                         readOnly={isCash}
                         disabled={readOnly || !isSelected || isCash}

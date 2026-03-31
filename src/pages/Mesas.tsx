@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { CircleDollarSign, LayoutGrid, Loader2, Plus, ShoppingBag, Sparkles, Users } from "lucide-react";
@@ -12,6 +13,9 @@ import { useTrayOrder } from "@/hooks/useTrayOrder";
 import { cn } from "@/lib/utils";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
+import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
+import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
+import { generateUUID } from "@/lib/uuid";
 
 const STATUS_CONFIG = {
   free: {
@@ -55,6 +59,7 @@ const Mesas = () => {
   const { activeBranchId, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const { createTrayOrder } = useTrayOrder();
+  const qc = useQueryClient();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingSpecial, setCreatingSpecial] = useState(false);
@@ -62,15 +67,106 @@ const Mesas = () => {
   const canOperateMesas = canOperate(permissions, "mesas");
   const canCreateTrayOrder = canOperateMesas;
 
+  useEffect(() => {
+    if (!activeBranchId) return;
+
+    const menuScopes: MenuScope[] = ["TABLE", "TAKEOUT", "BULK"];
+    for (const menuScope of menuScopes) {
+      void qc.prefetchQuery({
+        queryKey: getMenuTreeQueryKey({
+          branchId: activeBranchId,
+          menuScope,
+          includeInactive: false,
+          hasOverride: false,
+        }),
+        queryFn: () =>
+          fetchMenuTreeNodes({
+            branchId: activeBranchId,
+            menuScope,
+            includeInactive: false,
+          }),
+        staleTime: 60_000,
+        gcTime: 10 * 60_000,
+      });
+    }
+
+    const warmOrderIds = [...new Set((tables ?? []).map((table) => table.activeOrderId).filter(Boolean))] as string[];
+    for (const warmOrderId of warmOrderIds) {
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(warmOrderId),
+        queryFn: () => fetchOrderDetail(warmOrderId),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
+    }
+  }, [activeBranchId, qc, tables]);
+
+  const warmTableFlow = (table: NonNullable<typeof tables>[number]) => {
+    if (!activeBranchId) return;
+
+    if (table.activeOrderId) {
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(table.activeOrderId),
+        queryFn: () => fetchOrderDetail(table.activeOrderId!),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
+    }
+  };
+
   const handleTrayOrder = async () => {
-    if (!canCreateTrayOrder) return;
+    if (!canCreateTrayOrder || !user || !activeBranchId) return;
     setCreatingTray(true);
     try {
-      const orderId = await createTrayOrder.mutateAsync();
-      toast.success("Orden bandeja creada");
+      const orderId = generateUUID();
+      const now = new Date().toISOString();
+
+      qc.setQueryData(getOrderQueryKey(orderId), {
+        id: orderId,
+        order_number: 0,
+        order_code: null,
+        status: "DRAFT",
+        order_type: "TAKEOUT",
+        menu_scope: "TAKEOUT",
+        is_special: false,
+        is_tray_order: true,
+        special_total_manual: null,
+        branch_id: activeBranchId,
+        table_id: null,
+        split_id: null,
+        table_name: undefined,
+        created_at: now,
+        items: [],
+        siblings: []
+      });
+
+      toast.success("Abriendo nueva orden para llevar...");
       navigate(`/ordenes?order=${orderId}&from=mesas`);
-    } catch (error: any) {
-      toast.error(error?.message || "Error al abrir orden bandeja");
+
+      supabase
+        .from("orders")
+        .insert({
+          id: orderId,
+          order_type: "TAKEOUT" as const,
+          menu_scope: "TAKEOUT",
+          created_by: user.id,
+          status: "DRAFT" as const,
+          branch_id: activeBranchId,
+          is_tray_order: true,
+        })
+        .then(({ error }) => {
+          if (error) toast.error("Error al registrar orden para llevar");
+          else {
+            qc.prefetchQuery({
+              queryKey: getOrderQueryKey(orderId),
+              queryFn: () => fetchOrderDetail(orderId),
+              staleTime: 15_000,
+              gcTime: 10 * 60_000,
+            });
+          }
+        });
+    } catch (err: any) {
+      toast.error(err.message || "Error al abrir orden bandeja");
     } finally {
       setCreatingTray(false);
     }
@@ -80,56 +176,34 @@ const Mesas = () => {
     if (!user || !activeBranchId || !canOperateMesas) return;
     setCreatingSpecial(true);
     try {
-      const { data: draftCandidates, error: existingDraftError } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("branch_id", activeBranchId)
-        .eq("created_by", user.id)
-        .eq("order_type", "DINE_IN")
-        .eq("is_special", true)
-        .eq("status", "DRAFT")
-        .order("updated_at", { ascending: false })
-        .limit(10);
-
-      if (existingDraftError) throw existingDraftError;
-
-      const candidateIds = (draftCandidates ?? []).map((candidate) => candidate.id);
-      let reusableDraftId: string | null = null;
-
-      if (candidateIds.length > 0) {
-        const { data: candidateItems, error: candidateItemsError } = await supabase
-          .from("order_items")
-          .select("order_id, status")
-          .in("order_id", candidateIds);
-
-        if (candidateItemsError) throw candidateItemsError;
-
-        const itemsByOrder = new Map<string, string[]>();
-        for (const orderId of candidateIds) {
-          itemsByOrder.set(orderId, []);
-        }
-
-        for (const item of candidateItems ?? []) {
-          const bucket = itemsByOrder.get(item.order_id) ?? [];
-          bucket.push(String(item.status ?? "DRAFT"));
-          itemsByOrder.set(item.order_id, bucket);
-        }
-
-        reusableDraftId = candidateIds.find((orderId) => {
-          const statuses = itemsByOrder.get(orderId) ?? [];
-          return statuses.every((status) => status === "DRAFT");
-        }) ?? null;
-      }
-
-      if (reusableDraftId) {
-        navigate(`/ordenes?order=${reusableDraftId}&from=mesas`);
-        return;
-      }
-
       const now = new Date().toISOString();
-      const { data, error } = await supabase
+      const orderId = generateUUID();
+
+      qc.setQueryData(getOrderQueryKey(orderId), {
+        id: orderId,
+        order_number: 0,
+        order_code: null,
+        status: "DRAFT",
+        order_type: "DINE_IN",
+        menu_scope: "TABLE",
+        is_special: true,
+        special_total_manual: null,
+        branch_id: activeBranchId,
+        table_id: null,
+        split_id: null,
+        table_name: undefined,
+        created_at: now,
+        items: [],
+        siblings: []
+      });
+
+      toast.success("Abriendo orden especial...");
+      navigate(`/ordenes?order=${orderId}&from=mesas`);
+
+      supabase
         .from("orders")
         .insert({
+          id: orderId,
           order_type: "DINE_IN" as const,
           menu_scope: "TABLE",
           created_by: user.id,
@@ -139,11 +213,17 @@ const Mesas = () => {
           special_marked_at: now,
           special_marked_by: user.id,
         })
-        .select("id")
-        .single();
-      if (error) throw error;
-      toast.success("Orden especial creada");
-      navigate(`/ordenes?order=${data.id}&from=mesas`);
+        .then(({ error }) => {
+          if (error) toast.error("Error al guardar la orden especial");
+          else {
+            qc.prefetchQuery({
+              queryKey: getOrderQueryKey(orderId),
+              queryFn: () => fetchOrderDetail(orderId),
+              staleTime: 15_000,
+              gcTime: 10 * 60_000,
+            });
+          }
+        });
     } catch (err: any) {
       toast.error(err.message || "Error al abrir orden especial");
     } finally {
@@ -155,15 +235,41 @@ const Mesas = () => {
     if (table.status === "free") {
       if (!canOperateMesas) return;
       if (table.activeOrderId) {
+        warmTableFlow(table);
         navigate(`/ordenes?order=${table.activeOrderId}&from=mesas`);
         return;
       }
       if (!user) return;
       setCreating(table.id);
       try {
-        const { data, error } = await supabase
+        const orderId = generateUUID();
+        const now = new Date().toISOString();
+
+        qc.setQueryData(getOrderQueryKey(orderId), {
+          id: orderId,
+          order_number: 0,
+          order_code: null,
+          status: "DRAFT",
+          order_type: "DINE_IN",
+          menu_scope: "TABLE",
+          is_special: false,
+          special_total_manual: null,
+          branch_id: activeBranchId!,
+          table_id: table.id,
+          split_id: null,
+          table_name: table.name,
+          created_at: now,
+          items: [],
+          siblings: []
+        });
+
+        toast.success(`Entrando a ${table.name}...`);
+        navigate(`/ordenes?order=${orderId}&from=mesas`);
+
+        supabase
           .from("orders")
           .insert({
+            id: orderId,
             table_id: table.id,
             order_type: "DINE_IN" as const,
             menu_scope: "TABLE",
@@ -171,18 +277,24 @@ const Mesas = () => {
             status: "DRAFT" as const,
             branch_id: activeBranchId!,
           })
-          .select("id")
-          .single();
-
-        if (error) throw error;
-        toast.success(`Orden creada para ${table.name}`);
-        navigate(`/ordenes?order=${data.id}&from=mesas`);
+          .then(({ error }) => {
+            if (error) toast.error("Error al registrar la apertura de la mesa");
+            else {
+              qc.prefetchQuery({
+                queryKey: getOrderQueryKey(orderId),
+                queryFn: () => fetchOrderDetail(orderId),
+                staleTime: 15_000,
+                gcTime: 10 * 60_000,
+              });
+            }
+          });
       } catch (err: any) {
         toast.error(err.message || "Error al crear orden");
       } finally {
         setCreating(null);
       }
     } else if (table.activeOrderId) {
+      warmTableFlow(table);
       navigate(`/ordenes?order=${table.activeOrderId}&from=mesas`);
     }
   };
@@ -210,7 +322,7 @@ const Mesas = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3">
             <motion.button
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -312,6 +424,8 @@ const Mesas = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: (index + 1) * 0.03 }}
                   onClick={() => handleTableClick(table)}
+                  onMouseEnter={() => warmTableFlow(table)}
+                  onTouchStart={() => warmTableFlow(table)}
                   disabled={isCreating}
                   className={cn(
                     "relative flex min-h-[142px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5",

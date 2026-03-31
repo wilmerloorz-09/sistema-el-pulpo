@@ -137,18 +137,17 @@ export default function PayableOrdersList({
                   const isExpanded = expandedOrderId === order.id;
 
                   return (
-                    <div key={order.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/75"}>
+                    <div key={order.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
                       <div
-                        className="grid gap-3 px-5 py-3.5 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center sm:px-8"
+                        onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center sm:px-8"
                       >
-                        <button
-                          type="button"
-                          onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                        <div
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
                           aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
                         >
                           {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        </button>
+                        </div>
 
                         <div className="min-w-0">
                           <div className="flex items-center gap-2.5">
@@ -166,16 +165,11 @@ export default function PayableOrdersList({
                             <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
                               {label}
                             </p>
-                            {order.is_tray_order && (
-                              <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                                BANDEJA
-                              </span>
-                            )}
                           </div>
                         </div>
 
                         <div className="min-w-0">
-                          <p className="truncate font-mono text-sm tracking-[0.08em] text-slate-500">
+                          <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
                             {rowCode}
                           </p>
                         </div>
@@ -201,7 +195,10 @@ export default function PayableOrdersList({
                             variant="ghost"
                             size="sm"
                             disabled={readOnly}
-                            onClick={() => setSelectedOrder(order)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedOrder(order);
+                            }}
                             className="h-9 rounded-full border border-[#15803d] bg-[#15803d] px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
                           >
                             <CreditCard className="h-4 w-4" />

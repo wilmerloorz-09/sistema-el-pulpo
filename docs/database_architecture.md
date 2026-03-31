@@ -101,6 +101,20 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - no crea tablas nuevas ni rompe la FK actual
   - si el destino esta libre, la orden se mueve con update directo de `orders.table_id`
   - si la orden ya tenia division y el destino esta libre, `orders.split_id` debe quedar `NULL` y la division origen se desactiva
+- RPC nueva:
+  - `get_branch_tables_overview(p_branch_id uuid)`
+- Esta funcion devuelve el resumen operativo ya consolidado por mesa visible del turno:
+  - estado (`free`, `occupied`, `to_pay`)
+  - `active_order_id`
+  - `active_order_status`
+  - `split_count`
+  - `total_due`
+  - `split_totals` en JSON
+  - `item_count`
+  - `elapsed_minutes`
+- Regla importante:
+  - un `DRAFT` vacio puede seguir devolviendose como `active_order_id` para reutilizarlo
+  - pero no debe contar como ocupacion real ni como deuda pendiente
 
 ## Addendum 2026-03-25B: Orden Especial
 - `public.orders` ahora incorpora metadatos de orden especial:
@@ -224,6 +238,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - exige motivo minimo
   - no permite anular si existen cobros (`cash_movements` `PAYMENT_IN`) en el turno
   - marca la apertura como `anulada` y devuelve la caja a estado `UNOPENED`
+- Indices agregados para el camino critico Mesas/Ordenes:
+  - `idx_orders_branch_table_status_updated` sobre `orders(branch_id, table_id, status, updated_at desc)` parcial `WHERE table_id IS NOT NULL`
+  - `idx_order_items_order_id` sobre `order_items(order_id)`
+  - `idx_order_item_modifiers_order_item_id` sobre `order_item_modifiers(order_item_id)`
+  - `idx_table_splits_table_id` sobre `table_splits(table_id)`
 - Tabla nueva: `cash_register_movements`
   - `shift_id`
   - `branch_id`

@@ -258,6 +258,7 @@ type PaymentNoteMeta = {
   reversed: boolean;
   voided: boolean;
   quantity: number | null;
+  tenderedAmount: number | null;
 };
 
 function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
@@ -270,6 +271,7 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
       reversed: false,
       voided: false,
       quantity: null,
+      tenderedAmount: null,
     };
   }
 
@@ -282,6 +284,7 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   let reversed = false;
   let voided = false;
   let quantity: number | null = null;
+  let tenderedAmount: number | null = null;
 
   for (const segment of segments) {
     if (segment.startsWith("ITEM:")) {
@@ -306,9 +309,13 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
       const parsedQty = Number(segment.replace("QTY:", "").trim());
       quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : null;
     }
+    if (segment.startsWith("TENDERED:")) {
+      const parsedTendered = Number(segment.replace("TENDERED:", "").trim());
+      tenderedAmount = Number.isFinite(parsedTendered) && parsedTendered >= 0 ? roundMoney(parsedTendered) : null;
+    }
   }
 
-  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, quantity };
+  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, quantity, tenderedAmount };
 }
 
 function isSpecialOrderNote(notes: string | null) {
@@ -888,28 +895,42 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       completedPaymentsFilters?.pageSize ?? 20,
     ],
     queryFn: async (): Promise<CompletedPaymentsResult> => {
-      if (!activeBranchId || !shiftQuery.data?.id) {
+      if (!activeBranchId) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
       const fromIso = toIsoFromDateTimeLocal(completedPaymentsFilters?.fromDateTime ?? "");
       const toIso = toIsoFromDateTimeLocal(completedPaymentsFilters?.toDateTime ?? "");
 
-      let movementQuery = supabase
-        .from("cash_movements")
-        .select("payment_id")
-        .eq("shift_id", shiftQuery.data.id)
-        .eq("movement_type", "PAYMENT_IN")
-        .not("payment_id", "is", null);
+      let effectiveStartIso = fromIso;
+      let effectiveEndIso = toIso;
 
-      if (fromIso) movementQuery = movementQuery.gte("created_at", fromIso);
-      if (toIso) movementQuery = movementQuery.lte("created_at", toIso);
+      if (!effectiveStartIso) {
+        if (shiftQuery.data?.opened_at) {
+          effectiveStartIso = shiftQuery.data.opened_at;
+        } else {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          effectiveStartIso = today.toISOString();
+        }
+      }
 
-      const { data: paymentMovements, error: movementError } = await movementQuery;
-      if (movementError) throw movementError;
+      if (!effectiveEndIso) {
+        if (shiftQuery.data) {
+          effectiveEndIso = shiftQuery.data.closed_at ?? new Date().toISOString();
+        } else {
+          effectiveEndIso = new Date().toISOString();
+        }
+      }
 
-      const paymentIds = [...new Set((paymentMovements ?? []).map((m) => m.payment_id).filter(Boolean))] as string[];
-      if (paymentIds.length === 0) {
+      const { data: branchOrders, error: branchOrdersError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("branch_id", activeBranchId);
+      if (branchOrdersError) throw branchOrdersError;
+
+      const branchOrderIds = (branchOrders ?? []).map((order) => order.id);
+      if (branchOrderIds.length === 0) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
@@ -917,10 +938,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         let query = supabase
           .from("payments")
           .select("id, created_at, amount, notes, order_id, payment_method_id, created_by", withCount ? { count: "exact" } : undefined)
-          .in("id", paymentIds);
-
-        if (fromIso) query = query.gte("created_at", fromIso);
-        if (toIso) query = query.lte("created_at", toIso);
+          .in("order_id", branchOrderIds)
+          .gte("created_at", effectiveStartIso)
+          .lte("created_at", effectiveEndIso);
 
         if (completedPaymentsFilters?.methodId && completedPaymentsFilters.methodId !== "ALL") {
           query = query.eq("payment_method_id", completedPaymentsFilters.methodId);
@@ -1012,7 +1032,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           const meta = parsePaymentNotes(payment.notes);
           if (meta.reversed || meta.voided) continue;
           const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
-          current.amount += Number(payment.amount);
+          current.amount += meta.tenderedAmount ?? Number(payment.amount);
           current.paymentCount += 1;
           summaryMap.set(payment.payment_method_id, current);
         }
@@ -1217,7 +1237,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const meta = parsePaymentNotes(payment.notes);
         if (meta.reversed || meta.voided) continue;
         const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
-        current.amount += Number(payment.amount);
+        current.amount += meta.tenderedAmount ?? Number(payment.amount);
         current.paymentCount += 1;
         summaryMap.set(payment.payment_method_id, current);
       }
@@ -1306,7 +1326,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const cashSplit = cashMethodId ? paymentSplits.find((split) => split.methodId === cashMethodId) ?? null : null;
       const cashSplitAmount = roundMoney(cashSplit?.amount ?? 0);
       const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
-      const effectiveCashChangeDenoms = cashMethodId ? cashChangeDenoms : [];
+      const effectiveCashChangeDenoms = cashChangeDenoms;
 
       const appliedTotal = roundMoney(paymentSplits.reduce((sum, split) => sum + Number(split.amount), 0));
       if (Math.abs(appliedTotal - totalAmount) > 0.01) {
@@ -1562,11 +1582,16 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           });
         }
       } else {
-        for (const rd of effectiveCashReceivedDenoms) {
-          denomChanges[rd.denomination_id] = (denomChanges[rd.denomination_id] || 0) + rd.qty;
-        }
         for (const cd of effectiveCashChangeDenoms) {
           denomChanges[cd.denomination_id] = (denomChanges[cd.denomination_id] || 0) - cd.qty;
+          await insertCashMovementCompat({
+            shift_id: shift.id,
+            payment_id: anchorPaymentId,
+            denomination_id: cd.denomination_id,
+            movement_type: "CHANGE_OUT",
+            qty_delta: cd.qty,
+            created_at: now,
+          });
         }
       }
 
@@ -2090,10 +2115,6 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     registerCashMovement,
   };
 }
-
-
-
-
 
 
 

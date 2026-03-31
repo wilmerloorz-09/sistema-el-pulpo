@@ -127,20 +127,43 @@ export interface OperationalMaps {
   cancelledTotalMap: Record<string, number>;
 }
 
+export const EMPTY_OPERATIONAL_MAPS: OperationalMaps = {
+  readyMap: {},
+  readyAvailableMap: {},
+  pendingPrepareMap: {},
+  dispatchedTotalMap: {},
+  dispatchedAvailableMap: {},
+  paidMap: {},
+  cancelledPendingMap: {},
+  cancelledReadyMap: {},
+  cancelledDispatchedMap: {},
+  cancelledTotalMap: {},
+};
+
+export function normalizeSnapshotRows(rows: OrderOperationalSnapshotRow[]) {
+  return rows.map(normalizeSnapshotRow);
+}
+
+export function buildOperationalMapsFromSnapshotRows(rows: OrderOperationalSnapshotRow[]): OperationalMaps {
+  const normalizedRows = normalizeSnapshotRows(rows);
+
+  return {
+    readyMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_ready_total"),
+    readyAvailableMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_ready_available"),
+    pendingPrepareMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_pending_prepare"),
+    dispatchedTotalMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_dispatched_total"),
+    dispatchedAvailableMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_dispatched_available"),
+    paidMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_paid"),
+    cancelledPendingMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_cancelled_pending"),
+    cancelledReadyMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_cancelled_ready"),
+    cancelledDispatchedMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_cancelled_dispatched"),
+    cancelledTotalMap: sumRowsByItem(normalizedRows, "order_item_id", "quantity_cancelled_total"),
+  };
+}
+
 export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise<OperationalMaps> {
   if (orderIds.length === 0) {
-    return {
-      readyMap: {},
-      readyAvailableMap: {},
-      pendingPrepareMap: {},
-      dispatchedTotalMap: {},
-      dispatchedAvailableMap: {},
-      paidMap: {},
-      cancelledPendingMap: {},
-      cancelledReadyMap: {},
-      cancelledDispatchedMap: {},
-      cancelledTotalMap: {},
-    };
+    return EMPTY_OPERATIONAL_MAPS;
   }
 
   try {
@@ -154,32 +177,8 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       }),
     );
 
-    const rows = snapshots.flat().map(normalizeSnapshotRow);
-
-    return {
-      readyMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_total"),
-      readyAvailableMap: sumRowsByItem(rows, "order_item_id", "quantity_ready_available"),
-      pendingPrepareMap: sumRowsByItem(rows, "order_item_id", "quantity_pending_prepare"),
-      dispatchedTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_total"),
-      dispatchedAvailableMap: sumRowsByItem(rows, "order_item_id", "quantity_dispatched_available"),
-      paidMap: sumRowsByItem(rows, "order_item_id", "quantity_paid"),
-      cancelledPendingMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_pending"),
-      cancelledReadyMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_ready"),
-      cancelledDispatchedMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_dispatched"),
-      cancelledTotalMap: sumRowsByItem(rows, "order_item_id", "quantity_cancelled_total"),
-    };
+    return buildOperationalMapsFromSnapshotRows(snapshots.flat());
   } catch {
-    return {
-      readyMap: {},
-      readyAvailableMap: {},
-      pendingPrepareMap: {},
-      dispatchedTotalMap: {},
-      dispatchedAvailableMap: {},
-      paidMap: {},
-      cancelledPendingMap: {},
-      cancelledReadyMap: {},
-      cancelledDispatchedMap: {},
-      cancelledTotalMap: {},
-    };
+    return EMPTY_OPERATIONAL_MAPS;
   }
 }

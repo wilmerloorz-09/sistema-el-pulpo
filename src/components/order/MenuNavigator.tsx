@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, History, ImageIcon, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 
@@ -318,7 +319,17 @@ const MenuNavigator = ({
   );
   const showBreadcrumb = breadcrumb.length > 1;
   if (loading) {
-    return <div className="rounded-3xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Cargando menu...</div>;
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <Skeleton className="h-11 rounded-2xl" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
+          <Skeleton className="h-36 rounded-[1.4rem]" />
+          <Skeleton className="h-36 rounded-[1.4rem]" />
+          <Skeleton className="h-36 rounded-[1.4rem]" />
+          <Skeleton className="h-36 rounded-[1.4rem]" />
+        </div>
+      </div>
+    );
   }
 
   if (error) {

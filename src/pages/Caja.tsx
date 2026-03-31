@@ -89,6 +89,49 @@ const Caja = () => {
     );
   }
 
+  if (activeTab === "completed" && (!shift || shift.caja_status !== "OPEN")) {
+    return (
+      <div className="min-h-full bg-slate-50 px-4 pt-4 pb-8 sm:px-6 sm:pt-6 lg:px-10">
+        <div className="mx-auto max-w-6xl space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <div>
+              <h1 className="text-[2.2rem] font-semibold tracking-[-0.04em] text-slate-950">
+                Historial de Pagos
+              </h1>
+              <p className="mt-2 text-sm text-slate-500">
+                Visualizando pagos ({activeBranch?.name ?? "Sucursal"}). No hay turno de caja abierto actualmente.
+              </p>
+            </div>
+          </div>
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
+            <CompletedPaymentsList
+              payments={completedPayments}
+              total={completedPaymentsTotal}
+              methodSummary={completedPaymentsMethodSummary}
+              collectedTotal={completedPaymentsCollectedTotal}
+              paymentMethods={paymentMethods}
+              loading={isLoadingCompletedPayments}
+              filters={completedFilters}
+              permissions={permissions}
+              cashierReverseWindowMinutes={cashierReverseWindowMinutes}
+              actionLoading={requestPaymentReversal.isPending || reversePayment.isPending || approvePaymentReversal.isPending}
+              onFiltersChange={setCompletedFilters}
+              onRequestReversal={(paymentId, reason, paymentEntryIds) =>
+                requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
+              }
+              onReversePayment={(paymentId, reason, paymentEntryIds) =>
+                reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds })
+              }
+              onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
+                approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
+              }
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!shift) {
     return (
       <div className="bg-slate-50 px-4 py-8 sm:px-6 lg:px-10">

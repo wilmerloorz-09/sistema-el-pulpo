@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { DispatchCardBase } from "./DispatchCardBase";
-import DispatchOrderDrawer from "./DispatchOrderDrawer";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 
 interface DispatchCardProps {
   order: DispatchOrder;
+  index: number;
   onMarkOrderReady: (order: DispatchOrder) => void;
   onMarkItemReady: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
   onDispatchItem: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
@@ -16,6 +16,7 @@ interface DispatchCardProps {
 
 export default function DispatchCard({
   order,
+  index,
   onMarkOrderReady,
   onMarkItemReady,
   onDispatchItem,
@@ -24,35 +25,21 @@ export default function DispatchCard({
   isDispatching = false,
   readOnly = false,
 }: DispatchCardProps) {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <>
-      <DispatchCardBase
-        order={order}
-        onMarkOrderReady={onMarkOrderReady}
-        onMarkItemReady={onMarkItemReady}
-        onDispatchItem={onDispatchItem}
-        isMarkingOrderReady={isMarkingOrderReady}
-        isMarkingReady={isMarkingReady}
-        isDispatching={isDispatching}
-        showEyeIcon={true}
-        onEyeClick={() => setIsDrawerOpen(true)}
-        readOnly={readOnly}
-      />
-
-      <DispatchOrderDrawer
-        order={order}
-        onMarkOrderReady={onMarkOrderReady}
-        onMarkItemReady={onMarkItemReady}
-        onDispatchItem={onDispatchItem}
-        isMarkingOrderReady={isMarkingOrderReady}
-        isMarkingReady={isMarkingReady}
-        isDispatching={isDispatching}
-        open={isDrawerOpen}
-        onOpenChange={setIsDrawerOpen}
-        readOnly={readOnly}
-      />
-    </>
+    <DispatchCardBase
+      order={order}
+      index={index}
+      isExpanded={isExpanded}
+      onToggleExpand={() => setIsExpanded((prev) => !prev)}
+      onMarkOrderReady={onMarkOrderReady}
+      onMarkItemReady={onMarkItemReady}
+      onDispatchItem={onDispatchItem}
+      isMarkingOrderReady={isMarkingOrderReady}
+      isMarkingReady={isMarkingReady}
+      isDispatching={isDispatching}
+      readOnly={readOnly}
+    />
   );
 }

@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 
 export type MenuScope = "TABLE" | "TAKEOUT" | "BULK";
+const MENU_TREE_SELECT =
+  "id, branch_id, menu_scope, parent_id, name, node_type, depth, display_order, is_active, manual_price_enabled, icon, price, description, image_url, legacy_product_id, is_tray_category";
 
 export interface MenuNode {
   id: string;
@@ -22,6 +24,8 @@ export interface MenuNode {
   image_url?: string | null;
   legacy_product_id?: string | null;
   is_tray_category?: boolean;
+  ancestor_ids?: string[];
+  manual_price_inherited?: boolean;
 }
 
 interface UseMenuTreeOptions {
@@ -51,6 +55,47 @@ const sortNodes = (nodes: MenuNode[]) =>
     return a.name.localeCompare(b.name);
   });
 
+export function getMenuTreeQueryKey(params: {
+  branchId: string | null | undefined;
+  menuScope?: MenuScope;
+  includeInactive?: boolean;
+  hasOverride?: boolean;
+}) {
+  return [
+    "menu-tree",
+    params.branchId ?? null,
+    params.menuScope ?? "TABLE",
+    params.includeInactive ?? false,
+    params.hasOverride ? "override" : "db",
+  ] as const;
+}
+
+export async function fetchMenuTreeNodes(params: {
+  branchId: string;
+  menuScope?: MenuScope;
+  includeInactive?: boolean;
+}) {
+  const menuScope = params.menuScope ?? "TABLE";
+  const includeInactive = params.includeInactive ?? false;
+
+  let queryBuilder = supabase
+    .from("menu_nodes" as never)
+    .select(MENU_TREE_SELECT)
+    .eq("branch_id", params.branchId)
+    .eq("menu_scope", menuScope)
+    .order("depth", { ascending: true })
+    .order("display_order", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (!includeInactive) {
+    queryBuilder = queryBuilder.eq("is_active", true);
+  }
+
+  const { data, error } = await queryBuilder;
+  if (error) throw error;
+  return (data ?? []) as unknown as MenuNode[];
+}
+
 export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn {
   const { activeBranchId } = useBranch();
   const [pathIds, setPathIds] = useState<string[]>([]);
@@ -59,39 +104,75 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
   const overrideNodes = options.nodesOverride ?? null;
 
   const query = useQuery({
-    queryKey: ["menu-tree", activeBranchId, menuScope, includeInactive, overrideNodes ? "override" : "db"],
-    queryFn: async () => {
-      let queryBuilder = supabase
-        .from("menu_nodes" as never)
-        .select("*")
-        .eq("branch_id", activeBranchId!)
-        .eq("menu_scope", menuScope)
-        .order("depth", { ascending: true })
-        .order("display_order", { ascending: true })
-        .order("name", { ascending: true });
-
-      if (!includeInactive) {
-        queryBuilder = queryBuilder.eq("is_active", true);
-      }
-
-      const { data, error } = await queryBuilder;
-
-      if (error) throw error;
-      return (data ?? []) as unknown as MenuNode[];
-    },
+    queryKey: getMenuTreeQueryKey({
+      branchId: activeBranchId,
+      menuScope,
+      includeInactive,
+      hasOverride: Boolean(overrideNodes),
+    }),
+    queryFn: () =>
+      fetchMenuTreeNodes({
+        branchId: activeBranchId!,
+        menuScope,
+        includeInactive,
+      }),
     enabled: !!activeBranchId && !overrideNodes,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
   });
 
   const nodes = overrideNodes ?? (query.data ?? []);
 
   const nodesById = useMemo(() => {
-    const next = new Map<string, MenuNode>();
+    const baseNodes = new Map<string, MenuNode>();
     for (const node of nodes) {
-      next.set(node.id, {
+      baseNodes.set(node.id, {
         ...node,
         price: node.price == null ? null : Number(node.price),
       });
     }
+
+    const ancestorCache = new Map<string, string[]>();
+    const manualPriceCache = new Map<string, boolean>();
+
+    const resolveAncestorIds = (node: MenuNode): string[] => {
+      const cached = ancestorCache.get(node.id);
+      if (cached) return cached;
+
+      const parentId = node.parent_id ?? null;
+      if (!parentId) {
+        ancestorCache.set(node.id, []);
+        return [];
+      }
+
+      const parentNode = baseNodes.get(parentId);
+      const nextAncestors = parentNode ? [parentNode.id, ...resolveAncestorIds(parentNode)] : [];
+      ancestorCache.set(node.id, nextAncestors);
+      return nextAncestors;
+    };
+
+    const resolveManualPrice = (node: MenuNode): boolean => {
+      const cached = manualPriceCache.get(node.id);
+      if (cached != null) return cached;
+
+      const inherited = resolveAncestorIds(node).some((ancestorId) => {
+        const ancestorNode = baseNodes.get(ancestorId);
+        return ancestorNode?.node_type === "category" && Boolean(ancestorNode.manual_price_enabled);
+      });
+
+      manualPriceCache.set(node.id, inherited);
+      return inherited;
+    };
+
+    const next = new Map<string, MenuNode>();
+    for (const node of baseNodes.values()) {
+      next.set(node.id, {
+        ...node,
+        ancestor_ids: resolveAncestorIds(node),
+        manual_price_inherited: resolveManualPrice(node),
+      });
+    }
+
     return next;
   }, [nodes]);
 
