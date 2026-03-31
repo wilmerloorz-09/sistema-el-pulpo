@@ -92,8 +92,8 @@ const ProtectedRoute = ({
   if (requiresOpenShift) {
     const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
     const canAccessAdmin = isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
-    const userEnabled = Boolean(shiftGateQuery.data?.userEnabled) || canAccessAdmin;
-    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || canAccessAdmin;
+    const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
+    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
     const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
       ? true
       : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));

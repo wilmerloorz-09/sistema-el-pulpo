@@ -42,7 +42,7 @@ interface Props {
   order: PayableOrder | null;
   paymentMethods: PaymentMethodOption[];
   shiftDenoms: ShiftDenom[];
-  onPay: (params: PayOrderParams) => void;
+  onPay: (params: PayOrderParams) => Promise<any> | void;
   paying: boolean;
   onClose: () => void;
   readOnly?: boolean;
@@ -518,7 +518,7 @@ export default function PaymentDialog({
     }
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!order || readOnly) return;
     if (!hasChargeSelection) return;
     if (paymentMethods.length === 0) {
@@ -598,18 +598,29 @@ export default function PaymentDialog({
     }));
 
     setConfirmOpen(false);
-    onPay({
-      orderId: order.id,
-      itemSelections,
-      paymentSplits: paymentSplitsPayload,
-      tenderedSplits: tenderedSplitsPayload,
-      isSpecial: isSpecialOrder,
-      specialAmount: isSpecialOrder ? currentChargeTotal : undefined,
-      receivedTotal: roundMoney(receivedSplitTotal),
-      totalAmount: roundMoney(currentChargeTotal),
-      cashReceivedDenoms,
-      cashChangeDenoms,
-    });
+    
+    try {
+      const payPromise = onPay({
+        orderId: order.id,
+        itemSelections,
+        paymentSplits: paymentSplitsPayload,
+        tenderedSplits: tenderedSplitsPayload,
+        isSpecial: isSpecialOrder,
+        specialAmount: isSpecialOrder ? currentChargeTotal : undefined,
+        receivedTotal: roundMoney(receivedSplitTotal),
+        totalAmount: roundMoney(currentChargeTotal),
+        cashReceivedDenoms,
+        cashChangeDenoms,
+      });
+
+      if (payPromise && typeof (payPromise as any).then === 'function') {
+        await payPromise;
+      }
+      onClose(); // Cerrar INMEDIATAMENTE al completar la operacion, sin esperar refetch
+    } catch (err) {
+      // El error ya es manejado y notificado por react-query y useCaja.ts
+      console.error("Payment failed", err);
+    }
   };
 
   const canPay =

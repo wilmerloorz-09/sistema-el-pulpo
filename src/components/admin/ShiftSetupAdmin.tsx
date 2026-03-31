@@ -298,6 +298,14 @@ const ShiftSetupAdmin = () => {
     () => shiftUsersState.filter((userState) => userState.can_dispatch_orders || userState.is_supervisor),
     [shiftUsersState],
   );
+  const cajaCapableUsers = useMemo(
+    () => shiftUsersState.filter((userState) => userState.can_use_caja || userState.is_supervisor),
+    [shiftUsersState],
+  );
+  const mesaCapableUsers = useMemo(
+    () => shiftUsersState.filter((userState) => userState.can_serve_tables || userState.is_supervisor),
+    [shiftUsersState],
+  );
   const dispatchCapableUserIds = useMemo(
     () => dispatchCapableUsers.map((userState) => userState.user_id),
     [dispatchCapableUsers],
@@ -374,8 +382,16 @@ const ShiftSetupAdmin = () => {
       issues.push(`Cada usuario habilitado debe tener al menos un rol operativo. Revisa: ${usersWithoutOperationalRole.join(", ")}.`);
     }
 
+    if (activeTablesCount > 0 && mesaCapableUsers.length === 0) {
+      issues.push("Debe haber por lo menos un usuario para atencion de mesas en este turno.");
+    }
+
     if (dispatchCapableUsers.length === 0) {
       issues.push("Debe haber por lo menos un usuario para despacho en este turno.");
+    }
+
+    if (cajaCapableUsers.length === 0) {
+      issues.push("Debe haber por lo menos un usuario para caja en este turno.");
     }
 
     if ((workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT") {
@@ -390,7 +406,9 @@ const ShiftSetupAdmin = () => {
     return Array.from(new Set(issues));
   }, [
     activeTablesCount,
+    mesaCapableUsers.length,
     dispatchCapableUsers.length,
+    cajaCapableUsers.length,
     workingDispatchConfig?.dispatch_mode,
     enabledDispatchUserIds.length,
     enabledUserIds.length,

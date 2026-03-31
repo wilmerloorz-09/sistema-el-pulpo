@@ -14,7 +14,7 @@ export interface AppNavItem {
     idle: string;
     iconIdle: string;
   };
-  visible: (permissions: Record<string, unknown>) => boolean;
+  visible: (permissions: Record<string, any>) => boolean;
 }
 
 const NAV_ITEMS: AppNavItem[] = [
@@ -112,8 +112,8 @@ export function useVisibleNavItems() {
   return useMemo(() => {
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
-    const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && (Boolean(shiftGateQuery.data?.userEnabled) || canAccessAdmin);
-    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || canAccessAdmin;
+    const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && Boolean(shiftGateQuery.data?.userEnabled);
+    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
 
     const visibleItems = NAV_ITEMS.filter((item) => {
       if (isGlobalAdminWithoutBranches) {

@@ -279,7 +279,7 @@ const Caja = () => {
                 orders={payableOrders}
                 paymentMethods={paymentMethods}
                 shiftDenoms={shift.denoms}
-                onPay={(params) => payOrder.mutate(params)}
+                onPay={(params) => payOrder.mutateAsync(params)}
                 paying={payOrder.isPending}
                 readOnly={!canOperateCaja}
               />
@@ -318,7 +318,7 @@ const Caja = () => {
             orders={payableOrders}
             paymentMethods={paymentMethods}
             shiftDenoms={shift.denoms}
-            onPay={(params) => payOrder.mutate(params)}
+            onPay={(params) => payOrder.mutateAsync(params)}
             paying={payOrder.isPending}
             readOnly={!canOperateCaja}
           />

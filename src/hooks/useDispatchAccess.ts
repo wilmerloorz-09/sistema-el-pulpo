@@ -21,8 +21,7 @@ export function useDispatchAccess() {
   const shiftGateQuery = useBranchShiftGate();
 
   const access = useMemo(() => {
-    const hasDispatchShiftAccess = isGlobalAdmin
-      || Boolean(shiftGateQuery.data?.isSupervisor)
+    const hasDispatchShiftAccess = Boolean(shiftGateQuery.data?.isSupervisor)
       || Boolean(shiftGateQuery.data?.canDispatchOrders);
     const hasBaseViewTable = canView(permissions, "despacho_total") || canView(permissions, "despacho_mesa");
     const hasBaseViewTakeout = canView(permissions, "despacho_total") || canView(permissions, "despacho_para_llevar");

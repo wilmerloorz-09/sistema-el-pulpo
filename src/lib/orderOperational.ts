@@ -26,8 +26,9 @@ export function computeOperationalQuantities(input: {
   quantityCancelledDispatched?: number;
 }): OperationalQuantitySnapshot {
   const quantityOrdered = asInt(input.quantityOrdered);
-  const quantityReadyTotal = asInt(input.quantityReadyTotal);
   const quantityDispatchedTotal = asInt(input.quantityDispatchedTotal);
+  // Ensure that items directly dispatched are conceptually considered ready
+  const quantityReadyTotal = Math.max(asInt(input.quantityReadyTotal), quantityDispatchedTotal);
   const quantityCancelledPending = asInt(input.quantityCancelledPending);
   const quantityCancelledReady = asInt(input.quantityCancelledReady);
   const quantityCancelledDispatched = asInt(input.quantityCancelledDispatched);

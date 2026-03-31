@@ -18,7 +18,7 @@ interface Props {
   orders: PayableOrder[];
   paymentMethods: { id: string; name: string }[];
   shiftDenoms: ShiftDenom[];
-  onPay: (params: PayOrderParams) => void;
+  onPay: (params: PayOrderParams) => Promise<any> | void;
   paying: boolean;
   readOnly?: boolean;
 }
