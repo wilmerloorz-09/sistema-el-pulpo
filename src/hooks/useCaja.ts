@@ -532,15 +532,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   const qc = useQueryClient();
 
   const denomsQuery = useQuery({
-    queryKey: ["denominations", activeBranchId],
+    queryKey: ["denominations"],
     queryFn: () =>
       dbSelect<Denomination>("denominations", {
         select: "id, label, denomination_type, value, display_order, image_url",
-        branchId: activeBranchId,
         filters: [{ column: "is_active", op: "eq", value: true }],
         orderBy: { column: "display_order" },
       }),
-    enabled: !!activeBranchId,
+    enabled: true,
   });
 
   const branchTableSettingsQuery = useQuery({

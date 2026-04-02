@@ -161,8 +161,14 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
                 className="flex h-12 w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 text-sidebar-foreground transition-colors hover:bg-white/12"
                 aria-label="Mi cuenta"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/10">
-                  {initials ? (
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/10">
+                  {profile?.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={profile.full_name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : initials ? (
                     <span className="text-xs font-black tracking-wide">{initials}</span>
                   ) : (
                     <UserRound className="h-5 w-5" />

@@ -46,13 +46,10 @@ export default function PayableOrdersList({
     if (!selectedOrder) return;
 
     const refreshedOrder = orders.find((order) => order.id === selectedOrder.id) ?? null;
-    if (!refreshedOrder) {
-      setSelectedOrder(null);
-      return;
+    if (refreshedOrder) {
+      setSelectedOrder(refreshedOrder);
     }
-
-    setSelectedOrder(refreshedOrder);
-  }, [orders, selectedOrder]);
+  }, [orders, selectedOrder?.id]);
 
   const pendingUnits = (order: PayableOrder) =>
     order.items.reduce((sum, item) => sum + item.quantity_pending, 0);

@@ -81,7 +81,7 @@ export default function OpenShiftForm({
         <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-foreground">
           <div className="mb-2 flex items-center gap-2 font-medium">
             <AlertCircle className="h-4 w-4 text-warning" />
-            No hay denominaciones configuradas para esta sucursal
+            No hay denominaciones configuradas
           </div>
           <p className="text-muted-foreground">
             Configura las monedas y billetes en Administracion / Denominaciones para que el formulario de apertura muestre el desglose.

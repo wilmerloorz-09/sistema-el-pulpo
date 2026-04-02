@@ -73,8 +73,18 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
           className="group flex min-w-[4.65rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all hover:border-orange-200 hover:bg-orange-50/90 hover:text-primary dark:hover:border-border dark:hover:bg-muted"
           aria-label="Mi cuenta"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-muted text-foreground transition-transform group-hover:scale-105">
-            {initials ? <span className="text-xs font-black tracking-wide">{initials}</span> : <UserRound className="h-5 w-5" />}
+          <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-2xl bg-muted text-foreground transition-transform group-hover:scale-105">
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={profile.full_name}
+                className="h-full w-full object-cover"
+              />
+            ) : initials? (
+              <span className="text-xs font-black tracking-wide">{initials}</span>
+            ) : (
+              <UserRound className="h-5 w-5" />
+            )}
           </span>
           <span className="max-w-[4.5rem] truncate text-center leading-none">Cuenta</span>
         </button>

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +59,7 @@ interface EditUserDialogProps {
 }
 
 const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }: EditUserDialogProps) => {
+  const { profile, refreshProfile } = useAuth();
   const isProtected = Boolean(user.is_protected_superadmin);
   const isAdmin = user.global_roles.some((r) => r.code === "administrador");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,7 +106,14 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
         .eq("id", user.id);
       if (error) throw error;
     },
-    onSuccess: () => { onRefresh(); onClose(); toast.success("Perfil actualizado"); },
+    onSuccess: () => {
+      onRefresh();
+      if (user.id === profile?.id) {
+        void refreshProfile();
+      }
+      onClose();
+      toast.success("Perfil actualizado");
+    },
     onError: (e: any) => toast.error(e.message || "Error al actualizar"),
   });
 
@@ -229,14 +238,16 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
       const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
 
-      const { error: updateError } = await supabase
-        .from("profiles")
+      const { error: updateError } = await (supabase.from("profiles") as any)
         .update({ avatar_url: publicUrl })
         .eq("id", user.id);
       if (updateError) throw updateError;
 
       setAvatarPreview(publicUrl);
       onRefresh();
+      if (user.id === profile?.id) {
+        void refreshProfile();
+      }
       toast.success("Foto actualizada");
     } catch (err: any) {
       toast.error(err.message || "No se pudo subir la foto");
@@ -347,9 +358,9 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
-                  <SelectItem value="administrador">Administrador Global</SelectItem>
-                  <SelectItem value="supervisor">Supervisor de Sucursal</SelectItem>
-                  <SelectItem value="usuario_operativo">Usuario Operativo</SelectItem>
+                  <SelectItem value="administrador">Administrador General</SelectItem>
+                  <SelectItem value="supervisor">Supervisor</SelectItem>
+                  <SelectItem value="usuario_operativo">Usuario operativo</SelectItem>
                 </SelectContent>
               </Select>
             </div>

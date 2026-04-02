@@ -743,6 +743,77 @@ const MenuNodesCrud = ({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const hardDeleteMutation = useMutation({
+    mutationFn: async (node: AdminMenuNode) => {
+      const childrenCount = getChildren(node.id).length;
+      if (node.node_type === "category" && childrenCount > 0) {
+        throw new Error("No puedes eliminar una categoria que tiene hijos. Elimina primero sus hijos.");
+      }
+
+      const confirmed = window.confirm(
+        "¿Estas seguro de eliminar permanentemente este nodo? Esta accion solo funcionara si NO tiene historial de ventas."
+      );
+      if (!confirmed) return false;
+
+      // 1. Delete from legacy tables first to fail fast if there is history
+      if (node.node_type === "product") {
+        const legacyProductId = node.legacy_product_id ?? node.id;
+        const { error: productError } = await supabase.from("products").delete().eq("id", legacyProductId);
+        if (productError) {
+          if (productError.code === "23503") {
+            throw new Error("No se puede eliminar: Este producto tiene historial de ventas. Desactivalo en su lugar.");
+          }
+          throw productError;
+        }
+      } else if (isTableScope || menuScope === "BULK") {
+        // Enforce legacy cleanup for table and bulk scopes
+        
+        // If it was a root category in legacy
+        const { error: categoryError } = await supabase.from("categories").delete().eq("id", node.id);
+        if (categoryError && categoryError.code !== "PGRST116" && categoryError.code !== "42703") {
+          if (categoryError.code === "23503") throw new Error("No se puede eliminar: Esta categoria tiene productos con historial.");
+          // ignore other errors like column not exists if it's not a root cat
+        }
+        
+        // Also subcategories
+        const { error: subcategoryError } = await supabase.from("subcategories").delete().eq("id", node.id);
+        if (subcategoryError && subcategoryError.code !== "PGRST116") {
+          if (subcategoryError.code === "23503") throw new Error("No se puede eliminar: Esta subcategoria tiene productos con historial.");
+        }
+      }
+
+      // 2. Delete from menu_nodes
+      const { error: menuNodeError } = await supabase
+        .from("menu_nodes" as never)
+        .delete()
+        .eq("id", node.id);
+      if (menuNodeError) throw menuNodeError;
+
+      // 3. Delete image from storage
+      const managedPath = extractManagedImagePath(node.image_url);
+      if (managedPath) {
+        try {
+          await supabase.storage.from(MENU_NODE_IMAGE_BUCKET).remove([managedPath]);
+        } catch (storageErr) {
+          console.warn("No se pudo eliminar la imagen de storage tras eliminar el nodo", storageErr);
+        }
+      }
+
+      return true;
+    },
+    onSuccess: (didDelete) => {
+      if (!didDelete) return;
+      toast.success("Nodo eliminado permanentemente");
+      queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-products"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+      resetForm();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const copyFromTableMutation = useMutation({
     mutationFn: async () => {
       if (!activeBranchId) throw new Error("No hay sucursal activa");
@@ -931,19 +1002,31 @@ const MenuNodesCrud = ({
             <p className="text-xs text-muted-foreground">Crear, editar y desactivar sin borrar historico.</p>
           </div>
           {selectedNode ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "rounded-xl",
-                selectedNode.is_active ? "text-destructive" : "text-emerald-700",
-              )}
-              onClick={() => toggleActiveMutation.mutate(selectedNode)}
-              disabled={toggleActiveMutation.isPending}
-            >
-              <Power className="mr-1.5 h-4 w-4" />
-              {selectedNode.is_active ? "Desactivar" : "Activar"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "rounded-xl",
+                  selectedNode.is_active ? "text-destructive" : "text-emerald-700",
+                )}
+                onClick={() => toggleActiveMutation.mutate(selectedNode)}
+                disabled={toggleActiveMutation.isPending}
+              >
+                <Power className="mr-1.5 h-4 w-4" />
+                {selectedNode.is_active ? "Desactivar" : "Activar"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl text-destructive hover:bg-destructive/10"
+                onClick={() => hardDeleteMutation.mutate(selectedNode)}
+                disabled={hardDeleteMutation.isPending}
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" />
+                Borrar fisico
+              </Button>
+            </div>
           ) : null}
         </div>
 

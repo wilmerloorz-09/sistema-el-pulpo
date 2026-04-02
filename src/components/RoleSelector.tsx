@@ -6,7 +6,7 @@ import { Shield, UtensilsCrossed, CircleDollarSign, ChefHat, Truck } from "lucid
 type AppRole = Database["public"]["Enums"]["app_role"];
 
 const ROLE_META: Record<AppRole, { label: string; icon: React.ReactNode; color: string }> = {
-  admin: { label: "Admin", icon: <Shield className="h-7 w-7" />, color: "bg-primary text-primary-foreground" },
+  admin: { label: "Administración", icon: <Shield className="h-7 w-7" />, color: "bg-primary text-primary-foreground" },
   mesero: { label: "Mesero", icon: <UtensilsCrossed className="h-7 w-7" />, color: "bg-accent text-accent-foreground" },
   cajero: { label: "Cajero", icon: <CircleDollarSign className="h-7 w-7" />, color: "bg-warning text-foreground" },
   cocina: { label: "Cocina", icon: <ChefHat className="h-7 w-7" />, color: "bg-destructive text-destructive-foreground" },

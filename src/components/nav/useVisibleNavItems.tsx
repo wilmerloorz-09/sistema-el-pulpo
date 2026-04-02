@@ -93,7 +93,7 @@ const NAV_ITEMS: AppNavItem[] = [
   },
   {
     to: "/admin",
-    label: "Admin",
+    label: "Administración",
     icon: <Settings className="h-5 w-5" />,
     tone: {
       active: "from-slate-700 to-slate-500",

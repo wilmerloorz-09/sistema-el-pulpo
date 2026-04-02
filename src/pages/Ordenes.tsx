@@ -303,18 +303,11 @@ const Ordenes = () => {
   }, [isTrayOrder, order?.id]);
 
   useEffect(() => {
-    if (order?.is_tray_order) {
-      setPendingMenuScopeSelection(null);
-      return;
-    }
-
-    if (order?.order_type === "DINE_IN") {
-      setPendingMenuScopeSelection("TABLE");
-      return;
-    }
-
+    // Cuando cambiamos de orden fisica, limpiamos cualquier seleccion pendiente
+    // para que tome el valor de la nueva orden desde la DB.
     setPendingMenuScopeSelection(null);
-  }, [order?.id, order?.is_tray_order, order?.order_type]);
+    setPendingTrayType(null);
+  }, [orderId]);
 
   useEffect(() => {
     return () => {

@@ -3,6 +3,8 @@ import { useCrud } from "@/hooks/useCrud";
 import { useEditState } from "@/hooks/useEditState";
 import { isCashPaymentMethodName, normalizePaymentMethodName } from "@/lib/paymentMethods";
 import { AdminTable, ColumnDef } from "./AdminTable";
+import { useBranch } from "@/contexts/BranchContext";
+import { Shield } from "lucide-react";
 
 interface PaymentMethod {
   id: string;
@@ -16,8 +18,23 @@ const columns: ColumnDef<PaymentMethod>[] = [
 ];
 
 const PaymentMethodsCrud = () => {
+  const { isGlobalAdmin } = useBranch();
   const crud = useCrud<PaymentMethod>({ table: "payment_methods", queryKey: "admin-payment-methods", orderBy: { column: "name" } });
   const edit = useEditState<PaymentMethod>({ name: "", is_active: true } as any);
+
+  if (!isGlobalAdmin) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-[28px] border border-orange-200 bg-white/80 p-8 shadow-sm">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <Shield className="h-8 w-8" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-lg font-black text-slate-900">Acceso restringido</h2>
+          <p className="max-w-xs text-sm text-slate-500">Solo los administradores generales pueden gestionar los metodos de pago.</p>
+        </div>
+      </div>
+    );
+  }
 
   const existingCashMethod = crud.data.find((item) => isCashPaymentMethodName(item.name));
 

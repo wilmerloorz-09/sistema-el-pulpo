@@ -2,15 +2,17 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Trash2, Save, X, Building2, Check, KeyRound, Shield, ChevronDown, ChevronUp, Search, Users, UserCheck, UserX } from "lucide-react";
+import { Loader2, Plus, Trash2, X, Building2, Check, KeyRound, Shield, ChevronDown, ChevronUp, Search, Users, UserCheck, UserX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import EditUserDialog from "./EditUserDialog";
+import AddUserDialog from "./AddUserDialog";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface AccessCatalog {
   branches: { id: string; name: string }[];
@@ -38,42 +40,12 @@ interface UserRow {
   branch_assignments: BranchAssignment[];
 }
 
-const extractEdgeFunctionError = async (err: any) => {
-  if (!err) return "Error desconocido";
-  const context = err.context;
-  if (context && typeof context.text === "function") {
-    try {
-      const raw = await context.text();
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed?.error) return parsed.error;
-        } catch {
-          return raw;
-        }
-      }
-    } catch {
-      // ignore parse failures
-    }
-  }
-  return err.message || "Error desconocido";
-};
-
-const isAlreadyExistsAssignmentError = (error: any) => {
-  const message = String(error?.message ?? "").toLowerCase();
-  return (
-    message.includes("duplicate key") ||
-    message.includes("already exists") ||
-    message.includes("ya existe")
-  );
-};
 
 const ROLE_COLORS: Record<string, string> = {
-  'Administrador Global': 'bg-purple-100 text-purple-800 border-purple-200',
+  'Administrador General': 'bg-purple-100 text-purple-800 border-purple-200',
   'Administrador':        'bg-purple-100 text-purple-800 border-purple-200',
-  'Supervisor de Sucursal': 'bg-teal-100 text-teal-800 border-teal-200',
   'Supervisor':           'bg-teal-100 text-teal-800 border-teal-200',
-  'Usuario Operativo':    'bg-blue-100 text-blue-800 border-blue-200',
+  'Usuario operativo':    'bg-blue-100 text-blue-800 border-blue-200',
   'Cajero':               'bg-amber-100 text-amber-800 border-amber-200',
   'Mesero':               'bg-blue-100 text-blue-800 border-blue-200',
   'Despachador':          'bg-green-100 text-green-800 border-green-200',
@@ -83,6 +55,7 @@ const getRoleColor = (roleName: string) =>
 
 const UsersCrud = () => {
   const qc = useQueryClient();
+  const { isGlobalAdmin } = useBranch();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState({ full_name: "", username: "", email: "" });
@@ -93,15 +66,6 @@ const UsersCrud = () => {
   const [filterRol, setFilterRol] = useState('__all__');
   const [filterSucursal, setFilterSucursal] = useState('__all__');
   const [filterActivo, setFilterActivo] = useState<'todos' | 'activos' | 'inactivos'>('todos');
-  const [newUser, setNewUser] = useState({
-    email: "",
-    password: "",
-    full_name: "",
-    username: "",
-    branch_id: "",
-    role_code: "usuario_operativo",
-    is_admin: false,
-  });
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["admin-users-access"],
@@ -134,6 +98,20 @@ const UsersCrud = () => {
     onSuccess: refreshAll,
     onError: (err: any) => toast.error(err.message || "No se pudo actualizar el estado"),
   });
+
+  if (!isGlobalAdmin) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-[28px] border border-orange-200 bg-white/80 p-8 shadow-sm">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <Shield className="h-8 w-8" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-lg font-black text-slate-900">Acceso restringido</h2>
+          <p className="max-w-xs text-sm text-slate-500">Solo los administradores globales pueden gestionar los usuarios del sistema.</p>
+        </div>
+      </div>
+    );
+  }
 
   const updateProfile = useMutation({
     mutationFn: async ({ id, full_name, username }: { id: string; full_name: string; username: string }) => {
@@ -218,114 +196,6 @@ const UsersCrud = () => {
 
   // Delete física eliminada: la desactivación se hace solo con toggleActive (is_active = false)
 
-  const createUser = useMutation({
-    mutationFn: async () => {
-      const normalizedEmail = newUser.email.trim().toLowerCase();
-      const normalizedUsername = newUser.username.trim().toLowerCase();
-
-      const existingUsername = users.find((row) => row.username.trim().toLowerCase() === normalizedUsername);
-      if (existingUsername) {
-        throw new Error("El nombre de usuario ya existe. Usa otro diferente.");
-      }
-
-      const existingEmail = users.find((row) => (row.email ?? "").trim().toLowerCase() === normalizedEmail);
-      if (existingEmail) {
-        throw new Error("El correo electronico ya esta registrado.");
-      }
-
-      const payload = {
-        email: normalizedEmail,
-        password: newUser.password,
-        full_name: newUser.full_name,
-        username: newUser.username.trim(),
-        branch_roles: newUser.branch_id
-          ? [{ branch_id: newUser.branch_id, role_code: newUser.role_code }]
-          : [],
-        global_roles: newUser.is_admin ? ["administrador"] : [],
-      };
-
-      const res = await supabase.functions.invoke("create-user", { body: payload });
-      if (res.error) throw new Error(await extractEdgeFunctionError(res.error));
-      if (res.data?.error) throw new Error(res.data.error);
-
-      let createdUserId: string | null = typeof res.data?.id === "string" ? res.data.id : null;
-
-      if (!createdUserId) {
-        const { data: createdProfileByEmail, error: profileLookupByEmailError } = await supabase
-          .from("profiles")
-          .select("id")
-          .ilike("email", normalizedEmail)
-          .limit(1)
-          .maybeSingle();
-
-        if (profileLookupByEmailError) throw profileLookupByEmailError;
-        createdUserId = createdProfileByEmail?.id ?? null;
-      }
-
-      if (!createdUserId) {
-        const { data: createdProfileByUsername, error: profileLookupByUsernameError } = await supabase
-          .from("profiles")
-          .select("id")
-          .ilike("username", newUser.username.trim())
-          .limit(1)
-          .maybeSingle();
-
-        if (profileLookupByUsernameError) throw profileLookupByUsernameError;
-        createdUserId = createdProfileByUsername?.id ?? null;
-      }
-
-      if (!createdUserId) {
-        throw new Error("El usuario se creo, pero no se pudo resolver su perfil para completar la asignacion inicial.");
-      }
-
-      if (newUser.branch_id && newUser.role_code) {
-        const { error: assignBranchRoleError } = await supabase.rpc("assign_user_branch_role" as never, {
-          p_target_user_id: createdUserId,
-          p_branch_id: newUser.branch_id,
-          p_role_code: newUser.role_code,
-          p_reason: "Asignacion inicial al crear usuario",
-        } as never);
-
-        if (assignBranchRoleError && !isAlreadyExistsAssignmentError(assignBranchRoleError)) {
-          throw assignBranchRoleError;
-        }
-
-        const { error: activeBranchError } = await supabase.rpc("set_user_active_branch", {
-          p_target_user_id: createdUserId,
-          p_new_branch_id: newUser.branch_id,
-          p_reason: "Sucursal inicial al crear usuario",
-        });
-        if (activeBranchError) throw activeBranchError;
-      }
-
-      if (newUser.is_admin) {
-        const { error: assignGlobalRoleError } = await supabase.rpc("assign_user_global_role" as never, {
-          p_target_user_id: createdUserId,
-          p_role_code: "administrador",
-        } as never);
-
-        if (assignGlobalRoleError && !isAlreadyExistsAssignmentError(assignGlobalRoleError)) {
-          throw assignGlobalRoleError;
-        }
-      }
-    },
-    onSuccess: () => {
-      refreshAll();
-      setShowAddForm(false);
-      setNewUser({
-        email: "",
-        password: "",
-        full_name: "",
-        username: "",
-        branch_id: "",
-        role_code: "usuario_operativo",
-        is_admin: false,
-      });
-      toast.success("Usuario creado correctamente");
-    },
-    onError: (err: any) => toast.error(err.message || "No se pudo crear el usuario"),
-  });
-
   const branchesMap = useMemo(
     () => Object.fromEntries((catalog?.branches ?? []).map((branch) => [branch.id, branch.name])),
     [catalog?.branches],
@@ -343,14 +213,7 @@ const UsersCrud = () => {
   ).size;
 
   // Opciones únicas para filtros
-  const uniqueRoles = useMemo(() => {
-    const roles = new Set<string>();
-    users.forEach(u => {
-      u.global_roles.forEach(r => roles.add(r.name));
-      u.branch_assignments.forEach(a => roles.add(a.role_name));
-    });
-    return Array.from(roles).sort();
-  }, [users]);
+  const uniqueRoles = ["Administrador General", "Supervisor", "Usuario operativo"];
 
   const uniqueBranches = useMemo(() => {
     const branches = new Map<string, string>();
@@ -366,9 +229,14 @@ const UsersCrud = () => {
       u.full_name.toLowerCase().includes(search.toLowerCase()) ||
       (u.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       u.username.toLowerCase().includes(search.toLowerCase());
-    const matchRol = filterRol === '__all__' ||
-      u.global_roles.some(r => r.name === filterRol) ||
-      u.branch_assignments.some(a => a.role_name === filterRol);
+    const isAdmin = u.global_roles.some((r) => r.code === "administrador");
+    const isSupervisor = !isAdmin && u.branch_assignments.some((a) => a.role_code === "supervisor");
+
+    const matchRol = filterRol === '__all__' || (
+      filterRol === "Administrador General" ? isAdmin :
+      filterRol === "Supervisor" ? isSupervisor :
+      (!isAdmin && !isSupervisor) // Usuario operativo
+    );
     const matchSuc = filterSucursal === '__all__' ||
       u.branch_assignments.some(a => a.branch_id === filterSucursal);
     const matchActivo = filterActivo === 'todos' ||
@@ -477,116 +345,13 @@ const UsersCrud = () => {
         </Button>
       </div>
 
-      {showAddForm && (
-        <div className="space-y-4 rounded-3xl border border-primary/20 bg-primary/5 p-6 animate-in fade-in zoom-in duration-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary">Nuevo usuario</h3>
-            <Badge variant="outline" className="border-primary/20 bg-white text-primary">3 Roles Disponibles</Badge>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre Completo</label>
-              <Input placeholder="Ej: Juan Perez" value={newUser.full_name} onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })} className="h-10 rounded-xl border-slate-200 bg-white text-sm focus:ring-1" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre de Usuario</label>
-              <Input placeholder="Ej: jperez" value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} className="h-10 rounded-xl border-slate-200 bg-white text-sm focus:ring-1" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Email</label>
-              <Input placeholder="correo@ejemplo.com" type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="h-10 rounded-xl border-slate-200 bg-white text-sm focus:ring-1" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Contraseña</label>
-              <Input placeholder="********" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="h-10 rounded-xl border-slate-200 bg-white text-sm focus:ring-1" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white/60 p-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Tipo de Acceso</label>
-              <Select 
-                value={newUser.is_admin ? "admin" : "staff"} 
-                onValueChange={(val) => {
-                  const isAdmin = val === "admin";
-                  setNewUser({ 
-                    ...newUser, 
-                    is_admin: isAdmin,
-                    // Si es admin, desactivamos sucursal inicial requerida para simplificar
-                    branch_id: isAdmin ? "" : newUser.branch_id,
-                    role_code: isAdmin ? "" : (newUser.role_code || "usuario_operativo")
-                  });
-                }}
-              >
-                <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white text-sm font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="admin">Administrador Global</SelectItem>
-                  <SelectItem value="staff">Personal de Sucursal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {!newUser.is_admin && (
-              <>
-                <div className="space-y-1.5">
-                  <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sucursal</label>
-                  <Select value={newUser.branch_id || undefined} onValueChange={(value) => setNewUser({ ...newUser, branch_id: value })}>
-                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white text-sm"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {(catalog?.branches ?? []).map((branch) => (
-                        <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Rol Operativo</label>
-                  <Select value={newUser.role_code} onValueChange={(value) => setNewUser({ ...newUser, role_code: value })}>
-                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white text-sm"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {(catalog?.branch_roles ?? []).map((role) => (
-                        <SelectItem key={role.id} value={role.code}>{role.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-            {newUser.is_admin && (
-              <div className="col-span-2 flex items-center p-4">
-                <p className="text-xs text-muted-foreground italic">
-                  * El Administrador Global tendrá acceso total a todas las sucursales del sistema.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
-            <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)} className="h-10 rounded-xl px-4 text-xs font-bold hover:bg-slate-200">
-              CANCELAR
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => createUser.mutate()}
-              disabled={
-                createUser.isPending ||
-                !newUser.email ||
-                !newUser.password ||
-                !newUser.full_name ||
-                !newUser.username ||
-                (!newUser.is_admin && (!newUser.branch_id || !newUser.role_code))
-              }
-              className="h-10 rounded-xl px-6 text-xs font-bold shadow-lg"
-            >
-              {createUser.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-              GUARDAR USUARIO
-            </Button>
-          </div>
-        </div>
-      )}
+      <AddUserDialog
+        open={showAddForm}
+        onClose={() => setShowAddForm(false)}
+        onRefresh={refreshAll}
+        catalog={catalog}
+        existingUsers={users}
+      />
 
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_15px_45px_-30px_rgba(15,23,42,0.25)]">
         {/* Encabezado de columnas */}
@@ -623,10 +388,10 @@ const UsersCrud = () => {
           const isAdmin = user.global_roles.some((r) => r.code === "administrador");
           const isSupervisor = !isAdmin && user.branch_assignments.some((a) => a.role_code === "supervisor");
           const userTypeName = isAdmin
-            ? "Administrador Global"
+            ? "Administrador General"
             : isSupervisor
-            ? "Supervisor de Sucursal"
-            : "Usuario Operativo";
+            ? "Supervisor"
+            : "Usuario operativo";
           const userTypeColor = isAdmin
             ? "border-violet-200 bg-violet-50 text-violet-700"
             : isSupervisor

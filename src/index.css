@@ -175,7 +175,7 @@
   }
 
   .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    @apply pb-[env(safe-area-inset-bottom,0px)];
   }
 
   .mb-safe {
@@ -194,5 +194,41 @@
     .mb-safe {
       padding-bottom: 5rem;
     }
+  }
+}
+
+/* Estilos de Impresión */
+@media print {
+  /* Ocultar TODO por defecto */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Mostrar solo el área del recibo y sus hijos */
+  #print-receipt, #print-receipt * {
+    visibility: visible !important;
+  }
+
+  /* Posicionar el recibo en la esquina superior izquierda */
+  #print-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    width: 76mm !important;
+    background: white !important;
+    color: black !important;
+    display: block !important;
+  }
+
+  /* Forzar fondo blanco */
+  body {
+    background: white !important;
+  }
+
+  /* Ocultar elementos que sabemos que NO queremos */
+  header, footer, nav, .no-print, button {
+    display: none !important;
   }
 }

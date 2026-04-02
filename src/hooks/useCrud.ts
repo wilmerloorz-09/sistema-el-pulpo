@@ -12,7 +12,6 @@ const BRANCH_TABLES: TableName[] = [
   "modifiers",
   "restaurant_tables",
   "payment_methods",
-  "denominations",
 ];
 
 interface UseCrudOptions<T> {

@@ -66,9 +66,24 @@ const AppLayout = () => {
           </DialogHeader>
 
           <div className="space-y-3">
-            <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-              <div className="text-sm font-bold text-foreground">{profile?.full_name || "Usuario"}</div>
-              {profile?.username ? <div className="text-xs font-medium text-muted-foreground">@{profile.username}</div> : null}
+            <div className="flex items-center gap-4 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/50 border border-orange-200">
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={profile.full_name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-sm font-black tracking-wide text-primary">
+                    {profile?.full_name ? profile.full_name[0].toUpperCase() : <UserRound className="h-6 w-6" />}
+                  </span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-foreground">{profile?.full_name || "Usuario"}</div>
+                {profile?.username ? <div className="truncate text-xs font-medium text-muted-foreground">@{profile.username}</div> : null}
+              </div>
             </div>
 
             {(activeBranch || branches.length > 1) && (

@@ -26,9 +26,10 @@ import {
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, ReceiptText, RotateCcw, Soup, Trash2, Wallet, WalletCards } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, Wallet, WalletCards } from "lucide-react";
 import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
+import PaymentReceipt from "./PaymentReceipt";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -148,6 +149,10 @@ export default function PaymentDialog({
   const activePaymentSplitInputId = useRef<string | null>(null);
   const isSpecialOrder = Boolean(order?.is_special);
 
+  const [successView, setSuccessView] = useState(false);
+  const [lastTransactionData, setLastTransactionData] = useState<any>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!order) return;
 
@@ -173,6 +178,8 @@ export default function PaymentDialog({
     setCashDetailOpen(false);
     setCashOverpayConfirmOpen(false);
     setPendingCashDenominationId(null);
+    setSuccessView(false);
+    setLastTransactionData(null);
   }, [order?.id, order?.items, defaultMethodId, cashMethod?.id, paymentMethods]);
 
   useEffect(() => {
@@ -600,6 +607,40 @@ export default function PaymentDialog({
     setConfirmOpen(false);
     
     try {
+      // Capturar datos para el recibo antes de realizar el pago
+      const transactionItems = isSpecialOrder
+        ? []
+        : itemSelections.map((sel) => {
+            const originalItem = order.items.find((i) => i.id === sel.itemId);
+            return {
+              description: originalItem?.description_snapshot ?? "Producto",
+              quantity: sel.quantity,
+              unitPrice: sel.unitPrice,
+              amount: sel.amount,
+            };
+          });
+
+      const transactionPayments = paymentAllocationPreview
+        .filter((sp) => sp.appliedAmount > 0)
+        .map((sp) => ({
+          methodName: sp.methodName,
+          appliedAmount: sp.appliedAmount,
+        }));
+
+      const receiptData = {
+        orderNumber: order.order_code ?? order.order_number,
+        tableName: order.table_name,
+        orderType: order.order_type,
+        isSpecial: isSpecialOrder,
+        isTrayOrder: order.is_tray_order,
+        items: transactionItems,
+        payments: transactionPayments,
+        totalAmount: currentChargeTotal,
+        totalReceived: roundMoney(receivedSplitTotal),
+        changeAmount: changeAmount,
+        createdAt: new Date().toISOString(),
+      };
+
       const payPromise = onPay({
         orderId: order.id,
         itemSelections,
@@ -613,12 +654,13 @@ export default function PaymentDialog({
         cashChangeDenoms,
       });
 
-      if (payPromise && typeof (payPromise as any).then === 'function') {
+      if (payPromise && typeof (payPromise as any).then === "function") {
         await payPromise;
       }
-      onClose(); // Cerrar INMEDIATAMENTE al completar la operacion, sin esperar refetch
+
+      setLastTransactionData(receiptData);
+      setSuccessView(true);
     } catch (err) {
-      // El error ya es manejado y notificado por react-query y useCaja.ts
       console.error("Payment failed", err);
     }
   };
@@ -1110,9 +1152,55 @@ export default function PaymentDialog({
   );
 
   return (
+    <>
     <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
+      {lastTransactionData && (
+        <PaymentReceipt
+          ref={receiptRef}
+          orderNumber={lastTransactionData.orderNumber}
+          tableName={lastTransactionData.tableName}
+          orderType={lastTransactionData.orderType}
+          isSpecial={lastTransactionData.isSpecial}
+          isTrayOrder={lastTransactionData.isTrayOrder}
+          items={lastTransactionData.items}
+          payments={lastTransactionData.payments}
+          totalAmount={lastTransactionData.totalAmount}
+          totalReceived={lastTransactionData.totalReceived}
+          changeAmount={lastTransactionData.changeAmount}
+          createdAt={lastTransactionData.createdAt}
+        />
+      )}
       <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] flex-col overflow-hidden bg-white p-0 sm:max-h-[94vh] sm:w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-1.5rem)] lg:max-w-[1500px]">
-        <DialogHeader className="shrink-0 border-b border-border bg-white px-4 py-3 sm:px-6">
+        {successView ? (
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center animate-in fade-in zoom-in duration-300 no-print">
+            <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-green-100 text-green-600 shadow-sm">
+              <CheckCircle2 className="h-12 w-12" />
+            </div>
+            <h2 className="mb-2 text-2xl font-black text-slate-900">¡Cobro realizado con éxito!</h2>
+            <p className="mb-8 max-w-sm text-slate-500">
+              La transacción ha sido registrada correctamente. ¿Deseas imprimir el comprobante?
+            </p>
+
+            <div className="flex flex-col gap-3 w-full max-w-xs">
+              <Button
+                variant="outline"
+                className="h-12 gap-2 rounded-2xl font-bold shadow-sm border-2 hover:bg-slate-50"
+                onClick={() => window.print()}
+              >
+                <Printer className="h-5 w-5" />
+                Imprimir Comprobante
+              </Button>
+              <Button
+                className="h-12 gap-2 rounded-2xl font-bold shadow-md"
+                onClick={onClose}
+              >
+                Finalizar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <DialogHeader className="shrink-0 border-b border-border bg-white px-4 py-3 sm:px-6">
           <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-lg sm:text-xl">
             <span className="min-w-0">
               {readOnly ? "Consulta de cobro" : "Cobrar"} {order?.order_code ?? `#${order?.order_number}`}
@@ -1535,6 +1623,8 @@ export default function PaymentDialog({
             </div>
           </div>
         ) : null}
+        </>
+        )}
       </DialogContent>
 
       <Dialog
@@ -1755,7 +1845,6 @@ export default function PaymentDialog({
           </div>
         </DialogContent>
       </Dialog>
-
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-2xl">
           <AlertDialogHeader>
@@ -1912,9 +2001,9 @@ export default function PaymentDialog({
         </AlertDialogContent>
       </AlertDialog>
     </Dialog>
+    </>
   );
 }
-
 
 
 

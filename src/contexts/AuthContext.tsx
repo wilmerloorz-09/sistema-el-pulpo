@@ -11,6 +11,7 @@ interface Profile {
   is_active: boolean;
   active_branch_id?: string | null;
   is_protected_superadmin?: boolean;
+  avatar_url?: string | null;
 }
 
 interface AuthState {

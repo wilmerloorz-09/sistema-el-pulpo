@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ImageUp, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ImageUp, Trash2, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -58,9 +58,9 @@ const getFileExtension = (file: File) => {
   }
 };
 
-const buildDenominationImagePath = (branchId: string, denominationId: string, file: File) => {
+const buildDenominationImagePath = (denominationId: string, file: File) => {
   const extension = getFileExtension(file);
-  return `${branchId}/${denominationId}/${Date.now()}-${generateUUID()}.${extension}`;
+  return `global/denominations/${denominationId}/${Date.now()}-${generateUUID()}.${extension}`;
 };
 
 const extractManagedImagePath = (imageUrl: string | null | undefined) => {
@@ -75,7 +75,7 @@ const getPublicImageUrl = (path: string) => supabase.storage.from(DENOMINATION_I
 
 const DenominationsCrud = () => {
   const qc = useQueryClient();
-  const { activeBranchId } = useBranch();
+  const { isGlobalAdmin } = useBranch();
   const crud = useCrud<Denomination>({ table: "denominations", queryKey: "admin-denominations", orderBy: { column: "display_order" } });
   const edit = useEditState<Denomination>({ label: "", denomination_type: "coin", value: 0, display_order: 1, image_url: "", is_active: true } as any);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
@@ -108,6 +108,20 @@ const DenominationsCrud = () => {
     () => crud.data.find((item) => item.id === edit.editingId) ?? null,
     [crud.data, edit.editingId],
   );
+  
+  if (!isGlobalAdmin) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-[28px] border border-orange-200 bg-white/80 p-8 shadow-sm">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <Shield className="h-8 w-8" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-lg font-black text-slate-900">Acceso restringido</h2>
+          <p className="max-w-xs text-sm text-slate-500">Solo los administradores globales pueden gestionar las denominaciones de efectivo.</p>
+        </div>
+      </div>
+    );
+  }
 
   const imagePreviewUrl = localPreviewUrl ?? (removeImage ? "" : normalizeImageUrl(edit.editValues.image_url));
   const hasCurrentImage = Boolean(normalizeImageUrl(edit.editValues.image_url)) && !removeImage;
@@ -133,7 +147,6 @@ const DenominationsCrud = () => {
 
   const saveMutation = useMutation({
     mutationFn: async (values: Record<string, any>) => {
-      if (!activeBranchId) throw new Error("Selecciona una sucursal activa");
 
       const label = String(values.label ?? "").trim();
       const value = Number(values.value ?? 0);
@@ -159,7 +172,7 @@ const DenominationsCrud = () => {
       try {
         if (selectedImageFile) {
           validateImageFile(selectedImageFile);
-          uploadedImagePath = buildDenominationImagePath(activeBranchId, id, selectedImageFile);
+          uploadedImagePath = buildDenominationImagePath(id, selectedImageFile);
           const { error: uploadError } = await supabase.storage
             .from(DENOMINATION_IMAGE_BUCKET)
             .upload(uploadedImagePath, selectedImageFile, {
@@ -173,7 +186,6 @@ const DenominationsCrud = () => {
 
         const { error } = await supabase.from("denominations").upsert({
           id,
-          branch_id: activeBranchId,
           label,
           denomination_type: values.denomination_type === "bill" ? "bill" : "coin",
           value,
