@@ -1,27 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import { useCancellation } from "@/hooks/useCancellation";
 import { supabase } from "@/integrations/supabase/client";
+import { useCancellation } from "@/hooks/useCancellation";
 import { CANCELLATION_REASONS, type CancellationReason } from "@/types/cancellation";
 import type { OrderItemSummary } from "@/hooks/useOrdersByStatus";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronsDown, ChevronsUp, Loader2, RotateCcw } from "lucide-react";
 
 interface CancelOrderDialogProps {
   orderId: string;
-  orderNumber: number;
+  orderNumber: string | number;
   userId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -39,16 +31,65 @@ interface SnapshotItem {
   description_snapshot: string;
   tray_item_type?: "A" | "B" | "C" | null;
   item_status: string;
-  quantity_ordered: number;
   quantity_paid: number;
   quantity_ready_available: number;
-  quantity_dispatched_total: number;
   quantity_dispatched_available: number;
   quantity_cancelled_total: number;
-  quantity_cancelled_dispatched: number;
   quantity_pending_prepare: number;
   quantity_cancellable: number;
   unit_price: number;
+}
+
+const clampQty = (value: number, max: number) => Math.max(0, Math.min(max, Math.floor(Number.isFinite(value) ? value : 0)));
+function TransferRow({
+  item,
+  qty,
+  right,
+  disabled,
+  onOne,
+  onAll,
+}: {
+  item: SnapshotItem;
+  qty: number;
+  right?: boolean;
+  disabled?: boolean;
+  onOne: () => void;
+  onAll: () => void;
+}) {
+  const isBulk = item.tray_item_type === "C";
+  return (
+    <div className={`grid items-center gap-2 rounded-2xl border px-3 py-2 ${right ? "border-orange-200 bg-orange-50/40" : "border-stone-200 bg-stone-50/50"} grid-cols-[78px_44px_minmax(0,1fr)]`}>
+      <div className={`flex ${right ? "justify-start" : "justify-end"} gap-2`}>
+        {right ? (
+          <>
+            <button type="button" disabled={disabled} onClick={onAll} className="flex h-8 min-w-[38px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-xs font-semibold text-emerald-700 disabled:opacity-50">
+              <ChevronsUp className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline">&lt;&lt;</span>
+            </button>
+            <button type="button" disabled={disabled} onClick={onOne} className="h-8 w-8 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 disabled:opacity-50">
+              <ArrowUp className="mx-auto h-4 w-4 sm:hidden" />
+              <ArrowLeft className="mx-auto hidden h-4 w-4 sm:block" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" disabled={disabled} onClick={onOne} className="h-8 w-8 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 disabled:opacity-50">
+              <ArrowDown className="mx-auto h-4 w-4 sm:hidden" />
+              <ArrowRight className="mx-auto hidden h-4 w-4 sm:block" />
+            </button>
+            <button type="button" disabled={disabled} onClick={onAll} className="flex h-8 min-w-[38px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-xs font-semibold text-emerald-700 disabled:opacity-50">
+              <ChevronsDown className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline">&gt;&gt;</span>
+            </button>
+          </>
+        )}
+      </div>
+      <span className="text-center text-sm font-semibold text-slate-900">{isBulk ? "AG" : qty}</span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium leading-snug text-slate-900 break-words">{item.description_snapshot}</div>
+      </div>
+    </div>
+  );
 }
 
 export default function CancelOrderDialog({
@@ -67,336 +108,300 @@ export default function CancelOrderDialog({
 }: CancelOrderDialogProps) {
   const [reason, setReason] = useState<CancellationReason | "">("");
   const [notes, setNotes] = useState("");
-  const [cancellationType, setCancellationType] = useState<"partial" | "total">(initialCancellationType);
-  const [items, setItems] = useState<SnapshotItem[]>([]);
-  const [cancelQtyByItem, setCancelQtyByItem] = useState<Record<string, number>>({});
+  const [snapshotItems, setSnapshotItems] = useState<SnapshotItem[]>([]);
+  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const initializedScopeKeyRef = useRef<string | null>(null);
   const { cancelOrderMutation } = useCancellation();
 
-  useEffect(() => {
-    if (!open) return;
-    setCancellationType(initialCancellationType);
-  }, [open, initialCancellationType]);
+  const visibleItemsSignature = useMemo(() => JSON.stringify(
+    (Array.isArray(visibleItems) ? visibleItems : [])
+      .map((item) => ({
+        id: item.id,
+        quantity: Number(item.quantity ?? 0),
+        description_snapshot: item.description_snapshot ?? "",
+        tray_item_type: item.tray_item_type ?? null,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  ), [visibleItems]);
+
+  const normalizedVisibleItems = useMemo(
+    () => (Array.isArray(visibleItems) ? visibleItems : []).map((item) => ({
+      id: item.id,
+      quantity: Number(item.quantity ?? 0),
+      description_snapshot: item.description_snapshot,
+      tray_item_type: item.tray_item_type ?? null,
+    })),
+    [visibleItemsSignature],
+  );
+
+  const initialQtySignature = useMemo(() => JSON.stringify(
+    Object.entries(initialCancelQtyByItem ?? {})
+      .map(([itemId, qty]) => [itemId, Math.max(0, Math.floor(Number(qty) || 0))] as const)
+      .sort(([leftId], [rightId]) => leftId.localeCompare(rightId)),
+  ), [initialCancelQtyByItem]);
+
+  const normalizedInitialQtyByItem = useMemo(
+    () => Object.fromEntries(
+      Object.entries(initialCancelQtyByItem ?? {}).map(([itemId, qty]) => [
+        itemId,
+        Math.max(0, Math.floor(Number(qty) || 0)),
+      ]),
+    ) as Record<string, number>,
+    [initialQtySignature],
+  );
+
+  const visibleItemMap = useMemo(
+    () => new Map(normalizedVisibleItems.map((item) => [item.id, item])),
+    [normalizedVisibleItems],
+  );
+
+  const items = useMemo(
+    () => snapshotItems
+      .filter((item) => visibleItemMap.size === 0 || visibleItemMap.has(item.order_item_id))
+      .map((item) => {
+        const visibleItem = visibleItemMap.get(item.order_item_id);
+        return {
+          ...item,
+          description_snapshot: visibleItem?.description_snapshot ?? item.description_snapshot,
+          tray_item_type: visibleItem?.tray_item_type ?? item.tray_item_type ?? null,
+          quantity_cancellable: visibleItem
+            ? Math.min(item.quantity_cancellable, Number(visibleItem.quantity ?? 0))
+            : item.quantity_cancellable,
+        };
+      })
+      .filter((item) => item.quantity_cancellable > 0),
+    [snapshotItems, visibleItemMap],
+  );
+
+  const scopeIncludesWholeOrder = useMemo(
+    () => visibleItemMap.size === 0 || snapshotItems.every((item) => visibleItemMap.has(item.order_item_id)),
+    [snapshotItems, visibleItemMap],
+  );
+
+  const initialSelectedQty = useMemo(() => {
+    const shouldSeedAll = initialCancellationType === "total" && scopeIncludesWholeOrder;
+    return Object.fromEntries(
+      items.map((item) => [
+        item.order_item_id,
+        shouldSeedAll
+          ? item.quantity_cancellable
+          : clampQty(Number(normalizedInitialQtyByItem[item.order_item_id] ?? 0), item.quantity_cancellable),
+      ]),
+    );
+  }, [items, normalizedInitialQtyByItem, initialCancellationType, scopeIncludesWholeOrder]);
+
+  const selectionScopeKey = useMemo(
+    () => `${orderId}|${visibleItemsSignature}|${initialQtySignature}|${initialCancellationType}|${scopeIncludesWholeOrder ? "full" : "scoped"}`,
+    [orderId, visibleItemsSignature, initialQtySignature, initialCancellationType, scopeIncludesWholeOrder],
+  );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedScopeKeyRef.current = null;
+      setSnapshotItems([]);
+      setSelectedQty({});
+      setLoadError(null);
+      setReason("");
+      setNotes("");
+      return;
+    }
+
+    let cancelled = false;
 
     const loadSnapshot = async () => {
       setLoadingSnapshot(true);
+      setLoadError(null);
       try {
-        const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", {
-          p_order_id: orderId,
-        });
-
+        const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", { p_order_id: orderId });
         if (error) throw error;
-
-        const visibleItemsById = new Map(
-          visibleItems.map((item) => [
-            item.id,
-            {
-              quantity: Number(item.quantity ?? 0),
-              description: item.description_snapshot,
-              tray_item_type: item.tray_item_type ?? null,
-            },
-          ]),
-        );
-
-        const snapshot = ((data ?? []) as any[])
-          .map((item) => ({
-            order_item_id: item.order_item_id,
-            description_snapshot: item.description_snapshot,
-            item_status: item.item_status ?? "SENT",
-            quantity_ordered: Number(item.quantity_ordered ?? 0),
-            quantity_paid: Number(item.quantity_paid ?? 0),
-            quantity_ready_available: Number(item.quantity_ready_available ?? 0),
-            quantity_dispatched_total: Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0),
-            quantity_dispatched_available: Math.max(
-              0,
-              Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0)
-                - Number(item.quantity_cancelled_dispatched ?? 0),
-            ),
-            quantity_cancelled_total: Number(item.quantity_cancelled_total ?? 0),
-            quantity_cancelled_dispatched: Number(item.quantity_cancelled_dispatched ?? 0),
-            quantity_pending_prepare: Number(item.quantity_pending_prepare ?? 0),
-            quantity_cancellable:
-              Number(item.quantity_pending_prepare ?? 0)
-              + Number(item.quantity_ready_available ?? 0)
-              + Math.max(
-                0,
-                Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0)
-                  - Number(item.quantity_cancelled_dispatched ?? 0),
-              ),
-            unit_price: Number(item.unit_price ?? 0),
-          }))
-          .filter((item) => visibleItemsById.size === 0 || visibleItemsById.has(item.order_item_id))
+        const snapshotRows = Array.isArray(data) ? data : [];
+        const nextItems = (snapshotRows as any[])
           .map((item) => {
-            const visibleItem = visibleItemsById.get(item.order_item_id);
-            if (!visibleItem) return item;
-
+            const qtyCancellable =
+              Number(item.quantity_pending_prepare ?? 0) +
+              Number(item.quantity_ready_available ?? 0) +
+              Math.max(0, Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0) - Number(item.quantity_cancelled_dispatched ?? 0));
             return {
-              ...item,
-              description_snapshot: visibleItem.description || item.description_snapshot,
-              tray_item_type: visibleItem.tray_item_type ?? null,
-              quantity_cancellable: Math.max(0, Math.min(item.quantity_cancellable, visibleItem.quantity)),
-            };
+              order_item_id: item.order_item_id,
+              description_snapshot: item.description_snapshot,
+              tray_item_type: null,
+              item_status: item.item_status ?? "SENT",
+              quantity_paid: Number(item.quantity_paid ?? 0),
+              quantity_ready_available: Number(item.quantity_ready_available ?? 0),
+              quantity_dispatched_available: Math.max(0, Number(item.quantity_dispatched_total ?? item.quantity_dispatched ?? 0) - Number(item.quantity_cancelled_dispatched ?? 0)),
+              quantity_cancelled_total: Number(item.quantity_cancelled_total ?? 0),
+              quantity_pending_prepare: Number(item.quantity_pending_prepare ?? 0),
+              quantity_cancellable: qtyCancellable,
+              unit_price: Number(item.unit_price ?? 0),
+            } as SnapshotItem;
           })
           .filter((item) => item.quantity_cancellable > 0);
 
-        setItems(snapshot);
-
-        const initialQty: Record<string, number> = {};
-        for (const item of snapshot) {
-          const requestedQty = Math.max(
-            0,
-            Math.min(item.quantity_cancellable, Math.floor(initialCancelQtyByItem[item.order_item_id] ?? 0)),
-          );
-          initialQty[item.order_item_id] =
-            cancellationType === "total"
-              ? item.quantity_cancellable
-              : requestedQty;
-        }
-        setCancelQtyByItem(initialQty);
+        if (cancelled) return;
+        setSnapshotItems(nextItems);
+      } catch (error: any) {
+        if (cancelled) return;
+        console.error("Error cargando snapshot para anulacion:", error);
+        setSnapshotItems([]);
+        setSelectedQty({});
+        setLoadError(error?.message || "No se pudo cargar la informacion anulable de esta orden.");
       } finally {
-        setLoadingSnapshot(false);
+        if (!cancelled) {
+          setLoadingSnapshot(false);
+        }
       }
     };
 
     loadSnapshot();
-  }, [open, orderId, cancellationType, visibleItems, initialCancelQtyByItem]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, orderId]);
 
-  const selectedItems = useMemo(
-    () =>
-      items
-        .map((item) => {
-          const selectedCancelQty = Math.max(
-            0,
-            Math.min(item.quantity_cancellable, Math.floor(cancelQtyByItem[item.order_item_id] ?? 0)),
-          );
-          const quantityCancelledPending = Math.min(selectedCancelQty, item.quantity_pending_prepare);
-          const remainingAfterPending = Math.max(0, selectedCancelQty - quantityCancelledPending);
-          const quantityCancelledReady = Math.min(remainingAfterPending, item.quantity_ready_available);
-          const quantityCancelledDispatched = Math.max(0, remainingAfterPending - quantityCancelledReady);
+  useEffect(() => {
+    if (!open || loadingSnapshot) return;
+    if (initializedScopeKeyRef.current === selectionScopeKey) return;
+    setSelectedQty(initialSelectedQty);
+    initializedScopeKeyRef.current = selectionScopeKey;
+  }, [open, loadingSnapshot, selectionScopeKey, initialSelectedQty]);
 
-          return {
-            ...item,
-            selected_cancel_qty: selectedCancelQty,
-            quantity_cancelled_pending: quantityCancelledPending,
-            quantity_cancelled_ready: quantityCancelledReady,
-            quantity_cancelled_dispatched: quantityCancelledDispatched,
-          };
-        })
-        .filter((item) => item.selected_cancel_qty > 0),
-    [items, cancelQtyByItem],
-  );
+  const selectedItems = useMemo(() => items.map((item) => {
+    const qty = clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable);
+    const cancelledPending = Math.min(qty, item.quantity_pending_prepare);
+    const remAfterPending = Math.max(0, qty - cancelledPending);
+    const cancelledReady = Math.min(remAfterPending, item.quantity_ready_available);
+    return {
+      ...item,
+      selected_cancel_qty: qty,
+      quantity_cancelled_pending: cancelledPending,
+      quantity_cancelled_ready: cancelledReady,
+      quantity_cancelled_dispatched: Math.max(0, remAfterPending - cancelledReady),
+    };
+  }).filter((item) => item.selected_cancel_qty > 0), [items, selectedQty]);
 
-  const totalToCancel = useMemo(
-    () => selectedItems.reduce((sum, item) => sum + item.selected_cancel_qty * item.unit_price, 0),
-    [selectedItems],
-  );
-
+  const availableRows = useMemo(() => items.map((item) => ({ ...item, qty: Math.max(0, item.quantity_cancellable - clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable)) })).filter((item) => item.qty > 0), [items, selectedQty]);
+  const selectedRows = useMemo(() => items.map((item) => ({ ...item, qty: clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable) })).filter((item) => item.qty > 0), [items, selectedQty]);
   const requiresAuthorization = requiresAuthorizationOverride ?? (!canAuthorizeCancel && !isCancelRequested);
-
+  const cancellationType = useMemo<"partial" | "total">(
+    () =>
+      snapshotItems.length > 0 &&
+      snapshotItems.every((item) => clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable) === item.quantity_cancellable)
+        ? "total"
+        : "partial",
+    [snapshotItems, selectedQty],
+  );
   const canSubmit = !!reason && !loadingSnapshot && !cancelOrderMutation.isPending && selectedItems.length > 0;
 
-  const handleChangeQty = (orderItemId: string, rawValue: string, maxQty: number) => {
-    const parsed = Number(rawValue);
-    const normalized = Number.isFinite(parsed) ? Math.floor(parsed) : 0;
-    const clamped = Math.max(0, Math.min(maxQty, normalized));
-    setCancelQtyByItem((prev) => ({ ...prev, [orderItemId]: clamped }));
+  const setQty = (id: string, nextQty: number, maxQty: number) => {
+    const clamped = clampQty(nextQty, maxQty);
+    setSelectedQty((prev) => ({ ...prev, [id]: clamped }));
   };
 
-  const handleConfirm = async () => {
-    if (!canSubmit) return;
+  const fillAll = () => {
+    const next = Object.fromEntries(items.map((item) => [item.order_item_id, item.quantity_cancellable]));
+    setSelectedQty(next);
+  };
 
-    cancelOrderMutation.mutate(
-      {
-        orderId,
-        userId,
-        cancellationType,
-        items: selectedItems.map((item) => ({
-          order_item_id: item.order_item_id,
-          quantity_cancelled: item.selected_cancel_qty,
-          status: item.item_status,
-          description_snapshot: item.description_snapshot,
-          unit_price: item.unit_price,
-          quantity_cancelled_pending: item.quantity_cancelled_pending,
-          quantity_cancelled_ready: item.quantity_cancelled_ready,
-          quantity_cancelled_dispatched: item.quantity_cancelled_dispatched,
-        })),
-        cancellationData: {
-          reason,
-          notes,
-          cancelledBy: userId,
-        },
-        requiresAuthorization,
+  const clearAll = () => {
+    const next = Object.fromEntries(items.map((item) => [item.order_item_id, 0]));
+    setSelectedQty(next);
+  };
+
+  const handleConfirm = () => {
+    if (!canSubmit) return;
+    cancelOrderMutation.mutate({
+      orderId,
+      userId,
+      cancellationType,
+      items: selectedItems.map((item) => ({
+        order_item_id: item.order_item_id,
+        quantity_cancelled: item.selected_cancel_qty,
+        status: item.item_status,
+        description_snapshot: item.description_snapshot,
+        unit_price: item.unit_price,
+        quantity_cancelled_pending: item.quantity_cancelled_pending,
+        quantity_cancelled_ready: item.quantity_cancelled_ready,
+        quantity_cancelled_dispatched: item.quantity_cancelled_dispatched,
+      })),
+      cancellationData: { reason, notes, cancelledBy: userId },
+      requiresAuthorization,
+    }, {
+      onSuccess: () => {
+        onOpenChange(false);
       },
-      {
-        onSuccess: () => {
-          onOpenChange(false);
-          setReason("");
-          setNotes("");
-          setCancellationType(initialCancellationType);
-          setCancelQtyByItem({});
-        },
-      },
-    );
+    });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[92vw] md:max-w-2xl lg:max-w-4xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[92vw] lg:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>Cancelar orden</DialogTitle>
-          <DialogDescription>Orden #{orderNumber}</DialogDescription>
+          <DialogTitle>Anular orden</DialogTitle>
+          <DialogDescription>{String(orderNumber)}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {!compactPresetMode && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border p-2 sm:flex-row sm:items-center">
-              <Button
-                type="button"
-                variant={cancellationType === "partial" ? "default" : "outline"}
-                onClick={() => setCancellationType("partial")}
-                className="h-9 w-full sm:h-8 sm:w-auto"
-              >
-                Cancelacion parcial
-              </Button>
-              <Button
-                type="button"
-                variant={cancellationType === "total" ? "default" : "outline"}
-                onClick={() => setCancellationType("total")}
-                className="h-9 w-full sm:h-8 sm:w-auto"
-              >
-                Cancelacion total
-              </Button>
-            </div>
-          )}
-
-          {!compactPresetMode && (
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                Aqui aparecen las cantidades que todavia se pueden anular. Si una linea ya fue despachada pero aun no esta pagada, tambien se mostrara como anulable.
-              </AlertDescription>
-            </Alert>
-          )}
-
           {loadingSnapshot ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Cargando cantidades operativas de la orden...
-            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Cargando cantidades operativas...</div>
+          ) : loadError ? (
+            <Alert variant="destructive"><AlertDescription>{loadError}</AlertDescription></Alert>
           ) : items.length === 0 ? (
-            <Alert>
-              <AlertDescription>
-                Esta orden ya no tiene cantidades anulables. Si todo ya fue pagado o ya no queda cantidad disponible, no puede anularse desde aqui.
-              </AlertDescription>
-            </Alert>
+            <Alert><AlertDescription>Esta orden ya no tiene cantidades anulables.</AlertDescription></Alert>
           ) : (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {compactPresetMode ? "Detalle de anulacion" : "Seleccion de cantidades a cancelar"}
-              </Label>
-              <div className="max-h-[46dvh] space-y-2 overflow-y-auto rounded-lg border border-border p-2 sm:max-h-72 md:max-h-[52dvh]">
-                {items.map((item) => (
-                  <div key={item.order_item_id} className="rounded-md border border-border p-2">
-                    <div className={`flex flex-col gap-2.5 ${compactPresetMode ? "md:grid md:grid-cols-[minmax(0,1fr)_220px] md:items-center" : "md:grid md:grid-cols-[minmax(0,1fr)_96px] md:items-start"}`}>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{item.description_snapshot}</p>
-                        <p className="text-xs leading-5 text-muted-foreground">
-                          {item.tray_item_type !== "C" ? `Ord: ${item.quantity_ordered} | ` : ""}
-                          Pend: {item.quantity_pending_prepare} | Listo: {item.quantity_ready_available} | Desp: {item.quantity_dispatched_available} | Canc: {item.quantity_cancelled_total} | Pag: {item.quantity_paid}
-                        </p>
-                      </div>
-                      {compactPresetMode ? (
-                        <div className="rounded-md bg-muted px-3 py-2 text-sm md:text-right">
-                          Cantidad a anular: <span className="font-semibold">{cancelQtyByItem[item.order_item_id] ?? 0}</span>
-                        </div>
-                      ) : (
-                        <div className="w-full md:w-24">
-                          <Label htmlFor={`qty-${item.order_item_id}`} className="text-[11px] text-muted-foreground">
-                            Cant. cancelar
-                          </Label>
-                          <Input
-                            id={`qty-${item.order_item_id}`}
-                            type="number"
-                            min={0}
-                            max={item.quantity_cancellable}
-                            step={1}
-                            disabled={cancellationType === "total" || item.quantity_cancellable <= 0}
-                            value={cancelQtyByItem[item.order_item_id] ?? 0}
-                            onChange={(e) => handleChangeQty(item.order_item_id, e.target.value, item.quantity_cancellable)}
-                            className="h-9"
-                          />
-                        </div>
-                      )}
-                    </div>
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">{compactPresetMode ? "Detalle de anulacion" : "Seleccion de cantidades a anular"}</Label>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <section className="space-y-2 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.18)]">
+                  <div className="flex flex-wrap items-start justify-between gap-2.5">
+                    <div><h3 className="text-base font-semibold text-slate-950">Items anulables</h3><p className="text-xs text-slate-500">Mueve desde aqui lo que vas a anular ahora.</p></div>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto" onClick={fillAll}>
+                      <ArrowDown className="h-4 w-4 sm:hidden" />
+                      <ArrowRight className="hidden h-4 w-4 sm:block" />
+                      Todo
+                    </Button>
                   </div>
-                ))}
+                  {availableRows.length === 0 ? <div className="flex h-[220px] items-center justify-center rounded-2xl border border-dashed border-stone-200 bg-stone-50/70 px-6 text-center text-sm text-slate-500">No quedan items anulables para mover en esta operacion.</div> : <div className="max-h-[320px] space-y-1.5 overflow-y-auto pr-1">{availableRows.map((item) => <TransferRow key={item.order_item_id} item={item} qty={item.qty} onOne={() => setQty(item.order_item_id, Number(selectedQty[item.order_item_id] ?? 0) + 1, item.quantity_cancellable)} onAll={() => setQty(item.order_item_id, item.quantity_cancellable, item.quantity_cancellable)} />)}</div>}
+                </section>
+                <section className="space-y-2 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.18)]">
+                  <div className="flex flex-wrap items-start justify-between gap-2.5">
+                    <div><h3 className="text-base font-semibold text-slate-950">Items a anular ahora</h3><p className="text-xs text-slate-500">Esto es lo que se registra en esta operacion.</p></div>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto" onClick={clearAll}><RotateCcw className="h-4 w-4" />Vaciar</Button>
+                  </div>
+                  {selectedRows.length === 0 ? <div className="flex h-[220px] items-center justify-center rounded-2xl border border-dashed border-stone-200 bg-stone-50/70 px-6 text-center text-sm text-slate-500">Mueve items desde la izquierda para incluirlos en esta anulacion.</div> : <div className="max-h-[320px] space-y-1.5 overflow-y-auto pr-1">{selectedRows.map((item) => <TransferRow key={item.order_item_id} item={item} qty={item.qty} right onOne={() => setQty(item.order_item_id, Number(selectedQty[item.order_item_id] ?? 0) - 1, item.quantity_cancellable)} onAll={() => setQty(item.order_item_id, 0, item.quantity_cancellable)} />)}</div>}
+                </section>
               </div>
             </div>
           )}
-
           <div className="space-y-3">
-            <Label className="text-sm font-medium">Motivo de cancelacion *</Label>
-            <RadioGroup value={reason} onValueChange={(value) => setReason(value as CancellationReason)}>
+            <Label htmlFor="order-cancel-reason" className="text-sm font-medium">Motivo de anulacion *</Label>
+            <Select value={reason} onValueChange={(value) => setReason(value as CancellationReason)}>
+              <SelectTrigger id="order-cancel-reason">
+                <SelectValue placeholder="Selecciona un motivo" />
+              </SelectTrigger>
+              <SelectContent>
               {Object.entries(CANCELLATION_REASONS).map(([key, label]) => (
-                <div key={key} className="flex items-center space-x-2">
-                  <RadioGroupItem value={key} id={`order-${key}`} />
-                  <Label htmlFor={`order-${key}`} className="cursor-pointer font-normal">
-                    {label}
-                  </Label>
-                </div>
+                <SelectItem key={key} value={key}>{label}</SelectItem>
               ))}
-            </RadioGroup>
+              </SelectContent>
+            </Select>
           </div>
-
           {!compactPresetMode && (
             <div className="space-y-2">
-              <Label htmlFor="order-notes" className="text-sm font-medium">
-                Notas adicionales (opcional)
-              </Label>
-              <Textarea
-                id="order-notes"
-                placeholder="Detalle adicional de la cancelacion..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="h-20"
-              />
+              <Label htmlFor="order-notes" className="text-sm font-medium">Notas adicionales (opcional)</Label>
+              <Textarea id="order-notes" placeholder="Detalle adicional de la anulacion..." value={notes} onChange={(e) => setNotes(e.target.value)} className="h-20" />
             </div>
           )}
-
           {!compactPresetMode && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                Se cancela primero la cantidad pendiente, luego la cantidad lista y, si todavia hace falta, la cantidad ya despachada que siga sin pagarse. Las cantidades pagadas nunca se cancelan.
-              </AlertDescription>
-            </Alert>
+            <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertDescription>Se anula primero la cantidad pendiente, luego la lista y finalmente la despachada no pagada.</AlertDescription></Alert>
           )}
-
-          <div className="rounded-lg bg-muted p-3 text-sm">
-            <p className="text-muted-foreground">Items seleccionados: {selectedItems.length}</p>
-            <p className="font-semibold">Total a cancelar: ${totalToCancel.toFixed(2)}</p>
-          </div>
         </div>
 
         <DialogFooter className="flex-col gap-2 sm:flex-row">
-          <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
-            Cerrar
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">Cerrar</Button>
           <Button variant="destructive" onClick={handleConfirm} disabled={!canSubmit} className="w-full sm:w-auto">
-            {cancelOrderMutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...
-              </>
-            ) : isCancelRequested && canAuthorizeCancel ? (
-              "Autorizar anulación"
-            ) : !canAuthorizeCancel ? (
-              "Solicitar anulación"
-            ) : (
-              "Confirmar cancelacion"
-            )}
+            {cancelOrderMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : isCancelRequested && canAuthorizeCancel ? "Autorizar anulacion" : !canAuthorizeCancel ? "Solicitar anulacion" : "Confirmar anulacion"}
           </Button>
         </DialogFooter>
       </DialogContent>

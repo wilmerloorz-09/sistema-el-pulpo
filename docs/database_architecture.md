@@ -152,7 +152,11 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `table_splits.split_code` puede seguir guardado con formato historico, pero la capa visual debe normalizarlo a `2A`, `2B`, etc.
 
 ## Denominaciones
-- `denominations` ahora soporta `image_url` para representar visualmente monedas y billetes.
+- `denominations` es ahora un catalogo global.
+- Se elimino la columna `branch_id` para permitir que el mismo set de efectivo sea compartido por todas las sucursales.
+- Solo los administradores globales (`is_global_admin`) tienen permisos de escritura sobre esta tabla.
+- Soporta `image_url` para representar visualmente monedas y billetes.
+
 - `denominations.denomination_type` define explicitamente si una denominacion es `coin` o `bill`.
 - La imagen se carga a Storage en el bucket publico `denomination-images` y se reutiliza en Admin/Caja.
 - El flujo de Caja debe leer `image_url` junto con `label`, `denomination_type`, `value` y `display_order`.
@@ -176,7 +180,8 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `motivo_anulacion`
 - `cash_shifts.caja_status` queda como estado agregado de la caja actual del turno (`UNOPENED` | `OPEN` | `CLOSED`), no como historial completo.
 - La apertura de turno tambien fija `active_tables_count` como frontera operativa de mesas para ese turno.
-- La habilitacion de usuarios por turno ya no es implícita: vive en `cash_shift_users`.
+- La habilitacion de usuarios por turno vive en `cash_shift_users`.
+- Los administradores globales tienen permisos explicitos para gestionar avatares de cualquier usuario en el bucket `avatars` y actualizar `profiles.avatar_url`.
 - `cash_shift_users` ya no es solo un flag binario:
   - `is_enabled`
   - `can_serve_tables`
@@ -185,6 +190,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `can_authorize_order_cancel`
   - `is_supervisor`
 - Aun con ese modelo, administrador general y supervisor de sucursal deben poder abrir/cerrar caja por override administrativo usando `can_manage_branch_admin(...)`.
+
 - `close_cash_register(shift_id, cashier_id, branch_id, notes)` debe bloquearse si en la sucursal aun existen ordenes con estado distinto de `PAID` o `CANCELLED`.
 - `payment_entries` / tablas equivalentes de cobro son la fuente de `Recaudado` por metodo.
 - Regla funcional importante:
@@ -288,6 +294,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - clasificar `Enviadas`, `Listas`, `Despachadas`
   - determinar que entra a `Por cobrar`
   - mantener consistencia entre `Ordenes`, `Despacho`, `Cocina` y `Caja`
+- La vista de listado de `Ordenes` puede cambiar de tarjetas a lista expandible sin requerir cambios de esquema, siempre que siga consumiendo el mismo dataset filtrado por etapa y las mismas cantidades derivadas del snapshot.
 - Mientras existan bases remotas con despliegue parcial, el consumidor frontend debe tolerar dos variantes del RPC:
   - nueva: `quantity_dispatched_total`, `quantity_dispatched_available`, `quantity_cancelled_dispatched`
   - legacy: `quantity_dispatched`
@@ -302,6 +309,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `DISPATCHED`
 - `cancel_order_quantities(...)` ya no debe limitarse a `Pendiente + Listo`; debe poder cancelar tambien `Despachado` mientras no exista pago sobre esa cantidad.
 - Si el dialogo de anulacion se abre desde una tarjeta filtrada, el frontend debe enviar solo el subconjunto visible/anulable de esa tarjeta; no debe intentar cancelar items que no forman parte de la vista desde donde se disparo la accion.
+- El hecho de que `CancelOrderDialog` ahora seleccione cantidades con un modelo dual (`anulable` -> `a anular ahora`) no cambia el esquema ni las RPCs; solo reordena en frontend como se construye la misma lista final de `p_items`.
+- Si el frontend deriva `p_cancellation_type = total`, esa derivacion debe salir de haber seleccionado toda la orden operativamente anulable; no de un toggle visual desacoplado del subconjunto enviado.
+- Ocultar precios o totales en `CancelOrderDialog` no cambia nada en persistencia: `unit_price` sigue viajando en memoria solo para las reglas actuales del backend, no como dato visible obligatorio en UI.
+- Cambiar el motivo de anulacion de radios a combo/select tampoco altera contrato de datos: el frontend sigue enviando el mismo `reason` textual/enumerado al backend.
 
 ## Notificacion de orden lista
 - La tabla/evento `order_ready_notifications` sigue siendo el disparador realtime cuando una orden entra a estado `READY`.

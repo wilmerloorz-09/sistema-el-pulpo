@@ -61,6 +61,19 @@
   - categorias/subniveles: cards
   - productos: filas de lista a ancho completo
 - Esa lista de productos se comparte entre `Mesa`, `Para llevar` y `Orden especial`, por lo que cualquier cambio visual en el render de producto debe validarse en los tres flujos.
+- La vista de `OrdersList` ya no usa un grid de tarjetas independientes:
+  - ahora usa una lista expandible con una fila resumen por orden
+  - el detalle de items se abre inline dentro de la misma lista
+  - los botones de anular / solicitar / autorizar / negar deben mantenerse dentro de ese flujo sin depender de una card separada
+  - en telefono, la fila resumen debe resolverse en dos lineas compactas y no en un stack vertical de bloques
+  - en telefono, el cambio de pestana/estado debe hacerse con un `Select` compacto; la grilla de tabs queda para escritorio
+- `CancelOrderDialog` usa ahora un selector dual alineado con `PaymentDialog`:
+  - izquierda: cantidades aun anulables
+  - derecha: cantidades que se aplicaran en la anulacion actual
+  - la logica de seleccion sigue produciendo el mismo payload de backend; cambia la superficie de seleccion, no el contrato operativo
+  - no debe convivir con toggles visuales del esquema anterior (`parcial/total`); ese estado se deriva desde la seleccion efectiva
+  - en UI de anulacion no se muestran precios ni totales monetarios; solo cantidades y contexto operativo por linea
+  - el motivo de anulacion debe ir en un `Select` compacto para no consumir altura con una lista de opciones expandida
 - La visibilidad de estados operativos entre usuarios depende de dos capas:
   - RLS correcto sobre tablas de eventos operativos
   - suscripciones en vivo en frontend para invalidar listas cuando cambia `orders`, `order_items` y eventos asociados
@@ -106,6 +119,9 @@
 
 ### Usuarios y alta administrativa
 - `UsersCrud` sigue siendo la superficie de administracion de usuarios.
+
+### Usuarios y alta administrativa
+- `UsersCrud` sigue siendo la superficie de administracion de usuarios.
 - La Edge Function `create-user` debe:
   - validar duplicados de `email` y `username`
   - crear el usuario en Auth
@@ -114,7 +130,11 @@
   - hacer rollback del usuario de Auth si la asignacion posterior falla
 - La UI de `Usuarios` debe distinguir:
   - rol en sucursal activa
-  - rol global, solo si existe
+  - rol global, el cual sirve de base para la herencia de permisos
+- El modulo de `Usuarios` fue modernizado para permitir una gestion mas fluida:
+  - `EditUserDialog` con _sticky footer_ para acciones permanentes
+  - Asignacion automatica de roles de sucursal basados en el tipo de usuario global
+  - Permiso para administradores globales de gestionar avatares de cualquier perfil
 
 ## Cambios Arquitectonicos de Esta Jornada
 
@@ -166,6 +186,11 @@
 - Las asignaciones de modificadores tambien viven en `Arbol Menu`; la pestana `Modificadores` queda solo para el catalogo base.
 - Cuando el nodo es `category`, el editor tambien expone `Precios manuales`; esa decision se guarda en el propio nodo y la carga operativa del catalogo puede heredarla hacia productos descendientes.
 
+### D.0) Denominaciones Globales
+- El catalogo de `denominations` ya no es por sucursal.
+- La arquitectura permite que los administradores globales mantengan un solo pool de denominaciones e imagenes para toda la red.
+- El RLS ahora valida `is_global_admin` para cualquier operacion de escritura en denominaciones.
+
 ### D) Capa de compatibilidad legacy
 - Al guardar nodos del arbol, se replica la estructura minima necesaria en tablas legacy.
 - Los nodos `product` se sincronizan hacia `products` para que puedan entrar a `order_items`.
@@ -213,9 +238,13 @@
   - en movil se mantiene como conmutador compacto dentro de `Caja`
   - la seleccion actual se persiste en la URL (`?tab=completed`) para que el shell pueda controlarla
 - `PaymentDialog` contiene:
-  - seleccion de cantidades a cobrar con dos columnas (`Items pendientes` y `Items a cobrar ahora`) para ordenes normales
+  - seleccion de cantidades a cobrar con dos columnas (`Items pendientes` y `Items a cobrar ahora`) desde tablet
   - metodos de pago compactos en una franja inferior
   - modal dedicado para `Monedas y billetes`
+- La arquitectura del flujo de cobro incorpora ahora:
+  - Persistencia del modal tras el pago exitoso para permitir la impresion del ticket de venta
+  - Soporte nativo para tickets de 80mm optimizados para impresoras termicas
+  - Navegacion automatica al ticket si el efectivo cubre la totalidad de la orden
 - La lista visible de metodos debe deduplicar nombres equivalentes (`Efectivo`, etc.) para no repetir opciones en pantalla.
 - Para ordenes normales:
   - la seleccion inicia en cero
@@ -296,6 +325,7 @@
   - modo `SPLIT`: cada usuario ve solo el tipo asignado
   - si un usuario queda con ambos tipos, tambien puede ver `Todos`
 - El card operativo de `Despacho` ya no usa un solo boton global por orden:
+  - se refactorizo a una vista de lista tipo acordeon para manejar alto volumen sin saturar la pantalla
   - cada item expone su stepper de cantidad
   - `Listo` es solo una senal para el mesero
   - `Despachar` consume desde `PENDING` y/o `READY` sin requerir `READY` previo

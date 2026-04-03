@@ -7,8 +7,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useCancellation } from "@/hooks/useCancellation";
 import { canManage } from "@/lib/permissions";
-import OrderCard from "./OrderCard";
+import OrderListRow from "./OrderListRow";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,7 @@ interface OrdersListProps {
 export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersListProps) {
   const [activeTab, setActiveTab] = useState<TabType>("sent");
   const [approvalTarget, setApprovalTarget] = useState<OrderSummary | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const { user } = useAuth();
   const { activeBranchId, isGlobalAdmin, permissions } = useBranch();
   const qc = useQueryClient();
@@ -231,34 +233,70 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
             )}
           </div>
 
-          <div className="grid flex-1 grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid-cols-5">
-        {tabs.map((tab) => {
-          const count = getTabCount(tab.key);
-          const isActive = activeTab === tab.key;
+          <div className="flex-1">
+            <div className="md:hidden">
+              <Select value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
+                <SelectTrigger className="h-12 rounded-[22px] border-orange-200 bg-white/92 px-4 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 pr-2">
+                    <span className="shrink-0 text-primary">{currentTab.icon}</span>
+                    <span className="truncate text-sm font-semibold text-foreground">{currentTab.label}</span>
+                    {getTabCount(currentTab.key) > 0 && (
+                      <span className="shrink-0 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        {getTabCount(currentTab.key)}
+                      </span>
+                    )}
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  {tabs.map((tab) => {
+                    const count = getTabCount(tab.key);
 
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "flex min-h-[52px] items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
-                isActive
-                  ? "bg-gradient-to-r from-orange-500 to-orange-400 text-white shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
-                  : "border border-transparent bg-white/70 text-muted-foreground hover:border-orange-200 hover:bg-orange-50 hover:text-foreground",
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                {tab.icon}
-                <span>{tab.label}</span>
-              </div>
-              {count > 0 && (
-                <Badge variant={isActive ? "secondary" : "outline"} className={cn("h-6 px-2 text-xs", isActive ? "border-white/30 bg-white/20 text-white" : "border-orange-200 bg-white text-primary")}>
-                  {count}
-                </Badge>
-              )}
-            </button>
-          );
-        })}
+                    return (
+                      <SelectItem key={tab.key} value={tab.key}>
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span className="truncate">{tab.label}</span>
+                          {count > 0 && (
+                            <span className="shrink-0 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                              {count}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="hidden grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid md:grid-cols-5">
+              {tabs.map((tab) => {
+                const count = getTabCount(tab.key);
+                const isActive = activeTab === tab.key;
+
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={cn(
+                      "flex min-h-[52px] items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
+                      isActive
+                        ? "bg-gradient-to-r from-orange-500 to-orange-400 text-white shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
+                        : "border border-transparent bg-white/70 text-muted-foreground hover:border-orange-200 hover:bg-orange-50 hover:text-foreground",
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                    </div>
+                    {count > 0 && (
+                      <Badge variant={isActive ? "secondary" : "outline"} className={cn("h-6 px-2 text-xs", isActive ? "border-white/30 bg-white/20 text-white" : "border-orange-200 bg-white text-primary")}>
+                        {count}
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -275,19 +313,26 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
             <p className="mt-1 text-sm text-muted-foreground">Cuando existan movimientos en esta etapa, apareceran aqui.</p>
           </div>
         ) : (
-          currentOrders.data.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
-              onApproveCancellation={activeTab === "pendingCancellation" ? (order) => setApprovalTarget(order) : undefined}
-              onRejectCancel={activeTab === "pendingCancellation" ? (order) => rejectCancellationRequestMutation.mutate({ orderId: order.id }) : undefined}
-              showCancelButton={currentTab.showCancel && !readOnly}
-              showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
-              readOnly={readOnly}
-              canAuthorizeCancel={canAuthorizeCancel}
-            />
-          ))
+          <div className="col-span-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
+            <div className="divide-y divide-slate-200">
+              {currentOrders.data.map((order, index) => (
+                <OrderListRow
+                  key={order.id}
+                  order={order}
+                  index={index}
+                  isExpanded={expandedOrderId === order.id}
+                  onToggleExpand={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                  onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
+                  onApproveCancellation={activeTab === "pendingCancellation" ? (selectedOrder) => setApprovalTarget(selectedOrder) : undefined}
+                  onRejectCancel={activeTab === "pendingCancellation" ? (selectedOrder) => rejectCancellationRequestMutation.mutate({ orderId: selectedOrder.id }) : undefined}
+                  showCancelButton={currentTab.showCancel && !readOnly}
+                  showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
+                  readOnly={readOnly}
+                  canAuthorizeCancel={canAuthorizeCancel}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

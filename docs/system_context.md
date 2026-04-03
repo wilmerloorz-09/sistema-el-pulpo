@@ -7,7 +7,75 @@
 - El catalogo visible en Ordenes ya navega con arbol recursivo `menu_nodes`, pero la persistencia operativa de items sigue dependiendo de `products`.
 - El sistema ya contempla tambien el alcance `BULK` (`A granel`) como tercer arbol operativo del catalogo.
 
-## Cambios Aplicados en Esta Jornada (2026-03-29)
+## Cambios Aplicados en Esta Jornada (2026-04-03)
+
+### 0.0.5) Caja: Ticket térmico profesional y persistencia de cobro
+- Se implementó un nuevo sistema de tickets de venta optimizado para impresoras térmicas de 80mm.
+- El ticket incluye: encabezado de sucursal, detalle de la orden, desglose de pagos por método y cambio entregado.
+- En `Caja > PaymentDialog`, el modal ya no se cierra automáticamente tras un cobro exitoso.
+- Esto permite la impresión manual del ticket tantas veces como sea necesario desde la pantalla de confirmación.
+- Se corrigieron problemas de renderizado en el diálogo de impresión para asegurar un ancho de 80mm real.
+
+### 0.0.6) Usuarios: Modernización de perfiles y roles desglosados
+- Se rediseñó por completo el `EditUserDialog` para ofrecer una experiencia administrativa más limpia y profesional.
+- La asignación de roles en sucursal ahora se deriva automáticamente del tipo de usuario global seleccionado.
+- Se implementó un _sticky footer_ en el formulario de edición para mantener las acciones de guardado siempre visibles.
+- Los administradores globales ahora tienen permisos para cargar o actualizar avatares (imágenes de perfil) de cualquier usuario del sistema.
+
+### 0.0.7) Rendimiento y UX: Optimizaciones en POS y Despacho
+- Se implementó carga paralela de datos clave y UI optimista para reducir la percepción de latencia en el POS.
+- El historial de "Pagos realizados" ahora es accesible incluso cuando la caja del turno se encuentra cerrada.
+- En el módulo de cobro, el sistema navega automáticamente a la pantalla de confirmación/ticket cuando el monto en efectivo ingresado cubre el 100% de la deuda.
+- El módulo de `Despacho` fue refactorizado: las tarjetas (`cards`) individuales fueron reemplazadas por una vista de lista tipo acordeón más eficiente para sucursales con alto volumen de órdenes.
+
+### 0.0.8) Denominaciones: Globalización del catálogo de efectivo
+- Las denominaciones de efectivo dejaron de ser por sucursal para pasar a ser un catálogo global del sistema.
+- Solo los administradores globales tienen permisos para gestionar (crear, editar, eliminar) denominaciones e imágenes asociadas.
+- Esto asegura consistencia en el flujo de caja en toda la red de sucursales.
+
+### 0.0.9) Ordenes: listado operativo en lugar de tarjetas
+- En el modulo `Ordenes`, la vista por estados ya no debe renderizarse como mosaico de tarjetas.
+- La presentacion vigente sigue ahora el mismo patron operativo de `Caja` y `Despacho`:
+  - fila resumen por orden
+  - expansion inline para ver detalle de items
+  - acciones operativas visibles sin perder informacion de estado, tiempos, total o anulacion
+- En movil, esa fila resumen de `Ordenes` no debe volver a convertirse en una card alta con bloques apilados:
+  - el resumen principal debe resolverse en dos lineas compactas por orden
+  - si hace falta mas ancho, condensar etiquetas y metadatos antes que crecer en altura como tarjeta
+- En movil, las opciones de estado de `Ordenes` (`Enviadas`, `Despachadas`, `Pendiente de anulacion`, `Canceladas`, `Pagadas`) deben mostrarse en un combo/select y no en una grilla de botones.
+- El detalle expandido debe seguir respetando la semantica por pestana:
+  - cantidades visibles segun la etapa operativa actual
+  - solicitud pendiente de anulacion cuando aplique
+  - tratamiento especial de items `A granel` sin reintroducir compra por unidades
+
+### 0.0.10) Anulacion de orden: selector dual como en cobro
+- `CancelOrderDialog` ya no debe trabajar con inputs sueltos por fila como flujo principal.
+- La UX vigente usa el mismo modelo de `Caja > PaymentDialog`:
+  - columna izquierda con items aun anulables
+  - columna derecha con items a anular ahora
+  - acciones `Todo`, `Vaciar`, mover uno y mover todo por linea
+- A diferencia de `PaymentDialog`, en anulacion no hace falta exponer precios, subtotales ni totales monetarios:
+  - la seleccion se guia por cantidades operativas
+  - los importes siguen existiendo solo para el payload y efectos de backend cuando aplique
+- Para ahorrar espacio vertical en el modal, el motivo de anulacion debe renderizarse como combo/select, no como lista expandida de radios.
+- Tampoco hace falta un `Alert` introductorio encima del selector dual; la ventana debe abrir directo al contenido operativo para no consumir altura util.
+- Tampoco hace falta una tarjeta/resumen final con contador de items seleccionados; ese dato no debe ocupar espacio separado en la ventana.
+- El encabezado de `CancelOrderDialog` debe mostrar la referencia completa de la orden:
+  - usar `order_code` cuando exista
+  - fallback a `#order_number` cuando no exista codigo enriquecido
+- En las filas del selector de anulacion:
+  - priorizar que el nombre del producto pueda verse completo, aunque ocupe mas de una linea
+  - no mostrar una segunda linea de datos operativos debajo del nombre
+- En movil, como el selector dual se apila en vertical:
+  - las acciones de mover deben usar flechas `abajo` para enviar a la lista inferior
+  - y flechas `arriba` para devolver a la lista superior
+  - en escritorio se mantiene la semantica lateral izquierda/derecha
+- No mezclar ese selector con el esquema anterior de `anulacion parcial / total` como toggle visual:
+  - la seleccion vive solo en el dual-list
+  - si toda la orden queda seleccionada, el frontend puede derivar `total` al confirmar sin reintroducir botones heredados
+- La distribucion visual debe seguir mostrando el detalle operativo de cada linea (`Pend`, `Listo`, `Desp`, `Canc`, `Pag`) para no perder contexto al seleccionar cantidades.
+
+## Cambios Aplicados en Jornadas Previas (2026-03-29)
 
 ### 0.0.4) Mesas/Ordenes: warm cache de primera apertura y resumen consolidado
 - La primera apertura de una mesa ya no debe depender de reconstruir el estado completo desde multiples queries cliente-servidor en el clic.

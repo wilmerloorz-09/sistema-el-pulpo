@@ -11,12 +11,16 @@
 --   - incluye imagenes/referencias visuales de productos en `menu_nodes.image_url`
 --   - incluye configuraciones de categoria como `manual_price_enabled`
 --   - incluye configuracion de productos incluidos para `A granel` y sus reglas de entrega por monto
--- - Elimina sucursales y configuraciones asociadas, incluida la referencia de mesas por sucursal
+-- - Elimina sucursales y configuraciones asociadas:
+--   - incluye referencia de mesas por sucursal
+--   - incluye catalogo de denominaciones globales
 -- - Elimina politicas/configuraciones por sucursal:
 --   - cancelacion/anulacion directa por categoria
 --   - configuracion de despacho por sucursal
 --   - asignaciones de despacho
--- - Elimina usuarios no protegidos
+-- - Elimina usuarios no protegidos y sus metadatos:
+--   - incluye roles desglosados y herencia de permisos
+--   - incluye avatares y configuraciones de perfil modernizadas
 -- - Conserva solo el superadmin principal protegido
 -- - Preserva estructura base del sistema: modulos, roles, permisos, funciones, migraciones
 --
@@ -29,8 +33,8 @@
 -- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
 -- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR / A GRANEL, TODOS QUEDAN VACIOS
 -- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (`emit_order_ready_alert`, `get_mesero_ready_alerts`, `order_has_dispatch_after`)
--- - TAMBIEN PERMANECEN INTACTAS LAS RPCS DE ORDEN ESPECIAL Y DEMAS FLUJOS OPERATIVOS; SOLO SE BORRAN LOS DATOS
--- - LOS AJUSTES RECIENTES DE NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
+-- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
+-- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
 
 BEGIN;
@@ -232,12 +236,3 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
 -- - modulos, roles y permisos base intactos
 -- ============================================================
-
-
-
-
-
-
-
-
-

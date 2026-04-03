@@ -495,7 +495,7 @@ const Ordenes = () => {
         {cancelOrder && user && canCancelOrders && (
         <CancelOrderDialog
           orderId={cancelOrder.id}
-          orderNumber={cancelOrder.order_number}
+          orderNumber={cancelOrder.order_code ?? `#${cancelOrder.order_number}`}
           userId={user.id}
           open={!!cancelOrder}
           onOpenChange={(open) => !open && setCancelOrder(null)}
@@ -1520,7 +1520,7 @@ const Ordenes = () => {
       {user && canCancelOrders && (
         <CancelOrderDialog
           orderId={order.id}
-          orderNumber={order.order_number}
+          orderNumber={order.order_code ?? `#${order.order_number}`}
           userId={user.id}
           open={inlineCancelOpen}
           onOpenChange={(open) => {

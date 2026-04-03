@@ -36,6 +36,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si un nodo o producto se desactiva desde `Productos`, `Ordenes` debe reflejarlo como agotado.
 - No basta con cambiar color o etiqueta; debe bloquearse su seleccion operativa.
 
+### 4.2) Rendimiento y UX en el POS
+- Priorizar la carga paralela de datos fundamentales para minimizar la espera del usuario.
+- Implementar UI optimista siempre que sea posible para acciones frecuentes (agregar items, enviar a cocina).
+- El historial de "Pagos realizados" debe permanecer accesible independientemente de si la caja esta abierta o cerrada.
+
 ### 5) Modificadores: modelo estructurado obligatorio
 - Modificador no es texto libre concatenado.
 - Catalogo base por `modifiers`.
@@ -141,6 +146,30 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - productos deben mantenerse como filas de lista a ancho completo
   - ese render de producto aplica por igual a `Mesa`, `Para llevar` y `Orden especial`
   - en telefono, el grid general debe poder bajar a 2 columnas para niveles no-producto sin romper las filas de producto
+- En `Despacho`, para sucursales con alto volumen, priorizar la vista de lista tipo acordeon sobre el modelo de tarjetas (`cards`) individuales para mejorar la densidad de informacion y la velocidad operativa.
+- En `Ordenes`, la vista por pestanas (`Enviadas`, `Despachadas`, `Pendiente de anulacion`, `Canceladas`, `Pagadas`) debe mantenerse como lista expandible y no volver a un mosaico de tarjetas.
+- Si se toca `OrdersList`, conservar dentro de la fila o su expansion:
+  - origen de la orden
+  - codigo
+  - tiempo o evento visible
+  - total
+  - detalle de items por etapa
+  - botones de solicitar/anular/autorizar/negar cuando correspondan
+  - en movil, la fila resumen debe mantenerse en dos lineas compactas; no convertirla otra vez en card alta con datos apilados
+  - en movil, las pestanas de estado deben pasar a `Select`/combo para ahorrar espacio; la grilla de botones queda para pantallas mayores
+- Si se toca `CancelOrderDialog`, mantener el mismo modelo de seleccion de `PaymentDialog`:
+  - columna izquierda con cantidades aun anulables
+  - columna derecha con cantidades a aplicar en la anulacion actual
+  - acciones de mover una cantidad o mover todo por linea
+  - sin volver al esquema principal de inputs sueltos por fila
+  - sin mezclar ese selector con botones heredados de `parcial/total`; si hace falta distinguir `total`, debe calcularse desde la seleccion real
+  - no mostrar precios, subtotales ni totales monetarios en esa ventana; la anulacion se decide por cantidades y estado operativo
+  - renderizar el motivo de anulacion como `Select`/combo para ahorrar espacio vertical
+  - no agregar un `Alert` introductorio encima del selector dual; priorizar altura util para las listas
+  - no agregar una tarjeta resumen aparte con conteo de items seleccionados
+  - en el encabezado, mostrar siempre la referencia completa (`order_code` o fallback `#order_number`)
+  - en cada fila, permitir que el nombre del producto se vea completo y no renderizar metadatos en una segunda linea debajo
+  - en movil, cuando las dos listas quedan apiladas, usar flechas verticales (`abajo` / `arriba`) en lugar de laterales para mover items
 - En `Mesas`, si se muestran totales o divisiones en la tarjeta:
   - telefono: usar badges compactos, con truncado si hace falta
   - tablet: aumentar padding/tipografia sin romper la regla de esquinas
@@ -178,8 +207,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si se toca `PaymentDialog`, mantener estas reglas:
   - orden normal: dos columnas visibles (`Items pendientes` y `Items a cobrar ahora`) desde tablet en adelante
   - telefono: permitir una sola columna estable o bloques apilados antes que comprimir filas hasta hacerlas ilegibles
-  - no volver a seleccionar automaticamente todo el pendiente al abrir
-  - el pago parcial no debe cerrar el modal mientras la orden siga existiendo en `Por cobrar`
+  - No volver a seleccionar automaticamente todo el pendiente al abrir.
+  - El pago parcial no debe cerrar el modal mientras la orden siga existiendo en `Por cobrar`.
+  - El modal NO debe cerrarse automaticamente tras un cobro exitoso: debe permitir al usuario imprimir el ticket de venta manualmente.
+  - Los tickets deben seguir el estandar profesional de 80mm para impresoras termicas.
+  - Si el pago en efectivo cubre la totalidad, navegar automaticamente a la pantalla de confirmacion del ticket.
   - los metodos de pago deben compactarse sin montarse entre si; si no caben en una sola linea, apilarlos
   - si existen metodos duplicados por nombre visible, deduplicarlos en la UI antes de renderizar
   - `Monedas y billetes` solo debe habilitarse cuando exista al menos un item en `Items a cobrar ahora`
@@ -196,7 +228,8 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - esta regla tambien aplica al dividir mesa o cambiar entre submesas
 
 ### Admin
-- `Arbol Menu` es la via principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
+- `Arbol Menu` es la vía principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
+- Las denominaciones de efectivo son ahora globales; su gestion queda reservada exclusivamente a administradores globales en `Admin > Denominaciones`.
 - Cuando se toque `Admin > Arbol Menu`, validar tambien:
   - `Arbol Menu Mesa`
   - `Arbol Menu Para Llevar`
@@ -204,17 +237,6 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - `image_url` es la representacion visual principal del nodo y debe llenarse desde la subida de archivo a Storage.
 - El campo `icon` ya no debe exponerse en `Admin > Arbol Menu`; si persiste en BD, tratarlo solo como remanente legacy.
 - La pestana `Modificadores` solo administra el catalogo base; la asignacion a nodos debe hacerse en `Arbol Menu`.
-- `AdminTable` debe seguir siendo la base para listados administrativos y en movil debe mostrarse como tarjetas, no como tabla apretada.
-- En `Usuarios`, distinguir siempre entre:
-  - rol en sucursal activa
-  - rol global
-- No mostrar etiquetas vacias o confusas como `Sin rol global` si no aportan valor operativo.
-
-### Backend y consultas
-- Para modificadores, leer descripciones desde la relacion con `modifiers`.
-- La disponibilidad operativa del modificador debe resolverse desde `menu_node_modifiers`.
-- Filtrar datos vacios o inconsistentes antes de renderizar.
-- Si se toca apertura/cierre de turno, validar tambien la consistencia de mesas activas; no dejar turnos medio abiertos ni mesas activas sin turno.
 - No permitir cierre de turno si quedan ordenes o cobros pendientes; esa regla debe vivir en BD y no solo en frontend.
 - Administrador general y supervisor de sucursal deben poder operar caja por override administrativo, aunque no tengan `can_use_caja` marcado como usuario comun del turno.
 - Si se toca creacion de usuarios, validar el circuito completo:
