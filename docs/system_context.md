@@ -47,6 +47,9 @@
   - cantidades visibles segun la etapa operativa actual
   - solicitud pendiente de anulacion cuando aplique
   - tratamiento especial de items `A granel` sin reintroducir compra por unidades
+- En `Ordenes` / `Mesa`, cuando se selecciona un producto del arbol `TABLE`, el nombre y precio visibles deben salir del nodo de menu elegido.
+  - no se debe reemplazar visualmente por una variante legacy distinta (`Tarrina`, otro precio, etc.) solo porque `legacy_product_id` apunte a otro espejo
+  - `legacy_product_id` sigue siendo fallback operativo, no la fuente principal del texto/precio mostrado en ese flujo
 
 ### 0.0.10) Anulacion de orden: selector dual como en cobro
 - `CancelOrderDialog` ya no debe trabajar con inputs sueltos por fila como flujo principal.
@@ -120,6 +123,8 @@
   - el item se maneja operativamente como una sola linea
   - puede mostrar una vista previa de productos a entregar segun el monto ingresado
   - guarda la indicacion en `item_note` con formato `Entregar: ...`
+  - debe persistirse con `order_items.tray_item_type = 'C'` aunque la orden no sea `Para llevar`
+  - si la orden no es `Para llevar`, no debe usar el RPC `add_tray_order_item`; se inserta como `order_item` normal con marca `tray_item_type = 'C'`
 - En las vistas operativas, cuando el item es `A granel`, ya no debe mostrarse como `x1` o `1 unidad(es)` en orden, cocina, caja, detalle, ticket o pagos realizados.
 - En `Despacho`, para `A granel`:
   - no se muestra stepper de cantidad
@@ -305,8 +310,10 @@
   - ese flujo siempre debe cancelar como `partial`, aunque se anule el 100% de la linea
   - nunca debe reinterpretarse como anulacion total de la orden completa
 - La anulacion directa por item tambien debe respetar la politica operativa del turno:
-  - supervisor/admin o usuario con `can_authorize_order_cancel`: aplica directo
+  - administrador general, administrador de sucursal, supervisor habilitado en turno o usuario con `can_authorize_order_cancel`: pueden resolver directo
   - mesero comun: solo aplica directo si la categoria raiz del producto tiene `allow_direct_cancel = true`
+  - esa via directa de mesero deja de aplicar cuando la seleccion pertenece a una orden/item ya despachado
+  - si la seleccion toca una linea despachada, debe pasar a autorizacion
   - si la categoria no permite anulacion directa, el mismo flujo debe generar solicitud y no aplicar la anulacion real
 
 ### 4.6) Mesas: modelo hibrido nuevo

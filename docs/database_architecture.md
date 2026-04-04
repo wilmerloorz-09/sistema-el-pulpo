@@ -47,7 +47,13 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
 - `BULK` no rompe esta regla: el item vendido sigue cerrando sobre `order_items.product_id`, aunque la entrega adicional se resuelva con tablas auxiliares y `item_note`.
+- Cuando la venta proviene de `menu_scope = 'BULK'`, el item operativo tambien debe guardar `order_items.tray_item_type = 'C'` para que las vistas compartidas reconozcan que no es una compra por unidades.
+- Ese marcador no implica `orders.is_tray_order = true`: para `Mesa`, el alta sigue yendo a `order_items` normal; el RPC `add_tray_order_item` queda reservado para ordenes realmente `Para llevar`.
 - El modo de precio manual no vive en `products`: se resuelve desde ancestros de `menu_nodes` y hoy se hereda en frontend al cargar el catalogo.
+- En seleccion de venta para `TABLE`, el frontend debe priorizar:
+  - `menu_nodes.id` como espejo legacy preferido en `products`
+  - `menu_nodes.name` y `menu_nodes.price` como referencia visible de nombre/precio
+  - `legacy_product_id` solo como fallback si el espejo esperado no existe
 - La capa de Caja sigue cobrando desde `orders` + `order_items`, pero ahora puede enriquecer visualmente cada item enlazando:
   - `order_items.product_id`
   - `menu_nodes.legacy_product_id`
@@ -338,7 +344,10 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - La resolucion operativa por producto se hace con `get_branch_cancel_policy_for_product(branch_id, product_id)`:
   - busca el ancestro raiz (`depth = 0`) del producto dentro de `menu_nodes`
   - devuelve `allow_direct_cancel`
-  - ese valor se combina en frontend con `can_authorize_order_cancel` / supervisor / admin para decidir si la anulacion aplica directo o pasa a solicitud
+  - ese valor se combina con permisos operativos asi:
+    - administrador general, administrador de sucursal, supervisor habilitado en turno y `can_authorize_order_cancel` pueden resolver directo
+    - el check `allow_direct_cancel` aplica al flujo de mesero comun
+    - si la seleccion toca items/cantidades ya despachadas, el flujo de mesero ya no puede aplicar directo y debe pasar a autorizacion
 
 ## Solicitudes pendientes de anulacion
 - `orders.cancel_requested_at` identifica una orden con solicitud pendiente de anulacion.

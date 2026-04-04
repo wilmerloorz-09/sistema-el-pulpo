@@ -200,9 +200,7 @@ export default function OrderListRow({
     ? canAuthorizeCancel
       ? "Autorizar anulacion"
       : "Respuesta pendiente"
-    : canAuthorizeCancel
-      ? "Anular pedido"
-      : "Solicitar anulacion";
+    : "Anular pedido";
 
   const actionVariant = isPendingCancellationView
     ? canAuthorizeCancel
@@ -222,9 +220,7 @@ export default function OrderListRow({
       ? canAuthorizeCancel
         ? "Autorizar"
         : "Pendiente"
-      : canAuthorizeCancel
-        ? "Anular"
-        : "Solicitar";
+      : "Anular";
 
     if (readOnly) {
       return <span className="px-1 text-xs text-muted-foreground whitespace-nowrap">{compact ? "Consulta" : "Solo consulta"}</span>;

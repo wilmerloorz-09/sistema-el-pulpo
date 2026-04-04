@@ -9,6 +9,7 @@ type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "
 
 export interface OrderItemSummary {
   id: string;
+  product_id?: string;
   description_snapshot: string;
   quantity: number;
   quantity_total?: number;
@@ -240,6 +241,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       const items = await dbSelect<{
         id: string;
         order_id: string;
+        product_id?: string | null;
         description_snapshot: string;
         item_note?: string | null;
         quantity: number;
@@ -249,7 +251,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         paid_at?: string | null;
         tray_item_type?: "A" | "B" | "C" | null;
       }>("order_items", {
-        select: "id, order_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type",
+        select: "id, order_id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
@@ -491,6 +493,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
           const formattedItems: OrderItemSummary[] = effectiveItems.map((item) => ({
             id: item.id,
+            product_id: item.product_id ?? undefined,
             description_snapshot: item.description_snapshot,
             quantity: item.quantity,
             quantity_total: Number((item as any).activeQuantity ?? item.quantity ?? 0),

@@ -17,6 +17,9 @@
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero, las de orden especial y el sistema de tickets (80mm)
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
+--   - por eso se mantiene que un mesero pueda anular directo solo en las categorias habilitadas por turno/sucursal
+--   - si la seleccion toca una cantidad ya despachada, el flujo seguira requiriendo autorizacion
+--   - administrador, supervisor y usuario con can_authorize_order_cancel conservan su capacidad de resolver directo
 -- - Conserva configuracion estructural de despacho por sucursal:
 --   - dispatch_config
 --   - dispatch_assignments
@@ -25,6 +28,7 @@
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
 -- - limpiar ventas, ordenes, cocina, despacho y caja
+-- - limpiar tambien solicitudes de anulacion pendientes ya registradas
 -- - mantener lista la base para nuevas pruebas sin reconfigurar todo
 -- ============================================================
 
@@ -110,8 +114,11 @@ COMMIT;
 -- - Referencia de mesas intacta
 -- - Mesas internas intactas, pero desactivadas
 -- - Politicas de cancelacion/anulacion por categoria intactas
+-- - Reglas de anulacion directa por mesero intactas:
+--   - las categorias habilitadas siguen marcadas
+--   - las lineas ya despachadas siguen requiriendo autorizacion para mesero
 -- - Configuracion y asignaciones de despacho intactas
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================

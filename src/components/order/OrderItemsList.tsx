@@ -69,7 +69,6 @@ const OrderItemsList = ({
   return (
     <div className="flex flex-col gap-3">
       {items.map((item) => {
-        const isBulkItem = item.tray_item_type === "C";
         const isPending = item.status === "DRAFT";
         const canCancelOperational = !isPending && !!onRequestCancel && !disableOperationalCancel;
         const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
@@ -90,6 +89,7 @@ const OrderItemsList = ({
         );
         const trimmedItemNote = String(item.item_note ?? "").trim();
         const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
+        const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
 
         return (
           <div
@@ -154,7 +154,7 @@ const OrderItemsList = ({
 
                 <p className="mt-1 text-xs text-muted-foreground">
                   {isBulkItem ? (
-                    <span className="font-semibold text-foreground">${item.unit_price.toFixed(2)}</span>
+                    <span className="font-semibold text-foreground">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                   ) : (
                     <>
                       ${item.unit_price.toFixed(2)} x {displayQuantity} ={" "}

@@ -294,9 +294,7 @@ export function OrderCardBase({
                   ? "Autorizar anulacion"
                   : isCancelRequested
                     ? "Respuesta pendiente"
-                    : canAuthorizeCancel
-                      ? "Anular pedido"
-                      : "Solicitar anulacion"}
+                    : "Anular pedido"}
               </Button>
             )}
           </div>

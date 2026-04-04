@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { useCancellation } from "@/hooks/useCancellation";
+import { useBranch } from "@/contexts/BranchContext";
 import { CANCELLATION_REASONS, type CancellationReason } from "@/types/cancellation";
 import type { OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronsDown, ChevronsUp, Loader2, RotateCcw } from "lucide-react";
@@ -28,6 +29,7 @@ interface CancelOrderDialogProps {
 
 interface SnapshotItem {
   order_item_id: string;
+  product_id?: string | null;
   description_snapshot: string;
   tray_item_type?: "A" | "B" | "C" | null;
   item_status: string;
@@ -106,10 +108,12 @@ export default function CancelOrderDialog({
   compactPresetMode = false,
   requiresAuthorizationOverride,
 }: CancelOrderDialogProps) {
+  const { activeBranchId } = useBranch();
   const [reason, setReason] = useState<CancellationReason | "">("");
   const [notes, setNotes] = useState("");
   const [snapshotItems, setSnapshotItems] = useState<SnapshotItem[]>([]);
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
+  const [allowDirectCancelByProductId, setAllowDirectCancelByProductId] = useState<Record<string, boolean>>({});
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const initializedScopeKeyRef = useRef<string | null>(null);
@@ -119,6 +123,7 @@ export default function CancelOrderDialog({
     (Array.isArray(visibleItems) ? visibleItems : [])
       .map((item) => ({
         id: item.id,
+        product_id: item.product_id ?? null,
         quantity: Number(item.quantity ?? 0),
         description_snapshot: item.description_snapshot ?? "",
         tray_item_type: item.tray_item_type ?? null,
@@ -129,6 +134,7 @@ export default function CancelOrderDialog({
   const normalizedVisibleItems = useMemo(
     () => (Array.isArray(visibleItems) ? visibleItems : []).map((item) => ({
       id: item.id,
+      product_id: item.product_id ?? null,
       quantity: Number(item.quantity ?? 0),
       description_snapshot: item.description_snapshot,
       tray_item_type: item.tray_item_type ?? null,
@@ -164,6 +170,7 @@ export default function CancelOrderDialog({
         const visibleItem = visibleItemMap.get(item.order_item_id);
         return {
           ...item,
+          product_id: visibleItem?.product_id ?? null,
           description_snapshot: visibleItem?.description_snapshot ?? item.description_snapshot,
           tray_item_type: visibleItem?.tray_item_type ?? item.tray_item_type ?? null,
           quantity_cancellable: visibleItem
@@ -202,6 +209,7 @@ export default function CancelOrderDialog({
       initializedScopeKeyRef.current = null;
       setSnapshotItems([]);
       setSelectedQty({});
+      setAllowDirectCancelByProductId({});
       setLoadError(null);
       setReason("");
       setNotes("");
@@ -267,6 +275,59 @@ export default function CancelOrderDialog({
     initializedScopeKeyRef.current = selectionScopeKey;
   }, [open, loadingSnapshot, selectionScopeKey, initialSelectedQty]);
 
+  const directCancelPolicyProductIds = useMemo(
+    () => [...new Set(
+      normalizedVisibleItems
+        .map((item) => String(item.product_id ?? "").trim())
+        .filter((productId) => productId.length > 0),
+    )],
+    [normalizedVisibleItems],
+  );
+
+  const directCancelPolicyKey = useMemo(
+    () => JSON.stringify([...directCancelPolicyProductIds].sort()),
+    [directCancelPolicyProductIds],
+  );
+
+  useEffect(() => {
+    if (!open || canAuthorizeCancel || !activeBranchId || directCancelPolicyProductIds.length === 0) {
+      setAllowDirectCancelByProductId({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadDirectCancelPolicy = async () => {
+      try {
+        const entries = await Promise.all(
+          directCancelPolicyProductIds.map(async (productId) => {
+            const { data, error } = await (supabase as any).rpc("get_branch_cancel_policy_for_product", {
+              p_branch_id: activeBranchId,
+              p_product_id: productId,
+            });
+            if (error) throw error;
+
+            const policyRow = Array.isArray(data) ? data[0] : data;
+            return [productId, Boolean(policyRow?.allow_direct_cancel)] as const;
+          }),
+        );
+
+        if (cancelled) return;
+        setAllowDirectCancelByProductId(Object.fromEntries(entries));
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Error cargando politica de anulacion directa:", error);
+        setAllowDirectCancelByProductId({});
+      }
+    };
+
+    void loadDirectCancelPolicy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, canAuthorizeCancel, activeBranchId, directCancelPolicyKey]);
+
   const selectedItems = useMemo(() => items.map((item) => {
     const qty = clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable);
     const cancelledPending = Math.min(qty, item.quantity_pending_prepare);
@@ -283,7 +344,22 @@ export default function CancelOrderDialog({
 
   const availableRows = useMemo(() => items.map((item) => ({ ...item, qty: Math.max(0, item.quantity_cancellable - clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable)) })).filter((item) => item.qty > 0), [items, selectedQty]);
   const selectedRows = useMemo(() => items.map((item) => ({ ...item, qty: clampQty(Number(selectedQty[item.order_item_id] ?? 0), item.quantity_cancellable) })).filter((item) => item.qty > 0), [items, selectedQty]);
-  const requiresAuthorization = requiresAuthorizationOverride ?? (!canAuthorizeCancel && !isCancelRequested);
+  const selectedTouchesDispatchedItems = useMemo(
+    () => selectedItems.some((item) => Number(item.quantity_dispatched_available ?? 0) > 0),
+    [selectedItems],
+  );
+  const selectedTouchesBlockedCategories = useMemo(
+    () => selectedItems.some((item) => {
+      const productId = String(item.product_id ?? "").trim();
+      return productId.length > 0 && allowDirectCancelByProductId[productId] === false;
+    }),
+    [selectedItems, allowDirectCancelByProductId],
+  );
+  const requiresAuthorization = requiresAuthorizationOverride ?? (
+    !canAuthorizeCancel
+    && !isCancelRequested
+    && (selectedTouchesDispatchedItems || selectedTouchesBlockedCategories)
+  );
   const cancellationType = useMemo<"partial" | "total">(
     () =>
       snapshotItems.length > 0 &&
@@ -401,7 +477,7 @@ export default function CancelOrderDialog({
         <DialogFooter className="flex-col gap-2 sm:flex-row">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">Cerrar</Button>
           <Button variant="destructive" onClick={handleConfirm} disabled={!canSubmit} className="w-full sm:w-auto">
-            {cancelOrderMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : isCancelRequested && canAuthorizeCancel ? "Autorizar anulacion" : !canAuthorizeCancel ? "Solicitar anulacion" : "Confirmar anulacion"}
+            {cancelOrderMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : isCancelRequested && canAuthorizeCancel ? "Autorizar anulacion" : requiresAuthorization ? "Solicitar anulacion" : "Confirmar anulacion"}
           </Button>
         </DialogFooter>
       </DialogContent>

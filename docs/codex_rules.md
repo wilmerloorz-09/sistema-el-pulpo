@@ -28,9 +28,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
 - Cualquier cambio en `MenuNodesCrud`, `useMenuTree` o `MenuNavigator` debe considerar el espejo operativo en legacy.
   - Regla adicional:
+    - en `TABLE`, al resolver un producto para vender, priorizar `menu_nodes.id` como espejo legacy y usar `menu_nodes.name` / `menu_nodes.price` como referencia visible antes de caer a `legacy_product_id`
     - en `TAKEOUT`, no escribir categorias/subcategorias legacy por reflejo automatico
     - en `TAKEOUT`, si se crea/edita producto, resolver el espejo en `products` sin fabricar subcategorias nuevas fuera del arbol `Mesa`
-    - en `BULK`, preservar el circuito de productos incluidos (`BULK -> TABLE`) y la persistencia de instrucciones de entrega en `item_note`
+    - en `BULK`, preservar el circuito de productos incluidos (`BULK -> TABLE`), la persistencia de instrucciones de entrega en `item_note` y guardar `tray_item_type = 'C'` para que las vistas operativas no lo traten como unidades
+    - no usar `add_tray_order_item` solo por ver `tray_item_type = 'C'`; ese RPC es exclusivo de ordenes con `is_tray_order = true`
 
 ### 4.1) Productos agotados deben reflejarse en venta
 - Si un nodo o producto se desactiva desde `Productos`, `Ordenes` debe reflejarlo como agotado.
@@ -85,8 +87,10 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - No reintroducir una UI de "plato de cocina" por fila salvo cambio funcional explicito.
 - Si una categoria raiz no tiene productos aun, igual debe aparecer en el listado si sigue siendo una categoria activa valida.
 - Si se toca anulacion por item en `Ordenes`, respetar siempre esta regla:
-  - usuario con `can_authorize_order_cancel`, supervisor o admin: anulacion directa
+  - administrador general, administrador de sucursal, supervisor habilitado en turno o usuario con `can_authorize_order_cancel`: pueden resolver directo
   - mesero normal: solo anulacion directa cuando `get_branch_cancel_policy_for_product(...)` devuelva `allow_direct_cancel = true`
+  - esa anulacion directa por mesero solo aplica mientras la seleccion no toque una linea/cantidad ya despachada
+  - si la seleccion ya corresponde a una orden/item despachado, debe pasar a autorizacion
   - si no, el mismo flujo debe generar solicitud de anulacion y no aplicar cancelacion real
 
 ### 7.3) Solicitudes pendientes de anulacion

@@ -281,6 +281,8 @@
   - la fuente visible es `orders.cancel_requested_at`
   - mientras exista esa marca, la orden sale de las tabs operativas normales y pasa a `Pendiente de anulacion`
   - la resolucion final sigue dependiendo del flujo de autorizacion/cancelacion, no de la mera solicitud
+- En ese flujo, administrador general, administrador de sucursal, supervisor habilitado en turno y usuarios con `can_authorize_order_cancel` pueden resolver directo.
+- La politica `allow_direct_cancel` de categoria queda reservada al camino de anulacion directa por mesero, y deja de aplicar cuando la seleccion ya toca una linea/orden despachada.
 - Ese snapshot ahora tambien debe distinguir:
   - `quantity_dispatched_total`
   - `quantity_dispatched_available`

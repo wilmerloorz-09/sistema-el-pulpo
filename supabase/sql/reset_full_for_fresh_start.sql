@@ -16,6 +16,8 @@
 --   - incluye catalogo de denominaciones globales
 -- - Elimina politicas/configuraciones por sucursal:
 --   - cancelacion/anulacion directa por categoria
+--   - con eso tambien se resetea la habilitacion de anulacion directa por mesero
+--   - despues del reset ya no queda ninguna categoria autorizada para anulacion directa
 --   - configuracion de despacho por sucursal
 --   - asignaciones de despacho
 -- - Elimina usuarios no protegidos y sus metadatos:
@@ -32,7 +34,11 @@
 -- - NO LO EJECUTES SI QUIERES CONSERVAR HISTORIAL
 -- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
 -- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR / A GRANEL, TODOS QUEDAN VACIOS
--- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (`emit_order_ready_alert`, `get_mesero_ready_alerts`, `order_has_dispatch_after`)
+-- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (emit_order_ready_alert, get_mesero_ready_alerts, order_has_dispatch_after)
+-- - TAMBIEN QUEDA INTACTA LA LOGICA DE ANULACION:
+--   - mesero: anulacion directa solo en categorias habilitadas y mientras no toque cantidades ya despachadas
+--   - items/ordenes despachados: requieren autorizacion si quien opera no tiene autoridad directa
+--   - administrador, supervisor y usuario con can_authorize_order_cancel siguen pudiendo resolver directo
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
@@ -228,11 +234,12 @@ COMMIT;
 -- - 0 referencias de mesas por sucursal
 -- - 0 mesas internas
 -- - 0 politicas de cancelacion/anulacion por categoria
+-- - 0 categorias habilitadas para anulacion directa por mesero
 -- - 0 configuraciones/asignaciones de despacho
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - modulos, roles y permisos base intactos
 -- ============================================================

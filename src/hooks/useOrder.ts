@@ -300,7 +300,9 @@ export function useOrder(orderId: string | null) {
       tray_item_type?: "A" | "B" | "C";
       tray_container_cost?: number;
     }) => {
-      if (query.data?.is_tray_order || params.tray_item_type) {
+      const shouldUseTrayRpc = query.data?.is_tray_order === true;
+
+      if (shouldUseTrayRpc) {
         const { error } = await supabase.rpc("add_tray_order_item", {
           p_order_id: orderId!,
           p_product_id: params.product_id,
@@ -315,7 +317,7 @@ export function useOrder(orderId: string | null) {
         return;
       }
 
-      const total = params.unit_price * params.quantity;
+      const total = params.unit_price * params.quantity + (params.quantity > 0 ? (params.tray_container_cost ?? 0) : 0);
       const itemId = generateUUID();
 
       await dbInsert("order_items", {
@@ -328,6 +330,8 @@ export function useOrder(orderId: string | null) {
         quantity: params.quantity,
         total,
         status: "DRAFT",
+        tray_item_type: params.tray_item_type ?? null,
+        tray_container_cost: params.tray_container_cost ?? 0,
       });
 
       if (params.modifier_ids.length > 0) {

@@ -87,14 +87,41 @@ async function fetchMenuProductLookup(params: {
   isTrayOrder: boolean;
   trayType: TrayItemType;
 }): Promise<MenuProductLookupResult> {
-  const legacyProductId = params.node.legacy_product_id ?? params.node.id;
-  const { data: productRow, error: productError } = await supabase
+  const candidateProductIds = Array.from(new Set(
+    (
+      params.node.menu_scope === "TABLE"
+        ? [params.node.id, params.node.legacy_product_id]
+        : [params.node.legacy_product_id, params.node.id]
+    ).filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+  ));
+
+  if (candidateProductIds.length === 0) {
+    throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+  }
+
+  const { data: productRows, error: productError } = await supabase
     .from("products")
     .select("id, description, subcategory_id, unit_price, price_mode")
-    .eq("id", legacyProductId)
-    .single();
+    .in("id", candidateProductIds);
 
   if (productError) {
+    throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+  }
+
+  const productRowsById = new Map(
+    ((productRows ?? []) as Array<{
+      id: string;
+      description: string | null;
+      subcategory_id: string;
+      unit_price: number | null;
+      price_mode: "FIXED" | "MANUAL";
+    }>).map((row) => [row.id, row]),
+  );
+  const productRow = candidateProductIds
+    .map((productId) => productRowsById.get(productId))
+    .find((row): row is NonNullable<typeof row> => Boolean(row));
+
+  if (!productRow) {
     throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
   }
 
@@ -104,6 +131,12 @@ async function fetchMenuProductLookup(params: {
       : params.node.manual_price_inherited
         ? "MANUAL"
         : productRow.price_mode;
+
+  const resolvedDescription = params.node.name.trim() || productRow.description || "Producto";
+  const resolvedUnitPrice =
+    params.node.price == null
+      ? (productRow.unit_price == null ? null : Number(productRow.unit_price))
+      : Number(params.node.price);
 
   const modifierNodeIds = [params.node.id, ...(params.node.ancestor_ids ?? [])];
   const { data: links, error: linksError } = await supabase
@@ -158,9 +191,9 @@ async function fetchMenuProductLookup(params: {
     product: {
       id: productRow.id,
       menu_node_id: params.node.id,
-      description: productRow.description ?? params.node.name,
+      description: resolvedDescription,
       subcategory_id: productRow.subcategory_id,
-      unit_price: productRow.unit_price == null ? (params.node.price ?? null) : Number(productRow.unit_price),
+      unit_price: resolvedUnitPrice,
       price_mode: priceMode,
       icon: params.node.icon ?? null,
       image_url: params.node.image_url ?? null,
@@ -202,7 +235,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeBranchId, branches, permissions, setActiveBranch } = useBranch();
+  const { activeBranchId, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -241,7 +274,6 @@ const Ordenes = () => {
   const [inlineCancelVisibleItems, setInlineCancelVisibleItems] = useState<OrderItemSummary[]>([]);
   const [inlineCancelQtyByItem, setInlineCancelQtyByItem] = useState<Record<string, number>>({});
   const [inlineCancellationType, setInlineCancellationType] = useState<"partial" | "total">("partial");
-  const [inlineRequiresAuthorization, setInlineRequiresAuthorization] = useState(false);
   const [specialTotalInput, setSpecialTotalInput] = useState("");
   const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
@@ -253,11 +285,14 @@ const Ordenes = () => {
   const canOperateOrders = canOperate(permissions, "ordenes");
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   const canCancelOrders = canOperateOrders || canManageOrders;
-  const canAuthorizeCancel =
-    canManage(permissions, "admin_sucursal")
+  const hasDirectCancelRole =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global")
-    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
     || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canAuthorizeCancel =
+    hasDirectCancelRole
+    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel);
   const isTrayOrder = Boolean(order?.is_tray_order);
 
   useEffect(() => {
@@ -793,7 +828,7 @@ const Ordenes = () => {
     });
   };
 
-  const handleRequestInlineCancel = async (
+  const handleRequestInlineCancel = (
       item: {
         id: string;
         product_id?: string;
@@ -825,28 +860,11 @@ const Ordenes = () => {
         : maxQty > 0
           ? Number(item.total ?? 0) / maxQty
           : 0;
-    let requiresAuthorization = !canAuthorizeCancel;
-
-    if (activeBranchId && item.product_id) {
-      try {
-        const { data, error } = await (supabase as any).rpc("get_branch_cancel_policy_for_product", {
-          p_branch_id: activeBranchId,
-          p_product_id: item.product_id,
-        });
-        if (error) throw error;
-
-        const policyRow = Array.isArray(data) ? data[0] : data;
-        const allowDirectByCategory = Boolean(policyRow?.allow_direct_cancel);
-        requiresAuthorization = !(canAuthorizeCancel && allowDirectByCategory);
-      } catch (error: any) {
-        toast.error(error?.message || "No se pudo validar la politica de anulacion para este producto.");
-        return;
-      }
-    }
 
     setInlineCancelVisibleItems([
         {
           id: item.id,
+          product_id: item.product_id,
           description_snapshot: item.description_snapshot,
           quantity: normalizedQty,
           quantity_total: item.quantity_ordered ?? item.quantity,
@@ -861,7 +879,6 @@ const Ordenes = () => {
     ]);
     setInlineCancelQtyByItem({ [item.id]: normalizedQty });
     setInlineCancellationType("partial");
-    setInlineRequiresAuthorization(requiresAuthorization);
     setInlineCancelOpen(true);
   };
 
@@ -1417,7 +1434,7 @@ const Ordenes = () => {
           addItem.mutate({
             ...data,
             modifier_ids: isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids,
-            tray_item_type: isTrayOrder ? effectiveTrayType : undefined,
+            tray_item_type: isTrayOrder ? effectiveTrayType : isBulkScopeSelection ? "C" : undefined,
             tray_container_cost: 0,
           }, {
             onSuccess: () => {
@@ -1529,7 +1546,6 @@ const Ordenes = () => {
               setInlineCancelVisibleItems([]);
               setInlineCancelQtyByItem({});
               setInlineCancellationType("partial");
-              setInlineRequiresAuthorization(false);
             }
           }}
           canAuthorizeCancel={canAuthorizeCancel}
@@ -1538,7 +1554,6 @@ const Ordenes = () => {
           initialCancellationType={inlineCancellationType}
           initialCancelQtyByItem={inlineCancelQtyByItem}
           compactPresetMode={true}
-          requiresAuthorizationOverride={inlineRequiresAuthorization}
         />
       )}
 
