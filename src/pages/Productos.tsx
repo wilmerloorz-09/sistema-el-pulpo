@@ -22,13 +22,12 @@ const Productos = () => {
     canView(permissions, "despacho_mesa") ||
     canView(permissions, "despacho_para_llevar");
 
-  const canOperateDispatch =
-    canOperate(permissions, "despacho_total") ||
-    canOperate(permissions, "despacho_mesa") ||
-    canOperate(permissions, "despacho_para_llevar");
-
-  const canOperateByShift = Boolean(shiftGateQuery.data?.canDispatchOrders) || Boolean(shiftGateQuery.data?.isSupervisor);
-  const readOnly = !canOperateDispatch || !canOperateByShift;
+  const canOperateByShift =
+    Boolean(shiftGateQuery.data?.canManageProducts)
+    || Boolean(shiftGateQuery.data?.canDispatchOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canEditProducts = canOperateByShift;
+  const readOnly = !canEditProducts;
 
   const refreshMenuQueries = () => {
     qc.invalidateQueries({ queryKey: ["menu-tree"] });
@@ -108,10 +107,10 @@ const Productos = () => {
               <PackageSearch className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="font-display text-xl font-black text-foreground">Productos</h1>
-              <p className="text-sm text-muted-foreground">
-                Arbol de menu para consulta. En despacho puedes marcar productos agotados o reactivarlos.
-              </p>
+          <h1 className="font-display text-xl font-black text-foreground">Productos</h1>
+          <p className="text-sm text-muted-foreground">
+                Arbol de menu para consulta. Despacho habilita Productos automaticamente, pero tambien puede asignarse por separado.
+          </p>
             </div>
           </div>
 

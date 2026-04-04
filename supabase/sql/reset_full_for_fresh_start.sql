@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- RESET TOTAL DEL SISTEMA POS PARA PRUEBAS DESDE CERO (MODO DESTRUCTIVO)
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -6,6 +6,8 @@
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
+--   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
+--   - incluye auditoria de cierre de turno (closed_by, closed_from_device, closed_from_user_agent)
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 --   - incluye todos los alcances de menu_nodes: `TABLE`, `TAKEOUT` y `BULK`
 --   - incluye imagenes/referencias visuales de productos en `menu_nodes.image_url`
@@ -39,6 +41,10 @@
 --   - mesero: anulacion directa solo en categorias habilitadas y mientras no toque cantidades ya despachadas
 --   - items/ordenes despachados: requieren autorizacion si quien opera no tiene autoridad directa
 --   - administrador, supervisor y usuario con can_authorize_order_cancel siguen pudiendo resolver directo
+-- - LAS REGLAS DE HERENCIA DE PERMISOS POR TURNO SIGUEN EXISTIENDO EN LA ESTRUCTURA:
+--   - Mesas incluye acceso a Ordenes
+--   - Despacho incluye acceso total a Productos
+--   - Ordenes y Productos tambien pueden habilitarse por separado
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
@@ -236,6 +242,8 @@ COMMIT;
 -- - 0 politicas de cancelacion/anulacion por categoria
 -- - 0 categorias habilitadas para anulacion directa por mesero
 -- - 0 configuraciones/asignaciones de despacho
+-- - 0 usuarios habilitados por turno y 0 permisos operativos por turno
+-- - 0 auditoria de cierre de turno previa
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
@@ -243,3 +251,5 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
+

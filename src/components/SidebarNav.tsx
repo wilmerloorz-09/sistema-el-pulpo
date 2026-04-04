@@ -28,6 +28,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
   const { profile } = useAuth();
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
   const initials = getInitials(profile?.full_name);
+  const accountLabel = profile?.full_name || profile?.username || "Mi cuenta";
   const location = useLocation();
   const activeCajaTab = location.pathname === "/caja" && location.search.includes("tab=completed") ? "completed" : "pending";
   const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
@@ -174,10 +175,10 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
                     <UserRound className="h-5 w-5" />
                   )}
                 </span>
-                <span className="truncate text-sm font-bold">Mi cuenta</span>
+                <span className="truncate text-sm font-bold">{accountLabel}</span>
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Mi cuenta</TooltipContent>
+            <TooltipContent side="right">{accountLabel}</TooltipContent>
           </Tooltip>
         </div>
       </div>

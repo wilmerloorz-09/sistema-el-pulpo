@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- RESET OPERATIVO DEL SISTEMA POS PARA PRUEBAS DESDE CERO
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -6,6 +6,7 @@
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
+-- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Conserva todos los arboles operativos de menu_nodes:
 --   - `TABLE`
@@ -24,6 +25,8 @@
 --   - dispatch_config
 --   - dispatch_assignments
 -- - Reinicia la operacion diaria sin desmontar el sistema
+--   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
+--   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -118,7 +121,10 @@ COMMIT;
 --   - las categorias habilitadas siguen marcadas
 --   - las lineas ya despachadas siguen requiriendo autorizacion para mesero
 -- - Configuracion y asignaciones de despacho intactas
+-- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
+

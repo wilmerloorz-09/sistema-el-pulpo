@@ -10,7 +10,9 @@ export interface BranchShiftGate {
   activeTablesCount: number;
   cajaStatus: "UNOPENED" | "OPEN" | "CLOSED";
   canServeTables: boolean;
+  canAccessOrders: boolean;
   canDispatchOrders: boolean;
+  canManageProducts: boolean;
   canUseCaja: boolean;
   canAuthorizeOrderCancel: boolean;
   isSupervisor: boolean;
@@ -32,7 +34,9 @@ export function useBranchShiftGate() {
           activeTablesCount: 0,
           cajaStatus: "UNOPENED",
           canServeTables: false,
+          canAccessOrders: false,
           canDispatchOrders: false,
+          canManageProducts: false,
           canUseCaja: false,
           canAuthorizeOrderCancel: false,
           isSupervisor: false,
@@ -56,7 +60,9 @@ export function useBranchShiftGate() {
           activeTablesCount: Number(row?.active_tables_count ?? 0),
           cajaStatus: row?.caja_status ?? "UNOPENED",
           canServeTables: Boolean(row?.can_serve_tables),
+          canAccessOrders: Boolean(row?.can_access_orders ?? row?.can_serve_tables),
           canDispatchOrders: Boolean(row?.can_dispatch_orders),
+          canManageProducts: Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
           canUseCaja: Boolean(row?.can_use_caja),
           canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
           isSupervisor: Boolean(row?.is_supervisor),
@@ -66,7 +72,7 @@ export function useBranchShiftGate() {
 
       const { data: shiftUserRow, error: shiftUserError } = await (supabase
         .from("cash_shift_users" as never)
-        .select("is_enabled, can_serve_tables, can_dispatch_orders, can_use_caja, can_authorize_order_cancel, is_supervisor")
+        .select("is_enabled, can_serve_tables, can_access_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor")
         .eq("shift_id", shiftId)
         .eq("user_id", user.id)
         .maybeSingle() as any);
@@ -83,7 +89,13 @@ export function useBranchShiftGate() {
         activeTablesCount: Number(row?.active_tables_count ?? 0),
         cajaStatus: row?.caja_status ?? "UNOPENED",
         canServeTables: hasDirectShiftRow ? Boolean(shiftUserRow?.can_serve_tables) : Boolean(row?.can_serve_tables),
+        canAccessOrders: hasDirectShiftRow
+          ? Boolean(shiftUserRow?.can_access_orders ?? shiftUserRow?.can_serve_tables)
+          : Boolean(row?.can_access_orders ?? row?.can_serve_tables),
         canDispatchOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_dispatch_orders) : Boolean(row?.can_dispatch_orders),
+        canManageProducts: hasDirectShiftRow
+          ? Boolean(shiftUserRow?.can_manage_products ?? shiftUserRow?.can_dispatch_orders)
+          : Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
         canUseCaja: hasDirectShiftRow ? Boolean(shiftUserRow?.can_use_caja) : Boolean(row?.can_use_caja),
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),

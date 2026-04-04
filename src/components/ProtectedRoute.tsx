@@ -1,7 +1,8 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { canManage, hasPermission, type AccessLevel } from "@/lib/permissions";
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
     level: AccessLevel;
   };
   requiresOpenShift?: boolean;
-  requiredShiftRoles?: Array<"canServeTables" | "canDispatchOrders" | "canUseCaja">;
+  requiredShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja">;
 }
 
 const MODULE_FALLBACK_PATH: Record<string, string> = {
@@ -29,8 +30,10 @@ const MODULE_FALLBACK_PATH: Record<string, string> = {
 };
 
 const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number], string> = {
-  canServeTables: "Mesas y Ordenes",
+  canServeTables: "Mesas",
+  canAccessOrders: "Ordenes",
   canDispatchOrders: "Despacho",
+  canManageProducts: "Productos",
   canUseCaja: "Caja",
 };
 
@@ -44,6 +47,8 @@ const ProtectedRoute = ({
   const { user, loading } = useAuth();
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
+  const location = useLocation();
+  const { preferredPath, canAccessAdmin, isLoading: preferredPathLoading } = usePreferredHomePath();
 
   if (loading) {
     return (
@@ -55,7 +60,7 @@ const ProtectedRoute = ({
 
   if (!user) return <Navigate to="/login" replace />;
 
-  if (requiresOpenShift && shiftGateQuery.isLoading) {
+  if (requiresOpenShift && (shiftGateQuery.isLoading || preferredPathLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -65,10 +70,12 @@ const ProtectedRoute = ({
 
   const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
   const fallback = (() => {
+    if (preferredPath) return preferredPath;
     const firstAllowed = currentModules.find((code) => MODULE_FALLBACK_PATH[code]);
     if (firstAllowed) return MODULE_FALLBACK_PATH[firstAllowed];
     if (isGlobalAdminWithoutBranches) return "/admin";
-    return "/mesas";
+    if (canAccessAdmin) return "/admin";
+    return "/";
   })();
 
   if (requiredPermission) {
@@ -91,7 +98,6 @@ const ProtectedRoute = ({
 
   if (requiresOpenShift) {
     const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
-    const canAccessAdmin = isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
     const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
     const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
     const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
@@ -120,6 +126,10 @@ const ProtectedRoute = ({
     }
 
     if (!hasSupervisorBypass && !hasRequiredShiftRole) {
+      if (preferredPath && preferredPath !== location.pathname) {
+        return <Navigate to={preferredPath} replace />;
+      }
+
       const requestedAreas = (requiredShiftRoles ?? []).map((role) => SHIFT_ROLE_LABELS[role]).join(" o ");
 
       return (

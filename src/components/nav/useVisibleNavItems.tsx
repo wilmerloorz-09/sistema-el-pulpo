@@ -89,7 +89,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
       iconIdle: "bg-violet-50 text-violet-600",
     },
-    visible: (permissions) => canView(permissions, "reportes_sucursal") || canView(permissions, "reportes_globales"),
+    visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
     to: "/admin",
@@ -130,14 +130,19 @@ export function useVisibleNavItems() {
 
       if (item.to === "/mesas" || item.to === "/ordenes") {
         if (!item.visible(permissions)) return false;
-        return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
+        if (item.to === "/mesas") {
+          return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
+        }
+        return hasSupervisorBypass
+          || Boolean(shiftGateQuery.data?.canServeTables)
+          || Boolean(shiftGateQuery.data?.canAccessOrders);
       }
 
       if (item.to === "/productos") {
         if (!item.visible(permissions)) return false;
         return hasSupervisorBypass
-          || Boolean(shiftGateQuery.data?.canServeTables)
-          || Boolean(shiftGateQuery.data?.canDispatchOrders);
+          || Boolean(shiftGateQuery.data?.canDispatchOrders)
+          || Boolean(shiftGateQuery.data?.canManageProducts);
       }
 
       if (item.to === "/caja") {
@@ -166,7 +171,9 @@ export function useVisibleNavItems() {
     hasDispatchAccess,
     isGlobalAdmin,
     permissions,
+    shiftGateQuery.data?.canAccessOrders,
     shiftGateQuery.data?.canDispatchOrders,
+    shiftGateQuery.data?.canManageProducts,
     shiftGateQuery.data?.canServeTables,
     shiftGateQuery.data?.canUseCaja,
     shiftGateQuery.data?.isSupervisor,

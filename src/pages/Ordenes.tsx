@@ -285,6 +285,7 @@ const Ordenes = () => {
   const canOperateOrders =
     canOperate(permissions, "ordenes")
     || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canAccessOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   const canCancelOrders = canOperateOrders || canManageOrders;

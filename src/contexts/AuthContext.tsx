@@ -27,7 +27,7 @@ interface AuthContextType extends AuthState {
   refreshProfile: () => Promise<void>;
 }
 
-const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
+const SESSION_TIMEOUT_MS = 40 * 60 * 1000;
 const SESSION_ACTIVITY_STORAGE_KEY = "authSessionActivity";
 const SESSION_ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
 const SESSION_EXPIRY_CHECK_INTERVAL_MS = 30 * 1000;

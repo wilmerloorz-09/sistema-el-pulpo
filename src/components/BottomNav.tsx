@@ -24,6 +24,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
   const initials = getInitials(profile?.full_name);
+  const accountLabel = profile?.full_name || profile?.username || "Cuenta";
   const location = useLocation();
   const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
 
@@ -86,7 +87,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
               <UserRound className="h-5 w-5" />
             )}
           </span>
-          <span className="max-w-[4.5rem] truncate text-center leading-none">Cuenta</span>
+          <span className="max-w-[4.5rem] truncate text-center leading-none">{accountLabel}</span>
         </button>
       </div>
     </nav>

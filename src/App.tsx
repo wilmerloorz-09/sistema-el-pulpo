@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { BranchProvider, useBranch } from "@/contexts/BranchContext";
-import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { useEffect, useState } from "react";
 import { initSyncListeners } from "@/services/SyncService";
@@ -22,7 +22,6 @@ import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
-import { canManage } from "@/lib/permissions";
 
 const queryClient = new QueryClient();
 
@@ -101,44 +100,14 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
 };
 
 const HomeRedirect = () => {
-  const { branches, isGlobalAdmin, permissions, loading } = useBranch();
-  const shiftGateQuery = useBranchShiftGate();
+  const { loading } = useBranch();
+  const { preferredPath, isLoading } = usePreferredHomePath();
 
-  if (loading || shiftGateQuery.isLoading) {
+  if (loading || isLoading) {
     return <LoadingScreen />;
   }
 
-  if (isGlobalAdmin && branches.length === 0) {
-    return <Navigate to="/admin" replace />;
-  }
-
-  if (!shiftGateQuery.data?.shiftOpen) {
-    if (isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global")) {
-      return <Navigate to="/admin" replace />;
-    }
-  }
-
-  const gate = shiftGateQuery.data;
-  const canAccessAdmin = isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
-  const hasSupervisorBypass = Boolean(gate?.isSupervisor) || canAccessAdmin;
-
-  if (hasSupervisorBypass || gate?.canServeTables) {
-    return <Navigate to="/mesas" replace />;
-  }
-
-  if (hasSupervisorBypass || gate?.canDispatchOrders) {
-    return <Navigate to="/despacho" replace />;
-  }
-
-  if (hasSupervisorBypass || gate?.canUseCaja) {
-    return <Navigate to="/caja" replace />;
-  }
-
-  if (canAccessAdmin) {
-    return <Navigate to="/admin" replace />;
-  }
-
-  return <Navigate to="/reportes" replace />;
+  return <Navigate to={preferredPath ?? "/mesas"} replace />;
 };
 
 const SyncInit = () => {
@@ -283,7 +252,7 @@ const App = () => (
                 <Route
                   path="/ordenes"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders"]}>
                       <Ordenes />
                     </ProtectedRoute>
                   }
@@ -299,7 +268,7 @@ const App = () => (
                 <Route
                   path="/productos"
                   element={
-                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift requiredShiftRoles={["canServeTables", "canDispatchOrders"]}>
+                    <ProtectedRoute allowedModules={["ordenes", "despacho_total", "despacho_mesa", "despacho_para_llevar"]} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders", "canDispatchOrders", "canManageProducts"]}>
                       <Productos />
                     </ProtectedRoute>
                   }
@@ -315,7 +284,7 @@ const App = () => (
                 <Route
                   path="/reportes"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "reportes_sucursal", level: "VIEW" }} requiresOpenShift>
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]} requiresOpenShift>
                       <Reportes />
                     </ProtectedRoute>
                   }
