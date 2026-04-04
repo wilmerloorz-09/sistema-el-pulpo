@@ -292,6 +292,7 @@ export function useOrder(orderId: string | null) {
   const addItem = useMutation({
     mutationFn: async (params: {
       product_id: string;
+      menu_node_id?: string | null;
       description_snapshot: string;
       item_note?: string | null;
       unit_price: number;
@@ -317,32 +318,19 @@ export function useOrder(orderId: string | null) {
         return;
       }
 
-      const total = params.unit_price * params.quantity + (params.quantity > 0 ? (params.tray_container_cost ?? 0) : 0);
-      const itemId = generateUUID();
-
-      await dbInsert("order_items", {
-        id: itemId,
-        order_id: orderId!,
-        product_id: params.product_id,
-        description_snapshot: params.description_snapshot,
-        item_note: params.item_note ?? null,
-        unit_price: params.unit_price,
-        quantity: params.quantity,
-        total,
-        status: "DRAFT",
-        tray_item_type: params.tray_item_type ?? null,
-        tray_container_cost: params.tray_container_cost ?? 0,
-      });
-
-      if (params.modifier_ids.length > 0) {
-        for (const modifierId of params.modifier_ids) {
-          await dbInsert("order_item_modifiers", {
-            id: generateUUID(),
-            order_item_id: itemId,
-            modifier_id: modifierId,
-          });
-        }
-      }
+      const { error } = await supabase.rpc("add_dine_in_order_item" as never, {
+        p_order_id: orderId!,
+        p_product_id: params.product_id,
+        p_menu_node_id: params.menu_node_id ?? null,
+        p_quantity: params.quantity,
+        p_unit_price: params.unit_price,
+        p_description_snapshot: params.description_snapshot,
+        p_item_note: params.item_note ?? null,
+        p_modifier_ids: params.modifier_ids,
+        p_tray_item_type: params.tray_item_type ?? null,
+        p_tray_container_cost: params.tray_container_cost ?? 0,
+      } as never);
+      if (error) throw error;
     },
     onMutate: async (params) => {
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
@@ -470,39 +458,10 @@ export function useOrder(orderId: string | null) {
       const draftItems = order.items.filter((item) => item.status === "DRAFT");
       if (draftItems.length === 0) return;
 
-      const now = new Date().toISOString();
-
-      await Promise.all(
-        draftItems.map((item) =>
-          dbUpdate("order_items", item.id, {
-            status: "SENT",
-            sent_to_kitchen_at: now,
-          })
-        )
-      );
-
-      const shouldReopenDineInFlow =
-        order.order_type === "DINE_IN"
-        && order.status !== "CANCELLED"
-        && order.status !== "DRAFT";
-
-      if (order.status === "DRAFT" || shouldReopenDineInFlow) {
-        const newStatus: OrderStatus = order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : "SENT_TO_KITCHEN";
-        const orderUpdate: Record<string, unknown> = {
-          status: newStatus,
-          updated_at: now,
-        };
-
-        if (newStatus === "SENT_TO_KITCHEN") {
-          orderUpdate.sent_to_kitchen_at = now;
-        }
-
-        if (newStatus === "KITCHEN_DISPATCHED" && order.status === "DRAFT") {
-          orderUpdate.dispatched_at = now;
-        }
-
-        await dbUpdate("orders", orderId!, orderUpdate);
-      }
+      const { error } = await supabase.rpc("submit_order_draft_items" as never, {
+        p_order_id: orderId!,
+      } as never);
+      if (error) throw error;
     },
     onSuccess: () => {
       const order = query.data;

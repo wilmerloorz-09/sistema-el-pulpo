@@ -53,6 +53,42 @@ const STATUS_CONFIG = {
 const formatCurrency = (value: number) => `$${roundMoney(value).toFixed(2)}`;
 const formatTableBadge = (name: string) => name.replace(/^mesa\s*/i, "").trim() || name;
 
+const seedDraftOrderCache = (
+  qc: ReturnType<typeof useQueryClient>,
+  orderId: string,
+  {
+    branchId,
+    tableId,
+    tableName,
+    isSpecial,
+    createdAt,
+  }: {
+    branchId: string;
+    tableId: string | null;
+    tableName?: string;
+    isSpecial: boolean;
+    createdAt: string;
+  },
+) => {
+  qc.setQueryData(getOrderQueryKey(orderId), {
+    id: orderId,
+    order_number: 0,
+    order_code: null,
+    status: "DRAFT",
+    order_type: "DINE_IN",
+    menu_scope: "TABLE",
+    is_special: isSpecial,
+    special_total_manual: null,
+    branch_id: branchId,
+    table_id: tableId,
+    split_id: null,
+    table_name: tableName,
+    created_at: createdAt,
+    items: [],
+    siblings: [],
+  });
+};
+
 const Mesas = () => {
   const { data: tables, isLoading } = useTablesWithStatus();
   const { user } = useAuth();
@@ -64,7 +100,10 @@ const Mesas = () => {
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingSpecial, setCreatingSpecial] = useState(false);
   const [creatingTray, setCreatingTray] = useState(false);
-  const canOperateMesas = canOperate(permissions, "mesas");
+  const canOperateMesas =
+    canOperate(permissions, "mesas")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
   const canCreateTrayOrder = canOperateMesas;
 
   useEffect(() => {
@@ -177,53 +216,34 @@ const Mesas = () => {
     setCreatingSpecial(true);
     try {
       const now = new Date().toISOString();
-      const orderId = generateUUID();
+      const { data, error } = await supabase.rpc("create_dine_in_order" as never, {
+        p_branch_id: activeBranchId,
+        p_created_by: user.id,
+        p_table_id: null,
+        p_is_special: true,
+      } as never);
 
-      qc.setQueryData(getOrderQueryKey(orderId), {
-        id: orderId,
-        order_number: 0,
-        order_code: null,
-        status: "DRAFT",
-        order_type: "DINE_IN",
-        menu_scope: "TABLE",
-        is_special: true,
-        special_total_manual: null,
-        branch_id: activeBranchId,
-        table_id: null,
-        split_id: null,
-        table_name: undefined,
-        created_at: now,
-        items: [],
-        siblings: []
+      if (error) throw error;
+
+      const orderId = String(data);
+
+      seedDraftOrderCache(qc, orderId, {
+        branchId: activeBranchId,
+        tableId: null,
+        isSpecial: true,
+        createdAt: now,
       });
 
       toast.success("Abriendo orden especial...");
       navigate(`/ordenes?order=${orderId}&from=mesas`);
-
-      supabase
-        .from("orders")
-        .insert({
-          id: orderId,
-          order_type: "DINE_IN" as const,
-          menu_scope: "TABLE",
-          created_by: user.id,
-          status: "DRAFT" as const,
-          branch_id: activeBranchId,
-          is_special: true,
-          special_marked_at: now,
-          special_marked_by: user.id,
-        })
-        .then(({ error }) => {
-          if (error) toast.error("Error al guardar la orden especial");
-          else {
-            qc.prefetchQuery({
-              queryKey: getOrderQueryKey(orderId),
-              queryFn: () => fetchOrderDetail(orderId),
-              staleTime: 15_000,
-              gcTime: 10 * 60_000,
-            });
-          }
-        });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(orderId),
+        queryFn: () => fetchOrderDetail(orderId),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
     } catch (err: any) {
       toast.error(err.message || "Error al abrir orden especial");
     } finally {
@@ -242,54 +262,38 @@ const Mesas = () => {
       if (!user) return;
       setCreating(table.id);
       try {
-        const orderId = generateUUID();
         const now = new Date().toISOString();
+        const { data, error } = await supabase.rpc("create_dine_in_order" as never, {
+          p_branch_id: activeBranchId!,
+          p_created_by: user.id,
+          p_table_id: table.id,
+          p_is_special: false,
+        } as never);
 
-        qc.setQueryData(getOrderQueryKey(orderId), {
-          id: orderId,
-          order_number: 0,
-          order_code: null,
-          status: "DRAFT",
-          order_type: "DINE_IN",
-          menu_scope: "TABLE",
-          is_special: false,
-          special_total_manual: null,
-          branch_id: activeBranchId!,
-          table_id: table.id,
-          split_id: null,
-          table_name: table.name,
-          created_at: now,
-          items: [],
-          siblings: []
+        if (error) throw error;
+
+        const orderId = String(data);
+
+        seedDraftOrderCache(qc, orderId, {
+          branchId: activeBranchId!,
+          tableId: table.id,
+          tableName: table.name,
+          isSpecial: false,
+          createdAt: now,
         });
 
         toast.success(`Entrando a ${table.name}...`);
         navigate(`/ordenes?order=${orderId}&from=mesas`);
-
-        supabase
-          .from("orders")
-          .insert({
-            id: orderId,
-            table_id: table.id,
-            order_type: "DINE_IN" as const,
-            menu_scope: "TABLE",
-            created_by: user.id,
-            status: "DRAFT" as const,
-            branch_id: activeBranchId!,
-          })
-          .then(({ error }) => {
-            if (error) toast.error("Error al registrar la apertura de la mesa");
-            else {
-              qc.prefetchQuery({
-                queryKey: getOrderQueryKey(orderId),
-                queryFn: () => fetchOrderDetail(orderId),
-                staleTime: 15_000,
-                gcTime: 10 * 60_000,
-              });
-            }
-          });
+        qc.invalidateQueries({ queryKey: ["orders"] });
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+        void qc.prefetchQuery({
+          queryKey: getOrderQueryKey(orderId),
+          queryFn: () => fetchOrderDetail(orderId),
+          staleTime: 15_000,
+          gcTime: 10 * 60_000,
+        });
       } catch (err: any) {
-        toast.error(err.message || "Error al crear orden");
+        toast.error(err.message || "Error al registrar la apertura de la mesa");
       } finally {
         setCreating(null);
       }

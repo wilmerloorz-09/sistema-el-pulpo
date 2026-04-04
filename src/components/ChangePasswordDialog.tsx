@@ -11,13 +11,21 @@ interface ChangePasswordDialogProps {
   /** If provided, admin is changing another user's password */
   targetUserId?: string;
   targetUserName?: string;
+  targetUserEmail?: string | null;
+  targetUsername?: string;
   trigger?: React.ReactNode;
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-const ChangePasswordDialog = ({ targetUserId, targetUserName, trigger }: ChangePasswordDialogProps) => {
+const ChangePasswordDialog = ({
+  targetUserId,
+  targetUserName,
+  targetUserEmail,
+  targetUsername,
+  trigger,
+}: ChangePasswordDialogProps) => {
   const [open, setOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -52,6 +60,8 @@ const ChangePasswordDialog = ({ targetUserId, targetUserName, trigger }: ChangeP
       },
       body: JSON.stringify({
         target_user_id: targetUserId,
+        target_user_email: targetUserEmail ?? null,
+        target_username: targetUsername ?? null,
         new_password: newPassword,
       }),
     });

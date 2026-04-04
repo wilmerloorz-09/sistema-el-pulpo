@@ -70,10 +70,11 @@ const OrderItemsList = ({
     <div className="flex flex-col gap-3">
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
-        const canCancelOperational = !isPending && !!onRequestCancel && !disableOperationalCancel;
+        const isRequestedCancel = item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION";
+        const canCancelOperational = !isPending && !isRequestedCancel && !!onRequestCancel && !disableOperationalCancel;
         const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
         const draftDisabled = isPending && disableDraftEditing;
-        const operationalDisabled = !isPending && disableOperationalCancel;
+        const operationalDisabled = (!isPending && disableOperationalCancel) || isRequestedCancel;
         const controlDisabled = isPending ? draftDisabled : operationalDisabled;
         const operationalControlClass = !isPending && !operationalDisabled
           ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)] hover:border-orange-300 hover:bg-orange-50"
@@ -181,7 +182,9 @@ const OrderItemsList = ({
                       "h-8 w-8 rounded-xl",
                       isPending
                         ? "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100"
-                        : "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100",
+                        : isRequestedCancel
+                          ? "border-border bg-muted text-muted-foreground cursor-not-allowed"
+                          : "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100",
                     )}
                     disabled={controlDisabled || (!isPending && (!canCancelOperational || maxOperationalQty <= 0))}
                     onClick={() => {

@@ -305,6 +305,8 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           <ChangePasswordDialog
             targetUserId={user.id}
             targetUserName={user.full_name}
+            targetUserEmail={user.email ?? null}
+            targetUsername={user.username}
             trigger={
               <Button size="sm" variant="outline" className="shrink-0 gap-1.5 rounded-xl text-xs font-semibold">
                 Cambiar contraseña

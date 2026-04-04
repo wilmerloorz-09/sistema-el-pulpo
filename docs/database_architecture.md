@@ -45,6 +45,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
 - `order_items.product_id` sigue con FK hacia `products(id)`.
 - `orders.menu_scope` define con que arbol se opero visualmente la orden.
 - Por eso, un nodo `menu_nodes` de tipo `product` debe tener espejo operativo en `products` si se quiere vender.
+- En este esquema, la pertenencia operativa a sucursal no debe inferirse desde `products.branch_id` porque ese campo no existe; para altas/validaciones de venta, la referencia correcta de sucursal sale de `menu_nodes.branch_id` y del contexto de la orden.
 - Mientras esa FK exista, `menu_nodes` por si solo no cierra el circuito transaccional de una orden.
 - `BULK` no rompe esta regla: el item vendido sigue cerrando sobre `order_items.product_id`, aunque la entrega adicional se resuelva con tablas auxiliares y `item_note`.
 - Cuando la venta proviene de `menu_scope = 'BULK'`, el item operativo tambien debe guardar `order_items.tray_item_type = 'C'` para que las vistas compartidas reconozcan que no es una compra por unidades.
@@ -195,6 +196,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `can_use_caja`
   - `can_authorize_order_cancel`
   - `is_supervisor`
+- La apertura de una nueva orden `DINE_IN` desde `Mesas` / `Orden especial` debe resolverse por RPC (`create_dine_in_order`) con validacion sobre `cash_shifts` y `cash_shift_users`; no por `insert` directo desde el cliente sobre `orders`.
 - Aun con ese modelo, administrador general y supervisor de sucursal deben poder abrir/cerrar caja por override administrativo usando `can_manage_branch_admin(...)`.
 
 - `close_cash_register(shift_id, cashier_id, branch_id, notes)` debe bloquearse si en la sucursal aun existen ordenes con estado distinto de `PAID` o `CANCELLED`.
@@ -293,6 +295,7 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - indica si hay turno abierto y si el usuario autenticado esta habilitado para operar
   - expone tambien `active_tables_count` para que usuarios operativos puedan ver Mesas aunque no tengan permisos de Caja
   - debe poder reflejar tambien las capacidades del usuario del turno para modular menu y rutas
+- En el modelo simplificado vigente, `Usuario operativo` recibe su capacidad concreta desde `cash_shift_users`; no se debe volver a partir ese comportamiento en subtipos legacy (`mesero`, `cajero`, `despachador`) como fuente principal de la UI.
 
 ## Snapshot operativo
 - La UI operativa ya no debe reconstruir estados solo desde eventos dispersos.

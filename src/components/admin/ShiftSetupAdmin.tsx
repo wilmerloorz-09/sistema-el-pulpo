@@ -45,6 +45,11 @@ const OPERATIVE_ROLE_KEYS: Array<keyof Pick<
   "can_serve_tables" | "can_dispatch_orders" | "can_use_caja" | "is_supervisor"
 >> = ["can_serve_tables", "can_dispatch_orders", "can_use_caja", "is_supervisor"];
 
+type ShiftUserRoleKey = keyof Pick<
+  ShiftUserRow,
+  "can_serve_tables" | "can_dispatch_orders" | "can_use_caja" | "can_authorize_order_cancel" | "is_supervisor"
+>;
+
 function hasOperationalCapability(user: ShiftUserRow) {
   return OPERATIVE_ROLE_KEYS.some((key) => user[key]);
 }
@@ -65,6 +70,35 @@ function normalizeShiftUser(user: ShiftUserRow, useFallbackServeRole: boolean): 
   }
 
   return normalized;
+}
+
+function sanitizeShiftUserCapability<T extends {
+  isEnabled: boolean;
+  canServeTables: boolean;
+  canDispatchOrders: boolean;
+  canUseCaja: boolean;
+  canAuthorizeOrderCancel: boolean;
+  isSupervisor: boolean;
+}>(user: T): T {
+  const hasOperationalRole =
+    user.canServeTables
+    || user.canDispatchOrders
+    || user.canUseCaja
+    || user.isSupervisor;
+
+  if (!user.isEnabled || hasOperationalRole) {
+    return user;
+  }
+
+  return {
+    ...user,
+    isEnabled: false,
+    canServeTables: false,
+    canDispatchOrders: false,
+    canUseCaja: false,
+    canAuthorizeOrderCancel: false,
+    isSupervisor: false,
+  };
 }
 
 function sameMembers(left: string[], right: string[]) {
@@ -210,7 +244,52 @@ const ShiftSetupAdmin = () => {
         p_branch_id: activeBranchId,
       } as never);
       if (error) throw error;
-      return ((data ?? []) as ShiftUserRow[]).filter((row) => row.is_profile_active);
+      const baseRows = ((data ?? []) as ShiftUserRow[]).filter((row) => row.is_profile_active);
+      const shiftId = shiftQuery.data?.id;
+
+      if (!shiftId) {
+        return baseRows.map((row) => normalizeShiftUser(row, false));
+      }
+
+      const { data: shiftUsersData, error: shiftUsersError } = await (supabase
+        .from("cash_shift_users" as never)
+        .select("user_id, is_enabled, can_serve_tables, can_dispatch_orders, can_use_caja, can_authorize_order_cancel, is_supervisor")
+        .eq("shift_id", shiftId) as any);
+
+      if (shiftUsersError) throw shiftUsersError;
+
+      const shiftUsersMap = new Map<string, {
+        is_enabled: boolean;
+        can_serve_tables: boolean;
+        can_dispatch_orders: boolean;
+        can_use_caja: boolean;
+        can_authorize_order_cancel: boolean;
+        is_supervisor: boolean;
+      }>();
+
+      for (const row of (shiftUsersData ?? []) as Array<{
+        user_id: string;
+        is_enabled: boolean | null;
+        can_serve_tables: boolean | null;
+        can_dispatch_orders: boolean | null;
+        can_use_caja: boolean | null;
+        can_authorize_order_cancel: boolean | null;
+        is_supervisor: boolean | null;
+      }>) {
+        shiftUsersMap.set(row.user_id, {
+          is_enabled: Boolean(row.is_enabled),
+          can_serve_tables: Boolean(row.can_serve_tables),
+          can_dispatch_orders: Boolean(row.can_dispatch_orders),
+          can_use_caja: Boolean(row.can_use_caja),
+          can_authorize_order_cancel: Boolean(row.can_authorize_order_cancel),
+          is_supervisor: Boolean(row.is_supervisor),
+        });
+      }
+
+      return baseRows.map((row) => normalizeShiftUser({
+        ...row,
+        ...(shiftUsersMap.get(row.user_id) ?? {}),
+      }, false));
     },
     enabled: !!activeBranchId,
   });
@@ -254,6 +333,10 @@ const ShiftSetupAdmin = () => {
   const isOpen = Boolean(shiftQuery.data);
   const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
+  const persistedEnabledUsersRawData = useMemo(
+    () => (shiftUsersQuery.data ?? []).filter((row) => row.is_enabled),
+    [shiftUsersQuery.data],
+  );
   const persistedEnabledUsersData = useMemo(
     () =>
       allBranchUsers
@@ -442,7 +525,7 @@ const ShiftSetupAdmin = () => {
       can_use_caja: u.can_use_caja,
       can_authorize_order_cancel: u.can_authorize_order_cancel,
       is_supervisor: u.is_supervisor
-    }))) !== JSON.stringify(persistedEnabledUsersData.map(u => ({
+    }))) !== JSON.stringify(persistedEnabledUsersRawData.map(u => ({
       can_serve_tables: u.can_serve_tables,
       can_dispatch_orders: u.can_dispatch_orders,
       can_use_caja: u.can_use_caja,
@@ -482,10 +565,11 @@ const ShiftSetupAdmin = () => {
     setSelectedUserToAdd("");
   };
 
-  const updateUserRole = (userId: string, role: keyof ShiftUserRow, value: boolean) => {
-    setShiftUsersState((prev) => prev.map((u) =>
-      u.user_id === userId ? { ...u, [role]: value } : u
-    ));
+  const updateUserRole = (userId: string, role: ShiftUserRoleKey, value: boolean) => {
+    setShiftUsersState((prev) => prev.map((u) => {
+      if (u.user_id !== userId) return u;
+      return normalizeShiftUser({ ...u, [role]: value }, false);
+    }));
   };
 
   const invalidateShiftState = () => {
@@ -642,58 +726,36 @@ const ShiftSetupAdmin = () => {
     canAuthorizeOrderCancel: boolean;
     isSupervisor: boolean;
   }) => {
-    const rpcParams = {
-      p_shift_id: params.shiftId,
-      p_user_id: params.userId,
-      p_is_enabled: params.isEnabled,
-      p_can_serve_tables: params.canServeTables,
-      p_can_dispatch_orders: params.canDispatchOrders,
-      p_can_use_caja: params.canUseCaja,
-      p_can_authorize_order_cancel: params.canAuthorizeOrderCancel,
-      p_is_supervisor: params.isSupervisor,
-    };
+    const sanitizedParams = sanitizeShiftUserCapability(params);
 
-    const { error } = await supabase.rpc("set_shift_user_enabled" as never, rpcParams as never);
-
-    if (!error) return;
-
-    const message = String(error.message ?? "");
-    const missingExtendedSignature =
-      message.includes("Could not find the function public.set_shift_user_enabled")
-      || message.includes("schema cache");
-
-    if (!missingExtendedSignature) {
-      throw error;
-    }
-
-    if (params.isEnabled) {
-      const { error: upsertError } = await (supabase
+    if (!sanitizedParams.isEnabled) {
+      const { error: deleteError } = await (supabase
         .from("cash_shift_users" as never)
-        .upsert({
-          shift_id: params.shiftId,
-          user_id: params.userId,
-          is_enabled: true,
-          can_serve_tables: params.canServeTables,
-          can_dispatch_orders: params.canDispatchOrders,
-          can_use_caja: params.canUseCaja,
-          can_authorize_order_cancel: params.canAuthorizeOrderCancel,
-          is_supervisor: params.isSupervisor,
-        } as never, {
-          onConflict: "shift_id,user_id",
-          ignoreDuplicates: false,
-        }) as any);
+        .delete()
+        .eq("shift_id", sanitizedParams.shiftId)
+        .eq("user_id", sanitizedParams.userId) as any);
 
-      if (upsertError) throw upsertError;
+      if (deleteError) throw deleteError;
       return;
     }
 
-    const { error: deleteError } = await (supabase
+    const { error: upsertError } = await (supabase
       .from("cash_shift_users" as never)
-      .delete()
-      .eq("shift_id", params.shiftId)
-      .eq("user_id", params.userId) as any);
+      .upsert({
+        shift_id: sanitizedParams.shiftId,
+        user_id: sanitizedParams.userId,
+        is_enabled: true,
+        can_serve_tables: sanitizedParams.canServeTables,
+        can_dispatch_orders: sanitizedParams.canDispatchOrders,
+        can_use_caja: sanitizedParams.canUseCaja,
+        can_authorize_order_cancel: sanitizedParams.canAuthorizeOrderCancel,
+        is_supervisor: sanitizedParams.isSupervisor,
+      } as never, {
+        onConflict: "shift_id,user_id",
+        ignoreDuplicates: false,
+      }) as any);
 
-    if (deleteError) throw deleteError;
+    if (upsertError) throw upsertError;
   };
 
   const resolveCurrentOpenShiftId = async () => {
@@ -718,14 +780,24 @@ const ShiftSetupAdmin = () => {
     if (!activeBranchId) throw new Error("No hay sucursal activa");
 
     const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
-    const enabledUsersJson = shiftUsersState.map((u) => ({
+    const enabledUsersJson = shiftUsersState.map((u) => sanitizeShiftUserCapability({
+      isEnabled: true,
       user_id: u.user_id,
-      can_serve_tables: u.can_serve_tables,
-      can_dispatch_orders: u.can_dispatch_orders,
-      can_use_caja: u.can_use_caja,
-      can_authorize_order_cancel: u.can_authorize_order_cancel,
-      is_supervisor: u.is_supervisor,
-    }));
+      canServeTables: u.can_serve_tables,
+      canDispatchOrders: u.can_dispatch_orders,
+      canUseCaja: u.can_use_caja,
+      canAuthorizeOrderCancel: u.can_authorize_order_cancel,
+      isSupervisor: u.is_supervisor,
+    }))
+      .filter((entry) => entry.isEnabled)
+      .map((entry) => ({
+        user_id: entry.user_id,
+        can_serve_tables: entry.canServeTables,
+        can_dispatch_orders: entry.canDispatchOrders,
+        can_use_caja: entry.canUseCaja,
+        can_authorize_order_cancel: entry.canAuthorizeOrderCancel,
+        is_supervisor: entry.isSupervisor,
+      }));
 
     const { data, error } = await supabase.rpc("open_cash_shift_with_tables" as never, {
       p_cashier_id: user.id,
@@ -804,42 +876,36 @@ const ShiftSetupAdmin = () => {
       } as never);
       if (tablesError) throw tablesError;
 
-      const currentEnabledSet = new Set(persistedEnabledUserIds);
-      const nextEnabledSet = new Set(enabledUserIds);
-
-      const changedUsers = allBranchUsers.filter((row) => {
-        const wasEnabled = currentEnabledSet.has(row.user_id);
-        const isEnabled = nextEnabledSet.has(row.user_id);
-
-        if (wasEnabled !== isEnabled) return true;
-        if (!isEnabled) return false;
-
-        const currentState = persistedEnabledUsersData.find((u) => u.user_id === row.user_id);
-        const nextState = shiftUsersState.find((u) => u.user_id === row.user_id);
-        if (!currentState || !nextState) return true;
-
-        return currentState.can_serve_tables !== nextState.can_serve_tables
-          || currentState.can_dispatch_orders !== nextState.can_dispatch_orders
-          || currentState.can_use_caja !== nextState.can_use_caja
-          || currentState.can_authorize_order_cancel !== nextState.can_authorize_order_cancel
-          || currentState.is_supervisor !== nextState.is_supervisor;
-      });
+      const sanitizedEnabledUsers = shiftUsersState
+        .map((entry) => sanitizeShiftUserCapability({
+          shiftId: shiftQuery.data!.id,
+          userId: entry.user_id,
+          isEnabled: true,
+          canServeTables: entry.can_serve_tables,
+          canDispatchOrders: entry.can_dispatch_orders,
+          canUseCaja: entry.can_use_caja,
+          canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
+          isSupervisor: entry.is_supervisor,
+        }))
+        .filter((entry) => entry.isEnabled);
 
       await Promise.all(
-        changedUsers.map(async (row) => {
-          const nextState = shiftUsersState.find(u => u.user_id === row.user_id);
-          await setShiftUserEnabledCompat({
-            shiftId: shiftQuery.data!.id,
-            userId: row.user_id,
-            isEnabled: nextEnabledSet.has(row.user_id),
-            canServeTables: nextState?.can_serve_tables ?? false,
-            canDispatchOrders: nextState?.can_dispatch_orders ?? false,
-            canUseCaja: nextState?.can_use_caja ?? false,
-            canAuthorizeOrderCancel: nextState?.can_authorize_order_cancel ?? false,
-            isSupervisor: nextState?.is_supervisor ?? false,
-          });
-        }),
+        sanitizedEnabledUsers.map((entry) =>
+          setShiftUserEnabledCompat(entry),
+        ),
       );
+
+      const enabledUserIdsForShift = sanitizedEnabledUsers.map((entry) => entry.userId);
+      const deleteQuery = (supabase
+        .from("cash_shift_users" as never)
+        .delete()
+        .eq("shift_id", shiftQuery.data.id) as any);
+
+      const { error: cleanupError } = enabledUserIdsForShift.length > 0
+        ? await deleteQuery.not("user_id", "in", `(${enabledUserIdsForShift.map((id) => `"${id}"`).join(",")})`)
+        : await deleteQuery;
+
+      if (cleanupError) throw cleanupError;
     },
     onSuccess: () => {
       invalidateShiftState();

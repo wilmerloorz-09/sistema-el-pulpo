@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp, Clock, Ban, CreditCard, Package, ShoppingBag, UtensilsCrossed } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
@@ -444,6 +445,11 @@ export default function OrderListRow({
                         {item.tray_item_type ? (
                           <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
                         ) : null}
+                        {item.status === "ITEM_PENDING_CANCELLATION" && (
+                          <Badge variant="secondary" className="border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold text-amber-800">
+                            Petición de anulación
+                          </Badge>
+                        )}
                       </div>
 
                       {item.modifiers.length > 0 && (

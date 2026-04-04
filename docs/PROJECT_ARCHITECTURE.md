@@ -116,6 +116,7 @@
   - precalienta el detalle de las ordenes visibles
   - precalienta el arbol de menu para `TABLE`, `TAKEOUT` y `BULK`
   - al navegar a `Ordenes`, la pantalla debe reutilizar ese cache en React Query
+- La apertura de una nueva orden `DINE_IN` desde `Mesas` o `Orden especial` debe resolverse por RPC de backend y no por `insert` directo en `orders`, para que la seguridad real se alinee con el turno operativo.
 
 ### Usuarios y alta administrativa
 - `UsersCrud` sigue siendo la superficie de administracion de usuarios.
@@ -314,6 +315,8 @@
 - La UX vigente del bloque de usuarios del turno ya no es "todos visibles y luego desmarcar":
   - se agregan usuarios activos de sucursal desde combo + boton
   - solo los agregados quedan como tarjetas configurables
+- En el modelo simplificado vigente, `Administrador`, `Supervisor` y `Usuario operativo` son los tipos visibles de usuario.
+- Para `Usuario operativo`, `cash_shift_users` define la capacidad operativa concreta dentro del turno (`Mesas`, `Despacho`, `Caja`, `Autorizar anul.`).
 - El bloque `Cancelacion/Anulacion directa de orden por categoria` vive dentro de este mismo formulario y persiste junto con el resto.
 - Sin turno abierto, los modulos operativos deben degradarse a estado bloqueado; `Admin` queda como unico punto de entrada para administradores/supervisores.
 

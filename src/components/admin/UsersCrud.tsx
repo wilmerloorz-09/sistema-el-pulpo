@@ -490,6 +490,8 @@ const UsersCrud = () => {
                     <ChangePasswordDialog
                       targetUserId={user.id}
                       targetUserName={user.full_name}
+                      targetUserEmail={user.email ?? null}
+                      targetUsername={user.username}
                       trigger={
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-primary transition-colors" title="Cambiar contraseña">
                           <KeyRound className="h-3.5 w-3.5" />

@@ -95,6 +95,17 @@ function isAuthorizationRequiredError(error: unknown) {
   return message.toLowerCase().includes("requiere autorizacion");
 }
 
+function isRlsPolicyError(error: unknown) {
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: string }).code) : "";
+  const message = typeof error === "object" && error !== null && "message" in error ? String((error as { message?: string }).message) : "";
+
+  return (
+    code === "42501"
+    || message.toLowerCase().includes("row-level security")
+    || message.toLowerCase().includes("violates row-level security policy")
+  );
+}
+
 function applyCancellationToOrderCache(
   current: any,
   selections: Array<{ order_item_id: string; quantity_cancelled: number }>,
@@ -194,31 +205,6 @@ export function useCancellation() {
     }
   };
 
-  const requestOrderCancellationFallback = async (orderId: string, userId: string) => {
-    const now = new Date().toISOString();
-
-    try {
-      const { error } = await (supabase.from("orders") as any)
-        .update({
-          cancel_requested_by: userId,
-          cancel_requested_at: now,
-        })
-        .eq("id", orderId);
-
-      if (!error) return;
-
-      const { error: retryError } = await (supabase.from("orders") as any)
-        .update({
-          cancel_requested_at: now,
-        })
-        .eq("id", orderId);
-
-      if (retryError) throw retryError;
-    } catch (fallbackError) {
-      throw fallbackError;
-    }
-  };
-
   const createPendingCancellationDraftDirect = async (
     orderId: string,
     userId: string,
@@ -229,25 +215,57 @@ export function useCancellation() {
   ) => {
     const now = new Date().toISOString();
     const draftId = generateUUID();
-    const payload = {
-      notes: notes?.trim() || null,
-      items: items
-        .filter((item) => item.quantity_cancelled > 0)
-        .map((item) => ({
-          order_item_id: item.order_item_id,
-          quantity_cancelled: item.quantity_cancelled,
-        })),
-    };
 
     const { data: existingDrafts, error: existingDraftsError } = await supabase
       .from("order_cancellations")
-      .select("id")
+      .select("id, notes")
       .eq("order_id", orderId)
       .eq("status", "VOIDED")
       .ilike("notes", "[PENDING_REQUEST]%");
     if (existingDraftsError) throw existingDraftsError;
 
     const existingDraftIds = (existingDrafts ?? []).map((row) => row.id);
+    const mergedItemsMap = new Map<string, number>();
+
+    if (existingDraftIds.length > 0) {
+      const { data: existingDetailRows, error: existingDetailRowsError } = await supabase
+        .from("order_item_cancellations")
+        .select("order_cancellation_id, order_item_id, quantity_cancelled")
+        .in("order_cancellation_id", existingDraftIds);
+      if (existingDetailRowsError) throw existingDetailRowsError;
+
+      for (const row of existingDetailRows ?? []) {
+        const orderItemId = String(row.order_item_id ?? "").trim();
+        const qty = Math.max(0, Math.floor(Number(row.quantity_cancelled ?? 0)));
+        if (!orderItemId || qty <= 0) continue;
+        mergedItemsMap.set(orderItemId, (mergedItemsMap.get(orderItemId) ?? 0) + qty);
+      }
+
+      if (mergedItemsMap.size === 0) {
+        for (const draft of existingDrafts ?? []) {
+          for (const item of parsePendingRequestItemsFromNotes(draft.notes ?? null)) {
+            mergedItemsMap.set(item.order_item_id, (mergedItemsMap.get(item.order_item_id) ?? 0) + item.quantity_cancelled);
+          }
+        }
+      }
+    }
+
+    for (const item of items) {
+      const orderItemId = String(item.order_item_id ?? "").trim();
+      const qty = Math.max(0, Math.floor(Number(item.quantity_cancelled ?? 0)));
+      if (!orderItemId || qty <= 0) continue;
+      mergedItemsMap.set(orderItemId, (mergedItemsMap.get(orderItemId) ?? 0) + qty);
+    }
+
+    const mergedItems = Array.from(mergedItemsMap.entries()).map(([order_item_id, quantity_cancelled]) => ({
+      order_item_id,
+      quantity_cancelled,
+    }));
+    const payload = {
+      notes: notes?.trim() || null,
+      items: mergedItems,
+    };
+
     if (existingDraftIds.length > 0) {
       const { error: deleteDetailError } = await supabase
         .from("order_item_cancellations")
@@ -274,28 +292,106 @@ export function useCancellation() {
     } as any);
     if (headerError) throw headerError;
 
-    const detailRows = items
-      .filter((item) => item.quantity_cancelled > 0)
-      .map((item) => ({
-        id: generateUUID(),
-        order_cancellation_id: draftId,
-        order_id: orderId,
-        order_item_id: item.order_item_id,
-        quantity_cancelled: item.quantity_cancelled,
-        unit_price: item.unit_price,
-        total_amount: Math.round(item.quantity_cancelled * item.unit_price * 100) / 100,
-        source_stage:
-          (item.quantity_cancelled_dispatched ?? 0) > 0
-            ? "DISPATCHED"
-            : (item.quantity_cancelled_ready ?? 0) > 0
-              ? "READY"
-              : "PENDING",
-        created_at: now,
-      }));
+    const snapshotResponse = await (supabase as any).rpc("get_order_operational_snapshot", {
+      p_order_id: orderId,
+    });
+    if (snapshotResponse.error) throw snapshotResponse.error;
+
+    const snapshotRows = Array.isArray(snapshotResponse.data) ? snapshotResponse.data : [];
+    const detailRows = mergedItems.flatMap((item) => {
+      const snapshot = snapshotRows.find((row: any) => String(row.order_item_id) === item.order_item_id);
+      if (!snapshot) return [];
+
+      const unitPrice = Number(snapshot.unit_price ?? 0);
+      let remainingQty = item.quantity_cancelled;
+      const pendingQty = Math.min(remainingQty, Math.max(0, Number(snapshot.quantity_pending_prepare ?? 0)));
+      remainingQty = Math.max(0, remainingQty - pendingQty);
+      const readyQty = Math.min(remainingQty, Math.max(0, Number(snapshot.quantity_ready_available ?? 0)));
+      remainingQty = Math.max(0, remainingQty - readyQty);
+      const dispatchedAvailable = Math.max(
+        0,
+        Number(snapshot.quantity_dispatched_total ?? snapshot.quantity_dispatched ?? 0)
+          - Number(snapshot.quantity_cancelled_dispatched ?? 0),
+      );
+      const dispatchedQty = Math.min(remainingQty, dispatchedAvailable);
+
+      const rows = [];
+      if (pendingQty > 0) {
+        rows.push({
+          id: generateUUID(),
+          order_cancellation_id: draftId,
+          order_id: orderId,
+          order_item_id: item.order_item_id,
+          quantity_cancelled: pendingQty,
+          unit_price: unitPrice,
+          total_amount: Math.round(pendingQty * unitPrice * 100) / 100,
+          source_stage: "PENDING",
+          created_at: now,
+        });
+      }
+      if (readyQty > 0) {
+        rows.push({
+          id: generateUUID(),
+          order_cancellation_id: draftId,
+          order_id: orderId,
+          order_item_id: item.order_item_id,
+          quantity_cancelled: readyQty,
+          unit_price: unitPrice,
+          total_amount: Math.round(readyQty * unitPrice * 100) / 100,
+          source_stage: "READY",
+          created_at: now,
+        });
+      }
+      if (dispatchedQty > 0) {
+        rows.push({
+          id: generateUUID(),
+          order_cancellation_id: draftId,
+          order_id: orderId,
+          order_item_id: item.order_item_id,
+          quantity_cancelled: dispatchedQty,
+          unit_price: unitPrice,
+          total_amount: Math.round(dispatchedQty * unitPrice * 100) / 100,
+          source_stage: "DISPATCHED",
+          created_at: now,
+        });
+      }
+
+      return rows;
+    });
 
     if (detailRows.length > 0) {
       const { error: detailError } = await supabase.from("order_item_cancellations").insert(detailRows as any);
       if (detailError) throw detailError;
+    }
+  };
+
+  const requestOrderCancellationFallback = async (orderId: string, userId: string) => {
+    const now = new Date().toISOString();
+
+    try {
+      const { error } = await (supabase.from("orders") as any)
+        .update({
+          cancel_requested_by: userId,
+          cancel_requested_at: now,
+        })
+        .eq("id", orderId);
+
+      if (!error) return;
+
+      console.warn("Error en primer intento de fallback de solicitud de anulacion (RLS?):", error);
+
+      const { error: retryError } = await (supabase.from("orders") as any)
+        .update({
+          cancel_requested_at: now,
+        })
+        .eq("id", orderId);
+
+      if (retryError) {
+        console.error("Error definitivo en fallback de solicitud de anulacion:", retryError);
+        throw retryError;
+      }
+    } catch (fallbackError) {
+      throw fallbackError;
     }
   };
 
@@ -304,16 +400,94 @@ export function useCancellation() {
       const { itemId, orderId, currentStatus, quantity, unitPrice, userId, cancellationData } = params;
       const reason = cancellationData?.reason || "Sin especificar";
 
-      const { error } = await supabase.rpc("cancel_order_quantities", {
-        p_order_id: orderId,
-        p_cancelled_by: userId,
-        p_reason: reason,
-        p_notes: cancellationData?.notes ?? null,
-        p_items: [{ order_item_id: itemId, quantity_cancelled: quantity }],
-        p_cancellation_type: "partial",
-      });
+      const createAuthorizationRequest = async () => {
+        let requestStoredWithoutDraft = false;
 
-      if (error) throw error;
+        const { error } = await supabase.rpc("create_pending_order_cancellation_request", {
+          p_order_id: orderId,
+          p_user_id: userId,
+          p_reason: reason,
+          p_notes: cancellationData?.notes ?? null,
+          p_items: [{ order_item_id: itemId, quantity_cancelled: quantity }],
+          p_cancellation_type: "partial",
+        });
+
+        if (error) {
+          console.error("Error al registrar solicitud de anulacion por item (RPC principal):", error);
+
+          if (isMissingRpcFunctionError(error, "create_pending_order_cancellation_request")) {
+            const fallbackRequest = await supabase.rpc("request_order_cancellation", {
+              p_order_id: orderId,
+              p_user_id: userId,
+            });
+
+            if (fallbackRequest.error) {
+              if (!isMissingRpcFunctionError(fallbackRequest.error, "request_order_cancellation")) {
+                throw fallbackRequest.error;
+              }
+              await requestOrderCancellationFallback(orderId, userId);
+            }
+
+            try {
+              await createPendingCancellationDraftDirect(
+                orderId,
+                userId,
+                reason,
+                cancellationData?.notes ?? null,
+                [{
+                  order_item_id: itemId,
+                  quantity_cancelled: quantity,
+                  status: currentStatus,
+                  description_snapshot: "",
+                  unit_price: unitPrice,
+                }],
+                "partial",
+              );
+            } catch (draftError) {
+              if (
+                !isRlsPolicyError(draftError) &&
+                !isMissingRelationError(draftError, "order_cancellations") &&
+                !isMissingRelationError(draftError, "order_item_cancellations")
+              ) {
+                throw draftError;
+              }
+
+              requestStoredWithoutDraft = true;
+              console.warn("No se pudo guardar borrador detallado para item (RLS?), se conserva solicitud basica.", draftError);
+            }
+          } else {
+            throw error;
+          }
+        }
+
+        return {
+          itemId,
+          orderId,
+          isRequest: true,
+          selections: [{ order_item_id: itemId, quantity_cancelled: quantity }],
+          cancellationType: "partial" as const,
+          requestStoredWithoutDraft,
+        };
+      };
+
+      try {
+        const { error } = await supabase.rpc("cancel_order_quantities", {
+          p_order_id: orderId,
+          p_cancelled_by: userId,
+          p_reason: reason,
+          p_notes: cancellationData?.notes ?? null,
+          p_items: [{ order_item_id: itemId, quantity_cancelled: quantity }],
+          p_cancellation_type: "partial",
+        });
+
+        if (error) throw error;
+      } catch (error) {
+        if (!isAuthorizationRequiredError(error)) {
+          throw error;
+        }
+
+        return createAuthorizationRequest();
+      }
 
       await runKitchenAndLossSideEffects(orderId, userId, reason, [
         {
@@ -335,11 +509,16 @@ export function useCancellation() {
     },
     onSuccess: async (data) => {
       if (data.isRequest) {
+        const requestedAt = new Date().toISOString();
         toast.success("Solicitud de anulación enviada");
         qc.setQueryData(["order", data.orderId], (current: any) => {
           if (!current) return current;
-          return { ...current, cancel_requested_at: new Date().toISOString() };
+          return { ...current, cancel_requested_at: requestedAt };
         });
+        syncPendingRequestIntoOrderListCaches(qc, data.orderId, requestedAt);
+        if ((data as any).requestStoredWithoutDraft) {
+          toast.info("La solicitud quedo registrada en la orden. El detalle por item requiere aplicar la RPC remota mas reciente.");
+        }
       } else {
         qc.setQueryData(["order", data.orderId], (current: any) =>
           applyCancellationToOrderCache(current, data.selections, data.cancellationType)
@@ -365,6 +544,8 @@ export function useCancellation() {
       const selectedItems = items.filter((item) => item.quantity_cancelled > 0);
 
       const createAuthorizationRequest = async () => {
+        let requestStoredWithoutDraft = false;
+
         const { error } = await supabase.rpc("create_pending_order_cancellation_request", {
           p_order_id: orderId,
           p_user_id: userId,
@@ -378,39 +559,59 @@ export function useCancellation() {
         });
 
         if (error) {
-          if (!isMissingRpcFunctionError(error, "create_pending_order_cancellation_request")) {
-            throw error;
-          }
+          console.error("Error al registrar solicitud de anulacion (RPC principal):", error);
+          
+          // Solo caemos en fallback si la funcion NO existe realmente
+          if (isMissingRpcFunctionError(error, "create_pending_order_cancellation_request")) {
+            const fallbackRequest = await supabase.rpc("request_order_cancellation", {
+              p_order_id: orderId,
+              p_user_id: userId,
+            });
 
-          const fallbackRequest = await supabase.rpc("request_order_cancellation", {
-            p_order_id: orderId,
-            p_user_id: userId,
-          });
-
-          if (fallbackRequest.error) {
-            if (!isMissingRpcFunctionError(fallbackRequest.error, "request_order_cancellation")) {
-              throw fallbackRequest.error;
+            if (fallbackRequest.error) {
+              if (!isMissingRpcFunctionError(fallbackRequest.error, "request_order_cancellation")) {
+                throw fallbackRequest.error;
+              }
+              await requestOrderCancellationFallback(orderId, userId);
             }
 
-            await requestOrderCancellationFallback(orderId, userId);
-          }
+            try {
+              await createPendingCancellationDraftDirect(
+                orderId,
+                userId,
+                reason,
+                cancellationData?.notes ?? null,
+                items,
+                cancellationType,
+              );
+            } catch (draftError) {
+              if (
+                !isRlsPolicyError(draftError) &&
+                !isMissingRelationError(draftError, "order_cancellations") &&
+                !isMissingRelationError(draftError, "order_item_cancellations")
+              ) {
+                throw draftError;
+              }
 
-          await createPendingCancellationDraftDirect(
-            orderId,
-            userId,
-            reason,
-            cancellationData?.notes ?? null,
-            items,
-            cancellationType,
-          );
+              requestStoredWithoutDraft = true;
+              console.warn("No se pudo guardar borrador detallado (RLS?), se conserva solicitud basica.", draftError);
+            }
+          } else {
+            // Si la funcion EXISTE pero lanzo error (ej. RLS, validacion), lo lanzamos hacia arriba
+            throw error;
+          }
         }
 
         return {
           orderId,
           isRequest: true,
           cancellationId: null,
-          selections: [],
+          selections: (cancellationType === "total" ? items : selectedItems).map(item => ({
+            order_item_id: item.order_item_id,
+            quantity_cancelled: item.quantity_cancelled,
+          })),
           cancellationType,
+          requestStoredWithoutDraft,
         };
       };
 
@@ -464,11 +665,16 @@ export function useCancellation() {
     },
     onSuccess: async (data) => {
       if (data.isRequest) {
+        const requestedAt = new Date().toISOString();
         toast.success("Solicitud de anulación enviada");
         qc.setQueryData(["order", data.orderId], (current: any) => {
           if (!current) return current;
-          return { ...current, cancel_requested_at: new Date().toISOString() };
+          return { ...current, cancel_requested_at: requestedAt };
         });
+        syncPendingRequestIntoOrderListCaches(qc, data.orderId, requestedAt);
+        if ((data as any).requestStoredWithoutDraft) {
+          toast.info("La solicitud quedo registrada en la orden. El detalle por item requiere aplicar la RPC remota mas reciente.");
+        }
       } else {
         qc.setQueryData(["order", data.orderId], (current: any) =>
           applyCancellationToOrderCache(current, data.selections, data.cancellationType)
@@ -533,7 +739,69 @@ export function useCancellation() {
 
       const drafts = pendingDrafts ?? [];
       if (drafts.length === 0) {
-        throw new Error("No se encontro una solicitud pendiente para esta orden");
+        const snapshotResponse = await (supabase as any).rpc("get_order_operational_snapshot", {
+          p_order_id: orderId,
+        });
+        if (snapshotResponse.error) throw snapshotResponse.error;
+
+        const fallbackSelections: CancelOrderItemSelection[] = (Array.isArray(snapshotResponse.data) ? snapshotResponse.data : [])
+          .map((row: any) => {
+            const quantityPending = Math.max(0, Number(row.quantity_pending_prepare ?? 0));
+            const quantityReady = Math.max(0, Number(row.quantity_ready_available ?? 0));
+            const quantityDispatched = Math.max(
+              0,
+              Number(row.quantity_dispatched_total ?? row.quantity_dispatched ?? 0)
+                - Number(row.quantity_cancelled_dispatched ?? 0),
+            );
+            const quantityCancelled = quantityPending + quantityReady + quantityDispatched;
+
+            return {
+              order_item_id: String(row.order_item_id),
+              quantity_cancelled: quantityCancelled,
+              quantity_cancelled_pending: quantityPending,
+              quantity_cancelled_ready: quantityReady,
+              quantity_cancelled_dispatched: quantityDispatched,
+              unit_price: Number(row.unit_price ?? 0),
+              description_snapshot: String(row.description_snapshot ?? "Item"),
+              status: "PENDING_CANCELLATION",
+            } satisfies CancelOrderItemSelection;
+          })
+          .filter((item) => item.quantity_cancelled > 0);
+
+        if (fallbackSelections.length === 0) {
+          throw new Error("No se encontro una solicitud pendiente para esta orden");
+        }
+
+        const { data, error } = await supabase.rpc("cancel_order_quantities", {
+          p_order_id: orderId,
+          p_cancelled_by: userId,
+          p_reason: "Solicitud pendiente aprobada",
+          p_notes: "[LEGACY_PENDING_REQUEST]",
+          p_items: fallbackSelections.map((item) => ({
+            order_item_id: item.order_item_id,
+            quantity_cancelled: item.quantity_cancelled,
+          })),
+          p_cancellation_type: "total",
+        });
+        if (error) throw error;
+
+        const { error: clearPendingError } = await supabase.rpc("clear_pending_order_cancellation_request", {
+          p_order_id: orderId,
+        });
+        if (clearPendingError) throw clearPendingError;
+
+        return {
+          orderId,
+          cancellationId: data as string | null,
+          selections: fallbackSelections.map((item) => ({
+            order_item_id: item.order_item_id,
+            quantity_cancelled: item.quantity_cancelled,
+            quantity_cancelled_pending: item.quantity_cancelled_pending,
+            quantity_cancelled_ready: item.quantity_cancelled_ready,
+            quantity_cancelled_dispatched: item.quantity_cancelled_dispatched,
+          })),
+          cancellationType: "total" as const,
+        };
       }
 
       const draftIds = drafts.map((draft) => draft.id);
@@ -686,6 +954,105 @@ export function useCancellation() {
     rejectCancellationRequestMutation,
     approveCancellationRequestMutation,
   };
+}
+
+function buildPendingOrderSummaryFromOrderCache(currentOrder: any, requestedAt: string) {
+  if (!currentOrder?.id) return null;
+
+  const items = Array.isArray(currentOrder.items)
+    ? currentOrder.items.map((item: any) => ({
+        id: item.id,
+        product_id: item.product_id ?? undefined,
+        description_snapshot: item.description_snapshot,
+        quantity: Number(item.quantity ?? 0),
+        quantity_total: Number(item.quantity_ordered ?? item.original_quantity ?? item.quantity ?? 0),
+        quantity_requested: Number(item.quantity ?? 0),
+        quantity_dispatched: Number(item.quantity_dispatched ?? 0),
+        quantity_remaining: Number(item.quantity_remaining ?? 0),
+        total: Number(item.total ?? 0),
+        status: "PENDING_CANCELLATION",
+        tray_item_type: item.tray_item_type ?? null,
+        modifiers: Array.isArray(item.modifiers)
+          ? item.modifiers.map((modifier: any) => ({ description: String(modifier.description ?? "").trim() }))
+          : [],
+        item_note: item.item_note ?? null,
+      }))
+    : [];
+
+  return {
+    id: currentOrder.id,
+    order_number: Number(currentOrder.order_number ?? 0),
+    order_code: currentOrder.order_code ?? null,
+    split_code: currentOrder.split_code ?? null,
+    status: "PENDING_CANCELLATION",
+    order_type: currentOrder.order_type ?? "DINE_IN",
+    is_special: Boolean(currentOrder.is_special),
+    special_total_manual: currentOrder.special_total_manual ?? null,
+    table_id: currentOrder.table_id ?? null,
+    table_name: currentOrder.table_name ?? null,
+    created_at: currentOrder.created_at,
+    sent_to_kitchen_at: currentOrder.sent_to_kitchen_at ?? null,
+    ready_at: currentOrder.ready_at ?? null,
+    dispatched_at: currentOrder.dispatched_at ?? null,
+    paid_at: currentOrder.paid_at ?? null,
+    cancelled_at: currentOrder.cancelled_at ?? null,
+    cancel_requested_at: requestedAt,
+    total: items.reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0),
+    item_count: items.length,
+    items,
+  };
+}
+
+function markOrderPendingRequestInListCaches(qc: ReturnType<typeof useQueryClient>, orderId: string, requestedAt: string) {
+  const currentOrder = qc.getQueryData(["order", orderId]) as any;
+  const pendingSummary = buildPendingOrderSummaryFromOrderCache(currentOrder, requestedAt);
+
+  qc.setQueriesData({ queryKey: ["orders"] }, (current: any) => {
+    if (!Array.isArray(current)) return current;
+
+    const next = current.map((order: any) =>
+      order?.id === orderId
+        ? {
+            ...order,
+            // Mantenemos el estado original para que no desaparezca de la pestaña actual (Despachadas, etc.)
+            // Pero actualizamos la fecha de solicitud para disparar la logica de "Pendiente" en items
+            cancel_requested_at: requestedAt,
+            // El status global solo se pone en PENDING_CANCELLATION si la vista lo requiere (calculado en el hook listador)
+          }
+        : order,
+    );
+
+    const exists = next.some((order: any) => order?.id === orderId);
+    return exists || !pendingSummary ? next : [pendingSummary, ...next];
+  });
+}
+
+function syncPendingRequestIntoOrderListCaches(qc: ReturnType<typeof useQueryClient>, orderId: string, requestedAt: string) {
+  const currentOrder = qc.getQueryData(["order", orderId]) as any;
+  const pendingSummary = buildPendingOrderSummaryFromOrderCache(currentOrder, requestedAt);
+  const queryEntries = qc.getQueriesData({ queryKey: ["orders"] });
+
+  for (const [queryKey, current] of queryEntries) {
+    if (!Array.isArray(current) || !Array.isArray(queryKey)) continue;
+
+    const viewStatus = queryKey[2];
+    const next = current.map((order: any) =>
+      order?.id === orderId
+        ? {
+            ...order,
+            cancel_requested_at: requestedAt,
+          }
+        : order,
+    );
+
+    const exists = next.some((order: any) => order?.id === orderId);
+    if (viewStatus === "PENDING_CANCELLATION") {
+      qc.setQueryData(queryKey, exists || !pendingSummary ? next : [pendingSummary, ...next]);
+      continue;
+    }
+
+    qc.setQueryData(queryKey, next);
+  }
 }
 
 export type { CancelOrderItemSelection, CancelOrderParams };

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface BranchShiftGate {
   shiftId: string | null;
@@ -18,11 +19,12 @@ export interface BranchShiftGate {
 
 export function useBranchShiftGate() {
   const { activeBranchId } = useBranch();
+  const { user } = useAuth();
 
   return useQuery({
-    queryKey: ["branch-shift-gate", activeBranchId],
+    queryKey: ["branch-shift-gate", activeBranchId, user?.id ?? null],
     queryFn: async (): Promise<BranchShiftGate> => {
-      if (!activeBranchId) {
+      if (!activeBranchId || !user?.id) {
         return {
           shiftId: null,
           shiftOpen: false,
@@ -44,22 +46,51 @@ export function useBranchShiftGate() {
       if (error) throw error;
 
       const row = Array.isArray(data) ? data[0] : data;
+      const shiftId = row?.shift_id ?? null;
+
+      if (!shiftId) {
+        return {
+          shiftId: null,
+          shiftOpen: Boolean(row?.shift_open),
+          userEnabled: Boolean(row?.user_enabled),
+          activeTablesCount: Number(row?.active_tables_count ?? 0),
+          cajaStatus: row?.caja_status ?? "UNOPENED",
+          canServeTables: Boolean(row?.can_serve_tables),
+          canDispatchOrders: Boolean(row?.can_dispatch_orders),
+          canUseCaja: Boolean(row?.can_use_caja),
+          canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
+          isSupervisor: Boolean(row?.is_supervisor),
+          legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
+        };
+      }
+
+      const { data: shiftUserRow, error: shiftUserError } = await (supabase
+        .from("cash_shift_users" as never)
+        .select("is_enabled, can_serve_tables, can_dispatch_orders, can_use_caja, can_authorize_order_cancel, is_supervisor")
+        .eq("shift_id", shiftId)
+        .eq("user_id", user.id)
+        .maybeSingle() as any);
+
+      if (shiftUserError) throw shiftUserError;
+
+      const directUserEnabled = Boolean(shiftUserRow?.is_enabled);
+      const hasDirectShiftRow = shiftUserRow != null;
 
       return {
-        shiftId: row?.shift_id ?? null,
+        shiftId,
         shiftOpen: Boolean(row?.shift_open),
-        userEnabled: Boolean(row?.user_enabled),
+        userEnabled: hasDirectShiftRow ? directUserEnabled : Boolean(row?.user_enabled),
         activeTablesCount: Number(row?.active_tables_count ?? 0),
         cajaStatus: row?.caja_status ?? "UNOPENED",
-        canServeTables: Boolean(row?.can_serve_tables),
-        canDispatchOrders: Boolean(row?.can_dispatch_orders),
-        canUseCaja: Boolean(row?.can_use_caja),
-        canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
-        isSupervisor: Boolean(row?.is_supervisor),
+        canServeTables: hasDirectShiftRow ? Boolean(shiftUserRow?.can_serve_tables) : Boolean(row?.can_serve_tables),
+        canDispatchOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_dispatch_orders) : Boolean(row?.can_dispatch_orders),
+        canUseCaja: hasDirectShiftRow ? Boolean(shiftUserRow?.can_use_caja) : Boolean(row?.can_use_caja),
+        canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
+        isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),
         legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
       };
     },
-    enabled: !!activeBranchId,
+    enabled: !!activeBranchId && !!user?.id,
     staleTime: 0,
     refetchInterval: 5000,
   });

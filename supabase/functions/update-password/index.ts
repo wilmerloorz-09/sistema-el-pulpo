@@ -11,6 +11,56 @@ const toJson = (payload: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+const normalizeText = (value: unknown) => String(value ?? "").trim();
+const normalizeEmail = (value: unknown) => normalizeText(value).toLowerCase();
+const isUserNotFoundMessage = (value: unknown) =>
+  normalizeText(value).toLowerCase().includes("user not found");
+
+async function resolveAuthUserId(
+  adminClient: ReturnType<typeof createClient>,
+  requestedId: string | null,
+  requestedEmail: string | null,
+  requestedUsername: string | null,
+) {
+  const normalizedId = normalizeText(requestedId);
+  const normalizedEmail = normalizeEmail(requestedEmail);
+  const normalizedUsername = normalizeText(requestedUsername).toLowerCase();
+
+  let page = 1;
+  const perPage = 200;
+
+  while (true) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw new Error(`No se pudo listar usuarios auth: ${error.message}`);
+    }
+
+    const users = data?.users ?? [];
+    const matchedUser = users.find((user) => {
+      const userEmail = normalizeEmail(user.email);
+      const userUsername = normalizeText(user.user_metadata?.username).toLowerCase();
+
+      return (
+        (normalizedId.length > 0 && user.id === normalizedId)
+        || (normalizedEmail.length > 0 && userEmail === normalizedEmail)
+        || (normalizedUsername.length > 0 && userUsername === normalizedUsername)
+      );
+    });
+
+    if (matchedUser) {
+      return matchedUser.id;
+    }
+
+    if (users.length < perPage) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -25,17 +75,12 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-
     if (!supabaseUrl || !serviceRoleKey) {
       console.error("update-password: missing env vars");
       return toJson({ error: "Faltan secretos SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY" }, 500);
     }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
-    const callerClient = createClient(supabaseUrl, anonKey ?? serviceRoleKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
 
     const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
     const {
@@ -52,10 +97,12 @@ Deno.serve(async (req) => {
       return toJson({ error: "No autorizado" }, 401);
     }
 
-    const { target_user_id, new_password } = await req.json();
+    const { target_user_id, target_user_email, target_username, new_password } = await req.json();
     console.log("update-password: request", {
       caller_id: caller.id,
       target_user_id: target_user_id ?? caller.id,
+      target_user_email: target_user_email ?? null,
+      target_username: target_username ?? null,
       changing_other_user: Boolean(target_user_id && target_user_id !== caller.id),
     });
 
@@ -80,11 +127,60 @@ Deno.serve(async (req) => {
       }
     }
 
-    const userId = target_user_id || caller.id;
+    const changingOtherUser = Boolean(target_user_id && target_user_id !== caller.id);
+    let userId = target_user_id || caller.id;
+    let targetProfile:
+      | {
+          id: string;
+          email: string | null;
+          username: string | null;
+        }
+      | null = null;
 
-    const { error } = await adminClient.auth.admin.updateUserById(userId, {
+    if (changingOtherUser) {
+      const { data, error: profileError } = await adminClient
+        .from("profiles")
+        .select("id, email, username")
+        .eq("id", target_user_id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("update-password: target profile lookup failed", profileError.message);
+        return toJson({ error: "No se pudo validar el usuario objetivo" }, 500);
+      }
+
+      if (!data) {
+        return toJson({ error: "El perfil del usuario no existe" }, 404);
+      }
+      targetProfile = data;
+    }
+
+    let { error } = await adminClient.auth.admin.updateUserById(userId, {
       password: new_password,
     });
+
+    if (error && changingOtherUser && isUserNotFoundMessage(error.message)) {
+      const resolvedUserId = await resolveAuthUserId(
+        adminClient,
+        target_user_id,
+        target_user_email ?? targetProfile?.email ?? null,
+        target_username ?? targetProfile?.username ?? null,
+      );
+
+      if (!resolvedUserId) {
+        console.error("update-password: target auth user not found", {
+          target_user_id,
+          target_user_email: target_user_email ?? targetProfile?.email ?? null,
+          target_username: target_username ?? targetProfile?.username ?? null,
+        });
+        return toJson({ error: "No se encontro el usuario en Auth para cambiar la contrasena" }, 404);
+      }
+
+      userId = resolvedUserId;
+      ({ error } = await adminClient.auth.admin.updateUserById(userId, {
+        password: new_password,
+      }));
+    }
 
     if (error) {
       console.error("update-password: updateUserById failed", error.message);

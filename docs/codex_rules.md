@@ -72,6 +72,9 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
 - Si no hay turno abierto, los modulos operativos deben quedar bloqueados y solo `Admin` debe seguir accesible para administradores/supervisores.
 - En `Admin > Turno`, la UX vigente de usuarios es `combo + agregar + tarjetas`; no volver al modelo de "todos visibles y luego desmarcar".
 - En `Admin > Turno`, `Despacho` ya no debe exponer switches manuales de vistas activas; `Mesa` se deriva de mesas activas y `Para llevar` queda disponible.
+- En el modelo simplificado vigente, `Usuario operativo` no se parte en roles base visibles; la capacidad concreta de `Mesas`, `Despacho`, `Caja` y `Autorizar anul.` se define dentro del turno por `cash_shift_users`.
+- Si se toca la apertura de `Mesa` u `Orden especial`, no volver a usar `insert` directo a `orders` desde frontend; usar RPC validada por turno para respetar `cash_shift_users.can_serve_tables`.
+- El mismo criterio aplica a altas de `order_items` y al envio de borradores a cocina/caja desde `Ordenes`: evitar `insert/update` directo desde frontend cuando el flujo dependa del turno operativo.
 - Si se implementa o toca `Cambiar mesa` para una orden `DINE_IN`, mantener siempre esta regla:
   - destino libre: mover directo actualizando `orders.table_id`
   - si la orden ya tenia division y el destino esta libre, debe salir de esa division y quedar con `orders.split_id = NULL`

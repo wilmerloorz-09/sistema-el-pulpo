@@ -137,6 +137,7 @@
 - Esa marca se persiste en `menu_nodes.manual_price_enabled`.
 - Si un producto cuelga de una categoria (o ancestro) con `manual_price_enabled = true`, `Ordenes` debe tratarlo como producto de precio manual al cargar el catalogo.
 - En `Mesas`, abrir una mesa, para llevar o una orden especial debe seguir entrando al flujo normal de `Ordenes`, pero la navegacion visual debe conservar seleccionado `Mesas` cuando la apertura proviene desde ese modulo.
+- La apertura real de `Mesa` y `Orden Especial` no debe salir por `insert` directo a `orders` desde frontend; debe pasar por una RPC validada por turno (`cash_shifts` + `cash_shift_users`) para respetar `Mesero (Mesas)` en `Usuario operativo`.
 - En `Ordenes`, al dividir mesa o cambiar entre submesas tambien debe preservarse ese origen (`from=mesas`) para no resaltar `Ordenes` en la navegacion lateral/inferior.
 - En `Caja > PaymentDialog`, la lista de metodos de pago ya no debe duplicar metodos con el mismo nombre visible.
 - `Monedas y billetes` solo debe habilitarse cuando exista al menos un item en la columna `Items a cobrar ahora`.
@@ -352,6 +353,11 @@
   - boton `Agregar`
   - solo los usuarios agregados quedan visibles abajo para definir capacidades
 - Los usuarios habilitados del turno se persisten por `cash_shift_users`.
+- En el modelo simplificado vigente, el tipo base del usuario es:
+  - `Administrador`
+  - `Supervisor`
+  - `Usuario operativo`
+- Para `Usuario operativo`, la capacidad concreta de `Mesas`, `Despacho`, `Caja` y `Autorizar anul.` se define en `cash_shift_users` dentro del turno.
 - Antes de abrir o guardar turno deben cumplirse estas condiciones:
   - al menos un usuario habilitado
   - al menos un usuario habilitado para despacho; si el modo es `SPLIT`, cada vista activa debe quedar cubierta por asignacion

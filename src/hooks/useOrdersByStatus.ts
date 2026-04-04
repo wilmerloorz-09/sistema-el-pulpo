@@ -135,7 +135,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       let cancelledOrdersMeta: Record<string, { cancelled_at: string | null }> = {};
       let pendingCancellationItemsByOrder: Record<string, Record<string, number>> = {};
-      let pendingCancellationOrderIds = new Set<string>();
 
       if (cancelledView) {
         const { data: cancellationHeaders, error: cancellationHeadersError } = await supabase
@@ -165,74 +164,78 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         );
       }
 
-      if (pendingCancellationView) {
-        const eligibleOrderIds = orders
-          .filter((order) => order.status !== "CANCELLED" && order.status !== "PAID" && !!order.cancel_requested_at)
-          .map((order) => order.id);
+      const candidatePendingOrderIds = orders
+        .filter((order) => order.status !== "CANCELLED" && order.status !== "PAID" && !!order.cancel_requested_at)
+        .map((order) => order.id);
 
-        if (eligibleOrderIds.length > 0) {
-          const { data: pendingHeaders, error: pendingHeadersError } = await supabase
-            .from("order_cancellations")
-            .select("id, order_id, status, notes, created_at")
-            .in("order_id", eligibleOrderIds)
-            .eq("status", "VOIDED")
-            .ilike("notes", "[PENDING_REQUEST]%")
-            .order("created_at", { ascending: false });
-          if (pendingHeadersError) throw pendingHeadersError;
+      if (candidatePendingOrderIds.length > 0) {
+        const { data: pendingHeaders, error: pendingHeadersError } = await supabase
+          .from("order_cancellations")
+          .select("id, order_id, status, notes, created_at")
+          .in("order_id", candidatePendingOrderIds)
+          .eq("status", "VOIDED")
+          .ilike("notes", "[PENDING_REQUEST]%")
+          .order("created_at", { ascending: false });
+        if (pendingHeadersError) throw pendingHeadersError;
 
-          const allPendingHeaderIds = (pendingHeaders ?? []).map((header) => header.id);
-          if (allPendingHeaderIds.length > 0) {
-            const { data: pendingItems, error: pendingItemsError } = await supabase
-              .from("order_item_cancellations")
-              .select("order_cancellation_id, order_id, order_item_id, quantity_cancelled")
-              .in("order_cancellation_id", allPendingHeaderIds);
-            if (pendingItemsError) throw pendingItemsError;
+        const allPendingHeaderIds = (pendingHeaders ?? []).map((header) => header.id);
+        const pendingItemsByHeaderId: Record<string, Array<{
+          order_cancellation_id: string;
+          order_id: string;
+          order_item_id: string;
+          quantity_cancelled: number | null;
+        }>> = {};
+        const pendingHeaderById = Object.fromEntries((pendingHeaders ?? []).map((header) => [header.id, header]));
 
-            const pendingItemsByHeaderId: Record<string, typeof pendingItems> = {};
-            for (const row of pendingItems ?? []) {
-              if (!pendingItemsByHeaderId[row.order_cancellation_id]) {
-                pendingItemsByHeaderId[row.order_cancellation_id] = [];
-              }
-              pendingItemsByHeaderId[row.order_cancellation_id]!.push(row);
+        if (allPendingHeaderIds.length > 0) {
+          const { data: pendingItems, error: pendingItemsError } = await supabase
+            .from("order_item_cancellations")
+            .select("order_cancellation_id, order_id, order_item_id, quantity_cancelled")
+            .in("order_cancellation_id", allPendingHeaderIds);
+          if (pendingItemsError) throw pendingItemsError;
+
+          for (const row of pendingItems ?? []) {
+            if (!pendingItemsByHeaderId[row.order_cancellation_id]) {
+              pendingItemsByHeaderId[row.order_cancellation_id] = [];
             }
-
-            const latestPendingHeaderByOrder: Record<string, string> = {};
-            const pendingHeaderById = Object.fromEntries((pendingHeaders ?? []).map((header) => [header.id, header]));
-            for (const header of pendingHeaders ?? []) {
-              const headerRows = pendingItemsByHeaderId[header.id] ?? [];
-              const fallbackMap = headerRows.length === 0 ? parsePendingRequestItemsFromNotes(header.notes) : {};
-              const hasFallbackItems = Object.keys(fallbackMap).length > 0;
-              if (headerRows.length === 0 && !hasFallbackItems) continue;
-              if (!latestPendingHeaderByOrder[header.order_id]) {
-                latestPendingHeaderByOrder[header.order_id] = header.id;
-              }
-            }
-
-            for (const [orderId, headerId] of Object.entries(latestPendingHeaderByOrder)) {
-              pendingCancellationOrderIds.add(orderId);
-              const orderMap: Record<string, number> = {};
-              const headerRows = pendingItemsByHeaderId[headerId] ?? [];
-              if (headerRows.length > 0) {
-                for (const row of headerRows) {
-                  orderMap[row.order_item_id] = (orderMap[row.order_item_id] ?? 0) + Number(row.quantity_cancelled ?? 0);
-                }
-              } else {
-                Object.assign(orderMap, parsePendingRequestItemsFromNotes(pendingHeaderById[headerId]?.notes ?? null));
-              }
-              pendingCancellationItemsByOrder[orderId] = orderMap;
-            }
+            pendingItemsByHeaderId[row.order_cancellation_id]!.push(row);
           }
         }
 
+        const latestPendingHeaderByOrder: Record<string, string> = {};
+        for (const header of pendingHeaders ?? []) {
+          const headerRows = pendingItemsByHeaderId[header.id] ?? [];
+          const fallbackMap = headerRows.length === 0 ? parsePendingRequestItemsFromNotes(header.notes) : {};
+          const hasFallbackItems = headerRows.length > 0 || Object.keys(fallbackMap).length > 0;
+          if (!hasFallbackItems) continue;
+          if (!latestPendingHeaderByOrder[header.order_id]) {
+            latestPendingHeaderByOrder[header.order_id] = header.id;
+          }
+        }
+
+        for (const [orderId, headerId] of Object.entries(latestPendingHeaderByOrder)) {
+          const orderMap: Record<string, number> = {};
+          const headerRows = pendingItemsByHeaderId[headerId] ?? [];
+          if (headerRows.length > 0) {
+            for (const row of headerRows) {
+              orderMap[row.order_item_id] = (orderMap[row.order_item_id] ?? 0) + Number(row.quantity_cancelled ?? 0);
+            }
+          } else {
+            Object.assign(orderMap, parsePendingRequestItemsFromNotes(pendingHeaderById[headerId]?.notes ?? null));
+          }
+          pendingCancellationItemsByOrder[orderId] = orderMap;
+        }
+
+      }
+
+      if (pendingCancellationView) {
         orders = orders.filter(
           (order) =>
             order.status !== "CANCELLED" &&
             order.status !== "PAID" &&
             !!order.cancel_requested_at &&
-            pendingCancellationOrderIds.has(order.id),
+            Object.keys(pendingCancellationItemsByOrder[order.id] ?? {}).length > 0,
         );
-      } else {
-        orders = orders.filter((order) => !order.cancel_requested_at);
       }
 
       const orderIds = orders.map((order) => order.id);
@@ -375,10 +378,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               const pendingRequestedItems = pendingCancellationView
                 ? pendingCancellationItemsByOrder[order.id] ?? null
-                : null;
-              const pendingRequestedQuantity = pendingCancellationView
-                ? pendingRequestedItems?.[item.id] ?? 0
-                : 0;
+                : pendingCancellationItemsByOrder[order.id] ?? null;
+              const pendingRequestedQuantity = Math.max(0, pendingRequestedItems?.[item.id] ?? 0);
 
               const displayQuantity = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
@@ -389,12 +390,12 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
                 : paidView
                   ? paidDisplayQuantity
                 : readyView
-                  ? unpaidReadyQuantity
+                  ? Math.max(0, unpaidReadyQuantity - pendingRequestedQuantity)
                 : dispatchedView
-                    ? unpaidDispatchedQuantity
+                    ? Math.max(0, unpaidDispatchedQuantity - pendingRequestedQuantity)
                   : sentView
-                      ? unpaidPendingQuantity
-                      : unpaidActiveQuantity;
+                      ? Math.max(0, unpaidPendingQuantity - pendingRequestedQuantity)
+                      : Math.max(0, unpaidActiveQuantity - pendingRequestedQuantity);
 
               const effectiveStatus = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
@@ -560,16 +561,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         })
         .filter((order) => {
           if (order.items.length === 0) {
-            if (pendingCancellationView) {
-              return !!order.cancel_requested_at && pendingCancellationOrderIds.has(order.id);
-            }
             return false;
-          }
-          if (pendingCancellationView) {
-            const pendingRequestedItems = pendingCancellationItemsByOrder[order.id] ?? null;
-            if (!pendingRequestedItems || Object.keys(pendingRequestedItems).length === 0) {
-              return !!order.cancel_requested_at && pendingCancellationOrderIds.has(order.id);
-            }
           }
           if (dispatchedView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED") {
             return false;

@@ -282,7 +282,10 @@ const Ordenes = () => {
   const autoCleanupOrderRef = useRef<typeof order | null>(null);
   const isBulkScopeSelection = currentMenuScope === "BULK";
 
-  const canOperateOrders = canOperate(permissions, "ordenes");
+  const canOperateOrders =
+    canOperate(permissions, "ordenes")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   const canCancelOrders = canOperateOrders || canManageOrders;
   const hasDirectCancelRole =
@@ -1433,6 +1436,7 @@ const Ordenes = () => {
         onConfirm={(data) => {
           addItem.mutate({
             ...data,
+            menu_node_id: selectedProduct?.menu_node_id ?? null,
             modifier_ids: isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids,
             tray_item_type: isTrayOrder ? effectiveTrayType : isBulkScopeSelection ? "C" : undefined,
             tray_container_cost: 0,
