@@ -61,7 +61,7 @@ class PermissionService:
       return True
     if self.has_branch_module_access(db, user_id=user.id, branch_id=branch_id, module_code="admin_global", minimum_level=AccessLevel.MANAGE):
       return True
-    shift_user = db.scalar(select(CashShiftUser).where(CashShiftUser.shift_id == cash_session_id, CashShiftUser.user_id == user.id, CashShiftUser.is_enabled.is_(True), or_(CashShiftUser.is_supervisor.is_(True), CashShiftUser.can_use_caja.is_(True)))))
+    shift_user = db.scalar(select(CashShiftUser).where(CashShiftUser.shift_id == cash_session_id, CashShiftUser.user_id == user.id, CashShiftUser.is_enabled.is_(True), or_(CashShiftUser.is_supervisor.is_(True), CashShiftUser.can_use_caja.is_(True))))
     return shift_user is not None
 
   def assert_capture_request_access(self, db: Session, *, user: AuthenticatedUser, capture_request: PaymentCaptureRequest) -> None:
