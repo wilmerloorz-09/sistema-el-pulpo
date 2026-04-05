@@ -1,0 +1,10 @@
+{
+  "name": "el-pulpo-payment-proof-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "pinia": "^2.3.1",
+    "vue": "^3.5.13"
+  }
+}

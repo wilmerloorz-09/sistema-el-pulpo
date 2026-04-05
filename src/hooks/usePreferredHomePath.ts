@@ -26,6 +26,8 @@ export function usePreferredHomePath() {
       preferredPath = "/admin";
     } else if (!gate?.shiftOpen || !gate?.userEnabled) {
       preferredPath = canAccessAdmin ? "/admin" : null;
+    } else if (gate?.isCaptureDeviceOnly) {
+      preferredPath = "/caja";
     } else if (hasSupervisorBypass || gate?.canServeTables) {
       preferredPath = "/mesas";
     } else if (hasSupervisorBypass || gate?.canAccessOrders) {

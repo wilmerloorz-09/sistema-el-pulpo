@@ -7,6 +7,8 @@ export interface BranchShiftGate {
   shiftId: string | null;
   shiftOpen: boolean;
   userEnabled: boolean;
+  cashierId: string | null;
+  captureUserId: string | null;
   activeTablesCount: number;
   cajaStatus: "UNOPENED" | "OPEN" | "CLOSED";
   canServeTables: boolean;
@@ -16,6 +18,7 @@ export interface BranchShiftGate {
   canUseCaja: boolean;
   canAuthorizeOrderCancel: boolean;
   isSupervisor: boolean;
+  isCaptureDeviceOnly: boolean;
   legacyFallbackApplied: boolean;
 }
 
@@ -31,6 +34,8 @@ export function useBranchShiftGate() {
           shiftId: null,
           shiftOpen: false,
           userEnabled: false,
+          cashierId: null,
+          captureUserId: null,
           activeTablesCount: 0,
           cajaStatus: "UNOPENED",
           canServeTables: false,
@@ -40,6 +45,7 @@ export function useBranchShiftGate() {
           canUseCaja: false,
           canAuthorizeOrderCancel: false,
           isSupervisor: false,
+          isCaptureDeviceOnly: false,
           legacyFallbackApplied: false,
         };
       }
@@ -57,6 +63,8 @@ export function useBranchShiftGate() {
           shiftId: null,
           shiftOpen: Boolean(row?.shift_open),
           userEnabled: Boolean(row?.user_enabled),
+          cashierId: null,
+          captureUserId: null,
           activeTablesCount: Number(row?.active_tables_count ?? 0),
           cajaStatus: row?.caja_status ?? "UNOPENED",
           canServeTables: Boolean(row?.can_serve_tables),
@@ -66,9 +74,17 @@ export function useBranchShiftGate() {
           canUseCaja: Boolean(row?.can_use_caja),
           canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
           isSupervisor: Boolean(row?.is_supervisor),
+          isCaptureDeviceOnly: false,
           legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
         };
       }
+
+      const { data: shiftMetaRow, error: shiftMetaError } = await (supabase
+        .from("cash_shifts" as never)
+        .select("cashier_id, capture_user_id")
+        .eq("id", shiftId)
+        .maybeSingle() as any);
+      if (shiftMetaError) throw shiftMetaError;
 
       const { data: shiftUserRow, error: shiftUserError } = await (supabase
         .from("cash_shift_users" as never)
@@ -81,11 +97,15 @@ export function useBranchShiftGate() {
 
       const directUserEnabled = Boolean(shiftUserRow?.is_enabled);
       const hasDirectShiftRow = shiftUserRow != null;
+      const cashierId = shiftMetaRow?.cashier_id ?? null;
+      const captureUserId = shiftMetaRow?.capture_user_id ?? null;
 
       return {
         shiftId,
         shiftOpen: Boolean(row?.shift_open),
         userEnabled: hasDirectShiftRow ? directUserEnabled : Boolean(row?.user_enabled),
+        cashierId,
+        captureUserId,
         activeTablesCount: Number(row?.active_tables_count ?? 0),
         cajaStatus: row?.caja_status ?? "UNOPENED",
         canServeTables: hasDirectShiftRow ? Boolean(shiftUserRow?.can_serve_tables) : Boolean(row?.can_serve_tables),
@@ -99,6 +119,7 @@ export function useBranchShiftGate() {
         canUseCaja: hasDirectShiftRow ? Boolean(shiftUserRow?.can_use_caja) : Boolean(row?.can_use_caja),
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),
+        isCaptureDeviceOnly: captureUserId === user.id && cashierId !== user.id,
         legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
       };
     },

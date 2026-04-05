@@ -5,8 +5,10 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
+--   - incluye solicitudes y metadatos de comprobantes de transferencia
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
+--   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Conserva todos los arboles operativos de menu_nodes:
 --   - `TABLE`
@@ -27,6 +29,9 @@
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
+--   - al borrar payment_capture_requests y payment_proofs se limpia el flujo operativo de comprobantes de transferencia
+-- - NO elimina archivos del bucket privado de Supabase Storage
+--   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -60,6 +65,8 @@ DECLARE
     'public.cash_register_openings',
     'public.cash_movements',
     'public.cash_shift_denoms',
+    'public.payment_proofs',
+    'public.payment_capture_requests',
     'public.payments',
     'public.operational_losses',
     'public.cash_shift_users',
@@ -122,9 +129,13 @@ COMMIT;
 --   - las lineas ya despachadas siguen requiriendo autorizacion para mesero
 -- - Configuracion y asignaciones de despacho intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
+-- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia
+-- - archivos en Supabase Storage no se borran con este SQL
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
+
 
 

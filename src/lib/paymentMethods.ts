@@ -15,6 +15,10 @@ export function isCashPaymentMethodName(value: string): boolean {
   return normalizePaymentMethodName(value) === "efectivo";
 }
 
+export function isTransferPaymentMethodName(value: string): boolean {
+  return normalizePaymentMethodName(value).includes("transfer");
+}
+
 export function dedupePaymentMethods(methods: PaymentMethodOption[]): PaymentMethodOption[] {
   const seen = new Set<string>();
   const unique: PaymentMethodOption[] = [];

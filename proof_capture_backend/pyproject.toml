@@ -1,0 +1,30 @@
+[project]
+name = "el-pulpo-payment-proof-backend"
+version = "0.1.0"
+description = "Modulo de comprobantes de transferencia para El Pulpo POS"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.14.0",
+  "fastapi>=0.115.0",
+  "httpx>=0.27.0",
+  "pillow>=11.0.0",
+  "psycopg[binary]>=3.2.0",
+  "pydantic-settings>=2.7.0",
+  "python-multipart>=0.0.9",
+  "sqlalchemy>=2.0.36",
+  "uvicorn[standard]>=0.32.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"

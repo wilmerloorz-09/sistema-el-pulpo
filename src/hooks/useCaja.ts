@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { generateUUID } from "@/lib/uuid";
-import { dedupePaymentMethods, isCashPaymentMethodName } from "@/lib/paymentMethods";
+import { dedupePaymentMethods, isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
 import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
@@ -34,12 +34,21 @@ export interface CashShift {
   id: string;
   status: "OPEN" | "CLOSED";
   caja_status: Database["public"]["Enums"]["caja_status"];
+  cashier_id: string;
+  capture_user_id: string | null;
+  capture_device_label: string | null;
   opened_at: string;
   closed_at: string | null;
   notes: string | null;
   active_tables_count: number;
   denoms: ShiftDenom[];
   openingHistory: CashRegisterOpeningHistoryEntry[];
+}
+
+export interface CashShiftCaptureCandidate {
+  id: string;
+  full_name: string;
+  username: string;
 }
 
 export interface CashRegisterOpeningHistoryEntry {
@@ -60,6 +69,20 @@ export interface CashRegisterOpeningHistoryEntry {
   motivo_anulacion: string | null;
   is_current: boolean;
   payment_count: number;
+}
+
+export interface PendingPaymentCaptureRequest {
+  id: string;
+  payment_id: string;
+  status: "pending" | "opened" | "uploaded" | "approved" | "rejected" | "expired" | "canceled";
+  secure_token: string;
+  token_expires_at: string;
+  created_at: string;
+  amount: number;
+  order_id: string;
+  order_number: number | null;
+  order_code: string | null;
+  payment_method_name: string;
 }
 
 export interface CashRegisterMovement {
@@ -221,6 +244,7 @@ export interface CompletedPaymentsMethodSummary {
 }
 
 const DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES = 15;
+const DEFAULT_PAYMENT_CAPTURE_TOKEN_TTL_MINUTES = 20;
 
 function parseNumericSetting(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -345,6 +369,19 @@ function isMissingRpcSignature(error: any, functionName: string) {
 function isRowLevelSecurityError(error: any) {
   const message = String(error?.message ?? "");
   return message.toLowerCase().includes("row-level security");
+}
+
+function isMissingTableError(error: any, tableName: string) {
+  const message = String(error?.message ?? "");
+  return error?.code === "42P01"
+    || error?.code === "PGRST205"
+    || message.includes(`relation "${tableName}" does not exist`)
+    || message.includes(`Could not find the table '${tableName}'`)
+    || message.includes(`Could not find the table "${tableName}"`);
+}
+
+function buildPaymentCaptureToken() {
+  return generateUUID().replace(/-/g, "");
 }
 
 type PaymentItemRow = {
@@ -566,14 +603,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     queryFn: async () => {
       if (!activeBranchId) return null;
 
-      const { data, error } = await supabase
-        .from("cash_shifts")
-        .select("id, status, caja_status, opened_at, closed_at, notes, active_tables_count")
+      const { data, error } = await (supabase
+        .from("cash_shifts" as never)
+        .select("id, status, caja_status, cashier_id, capture_user_id, capture_device_label, opened_at, closed_at, notes, active_tables_count")
         .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
         .order("opened_at", { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .maybeSingle() as any);
       if (error) throw error;
       if (!data) return null;
 
@@ -622,9 +659,165 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         payment_count: Number(row.payment_count ?? 0),
       })) as CashRegisterOpeningHistoryEntry[];
 
-      return { ...data, denoms: enriched, openingHistory } as CashShift;
+      return {
+        ...data,
+        capture_user_id: data.capture_user_id ?? null,
+        capture_device_label: data.capture_device_label ?? null,
+        denoms: enriched,
+        openingHistory,
+      } as CashShift;
     },
     enabled: !!activeBranchId && !!denomsQuery.data,
+  });
+
+  const captureCandidatesQuery = useQuery({
+    queryKey: ["cash-shift-capture-candidates", shiftQuery.data?.id],
+    queryFn: async (): Promise<CashShiftCaptureCandidate[]> => {
+      const shift = shiftQuery.data;
+      if (!shift?.id) return [];
+
+      const { data: shiftUsers, error: shiftUsersError } = await (supabase
+        .from("cash_shift_users" as never)
+        .select("user_id")
+        .eq("shift_id", shift.id)
+        .eq("is_enabled", true) as any);
+      if (shiftUsersError) throw shiftUsersError;
+
+      const userIds = [...new Set((shiftUsers ?? []).map((row: any) => row.user_id).filter(Boolean))];
+      if (userIds.length === 0) return [];
+
+      const { data: profiles, error: profilesError } = await (supabase
+        .from("profiles" as never)
+        .select("id, full_name, username, is_active")
+        .in("id", userIds) as any);
+      if (profilesError) throw profilesError;
+
+      return (profiles ?? [])
+        .filter((profile: any) => profile.is_active !== false)
+        .map((profile: any) => ({
+          id: profile.id,
+          full_name: profile.full_name ?? "Usuario",
+          username: profile.username ?? "",
+        }))
+        .sort((a: CashShiftCaptureCandidate, b: CashShiftCaptureCandidate) =>
+          a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" })
+          || a.username.localeCompare(b.username, "es", { sensitivity: "base" }),
+        );
+    },
+    enabled: !!shiftQuery.data?.id,
+  });
+
+  const pendingCaptureRequestsQuery = useQuery({
+    queryKey: ["pending-payment-capture-requests", shiftQuery.data?.id, user?.id],
+    queryFn: async (): Promise<PendingPaymentCaptureRequest[]> => {
+      const shift = shiftQuery.data;
+      if (!shift?.id || !user?.id) return [];
+      if (shift.capture_user_id !== user.id) return [];
+
+      const { data: requestRows, error: requestRowsError } = await (supabase
+        .from("payment_capture_requests" as never)
+        .select("id, payment_id, status, secure_token, token_expires_at, created_at")
+        .eq("cash_session_id", shift.id)
+        .eq("assigned_capture_user_id", user.id)
+        .in("status", ["pending", "opened"])
+        .order("created_at", { ascending: true }) as any);
+
+      if (requestRowsError) {
+        if (isMissingTableError(requestRowsError, "payment_capture_requests")) {
+          return [];
+        }
+        throw requestRowsError;
+      }
+
+      const requests = (requestRows ?? []) as Array<{
+        id: string;
+        payment_id: string;
+        status: PendingPaymentCaptureRequest["status"];
+        secure_token: string;
+        token_expires_at: string;
+        created_at: string;
+      }>;
+
+      if (requests.length === 0) return [];
+
+      const paymentIds = [...new Set(requests.map((row) => row.payment_id).filter(Boolean))];
+
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from("payments")
+        .select("id, order_id, payment_method_id, amount")
+        .in("id", paymentIds);
+      if (paymentsError) throw paymentsError;
+
+      const payments = paymentsData ?? [];
+      const orderIds = [...new Set(payments.map((row) => row.order_id).filter(Boolean))];
+      const methodIds = [...new Set(payments.map((row) => row.payment_method_id).filter(Boolean))];
+
+      const [{ data: ordersData, error: ordersError }, { data: methodsData, error: methodsError }] = await Promise.all([
+        orderIds.length === 0
+          ? Promise.resolve({ data: [] as Array<{ id: string; order_number: number | null; order_code: string | null }>, error: null })
+          : supabase.from("orders").select("id, order_number, order_code").in("id", orderIds),
+        methodIds.length === 0
+          ? Promise.resolve({ data: [] as Array<{ id: string; name: string | null }>, error: null })
+          : supabase.from("payment_methods").select("id, name").in("id", methodIds),
+      ]);
+
+      if (ordersError) throw ordersError;
+      if (methodsError) throw methodsError;
+
+      const paymentsMap = Object.fromEntries(payments.map((payment) => [payment.id, payment]));
+      const ordersMap = Object.fromEntries((ordersData ?? []).map((order) => [order.id, order]));
+      const methodsMap = Object.fromEntries((methodsData ?? []).map((method) => [method.id, method]));
+
+      return requests.map((request) => {
+        const payment = paymentsMap[request.payment_id];
+        const order = payment ? ordersMap[payment.order_id] : null;
+        const method = payment ? methodsMap[payment.payment_method_id] : null;
+
+        return {
+          ...request,
+          amount: Number(payment?.amount ?? 0),
+          order_id: payment?.order_id ?? "",
+          order_number: order?.order_number ?? null,
+          order_code: order?.order_code ?? null,
+          payment_method_name: method?.name ?? "Transferencia",
+        };
+      });
+    },
+    enabled: !!shiftQuery.data?.id && !!user?.id,
+    refetchInterval: ({ state }) => (state.data && state.data.length > 0 ? 3000 : 5000),
+  });
+
+  const openCaptureRequest = useMutation({
+    mutationFn: async (requestId: string) => {
+      const shift = shiftQuery.data;
+      if (!shift?.id) throw new Error("No hay turno abierto");
+      if (!user?.id) throw new Error("No user");
+
+      const now = new Date().toISOString();
+      const { error } = await (supabase
+        .from("payment_capture_requests" as never)
+        .update({
+          status: "opened",
+          opened_at: now,
+          updated_at: now,
+        } as never)
+        .eq("id", requestId)
+        .eq("cash_session_id", shift.id)
+        .eq("assigned_capture_user_id", user.id)
+        .in("status", ["pending", "opened"]) as any);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pending-payment-capture-requests"], exact: false });
+    },
+    onError: (err: any) => {
+      if (isMissingTableError(err, "payment_capture_requests")) {
+        toast.error("La base de datos todavia no tiene habilitado el modulo de comprobantes.");
+        return;
+      }
+      toast.error(err.message ?? "No se pudo abrir la solicitud de comprobante");
+    },
   });
 
   const movementsQuery = useQuery({
@@ -1259,11 +1452,20 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   });
 
   const openCashRegister = useMutation({
-    mutationFn: async ({ counts: denomCounts }: { counts: { denomination_id: string; qty: number }[] }) => {
+    mutationFn: async ({
+      counts: denomCounts,
+      captureUserId,
+      captureDeviceLabel,
+    }: {
+      counts: { denomination_id: string; qty: number }[];
+      captureUserId: string;
+      captureDeviceLabel?: string | null;
+    }) => {
       if (!user) throw new Error("No user");
       if (!activeBranchId) throw new Error("No branch selected");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
+      if (!captureUserId) throw new Error("Debes seleccionar el usuario que tomara la foto del comprobante");
 
       const normalizedDenomCounts = denomCounts.map((denom) => ({
         denomination_id: denom.denomination_id,
@@ -1275,6 +1477,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         p_cashier_id: user.id,
         p_branch_id: activeBranchId,
         p_denoms: normalizedDenomCounts,
+        p_capture_user_id: captureUserId,
+        p_capture_device_label: captureDeviceLabel?.trim() ? captureDeviceLabel.trim() : null,
       });
       if (error) throw error;
     },
@@ -1320,6 +1524,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const cashMethods = (selectedMethods ?? []).filter((method) => isCashPaymentMethodName(method.name));
+      const transferMethodIds = new Set(
+        (selectedMethods ?? [])
+          .filter((method) => isTransferPaymentMethodName(method.name))
+          .map((method) => method.id),
+      );
       if (cashMethods.length > 1) throw new Error("Solo puede existir un pago en efectivo por cobro");
       const cashMethodId = cashMethods[0]?.id ?? null;
       const cashSplit = cashMethodId ? paymentSplits.find((split) => split.methodId === cashMethodId) ?? null : null;
@@ -1552,6 +1761,47 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       if (!anchorPaymentId) throw new Error("No se pudo registrar el pago");
 
+      let createdCaptureRequestCount = 0;
+      let captureRequestWarning: string | null = null;
+
+      const transferPayments = paymentsToInsert.filter((payment) => transferMethodIds.has(payment.payment_method_id));
+      if (transferPayments.length > 0) {
+        if (!shift.capture_user_id) {
+          captureRequestWarning = "El pago por transferencia se registro, pero este turno no tiene usuario capturador configurado.";
+        } else if (!activeBranchId) {
+          captureRequestWarning = "El pago por transferencia se registro, pero no se pudo asociar la sucursal para la solicitud de foto.";
+        } else {
+          const captureRequestsToInsert = transferPayments.map((payment) => ({
+            id: generateUUID(),
+            cash_session_id: shift.id,
+            payment_id: payment.id,
+            branch_id: activeBranchId,
+            requested_by_user_id: user.id,
+            assigned_capture_user_id: shift.capture_user_id,
+            status: "pending",
+            secure_token: buildPaymentCaptureToken(),
+            token_expires_at: new Date(
+              Date.now() + DEFAULT_PAYMENT_CAPTURE_TOKEN_TTL_MINUTES * 60 * 1000,
+            ).toISOString(),
+            created_at: now,
+            updated_at: now,
+          }));
+
+          try {
+            const { error: captureRequestInsertError } = await (supabase
+              .from("payment_capture_requests" as never)
+              .insert(captureRequestsToInsert as never) as any);
+            if (captureRequestInsertError) throw captureRequestInsertError;
+            createdCaptureRequestCount = captureRequestsToInsert.length;
+          } catch (captureRequestError: any) {
+            console.error("No se pudo crear la solicitud de captura de comprobante", captureRequestError);
+            captureRequestWarning = isMissingTableError(captureRequestError, "payment_capture_requests")
+              ? "El pago por transferencia se registro, pero la tabla de solicitudes de foto aun no esta disponible en la base de datos."
+              : "El pago por transferencia se registro, pero no se pudo generar la solicitud para subir la foto.";
+          }
+        }
+      }
+
       const denomChanges: Record<string, number> = {};
       const cashMovementsPromises: Promise<void>[] = [];
 
@@ -1725,6 +1975,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       return {
         denomChanges,
         refreshedShiftDenoms: finalRefreshedShiftDenoms,
+        createdCaptureRequestCount,
+        captureRequestWarning,
       };
     },
     onSuccess: async (result) => {
@@ -1755,9 +2007,19 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
         qc.invalidateQueries({ queryKey: ["order"], exact: false }),
         qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["pending-payment-capture-requests"], exact: false }),
       ]).catch(console.error);
 
-      toast.success("Pago registrado");
+      const captureRequestCount = result?.createdCaptureRequestCount ?? 0;
+      toast.success(
+        captureRequestCount > 0
+          ? `Pago registrado. Solicitud de foto enviada (${captureRequestCount}).`
+          : "Pago registrado",
+      );
+
+      if (result?.captureRequestWarning) {
+        toast.warning(result.captureRequestWarning);
+      }
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -2120,6 +2382,12 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     isLoadingCompletedPayments: completedPaymentsQuery.isLoading,
     cashierReverseWindowMinutes: cashierReverseWindowQuery.data ?? DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES,
     branchReferenceTableCount: branchTableSettingsQuery.data?.reference_table_count ?? 0,
+    captureCandidates: captureCandidatesQuery.data ?? [],
+    isLoadingCaptureCandidates: captureCandidatesQuery.isLoading,
+    pendingCaptureRequests: pendingCaptureRequestsQuery.data ?? [],
+    isLoadingPendingCaptureRequests: pendingCaptureRequestsQuery.isLoading,
+    refetchPendingCaptureRequests: pendingCaptureRequestsQuery.refetch,
+    openCaptureRequest,
     openCashRegister,
     payOrder,
     requestPaymentReversal,

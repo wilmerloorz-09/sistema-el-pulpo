@@ -100,6 +100,7 @@ const ProtectedRoute = ({
     const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
     const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
     const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
+    const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
     const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
       ? true
       : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
@@ -123,6 +124,10 @@ const ProtectedRoute = ({
           </div>
         </div>
       );
+    }
+
+    if (isCaptureDeviceOnly && location.pathname !== "/caja") {
+      return <Navigate to="/caja" replace />;
     }
 
     if (!hasSupervisorBypass && !hasRequiredShiftRole) {

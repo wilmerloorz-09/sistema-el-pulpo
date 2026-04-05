@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
+import { supabase } from "@/services/DatabaseService";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
-import { CreditCard, History, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, RotateCcw, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
 
@@ -22,6 +30,8 @@ const initialCompletedFilters: CompletedPaymentsFilters = {
   pageSize: 20,
 };
 
+const PAYMENT_PROOF_API_URL = (import.meta.env.VITE_PAYMENT_PROOF_API_URL ?? "").trim().replace(/\/$/, "");
+
 const formatElapsed = (openedAt: string) => {
   const opened = new Date(openedAt);
   const elapsed = Math.max(0, Math.floor((Date.now() - opened.getTime()) / 60000));
@@ -31,10 +41,20 @@ const formatElapsed = (openedAt: string) => {
 };
 
 const Caja = () => {
+  const { user } = useAuth();
   const { permissions, isGlobalAdmin, activeBranch } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
   const { isDesktop } = useBreakpoint();
   const [searchParams, setSearchParams] = useSearchParams();
   const [completedFilters, setCompletedFilters] = useState<CompletedPaymentsFilters>(initialCompletedFilters);
+  const [activeCaptureRequestId, setActiveCaptureRequestId] = useState<string | null>(null);
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [captureNotesByRequest, setCaptureNotesByRequest] = useState<Record<string, string>>({});
+  const [uploadingCaptureRequestId, setUploadingCaptureRequestId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeTab = searchParams.get("tab") === "completed" ? "completed" : "pending";
 
   const setActiveTab = (tab: "pending" | "completed") => {
@@ -71,6 +91,11 @@ const Caja = () => {
     completedPaymentsCollectedTotal,
     isLoadingCompletedPayments,
     cashierReverseWindowMinutes,
+    captureCandidates,
+    pendingCaptureRequests,
+    isLoadingPendingCaptureRequests,
+    refetchPendingCaptureRequests,
+    openCaptureRequest,
     openCashRegister,
     payOrder,
     requestPaymentReversal,
@@ -81,6 +106,150 @@ const Caja = () => {
     registerCashMovement,
   } = useCaja(completedFilters);
 
+  const activeCaptureRequest = useMemo(
+    () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
+    [activeCaptureRequestId, pendingCaptureRequests],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) {
+        URL.revokeObjectURL(photoPreviewUrl);
+      }
+    };
+  }, [photoPreviewUrl]);
+
+  useEffect(() => {
+    if (!activeCaptureRequestId) return;
+    if (pendingCaptureRequests.some((request) => request.id === activeCaptureRequestId)) return;
+
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+    setActiveCaptureRequestId(null);
+    setSelectedPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setCaptureError(null);
+    setUploadProgress(0);
+    setUploadingCaptureRequestId(null);
+  }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
+
+  const clearSelectedPhoto = () => {
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+    setSelectedPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setCaptureError(null);
+    setUploadProgress(0);
+    setUploadingCaptureRequestId(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleTakePhotoClick = async (requestId: string) => {
+    setCaptureError(null);
+    setActiveCaptureRequestId(requestId);
+    clearSelectedPhoto();
+
+    try {
+      await openCaptureRequest.mutateAsync(requestId);
+    } catch {
+      return;
+    }
+
+    window.setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 60);
+  };
+
+  const handleSelectedPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) return;
+
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setSelectedPhotoFile(file);
+    setPhotoPreviewUrl(objectUrl);
+    setCaptureError(null);
+  };
+
+  const handleUploadSelectedPhoto = async () => {
+    if (!activeCaptureRequest || !selectedPhotoFile) return;
+
+    if (!PAYMENT_PROOF_API_URL) {
+      setCaptureError("La opcion para tomar la foto ya esta lista, pero la subida final aun no esta configurada en este entorno.");
+      toast.warning("Falta configurar VITE_PAYMENT_PROOF_API_URL para subir el comprobante.");
+      return;
+    }
+
+    setUploadingCaptureRequestId(activeCaptureRequest.id);
+    setUploadProgress(8);
+    setCaptureError(null);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      setUploadingCaptureRequestId(null);
+      setUploadProgress(0);
+      setCaptureError("Tu sesion expiro. Vuelve a iniciar sesion.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", selectedPhotoFile);
+
+    const note = captureNotesByRequest[activeCaptureRequest.id]?.trim();
+    if (note) {
+      formData.append("note", note);
+    }
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${PAYMENT_PROOF_API_URL}/api/capture-requests/${activeCaptureRequest.secure_token}/upload`);
+        xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const percent = Math.max(10, Math.min(95, Math.round((event.loaded / event.total) * 100)));
+          setUploadProgress(percent);
+        };
+
+        xhr.onerror = () => reject(new Error("No se pudo subir la foto del comprobante."));
+
+        xhr.onload = () => {
+          try {
+            const payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+              return;
+            }
+            reject(new Error(payload?.message || "No se pudo guardar el comprobante."));
+          } catch {
+            reject(new Error("La respuesta del servidor no fue valida."));
+          }
+        };
+
+        xhr.send(formData);
+      });
+
+      setUploadProgress(100);
+      toast.success("Comprobante enviado correctamente.");
+      await refetchPendingCaptureRequests();
+      clearSelectedPhoto();
+      setActiveCaptureRequestId(null);
+    } catch (error: any) {
+      setCaptureError(error?.message ?? "No se pudo subir la foto del comprobante.");
+    } finally {
+      setUploadingCaptureRequestId(null);
+    }
+  };
+
   if (isLoadingShift) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -88,6 +257,9 @@ const Caja = () => {
       </div>
     );
   }
+
+  const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly)
+    || Boolean(shift?.capture_user_id && user?.id && shift.capture_user_id === user.id && shift.cashier_id !== user.id);
 
   if (activeTab === "completed" && (!shift || shift.caja_status !== "OPEN")) {
     return (
@@ -162,7 +334,12 @@ const Caja = () => {
             {shift.caja_status === "UNOPENED" ? (
               <OpenShiftForm
                 denominations={denominations}
-                onOpen={({ counts }) => openCashRegister.mutate({ counts })}
+                captureCandidates={captureCandidates}
+                initialCaptureUserId={shift.capture_user_id}
+                initialCaptureDeviceLabel={shift.capture_device_label}
+                onOpen={({ counts, captureUserId, captureDeviceLabel }) =>
+                  openCashRegister.mutate({ counts, captureUserId, captureDeviceLabel })
+                }
                 opening={openCashRegister.isPending}
                 readOnly={!canOperateCaja}
                 title="Abrir Caja"
@@ -176,6 +353,221 @@ const Caja = () => {
                   La caja de este turno ya fue cerrada. Para volver a cobrar necesitas abrir una nueva jornada desde Administracion.
                 </p>
               </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isCaptureDeviceOnly) {
+    return (
+      <div className="bg-slate-50 px-4 py-6 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-3xl space-y-6">
+          <div className="border-b border-slate-200 pb-4">
+            <h1 className="text-[2rem] font-semibold tracking-[-0.04em] text-slate-950">
+              Caja · {activeBranch?.name ?? "Sucursal"}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Este dispositivo esta asignado para capturar comprobantes de transferencia.
+            </p>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-6 text-center shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
+            {isLoadingPendingCaptureRequests ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Buscando solicitudes de comprobante...
+                </p>
+              </div>
+            ) : pendingCaptureRequests.length === 0 ? (
+              <>
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                  <Camera className="h-8 w-8" />
+                </div>
+                <h2 className="mt-4 font-display text-2xl font-black text-foreground">
+                  Esperando solicitud de foto
+                </h2>
+                <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                  Cuando el cajero principal registre un pago por transferencia, aqui aparecera la solicitud para tomar y subir el comprobante.
+                </p>
+              </>
+            ) : (
+              <div className="space-y-4 text-left">
+                <div className="flex items-start gap-4 rounded-3xl border border-orange-200 bg-orange-50/70 p-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-sm">
+                    <ReceiptText className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h2 className="font-display text-2xl font-black text-foreground">
+                      Solicitud de foto pendiente
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Se registro un pago por transferencia y este equipo ya fue notificado para subir el comprobante.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {pendingCaptureRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className="rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.4)]"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                            {request.order_code
+                              ? `Orden ${request.order_code}`
+                              : request.order_number
+                                ? `Orden #${request.order_number}`
+                                : "Orden"}
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-slate-950">
+                            ${request.amount.toFixed(2)}
+                          </p>
+                        </div>
+                        <Badge className="border-orange-200 bg-orange-100 text-orange-700 hover:bg-orange-100">
+                          {request.status === "opened" ? "Abierta" : "Pendiente"}
+                        </Badge>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-600">
+                        Metodo: {request.payment_method_name}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Expira: {new Date(request.token_expires_at).toLocaleTimeString("es-EC", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          className="rounded-2xl"
+                          onClick={() => void handleTakePhotoClick(request.id)}
+                          disabled={Boolean(uploadingCaptureRequestId)}
+                        >
+                          <Camera className="mr-2 h-4 w-4" />
+                          Tomar foto
+                        </Button>
+                        {activeCaptureRequestId === request.id && selectedPhotoFile && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-2xl"
+                            onClick={clearSelectedPhoto}
+                            disabled={uploadingCaptureRequestId === request.id}
+                          >
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            Volver a tomar
+                          </Button>
+                        )}
+                      </div>
+
+                      {activeCaptureRequestId === request.id && (
+                        <div className="mt-4 rounded-3xl border border-dashed border-orange-200 bg-orange-50/40 p-4">
+                          {!selectedPhotoFile || !photoPreviewUrl ? (
+                            <p className="text-sm text-slate-600">
+                              Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
+                            </p>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className="overflow-hidden rounded-2xl border border-orange-100 bg-white">
+                                <img
+                                  src={photoPreviewUrl}
+                                  alt="Preview del comprobante"
+                                  className="h-64 w-full object-cover"
+                                />
+                              </div>
+                              <div className="rounded-2xl bg-white/90 p-3">
+                                <p className="text-sm font-medium text-slate-900">
+                                  Vista previa lista
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  La foto solo se guardara cuando confirmes con “Usar foto”.
+                                </p>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                                  Observacion opcional
+                                </label>
+                                <Textarea
+                                  value={captureNotesByRequest[request.id] ?? ""}
+                                  onChange={(event) =>
+                                    setCaptureNotesByRequest((current) => ({
+                                      ...current,
+                                      [request.id]: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Ejemplo: comprobante legible, revisar monto, etc."
+                                  disabled={uploadingCaptureRequestId === request.id}
+                                />
+                              </div>
+                              {uploadingCaptureRequestId === request.id && (
+                                <div className="space-y-2">
+                                  <Progress value={uploadProgress} className="h-2.5" />
+                                  <p className="text-xs text-slate-500">
+                                    Subiendo comprobante... {uploadProgress}%
+                                  </p>
+                                </div>
+                              )}
+                              {captureError && (
+                                <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                  {captureError}
+                                </div>
+                              )}
+                              {!PAYMENT_PROOF_API_URL && (
+                                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                                  La camara y la vista previa ya estan disponibles. Para guardar definitivamente la foto falta configurar el backend de comprobantes en este entorno.
+                                </div>
+                              )}
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  className="rounded-2xl"
+                                  onClick={() => void handleUploadSelectedPhoto()}
+                                  disabled={uploadingCaptureRequestId === request.id}
+                                >
+                                  {uploadingCaptureRequestId === request.id ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                  )}
+                                  Usar foto
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="rounded-2xl"
+                                  onClick={clearSelectedPhoto}
+                                  disabled={uploadingCaptureRequestId === request.id}
+                                >
+                                  <Upload className="mr-2 h-4 w-4" />
+                                  Elegir otra
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleSelectedPhoto}
+            />
+            {shift.capture_device_label && (
+              <p className="mt-4 text-xs uppercase tracking-[0.22em] text-slate-500">
+                Equipo asignado: {shift.capture_device_label}
+              </p>
             )}
           </div>
         </div>

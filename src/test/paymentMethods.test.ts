@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupePaymentMethods, getDefaultPaymentMethodId } from "@/lib/paymentMethods";
+import { dedupePaymentMethods, getDefaultPaymentMethodId, isTransferPaymentMethodName } from "@/lib/paymentMethods";
 
 describe("paymentMethods helpers", () => {
   it("dedupePaymentMethods keeps a single method per id", () => {
@@ -34,5 +34,11 @@ describe("paymentMethods helpers", () => {
     ];
 
     expect(getDefaultPaymentMethodId(methods)).toBe("9");
+  });
+
+  it("isTransferPaymentMethodName detects transfer methods", () => {
+    expect(isTransferPaymentMethodName("Transferencia")).toBe(true);
+    expect(isTransferPaymentMethodName("Transferencia bancaria")).toBe(true);
+    expect(isTransferPaymentMethodName("Tarjeta")).toBe(false);
   });
 });
