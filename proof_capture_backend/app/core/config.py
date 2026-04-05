@@ -23,6 +23,7 @@ class Settings(BaseSettings):
   payment_proof_signed_url_ttl_seconds: int = 120
   payment_capture_max_attempts_per_window: int = 8
   payment_capture_attempt_window_minutes: int = 10
+  payment_proof_ocr_command: str | None = "tesseract"
 
   @field_validator("backend_cors_origins", mode="before")
   @classmethod

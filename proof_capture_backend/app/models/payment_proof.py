@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 import enum
 import uuid
 
@@ -229,6 +230,13 @@ class PaymentProof(Base, TimestampMixin):
   image_height: Mapped[int | None] = mapped_column(Integer)
   uploaded_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.profiles.id"), nullable=False)
   uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+  ocr_text: Mapped[str | None] = mapped_column(Text)
+  analysis_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+  detected_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+  amount_matches_expected: Mapped[bool | None]
+  analysis_summary: Mapped[str | None] = mapped_column(Text)
+  analysis_error_code: Mapped[str | None] = mapped_column(String(64))
+  analysis_ran_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
   validation_status: Mapped[ProofValidationStatus] = mapped_column(
     Enum(ProofValidationStatus, name="payment_proof_validation_status", schema="public", values_callable=enum_values),
     nullable=False,

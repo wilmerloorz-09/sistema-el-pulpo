@@ -12,6 +12,7 @@ from app.services.audit_service import AuditService, RequestAuditContext
 from app.services.auth_service import AuthenticatedUser
 from app.services.image_validation_service import ImageValidationService
 from app.services.payment_capture_service import PaymentCaptureService
+from app.services.payment_proof_analysis_service import PaymentProofAnalysisService
 from app.services.payment_proof_service import PaymentProofService
 from app.services.permission_service import PermissionService
 from app.services.storage_service import StorageService
@@ -31,6 +32,7 @@ def get_proof_service(
     settings=settings,
     storage_service=StorageService(settings),
     image_validation_service=ImageValidationService(settings),
+    payment_proof_analysis_service=PaymentProofAnalysisService(settings),
     audit_service=AuditService(),
     permission_service=PermissionService(),
     capture_service=capture_service,

@@ -14,6 +14,7 @@ from app.services.audit_service import AuditService, RequestAuditContext
 from app.services.auth_service import AuthenticatedUser
 from app.services.image_validation_service import ImageValidationService, InvalidImageError
 from app.services.payment_capture_service import PaymentCaptureService
+from app.services.payment_proof_analysis_service import PaymentProofAnalysisService
 from app.services.permission_service import PermissionService
 from app.services.storage_service import StorageService, StorageServiceError
 
@@ -29,6 +30,7 @@ class PaymentProofService:
     settings: Settings,
     storage_service: StorageService,
     image_validation_service: ImageValidationService,
+    payment_proof_analysis_service: PaymentProofAnalysisService,
     audit_service: AuditService,
     permission_service: PermissionService,
     capture_service: PaymentCaptureService,
@@ -36,6 +38,7 @@ class PaymentProofService:
     self.settings = settings
     self.storage_service = storage_service
     self.image_validation_service = image_validation_service
+    self.payment_proof_analysis_service = payment_proof_analysis_service
     self.audit_service = audit_service
     self.permission_service = permission_service
     self.capture_service = capture_service
@@ -97,8 +100,38 @@ class PaymentProofService:
       image_width=validated.image_width,
       image_height=validated.image_height,
       uploaded_by_user_id=actor.id,
+      analysis_status="pending",
       validation_status=ProofValidationStatus.PENDING,
     )
+
+    payment = db.get(Payment, capture_request.payment_id)
+    try:
+      analysis = self.payment_proof_analysis_service.analyze_payment_proof(
+        image_bytes=validated.file_bytes,
+        expected_amount=payment.amount if payment else 0,
+      )
+      proof.ocr_text = analysis.ocr_text
+      proof.analysis_status = analysis.status
+      proof.detected_amount = analysis.detected_amount
+      proof.amount_matches_expected = analysis.amount_matches_expected
+      proof.analysis_summary = analysis.summary
+      proof.analysis_error_code = analysis.error_code
+      proof.analysis_ran_at = analysis.ran_at
+    except Exception as exc:
+      proof.analysis_status = "error"
+      proof.analysis_summary = "No se pudo analizar automaticamente el comprobante. Requiere revision manual."
+      proof.analysis_error_code = "analysis_failed"
+      proof.analysis_ran_at = _utcnow()
+      self.audit_service.log_event(
+        db,
+        actor_user_id=actor.id,
+        action="capture_analysis_failed",
+        entity="payment_proofs",
+        entity_id=str(proof.id),
+        after_data={"capture_request_id": str(capture_request.id), "reason": str(exc)},
+        context=context,
+      )
+
     capture_request.status = CaptureRequestStatus.UPLOADED
     capture_request.uploaded_at = _utcnow()
     db.add(proof)

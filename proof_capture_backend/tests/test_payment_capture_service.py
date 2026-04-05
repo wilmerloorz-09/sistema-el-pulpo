@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -11,6 +12,7 @@ from app.models.payment_proof import CaptureRequestStatus, PaymentCaptureRequest
 from app.services.audit_service import AuditService
 from app.services.image_validation_service import ValidatedImage
 from app.services.payment_capture_service import PaymentCaptureService, PaymentContext
+from app.services.payment_proof_analysis_service import ProofAnalysisResult
 from app.services.payment_proof_service import PaymentProofService
 
 
@@ -84,6 +86,7 @@ async def test_upload_rejects_assigned_request_from_other_user(settings, actor, 
     settings=settings,
     storage_service=Mock(),
     image_validation_service=Mock(),
+    payment_proof_analysis_service=Mock(),
     audit_service=AuditService(),
     permission_service=permission_service,
     capture_service=capture_service,
@@ -125,11 +128,22 @@ async def test_upload_persists_proof_metadata(settings, actor, audit_context):
     sha256_hash="a" * 64,
     original_file_name="proof.png",
   )
+  analysis_service = Mock()
+  analysis_service.analyze_payment_proof.return_value = ProofAnalysisResult(
+    status="match",
+    summary="Monto detectado 14.00 y coincide con el pago esperado.",
+    error_code=None,
+    ocr_text="TRANSFERENCIA 14.00",
+    detected_amount=Decimal("14.00"),
+    amount_matches_expected=True,
+    ran_at=datetime.now(timezone.utc),
+  )
 
   service = PaymentProofService(
     settings=settings,
     storage_service=storage_service,
     image_validation_service=image_validation_service,
+    payment_proof_analysis_service=analysis_service,
     audit_service=AuditService(),
     permission_service=permission_service,
     capture_service=Mock(),
@@ -147,6 +161,8 @@ async def test_upload_persists_proof_metadata(settings, actor, audit_context):
   assert request_after.status == CaptureRequestStatus.UPLOADED
   assert proof.validation_status == ProofValidationStatus.PENDING
   assert proof.mime_type == "image/jpeg"
+  assert proof.analysis_status == "match"
+  assert proof.amount_matches_expected is True
   storage_service.upload_bytes.assert_called_once()
   db.add.assert_called()
   db.commit.assert_called_once()
@@ -165,6 +181,7 @@ def test_generates_signed_view_url(settings, actor):
     settings=settings,
     storage_service=storage_service,
     image_validation_service=Mock(),
+    payment_proof_analysis_service=Mock(),
     audit_service=AuditService(),
     permission_service=permission_service,
     capture_service=Mock(),
@@ -195,6 +212,7 @@ def test_rejects_expired_token_on_upload(settings, actor, audit_context):
     settings=settings,
     storage_service=Mock(),
     image_validation_service=Mock(),
+    payment_proof_analysis_service=Mock(),
     audit_service=AuditService(),
     permission_service=permission_service,
     capture_service=Mock(),
@@ -241,6 +259,7 @@ def test_approve_and_reject_flow(settings, actor, audit_context):
     settings=settings,
     storage_service=Mock(),
     image_validation_service=Mock(),
+    payment_proof_analysis_service=Mock(),
     audit_service=AuditService(),
     permission_service=permission_service,
     capture_service=Mock(),

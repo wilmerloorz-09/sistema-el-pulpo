@@ -71,6 +71,13 @@ class PaymentProofSummary(BaseModel):
   image_height: int | None = None
   uploaded_by_user_id: UUID
   uploaded_at: datetime
+  ocr_text: str | None = None
+  analysis_status: str
+  detected_amount: Decimal | None = None
+  amount_matches_expected: bool | None = None
+  analysis_summary: str | None = None
+  analysis_error_code: str | None = None
+  analysis_ran_at: datetime | None = None
   validation_status: ProofValidationStatus
   validated_by_user_id: UUID | None = None
   validated_at: datetime | None = None
