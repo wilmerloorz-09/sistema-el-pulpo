@@ -11,6 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 
+def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+  return [str(member.value) for member in enum_cls]
+
+
 class CashShiftStatus(str, enum.Enum):
   OPEN = "OPEN"
   CLOSED = "CLOSED"
@@ -101,7 +105,10 @@ class RolePermission(Base, TimestampMixin):
 
   role_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.roles.id", ondelete="CASCADE"), primary_key=True)
   module_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.modules.id", ondelete="CASCADE"), primary_key=True)
-  access_level: Mapped[AccessLevel] = mapped_column(Enum(AccessLevel, name="access_level", schema="public"), nullable=False)
+  access_level: Mapped[AccessLevel] = mapped_column(
+    Enum(AccessLevel, name="access_level", schema="public", values_callable=enum_values),
+    nullable=False,
+  )
 
 
 class CashShift(Base):
@@ -115,7 +122,10 @@ class CashShift(Base):
   capture_device_label: Mapped[str | None] = mapped_column(Text, nullable=True)
   opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
   closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-  status: Mapped[CashShiftStatus] = mapped_column(Enum(CashShiftStatus, name="cash_shift_status", schema="public"), nullable=False)
+  status: Mapped[CashShiftStatus] = mapped_column(
+    Enum(CashShiftStatus, name="cash_shift_status", schema="public", values_callable=enum_values),
+    nullable=False,
+  )
   notes: Mapped[str | None] = mapped_column(Text)
 
 
@@ -180,7 +190,11 @@ class PaymentCaptureRequest(Base, TimestampMixin):
   branch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.branches.id"), nullable=False)
   requested_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.profiles.id"), nullable=False)
   assigned_capture_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.profiles.id"), nullable=False)
-  status: Mapped[CaptureRequestStatus] = mapped_column(Enum(CaptureRequestStatus, name="payment_capture_request_status", schema="public"), nullable=False, default=CaptureRequestStatus.PENDING)
+  status: Mapped[CaptureRequestStatus] = mapped_column(
+    Enum(CaptureRequestStatus, name="payment_capture_request_status", schema="public", values_callable=enum_values),
+    nullable=False,
+    default=CaptureRequestStatus.PENDING,
+  )
   secure_token: Mapped[str] = mapped_column(String(64), nullable=False)
   token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
   opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -215,7 +229,11 @@ class PaymentProof(Base, TimestampMixin):
   image_height: Mapped[int | None] = mapped_column(Integer)
   uploaded_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("public.profiles.id"), nullable=False)
   uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-  validation_status: Mapped[ProofValidationStatus] = mapped_column(Enum(ProofValidationStatus, name="payment_proof_validation_status", schema="public"), nullable=False, default=ProofValidationStatus.PENDING)
+  validation_status: Mapped[ProofValidationStatus] = mapped_column(
+    Enum(ProofValidationStatus, name="payment_proof_validation_status", schema="public", values_callable=enum_values),
+    nullable=False,
+    default=ProofValidationStatus.PENDING,
+  )
   validated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("public.profiles.id"))
   validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
   rejection_reason: Mapped[str | None] = mapped_column(Text)
