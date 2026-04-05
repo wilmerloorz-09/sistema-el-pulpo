@@ -1,0 +1,46 @@
+Haz esto exactamente.
+
+1. Limpiar movimientos operativos en la base
+Abre Supabase > SQL Editor y ejecuta el archivo reset_operational_for_fresh_start.sql.
+
+Si prefieres copiar el contenido desde tu máquina:
+
+abre reset_operational_for_fresh_start.sql
+copia todo
+pégalo en SQL Editor
+presiona Run
+Eso elimina lo operativo:
+
+órdenes
+pagos
+caja
+movimientos
+eventos
+solicitudes/metadatos de comprobantes
+No elimina las fotos del bucket.
+
+2. Si también quieres borrar las fotos de comprobantes
+Necesitas la service_role key real de Supabase.
+
+En Supabase:
+
+ve a Project Settings
+entra a API
+copia Project URL
+copia service_role
+Luego, en PowerShell dentro de C:\sistema-el-pulpo, ejecuta:
+
+$env:SUPABASE_URL="https://apmsuigcveqtjzbpfihb.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="PEGA_AQUI_LA_SERVICE_ROLE_KEY_REAL"
+.\scripts\reset-payment-proofs-storage.ps1
+3. Resultado esperado
+
+el SQL deja la base operativa limpia
+el script vacía el bucket payment-proofs
+4. Si solo quieres eliminar movimientos operativos y nada más
+Haz solo el paso 1.
+
+Resumen corto
+
+solo movimientos operativos: ejecuta reset_operational_for_fresh_start.sql
+movimientos + fotos: después corre reset-payment-proofs-storage.ps1

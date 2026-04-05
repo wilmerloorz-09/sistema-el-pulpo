@@ -96,6 +96,9 @@ const Caja = () => {
     isLoadingPendingCaptureRequests,
     refetchPendingCaptureRequests,
     openCaptureRequest,
+    prepareTransferProof,
+    discardPreparedTransferProof,
+    getTransferProofReadiness,
     openCashRegister,
     payOrder,
     requestPaymentReversal,
@@ -213,6 +216,7 @@ const Caja = () => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${PAYMENT_PROOF_API_URL}/api/capture-requests/${activeCaptureRequest.secure_token}/upload`);
         xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+        xhr.timeout = 45000;
 
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
@@ -220,7 +224,13 @@ const Caja = () => {
           setUploadProgress(percent);
         };
 
+        xhr.upload.onload = () => {
+          setUploadProgress((current) => Math.max(current, 96));
+        };
+
         xhr.onerror = () => reject(new Error("No se pudo subir la foto del comprobante."));
+        xhr.onabort = () => reject(new Error("La subida del comprobante fue cancelada."));
+        xhr.ontimeout = () => reject(new Error("La subida esta tardando demasiado. Intenta de nuevo."));
 
         xhr.onload = () => {
           try {
@@ -672,6 +682,9 @@ const Caja = () => {
                 paymentMethods={paymentMethods}
                 shiftDenoms={shift.denoms}
                 onPay={(params) => payOrder.mutateAsync(params)}
+                onPrepareTransferProof={(params) => prepareTransferProof(params)}
+                onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
+                getTransferProofReadiness={getTransferProofReadiness}
                 paying={payOrder.isPending}
                 readOnly={!canOperateCaja}
               />
@@ -711,6 +724,9 @@ const Caja = () => {
             paymentMethods={paymentMethods}
             shiftDenoms={shift.denoms}
             onPay={(params) => payOrder.mutateAsync(params)}
+            onPrepareTransferProof={(params) => prepareTransferProof(params)}
+            onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
+            getTransferProofReadiness={getTransferProofReadiness}
             paying={payOrder.isPending}
             readOnly={!canOperateCaja}
           />

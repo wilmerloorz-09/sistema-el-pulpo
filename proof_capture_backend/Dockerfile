@@ -9,9 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   tesseract-ocr \
   && rm -rf /var/lib/apt/lists/*
 
-COPY proof_capture_backend/pyproject.toml /app/pyproject.toml
-COPY proof_capture_backend/app /app/app
-COPY proof_capture_backend/alembic /app/alembic
+COPY pyproject.toml /app/pyproject.toml
+COPY app /app/app
+COPY alembic /app/alembic
 
 RUN pip install --no-cache-dir .
 

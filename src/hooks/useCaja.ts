@@ -181,6 +181,13 @@ export interface PayOrderParams {
   totalAmount: number;
   cashReceivedDenoms: { denomination_id: string; qty: number }[];
   cashChangeDenoms: { denomination_id: string; qty: number }[];
+  preparedTransferProofSession?: PreparedTransferProofSession | null;
+}
+
+export interface PreparedTransferProofSession {
+  paymentGroupId: string;
+  paymentIds: string[];
+  captureRequestIds: string[];
 }
 
 export type CompletedPaymentStatus = "APPLIED" | "PARTIAL" | "REVERSED" | "VOIDED";
@@ -281,6 +288,7 @@ type PaymentNoteMeta = {
   reversalRequested: boolean;
   reversed: boolean;
   voided: boolean;
+  transferProofPending: boolean;
   quantity: number | null;
   tenderedAmount: number | null;
 };
@@ -290,13 +298,14 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
     return {
       itemId: null,
       paymentGroupId: null,
-      itemsAnchor: false,
-      reversalRequested: false,
-      reversed: false,
-      voided: false,
-      quantity: null,
-      tenderedAmount: null,
-    };
+        itemsAnchor: false,
+        reversalRequested: false,
+        reversed: false,
+        voided: false,
+        transferProofPending: false,
+        quantity: null,
+        tenderedAmount: null,
+      };
   }
 
   const segments = notes.split("|").map((s) => s.trim());
@@ -307,6 +316,7 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   let reversalRequested = false;
   let reversed = false;
   let voided = false;
+  let transferProofPending = false;
   let quantity: number | null = null;
   let tenderedAmount: number | null = null;
 
@@ -329,6 +339,9 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
     if (segment.startsWith("VOIDED:")) {
       voided = true;
     }
+    if (segment === "TRANSFER_PROOF_PENDING:1") {
+      transferProofPending = true;
+    }
     if (segment.startsWith("QTY:")) {
       const parsedQty = Number(segment.replace("QTY:", "").trim());
       quantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : null;
@@ -339,7 +352,7 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
     }
   }
 
-  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, quantity, tenderedAmount };
+  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, transferProofPending, quantity, tenderedAmount };
 }
 
 function isSpecialOrderNote(notes: string | null) {
@@ -384,6 +397,24 @@ function buildPaymentCaptureToken() {
   return generateUUID().replace(/-/g, "");
 }
 
+function buildPaymentNote(params: {
+  paymentGroupId: string;
+  index: number;
+  tenderedAmount: number;
+  appliedAmount: number;
+  isSpecial: boolean;
+  transferProofPending?: boolean;
+}) {
+  return [
+    `GROUP:${params.paymentGroupId}`,
+    `ITEMS_ANCHOR:${params.index === 0 ? 1 : 0}`,
+    `TENDERED:${params.tenderedAmount.toFixed(2)}`,
+    `APPLIED:${params.appliedAmount.toFixed(2)}`,
+    ...(params.isSpecial ? ["SPECIAL_ORDER:1"] : []),
+    ...(params.transferProofPending ? ["TRANSFER_PROOF_PENDING:1"] : []),
+  ].join("|");
+}
+
 type PaymentItemRow = {
   id: string;
   payment_id: string;
@@ -415,7 +446,7 @@ async function fetchActivePaymentItemsForOrderItems(orderItemIds: string[]): Pro
     (payments ?? [])
       .filter((payment) => {
         const meta = parsePaymentNotes(payment.notes);
-        return meta.reversed || meta.voided;
+        return meta.reversed || meta.voided || meta.transferProofPending;
       })
       .map((payment) => payment.id)
   );
@@ -452,7 +483,7 @@ async function fetchActivePaymentsTotalByOrder(orderIds: string[]): Promise<Reco
   const totals: Record<string, number> = {};
   for (const payment of payments ?? []) {
     const meta = parsePaymentNotes(payment.notes);
-    if (meta.reversed || meta.voided) continue;
+    if (meta.reversed || meta.voided || meta.transferProofPending) continue;
     totals[payment.order_id] = roundMoney((totals[payment.order_id] ?? 0) + Number(payment.amount ?? 0));
   }
 
@@ -819,6 +850,153 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       toast.error(err.message ?? "No se pudo abrir la solicitud de comprobante");
     },
   });
+
+  const prepareTransferProof = useMutation({
+    mutationFn: async ({
+      orderId,
+      paymentSplits,
+      tenderedSplits,
+      isSpecial = false,
+    }: {
+      orderId: string;
+      paymentSplits: PaymentSplitInput[];
+      tenderedSplits: PaymentSplitInput[];
+      isSpecial?: boolean;
+    }): Promise<PreparedTransferProofSession> => {
+      const shift = shiftQuery.data;
+      if (!shift) throw new Error("No hay turno abierto");
+      if (!activeBranchId) throw new Error("No se pudo determinar la sucursal activa");
+      if (!user) throw new Error("No user");
+
+      const { data: selectedMethods, error: selectedMethodsError } = await supabase
+        .from("payment_methods")
+        .select("id, name")
+        .in("id", paymentSplits.map((split) => split.methodId));
+      if (selectedMethodsError) throw selectedMethodsError;
+
+      const transferMethodIds = new Set(
+        (selectedMethods ?? [])
+          .filter((method) => isTransferPaymentMethodName(method.name))
+          .map((method) => method.id),
+      );
+
+      const transferSplits = paymentSplits.filter((split) => transferMethodIds.has(split.methodId));
+      if (transferSplits.length === 0) {
+        throw new Error("No hay pagos por transferencia para preparar.");
+      }
+      if (!shift.capture_user_id) {
+        throw new Error("Este turno no tiene usuario capturador configurado.");
+      }
+
+      const now = new Date().toISOString();
+      const paymentGroupId = generateUUID();
+      const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
+
+      const paymentsToInsert = transferSplits.map((paymentSplit, index) => ({
+        id: generateUUID(),
+        order_id: orderId,
+        payment_method_id: paymentSplit.methodId,
+        amount: paymentSplit.amount,
+        notes: buildPaymentNote({
+          paymentGroupId,
+          index,
+          tenderedAmount: tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount,
+          appliedAmount: Number(paymentSplit.amount),
+          isSpecial,
+          transferProofPending: true,
+        }),
+        created_by: user.id,
+        created_at: now,
+      }));
+
+      await Promise.all(paymentsToInsert.map((payment) => dbInsert("payments", payment)));
+
+      const captureRequestsToInsert = paymentsToInsert.map((payment) => ({
+        id: generateUUID(),
+        cash_session_id: shift.id,
+        payment_id: payment.id,
+        branch_id: activeBranchId,
+        requested_by_user_id: user.id,
+        assigned_capture_user_id: shift.capture_user_id,
+        status: "pending",
+        secure_token: buildPaymentCaptureToken(),
+        token_expires_at: new Date(Date.now() + DEFAULT_PAYMENT_CAPTURE_TOKEN_TTL_MINUTES * 60 * 1000).toISOString(),
+        created_at: now,
+        updated_at: now,
+      }));
+
+      try {
+        const { error } = await (supabase.from("payment_capture_requests" as never).insert(captureRequestsToInsert as never) as any);
+        if (error) throw error;
+      } catch (error) {
+        await Promise.all(paymentsToInsert.map((payment) => supabase.from("payments").delete().eq("id", payment.id)));
+        if (isMissingTableError(error, "payment_capture_requests")) {
+          throw new Error("La base de datos todavia no tiene habilitado el modulo de comprobantes.");
+        }
+        throw error;
+      }
+
+      return {
+        paymentGroupId,
+        paymentIds: paymentsToInsert.map((payment) => payment.id),
+        captureRequestIds: captureRequestsToInsert.map((request) => request.id),
+      };
+    },
+    onSuccess: (_, variables) => {
+      qc.invalidateQueries({ queryKey: ["pending-payment-capture-requests"], exact: false });
+      toast.success("Solicitud de foto enviada para el pago por transferencia.");
+    },
+    onError: (err: any) => toast.error(err.message ?? "No se pudo solicitar la foto de transferencia"),
+  });
+
+  const discardPreparedTransferProof = useMutation({
+    mutationFn: async (session: PreparedTransferProofSession) => {
+      if (session.captureRequestIds.length > 0) {
+        const { error: captureDeleteError } = await (supabase
+          .from("payment_capture_requests" as never)
+          .delete()
+          .in("id", session.captureRequestIds) as any);
+        if (captureDeleteError && !isMissingTableError(captureDeleteError, "payment_capture_requests")) {
+          throw captureDeleteError;
+        }
+      }
+
+      if (session.paymentIds.length > 0) {
+        const { error: paymentDeleteError } = await supabase
+          .from("payments")
+          .delete()
+          .in("id", session.paymentIds);
+        if (paymentDeleteError) throw paymentDeleteError;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pending-payment-capture-requests"], exact: false });
+      qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
+    },
+  });
+
+  const getTransferProofReadiness = async (paymentIds: string[]) => {
+    if (paymentIds.length === 0) return { ready: true, uploadedCount: 0, totalCount: 0 };
+
+    const { data, error } = await (supabase
+      .from("payment_capture_requests" as never)
+      .select("payment_id, status")
+      .in("payment_id", paymentIds) as any);
+    if (error) {
+      if (isMissingTableError(error, "payment_capture_requests")) {
+        throw new Error("La base de datos todavia no tiene habilitado el modulo de comprobantes.");
+      }
+      throw error;
+    }
+
+    const rows = (data ?? []) as Array<{ payment_id: string; status: PendingPaymentCaptureRequest["status"] }>;
+    const uploadedCount = rows.filter((row) => ["uploaded", "approved"].includes(row.status)).length;
+    return {
+      ready: rows.length === paymentIds.length && uploadedCount === paymentIds.length,
+      uploadedCount,
+      totalCount: paymentIds.length,
+    };
+  };
 
   const movementsQuery = useQuery({
     queryKey: ["cash-register-movements", shiftQuery.data?.id],
@@ -1222,7 +1400,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
         for (const payment of summaryPayments) {
           const meta = parsePaymentNotes(payment.notes);
-          if (meta.reversed || meta.voided) continue;
+            if (meta.reversed || meta.voided || meta.transferProofPending) continue;
           const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
           current.amount += meta.tenderedAmount ?? Number(payment.amount);
           current.paymentCount += 1;
@@ -1312,7 +1490,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const orderRealTotalMap: Record<string, number> = {};
       for (const payment of allOrderPayments) {
         const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided) continue;
+          if (meta.reversed || meta.voided || meta.transferProofPending) continue;
         orderPaidMap[payment.order_id] = (orderPaidMap[payment.order_id] || 0) + Number(payment.amount);
       }
       for (const item of allOrderItems) {
@@ -1427,7 +1605,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
       for (const payment of summaryPayments) {
         const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided) continue;
+          if (meta.reversed || meta.voided || meta.transferProofPending) continue;
         const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
         current.amount += meta.tenderedAmount ?? Number(payment.amount);
         current.paymentCount += 1;
@@ -1493,7 +1671,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   });
 
   const payOrder = useMutation({
-    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms }: PayOrderParams) => {
+    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession }: PayOrderParams) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
@@ -1688,11 +1866,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-      const now = new Date().toISOString();
-      const paymentGroupId = generateUUID();
-      const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
-      let anchorPaymentId = null;
-      let cashPaymentId: string | null = null;
+        const now = new Date().toISOString();
+        const paymentGroupId = preparedTransferProofSession?.paymentGroupId ?? generateUUID();
+        const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
+        let anchorPaymentId = null;
+        let cashPaymentId: string | null = null;
 
       const insertCashMovementCompat = async (payload: {
         shift_id: string;
@@ -1737,35 +1915,64 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       };
 
-      const paymentsToInsert = paymentSplits.map((paymentSplit, index) => {
-        const paymentId = generateUUID();
-        if (index === 0) anchorPaymentId = paymentId;
-        if (cashMethodId && paymentSplit.methodId === cashMethodId) {
-          cashPaymentId = paymentId;
-        }
+        const preparedTransferQueue = [...(preparedTransferProofSession?.paymentIds ?? [])];
+        const allPayments = paymentSplits.map((paymentSplit, index) => {
+          const reusePreparedPayment = transferMethodIds.has(paymentSplit.methodId) && preparedTransferQueue.length > 0;
+          const paymentId = reusePreparedPayment ? preparedTransferQueue.shift()! : generateUUID();
+          if (index === 0) anchorPaymentId = paymentId;
+          if (cashMethodId && paymentSplit.methodId === cashMethodId) {
+            cashPaymentId = paymentId;
+          }
 
-        return {
-          id: paymentId,
-          order_id: orderId,
-          payment_method_id: paymentSplit.methodId,
-          amount: paymentSplit.amount,
-          notes: `GROUP:${paymentGroupId}|ITEMS_ANCHOR:${index === 0 ? 1 : 0}|TENDERED:${(tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount).toFixed(2)}|APPLIED:${Number(paymentSplit.amount).toFixed(2)}${isSpecial ? "|SPECIAL_ORDER:1" : ""}`,
-          created_by: user.id,
-          created_at: now,
-        };
-      });
+          return {
+            id: paymentId,
+            order_id: orderId,
+            payment_method_id: paymentSplit.methodId,
+            amount: paymentSplit.amount,
+            notes: buildPaymentNote({
+              paymentGroupId,
+              index,
+              tenderedAmount: tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount,
+              appliedAmount: Number(paymentSplit.amount),
+              isSpecial: Boolean(isSpecial),
+              transferProofPending: false,
+            }),
+            created_by: user.id,
+            created_at: now,
+            reusePreparedPayment,
+          };
+        });
 
-      await Promise.all(
-        paymentsToInsert.map((payment) => dbInsert("payments", payment))
-      );
+        await Promise.all(
+          allPayments
+            .filter((payment) => !payment.reusePreparedPayment)
+            .map(({ reusePreparedPayment, ...payment }) => dbInsert("payments", payment))
+        );
 
-      if (!anchorPaymentId) throw new Error("No se pudo registrar el pago");
+        await Promise.all(
+          allPayments
+            .filter((payment) => payment.reusePreparedPayment)
+            .map(async (payment) => {
+              const { error } = await supabase
+                .from("payments")
+                .update({
+                  amount: payment.amount,
+                  notes: payment.notes,
+                  created_by: payment.created_by,
+                  created_at: payment.created_at,
+                })
+                .eq("id", payment.id);
+              if (error) throw error;
+            })
+        );
+
+        if (!anchorPaymentId) throw new Error("No se pudo registrar el pago");
 
       let createdCaptureRequestCount = 0;
       let captureRequestWarning: string | null = null;
 
-      const transferPayments = paymentsToInsert.filter((payment) => transferMethodIds.has(payment.payment_method_id));
-      if (transferPayments.length > 0) {
+        const transferPayments = allPayments.filter((payment) => transferMethodIds.has(payment.payment_method_id));
+        if (transferPayments.length > 0 && !preparedTransferProofSession) {
         if (!shift.capture_user_id) {
           captureRequestWarning = "El pago por transferencia se registro, pero este turno no tiene usuario capturador configurado.";
         } else if (!activeBranchId) {
@@ -2388,6 +2595,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     isLoadingPendingCaptureRequests: pendingCaptureRequestsQuery.isLoading,
     refetchPendingCaptureRequests: pendingCaptureRequestsQuery.refetch,
     openCaptureRequest,
+    prepareTransferProof: prepareTransferProof.mutateAsync,
+    discardPreparedTransferProof: discardPreparedTransferProof.mutateAsync,
+    getTransferProofReadiness,
     openCashRegister,
     payOrder,
     requestPaymentReversal,

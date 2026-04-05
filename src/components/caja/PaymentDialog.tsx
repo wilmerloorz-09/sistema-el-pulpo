@@ -22,12 +22,13 @@ import {
   getCashPaymentMethod,
   getDefaultPaymentMethodId,
   isCashPaymentMethodName,
+  isTransferPaymentMethodName,
   normalizePaymentMethodName,
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, Wallet, WalletCards } from "lucide-react";
-import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
+import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "./PaymentReceipt";
 
@@ -44,6 +45,14 @@ interface Props {
   paymentMethods: PaymentMethodOption[];
   shiftDenoms: ShiftDenom[];
   onPay: (params: PayOrderParams) => Promise<any> | void;
+  onPrepareTransferProof: (params: {
+    orderId: string;
+    paymentSplits: PayOrderParams["paymentSplits"];
+    tenderedSplits: PayOrderParams["tenderedSplits"];
+    isSpecial?: boolean;
+  }) => Promise<PreparedTransferProofSession>;
+  onDiscardPreparedTransferProof: (session: PreparedTransferProofSession) => Promise<any> | void;
+  getTransferProofReadiness: (paymentIds: string[]) => Promise<{ ready: boolean; uploadedCount: number; totalCount: number }>;
   paying: boolean;
   onClose: () => void;
   readOnly?: boolean;
@@ -126,6 +135,9 @@ export default function PaymentDialog({
   paymentMethods,
   shiftDenoms,
   onPay,
+  onPrepareTransferProof,
+  onDiscardPreparedTransferProof,
+  getTransferProofReadiness,
   paying,
   onClose,
   readOnly = false,
@@ -146,6 +158,11 @@ export default function PaymentDialog({
   const [cashDetailOpen, setCashDetailOpen] = useState(false);
   const [cashOverpayConfirmOpen, setCashOverpayConfirmOpen] = useState(false);
   const [pendingCashDenominationId, setPendingCashDenominationId] = useState<string | null>(null);
+  const [preparedTransferProofSession, setPreparedTransferProofSession] = useState<PreparedTransferProofSession | null>(null);
+  const [preparedTransferProofSignature, setPreparedTransferProofSignature] = useState<string | null>(null);
+  const [preparingTransferProof, setPreparingTransferProof] = useState(false);
+  const [transferProofReady, setTransferProofReady] = useState(false);
+  const [transferProofProgress, setTransferProofProgress] = useState<{ uploadedCount: number; totalCount: number }>({ uploadedCount: 0, totalCount: 0 });
   const activePaymentSplitInputId = useRef<string | null>(null);
   const isSpecialOrder = Boolean(order?.is_special);
 
@@ -178,6 +195,11 @@ export default function PaymentDialog({
     setCashDetailOpen(false);
     setCashOverpayConfirmOpen(false);
     setPendingCashDenominationId(null);
+    setPreparedTransferProofSession(null);
+    setPreparedTransferProofSignature(null);
+    setPreparingTransferProof(false);
+    setTransferProofReady(false);
+    setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
     setSuccessView(false);
     setLastTransactionData(null);
   }, [order?.id, order?.items, defaultMethodId, cashMethod?.id, paymentMethods]);
@@ -338,10 +360,27 @@ export default function PaymentDialog({
           receivedAmount,
           appliedAmount,
           overpayAmount: roundMoney(Math.max(0, receivedAmount - appliedAmount)),
-          methodName: paymentMethodMap[split.methodId]?.name ?? "Metodo",
-        };
-      });
+        methodName: paymentMethodMap[split.methodId]?.name ?? "Metodo",
+      };
+    });
   }, [paymentSplits, paymentMethodMap, currentChargeTotal, hasReceivedDenoms, totalReceived]);
+  const hasTransferPayment = useMemo(
+    () => paymentAllocationPreview.some((split) => split.appliedAmount > 0 && isTransferPaymentMethodName(split.methodName)),
+    [paymentAllocationPreview],
+  );
+  const transferPreparationSignature = useMemo(
+    () =>
+      JSON.stringify(
+        paymentAllocationPreview
+          .filter((split) => split.appliedAmount > 0)
+          .map((split) => ({
+            methodId: split.methodId,
+            receivedAmount: split.receivedAmount,
+            appliedAmount: split.appliedAmount,
+          })),
+      ),
+    [paymentAllocationPreview],
+  );
   const cashPreview = paymentAllocationPreview.find((split) => split.isCashMethod) ?? null;
   const cashAppliedAmount = roundMoney(cashPreview?.appliedAmount ?? 0);
   const appliedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.appliedAmount, 0));
@@ -641,39 +680,138 @@ export default function PaymentDialog({
         createdAt: new Date().toISOString(),
       };
 
-      const payPromise = onPay({
-        orderId: order.id,
-        itemSelections,
-        paymentSplits: paymentSplitsPayload,
-        tenderedSplits: tenderedSplitsPayload,
+        const payPromise = onPay({
+          orderId: order.id,
+          itemSelections,
+          paymentSplits: paymentSplitsPayload,
+          tenderedSplits: tenderedSplitsPayload,
         isSpecial: isSpecialOrder,
         specialAmount: isSpecialOrder ? currentChargeTotal : undefined,
-        receivedTotal: roundMoney(receivedSplitTotal),
-        totalAmount: roundMoney(currentChargeTotal),
-        cashReceivedDenoms,
-        cashChangeDenoms,
-      });
+          receivedTotal: roundMoney(receivedSplitTotal),
+          totalAmount: roundMoney(currentChargeTotal),
+          cashReceivedDenoms,
+          cashChangeDenoms,
+          preparedTransferProofSession,
+        });
 
-      if (payPromise && typeof (payPromise as any).then === "function") {
-        await payPromise;
-      }
+        if (payPromise && typeof (payPromise as any).then === "function") {
+          await payPromise;
+        }
 
-      setLastTransactionData(receiptData);
-      setSuccessView(true);
+        setPreparedTransferProofSession(null);
+        setTransferProofReady(false);
+        setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
+        setLastTransactionData(receiptData);
+        setSuccessView(true);
     } catch (err) {
       console.error("Payment failed", err);
     }
   };
 
   const canPay =
-    !readOnly &&
-    hasChargeSelection &&
+      !readOnly &&
+      hasChargeSelection &&
     paymentMethods.length > 0 &&
     paymentSplits.some((split) => split.amount > 0) &&
     !paying &&
-    shortageAmount <= 0.01 &&
-    (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.001 >= cashAppliedAmount))) &&
-    !(changeAmount > 0 && cannotMakeChange);
+      shortageAmount <= 0.01 &&
+      (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.001 >= cashAppliedAmount))) &&
+      !(changeAmount > 0 && cannotMakeChange);
+  const canConfirmPayment = canPay && (!hasTransferPayment || transferProofReady);
+
+  useEffect(() => {
+    if (!confirmOpen || !preparedTransferProofSession || !hasTransferPayment) return;
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const readiness = await getTransferProofReadiness(preparedTransferProofSession.paymentIds);
+        if (cancelled) return;
+        setTransferProofReady(readiness.ready);
+        setTransferProofProgress({
+          uploadedCount: readiness.uploadedCount,
+          totalCount: readiness.totalCount,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Transfer proof readiness failed", error);
+        }
+      }
+    };
+
+    void refresh();
+    const intervalId = window.setInterval(() => void refresh(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [confirmOpen, preparedTransferProofSession, hasTransferPayment, getTransferProofReadiness]);
+
+  const discardPreparedTransferIfNeeded = async () => {
+    if (!preparedTransferProofSession) return;
+    try {
+      await onDiscardPreparedTransferProof(preparedTransferProofSession);
+    } catch (error) {
+      console.error("Discard prepared transfer proof failed", error);
+    } finally {
+      setPreparedTransferProofSession(null);
+      setPreparedTransferProofSignature(null);
+      setTransferProofReady(false);
+      setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
+    }
+  };
+
+  useEffect(() => {
+    if (!preparedTransferProofSession) return;
+    if (preparedTransferProofSignature === transferPreparationSignature) return;
+    void discardPreparedTransferIfNeeded();
+  }, [preparedTransferProofSession, preparedTransferProofSignature, transferPreparationSignature]);
+
+  const handleDialogClose = () => {
+    void discardPreparedTransferIfNeeded();
+    onClose();
+  };
+
+  const handleOpenConfirm = async () => {
+    if (!canPay) return;
+
+    if (!hasTransferPayment) {
+      setConfirmOpen(true);
+      return;
+    }
+
+    if (preparedTransferProofSession) {
+      setConfirmOpen(true);
+      return;
+    }
+
+    const tenderedSplitsPayload = paymentAllocationPreview.map((split) => ({
+      methodId: split.methodId,
+      amount: split.receivedAmount,
+    }));
+    const paymentSplitsPayload = paymentAllocationPreview
+      .filter((split) => split.appliedAmount > 0)
+      .map((split) => ({ methodId: split.methodId, amount: split.appliedAmount }));
+
+    setPreparingTransferProof(true);
+    try {
+      const session = await onPrepareTransferProof({
+        orderId: order!.id,
+        paymentSplits: paymentSplitsPayload,
+        tenderedSplits: tenderedSplitsPayload,
+        isSpecial: isSpecialOrder,
+      });
+      setPreparedTransferProofSession(session);
+      setPreparedTransferProofSignature(transferPreparationSignature);
+      setTransferProofReady(false);
+      setTransferProofProgress({ uploadedCount: 0, totalCount: session.paymentIds.length });
+      setConfirmOpen(true);
+    } catch (error) {
+      console.error("Prepare transfer proof failed", error);
+    } finally {
+      setPreparingTransferProof(false);
+    }
+  };
 
   const paymentStatusMessage = useMemo(() => {
     if (readOnly) return "Modo consulta activo";
@@ -1098,14 +1236,14 @@ export default function PaymentDialog({
           </div>
 
           {!readOnly ? (
-            <Button
-              onClick={() => setConfirmOpen(true)}
-              disabled={!canPay}
-              className="h-12 w-full rounded-full border-0 bg-gradient-to-r from-orange-500 to-amber-400 px-6 text-base font-semibold text-white shadow-[0_18px_36px_-24px_rgba(249,115,22,0.55)] hover:translate-y-0 hover:brightness-105 lg:mt-0 lg:w-[250px]"
-            >
-              {paying ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
-              Cobrar ${currentChargeTotal.toFixed(2)}
-            </Button>
+              <Button
+                onClick={() => void handleOpenConfirm()}
+                disabled={!canPay || preparingTransferProof}
+                className="h-12 w-full rounded-full border-0 bg-gradient-to-r from-orange-500 to-amber-400 px-6 text-base font-semibold text-white shadow-[0_18px_36px_-24px_rgba(249,115,22,0.55)] hover:translate-y-0 hover:brightness-105 lg:mt-0 lg:w-[250px]"
+              >
+                {paying || preparingTransferProof ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
+                Cobrar ${currentChargeTotal.toFixed(2)}
+              </Button>
           ) : (
             <div className="rounded-2xl bg-stone-100 px-4 py-3 text-center text-xs text-slate-500 lg:w-[280px]">
               Esta cuenta no puede registrar cobros.
@@ -1153,7 +1291,7 @@ export default function PaymentDialog({
 
   return (
     <>
-    <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
+      <Dialog open={!!order} onOpenChange={(open) => !open && handleDialogClose()}>
       {lastTransactionData && (
         <PaymentReceipt
           ref={receiptRef}
@@ -1192,7 +1330,7 @@ export default function PaymentDialog({
               </Button>
               <Button
                 className="h-12 gap-2 rounded-2xl font-bold shadow-md"
-                onClick={onClose}
+                  onClick={handleDialogClose}
               >
                 Finalizar
               </Button>
@@ -1587,14 +1725,14 @@ export default function PaymentDialog({
                   </div>
 
                   {!readOnly ? (
-                    <Button
-                      onClick={() => setConfirmOpen(true)}
-                      disabled={!canPay}
-                      className="h-14 w-full gap-2 rounded-2xl px-4 font-display text-base font-semibold lg:w-[280px]"
-                    >
-                      {paying ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
+                      <Button
+                      onClick={() => void handleOpenConfirm()}
+                        disabled={!canPay || preparingTransferProof}
+                        className="h-14 w-full gap-2 rounded-2xl px-4 font-display text-base font-semibold lg:w-[280px]"
+                      >
+                        {paying || preparingTransferProof ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
                         <>
                           <CreditCard className="h-5 w-5" />
                           Cobrar ${currentChargeTotal.toFixed(2)}
@@ -1855,6 +1993,21 @@ export default function PaymentDialog({
           </AlertDialogHeader>
 
           <div className="space-y-4">
+            {hasTransferPayment && (
+              <div
+                className={cn(
+                  "rounded-2xl border p-3 text-sm",
+                  transferProofReady
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-amber-200 bg-amber-50 text-amber-800",
+                )}
+              >
+                {transferProofReady
+                  ? "Foto de transferencia recibida. Ya puedes confirmar el cobro."
+                  : `Esperando comprobante de transferencia subido (${transferProofProgress.uploadedCount}/${transferProofProgress.totalCount || preparedTransferProofSession?.paymentIds.length || 0}).`}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
@@ -1954,7 +2107,7 @@ export default function PaymentDialog({
 
           <AlertDialogFooter>
             <AlertDialogCancel>Volver</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePay} disabled={!canPay || paying}>
+            <AlertDialogAction onClick={handlePay} disabled={!canConfirmPayment || paying}>
               {paying ? "Procesando..." : "Confirmar cobro"}
             </AlertDialogAction>
           </AlertDialogFooter>

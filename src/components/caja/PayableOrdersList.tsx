@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PayableOrder, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
+import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, Soup, UtensilsCrossed } from "lucide-react";
@@ -19,6 +19,14 @@ interface Props {
   paymentMethods: { id: string; name: string }[];
   shiftDenoms: ShiftDenom[];
   onPay: (params: PayOrderParams) => Promise<any> | void;
+  onPrepareTransferProof: (params: {
+    orderId: string;
+    paymentSplits: PayOrderParams["paymentSplits"];
+    tenderedSplits: PayOrderParams["tenderedSplits"];
+    isSpecial?: boolean;
+  }) => Promise<PreparedTransferProofSession>;
+  onDiscardPreparedTransferProof: (session: PreparedTransferProofSession) => Promise<any> | void;
+  getTransferProofReadiness: (paymentIds: string[]) => Promise<{ ready: boolean; uploadedCount: number; totalCount: number }>;
   paying: boolean;
   readOnly?: boolean;
 }
@@ -36,6 +44,9 @@ export default function PayableOrdersList({
   paymentMethods,
   shiftDenoms,
   onPay,
+  onPrepareTransferProof,
+  onDiscardPreparedTransferProof,
+  getTransferProofReadiness,
   paying,
   readOnly = false,
 }: Props) {
@@ -270,6 +281,9 @@ export default function PayableOrdersList({
         paymentMethods={paymentMethods}
         shiftDenoms={shiftDenoms}
         onPay={onPay}
+        onPrepareTransferProof={onPrepareTransferProof}
+        onDiscardPreparedTransferProof={onDiscardPreparedTransferProof}
+        getTransferProofReadiness={getTransferProofReadiness}
         paying={paying}
         onClose={() => setSelectedOrder(null)}
         readOnly={readOnly}
