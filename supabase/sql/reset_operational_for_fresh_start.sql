@@ -32,6 +32,7 @@
 --   - al borrar payment_capture_requests y payment_proofs se limpia el flujo operativo de comprobantes de transferencia
 -- - NO elimina archivos del bucket privado de Supabase Storage
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
+--   - metodo recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -131,6 +132,7 @@ COMMIT;
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia
 -- - archivos en Supabase Storage no se borran con este SQL
+--   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados

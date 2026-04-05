@@ -224,10 +224,12 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - elimina tambien `orders` especiales porque `is_special` y `special_total_manual` viven dentro de `public.orders`
   - vacia ambos arboles `menu_nodes` (`TABLE` y `TAKEOUT`) junto con cualquier configuracion de `manual_price_enabled`
   - deja intactas funciones/RPCs, incluidas las de alerta de mesero y las de conversion a orden especial
+  - limpia la metadata de comprobantes en base de datos; si quieres vaciar tambien las fotos del bucket `payment-proofs`, ejecuta `node .\scripts\empty-payment-proofs-bucket.mjs`
 - `supabase/sql/reset_operational_for_fresh_start.sql`
   - elimina datos transaccionales (`orders`, `order_items`, `payments`, eventos, caja)
   - conserva catalogo, `menu_nodes`, imagenes, `manual_price_enabled` y la relacion visual `legacy_product_id`
   - por eso despues del reset operativo siguen disponibles las imagenes reales de producto en `Ordenes` y `Caja`
+  - no borra archivos de `payment-proofs`; para vaciarlos usa `node .\scripts\empty-payment-proofs-bucket.mjs`
 
 ## Funciones operativas nuevas para mesas por turno
 - `ensure_branch_table_capacity(branch_id, requested_count)`
