@@ -9,6 +9,31 @@
 
 ## Cambios Aplicados en Esta Jornada (2026-04-03)
 
+### 0.0.11) Comprobantes de transferencia: captura previa al cobro, backend dedicado y OCR basico
+- El flujo de `Transferencia` en `Caja` ya no debe permitir confirmar cobro solo por haber digitado el monto.
+- Al tocar `Cobrar` en `PaymentDialog`, si existe monto por transferencia, el sistema prepara una sesion provisional de pagos y crea solicitudes de captura antes del `Confirmar cobro`.
+- El modal de confirmacion ahora espera que la foto haya sido subida antes de habilitar el cierre del cobro.
+- Si el cajero cierra el dialogo o cambia la distribucion del pago antes de confirmar, la sesion provisional y sus solicitudes de captura deben descartarse para no dejar comprobantes huerfanos.
+- El capturador de comprobantes en `Caja` ya no debe quedarse colgado indefinidamente en el upload:
+  - existe timeout de subida
+  - se maneja `abort`
+  - el progreso sube a zona de procesamiento cuando el archivo ya termino de enviarse
+- La vista previa de foto en el capturador ahora debe mostrar comprobantes verticales completos y centrados, sin recortarlos con `object-cover`.
+- Existe un backend dedicado de comprobantes (`proof_capture_backend`) desplegable por separado.
+- Ese backend ya soporta OCR basico sin IA con `Tesseract`:
+  - extrae texto del comprobante cuando el binario `tesseract` esta disponible
+  - intenta detectar el monto
+  - compara contra el monto esperado del pago
+  - guarda resultado en `payment_proofs`
+- El analisis actual puede producir:
+  - `match`
+  - `mismatch`
+  - `needs_review`
+  - `unavailable`
+  - `error`
+- Si el entorno no tiene `tesseract`, el comprobante igual se guarda y queda marcado para revision manual.
+- En Render, ese analisis solo funciona en el servicio Docker del backend de comprobantes, porque el runtime nativo no incluye `tesseract`.
+
 ### 0.0.5) Caja: Ticket térmico profesional y persistencia de cobro
 - Se implementó un nuevo sistema de tickets de venta optimizado para impresoras térmicas de 80mm.
 - El ticket incluye: encabezado de sucursal, detalle de la orden, desglose de pagos por método y cambio entregado.

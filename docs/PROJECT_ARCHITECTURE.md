@@ -265,6 +265,46 @@
   - agrupa `Monedas` y `Billetes`
   - permite cantidad manual por denominacion
   - valida excedentes con confirmacion explicita
+- Para pagos por `Transferencia`, el flujo ya no es solo visual:
+  - al tocar `Cobrar`, `PaymentDialog` puede preparar pagos provisionales asociados a captura de comprobante
+  - esas filas provisionales no deben contarse como pago final hasta `Confirmar cobro`
+  - el dialogo de confirmacion debe consultar si la foto fue subida antes de habilitar el cierre del cobro
+  - si el flujo se cancela o cambia su distribucion, esas filas y solicitudes deben limpiarse
+
+### E.1) Backend de comprobantes de transferencia
+- Existe un backend Python/FastAPI dedicado en `proof_capture_backend`.
+- Ese backend encapsula:
+  - solicitudes de captura (`payment_capture_requests`)
+  - almacenamiento de imagen en bucket privado `payment-proofs`
+  - metadata del comprobante en `payment_proofs`
+  - aprobacion/rechazo posterior
+- La configuracion de conexion debe preferir pooler de Supabase sobre host directo `db.*` para evitar fallos por IPv6 en entornos como Render.
+- El despliegue productivo con OCR se resuelve mejor como servicio Docker, porque el runtime nativo de Render no trae dependencias de sistema como `tesseract`.
+
+### E.2) OCR basico sin IA para comprobantes
+- `proof_capture_backend` ya soporta una primera capa de analisis automatico sin IA.
+- El flujo actual:
+  - valida y reescribe la imagen
+  - la sube a Storage
+  - ejecuta OCR via `tesseract` si el binario esta disponible
+  - intenta detectar el monto del comprobante
+  - compara el monto detectado con el monto esperado del pago
+  - guarda el resultado en `payment_proofs`
+- Campos persistidos del analisis:
+  - `ocr_text`
+  - `analysis_status`
+  - `detected_amount`
+  - `amount_matches_expected`
+  - `analysis_summary`
+  - `analysis_error_code`
+  - `analysis_ran_at`
+- Estados previstos del analisis:
+  - `match`
+  - `mismatch`
+  - `needs_review`
+  - `unavailable`
+  - `error`
+- Si `tesseract` no existe en el entorno, el flujo no debe romperse: el comprobante se guarda y queda en revision manual (`unavailable`).
 
 ### F) Snapshot operativo compartido
 - Se consolido la dependencia en `get_order_operational_snapshot` para evitar divergencias entre:

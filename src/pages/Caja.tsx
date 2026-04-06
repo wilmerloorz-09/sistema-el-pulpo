@@ -483,11 +483,11 @@ const Caja = () => {
                             </p>
                           ) : (
                             <div className="space-y-4">
-                              <div className="overflow-hidden rounded-2xl border border-orange-100 bg-white">
+                              <div className="flex h-[32rem] items-center justify-center overflow-hidden rounded-2xl border border-orange-100 bg-white p-4">
                                 <img
                                   src={photoPreviewUrl}
                                   alt="Preview del comprobante"
-                                  className="h-64 w-full object-cover"
+                                  className="h-full max-w-[22rem] bg-white object-contain"
                                 />
                               </div>
                               <div className="rounded-2xl bg-white/90 p-3">

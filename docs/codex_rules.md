@@ -223,6 +223,12 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - si existen metodos duplicados por nombre visible, deduplicarlos en la UI antes de renderizar
   - `Monedas y billetes` solo debe habilitarse cuando exista al menos un item en `Items a cobrar ahora`
   - usar la imagen real del producto desde `menu_nodes.image_url` cuando exista; fallback a icono generico solo cuando falte
+  - si existe pago por `Transferencia`, el flujo debe poder preparar la captura del comprobante antes del `Confirmar cobro`
+  - no habilitar `Confirmar cobro` solo por haber digitado el monto de transferencia; el flujo debe considerar el estado real de la captura
+- Si se toca el capturador de comprobantes en `Caja`:
+  - la vista previa de una foto vertical debe mostrarse completa y centrada; no usar `object-cover` si eso recorta el comprobante
+  - manejar timeout, abort y errores del upload para evitar estados colgados en progreso indefinido
+  - si el backend devuelve error, intentar mostrar el `message` real antes de caer en un texto generico
 - Si se toca `OrderItemsList` en `Ordenes`, mantener comportamiento responsive explicito:
   - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
   - tablet: mantener controles a la derecha y aprovechar el ancho extra sin empujar acciones al pie
@@ -271,6 +277,11 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - que `Eliminar division` se bloquee si ya hubo cocina/listo/despacho/pago/cancelacion
 - En Caja, no mezclar montos de efectivo con montos no efectivos al presentar `Diferencia` o `Actual`.
 - Si el metodo efectivo no participa en un cobro final, no persistir ni reutilizar denominaciones temporales.
+- Si se toca `proof_capture_backend`:
+  - preservar la separacion entre captura, almacenamiento y validacion/aprobacion del comprobante
+  - no romper el comportamiento degradado cuando el entorno no tenga OCR disponible
+  - si se introduce OCR sin IA, guardar el resultado como asistencia (`match`, `mismatch`, `needs_review`, `unavailable`, `error`) y no como verdad bancaria absoluta
+  - si el despliegue requiere dependencias de sistema como `tesseract`, documentar explicitamente si el servicio debe correr en Docker y no en runtime nativo
 
 ## Checklist Minimo Antes de Cerrar una Tarea
 1. `npx.cmd tsc --noEmit`
@@ -286,6 +297,7 @@ Preservar continuidad tecnica y funcional del POS entre sesiones sin perder deci
   - arboles `TABLE` / `TAKEOUT` / `BULK`
   - `manual_price_enabled` en `menu_nodes`
   - productos incluidos para `A granel`
+  - modulo de comprobantes de transferencia (`payment_capture_requests`, `payment_proofs`, campos OCR/analisis y limpieza separada del bucket `payment-proofs`)
   - alertas/listas operativas nuevas que siguen existiendo como funciones
 6. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
 

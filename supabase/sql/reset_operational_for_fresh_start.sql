@@ -6,6 +6,7 @@
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
+--   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
@@ -33,6 +34,7 @@
 -- - NO elimina archivos del bucket privado de Supabase Storage
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
 --   - metodo recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
+--   - wrapper opcional: `.\scripts\reset-payment-proofs-storage.ps1`
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -130,13 +132,15 @@ COMMIT;
 --   - las lineas ya despachadas siguen requiriendo autorizacion para mesero
 -- - Configuracion y asignaciones de despacho intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
--- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia
+-- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+
+
 
 
 

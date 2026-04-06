@@ -5,7 +5,8 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
---   - incluye solicitudes, metadatos y archivos de comprobantes de transferencia
+--   - incluye solicitudes y metadatos de comprobantes de transferencia
+--   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 --   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - incluye auditoria de cierre de turno (closed_by, closed_from_device, closed_from_user_agent)
@@ -38,6 +39,7 @@
 -- - DESPUES DEL RESET TENDRAS QUE CONFIGURAR SUCURSAL/PRODUCTOS/REFERENCIA DE MESAS DESDE CERO
 -- - LOS ARCHIVOS DEL BUCKET PRIVADO `payment-proofs` DEBEN BORRARSE APARTE
 --   - metodo recomendado: ejecutar `node .\scripts\empty-payment-proofs-bucket.mjs`
+--   - wrapper opcional: `.\scripts\reset-payment-proofs-storage.ps1`
 -- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR / A GRANEL, TODOS QUEDAN VACIOS
 -- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (emit_order_ready_alert, get_mesero_ready_alerts, order_has_dispatch_after)
 -- - TAMBIEN QUEDA INTACTA LA LOGICA DE ANULACION:
@@ -252,9 +254,11 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
--- - 0 metadatos de comprobantes en base de datos; los archivos del bucket `payment-proofs` deben vaciarse aparte
+-- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+
+
 
 

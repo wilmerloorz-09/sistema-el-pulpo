@@ -219,16 +219,51 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - `paid_at` debe quedar informado
   - el estado operativo puede mantenerse en `READY` para no sacar la orden del flujo de `Despacho` antes de la entrega real
 
+## Comprobantes de transferencia
+- `payment_capture_requests`
+  - registra la solicitud de captura previa al cierre de cobro por transferencia
+  - usa `secure_token` para el flujo del capturador
+  - mantiene estados: `pending`, `opened`, `uploaded`, `approved`, `rejected`, `expired`, `canceled`
+- `payment_proofs`
+  - guarda la metadata del comprobante subido al bucket privado `payment-proofs`
+  - el archivo real vive en Storage; la tabla guarda solo metadata y estado operativo
+- Campos base del comprobante:
+  - `bucket_name`
+  - `object_path`
+  - `file_name_stored`
+  - `original_file_name`
+  - `mime_type`
+  - `file_size`
+  - `sha256_hash`
+  - `image_width`
+  - `image_height`
+  - `uploaded_by_user_id`
+  - `validation_status`
+- Campos nuevos de analisis OCR basico:
+  - `ocr_text`
+  - `analysis_status`
+  - `detected_amount`
+  - `amount_matches_expected`
+  - `analysis_summary`
+  - `analysis_error_code`
+  - `analysis_ran_at`
+- Regla funcional vigente:
+  - la foto puede subirse y guardarse aunque el OCR no este disponible
+  - si el entorno no tiene `tesseract`, `analysis_status` queda en `unavailable`
+  - si el OCR corre pero no logra leer texto/monto, queda en `needs_review`
+  - `match` y `mismatch` representan una comparacion automatica solo contra el monto esperado; no validan por si solos la autenticidad bancaria del comprobante
+
 ## Scripts de reset operativo
 - `supabase/sql/reset_full_for_fresh_start.sql`
   - elimina tambien `orders` especiales porque `is_special` y `special_total_manual` viven dentro de `public.orders`
   - vacia ambos arboles `menu_nodes` (`TABLE` y `TAKEOUT`) junto con cualquier configuracion de `manual_price_enabled`
-  - deja intactas funciones/RPCs, incluidas las de alerta de mesero y las de conversion a orden especial
-  - limpia la metadata de comprobantes en base de datos; si quieres vaciar tambien las fotos del bucket `payment-proofs`, ejecuta `node .\scripts\empty-payment-proofs-bucket.mjs`
+  - deja intactas funciones/RPCs, incluidas las de alerta de mesero, las de conversion a orden especial y las del backend de comprobantes
+  - limpia la metadata de comprobantes en base de datos, incluidos campos OCR/analisis; si quieres vaciar tambien las fotos del bucket `payment-proofs`, ejecuta `node .\scripts\empty-payment-proofs-bucket.mjs`
 - `supabase/sql/reset_operational_for_fresh_start.sql`
   - elimina datos transaccionales (`orders`, `order_items`, `payments`, eventos, caja)
   - conserva catalogo, `menu_nodes`, imagenes, `manual_price_enabled` y la relacion visual `legacy_product_id`
   - por eso despues del reset operativo siguen disponibles las imagenes reales de producto en `Ordenes` y `Caja`
+  - limpia tambien `payment_capture_requests` y `payment_proofs`, incluidos resultados OCR/analisis
   - no borra archivos de `payment-proofs`; para vaciarlos usa `node .\scripts\empty-payment-proofs-bucket.mjs`
 
 ## Funciones operativas nuevas para mesas por turno
@@ -493,6 +528,13 @@ Este modelo legacy no ha sido eliminado porque el flujo operativo de ordenes sig
   - crea `bulk_included_products`
   - crea `bulk_included_product_ranges`
   - agrega validacion para asignar productos incluidos desde `TABLE` a productos origen `BULK`
+- `proof_capture_backend/alembic/versions/20260404_000001_payment_proofs.py`
+  - crea `payment_capture_requests`
+  - crea `payment_proofs`
+  - agrega soporte base del modulo de comprobantes de transferencia
+- `proof_capture_backend/alembic/versions/20260405_000002_payment_proof_analysis_fields.py`
+  - agrega campos OCR/analisis a `payment_proofs`
+  - habilita comparacion automatica de monto sin IA
 
 ## Reglas de Integridad
 1. No hacer deletes fisicos en entidades con historial operativo.
