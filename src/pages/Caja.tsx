@@ -189,6 +189,51 @@ const Caja = () => {
     setCaptureError(null);
   };
 
+  const compressImage = async (file: File): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        const MAX_DIM = 1200;
+        
+        if (width > height && width > MAX_DIM) {
+          height *= MAX_DIM / width;
+          width = MAX_DIM;
+        } else if (height > MAX_DIM) {
+          width *= MAX_DIM / height;
+          height = MAX_DIM;
+        }
+        
+        canvas.width = Math.floor(width);
+        canvas.height = Math.floor(height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else resolve(file);
+          },
+          "image/jpeg",
+          0.8
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      img.src = url;
+    });
+  };
+
   const handleUploadSelectedPhoto = async () => {
     if (!activeCaptureRequest || !selectedPhotoFile) return;
 
@@ -211,8 +256,9 @@ const Caja = () => {
       return;
     }
 
+    const compressedBlob = await compressImage(selectedPhotoFile);
     const formData = new FormData();
-    formData.append("file", selectedPhotoFile);
+    formData.append("file", compressedBlob, "comprobante.jpg");
 
     const note = captureNotesByRequest[activeCaptureRequest.id]?.trim();
     if (note) {

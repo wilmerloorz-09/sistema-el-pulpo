@@ -890,6 +890,26 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         throw new Error("Este turno no tiene usuario de caja configurado.");
       }
 
+      const { data: orphanedPayments } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("created_by", user.id)
+        .like("notes", "%TRANSFER_PROOF_PENDING:1%");
+
+      if (orphanedPayments && orphanedPayments.length > 0) {
+        const orphanedPaymentIds = orphanedPayments.map((p) => p.id);
+        
+        await (supabase
+          .from("payment_capture_requests" as never)
+          .delete()
+          .in("payment_id", orphanedPaymentIds) as any);
+          
+        await supabase
+          .from("payments")
+          .delete()
+          .in("id", orphanedPaymentIds);
+      }
+
       const now = new Date().toISOString();
       const paymentGroupId = generateUUID();
       const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
