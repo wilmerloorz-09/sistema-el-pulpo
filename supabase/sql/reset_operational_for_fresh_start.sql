@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- RESET OPERATIVO DEL SISTEMA POS PARA PRUEBAS DESDE CERO
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -106,10 +106,11 @@ BEGIN
   IF to_regclass('public.entity_counters') IS NOT NULL THEN
     DELETE FROM public.entity_counters
     WHERE entity_key IN (
-      'orders',
+      'orders_daily',
+      'orders_repair',
       'cash_shifts',
-      'cash_register_openings',
-      'cash_register_movements'
+      'cash_movements',
+      'payments'
     );
     RAISE NOTICE 'Se limpiaron solo contadores operativos, preservando perfiles/mesas/sucursales';
   END IF;

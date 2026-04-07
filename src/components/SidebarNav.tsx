@@ -30,7 +30,11 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
   const initials = getInitials(profile?.full_name);
   const accountLabel = profile?.full_name || profile?.username || "Mi cuenta";
   const location = useLocation();
-  const activeCajaTab = location.pathname === "/caja" && location.search.includes("tab=completed") ? "completed" : "pending";
+  const cajaTabParam = new URLSearchParams(location.search).get("tab");
+  const activeCajaTab =
+    location.pathname === "/caja" && (cajaTabParam === "completed" || cajaTabParam === "capture")
+      ? cajaTabParam
+      : "pending";
   const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
 
   if (visibleItems.length === 0) {
@@ -131,6 +135,16 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
                   )}
                 >
                   Pagos realizados
+                </NavLink>
+                <NavLink
+                  to="/caja?tab=capture"
+                  className={cn(
+                    "rounded-xl px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 transition-colors",
+                    "hover:bg-white/8 hover:text-sidebar-foreground",
+                    activeCajaTab === "capture" && "bg-white/8 text-sidebar-foreground",
+                  )}
+                >
+                  Captura de comprobantes
                 </NavLink>
               </div>
             ) : null}

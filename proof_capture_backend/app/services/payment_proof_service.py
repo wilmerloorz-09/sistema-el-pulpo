@@ -105,32 +105,10 @@ class PaymentProofService:
     )
 
     payment = db.get(Payment, capture_request.payment_id)
-    try:
-      analysis = self.payment_proof_analysis_service.analyze_payment_proof(
-        image_bytes=validated.file_bytes,
-        expected_amount=payment.amount if payment else 0,
-      )
-      proof.ocr_text = analysis.ocr_text
-      proof.analysis_status = analysis.status
-      proof.detected_amount = analysis.detected_amount
-      proof.amount_matches_expected = analysis.amount_matches_expected
-      proof.analysis_summary = analysis.summary
-      proof.analysis_error_code = analysis.error_code
-      proof.analysis_ran_at = analysis.ran_at
-    except Exception as exc:
-      proof.analysis_status = "error"
-      proof.analysis_summary = "No se pudo analizar automaticamente el comprobante. Requiere revision manual."
-      proof.analysis_error_code = "analysis_failed"
-      proof.analysis_ran_at = _utcnow()
-      self.audit_service.log_event(
-        db,
-        actor_user_id=actor.id,
-        action="capture_analysis_failed",
-        entity="payment_proofs",
-        entity_id=str(proof.id),
-        after_data={"capture_request_id": str(capture_request.id), "reason": str(exc)},
-        context=context,
-      )
+    
+    proof.analysis_status = "skipped"
+    proof.analysis_summary = "Verificacion automatica deshabilitada temporalmente."
+    proof.analysis_ran_at = _utcnow()
 
     capture_request.status = CaptureRequestStatus.UPLOADED
     capture_request.uploaded_at = _utcnow()

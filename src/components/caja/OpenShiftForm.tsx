@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { CashRegisterOpeningHistoryEntry, CashShiftCaptureCandidate, Denomination } from "@/hooks/useCaja";
+import { useState } from "react";
+import type { CashRegisterOpeningHistoryEntry, Denomination } from "@/hooks/useCaja";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,13 +18,10 @@ import CashRegisterOpeningHistory from "@/components/caja/CashRegisterOpeningHis
 
 interface Props {
   denominations: Denomination[];
-  captureCandidates: CashShiftCaptureCandidate[];
-  initialCaptureUserId?: string | null;
-  initialCaptureDeviceLabel?: string | null;
+  hasCashierUser: boolean;
+  cashierUserLabel?: string | null;
   onOpen: (payload: {
     counts: { denomination_id: string; qty: number }[];
-    captureUserId: string;
-    captureDeviceLabel?: string | null;
   }) => void;
   opening: boolean;
   readOnly?: boolean;
@@ -35,9 +32,8 @@ interface Props {
 
 export default function OpenShiftForm({
   denominations,
-  captureCandidates,
-  initialCaptureUserId = null,
-  initialCaptureDeviceLabel = null,
+  hasCashierUser,
+  cashierUserLabel = null,
   onOpen,
   opening,
   readOnly = false,
@@ -48,31 +44,12 @@ export default function OpenShiftForm({
   const [counts, setCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(denominations.map((d) => [d.id, 0]))
   );
-  const [captureUserId, setCaptureUserId] = useState(initialCaptureUserId ?? "");
-  const [captureDeviceLabel, setCaptureDeviceLabel] = useState(initialCaptureDeviceLabel ?? "");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const hasDenominations = denominations.length > 0;
-  const hasCaptureCandidates = captureCandidates.length > 0;
   const total = denominations.reduce((sum, denomination) => sum + denomination.value * (counts[denomination.id] ?? 0), 0);
   const hasPositiveOpeningTotal = total > 0;
-  const canSubmit = hasDenominations && hasPositiveOpeningTotal && hasCaptureCandidates && !!captureUserId;
-
-  useEffect(() => {
-    if (!captureCandidates.length) {
-      setCaptureUserId("");
-      return;
-    }
-
-    if (initialCaptureUserId && captureCandidates.some((candidate) => candidate.id === initialCaptureUserId)) {
-      setCaptureUserId(initialCaptureUserId);
-      return;
-    }
-
-    setCaptureUserId((current) => current && captureCandidates.some((candidate) => candidate.id === current)
-      ? current
-      : captureCandidates[0].id);
-  }, [captureCandidates, initialCaptureUserId]);
+  const canSubmit = hasDenominations && hasPositiveOpeningTotal && hasCashierUser;
 
   const handleConfirmOpen = () => {
     if (!canSubmit) {
@@ -84,11 +61,7 @@ export default function OpenShiftForm({
       qty: counts[denomination.id] ?? 0,
     }));
     setConfirmOpen(false);
-    onOpen({
-      counts: data,
-      captureUserId,
-      captureDeviceLabel: captureDeviceLabel.trim() || null,
-    });
+    onOpen({ counts: data });
   };
 
   return (
@@ -123,55 +96,27 @@ export default function OpenShiftForm({
         </div>
       ) : (
         <div className="mb-6 space-y-4">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-sm font-semibold text-foreground">Usuario para toma de foto</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Antes de abrir caja debes indicar que usuario movil capturara los comprobantes de transferencia.
-            </p>
-            <div className="mt-3 grid gap-3">
-              <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Usuario capturador
-                </label>
-                <select
-                  value={captureUserId}
-                  onChange={(e) => setCaptureUserId(e.target.value)}
-                  className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
-                  disabled={readOnly || !hasCaptureCandidates}
-                >
-                  <option value="">Selecciona un usuario</option>
-                  {captureCandidates.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.full_name} @{candidate.username}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Equipo o celular
-                </label>
-                <Input
-                  value={captureDeviceLabel}
-                  onChange={(e) => setCaptureDeviceLabel(e.target.value)}
-                  placeholder="Ej. Celular caja 1"
-                  maxLength={120}
-                  disabled={readOnly}
-                />
-              </div>
-            </div>
-          </div>
-
-          {!hasCaptureCandidates && (
+          {!hasCashierUser && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-foreground">
               <div className="mb-2 flex items-center gap-2 font-medium">
                 <AlertCircle className="h-4 w-4 text-warning" />
-                No hay usuarios habilitados para asignar
+                No hay usuario de caja configurado
               </div>
               <p className="text-muted-foreground">
-                Habilita al menos un usuario en el turno desde Administracion para asignarlo como capturador de comprobantes.
+                Debes habilitar exactamente un usuario con permiso de Caja en este turno antes de abrir caja.
               </p>
+            </div>
+          )}
+
+          {hasCashierUser && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-sm font-semibold text-foreground">Usuario de Caja</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Este usuario abrira caja, cobrara las ordenes y desde su misma cuenta podra capturar comprobantes.
+              </p>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                {cashierUserLabel ?? "Usuario configurado"}
+              </div>
             </div>
           )}
 
@@ -222,9 +167,9 @@ export default function OpenShiftForm({
         </p>
       )}
 
-      {hasDenominations && !readOnly && hasPositiveOpeningTotal && !captureUserId && (
+      {hasDenominations && !readOnly && hasPositiveOpeningTotal && !hasCashierUser && (
         <p className="mt-3 text-center text-xs text-amber-700">
-          Debes seleccionar el usuario movil que tomara la foto del comprobante.
+          No puedes abrir caja hasta definir un unico usuario con permiso de Caja en este turno.
         </p>
       )}
 
@@ -236,7 +181,7 @@ export default function OpenShiftForm({
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm leading-6 text-muted-foreground">
               Se abrira la caja con un total inicial de <span className="font-bold text-foreground">${total.toFixed(2)}</span>.
-              El usuario asignado para la toma de foto sera <span className="font-bold text-foreground">{captureCandidates.find((candidate) => candidate.id === captureUserId)?.full_name ?? "sin asignar"}</span>.
+              El usuario de caja asignado sera <span className="font-bold text-foreground">{cashierUserLabel ?? "sin asignar"}</span>.
               Verifica los datos antes de continuar.
             </AlertDialogDescription>
           </AlertDialogHeader>

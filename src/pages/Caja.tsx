@@ -47,6 +47,7 @@ const Caja = () => {
   const { isDesktop } = useBreakpoint();
   const [searchParams, setSearchParams] = useSearchParams();
   const [completedFilters, setCompletedFilters] = useState<CompletedPaymentsFilters>(initialCompletedFilters);
+
   const [activeCaptureRequestId, setActiveCaptureRequestId] = useState<string | null>(null);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
@@ -55,16 +56,23 @@ const Caja = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const activeTab = searchParams.get("tab") === "completed" ? "completed" : "pending";
+  const activeTabParam = searchParams.get("tab");
+  const activeTab =
+    activeTabParam === "completed"
+      ? "completed"
+      : activeTabParam === "capture"
+        ? "capture"
+        : "pending";
 
-  const setActiveTab = (tab: "pending" | "completed") => {
+  const setActiveTab = (tab: "pending" | "completed" | "capture") => {
     const nextParams = new URLSearchParams(searchParams);
     if (tab === "pending") {
       nextParams.delete("tab");
     } else {
-      nextParams.set("tab", "completed");
+      nextParams.set("tab", tab);
     }
     setSearchParams(nextParams, { replace: true });
+
   };
   const canOperateCaja =
     canOperate(permissions, "caja")
@@ -260,6 +268,209 @@ const Caja = () => {
     }
   };
 
+  const renderCaptureContent = () => (
+    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
+      <div className="mb-4">
+        <h2 className="font-display text-sm font-bold text-foreground">Captura de comprobantes</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Usa esta vista desde el mismo usuario de caja para tomar y subir comprobantes de transferencia.
+        </p>
+      </div>
+
+      {isLoadingPendingCaptureRequests ? (
+        <div className="flex flex-col items-center justify-center py-10">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="mt-4 text-sm text-muted-foreground">
+            Buscando solicitudes de comprobante...
+          </p>
+        </div>
+      ) : pendingCaptureRequests.length === 0 ? (
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <Camera className="h-8 w-8" />
+          </div>
+          <h3 className="mt-4 font-display text-2xl font-black text-foreground">
+            Sin solicitudes pendientes
+          </h3>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+            Cuando registres un pago por transferencia, aqui aparecera la solicitud para tomar y subir el comprobante.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4 text-left">
+          <div className="flex items-start gap-4 rounded-3xl border border-orange-200 bg-orange-50/70 p-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-sm">
+              <ReceiptText className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-2xl font-black text-foreground">
+                Solicitudes de comprobante
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Se muestran aqui los pagos por transferencia que requieren captura y subida de comprobante.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {pendingCaptureRequests.map((request) => (
+              <div
+                key={request.id}
+                className="rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.4)]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                      {request.order_code
+                        ? `Orden ${request.order_code}`
+                        : request.order_number
+                          ? `Orden #${request.order_number}`
+                          : "Orden"}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-950">
+                      ${request.amount.toFixed(2)}
+                    </p>
+                  </div>
+                  <Badge className="border-orange-200 bg-orange-100 text-orange-700 hover:bg-orange-100">
+                    {request.status === "opened" ? "Abierta" : "Pendiente"}
+                  </Badge>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">
+                  Metodo: {request.payment_method_name}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Expira: {new Date(request.token_expires_at).toLocaleTimeString("es-EC", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className="rounded-2xl"
+                    onClick={() => void handleTakePhotoClick(request.id)}
+                    disabled={Boolean(uploadingCaptureRequestId)}
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Tomar foto
+                  </Button>
+                  {activeCaptureRequestId === request.id && selectedPhotoFile && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-2xl"
+                      onClick={clearSelectedPhoto}
+                      disabled={uploadingCaptureRequestId === request.id}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Volver a tomar
+                    </Button>
+                  )}
+                </div>
+
+                {activeCaptureRequestId === request.id && (
+                  <div className="mt-4 rounded-3xl border border-dashed border-orange-200 bg-orange-50/40 p-4">
+                    {!selectedPhotoFile || !photoPreviewUrl ? (
+                      <p className="text-sm text-slate-600">
+                        Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex h-[32rem] items-center justify-center overflow-hidden rounded-2xl border border-orange-100 bg-white p-4">
+                          <img
+                            src={photoPreviewUrl}
+                            alt="Preview del comprobante"
+                            className="h-full max-w-[22rem] bg-white object-contain"
+                          />
+                        </div>
+                        <div className="rounded-2xl bg-white/90 p-3">
+                          <p className="text-sm font-medium text-slate-900">
+                            Vista previa lista
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            La foto solo se guardara cuando confirmes con "Usar foto".
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                            Observacion opcional
+                          </label>
+                          <Textarea
+                            value={captureNotesByRequest[request.id] ?? ""}
+                            onChange={(event) =>
+                              setCaptureNotesByRequest((current) => ({
+                                ...current,
+                                [request.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Ejemplo: comprobante legible, revisar monto, etc."
+                            disabled={uploadingCaptureRequestId === request.id}
+                          />
+                        </div>
+                        {uploadingCaptureRequestId === request.id && (
+                          <div className="space-y-2">
+                            <Progress value={uploadProgress} className="h-2.5" />
+                            <p className="text-xs text-slate-500">
+                              Subiendo comprobante... {uploadProgress}%
+                            </p>
+                          </div>
+                        )}
+                        {captureError && (
+                          <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            {captureError}
+                          </div>
+                        )}
+                        {!PAYMENT_PROOF_API_URL && (
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                            La camara y la vista previa ya estan disponibles. Para guardar definitivamente la foto falta configurar el backend de comprobantes en este entorno.
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            className="rounded-2xl"
+                            onClick={() => void handleUploadSelectedPhoto()}
+                            disabled={uploadingCaptureRequestId === request.id}
+                          >
+                            {uploadingCaptureRequestId === request.id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                            )}
+                            Usar foto
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-2xl"
+                            onClick={clearSelectedPhoto}
+                            disabled={uploadingCaptureRequestId === request.id}
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Elegir otra
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleSelectedPhoto}
+      />
+    </div>
+  );
+
   if (isLoadingShift) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -268,8 +479,7 @@ const Caja = () => {
     );
   }
 
-  const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly)
-    || Boolean(shift?.capture_user_id && user?.id && shift.capture_user_id === user.id && shift.cashier_id !== user.id);
+  const isCaptureDeviceOnly = false;
 
   if (activeTab === "completed" && (!shift || shift.caja_status !== "OPEN")) {
     return (
@@ -344,12 +554,13 @@ const Caja = () => {
             {shift.caja_status === "UNOPENED" ? (
               <OpenShiftForm
                 denominations={denominations}
-                captureCandidates={captureCandidates}
-                initialCaptureUserId={shift.capture_user_id}
-                initialCaptureDeviceLabel={shift.capture_device_label}
-                onOpen={({ counts, captureUserId, captureDeviceLabel }) =>
-                  openCashRegister.mutate({ counts, captureUserId, captureDeviceLabel })
+                hasCashierUser={captureCandidates.length === 1}
+                cashierUserLabel={
+                  captureCandidates.length === 1
+                    ? `${captureCandidates[0].full_name} @${captureCandidates[0].username}`
+                    : null
                 }
+                onOpen={({ counts }) => openCashRegister.mutate({ counts })}
                 opening={openCashRegister.isPending}
                 readOnly={!canOperateCaja}
                 title="Abrir Caja"
@@ -631,50 +842,6 @@ const Caja = () => {
 
       {!isDesktop ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setActiveTab("pending")}
-              className={cn(
-                "group relative overflow-hidden rounded-2xl border px-3 py-3 text-sm font-semibold text-left transition-all",
-                activeTab === "pending"
-                  ? "border-orange-400 bg-gradient-to-b from-orange-500 to-orange-600 text-white shadow-[0_18px_35px_-24px_rgba(249,115,22,0.95)] dark:border-primary/50 dark:from-primary/20 dark:to-primary/10 dark:text-primary dark:shadow-none"
-                  : "border-orange-200 bg-white/85 text-muted-foreground hover:border-orange-300 hover:bg-orange-50 dark:border-border dark:bg-card/85 dark:hover:border-primary/30 dark:hover:bg-primary/5",
-              )}
-            >
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-white/10" />
-              <div className="relative flex items-center gap-2">
-                <div className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-xl border",
-                  activeTab === "pending" ? "border-white/40 bg-white/15 dark:border-primary/40 dark:bg-primary/20" : "border-orange-200 bg-orange-50 text-primary dark:border-primary/20 dark:bg-primary/10",
-                )}>
-                  <CreditCard className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-[13px] leading-tight">Por cobrar ({payableOrders.length})</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("completed")}
-              className={cn(
-                "group relative overflow-hidden rounded-2xl border px-3 py-3 text-sm font-semibold text-left transition-all",
-                activeTab === "completed"
-                  ? "border-violet-400 bg-gradient-to-b from-violet-500 to-fuchsia-600 text-white shadow-[0_18px_35px_-24px_rgba(139,92,246,0.95)] dark:border-violet-500/50 dark:from-violet-500/20 dark:to-violet-500/10 dark:text-violet-400 dark:shadow-none"
-                  : "border-orange-200 bg-white/85 text-muted-foreground hover:border-violet-300 hover:bg-violet-50 dark:border-border dark:bg-card/85 dark:hover:border-violet-500/30 dark:hover:bg-violet-500/5",
-              )}
-            >
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-white/10" />
-              <div className="relative flex items-center gap-2">
-                <div className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-xl border",
-                  activeTab === "completed" ? "border-white/40 bg-white/15 dark:border-violet-500/40 dark:bg-violet-500/20" : "border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/20 dark:bg-violet-500/10",
-                )}>
-                  <History className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-[13px] leading-tight">Pagos realizados ({completedPaymentsTotal})</span>
-              </div>
-            </button>
-          </div>
-
           {activeTab === "pending" ? (
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
               <PayableOrdersList
@@ -689,7 +856,7 @@ const Caja = () => {
                 readOnly={!canOperateCaja}
               />
             </div>
-          ) : (
+          ) : activeTab === "completed" ? (
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
               <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
               <CompletedPaymentsList
@@ -715,7 +882,7 @@ const Caja = () => {
                 }
               />
             </div>
-          )}
+          ) : renderCaptureContent()}
         </div>
       ) : activeTab === "pending" ? (
         <div>
@@ -731,7 +898,7 @@ const Caja = () => {
             readOnly={!canOperateCaja}
           />
         </div>
-      ) : (
+      ) : activeTab === "completed" ? (
         <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
           <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
           <CompletedPaymentsList
@@ -757,7 +924,7 @@ const Caja = () => {
             }
           />
         </div>
-      )}
+      ) : renderCaptureContent()}
       </div>
     </div>
   );

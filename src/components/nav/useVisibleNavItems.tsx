@@ -114,8 +114,6 @@ export function useVisibleNavItems() {
     const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
     const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && Boolean(shiftGateQuery.data?.userEnabled);
     const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
-    const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
-
     const visibleItems = NAV_ITEMS.filter((item) => {
       if (isGlobalAdminWithoutBranches) {
         return item.to === "/admin";
@@ -123,10 +121,6 @@ export function useVisibleNavItems() {
 
       if (!hasOperationalShift) {
         return item.to === "/admin" && canAccessAdmin;
-      }
-
-      if (isCaptureDeviceOnly) {
-        return item.to === "/caja" && item.visible(permissions);
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {
@@ -181,7 +175,6 @@ export function useVisibleNavItems() {
     shiftGateQuery.data?.canManageProducts,
     shiftGateQuery.data?.canServeTables,
     shiftGateQuery.data?.canUseCaja,
-    shiftGateQuery.data?.isCaptureDeviceOnly,
     shiftGateQuery.data?.isSupervisor,
     shiftGateQuery.data?.shiftOpen,
     shiftGateQuery.data?.userEnabled,

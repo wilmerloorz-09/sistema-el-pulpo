@@ -282,12 +282,16 @@ const Ordenes = () => {
   const autoCleanupOrderRef = useRef<typeof order | null>(null);
   const isBulkScopeSelection = currentMenuScope === "BULK";
 
+  const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
+  // Operar en órdenes: permiso explícito del módulo, flags del turno, o administración global/sucursal.
+  // Sin esto, un superadmin con `permissions` vacío en el RPC veía solo modo consulta aunque tuviera acceso total.
   const canOperateOrders =
-    canOperate(permissions, "ordenes")
+    isGlobalAdmin
+    || canManageOrders
+    || canOperate(permissions, "ordenes")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.canAccessOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
-  const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   const canCancelOrders = canOperateOrders || canManageOrders;
   const hasDirectCancelRole =
     isGlobalAdmin
@@ -890,7 +894,7 @@ const Ordenes = () => {
     <div className="space-y-3">
       {isTrayOrder ? (
         <div className="rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 p-4 shadow-[0_18px_42px_-30px_rgba(245,158,11,0.3)]">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="scrollbar-none -mx-1 flex flex-nowrap items-center gap-x-2 overflow-x-auto px-1 pb-0.5 sm:gap-x-4">
             {([
               { value: "B", label: "Con Envase" },
               { value: "A", label: "Sin envase" },
@@ -908,7 +912,7 @@ const Ordenes = () => {
                   }}
                   aria-pressed={checked}
                   className={cn(
-                    "flex items-center gap-2 text-sm font-semibold transition",
+                    "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold transition sm:gap-2 sm:text-sm",
                     checked
                       ? "text-amber-900"
                       : "text-amber-800/90",
@@ -940,10 +944,10 @@ const Ordenes = () => {
       ) : null}
 
       {order.order_type === "DINE_IN" ? (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
+        <div className="scrollbar-none -mx-1 flex flex-nowrap items-center gap-x-2 overflow-x-auto px-1 pb-0.5 sm:gap-x-3 md:gap-x-5">
           <button
             type="button"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
             onClick={() => {
               if (interactiveMenuScope === "TABLE") return;
               setPendingMenuScopeSelection("TABLE");
@@ -967,14 +971,14 @@ const Ordenes = () => {
                 )}
               />
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <ChefHat className="h-4 w-4" />
+            <span className="inline-flex items-center gap-1 sm:gap-1.5">
+              <ChefHat className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
               Menu Mesas
             </span>
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
             onClick={() => {
               if (interactiveMenuScope === "TAKEOUT") return;
               setPendingMenuScopeSelection("TAKEOUT");
@@ -998,14 +1002,14 @@ const Ordenes = () => {
                 )}
               />
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <ShoppingBag className="h-4 w-4" />
+            <span className="inline-flex items-center gap-1 sm:gap-1.5">
+              <ShoppingBag className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
               Con envase
             </span>
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground disabled:opacity-60"
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
             onClick={() => {
               if (interactiveMenuScope === "BULK") return;
               setPendingMenuScopeSelection("BULK");
@@ -1026,8 +1030,8 @@ const Ordenes = () => {
                 )}
               />
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Scale className="h-4 w-4" />
+            <span className="inline-flex items-center gap-1 sm:gap-1.5">
+              <Scale className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
               A granel
             </span>
           </button>
@@ -1052,7 +1056,9 @@ const Ordenes = () => {
     </div>
   ) : (
     <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
-      Modo consulta: puedes ver la orden, pero no agregar ni editar items.
+      {order.status === "PAID" || order.status === "CANCELLED"
+        ? "Esta orden está pagada o cancelada: solo lectura (no puedes agregar ni editar ítems)."
+        : "Modo consulta: no tienes permiso de operación en Órdenes para esta sucursal o tu usuario no tiene acceso operativo en el turno actual (revisa permisos del módulo Órdenes o asignación en caja)."}
     </div>
   );
 
@@ -1197,7 +1203,7 @@ const Ordenes = () => {
       <div className="flex flex-wrap items-start gap-1 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
         <div className="min-w-0 w-full space-y-2">
           <div className="flex items-center justify-between gap-1">
-            <div className="min-w-0 flex flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
                 <button
                   type="button"
                   onClick={handleMobileBackToMesas}
@@ -1299,7 +1305,7 @@ const Ordenes = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="scrollbar-none flex items-center gap-2 overflow-x-auto pb-1">
             {canShowConvertToSpecial && (
               <Button
                 variant="outline"
@@ -1360,7 +1366,12 @@ const Ordenes = () => {
       </div>
 
       <div className="relative z-10 flex flex-1 overflow-hidden 2xl:hidden">
-        <div className={cn("flex-1 overflow-y-auto p-3 pb-24", showCart && "hidden")}>
+        <div
+          className={cn(
+            "min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-24",
+            showCart && "hidden",
+          )}
+        >
           {menuPanel}
         </div>
 
@@ -1370,7 +1381,7 @@ const Ordenes = () => {
       </div>
 
       <div className="relative z-10 hidden flex-1 overflow-hidden p-4 2xl:grid 2xl:grid-cols-[minmax(0,1fr)_520px] 2xl:gap-4">
-        <div className="min-w-0 overflow-y-auto">
+        <div className="min-w-0 overflow-x-hidden overflow-y-auto">
           {menuPanel}
         </div>
         <div className="min-w-0 overflow-y-auto">

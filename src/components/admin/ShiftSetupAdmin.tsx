@@ -484,7 +484,7 @@ const ShiftSetupAdmin = () => {
     [shiftUsersState],
   );
   const cajaCapableUsers = useMemo(
-    () => shiftUsersState.filter((userState) => userState.can_use_caja || userState.is_supervisor),
+    () => shiftUsersState.filter((userState) => userState.can_use_caja),
     [shiftUsersState],
   );
   const mesaCapableUsers = useMemo(
@@ -576,7 +576,11 @@ const ShiftSetupAdmin = () => {
     }
 
     if (cajaCapableUsers.length === 0) {
-      issues.push("Debe haber por lo menos un usuario para caja en este turno.");
+      issues.push("Debe haber exactamente un usuario con permiso de Caja en este turno.");
+    }
+
+    if (cajaCapableUsers.length > 1) {
+      issues.push("Solo puede haber un usuario con permiso de Caja por turno.");
     }
 
     if ((workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT") {
@@ -673,6 +677,13 @@ const ShiftSetupAdmin = () => {
 
   const updateUserRole = (userId: string, role: ShiftUserRoleKey, value: boolean) => {
     setShiftUsersState((prev) => prev.map((u) => {
+      if (role === "can_use_caja" && value === true) {
+        if (u.user_id === userId) {
+          return normalizeShiftUser({ ...u, [role]: true }, false);
+        }
+        return normalizeShiftUser({ ...u, can_use_caja: false }, false);
+      }
+
       if (u.user_id !== userId) return u;
       return normalizeShiftUser({ ...u, [role]: value }, false);
     }));
@@ -1385,7 +1396,7 @@ const ShiftSetupAdmin = () => {
                           checked={userState?.can_use_caja ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_use_caja", c === true)}
                         />
-                        <span className="text-muted-foreground">Cajero</span>
+                        <span className="text-muted-foreground">Caja</span>
                       </label>
                       <label className="flex items-center gap-2 text-xs">
                         <Checkbox
@@ -1396,7 +1407,7 @@ const ShiftSetupAdmin = () => {
                       </label>
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      Mesas siempre incluye Ordenes. Despacho siempre incluye Productos. Ambos tambien pueden habilitarse por separado.
+                      Mesas siempre incluye Ordenes. Despacho siempre incluye Productos. Caja solo puede quedar habilitada para un usuario por turno.
                     </p>
                   </div>
                 );

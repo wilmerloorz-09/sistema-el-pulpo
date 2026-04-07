@@ -32,6 +32,7 @@ export interface ShiftDenom {
 
 export interface CashShift {
   id: string;
+  branch_id: string;
   status: "OPEN" | "CLOSED";
   caja_status: Database["public"]["Enums"]["caja_status"];
   cashier_id: string;
@@ -636,7 +637,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const { data, error } = await (supabase
         .from("cash_shifts" as never)
-        .select("id, status, caja_status, cashier_id, capture_user_id, capture_device_label, opened_at, closed_at, notes, active_tables_count")
+        .select("id, branch_id, status, caja_status, cashier_id, capture_user_id, capture_device_label, opened_at, closed_at, notes, active_tables_count")
         .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
         .order("opened_at", { ascending: false })
@@ -711,7 +712,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         .from("cash_shift_users" as never)
         .select("user_id")
         .eq("shift_id", shift.id)
-        .eq("is_enabled", true) as any);
+        .eq("is_enabled", true)
+        .eq("can_use_caja", true) as any);
       if (shiftUsersError) throw shiftUsersError;
 
       const userIds = [...new Set((shiftUsers ?? []).map((row: any) => row.user_id).filter(Boolean))];
@@ -743,7 +745,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     queryFn: async (): Promise<PendingPaymentCaptureRequest[]> => {
       const shift = shiftQuery.data;
       if (!shift?.id || !user?.id) return [];
-      if (shift.capture_user_id !== user.id) return [];
+      if (shift.cashier_id !== user.id) return [];
 
       const { data: requestRows, error: requestRowsError } = await (supabase
         .from("payment_capture_requests" as never)
@@ -884,8 +886,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (transferSplits.length === 0) {
         throw new Error("No hay pagos por transferencia para preparar.");
       }
-      if (!shift.capture_user_id) {
-        throw new Error("Este turno no tiene usuario capturador configurado.");
+      if (!shift.cashier_id) {
+        throw new Error("Este turno no tiene usuario de caja configurado.");
       }
 
       const now = new Date().toISOString();
@@ -917,7 +919,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         payment_id: payment.id,
         branch_id: activeBranchId,
         requested_by_user_id: user.id,
-        assigned_capture_user_id: shift.capture_user_id,
+        assigned_capture_user_id: shift.cashier_id,
         status: "pending",
         secure_token: buildPaymentCaptureToken(),
         token_expires_at: new Date(Date.now() + DEFAULT_PAYMENT_CAPTURE_TOKEN_TTL_MINUTES * 60 * 1000).toISOString(),
@@ -1632,18 +1634,13 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   const openCashRegister = useMutation({
     mutationFn: async ({
       counts: denomCounts,
-      captureUserId,
-      captureDeviceLabel,
     }: {
       counts: { denomination_id: string; qty: number }[];
-      captureUserId: string;
-      captureDeviceLabel?: string | null;
     }) => {
       if (!user) throw new Error("No user");
       if (!activeBranchId) throw new Error("No branch selected");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
-      if (!captureUserId) throw new Error("Debes seleccionar el usuario que tomara la foto del comprobante");
 
       const normalizedDenomCounts = denomCounts.map((denom) => ({
         denomination_id: denom.denomination_id,
@@ -1655,8 +1652,6 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         p_cashier_id: user.id,
         p_branch_id: activeBranchId,
         p_denoms: normalizedDenomCounts,
-        p_capture_user_id: captureUserId,
-        p_capture_device_label: captureDeviceLabel?.trim() ? captureDeviceLabel.trim() : null,
       });
       if (error) throw error;
     },
@@ -1973,8 +1968,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
         const transferPayments = allPayments.filter((payment) => transferMethodIds.has(payment.payment_method_id));
         if (transferPayments.length > 0 && !preparedTransferProofSession) {
-        if (!shift.capture_user_id) {
-          captureRequestWarning = "El pago por transferencia se registro, pero este turno no tiene usuario capturador configurado.";
+        if (!shift.cashier_id) {
+          captureRequestWarning = "El pago por transferencia se registro, pero este turno no tiene usuario de caja configurado.";
         } else if (!activeBranchId) {
           captureRequestWarning = "El pago por transferencia se registro, pero no se pudo asociar la sucursal para la solicitud de foto.";
         } else {
@@ -1984,7 +1979,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             payment_id: payment.id,
             branch_id: activeBranchId,
             requested_by_user_id: user.id,
-            assigned_capture_user_id: shift.capture_user_id,
+            assigned_capture_user_id: shift.cashier_id,
             status: "pending",
             secure_token: buildPaymentCaptureToken(),
             token_expires_at: new Date(

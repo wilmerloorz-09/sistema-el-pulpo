@@ -381,7 +381,7 @@ const Mesas = () => {
             <div className="min-w-0 flex items-center gap-2">
               <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Mesas</h1>
             </div>
-            <div className="menu-scroll -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="scrollbar-none -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap">
               <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-2.5 py-0.5 text-muted-foreground shadow-sm">
                 <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
                 {freeCount} libres

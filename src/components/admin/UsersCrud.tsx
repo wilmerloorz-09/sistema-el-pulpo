@@ -374,17 +374,11 @@ const UsersCrud = () => {
           )}
           {filteredUsers.map((user, idx) => {
             const isProtected = Boolean(user.is_protected_superadmin);
-            const branchOptions = catalog?.branches ?? [];
-            const uniqueBranchAssignments = Array.from(
-            new Map(user.branch_assignments.map((assignment) => [assignment.branch_id, assignment])).values(),
-          );
           const activeBranchAssignment =
             user.branch_assignments.find((assignment) => assignment.branch_id === user.active_branch_id) ??
             user.branch_assignments[0] ??
             null;
-          const assignedRoleCodesForSelectedBranch = user.branch_assignments
-            .filter((assignment) => assignment.branch_id === newAssignmentBranchId)
-            .map((assignment) => assignment.role_code);
+            const uniqueBranchAssignments = activeBranchAssignment ? [activeBranchAssignment] : [];
           const isAdmin = user.global_roles.some((r) => r.code === "administrador");
           const isSupervisor = !isAdmin && user.branch_assignments.some((a) => a.role_code === "supervisor");
           const userTypeName = isAdmin

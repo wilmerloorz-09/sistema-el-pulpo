@@ -43,15 +43,11 @@ const renderCompactNodeVisual = (node: MenuNode) => {
 
 const NodeCard = ({
   node,
-  childCount,
-  additionalDepth,
   onClick,
   nodeAction,
   trayMode = false,
 }: {
   node: MenuNode;
-  childCount: number;
-  additionalDepth: number;
   onClick: () => void;
   nodeAction?: ReactNode;
   trayMode?: boolean;
@@ -115,7 +111,7 @@ const NodeCard = ({
         }
       }}
       className={cn(
-        "group relative flex min-h-[146px] flex-col rounded-[1.4rem] p-3 text-left transition-all active:scale-[0.99] md:min-h-[184px] md:rounded-3xl md:p-4",
+        "group relative flex min-h-[146px] flex-col rounded-[1.4rem] p-3 text-center transition-all active:scale-[0.99] md:min-h-[184px] md:rounded-3xl md:p-4",
         "border border-dashed border-orange-400/95 bg-gradient-to-br from-orange-200 via-amber-100 to-yellow-200 shadow-[0_22px_46px_-32px_rgba(249,115,22,0.52)] hover:-translate-y-0.5 hover:border-orange-500 hover:shadow-[0_20px_34px_-20px_rgba(249,115,22,0.5)]",
         !node.is_active && "opacity-70 saturate-75",
         !isDisabledNode && "cursor-pointer",
@@ -129,25 +125,18 @@ const NodeCard = ({
         )}
       />
       <div className="mb-2 flex justify-center md:mb-4">{renderNodeVisual(node)}</div>
-      <div className="flex-1">
-        <p className="line-clamp-2 text-[0.82rem] font-semibold leading-tight text-foreground md:text-sm">{node.name}</p>
-        <div className="mt-1.5 flex items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground md:text-xs">{childCount} items</p>
-          {!node.is_active && (
-            <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
-              Agotado
-            </span>
-          )}
-        </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-0.5">
+        <p className="line-clamp-3 w-full text-center text-base font-semibold leading-snug text-foreground md:text-lg">
+          {node.name}
+        </p>
+        {!node.is_active && (
+          <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+            Agotado
+          </span>
+        )}
       </div>
 
       {nodeAction ? <div className="mt-2">{nodeAction}</div> : null}
-
-      {additionalDepth > 0 && (
-        <span className="absolute bottom-2.5 right-2.5 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
-          +{additionalDepth} nivel{additionalDepth === 1 ? "" : "es"}
-        </span>
-      )}
 
       <ChevronRight className="absolute right-4 top-4 h-4 w-4 text-primary opacity-0 transition-opacity group-hover:opacity-100" />
     </div>
@@ -171,7 +160,6 @@ const MenuNavigator = ({
     goBack,
     goToBreadcrumbIndex,
     getChildren,
-    countDescendantDepth,
     loading,
     error,
   } = useMenuTree({ includeInactive, menuScope, nodesOverride: trayMode && trayNodes ? trayNodes : null });
@@ -413,7 +401,7 @@ const MenuNavigator = ({
       </div>
 
       {!searchQuery.trim() && (
-        <div className="menu-scroll flex gap-2 overflow-x-auto pb-1">
+        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
           {l1Nodes.map((node) => (
             <button
               key={node.id}
@@ -436,7 +424,7 @@ const MenuNavigator = ({
       )}
 
       {!searchQuery.trim() && showBreadcrumb && (
-        <div className="menu-scroll inline-flex w-fit max-w-full items-center gap-2 overflow-x-auto whitespace-nowrap rounded-full border border-orange-200/70 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-1.5 text-xs shadow-[0_12px_28px_-24px_rgba(249,115,22,0.55)]">
+        <div className="scrollbar-none inline-flex w-fit max-w-full items-center gap-2 overflow-x-auto whitespace-nowrap rounded-full border border-orange-200/70 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-1.5 text-xs shadow-[0_12px_28px_-24px_rgba(249,115,22,0.55)]">
           {breadcrumb.map((node, index) => {
             const isLast = index === breadcrumb.length - 1;
             return (
@@ -471,8 +459,6 @@ const MenuNavigator = ({
             <NodeCard
               key={node.id}
               node={node}
-              childCount={getChildren(node.id).length}
-              additionalDepth={countDescendantDepth(node.id)}
               trayMode={trayMode}
               onClick={() => {
                 if (!node.is_active && !renderNodeAction?.(node)) return;
@@ -507,12 +493,6 @@ const MenuNavigator = ({
       </div>
 
       <style>{`
-        .menu-scroll {
-          scrollbar-width: none;
-        }
-        .menu-scroll::-webkit-scrollbar {
-          display: none;
-        }
         .menu-panel-exit {
           opacity: 1;
           transform: translateX(0);

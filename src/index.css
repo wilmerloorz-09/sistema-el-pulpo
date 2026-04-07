@@ -182,6 +182,18 @@
     margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /** Oculta barras de scroll (horizontal y vertical) manteniendo el desplazamiento táctil/rueda */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+    background: transparent;
+  }
+
   /* Asegurar que la barra inferior esté siempre visible en móviles */
   @supports (padding: max(0px)) {
     .safe-bottom {

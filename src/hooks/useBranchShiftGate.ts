@@ -119,7 +119,7 @@ export function useBranchShiftGate() {
         canUseCaja: hasDirectShiftRow ? Boolean(shiftUserRow?.can_use_caja) : Boolean(row?.can_use_caja),
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),
-        isCaptureDeviceOnly: captureUserId === user.id && cashierId !== user.id,
+        isCaptureDeviceOnly: false,
         legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
       };
     },
