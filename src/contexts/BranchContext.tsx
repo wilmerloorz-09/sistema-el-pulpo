@@ -50,7 +50,12 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    setLoading(true);
+    // Only set global loading true if we don't have branch data yet.
+    // This allows background refreshes (e.g. when tokens update or tab is refocused) 
+    // to happen without unmounting the whole app and closing modals.
+    if (access.branches.length === 0) {
+      setLoading(true);
+    }
     try {
       const { data, error } = await supabase.rpc("get_my_access_context" as never);
       if (error) throw error;

@@ -170,6 +170,16 @@ export default function PaymentDialog({
   const [lastTransactionData, setLastTransactionData] = useState<any>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
 
+  const orderItemHash = useMemo(
+    () => order?.items.map((i) => `${i.id}=${i.quantity_pending}`).join("|") ?? "",
+    [order?.items],
+  );
+
+  const paymentMethodsHash = useMemo(
+    () => paymentMethods.map(m => m.id).join("|"),
+    [paymentMethods]
+  );
+
   useEffect(() => {
     if (!order) return;
 
@@ -202,7 +212,7 @@ export default function PaymentDialog({
     setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
     setSuccessView(false);
     setLastTransactionData(null);
-  }, [order?.id, order?.items, defaultMethodId, cashMethod?.id, paymentMethods]);
+  }, [order?.id, orderItemHash, defaultMethodId, cashMethod?.id, paymentMethodsHash]);
 
   useEffect(() => {
     if (!order?.is_special) {
@@ -1308,7 +1318,13 @@ export default function PaymentDialog({
           createdAt={lastTransactionData.createdAt}
         />
       )}
-      <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] flex-col overflow-hidden bg-white p-0 sm:max-h-[94vh] sm:w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-1.5rem)] lg:max-w-[1500px]">
+      <DialogContent 
+        onInteractOutside={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] flex-col overflow-hidden bg-white p-0 sm:max-h-[94vh] sm:w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-1.5rem)] lg:max-w-[1500px]"
+      >
         {successView ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center animate-in fade-in zoom-in duration-300 no-print">
             <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-green-100 text-green-600 shadow-sm">
@@ -1775,7 +1791,13 @@ export default function PaymentDialog({
           setCashDetailOpen(true);
         }}
       >
-      <DialogContent className="flex max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] flex-col overflow-hidden p-0 sm:max-h-[94vh] sm:w-[96vw] sm:max-w-6xl">
+      <DialogContent 
+        onInteractOutside={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+        className="flex max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] flex-col overflow-hidden p-0 sm:max-h-[94vh] sm:w-[96vw] sm:max-w-6xl"
+      >
           <DialogHeader className="border-b border-border px-4 py-2.5">
             <DialogTitle className="font-display text-lg">Monedas y billetes</DialogTitle>
           </DialogHeader>

@@ -139,7 +139,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setState((prev) => ({ ...prev, session, user: session?.user ?? null, loading: true }));
+      // Prevent flipping the global "loading" switch if we already have a session and profile.
+      // This stops the whole app from unmounting (flashing white) when the browser refocuses or tokens refresh.
+      setState((prev) => ({
+        ...prev,
+        session,
+        user: session?.user ?? null,
+        loading: session?.user && prev.profile ? false : true,
+      }));
 
       if (session?.user) {
         setTimeout(async () => {
@@ -157,16 +164,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setState((prev) => ({ ...prev, session, user: session?.user ?? null }));
+      // Similarly here, only set loading: false once we are sure about the profile
       if (session?.user) {
         try {
           const profile = await fetchProfile(session.user.id);
-          setState((prev) => ({ ...prev, profile, loading: false }));
+          setState((prev) => ({ ...prev, session, user: session.user, profile, loading: false }));
         } catch {
-          setState((prev) => ({ ...prev, profile: null, loading: false }));
+          setState((prev) => ({ ...prev, session, user: session.user, profile: null, loading: false }));
         }
       } else {
-        setState((prev) => ({ ...prev, loading: false }));
+        setState((prev) => ({ ...prev, session: null, user: null, loading: false }));
       }
     });
 

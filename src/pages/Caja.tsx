@@ -798,6 +798,7 @@ const Caja = () => {
 
   const shiftElapsed = formatElapsed(shift.opened_at);
 
+
   return (
     <div className="min-h-full bg-slate-50 px-4 pt-3 pb-0 sm:px-6 sm:pt-4 lg:px-10">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -807,43 +808,46 @@ const Caja = () => {
               <h1 className="text-[1.72rem] font-semibold tracking-[-0.035em] text-slate-950 sm:text-[1.95rem]">
                 Caja · {activeBranch?.name ?? "Sucursal"}
               </h1>
-              <div className="mt-3 space-y-1">
-                <p className="text-sm text-slate-500">
-                  Turno abierto hace {shiftElapsed}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 rounded-full bg-[#0f766e]" />
-                  <span className="text-sm text-slate-700">Caja abierta</span>
-                  {!canOperateCaja && (
-                    <span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-500">
-                      Solo consulta
-                    </span>
-                  )}
+              {activeTab !== "capture" && (
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm text-slate-500">
+                    Turno abierto hace {shiftElapsed}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-[#0f766e]" />
+                    <span className="text-sm text-slate-700">Caja abierta</span>
+                    {!canOperateCaja && (
+                      <span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-500">
+                        Solo consulta
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
-            <ShiftSummary
-              shift={shift}
-              methodSummary={completedPaymentsMethodSummary}
-              movements={cashRegisterMovements}
-              movementsLoading={isLoadingCashRegisterMovements}
-              onClose={(notes) => closeCashRegister.mutateAsync(notes)}
-              onAnnulOpen={(reason) => annulCashOpening.mutateAsync({ reason })}
-              onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
-              closing={closeCashRegister.isPending}
-              annulling={annulCashOpening.isPending}
-              registeringMovement={registerCashMovement.isPending}
-              canAnnulOpen={canAnnulOpening}
-              readOnly={!canOperateCaja}
-            />
+            {activeTab !== "capture" && (
+              <ShiftSummary
+                shift={shift}
+                methodSummary={completedPaymentsMethodSummary}
+                movements={cashRegisterMovements}
+                movementsLoading={isLoadingCashRegisterMovements}
+                onClose={(notes) => closeCashRegister.mutateAsync(notes)}
+                onAnnulOpen={(reason) => annulCashOpening.mutateAsync({ reason })}
+                onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
+                closing={closeCashRegister.isPending}
+                annulling={annulCashOpening.isPending}
+                registeringMovement={registerCashMovement.isPending}
+                canAnnulOpen={canAnnulOpening}
+                readOnly={!canOperateCaja}
+              />
+            )}
           </div>
         </div>
 
-      {!isDesktop ? (
-        <div className="space-y-4">
+        <div className={cn(!isDesktop && "space-y-4")}>
           {activeTab === "pending" ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
+            <div className={cn(!isDesktop && "rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]")}>
               <PayableOrdersList
                 orders={payableOrders}
                 paymentMethods={paymentMethods}
@@ -857,7 +861,10 @@ const Caja = () => {
               />
             </div>
           ) : activeTab === "completed" ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
+            <div className={cn(
+              "rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]",
+              !isDesktop ? "p-4" : "p-5"
+            )}>
               <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
               <CompletedPaymentsList
                 payments={completedPayments}
@@ -884,47 +891,6 @@ const Caja = () => {
             </div>
           ) : renderCaptureContent()}
         </div>
-      ) : activeTab === "pending" ? (
-        <div>
-          <PayableOrdersList
-            orders={payableOrders}
-            paymentMethods={paymentMethods}
-            shiftDenoms={shift.denoms}
-            onPay={(params) => payOrder.mutateAsync(params)}
-            onPrepareTransferProof={(params) => prepareTransferProof(params)}
-            onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
-            getTransferProofReadiness={getTransferProofReadiness}
-            paying={payOrder.isPending}
-            readOnly={!canOperateCaja}
-          />
-        </div>
-      ) : activeTab === "completed" ? (
-        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
-          <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
-          <CompletedPaymentsList
-            payments={completedPayments}
-            total={completedPaymentsTotal}
-            methodSummary={completedPaymentsMethodSummary}
-            collectedTotal={completedPaymentsCollectedTotal}
-            paymentMethods={paymentMethods}
-            loading={isLoadingCompletedPayments}
-            filters={completedFilters}
-            permissions={permissions}
-            cashierReverseWindowMinutes={cashierReverseWindowMinutes}
-            actionLoading={requestPaymentReversal.isPending || reversePayment.isPending || approvePaymentReversal.isPending}
-            onFiltersChange={setCompletedFilters}
-            onRequestReversal={(paymentId, reason, paymentEntryIds) =>
-              requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
-            }
-            onReversePayment={(paymentId, reason, paymentEntryIds) =>
-              reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds })
-            }
-            onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
-              approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
-            }
-          />
-        </div>
-      ) : renderCaptureContent()}
       </div>
     </div>
   );
