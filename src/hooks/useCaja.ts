@@ -2518,20 +2518,26 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   });
 
   const takeCajaControl = useMutation({
-    mutationFn: async (sessionId: string) => {
-      const shift = shiftQuery.data;
-      if (!shift || !user) return;
+    mutationFn: async ({ sessionId, shiftId }: { sessionId: string; shiftId?: string }) => {
+      const resolvedShiftId = shiftId || shiftQuery.data?.id;
+      if (!resolvedShiftId || !user) {
+        throw new Error("No se pudo identificar el turno activo para tomar el control");
+      }
 
       const { error } = await supabase
         .from("cash_shift_users" as never)
         .update({ last_session_id: sessionId } as any)
-        .eq("shift_id", shift.id)
+        .eq("shift_id", resolvedShiftId)
         .eq("user_id", user.id);
 
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+    },
+    onError: (err: any) => {
+      console.error("Error taking caja control:", err);
+      toast.error("No se pudo reclamar el control de la caja: " + (err.message || "Error desconocido"));
     },
   });
 

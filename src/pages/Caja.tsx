@@ -145,8 +145,11 @@ const Caja = () => {
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
 
   useEffect(() => {
-    if (shiftGateQuery.data?.shiftId && shiftGateQuery.data?.userEnabled && shiftGateQuery.data?.lastSessionId !== TAB_SESSION_ID) {
-      void takeCajaControl(TAB_SESSION_ID);
+    const shiftId = shiftGateQuery.data?.shiftId;
+    const currentSessionIdInDb = shiftGateQuery.data?.lastSessionId;
+    // Only auto-claim if the shift is active but NO session has been registered yet in the DB
+    if (shiftId && shiftGateQuery.data?.userEnabled && !currentSessionIdInDb) {
+      void takeCajaControl({ sessionId: TAB_SESSION_ID, shiftId });
     }
   }, [shiftGateQuery.data?.shiftId, shiftGateQuery.data?.userEnabled]);
 
@@ -885,7 +888,10 @@ const Caja = () => {
                 getTransferProofReadiness={getTransferProofReadiness}
                 paying={payOrder.isPending}
                 readOnly={!canOperateCaja || !isSessionAuthorized}
-                onTakeControl={() => void takeCajaControl(TAB_SESSION_ID)}
+                onTakeControl={() => {
+                  const shiftId = shiftGateQuery.data?.shiftId;
+                  if (shiftId) void takeCajaControl({ sessionId: TAB_SESSION_ID, shiftId });
+                }}
               />
             </div>
           ) : activeTab === "completed" ? (
