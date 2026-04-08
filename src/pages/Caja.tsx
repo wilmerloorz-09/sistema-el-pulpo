@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useBranchShiftGate, TAB_SESSION_ID } from "@/hooks/useBranchShiftGate";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { supabase } from "@/services/DatabaseService";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,7 @@ const Caja = () => {
     closeCashRegister,
     annulCashOpening,
     registerCashMovement,
+    takeCajaControl,
   } = useCaja(completedFilters);
 
   const activeCaptureRequest = useMemo(
@@ -139,14 +140,17 @@ const Caja = () => {
     if (photoPreviewUrl) {
       URL.revokeObjectURL(photoPreviewUrl);
     }
-    setActiveCaptureRequestId(null);
-    setSelectedPhotoFile(null);
-    setPhotoPreviewUrl(null);
-    setCaptureError(null);
-    setUploadProgress(0);
     setUploadingCaptureRequestId(null);
     setPreparingPhoto(false);
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
+
+  useEffect(() => {
+    if (shiftGateQuery.data?.shiftId && shiftGateQuery.data?.userEnabled && shiftGateQuery.data?.lastSessionId !== TAB_SESSION_ID) {
+      void takeCajaControl(TAB_SESSION_ID);
+    }
+  }, [shiftGateQuery.data?.shiftId, shiftGateQuery.data?.userEnabled]);
+
+  const isSessionAuthorized = !shiftGateQuery.data?.shiftId || !shiftGateQuery.data?.userEnabled || shiftGateQuery.data?.lastSessionId === TAB_SESSION_ID;
 
   const clearSelectedPhoto = () => {
     if (photoPreviewUrl) {
@@ -880,7 +884,8 @@ const Caja = () => {
                 onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
                 getTransferProofReadiness={getTransferProofReadiness}
                 paying={payOrder.isPending}
-                readOnly={!canOperateCaja}
+                readOnly={!canOperateCaja || !isSessionAuthorized}
+                onTakeControl={() => void takeCajaControl(TAB_SESSION_ID)}
               />
             </div>
           ) : activeTab === "completed" ? (

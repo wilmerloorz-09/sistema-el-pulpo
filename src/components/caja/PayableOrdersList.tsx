@@ -29,6 +29,7 @@ interface Props {
   getTransferProofReadiness: (paymentIds: string[]) => Promise<{ ready: boolean; uploadedCount: number; totalCount: number }>;
   paying: boolean;
   readOnly?: boolean;
+  onTakeControl?: () => void;
 }
 
 function formatCurrency(amount: number) {
@@ -49,6 +50,7 @@ export default function PayableOrdersList({
   getTransferProofReadiness,
   paying,
   readOnly = false,
+  onTakeControl,
 }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
@@ -108,9 +110,21 @@ export default function PayableOrdersList({
             <div>
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.025em] text-slate-950 sm:text-[1.5rem]">Ordenes por cobrar</h2>
               {readOnly && (
-                <p className="mt-1 text-sm text-slate-500">
-                  Modo consulta. Puedes revisar pendientes, pero no registrar cobros.
-                </p>
+                <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <p className="text-sm text-slate-500">
+                    Modo consulta. No puedes registrar cobros en esta sesión.
+                  </p>
+                  {onTakeControl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onTakeControl}
+                      className="h-8 rounded-full border-amber-200 bg-amber-50 text-xs font-bold text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+                    >
+                      Tomar control de esta sesión
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>

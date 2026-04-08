@@ -3,10 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 
+export const TAB_SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36);
+
 export interface BranchShiftGate {
   shiftId: string | null;
   shiftOpen: boolean;
   userEnabled: boolean;
+  lastSessionId: string | null;
+  tabSessionId: string;
   cashierId: string | null;
   captureUserId: string | null;
   activeTablesCount: number;
@@ -34,6 +38,8 @@ export function useBranchShiftGate() {
           shiftId: null,
           shiftOpen: false,
           userEnabled: false,
+          lastSessionId: null,
+          tabSessionId: TAB_SESSION_ID,
           cashierId: null,
           captureUserId: null,
           activeTablesCount: 0,
@@ -63,6 +69,8 @@ export function useBranchShiftGate() {
           shiftId: null,
           shiftOpen: Boolean(row?.shift_open),
           userEnabled: Boolean(row?.user_enabled),
+          lastSessionId: null,
+          tabSessionId: TAB_SESSION_ID,
           cashierId: null,
           captureUserId: null,
           activeTablesCount: Number(row?.active_tables_count ?? 0),
@@ -88,7 +96,7 @@ export function useBranchShiftGate() {
 
       const { data: shiftUserRow, error: shiftUserError } = await (supabase
         .from("cash_shift_users" as never)
-        .select("is_enabled, can_serve_tables, can_access_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor")
+        .select("is_enabled, can_serve_tables, can_access_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, last_session_id")
         .eq("shift_id", shiftId)
         .eq("user_id", user.id)
         .maybeSingle() as any);
@@ -104,6 +112,8 @@ export function useBranchShiftGate() {
         shiftId,
         shiftOpen: Boolean(row?.shift_open),
         userEnabled: hasDirectShiftRow ? directUserEnabled : Boolean(row?.user_enabled),
+        lastSessionId: shiftUserRow?.last_session_id ?? null,
+        tabSessionId: TAB_SESSION_ID,
         cashierId,
         captureUserId,
         activeTablesCount: Number(row?.active_tables_count ?? 0),

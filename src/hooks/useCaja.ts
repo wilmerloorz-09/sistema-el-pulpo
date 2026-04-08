@@ -2517,6 +2517,24 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const takeCajaControl = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const shift = shiftQuery.data;
+      if (!shift || !user) return;
+
+      const { error } = await supabase
+        .from("cash_shift_users" as never)
+        .update({ last_session_id: sessionId } as any)
+        .eq("shift_id", shift.id)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+    },
+  });
+
   return {
     denominations: denomsQuery.data ?? [],
     shift: shiftQuery.data,
@@ -2547,8 +2565,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     reversePayment,
     approvePaymentReversal,
     closeCashRegister,
-    annulCashOpening,
-    registerCashMovement,
+    annulCashOpening: annulCashOpening.mutateAsync,
+    registerCashMovement: registerCashMovement.mutateAsync,
+    takeCajaControl: takeCajaControl.mutateAsync,
   };
 }
 
