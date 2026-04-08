@@ -83,6 +83,7 @@ export interface PendingPaymentCaptureRequest {
   order_id: string;
   order_number: number | null;
   order_code: string | null;
+  table_name: string | null;
   payment_method_name: string;
 }
 
@@ -741,7 +742,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         .eq("cash_session_id", shift.id)
         .eq("assigned_capture_user_id", user.id)
         .in("status", ["pending", "opened"])
-        .order("created_at", { ascending: true }) as any);
+        .order("created_at", { ascending: true })
+        .limit(1) as any);
 
       if (requestRowsError) {
         if (isMissingTableError(requestRowsError, "payment_capture_requests")) {
@@ -775,8 +777,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const [{ data: ordersData, error: ordersError }, { data: methodsData, error: methodsError }] = await Promise.all([
         orderIds.length === 0
-          ? Promise.resolve({ data: [] as Array<{ id: string; order_number: number | null; order_code: string | null }>, error: null })
-          : supabase.from("orders").select("id, order_number, order_code").in("id", orderIds),
+          ? Promise.resolve({ data: [] as Array<{ id: string; order_number: number | null; order_code: string | null; table_id: string | null }>, error: null })
+          : supabase.from("orders").select("id, order_number, order_code, table_id").in("id", orderIds),
         methodIds.length === 0
           ? Promise.resolve({ data: [] as Array<{ id: string; name: string | null }>, error: null })
           : supabase.from("payment_methods").select("id, name").in("id", methodIds),
@@ -789,10 +791,19 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const ordersMap = Object.fromEntries((ordersData ?? []).map((order) => [order.id, order]));
       const methodsMap = Object.fromEntries((methodsData ?? []).map((method) => [method.id, method]));
 
+      const tableIds = [...new Set((ordersData ?? []).map((row) => row.table_id).filter(Boolean))];
+      const { data: tablesData, error: tablesError } = await (tableIds.length === 0
+        ? Promise.resolve({ data: [] as any[], error: null })
+        : (supabase.from("restaurant_tables" as any).select("id, name").in("id", tableIds) as any));
+      if (tablesError) throw tablesError;
+
+      const tablesMap = Object.fromEntries((tablesData ?? []).map((table: any) => [table.id, table]));
+
       return requests.map((request) => {
         const payment = paymentsMap[request.payment_id];
         const order = payment ? ordersMap[payment.order_id] : null;
         const method = payment ? methodsMap[payment.payment_method_id] : null;
+        const table = order ? tablesMap[order.table_id] : null;
 
         return {
           ...request,
@@ -800,6 +811,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           order_id: payment?.order_id ?? "",
           order_number: order?.order_number ?? null,
           order_code: order?.order_code ?? null,
+          table_name: table?.alias || table?.name || null,
           payment_method_name: method?.name ?? "Transferencia",
         };
       });
@@ -873,6 +885,17 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const transferSplits = paymentSplits.filter((split) => transferMethodIds.has(split.methodId));
       if (transferSplits.length === 0) {
         throw new Error("No hay pagos por transferencia para preparar.");
+      }
+
+      const { data: existingRequests } = await (supabase
+        .from("payment_capture_requests" as never)
+        .select("id")
+        .eq("cash_session_id", shift.id)
+        .in("status", ["pending", "opened"])
+        .limit(1) as any);
+
+      if (existingRequests && existingRequests.length > 0) {
+        throw new Error("Ya existe una solicitud de captura pendiente. Por favor, completa la captura actual antes de iniciar una nueva.");
       }
       if (!shift.cashier_id) {
         throw new Error("Este turno no tiene usuario de caja configurado.");
@@ -1976,7 +1999,18 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
         const transferPayments = allPayments.filter((payment) => transferMethodIds.has(payment.payment_method_id));
         if (transferPayments.length > 0 && !preparedTransferProofSession) {
-        if (!shift.cashier_id) {
+          const { data: existingRequests } = await (supabase
+            .from("payment_capture_requests" as never)
+            .select("id")
+            .eq("cash_session_id", shift.id)
+            .in("status", ["pending", "opened"])
+            .limit(1) as any);
+
+          if (existingRequests && existingRequests.length > 0) {
+            throw new Error("Ya existe una solicitud de captura pendiente en caja. Por favor, completa la captura actual antes de registrar un nuevo pago por transferencia.");
+          }
+
+          if (!shift.cashier_id) {
           captureRequestWarning = "El pago por transferencia se registro, pero este turno no tiene usuario de caja configurado.";
         } else if (!activeBranchId) {
           captureRequestWarning = "El pago por transferencia se registro, pero no se pudo asociar la sucursal para la solicitud de foto.";

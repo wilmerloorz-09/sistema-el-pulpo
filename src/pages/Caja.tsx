@@ -331,17 +331,15 @@ const Caja = () => {
   const renderCaptureContent = () => (
     <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
       <div className="mb-4">
-        <h2 className="font-display text-sm font-bold text-foreground">Captura de comprobantes</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Usa esta vista desde el mismo usuario de caja para tomar y subir comprobantes de transferencia.
-        </p>
+        <h2 className="font-display text-sm font-bold text-foreground">Captura de comprobante</h2>
+
       </div>
 
       {isLoadingPendingCaptureRequests ? (
         <div className="flex flex-col items-center justify-center py-10">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="mt-4 text-sm text-muted-foreground">
-            Buscando solicitudes de comprobante...
+            Buscando solicitud de comprobante...
           </p>
         </div>
       ) : pendingCaptureRequests.length === 0 ? (
@@ -358,19 +356,7 @@ const Caja = () => {
         </div>
       ) : (
         <div className="space-y-4 text-left">
-          <div className="flex items-start gap-4 rounded-3xl border border-orange-200 bg-orange-50/70 p-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-sm">
-              <ReceiptText className="h-6 w-6" />
-            </div>
-            <div>
-              <h3 className="font-display text-2xl font-black text-foreground">
-                Solicitudes de comprobante
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Se muestran aqui los pagos por transferencia que requieren captura y subida de comprobante.
-              </p>
-            </div>
-          </div>
+
 
           <div className="space-y-3">
             {pendingCaptureRequests.map((request) => (
@@ -381,6 +367,7 @@ const Caja = () => {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                      {request.table_name ? `${request.table_name} - ` : ""}
                       {request.order_code
                         ? `Orden ${request.order_code}`
                         : request.order_number
@@ -391,19 +378,7 @@ const Caja = () => {
                       ${request.amount.toFixed(2)}
                     </p>
                   </div>
-                  <Badge className="border-orange-200 bg-orange-100 text-orange-700 hover:bg-orange-100">
-                    {request.status === "opened" ? "Abierta" : "Pendiente"}
-                  </Badge>
                 </div>
-                <p className="mt-3 text-sm text-slate-600">
-                  Metodo: {request.payment_method_name}
-                </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Expira: {new Date(request.token_expires_at).toLocaleTimeString("es-EC", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button
                     type="button"
@@ -417,13 +392,17 @@ const Caja = () => {
                   {activeCaptureRequestId === request.id && selectedPhotoFile && (
                     <Button
                       type="button"
-                      variant="outline"
-                      className="rounded-2xl"
-                      onClick={clearSelectedPhoto}
-                      disabled={uploadingCaptureRequestId === request.id}
+                      variant="default"
+                      className="rounded-2xl bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => void handleUploadSelectedPhoto()}
+                      disabled={uploadingCaptureRequestId === request.id || preparingPhoto}
                     >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      Volver a tomar
+                      {uploadingCaptureRequestId === request.id ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                      )}
+                      Subir foto
                     </Button>
                   )}
                 </div>
@@ -442,22 +421,23 @@ const Caja = () => {
                         Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
                       </p>
                     ) : (
-                      <div className="space-y-4">
-                        <div className="flex h-[32rem] items-center justify-center overflow-hidden rounded-2xl border border-orange-100 bg-white p-4">
+                        <div className="space-y-4">
+                          {uploadingCaptureRequestId === request.id && (
+                            <div className="space-y-2">
+                              <Progress value={uploadProgress} className="h-2.5" />
+                              <p className="text-xs text-slate-500 text-center">
+                                Subiendo comprobante... {uploadProgress}%
+                              </p>
+                            </div>
+                          )}
+                          <div className="flex h-[32rem] items-center justify-center overflow-hidden rounded-2xl border border-orange-100 bg-white p-4">
                           <img
                             src={photoPreviewUrl}
                             alt="Preview del comprobante"
                             className="h-full max-w-[22rem] bg-white object-contain"
                           />
                         </div>
-                        <div className="rounded-2xl bg-white/90 p-3">
-                          <p className="text-sm font-medium text-slate-900">
-                            Vista previa lista
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            La foto solo se guardara cuando confirmes con "Usar foto".
-                          </p>
-                        </div>
+
                         <div className="space-y-2">
                           <label className="text-xs uppercase tracking-[0.22em] text-slate-500">
                             Observacion opcional
@@ -492,31 +472,7 @@ const Caja = () => {
                             La camara y la vista previa ya estan disponibles. Para guardar definitivamente la foto falta configurar el backend de comprobantes en este entorno.
                           </div>
                         )}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            className="rounded-2xl"
-                            onClick={() => void handleUploadSelectedPhoto()}
-                            disabled={uploadingCaptureRequestId === request.id || preparingPhoto}
-                          >
-                            {uploadingCaptureRequestId === request.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="mr-2 h-4 w-4" />
-                            )}
-                            Usar foto
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="rounded-2xl"
-                            onClick={clearSelectedPhoto}
-                            disabled={uploadingCaptureRequestId === request.id || preparingPhoto}
-                          >
-                            <Upload className="mr-2 h-4 w-4" />
-                            Elegir otra
-                          </Button>
-                        </div>
+
                       </div>
                     )}
                   </div>
@@ -578,9 +534,9 @@ const Caja = () => {
               onRequestReversal={(paymentId, reason, paymentEntryIds) =>
                 requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
               }
-              onReversePayment={(paymentId, reason, paymentEntryIds) =>
-                reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds })
-              }
+              onReversePayment={async (paymentId, reason, paymentEntryIds) => {
+                await reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds });
+              }}
               onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
                 approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
               }
@@ -948,9 +904,9 @@ const Caja = () => {
                 onRequestReversal={(paymentId, reason, paymentEntryIds) =>
                   requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
                 }
-                onReversePayment={(paymentId, reason, paymentEntryIds) =>
-                  reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds })
-                }
+                onReversePayment={async (paymentId, reason, paymentEntryIds) => {
+                  await reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds });
+                }}
                 onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
                   approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
                 }
