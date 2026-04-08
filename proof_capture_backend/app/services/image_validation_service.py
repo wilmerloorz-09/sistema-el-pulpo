@@ -14,6 +14,7 @@ ALLOWED_PIL_FORMATS = {
   "PNG": "image/png",
   "WEBP": "image/webp",
 }
+MAX_OUTPUT_DIMENSION = 1600
 
 
 class InvalidImageError(ValueError):
@@ -60,9 +61,12 @@ class ImageValidationService:
         elif image.mode == "L":
           image = image.convert("RGB")
 
+        if max(image.size) > MAX_OUTPUT_DIMENSION:
+          image.thumbnail((MAX_OUTPUT_DIMENSION, MAX_OUTPUT_DIMENSION), Image.Resampling.LANCZOS)
+
         width, height = image.size
         output = BytesIO()
-        image.save(output, format="JPEG", quality=88, optimize=True, progressive=True)
+        image.save(output, format="JPEG", quality=82)
     except InvalidImageError:
       raise
     except UnidentifiedImageError as exc:

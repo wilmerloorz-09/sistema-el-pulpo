@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 
 import { PaymentProofApi } from "../services/paymentProofApi";
 import type { CaptureRequestSummary, MobileCaptureRequestView, PaymentProofSummary } from "../types/payment-proof";
+import { prepareProofImage } from "../utils/prepareProofImage";
 
 export const usePaymentProofStore = defineStore("paymentProof", () => {
   const api = ref<PaymentProofApi | null>(null);
@@ -12,6 +13,7 @@ export const usePaymentProofStore = defineStore("paymentProof", () => {
   const previewUrl = ref<string | null>(null);
   const selectedFile = ref<File | null>(null);
   const uploadStatus = ref<"idle" | "loading" | "success" | "error">("idle");
+  const selectionStatus = ref<"idle" | "loading" | "error">("idle");
   const errors = ref<string[]>([]);
 
   function configure(client: PaymentProofApi) {
@@ -23,17 +25,28 @@ export const usePaymentProofStore = defineStore("paymentProof", () => {
     return api.value;
   }
 
-  function setSelectedFile(file: File) {
+  async function setSelectedFile(file: File) {
     clearSelectedFile();
-    selectedFile.value = file;
-    previewUrl.value = URL.createObjectURL(file);
+    selectionStatus.value = "loading";
     errors.value = [];
+
+    try {
+      const preparedFile = await prepareProofImage(file);
+      selectedFile.value = preparedFile;
+      previewUrl.value = URL.createObjectURL(preparedFile);
+      selectionStatus.value = "idle";
+    } catch (error) {
+      selectionStatus.value = "error";
+      errors.value = [error instanceof Error ? error.message : "No se pudo preparar la imagen."];
+      throw error;
+    }
   }
 
   function clearSelectedFile() {
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
     previewUrl.value = null;
     selectedFile.value = null;
+    selectionStatus.value = "idle";
   }
 
   async function createCaptureRequest(paymentId: string) {
@@ -110,6 +123,7 @@ export const usePaymentProofStore = defineStore("paymentProof", () => {
     currentProof,
     errors,
     hasLocalPreview,
+    selectionStatus,
     configure,
     createCaptureRequest,
     fetchCaptureRequest,

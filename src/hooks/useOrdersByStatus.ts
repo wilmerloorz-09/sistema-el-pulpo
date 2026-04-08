@@ -293,7 +293,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             (payments ?? [])
               .filter((payment) => {
                 const meta = parsePaymentNotes(payment.notes);
-                return meta.reversed || meta.voided;
+                return meta.reversed || meta.voided || meta.transferProofPending;
               })
               .map((payment) => payment.id),
           );

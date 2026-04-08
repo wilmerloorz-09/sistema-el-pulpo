@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
+import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 
 // include CANCELLED since we'll add it to the enum via migration
@@ -82,6 +83,7 @@ export async function fetchTablesWithStatus(branchId: string): Promise<TableWith
 export function useTablesWithStatus() {
   const { activeBranchId } = useBranch();
   const qc = useQueryClient();
+  const reconciledGhostOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!activeBranchId) return;
@@ -219,11 +221,38 @@ export function useTablesWithStatus() {
     };
   }, [activeBranchId, qc]);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: getTablesWithStatusQueryKey(activeBranchId),
     queryFn: () => fetchTablesWithStatus(activeBranchId!),
     enabled: !!activeBranchId,
     staleTime: 5_000,
     gcTime: 10 * 60_000,
   });
+
+  useEffect(() => {
+    if (!activeBranchId || !query.data) return;
+
+    const ghostOrderIds = query.data
+      .filter((table) =>
+        table.totalDue <= 0
+        && Boolean(table.activeOrderId)
+        && ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"].includes(String(table.orderStatus ?? "")),
+      )
+      .map((table) => table.activeOrderId!)
+      .filter((orderId) => !reconciledGhostOrdersRef.current.has(orderId));
+
+    for (const orderId of ghostOrderIds) {
+      reconciledGhostOrdersRef.current.add(orderId);
+      void syncOrderPaymentState(orderId)
+        .then(() => {
+          qc.invalidateQueries({ queryKey: getTablesWithStatusQueryKey(activeBranchId) });
+        })
+        .catch((error) => {
+          reconciledGhostOrdersRef.current.delete(orderId);
+          console.error("No se pudo reconciliar el estado de pago de la orden", error);
+        });
+    }
+  }, [activeBranchId, qc, query.data]);
+
+  return query;
 }

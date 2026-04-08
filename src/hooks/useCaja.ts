@@ -394,6 +394,38 @@ function isMissingTableError(error: any, tableName: string) {
     || message.includes(`Could not find the table "${tableName}"`);
 }
 
+export async function syncOrderPaymentState(orderId: string) {
+  const { data, error } = await supabase.rpc("sync_order_payment_state" as never, {
+    p_order_id: orderId,
+  } as never);
+
+  if (!error) {
+    const row = Array.isArray(data)
+      ? (data[0] as { order_id?: string; status?: string; paid_at?: string | null } | undefined)
+      : undefined;
+
+    return row
+      ? {
+          orderId: row.order_id ?? orderId,
+          status: row.status ?? null,
+          paidAt: row.paid_at ?? null,
+        }
+      : {
+          orderId,
+          status: null,
+          paidAt: null,
+        };
+  }
+
+  if (isMissingRpcSignature(error, "sync_order_payment_state")) {
+    throw new Error(
+      "La base de datos aun no tiene habilitada la sincronizacion segura de pagos. Aplica la migracion mas reciente."
+    );
+  }
+
+  throw error;
+}
+
 function buildPaymentCaptureToken() {
   return generateUUID().replace(/-/g, "");
 }
@@ -525,9 +557,6 @@ async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]):
   }
 }
 
-
-type OrderStatus = Database["public"]["Enums"]["order_status"];
-
 function resolvePaidQuantity(params: {
   payableQuantity: number;
   orderedQuantity: number;
@@ -541,47 +570,6 @@ function resolvePaidQuantity(params: {
       : 0;
 
   return Math.min(params.payableQuantity, fallbackPaidQuantity);
-}
-
-function deriveOrderOperationalStatus(
-  items: Array<{
-    quantity: number;
-    readyQuantity?: number;
-    dispatchedQuantity?: number;
-    cancelledPendingQuantity?: number;
-    cancelledReadyQuantity?: number;
-    cancelledDispatchedQuantity?: number;
-  }>,
-  fallbackStatus: OrderStatus,
-): OrderStatus {
-  let pendingPrepare = 0;
-  let readyAvailable = 0;
-  let dispatched = 0;
-  let cancelledTotal = 0;
-  let activeNotCancelled = 0;
-
-  for (const item of items) {
-    const quantities = computeOperationalQuantities({
-      quantityOrdered: Number(item.quantity ?? 0),
-      quantityReadyTotal: item.readyQuantity ?? 0,
-      quantityDispatchedTotal: item.dispatchedQuantity ?? 0,
-      quantityCancelledPending: item.cancelledPendingQuantity ?? 0,
-      quantityCancelledReady: item.cancelledReadyQuantity ?? 0,
-      quantityCancelledDispatched: item.cancelledDispatchedQuantity ?? 0,
-    });
-
-    pendingPrepare += quantities.quantityPendingPrepare;
-    readyAvailable += quantities.quantityReadyAvailable;
-    dispatched += quantities.quantityDispatchedAvailable;
-    cancelledTotal += quantities.quantityCancelledTotal;
-    activeNotCancelled += Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-  }
-
-  if (activeNotCancelled <= 0 && cancelledTotal > 0) return "CANCELLED";
-  if (pendingPrepare === 0 && readyAvailable === 0 && dispatched > 0) return "KITCHEN_DISPATCHED";
-  if (pendingPrepare === 0 && readyAvailable > 0) return "READY";
-  if (pendingPrepare > 0) return "SENT_TO_KITCHEN";
-  return fallbackStatus;
 }
 
 function getPayableQuantityForOrderType(
@@ -1778,9 +1766,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-        const { data: orderData, error: orderDataError } = await supabase
+      const { data: orderData, error: orderDataError } = await supabase
           .from("orders")
-          .select("order_type, status, is_special, is_tray_order, special_total_manual")
+          .select("order_type, status, is_special, is_tray_order, special_total_manual, table_id")
           .eq("id", orderId)
           .single();
       if (orderDataError) throw orderDataError;
@@ -2070,82 +2058,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         }
       }
 
-      const orderItemsAfter = allDbItems;
-      const orderItemIdsAfter = orderItemsAfter.map((item) => item.id);
-      const operationalMapsAfter = operationalMaps;
-      let allFullyPaid = false;
-
-      const orderItemUpdatePromises: Promise<void>[] = [];
-
-      if (!isSpecial) {
-        const paidQtyMapAfter = { ...paidQtyMap };
-        for (const selection of itemSelections) {
-          paidQtyMapAfter[selection.itemId] = (paidQtyMapAfter[selection.itemId] || 0) + selection.quantity;
-        }
-
-        for (const orderItem of orderItemsAfter ?? []) {
-          const quantities = computeOperationalQuantities({
-            quantityOrdered: Number(orderItem.quantity ?? 0),
-            quantityReadyTotal: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
-            quantityDispatchedTotal: operationalMapsAfter.dispatchedTotalMap[orderItem.id] ?? 0,
-            quantityCancelledPending: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
-            quantityCancelledReady: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
-            quantityCancelledDispatched: operationalMapsAfter.cancelledDispatchedMap[orderItem.id] ?? 0,
-          });
-          const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-          const paidQty = paidQtyMapAfter[orderItem.id] ?? 0;
-          const isFullyPaid = activeQty <= 0 || paidQty >= activeQty;
-          orderItemUpdatePromises.push(dbUpdate("order_items", orderItem.id, { paid_at: isFullyPaid ? now : null }));
-        }
-
-        allFullyPaid = (orderItemsAfter ?? []).every((orderItem) => {
-          const quantities = computeOperationalQuantities({
-            quantityOrdered: Number(orderItem.quantity ?? 0),
-            quantityReadyTotal: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
-            quantityDispatchedTotal: operationalMapsAfter.dispatchedTotalMap[orderItem.id] ?? 0,
-            quantityCancelledPending: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
-            quantityCancelledReady: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
-            quantityCancelledDispatched: operationalMapsAfter.cancelledDispatchedMap[orderItem.id] ?? 0,
-          });
-          const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-          return activeQty <= 0 || (paidQtyMapAfter[orderItem.id] ?? 0) >= activeQty;
-        });
-      } else {
-        const activePaymentsAfter = { ...activePaymentsData };
-        activePaymentsAfter[orderId] = (activePaymentsAfter[orderId] || 0) + totalAmount;
-        
-        const configuredSpecialTotal = Number((orderData as { special_total_manual?: number | null }).special_total_manual ?? 0);
-        allFullyPaid = roundMoney(activePaymentsAfter[orderId] ?? 0) >= roundMoney(configuredSpecialTotal);
-      }
-
-      const operationalStatusAfterPayment = deriveOrderOperationalStatus(
-        (orderItemsAfter ?? []).map((orderItem) => ({
-          quantity: Number(orderItem.quantity ?? 0),
-          readyQuantity: operationalMapsAfter.readyMap[orderItem.id] ?? 0,
-          dispatchedQuantity: operationalMapsAfter.dispatchedTotalMap[orderItem.id] ?? 0,
-          cancelledPendingQuantity: operationalMapsAfter.cancelledPendingMap[orderItem.id] ?? 0,
-          cancelledReadyQuantity: operationalMapsAfter.cancelledReadyMap[orderItem.id] ?? 0,
-          cancelledDispatchedQuantity: operationalMapsAfter.cancelledDispatchedMap[orderItem.id] ?? 0,
-        })),
-        (orderData?.status ?? "SENT_TO_KITCHEN") as OrderStatus,
-      );
-
-      const shouldKeepOperationalStatusAfterFullPayment =
-        orderData?.order_type === "TAKEOUT" || Boolean((orderData as { is_tray_order?: boolean | null } | null)?.is_tray_order);
-      const takeoutReadyStatus =
-        shouldKeepOperationalStatusAfterFullPayment && allFullyPaid && operationalStatusAfterPayment !== "KITCHEN_DISPATCHED"
-          ? "READY"
-          : operationalStatusAfterPayment;
-
-      const orderUpdatePromise = allFullyPaid
-        ? dbUpdate("orders", orderId, {
-            status: shouldKeepOperationalStatusAfterFullPayment ? takeoutReadyStatus : "PAID",
-            paid_at: now,
-          })
-        : dbUpdate("orders", orderId, {
-            status: operationalStatusAfterPayment,
-            paid_at: null,
-          });
+      let paymentStateWarning: string | null = null;
 
       // MEGA PARALLEL EXECUTION BUNDLE
       const [finalRefreshedShiftDenoms] = await Promise.all([
@@ -2190,18 +2103,71 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             })
           )
         ) : Promise.resolve(),
-        Promise.all(orderItemUpdatePromises),
-        orderUpdatePromise,
       ]);
+
+      let syncSummary: Awaited<ReturnType<typeof syncOrderPaymentState>> | null = null;
+
+      try {
+        syncSummary = await syncOrderPaymentState(orderId);
+      } catch (syncError) {
+        console.error("No se pudo sincronizar el estado de pago de la orden", syncError);
+        paymentStateWarning =
+          syncError instanceof Error && syncError.message
+            ? syncError.message
+            : "El pago se registro, pero no se pudo cerrar la orden automaticamente.";
+      }
 
       return {
         denomChanges,
         refreshedShiftDenoms: finalRefreshedShiftDenoms,
         createdCaptureRequestCount,
         captureRequestWarning,
+        paymentStateWarning,
+        orderId,
+        orderType: orderData.order_type as "DINE_IN" | "TAKEOUT",
+        tableId: (orderData as { table_id?: string | null }).table_id ?? null,
+        syncStatus: syncSummary?.status ?? null,
       };
     },
     onSuccess: async (result) => {
+      if (
+        activeBranchId
+        && result?.orderType === "DINE_IN"
+        && result?.syncStatus === "PAID"
+        && result?.tableId
+      ) {
+        let patched = false;
+
+        qc.setQueryData(["tables-with-status", activeBranchId], (current: any) => {
+          if (!Array.isArray(current)) return current;
+
+          const next = current.map((table: any) => {
+            if (table?.id !== result.tableId) return table;
+            if (table?.activeOrderId !== result.orderId) return table;
+            if (Number(table?.splitCount ?? 0) > 1) return table;
+
+            patched = true;
+            return {
+              ...table,
+              status: "free",
+              activeOrderId: undefined,
+              orderStatus: undefined,
+              splitCount: 0,
+              totalDue: 0,
+              splitTotals: [],
+              itemCount: 0,
+              elapsedMinutes: 0,
+            };
+          });
+
+          return next;
+        });
+
+        if (!patched) {
+          qc.removeQueries({ queryKey: ["tables-with-status", activeBranchId], exact: true });
+        }
+      }
+
       if (activeBranchId && result?.refreshedShiftDenoms) {
         const refreshedQtyMap = Object.fromEntries(
           result.refreshedShiftDenoms.map((row) => [row.denomination_id, row.qty_current]),
@@ -2241,6 +2207,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       if (result?.captureRequestWarning) {
         toast.warning(result.captureRequestWarning);
+      }
+
+      if (result?.paymentStateWarning) {
+        toast.warning(result.paymentStateWarning);
       }
     },
     onError: (err: any) => toast.error(err.message),
@@ -2368,102 +2338,23 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       await Promise.all(payments.map((payment) => updatePaymentNotes(payment.id, marker)));
 
+      let syncWarning: string | null = null;
+
       if (affectedOrderIds.size > 0) {
-        const orderIds = [...affectedOrderIds];
-        const now = new Date().toISOString();
-
-        const { data: orderItems, error: orderItemsError } = await supabase
-          .from("order_items")
-          .select("id, order_id, quantity")
-          .in("order_id", orderIds);
-        if (orderItemsError) throw orderItemsError;
-
-        const orderItemIds = (orderItems ?? []).map((item) => item.id);
-        const paidRows = await fetchActivePaymentItemsForOrderItems(orderItemIds);
-        const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRows);
-        const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
-
-        await Promise.all((orderItems ?? []).map((orderItem) => {
-          const quantities = computeOperationalQuantities({
-            quantityOrdered: Number(orderItem.quantity ?? 0),
-            quantityReadyTotal: operationalMaps.readyMap[orderItem.id] ?? 0,
-            quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[orderItem.id] ?? 0,
-            quantityCancelledPending: operationalMaps.cancelledPendingMap[orderItem.id] ?? 0,
-            quantityCancelledReady: operationalMaps.cancelledReadyMap[orderItem.id] ?? 0,
-            quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[orderItem.id] ?? 0,
-          });
-          const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-          const isFullyPaid = activeQty <= 0 || (paidQtyMap[orderItem.id] ?? 0) >= activeQty;
-          return dbUpdate("order_items", orderItem.id, { paid_at: isFullyPaid ? now : null });
-        }));
-
-        const itemsByOrder: Record<string, { id: string; quantity: number }[]> = {};
-        for (const orderItem of orderItems ?? []) {
-          if (!itemsByOrder[orderItem.order_id]) itemsByOrder[orderItem.order_id] = [];
-          itemsByOrder[orderItem.order_id].push({ id: orderItem.id, quantity: Number(orderItem.quantity) });
+        try {
+          await Promise.all([...affectedOrderIds].map((orderId) => syncOrderPaymentState(orderId)));
+        } catch (syncError) {
+          console.error("No se pudo sincronizar el estado de pago tras reversar", syncError);
+          syncWarning =
+            syncError instanceof Error && syncError.message
+              ? syncError.message
+              : "El reverso se registro, pero no se pudo actualizar el estado de la orden automaticamente.";
         }
-
-        const { data: affectedOrders, error: affectedOrdersError } = await supabase
-          .from("orders")
-          .select("id, order_type, status, is_special, special_total_manual")
-          .in("id", orderIds);
-        if (affectedOrdersError) throw affectedOrdersError;
-
-        const activePaymentsByOrder = await fetchActivePaymentsTotalByOrder(orderIds);
-
-        const orderUpdatesPromises: Promise<void>[] = [];
-        for (const order of affectedOrders ?? []) {
-          const allFullyPaid = Boolean(order.is_special)
-            ? roundMoney(activePaymentsByOrder[order.id] ?? 0) >= roundMoney(Number(order.special_total_manual ?? 0))
-            : (itemsByOrder[order.id] ?? []).every((item) => {
-                const quantities = computeOperationalQuantities({
-                  quantityOrdered: item.quantity,
-                  quantityReadyTotal: operationalMaps.readyMap[item.id] ?? 0,
-                  quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[item.id] ?? 0,
-                  quantityCancelledPending: operationalMaps.cancelledPendingMap[item.id] ?? 0,
-                  quantityCancelledReady: operationalMaps.cancelledReadyMap[item.id] ?? 0,
-                  quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[item.id] ?? 0,
-                });
-                const activeQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
-                return activeQty <= 0 || (paidQtyMap[item.id] ?? 0) >= activeQty;
-              });
-
-          const operationalStatus = deriveOrderOperationalStatus(
-            (itemsByOrder[order.id] ?? []).map((item) => ({
-              quantity: item.quantity,
-              readyQuantity: operationalMaps.readyMap[item.id] ?? 0,
-              dispatchedQuantity: operationalMaps.dispatchedTotalMap[item.id] ?? 0,
-              cancelledPendingQuantity: operationalMaps.cancelledPendingMap[item.id] ?? 0,
-              cancelledReadyQuantity: operationalMaps.cancelledReadyMap[item.id] ?? 0,
-              cancelledDispatchedQuantity: operationalMaps.cancelledDispatchedMap[item.id] ?? 0,
-            })),
-            order.status as OrderStatus,
-          );
-
-          if (allFullyPaid) {
-            if (order.order_type === "TAKEOUT") {
-              orderUpdatesPromises.push(dbUpdate("orders", order.id, {
-                status: operationalStatus,
-                paid_at: now,
-              }));
-            } else {
-              orderUpdatesPromises.push(dbUpdate("orders", order.id, {
-                status: "PAID",
-                paid_at: now,
-              }));
-            }
-          } else {
-            const nextStatus = order.order_type === "TAKEOUT" ? "KITCHEN_DISPATCHED" : operationalStatus;
-            orderUpdatesPromises.push(dbUpdate("orders", order.id, {
-              status: nextStatus,
-              paid_at: null,
-            }));
-          }
-        }
-        await Promise.all(orderUpdatesPromises);
       }
+
+      return { syncWarning };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
@@ -2471,6 +2362,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       toast.success("Pago reversado correctamente");
+      if (result?.syncWarning) {
+        toast.warning(result.syncWarning);
+      }
     },
     onError: (err: any) => toast.error(err.message),
   });

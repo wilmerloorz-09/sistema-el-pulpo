@@ -16,12 +16,12 @@ export interface PaymentProofApiOptions {
 export class PaymentProofApi {
   constructor(private readonly options: PaymentProofApiOptions) {}
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const token = await this.options.getAccessToken();
+  private async request<T>(path: string, init?: RequestInit, requiresAuth = true): Promise<T> {
+    const token = requiresAuth ? await this.options.getAccessToken() : null;
     const response = await fetch(`${this.options.baseUrl}${path}`, {
       ...init,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(init?.headers ?? {}),
       },
@@ -59,10 +59,12 @@ export class PaymentProofApi {
   async uploadCaptureRequest(token: string, file: File) {
     const formData = new FormData();
     formData.append("file", file);
+    const accessToken = await this.options.getAccessToken();
     return this.request<PaymentProofWithRequest>(`/api/capture-requests/${token}/upload`, {
       method: "POST",
       body: formData,
-    });
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    }, false);
   }
 
   getPaymentProof(paymentId: string) {

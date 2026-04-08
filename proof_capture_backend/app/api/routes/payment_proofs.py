@@ -92,11 +92,10 @@ async def upload_capture_request(
   token: str,
   file: UploadFile = File(...),
   db: Session = Depends(get_db),
-  actor: AuthenticatedUser = Depends(get_current_user),
   context: RequestAuditContext = Depends(get_request_audit_context),
   service: PaymentProofService = Depends(get_proof_service),
 ):
-  capture_request, proof = await service.upload_capture_proof(db, token=token, upload_file=file, actor=actor, context=context)
+  capture_request, proof = await service.upload_capture_proof(db, token=token, upload_file=file, actor=None, context=context)
   return ApiResponse(message="Comprobante cargado correctamente.", data=PaymentProofWithRequest(proof=PaymentProofSummary.model_validate(proof), capture_request=CaptureRequestSummary.model_validate(capture_request)))
 
 

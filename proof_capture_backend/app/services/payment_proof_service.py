@@ -43,20 +43,28 @@ class PaymentProofService:
     self.permission_service = permission_service
     self.capture_service = capture_service
 
-  async def upload_capture_proof(self, db: Session, *, token: str, upload_file: UploadFile, actor: AuthenticatedUser, context: RequestAuditContext) -> tuple[PaymentCaptureRequest, PaymentProof]:
+  async def upload_capture_proof(
+    self,
+    db: Session,
+    *,
+    token: str,
+    upload_file: UploadFile,
+    actor: AuthenticatedUser | None,
+    context: RequestAuditContext,
+  ) -> tuple[PaymentCaptureRequest, PaymentProof]:
     capture_request = db.scalar(select(PaymentCaptureRequest).where(PaymentCaptureRequest.secure_token == token).with_for_update())
     if not capture_request:
       raise self._not_found("No se encontro la solicitud de captura.", "capture_request_not_found")
 
-    self.permission_service.assert_capture_request_access(db, user=actor, capture_request=capture_request)
     self._assert_request_upload_allowed(db, capture_request)
+    actor_user_id = actor.id if actor else capture_request.assigned_capture_user_id
 
-    if self._has_abusive_attempts(db, actor.id):
+    if self._has_abusive_attempts(db, actor_user_id):
       raise self._too_many_requests("Demasiados intentos fallidos. Espera unos minutos antes de reintentar.", "too_many_attempts")
 
     self.audit_service.log_event(
       db,
-      actor_user_id=actor.id,
+      actor_user_id=actor_user_id,
       action="capture_upload_started",
       entity="payment_capture_requests",
       entity_id=str(capture_request.id),
@@ -69,7 +77,7 @@ class PaymentProofService:
     except InvalidImageError as exc:
       self.audit_service.log_event(
         db,
-        actor_user_id=actor.id,
+        actor_user_id=actor_user_id,
         action="suspicious_upload_attempt",
         entity="payment_capture_requests",
         entity_id=str(capture_request.id),
@@ -99,7 +107,7 @@ class PaymentProofService:
       sha256_hash=validated.sha256_hash,
       image_width=validated.image_width,
       image_height=validated.image_height,
-      uploaded_by_user_id=actor.id,
+      uploaded_by_user_id=actor_user_id,
       analysis_status="pending",
       validation_status=ProofValidationStatus.PENDING,
     )
@@ -117,7 +125,7 @@ class PaymentProofService:
     try:
       self.audit_service.log_event(
         db,
-        actor_user_id=actor.id,
+        actor_user_id=actor_user_id,
         action="capture_uploaded",
         entity="payment_proofs",
         entity_id=str(proof.id),
@@ -133,7 +141,7 @@ class PaymentProofService:
         db.begin()
         self.audit_service.log_event(
           db,
-          actor_user_id=actor.id,
+          actor_user_id=actor_user_id,
           action="suspicious_upload_attempt",
           entity="payment_proofs",
           entity_id=str(proof.id),

@@ -22,11 +22,15 @@ async function loadRequest() {
   }
 }
 
-function handleFileChange(event: Event) {
+async function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  store.setSelectedFile(file);
+  try {
+    await store.setSelectedFile(file);
+  } catch {
+    // El store ya conserva el error para mostrarlo en pantalla.
+  }
 }
 
 function retake() {
@@ -64,15 +68,17 @@ onBeforeUnmount(() => {
         <input type="file" accept="image/*" capture="environment" @change="handleFileChange" />
       </label>
 
+      <p v-if="store.selectionStatus === 'loading'">Preparando la foto para subirla mas rapido...</p>
+
       <div v-if="store.previewUrl" class="mobile-capture-proof__preview">
         <img :src="store.previewUrl" alt="Preview del comprobante" />
       </div>
 
       <div class="mobile-capture-proof__actions">
-        <button type="button" :disabled="!store.previewUrl" @click="confirmPhoto">
+        <button type="button" :disabled="!store.previewUrl || store.selectionStatus === 'loading'" @click="confirmPhoto">
           {{ store.uploadStatus === "loading" ? "Subiendo..." : "Usar foto" }}
         </button>
-        <button type="button" :disabled="!store.previewUrl" @click="retake">Volver a tomar</button>
+        <button type="button" :disabled="!store.previewUrl || store.selectionStatus === 'loading'" @click="retake">Volver a tomar</button>
       </div>
 
       <p v-if="successMessage" class="mobile-capture-proof__success">{{ successMessage }}</p>

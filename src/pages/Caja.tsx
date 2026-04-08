@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, RotateCcw, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
+import { prepareProofImage } from "@/lib/prepareProofImage";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   orderQuery: "",
@@ -51,6 +52,7 @@ const Caja = () => {
   const [activeCaptureRequestId, setActiveCaptureRequestId] = useState<string | null>(null);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [captureNotesByRequest, setCaptureNotesByRequest] = useState<Record<string, string>>({});
   const [uploadingCaptureRequestId, setUploadingCaptureRequestId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -143,12 +145,14 @@ const Caja = () => {
     setCaptureError(null);
     setUploadProgress(0);
     setUploadingCaptureRequestId(null);
+    setPreparingPhoto(false);
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
 
   const clearSelectedPhoto = () => {
     if (photoPreviewUrl) {
       URL.revokeObjectURL(photoPreviewUrl);
     }
+    setPreparingPhoto(false);
     setSelectedPhotoFile(null);
     setPhotoPreviewUrl(null);
     setCaptureError(null);
@@ -175,18 +179,32 @@ const Caja = () => {
     }, 60);
   };
 
-  const handleSelectedPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectedPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (!file) return;
 
-    if (photoPreviewUrl) {
-      URL.revokeObjectURL(photoPreviewUrl);
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-    setSelectedPhotoFile(file);
-    setPhotoPreviewUrl(objectUrl);
+    setPreparingPhoto(true);
     setCaptureError(null);
+
+    try {
+      const preparedFile = await prepareProofImage(file);
+      if (photoPreviewUrl) {
+        URL.revokeObjectURL(photoPreviewUrl);
+      }
+
+      const objectUrl = URL.createObjectURL(preparedFile);
+      setSelectedPhotoFile(preparedFile);
+      setPhotoPreviewUrl(objectUrl);
+    } catch (error: any) {
+      setSelectedPhotoFile(null);
+      setPhotoPreviewUrl(null);
+      setCaptureError(error?.message ?? "No se pudo preparar la foto del comprobante.");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } finally {
+      setPreparingPhoto(false);
+    }
   };
 
   const compressImage = async (file: File): Promise<Blob> => {
@@ -249,12 +267,6 @@ const Caja = () => {
 
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      setUploadingCaptureRequestId(null);
-      setUploadProgress(0);
-      setCaptureError("Tu sesion expiro. Vuelve a iniciar sesion.");
-      return;
-    }
 
     const compressedBlob = await compressImage(selectedPhotoFile);
     const formData = new FormData();
@@ -269,7 +281,9 @@ const Caja = () => {
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${PAYMENT_PROOF_API_URL}/api/capture-requests/${activeCaptureRequest.secure_token}/upload`);
-        xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+        if (accessToken) {
+          xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+        }
         xhr.timeout = 45000;
 
         xhr.upload.onprogress = (event) => {
@@ -395,7 +409,7 @@ const Caja = () => {
                     type="button"
                     className="rounded-2xl"
                     onClick={() => void handleTakePhotoClick(request.id)}
-                    disabled={Boolean(uploadingCaptureRequestId)}
+                    disabled={Boolean(uploadingCaptureRequestId) || preparingPhoto}
                   >
                     <Camera className="mr-2 h-4 w-4" />
                     Tomar foto
@@ -416,7 +430,14 @@ const Caja = () => {
 
                 {activeCaptureRequestId === request.id && (
                   <div className="mt-4 rounded-3xl border border-dashed border-orange-200 bg-orange-50/40 p-4">
-                    {!selectedPhotoFile || !photoPreviewUrl ? (
+                    {preparingPhoto ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                        <Loader2 className="h-6 w-6 animate-spin text-orange-600" />
+                        <p className="text-sm text-slate-600">
+                          Preparando la foto para subirla mas rapido...
+                        </p>
+                      </div>
+                    ) : !selectedPhotoFile || !photoPreviewUrl ? (
                       <p className="text-sm text-slate-600">
                         Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
                       </p>
@@ -450,7 +471,7 @@ const Caja = () => {
                               }))
                             }
                             placeholder="Ejemplo: comprobante legible, revisar monto, etc."
-                            disabled={uploadingCaptureRequestId === request.id}
+                            disabled={uploadingCaptureRequestId === request.id || preparingPhoto}
                           />
                         </div>
                         {uploadingCaptureRequestId === request.id && (
@@ -476,7 +497,7 @@ const Caja = () => {
                             type="button"
                             className="rounded-2xl"
                             onClick={() => void handleUploadSelectedPhoto()}
-                            disabled={uploadingCaptureRequestId === request.id}
+                            disabled={uploadingCaptureRequestId === request.id || preparingPhoto}
                           >
                             {uploadingCaptureRequestId === request.id ? (
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -490,7 +511,7 @@ const Caja = () => {
                             variant="outline"
                             className="rounded-2xl"
                             onClick={clearSelectedPhoto}
-                            disabled={uploadingCaptureRequestId === request.id}
+                            disabled={uploadingCaptureRequestId === request.id || preparingPhoto}
                           >
                             <Upload className="mr-2 h-4 w-4" />
                             Elegir otra
