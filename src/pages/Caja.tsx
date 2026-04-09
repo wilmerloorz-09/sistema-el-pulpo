@@ -63,11 +63,9 @@ const Caja = () => {
   const activeTab =
     activeTabParam === "completed"
       ? "completed"
-      : activeTabParam === "capture"
-        ? "capture"
-        : "pending";
+      : "pending";
 
-  const setActiveTab = (tab: "pending" | "completed" | "capture") => {
+  const setActiveTab = (tab: "pending" | "completed") => {
     const nextParams = new URLSearchParams(searchParams);
     if (tab === "pending") {
       nextParams.delete("tab");
@@ -916,7 +914,7 @@ const Caja = () => {
                 }
               />
             </div>
-          ) : renderCaptureContent()}
+          ) : null}
         </div>
       </div>
     </div>

@@ -136,16 +136,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
                 >
                   Pagos realizados
                 </NavLink>
-                <NavLink
-                  to="/caja?tab=capture"
-                  className={cn(
-                    "rounded-xl px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 transition-colors",
-                    "hover:bg-white/8 hover:text-sidebar-foreground",
-                    activeCajaTab === "capture" && "bg-white/8 text-sidebar-foreground",
-                  )}
-                >
-                  Captura de comprobantes
-                </NavLink>
+
               </div>
             ) : null}
           </div>

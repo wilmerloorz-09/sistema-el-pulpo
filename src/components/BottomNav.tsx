@@ -75,12 +75,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                       <span className="text-sm">Pagos realizados</span>
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="p-0 rounded-xl focus:bg-emerald-50 focus:text-emerald-950 dark:focus:bg-emerald-500/20">
-                    <Link to="/caja?tab=capture" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
-                      <div className="flex bg-emerald-100 text-emerald-600 p-2 rounded-[12px] dark:bg-emerald-500/20 dark:text-emerald-400 shadow-sm"><Camera className="h-4 w-4" /></div>
-                      <span className="text-sm">Captura</span>
-                    </Link>
-                  </DropdownMenuItem>
+
                 </DropdownMenuContent>
               </DropdownMenu>
             );

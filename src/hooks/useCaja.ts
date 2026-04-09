@@ -1997,6 +1997,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       let createdCaptureRequestCount = 0;
       let captureRequestWarning: string | null = null;
 
+        // Transfer payment capture request logic disabled as per user request
+        /*
         const transferPayments = allPayments.filter((payment) => transferMethodIds.has(payment.payment_method_id));
         if (transferPayments.length > 0 && !preparedTransferProofSession) {
           const { data: existingRequests } = await (supabase
@@ -2045,6 +2047,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           }
         }
       }
+      */
 
       const denomChanges: Record<string, number> = {};
       const cashMovementsPromises: Promise<void>[] = [];

@@ -727,7 +727,7 @@ export default function PaymentDialog({
       shortageAmount <= 0.01 &&
       (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.001 >= cashAppliedAmount))) &&
       !(changeAmount > 0 && cannotMakeChange);
-  const canConfirmPayment = canPay && (!hasTransferPayment || transferProofReady);
+  const canConfirmPayment = canPay;
 
   useEffect(() => {
     if (!confirmOpen || !preparedTransferProofSession || !hasTransferPayment) return;
@@ -784,43 +784,7 @@ export default function PaymentDialog({
 
   const handleOpenConfirm = async () => {
     if (!canPay) return;
-
-    if (!hasTransferPayment) {
-      setConfirmOpen(true);
-      return;
-    }
-
-    if (preparedTransferProofSession) {
-      setConfirmOpen(true);
-      return;
-    }
-
-    const tenderedSplitsPayload = paymentAllocationPreview.map((split) => ({
-      methodId: split.methodId,
-      amount: split.receivedAmount,
-    }));
-    const paymentSplitsPayload = paymentAllocationPreview
-      .filter((split) => split.appliedAmount > 0)
-      .map((split) => ({ methodId: split.methodId, amount: split.appliedAmount }));
-
-    setPreparingTransferProof(true);
-    try {
-      const session = await onPrepareTransferProof({
-        orderId: order!.id,
-        paymentSplits: paymentSplitsPayload,
-        tenderedSplits: tenderedSplitsPayload,
-        isSpecial: isSpecialOrder,
-      });
-      setPreparedTransferProofSession(session);
-      setPreparedTransferProofSignature(transferPreparationSignature);
-      setTransferProofReady(false);
-      setTransferProofProgress({ uploadedCount: 0, totalCount: session.paymentIds.length });
-      setConfirmOpen(true);
-    } catch (error) {
-      console.error("Prepare transfer proof failed", error);
-    } finally {
-      setPreparingTransferProof(false);
-    }
+    setConfirmOpen(true);
   };
 
   const paymentStatusMessage = useMemo(() => {
@@ -2015,6 +1979,8 @@ export default function PaymentDialog({
           </AlertDialogHeader>
 
           <div className="space-y-4">
+            {/* Transfer proof status hidden as per user request */}
+            {/* 
             {hasTransferPayment && (
               <div
                 className={cn(
@@ -2029,6 +1995,7 @@ export default function PaymentDialog({
                   : `Esperando comprobante de transferencia subido (${transferProofProgress.uploadedCount}/${transferProofProgress.totalCount || preparedTransferProofSession?.paymentIds.length || 0}).`}
               </div>
             )}
+            */}
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
