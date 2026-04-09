@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Building2, Camera, Check, Loader2, Shield } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import { resolveRoleCodeFromCatalog } from "./userRoleUtils";
 
 interface BranchAssignment {
   branch_id: string;
@@ -123,10 +124,15 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
         if (error) throw error;
       }
 
+      const resolvedBranchRoleCode = resolveRoleCodeFromCatalog(
+        catalog?.branch_roles,
+        selectedUserType as "supervisor" | "usuario_operativo",
+      );
+
       const { error: assignError } = await supabase.rpc("assign_user_branch_role" as never, {
         p_target_user_id: user.id,
         p_branch_id: selectedBranchId,
-        p_role_code: selectedUserType,
+        p_role_code: resolvedBranchRoleCode,
         p_reason: "Asignacion unica desde administracion",
       } as never);
       if (assignError) throw assignError;

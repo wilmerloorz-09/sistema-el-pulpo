@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Building2, Camera, Check, Loader2, Shield, UserPlus } from "lucide-react";
+import { resolveRoleCodeFromCatalog } from "./userRoleUtils";
 
 interface AccessCatalog {
   branches: { id: string; name: string }[];
@@ -107,9 +108,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
       const branchRoleCode =
         form.user_type === "administrador"
           ? null
-          : form.user_type === "supervisor"
-            ? "supervisor"
-            : "usuario_operativo";
+          : resolveRoleCodeFromCatalog(catalog?.branch_roles, form.user_type);
 
       const payload = {
         email: normalizedEmail,
