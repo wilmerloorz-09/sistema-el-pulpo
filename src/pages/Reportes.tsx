@@ -12,15 +12,11 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, RefreshCw, Loader2, Smartphone, Cloud } from 'lucide-react';
+import { getOrderRef } from '@/lib/orderPresentation';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const Reportes = () => {
-  const getOrderRef = (orderCode: string | null | undefined, orderNumber: number | null | undefined) => {
-    if (orderCode && orderCode.trim().length > 0) return orderCode;
-    if (typeof orderNumber === "number") return String(orderNumber);
-    return "SIN-CODIGO";
-  };
   const {
     localOrders,
     remoteOrders,

@@ -72,7 +72,7 @@ const seedDraftOrderCache = (
 ) => {
   qc.setQueryData(getOrderQueryKey(orderId), {
     id: orderId,
-    order_number: 0,
+    order_number: null,
     order_code: null,
     status: "DRAFT",
     order_type: "DINE_IN",
@@ -162,7 +162,7 @@ const Mesas = () => {
 
       qc.setQueryData(getOrderQueryKey(orderId), {
         id: orderId,
-        order_number: 0,
+        order_number: null,
         order_code: null,
         status: "DRAFT",
         order_type: "TAKEOUT",

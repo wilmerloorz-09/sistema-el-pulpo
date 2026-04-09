@@ -721,7 +721,7 @@ export type Database = {
           is_special: boolean
           menu_scope: string
           order_code: string | null
-          order_number: number
+          order_number: number | null
           order_type: Database["public"]["Enums"]["order_type"]
           paid_at: string | null
           ready_at: string | null
@@ -753,7 +753,7 @@ export type Database = {
           is_special?: boolean
           menu_scope?: string
           order_code?: string | null
-          order_number?: number
+          order_number?: number | null
           order_type: Database["public"]["Enums"]["order_type"]
           paid_at?: string | null
           ready_at?: string | null
@@ -785,7 +785,7 @@ export type Database = {
           is_special?: boolean
           menu_scope?: string
           order_code?: string | null
-          order_number?: number
+          order_number?: number | null
           order_type?: Database["public"]["Enums"]["order_type"]
           paid_at?: string | null
           ready_at?: string | null

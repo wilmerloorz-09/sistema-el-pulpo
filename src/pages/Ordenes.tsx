@@ -28,7 +28,7 @@ import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
 import { formatSplitCodeLabel } from "@/lib/splitCode";
-import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
 
@@ -355,23 +355,24 @@ const Ordenes = () => {
   useEffect(() => {
     return () => {
       const currentOrder = autoCleanupOrderRef.current;
-      const shouldAutoCancelEmptyDraft =
+      const shouldAutoDeleteEmptyDraft =
         !!currentOrder &&
         currentOrder.status === "DRAFT" &&
         currentOrder.items.length === 0 &&
         (!currentOrder.is_special || Number(currentOrder.special_total_manual ?? 0) <= 0);
 
-      if (!shouldAutoCancelEmptyDraft) return;
+      if (!shouldAutoDeleteEmptyDraft) return;
 
-      const now = new Date().toISOString();
       void (async () => {
+        // Delete any orphan items first (FK constraint)
+        await supabase
+          .from("order_items")
+          .delete()
+          .eq("order_id", currentOrder.id);
+
         await supabase
           .from("orders")
-          .update({
-            status: "CANCELLED",
-            cancelled_at: now,
-            updated_at: now,
-          })
+          .delete()
           .eq("id", currentOrder.id)
           .eq("status", "DRAFT");
 
@@ -538,7 +539,7 @@ const Ordenes = () => {
         {cancelOrder && user && canCancelOrders && (
         <CancelOrderDialog
           orderId={cancelOrder.id}
-          orderNumber={cancelOrder.order_code ?? `#${cancelOrder.order_number}`}
+          orderNumber={getOrderRef(cancelOrder.order_code, cancelOrder.order_number)}
           userId={user.id}
           open={!!cancelOrder}
           onOpenChange={(open) => !open && setCancelOrder(null)}
@@ -1067,7 +1068,7 @@ const Ordenes = () => {
       <div className="mb-3 flex w-full items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="shrink-0 font-display text-sm font-bold">Orden</h2>
-          <p className="truncate text-xs font-semibold text-muted-foreground">{order.order_code ?? `#${order.order_number}`}</p>
+          <p className="truncate text-xs font-semibold text-muted-foreground">{getOrderRef(order.order_code, order.order_number)}</p>
         </div>
         {mobile ? (
           <Button variant="ghost" size="sm" className="h-11 px-3 gap-2 text-sm 2xl:hidden" onClick={() => setShowCart(false)}>
@@ -1464,7 +1465,7 @@ const Ordenes = () => {
       {order && (
         <ThermalReceipt
           ref={receiptRef}
-          orderNumber={order.order_code ?? `#${order.order_number}`}
+          orderNumber={getOrderRef(order.order_code, order.order_number)}
           orderType={order.order_type}
           isSpecial={order.is_special}
           isTrayOrder={order.is_tray_order}
@@ -1553,7 +1554,7 @@ const Ordenes = () => {
       {user && canCancelOrders && (
         <CancelOrderDialog
           orderId={order.id}
-          orderNumber={order.order_code ?? `#${order.order_number}`}
+          orderNumber={getOrderRef(order.order_code, order.order_number)}
           userId={user.id}
           open={inlineCancelOpen}
           onOpenChange={(open) => {

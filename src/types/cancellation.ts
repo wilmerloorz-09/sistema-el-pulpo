@@ -34,7 +34,7 @@ export interface OperationalLoss {
 // Ordenes
 export interface Order {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   branch_id: string;
   created_by: string;

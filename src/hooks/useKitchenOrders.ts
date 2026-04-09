@@ -24,7 +24,7 @@ export interface KitchenOrderItem {
 export interface KitchenOrder {
   card_id: string;
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
@@ -58,7 +58,7 @@ export function useKitchenOrders() {
 
       const orders = await dbSelect<{
         id: string;
-        order_number: number;
+        order_number: number | null;
         order_code: string | null;
         order_type: string;
         is_special: boolean | null;

@@ -31,7 +31,7 @@ export interface DispatchOrderItem {
 export interface DispatchOrder {
   card_id: string;
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
@@ -89,7 +89,7 @@ export function useDispatchOrders(scope: DispatchView) {
   const query = useQuery({
     queryKey: ["dispatch-orders", activeBranchId, config?.dispatch_mode, user?.id, scope],
     queryFn: async () => {
-      if (!activeBranchId || !user) return [];
+      if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const dispatchMode = configLoading ? "SINGLE" : config?.dispatch_mode || "SINGLE";
 
@@ -101,14 +101,38 @@ export function useDispatchOrders(scope: DispatchView) {
         .order("updated_at", { ascending: true });
 
       if (ordersError) throw ordersError;
-      if (!orders || orders.length === 0) return [];
+      if (!orders || orders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const permittedOrders = orders.filter((order) => {
-        if (scope === "SPECIAL") return Boolean(order.is_special);
-        if (scope === "TABLE") return matchesScope(order.order_type, scope) && !Boolean(order.is_special);
-        return matchesScope(order.order_type, scope);
-      });
-      if (permittedOrders.length === 0) return [];
+      const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
+      const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
+
+      const getPermittedForView = (v: DispatchView) => {
+        let baseFiltered = orders.filter((order) => {
+          if (v === "SPECIAL") return Boolean(order.is_special);
+          if (v === "TABLE") return matchesScope(order.order_type, v) && !Boolean(order.is_special);
+          return matchesScope(order.order_type, v);
+        });
+
+        if (dispatchMode === "SPLIT") {
+          if (userAssignments.length > 0 && !assignedTypes.has("ALL")) {
+            baseFiltered = baseFiltered.filter((order) => {
+              const orderType = order.order_type === "DINE_IN" || order.order_type === "TABLE" ? "TABLE" : "TAKEOUT";
+              return assignedTypes.has(orderType);
+            });
+          }
+        }
+        return baseFiltered;
+      };
+
+      const counts = {
+        ALL: getPermittedForView("ALL").length,
+        TABLE: getPermittedForView("TABLE").length,
+        TAKEOUT: getPermittedForView("TAKEOUT").length,
+        SPECIAL: getPermittedForView("SPECIAL").length,
+      };
+
+      const permittedOrders = getPermittedForView(scope);
+      if (permittedOrders.length === 0) return { orders: [], counts };
 
       const tableIds = [...new Set(permittedOrders.map((order) => order.table_id).filter(Boolean))] as string[];
       let tablesMap: Record<string, string> = {};
@@ -158,22 +182,9 @@ export function useDispatchOrders(scope: DispatchView) {
         cancelledPendingMap,
         cancelledReadyMap,
         cancelledDispatchedMap,
-      } =
-        await fetchOperationalMapsForOrders(orderIds);
+      } = await fetchOperationalMapsForOrders(orderIds);
 
-      let filteredOrders = permittedOrders;
-      if (dispatchMode === "SPLIT") {
-        const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
-        if (userAssignments.length > 0) {
-          const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
-          filteredOrders = permittedOrders.filter((order) => {
-            const orderType = order.order_type === "DINE_IN" || order.order_type === "TABLE" ? "TABLE" : "TAKEOUT";
-            return assignedTypes.has(orderType) || assignedTypes.has("ALL");
-          });
-        }
-      }
-
-      const cards = filteredOrders.flatMap((order) => {
+      const cards = permittedOrders.flatMap((order) => {
         const mappedItems = ((items ?? []) as any[])
           .filter((item) => item.order_id === order.id && !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at))
           .map((item) => {
@@ -188,7 +199,6 @@ export function useDispatchOrders(scope: DispatchView) {
 
             const quantityPendingPrepare = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
             const quantityReadyAvailable = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
-
             const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
 
             return {
@@ -255,8 +265,11 @@ export function useDispatchOrders(scope: DispatchView) {
         });
       });
 
-      return sortByBatchArrival(cards)
-        .filter((order) => order.items.length > 0 && (order.pending_prepare_count > 0 || order.ready_available_count > 0)) as DispatchOrder[];
+      return {
+        orders: sortByBatchArrival(cards)
+          .filter((order) => order.items.length > 0 && (order.pending_prepare_count > 0 || order.ready_available_count > 0)) as DispatchOrder[],
+        counts
+      };
     },
     enabled: !!activeBranchId && !!user,
     refetchInterval: 5000,
@@ -367,7 +380,8 @@ export function useDispatchOrders(scope: DispatchView) {
   });
 
   return {
-    orders: query.data || [],
+    orders: query.data?.orders || [],
+    counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 },
     isLoading: query.isLoading,
     isError: query.isError,
     applyReadyOperation,

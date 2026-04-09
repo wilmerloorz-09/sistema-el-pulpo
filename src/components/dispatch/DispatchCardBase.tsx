@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
 import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -273,7 +273,7 @@ export function DispatchCardBase({
 
         <div className="min-w-0">
           <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
-            {order.order_code ?? `#${order.order_number}`}
+            {getOrderRef(order.order_code, order.order_number)}
           </p>
         </div>
 

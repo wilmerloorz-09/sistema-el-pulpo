@@ -447,7 +447,7 @@ export async function recordOperationalLoss(
  */
 export async function notifyKitchenItemCancelled(
   orderId: string,
-  orderNumber: number,
+  orderNumber: number | null,
   itemId: string,
   description: string,
   quantity: number,
@@ -471,7 +471,7 @@ export async function notifyKitchenItemCancelled(
  */
 export async function notifyKitchenOrderCancelled(
   orderId: string,
-  orderNumber: number,
+  orderNumber: number | null,
   itemCount: number,
   reason: string,
   branchId: string

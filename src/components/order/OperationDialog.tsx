@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
+import { getOrderRef } from "@/lib/orderPresentation";
 
 interface OperationItem {
   id: string;
@@ -24,7 +25,7 @@ interface OperationItem {
 
 interface OperationOrder {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   items: OperationItem[];
 }
@@ -87,7 +88,7 @@ export default function OperationDialog({ open, onOpenChange, order, mode, proce
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl bg-background shadow-xl rounded-[24px]">
         <DialogHeader>
           <DialogTitle>{actionLabel} de orden</DialogTitle>
-          <DialogDescription>{order.order_code ?? `#${order.order_number}`}</DialogDescription>
+          <DialogDescription>{getOrderRef(order.order_code, order.order_number)}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

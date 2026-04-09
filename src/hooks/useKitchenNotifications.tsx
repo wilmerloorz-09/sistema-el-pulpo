@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 export interface KitchenNotification {
   id?: string;
   type: "ITEM_CANCELLED" | "ORDER_CANCELLED";
-  order_number: number;
+  order_number: number | null;
   message: string;
   item_id?: string;
   order_id: string;

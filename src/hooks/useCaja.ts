@@ -122,7 +122,7 @@ export interface CashRegisterMovementDetail {
 
 export interface PayableOrder {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
@@ -202,7 +202,7 @@ export interface CompletedPayment {
   amount: number;
   method_name: string;
   order_id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;

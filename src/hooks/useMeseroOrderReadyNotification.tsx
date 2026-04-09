@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 export interface OrderReadyNotification {
   id?: string;
   order_id: string;
-  order_number: number;
+  order_number: number | null;
   order_type: "DINE_IN" | "TAKEOUT";
   branch_id: string;
   created_by: string;
@@ -29,7 +29,7 @@ interface NotificationHookOptions {
 type ReadyOrderRow = {
   notification_id: string;
   order_id: string;
-  order_number: number;
+  order_number: number | null;
   order_type: "DINE_IN" | "TAKEOUT";
   branch_id: string;
   created_by: string;
@@ -298,7 +298,7 @@ export function OrderReadyNotificationBanner({
             <Bell className="mt-0.5 h-5 w-5 shrink-0 animate-bounce" />
             <div>
               <AlertDescription className="font-semibold text-base">
-                Orden #{notification.order_number} lista para despachar
+                Orden {notification.order_number ? `#${notification.order_number}` : ''} lista para despachar
               </AlertDescription>
               <AlertDescription className="mt-1 text-sm opacity-90">
                 {label}

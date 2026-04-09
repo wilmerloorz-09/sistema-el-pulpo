@@ -19,6 +19,7 @@ import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, Rotate
 import { cn } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
 import { prepareProofImage } from "@/lib/prepareProofImage";
+import { getOrderRef } from "@/lib/orderPresentation";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   orderQuery: "",
@@ -375,11 +376,7 @@ const Caja = () => {
                   <div>
                     <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
                       {request.table_name ? `${request.table_name} - ` : ""}
-                      {request.order_code
-                        ? `Orden ${request.order_code}`
-                        : request.order_number
-                          ? `Orden #${request.order_number}`
-                          : "Orden"}
+                      Orden {getOrderRef(request.order_code, request.order_number)}
                     </p>
                     <p className="mt-1 text-lg font-semibold text-slate-950">
                       ${request.amount.toFixed(2)}
@@ -669,11 +666,7 @@ const Caja = () => {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                            {request.order_code
-                              ? `Orden ${request.order_code}`
-                              : request.order_number
-                                ? `Orden #${request.order_number}`
-                                : "Orden"}
+                            Orden {getOrderRef(request.order_code, request.order_number)}
                           </p>
                           <p className="mt-1 text-lg font-semibold text-slate-950">
                             ${request.amount.toFixed(2)}

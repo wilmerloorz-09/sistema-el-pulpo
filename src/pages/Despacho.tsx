@@ -47,7 +47,7 @@ const Despacho = () => {
 
   const resolvedView = activeView && availableViews.includes(activeView) ? activeView : resolveInitialView(availableViews, storageKey);
   const scope = resolvedView ?? "TABLE";
-  const { orders, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem } = useDispatchOrders(scope);
+    const { orders, counts, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem } = useDispatchOrders(scope);
 
   if (accessLoading) {
     return (
@@ -125,24 +125,29 @@ const Despacho = () => {
               }}
               className="rounded-2xl border border-border bg-muted/50 p-1.5 shadow-sm"
             >
-              {availableViews.map((view) => (
-                (() => {
-                  const Icon = getViewIcon(view);
-                  return (
-                    <ToggleGroupItem
-                      key={view}
-                      value={view}
-                      className="rounded-xl px-4 py-2.5 text-sm font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm"
-                      aria-label={getViewLabel(view)}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Icon className="h-4 w-4" />
-                        <span>{getViewLabel(view)}</span>
-                      </span>
-                    </ToggleGroupItem>
-                  );
-                })()
-              ))}
+              {availableViews.map((view) => {
+                const Icon = getViewIcon(view);
+                const count = counts[view as keyof typeof counts] || 0;
+                
+                return (
+                  <ToggleGroupItem
+                    key={view}
+                    value={view}
+                    className="relative rounded-xl px-4 py-2.5 text-sm font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm"
+                    aria-label={getViewLabel(view)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Icon className="h-4 w-4" />
+                      <span>{getViewLabel(view)}</span>
+                      {count > 0 && (
+                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-[10px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in zoom-in duration-300">
+                          {count}
+                        </span>
+                      )}
+                    </span>
+                  </ToggleGroupItem>
+                );
+              })}
             </ToggleGroup>
           </div>
         )}

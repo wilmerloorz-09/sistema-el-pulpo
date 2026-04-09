@@ -14,7 +14,7 @@ import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign } from "luc
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type TabType = "sent" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
+type TabType = "sent" | "draft" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
 
 interface TabInfo {
   key: TabType;
@@ -33,6 +33,14 @@ const tabs: TabInfo[] = [
     showCancel: true,
     helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
     icon: <Clock className="h-4 w-4" />,
+  },
+  {
+    key: "draft",
+    label: "Borradores",
+    status: "DRAFT",
+    showCancel: true,
+    helperText: "Aqui ves las ordenes que aun no han sido enviadas a cocina.",
+    icon: <ClipboardList className="h-4 w-4" />,
   },
   {
     key: "dispatched",
@@ -181,6 +189,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
   }, [activeBranchId, qc]);
 
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
+  const draftOrders = useOrdersByStatus("DRAFT");
   const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED");
   const pendingCancellationOrders = useOrdersByStatus("PENDING_CANCELLATION");
   const cancelledOrders = useOrdersByStatus("CANCELLED");
@@ -190,6 +199,8 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
     switch (tab) {
       case "sent":
         return sentOrders;
+      case "draft":
+        return draftOrders;
       case "dispatched":
         return dispatchedOrders;
       case "pendingCancellation":
@@ -268,7 +279,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false }: OrdersLi
               </Select>
             </div>
 
-            <div className="hidden grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid md:grid-cols-5">
+            <div className="hidden grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid md:grid-cols-3 lg:grid-cols-6">
               {tabs.map((tab) => {
                 const count = getTabCount(tab.key);
                 const isActive = activeTab === tab.key;

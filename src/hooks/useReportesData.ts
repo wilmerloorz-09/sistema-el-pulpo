@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 
 export interface OrderWithStatus {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   status: string;
   created_at: string;

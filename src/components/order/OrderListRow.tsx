@@ -3,7 +3,7 @@ import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp, Clock, Ban, CreditCard, Package, ShoppingBag, UtensilsCrossed } from "lucide-react";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -306,7 +306,7 @@ export default function OrderListRow({
             </div>
 
             <span className="shrink-0 font-mono text-[11px] font-bold tracking-[0.08em] text-slate-700">
-              {order.order_code ?? `#${order.order_number}`}
+              {getOrderRef(order.order_code, order.order_number)}
             </span>
 
             <span className="shrink-0 text-sm font-semibold text-slate-950">{mobileAmount}</span>
@@ -365,7 +365,7 @@ export default function OrderListRow({
 
         <div className="hidden min-w-0 sm:block">
           <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
-            {order.order_code ?? `#${order.order_number}`}
+            {getOrderRef(order.order_code, order.order_number)}
           </p>
         </div>
 

@@ -30,3 +30,12 @@ export function getOrderKind(params: {
   if (params.orderType === "TAKEOUT") return "takeout" as const;
   return "table" as const;
 }
+
+export function getOrderRef(
+  orderCode: string | null | undefined,
+  orderNumber: number | null | undefined,
+): string {
+  if (orderCode && orderCode.trim()) return orderCode;
+  if (orderNumber && orderNumber > 0) return `#${orderNumber}`;
+  return "Borrador";
+}

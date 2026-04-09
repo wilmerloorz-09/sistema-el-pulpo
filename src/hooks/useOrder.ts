@@ -39,7 +39,7 @@ interface OrderItem {
 
 interface SiblingOrder {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   split_code: string;
   item_count: number;
@@ -77,7 +77,7 @@ export interface MoveTableResult {
 
 interface Order {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   status: OrderStatus;
   order_type: "DINE_IN" | "TAKEOUT";

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, Soup, UtensilsCrossed } from "lucide-react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
@@ -155,7 +155,7 @@ export default function PayableOrdersList({
                     ? order.special_pending_amount
                     : order.items.reduce((sum, item) => sum + item.pending_total, 0);
                   const pendingUnitsText = `${pending} ${pending === 1 ? "unidad pendiente" : "unidades pendientes"}`;
-                  const rowCode = order.order_code ?? `#${order.order_number}`;
+                  const rowCode = getOrderRef(order.order_code, order.order_number);
                   const isExpanded = expandedOrderId === order.id;
 
                   return (

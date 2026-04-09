@@ -64,7 +64,7 @@ function parsePendingRequestItemsFromNotes(notes: string | null): Record<string,
 
 export interface OrderSummary {
   id: string;
-  order_number: number;
+  order_number: number | null;
   order_code: string | null;
   split_code?: string | null;
   status: OrderStatus;
@@ -111,7 +111,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       let orders = await dbSelect<{
         id: string;
-        order_number: number;
+        order_number: number | null;
         order_code: string | null;
         status: OrderStatus;
         order_type: string;
@@ -423,7 +423,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
                 status: effectiveStatus,
               };
             })
-            .filter((item) => item.status !== "DRAFT" && item.quantity > 0);
+            .filter((item) => (status === "DRAFT" || item.status !== "DRAFT") && item.quantity > 0);
 
           const fallbackStageItems = items
             .filter((item) => item.order_id === order.id)
@@ -477,7 +477,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
                 status: fallbackStatus,
               };
             })
-            .filter((item): item is NonNullable<typeof item> => !!item && item.status !== "DRAFT" && item.quantity > 0);
+            .filter((item): item is NonNullable<typeof item> => !!item && (status === "DRAFT" || item.status !== "DRAFT") && item.quantity > 0);
 
           const shouldUseOrderStageFallback =
             !cancelledView &&
