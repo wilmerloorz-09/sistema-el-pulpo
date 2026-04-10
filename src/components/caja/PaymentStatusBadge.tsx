@@ -13,6 +13,7 @@ const statusMap: Record<CompletedPaymentStatus, { label: string; className: stri
 };
 
 export default function PaymentStatusBadge({ status }: Props) {
-  const config = statusMap[status];
+  const normalizedStatus = (status?.toString() || "").toUpperCase() as CompletedPaymentStatus;
+  const config = statusMap[normalizedStatus] || { label: status, className: "bg-gray-100 text-gray-500" };
   return <Badge className={config.className}>{config.label}</Badge>;
 }

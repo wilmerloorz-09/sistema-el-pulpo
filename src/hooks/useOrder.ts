@@ -154,9 +154,9 @@ async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
 export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
   const { data: order, error } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, table_name_snapshot")
     .eq("id", orderId)
-    .single();
+    .single() as any;
   if (error) throw error;
 
   const [
@@ -272,7 +272,7 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
   return {
     ...order,
     split_code: splitResult.data?.split_code ?? null,
-    table_name: tableResult.data?.name,
+    table_name: tableResult.data?.name ?? (order as any).table_name_snapshot,
     items: enrichedItems,
     siblings,
   } as Order;

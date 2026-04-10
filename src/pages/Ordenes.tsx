@@ -260,6 +260,7 @@ const Ordenes = () => {
       ? "TAKEOUT"
       : persistedMenuScope;
   const tablesQuery = useTablesWithStatus();
+  const tables = tablesQuery.data?.tables;
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
   const [selectedProductModifiers, setSelectedProductModifiers] = useState<ProductModifierOption[]>([]);
@@ -1499,7 +1500,7 @@ const Ordenes = () => {
         currentTableId={order.table_id}
         currentTableName={order.table_name}
         currentSplitCode={order.split_code}
-        tables={tablesQuery.data}
+        tables={tables}
         moving={moveToTable.isPending}
         onConfirm={handleChangeTable}
       />

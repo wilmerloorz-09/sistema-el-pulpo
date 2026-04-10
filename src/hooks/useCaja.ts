@@ -132,6 +132,7 @@ export interface PayableOrder {
   special_paid_amount: number;
   special_pending_amount: number;
   table_name: string | null;
+  table_name_snapshot?: string | null;
   split_code: string | null;
   total: number;
   tray_products_total?: number;
@@ -222,6 +223,7 @@ export interface CompletedPayment {
   tray_item_type?: "A" | "B" | "C" | null;
   item_amount: number;
   reversal_requested: boolean;
+  order_has_voided_payments: boolean;
 }
 
 export type CompletedPaymentsScope = "ALL" | "TABLE" | "TAKEOUT" | "SPECIAL";
@@ -1061,10 +1063,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const { data: orders, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, special_total_manual")
+        .select("id, order_number, order_code, order_type, table_id, split_id, status, is_special, created_at, special_total_manual, table_name_snapshot")
         .eq("branch_id", activeBranchId)
         .in("status", ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
-        .order("updated_at");
+        .order("updated_at") as any;
       if (error) throw error;
       if (!orders || orders.length === 0) return [];
 
@@ -1201,9 +1203,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             special_total_manual: specialManualTotal,
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
-            special_pending_amount: specialPendingAmount,
-            table_name: o.table_id ? tablesMap[o.table_id] ?? null : null,
-            split_code: o.split_id ? splitsMap[o.split_id] ?? null : null,
+            special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
+            table_name: (o.table_id ? tablesMap[o.table_id] : null) || (o as any).table_name_snapshot || null,
+            table_name_snapshot: (o as any).table_name_snapshot,
+            split_code: o.split_id ? splitsMap[o.split_id] : null,
             total: displayTotal,
             tray_products_total: trayProductsTotal,
             tray_container_total: trayContainerTotal,
@@ -1450,9 +1453,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const orderPaidMap: Record<string, number> = {};
       const orderRealTotalMap: Record<string, number> = {};
+      const orderHasVoidedPaymentsMap: Record<string, boolean> = {};
+      
       for (const payment of allOrderPayments) {
         const meta = parsePaymentNotes(payment.notes);
-          if (meta.reversed || meta.voided || meta.transferProofPending) continue;
+        if (meta.voided || meta.reversed) {
+          orderHasVoidedPaymentsMap[payment.order_id] = true;
+        }
+        if (meta.reversed || meta.voided || meta.transferProofPending) continue;
         orderPaidMap[payment.order_id] = (orderPaidMap[payment.order_id] || 0) + Number(payment.amount);
       }
       for (const item of allOrderItems) {
@@ -1528,6 +1536,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 tray_item_type: item?.tray_item_type ?? null,
                 item_amount: paymentItem.total_amount,
                 reversal_requested: meta.reversalRequested,
+                order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
               });
           }
         } else {
@@ -1560,6 +1569,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               tray_item_type: isSpecialOrderNote(payment.notes) ? null : legacyItem?.tray_item_type ?? null,
               item_amount: Number(payment.amount),
               reversal_requested: meta.reversalRequested,
+              order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
             });
         }
       }

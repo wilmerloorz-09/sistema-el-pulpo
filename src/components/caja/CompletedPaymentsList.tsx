@@ -25,6 +25,7 @@ interface PaymentGroup {
   notes: string | null;
   method_name: string;
   reversal_requested: boolean;
+  order_has_voided_payments: boolean;
   order: {
     id: string;
     number: number;
@@ -163,6 +164,7 @@ export default function CompletedPaymentsList({
           notes: row.notes,
           method_name: row.method_name,
           reversal_requested: row.reversal_requested,
+          order_has_voided_payments: row.order_has_voided_payments,
           order: {
             id: row.order_id,
             number: row.order_number ?? 0,
@@ -320,7 +322,9 @@ export default function CompletedPaymentsList({
                 orderType: payment.order.type,
                 isSpecial: payment.order.is_special,
               });
-              const blockedByState = payment.status === "REVERSED" || payment.status === "VOIDED";
+              const normalizedStatus = (payment.status?.toString() || "").toUpperCase();
+              const isVoidedOrReversed = normalizedStatus === "REVERSED" || normalizedStatus === "VOIDED";
+              const blockedByState = isVoidedOrReversed || payment.reversal_requested || payment.order_has_voided_payments;
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
 
               return (
@@ -351,6 +355,11 @@ export default function CompletedPaymentsList({
                           <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <PaymentStatusBadge status={payment.status} />
+                             {payment.reversal_requested && !isVoidedOrReversed && (
+                              <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                                Anulación Pendiente
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </div>

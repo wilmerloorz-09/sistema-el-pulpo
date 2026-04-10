@@ -25,6 +25,26 @@ export interface TableWithStatus {
   }>;
   itemCount: number;
   elapsedMinutes: number;
+  hasVoidedPayment: boolean;
+}
+
+export interface VoidedOrder {
+  id: string;
+  order_number: number | null;
+  order_code: string | null;
+  table_id: string | null;
+  status: OrderStatus;
+  is_special: boolean;
+  order_type: "DINE_IN" | "TAKEOUT";
+  created_at: string;
+  special_total_manual: number | null;
+  table_name_snapshot?: string | null;
+  total?: number;
+}
+
+export interface TablesWithStatusData {
+  tables: TableWithStatus[];
+  voidedOrders: VoidedOrder[];
 }
 
 interface TablesOverviewRow {
@@ -58,26 +78,70 @@ export function getTablesWithStatusQueryKey(branchId: string | null | undefined)
   return ["tables-with-status", branchId ?? null] as const;
 }
 
-export async function fetchTablesWithStatus(branchId: string): Promise<TableWithStatus[]> {
+export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {
   const { data, error } = await supabase.rpc("get_branch_tables_overview" as never, {
     p_branch_id: branchId,
   } as never);
   if (error) throw error;
 
-  return ((data ?? []) as TablesOverviewRow[]).map((row) => ({
-    id: row.table_id,
-    name: row.table_name,
-    visual_order: Number(row.visual_order ?? 0),
-    is_active: Boolean(row.table_is_active),
-    status: row.status ?? "free",
-    activeOrderId: row.active_order_id ?? undefined,
-    orderStatus: row.active_order_status ?? undefined,
-    splitCount: Number(row.split_count ?? 0),
-    totalDue: Number(row.total_due ?? 0),
-    splitTotals: parseSplitTotals(row.split_totals),
-    itemCount: Number(row.item_count ?? 0),
-    elapsedMinutes: Number(row.elapsed_minutes ?? 0),
-  }));
+  const rows = (data ?? []) as TablesOverviewRow[];
+  
+  // 1. Fetch ALL voided payments for this branch
+  const { data: voidedPayments } = await (supabase
+    .from("payments")
+    .select("order_id, orders!inner(branch_id)")
+    .eq("orders.branch_id", branchId)
+    .ilike("notes", "%VOIDED%") as any);
+  
+  const voidedOrderIds = [...new Set((voidedPayments ?? []).map((p: any) => String(p.order_id)))]
+    .filter((id) => id && id !== "undefined" && id !== "null") as string[];
+  
+  // 2. Fetch the orders for those voided payments (those that are still active)
+  let voidedOrders: VoidedOrder[] = [];
+  if (voidedOrderIds.length > 0) {
+    const { data: ordersData } = await (supabase
+      .from("orders")
+      .select("id, order_number, order_code, table_id, status, is_special, order_type, created_at, special_total_manual, table_name_snapshot, order_items(unit_price, quantity)")
+      .in("id", voidedOrderIds)
+      .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]) as any);
+    
+    voidedOrders = (ordersData ?? []).map((order: any) => {
+      const total = (order.order_items ?? []).reduce((acc: number, item: any) => {
+        return acc + (Number(item.unit_price || 0) * Number(item.quantity || 0));
+      }, 0);
+      return { ...order, total };
+    });
+  }
+
+  const voidedOrderIdSet = new Set(voidedOrders.map(o => o.id));
+
+  const tables = rows.map((row) => {
+    const hasVoidedPayment = row.active_order_id ? voidedOrderIdSet.has(row.active_order_id) : false;
+    
+    // If the active order on this table has a voided payment, we 'liberate' the table visual status
+    // so it can be used for new orders, but we still track that it has a voided order for this branch.
+    const effectiveStatus = hasVoidedPayment ? "free" : (row.status ?? "free");
+    const effectiveOrderId = hasVoidedPayment ? undefined : (row.active_order_id ?? undefined);
+    const effectiveOrderStatus = hasVoidedPayment ? undefined : (row.active_order_status ?? undefined);
+
+    return {
+      id: row.table_id,
+      name: row.table_name,
+      visual_order: Number(row.visual_order ?? 0),
+      is_active: Boolean(row.table_is_active),
+      status: effectiveStatus,
+      activeOrderId: effectiveOrderId,
+      orderStatus: effectiveOrderStatus,
+      splitCount: hasVoidedPayment ? 0 : Number(row.split_count ?? 0),
+      totalDue: hasVoidedPayment ? 0 : Number(row.total_due ?? 0),
+      splitTotals: hasVoidedPayment ? [] : parseSplitTotals(row.split_totals),
+      itemCount: hasVoidedPayment ? 0 : Number(row.item_count ?? 0),
+      elapsedMinutes: hasVoidedPayment ? 0 : Number(row.elapsed_minutes ?? 0),
+      hasVoidedPayment,
+    };
+  });
+
+  return { tables, voidedOrders };
 }
 
 export function useTablesWithStatus() {
@@ -230,9 +294,9 @@ export function useTablesWithStatus() {
   });
 
   useEffect(() => {
-    if (!activeBranchId || !query.data) return;
+    if (!activeBranchId || !query.data?.tables) return;
 
-    const ghostOrderIds = query.data
+    const ghostOrderIds = query.data.tables
       .filter((table) =>
         table.totalDue <= 0
         && Boolean(table.activeOrderId)
