@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.delete-user]
 verify_jwt = false
+
+[functions.void-payment]
+verify_jwt = false

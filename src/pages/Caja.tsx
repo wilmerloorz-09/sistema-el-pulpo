@@ -22,14 +22,8 @@ import { prepareProofImage } from "@/lib/prepareProofImage";
 import { getOrderRef } from "@/lib/orderPresentation";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
-  orderQuery: "",
-  methodId: "ALL",
-  fromDateTime: "",
-  toDateTime: "",
-  sortBy: "created_at",
-  sortDir: "desc",
-  page: 1,
-  pageSize: 20,
+  scope: "ALL",
+  cashierName: "ALL",
 };
 
 const PAYMENT_PROOF_API_URL = (import.meta.env.VITE_PAYMENT_PROOF_API_URL ?? "").trim().replace(/\/$/, "");
@@ -99,7 +93,6 @@ const Caja = () => {
     completedPaymentsMethodSummary,
     completedPaymentsCollectedTotal,
     isLoadingCompletedPayments,
-    cashierReverseWindowMinutes,
     captureCandidates,
     pendingCaptureRequests,
     isLoadingPendingCaptureRequests,
@@ -110,9 +103,8 @@ const Caja = () => {
     getTransferProofReadiness,
     openCashRegister,
     payOrder,
-    requestPaymentReversal,
-    reversePayment,
-    approvePaymentReversal,
+    requestPaymentVoid,
+    voidPaymentWithSupervisor,
     closeCashRegister,
     annulCashOpening,
     registerCashMovement,
@@ -513,10 +505,10 @@ const Caja = () => {
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <div>
               <h1 className="text-[2.2rem] font-semibold tracking-[-0.04em] text-slate-950">
-                Historial de Pagos
+                Pagos del turno
               </h1>
               <p className="mt-2 text-sm text-slate-500">
-                Visualizando pagos ({activeBranch?.name ?? "Sucursal"}). No hay turno de caja abierto actualmente.
+                Vista de pagos de caja para {activeBranch?.name ?? "Sucursal"}. No hay turno abierto en este momento.
               </p>
             </div>
           </div>
@@ -524,23 +516,24 @@ const Caja = () => {
             <CompletedPaymentsList
               payments={completedPayments}
               total={completedPaymentsTotal}
-              methodSummary={completedPaymentsMethodSummary}
               collectedTotal={completedPaymentsCollectedTotal}
-              paymentMethods={paymentMethods}
               loading={isLoadingCompletedPayments}
               filters={completedFilters}
               permissions={permissions}
-              cashierReverseWindowMinutes={cashierReverseWindowMinutes}
-              actionLoading={requestPaymentReversal.isPending || reversePayment.isPending || approvePaymentReversal.isPending}
+              actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
               onFiltersChange={setCompletedFilters}
-              onRequestReversal={(paymentId, reason, paymentEntryIds) =>
-                requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
+              onRequestVoid={(paymentId, reason, paymentEntryIds) =>
+                requestPaymentVoid.mutateAsync({ paymentId, reason, paymentEntryIds })
               }
-              onReversePayment={async (paymentId, reason, paymentEntryIds) => {
-                await reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds });
-              }}
-              onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
-                approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
+              onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentEntryIds) =>
+                voidPaymentWithSupervisor.mutateAsync({
+                  paymentId,
+                  requestId,
+                  reason,
+                  supervisorIdentifier,
+                  supervisorPassword,
+                  paymentEntryIds,
+                })
               }
             />
           </div>
@@ -890,27 +883,28 @@ const Caja = () => {
               "rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]",
               !isDesktop ? "p-4" : "p-5"
             )}>
-              <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos realizados ({completedPaymentsTotal})</h2>
+              <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos del turno ({completedPaymentsTotal})</h2>
               <CompletedPaymentsList
                 payments={completedPayments}
                 total={completedPaymentsTotal}
-                methodSummary={completedPaymentsMethodSummary}
                 collectedTotal={completedPaymentsCollectedTotal}
-                paymentMethods={paymentMethods}
                 loading={isLoadingCompletedPayments}
                 filters={completedFilters}
                 permissions={permissions}
-                cashierReverseWindowMinutes={cashierReverseWindowMinutes}
-                actionLoading={requestPaymentReversal.isPending || reversePayment.isPending || approvePaymentReversal.isPending}
+                actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
                 onFiltersChange={setCompletedFilters}
-                onRequestReversal={(paymentId, reason, paymentEntryIds) =>
-                  requestPaymentReversal.mutateAsync({ paymentId, reason, paymentEntryIds })
+                onRequestVoid={(paymentId, reason, paymentEntryIds) =>
+                  requestPaymentVoid.mutateAsync({ paymentId, reason, paymentEntryIds })
                 }
-                onReversePayment={async (paymentId, reason, paymentEntryIds) => {
-                  await reversePayment.mutateAsync({ paymentId, reason, paymentEntryIds });
-                }}
-                onApproveReversal={(paymentId, approve, reason, paymentEntryIds) =>
-                  approvePaymentReversal.mutateAsync({ paymentId, approved: approve, reason, paymentEntryIds })
+                onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentEntryIds) =>
+                  voidPaymentWithSupervisor.mutateAsync({
+                    paymentId,
+                    requestId,
+                    reason,
+                    supervisorIdentifier,
+                    supervisorPassword,
+                    paymentEntryIds,
+                  })
                 }
               />
             </div>

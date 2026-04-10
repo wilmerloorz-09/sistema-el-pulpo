@@ -880,6 +880,61 @@ const ShiftSetupAdmin = () => {
     if (upsertError) throw upsertError;
   };
 
+  const persistShiftUsersForShift = async (
+    shiftId: string,
+    sanitizedEnabledUsers: Array<{
+      userId: string;
+      isEnabled: boolean;
+      canServeTables: boolean;
+      canAccessOrders: boolean;
+      canDispatchOrders: boolean;
+      canManageProducts: boolean;
+      canUseCaja: boolean;
+      canAuthorizeOrderCancel: boolean;
+      isSupervisor: boolean;
+    }>,
+  ) => {
+    const cashierUserId =
+      sanitizedEnabledUsers.find((entry) => entry.canUseCaja)?.userId ?? null;
+
+    for (const entry of sanitizedEnabledUsers) {
+      await setShiftUserEnabledCompat({
+        shiftId,
+        userId: entry.userId,
+        isEnabled: true,
+        canServeTables: entry.canServeTables,
+        canAccessOrders: entry.canAccessOrders,
+        canDispatchOrders: entry.canDispatchOrders,
+        canManageProducts: entry.canManageProducts,
+        canUseCaja: false,
+        canAuthorizeOrderCancel: entry.canAuthorizeOrderCancel,
+        isSupervisor: entry.isSupervisor,
+      });
+    }
+
+    if (!cashierUserId) {
+      return;
+    }
+
+    const cashierEntry = sanitizedEnabledUsers.find((entry) => entry.userId === cashierUserId);
+    if (!cashierEntry) {
+      return;
+    }
+
+    await setShiftUserEnabledCompat({
+      shiftId,
+      userId: cashierEntry.userId,
+      isEnabled: true,
+      canServeTables: cashierEntry.canServeTables,
+      canAccessOrders: cashierEntry.canAccessOrders,
+      canDispatchOrders: cashierEntry.canDispatchOrders,
+      canManageProducts: cashierEntry.canManageProducts,
+      canUseCaja: true,
+      canAuthorizeOrderCancel: cashierEntry.canAuthorizeOrderCancel,
+      isSupervisor: cashierEntry.isSupervisor,
+    });
+  };
+
   const resolveCurrentOpenShiftId = async () => {
     if (!activeBranchId) throw new Error("No hay sucursal activa");
 
@@ -953,21 +1008,20 @@ const ShiftSetupAdmin = () => {
 
     const shiftId = (legacyData as string | null) ?? (await resolveCurrentOpenShiftId());
 
-    await Promise.all(
-      shiftUsersState.map((entry) =>
-        setShiftUserEnabledCompat({
-          shiftId,
-          userId: entry.user_id,
-          isEnabled: true,
-          canServeTables: entry.can_serve_tables,
-          canAccessOrders: entry.can_access_orders,
-          canDispatchOrders: entry.can_dispatch_orders,
-          canManageProducts: entry.can_manage_products,
-          canUseCaja: entry.can_use_caja,
-          canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
-          isSupervisor: entry.is_supervisor,
-        }),
-      ),
+    await persistShiftUsersForShift(
+      shiftId,
+      shiftUsersState.map((entry) => sanitizeShiftUserCapability({
+        shiftId,
+        userId: entry.user_id,
+        isEnabled: true,
+        canServeTables: entry.can_serve_tables,
+        canAccessOrders: entry.can_access_orders,
+        canDispatchOrders: entry.can_dispatch_orders,
+        canManageProducts: entry.can_manage_products,
+        canUseCaja: entry.can_use_caja,
+        canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
+        isSupervisor: entry.is_supervisor,
+      })).filter((entry) => entry.isEnabled),
     );
 
     return shiftId;
@@ -1019,11 +1073,7 @@ const ShiftSetupAdmin = () => {
         }))
         .filter((entry) => entry.isEnabled);
 
-      await Promise.all(
-        sanitizedEnabledUsers.map((entry) =>
-          setShiftUserEnabledCompat(entry),
-        ),
-      );
+      await persistShiftUsersForShift(shiftQuery.data.id, sanitizedEnabledUsers);
 
       const enabledUserIdsForShift = sanitizedEnabledUsers.map((entry) => entry.userId);
       const deleteQuery = (supabase

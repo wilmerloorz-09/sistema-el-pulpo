@@ -2,12 +2,14 @@ import { useMemo } from "react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
+import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { canManage } from "@/lib/permissions";
 
 export function usePreferredHomePath() {
   const { branches, isGlobalAdmin, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const dispatchAccess = useDispatchAccess();
+  const { visibleItems } = useVisibleNavItems();
 
   return useMemo(() => {
     const canAccessAdmin = isGlobalAdmin
@@ -15,7 +17,7 @@ export function usePreferredHomePath() {
       || canManage(permissions, "admin_global");
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const gate = shiftGateQuery.data;
-    const hasSupervisorBypass = Boolean(gate?.isSupervisor) || canAccessAdmin;
+    const hasSupervisorBypass = Boolean(gate?.isSupervisor);
     const hasOperationalShift = Boolean(gate?.shiftOpen) && Boolean(gate?.userEnabled);
     const canAccessDispatch = hasSupervisorBypass
       || (Boolean(gate?.canDispatchOrders) && dispatchAccess.hasAccess);
@@ -44,6 +46,7 @@ export function usePreferredHomePath() {
 
     return {
       preferredPath,
+      firstVisiblePath: visibleItems[0]?.to ?? null,
       canAccessAdmin,
       hasOperationalShift,
       isLoading: shiftGateQuery.isLoading || dispatchAccess.isLoading,
@@ -56,5 +59,6 @@ export function usePreferredHomePath() {
     permissions,
     shiftGateQuery.data,
     shiftGateQuery.isLoading,
+    visibleItems,
   ]);
 }

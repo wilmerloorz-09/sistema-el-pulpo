@@ -5,6 +5,8 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
+--   - incluye anulaciones seguras de pago con autorizacion de supervisor
+--   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
@@ -30,6 +32,8 @@
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
+--   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
+--   - al borrar orders y table_splits se eliminan tambien las divisiones reabiertas por anulacion de pago
 --   - al borrar payment_capture_requests y payment_proofs se limpia el flujo operativo de comprobantes de transferencia
 -- - NO elimina archivos del bucket privado de Supabase Storage
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
@@ -40,6 +44,7 @@
 -- - volver a probar el flujo del POS desde cero
 -- - limpiar ventas, ordenes, cocina, despacho y caja
 -- - limpiar tambien solicitudes de anulacion pendientes ya registradas
+-- - limpiar tambien reaperturas de mesa/division generadas por anulaciones de pago
 -- - mantener lista la base para nuevas pruebas sin reconfigurar todo
 -- ============================================================
 
@@ -63,6 +68,7 @@ DECLARE
     'public.order_cancellations',
 
     -- Pagos / caja
+    'public.payment_void_requests',
     'public.payment_items',
     'public.cash_register_movements',
     'public.cash_register_openings',
@@ -134,10 +140,11 @@ COMMIT;
 -- - Configuracion y asignaciones de despacho intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
+-- - 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones de pago, divisiones reabiertas por anulacion y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
 

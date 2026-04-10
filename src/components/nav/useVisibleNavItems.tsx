@@ -89,7 +89,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
       iconIdle: "bg-violet-50 text-violet-600",
     },
-    visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
+    visible: () => false,
   },
   {
     to: "/admin",

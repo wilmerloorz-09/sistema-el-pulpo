@@ -1,0 +1,2 @@
+[functions.void-payment]
+verify_jwt = false

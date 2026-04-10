@@ -224,18 +224,11 @@ export interface CompletedPayment {
   reversal_requested: boolean;
 }
 
-export type CompletedPaymentsSortBy = "created_at" | "amount";
-export type CompletedPaymentsSortDir = "asc" | "desc";
+export type CompletedPaymentsScope = "ALL" | "TABLE" | "TAKEOUT" | "SPECIAL";
 
 export interface CompletedPaymentsFilters {
-  orderQuery: string;
-  methodId: string;
-  fromDateTime: string;
-  toDateTime: string;
-  sortBy: CompletedPaymentsSortBy;
-  sortDir: CompletedPaymentsSortDir;
-  page: number;
-  pageSize: number;
+  scope: CompletedPaymentsScope;
+  cashierName: string;
 }
 
 interface CompletedPaymentsResult {
@@ -254,7 +247,6 @@ export interface CompletedPaymentsMethodSummary {
 
 const DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES = 15;
 const DEFAULT_PAYMENT_CAPTURE_TOKEN_TTL_MINUTES = 20;
-
 function parseNumericSetting(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -270,17 +262,6 @@ function parseNumericSetting(value: unknown): number | null {
     }
   }
   return null;
-}
-
-function toIsoFromDateTimeLocal(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
-function sanitizeForIlike(value: string): string {
-  return value.replace(/%/g, "").trim();
 }
 
 type PaymentNoteMeta = {
@@ -384,6 +365,18 @@ function isMissingRpcSignature(error: any, functionName: string) {
 function isRowLevelSecurityError(error: any) {
   const message = String(error?.message ?? "");
   return message.toLowerCase().includes("row-level security");
+}
+
+function buildPosTerminalLabel() {
+  if (typeof navigator === "undefined") return "POS no identificado";
+  const platform = navigator.platform || "Plataforma desconocida";
+  const userAgent = navigator.userAgent || "";
+
+  if (/android|iphone|ipad|ipod|mobile/i.test(userAgent)) {
+    return `POS movil - ${platform}`;
+  }
+
+  return `POS - ${platform}`;
 }
 
 function isMissingTableError(error: any, tableName: string) {
@@ -563,10 +556,11 @@ function resolvePaidQuantity(params: {
   orderedQuantity: number;
   paidQuantityFromPayments: number;
   paidAt?: string | null;
+  allowPaidAtFallback?: boolean;
 }) {
   const fallbackPaidQuantity = params.paidQuantityFromPayments > 0
     ? params.paidQuantityFromPayments
-    : params.paidAt
+    : params.allowPaidAtFallback !== false && params.paidAt
       ? params.orderedQuantity
       : 0;
 
@@ -1151,6 +1145,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 orderedQuantity: Number(i.quantity ?? 0),
                 paidQuantityFromPayments: paidQtyMap[i.id] ?? 0,
                 paidAt: i.paid_at,
+                allowPaidAtFallback: false,
               });
               const pendingQty = Math.max(0, payableQty - paidQty);
 
@@ -1288,117 +1283,58 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       "completed-payments",
       activeBranchId,
       shiftQuery.data?.id,
-      completedPaymentsFilters?.orderQuery ?? "",
-      completedPaymentsFilters?.methodId ?? "ALL",
-      completedPaymentsFilters?.fromDateTime ?? "",
-      completedPaymentsFilters?.toDateTime ?? "",
-      completedPaymentsFilters?.sortBy ?? "created_at",
-      completedPaymentsFilters?.sortDir ?? "desc",
-      completedPaymentsFilters?.page ?? 1,
-      completedPaymentsFilters?.pageSize ?? 20,
+      completedPaymentsFilters?.scope ?? "ALL",
     ],
     queryFn: async (): Promise<CompletedPaymentsResult> => {
       if (!activeBranchId) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
-      const fromIso = toIsoFromDateTimeLocal(completedPaymentsFilters?.fromDateTime ?? "");
-      const toIso = toIsoFromDateTimeLocal(completedPaymentsFilters?.toDateTime ?? "");
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStartIso = today.toISOString();
+      const shiftOpenedAt = shiftQuery.data?.opened_at ?? null;
+      const scope = completedPaymentsFilters?.scope ?? "ALL";
 
-      let effectiveStartIso = fromIso;
-      let effectiveEndIso = toIso;
-
-      if (!effectiveStartIso) {
-        if (shiftQuery.data?.opened_at) {
-          effectiveStartIso = shiftQuery.data.opened_at;
-        } else {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          effectiveStartIso = today.toISOString();
-        }
-      }
-
-      if (!effectiveEndIso) {
-        if (shiftQuery.data) {
-          effectiveEndIso = shiftQuery.data.closed_at ?? new Date().toISOString();
-        } else {
-          effectiveEndIso = new Date().toISOString();
-        }
-      }
+      const effectiveStartIso =
+        shiftOpenedAt && new Date(shiftOpenedAt).getTime() > new Date(todayStartIso).getTime()
+          ? shiftOpenedAt
+          : todayStartIso;
+      const effectiveEndIso = shiftQuery.data?.closed_at
+        ? new Date(shiftQuery.data.closed_at).getTime() < Date.now()
+          ? shiftQuery.data.closed_at
+          : new Date().toISOString()
+        : new Date().toISOString();
 
       const { data: branchOrders, error: branchOrdersError } = await supabase
         .from("orders")
-        .select("id")
+        .select("id, order_type, is_special")
         .eq("branch_id", activeBranchId);
       if (branchOrdersError) throw branchOrdersError;
 
-      const branchOrderIds = (branchOrders ?? []).map((order) => order.id);
+      const filteredBranchOrders = (branchOrders ?? []).filter((order) => {
+        if (scope === "ALL") return true;
+        if (scope === "SPECIAL") return Boolean(order.is_special);
+        if (scope === "TABLE") return !order.is_special && order.order_type === "DINE_IN";
+        if (scope === "TAKEOUT") return !order.is_special && order.order_type === "TAKEOUT";
+        return true;
+      });
+
+      const branchOrderIds = filteredBranchOrders.map((order) => order.id);
       if (branchOrderIds.length === 0) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
-      const buildPaymentsQuery = (withCount = false) => {
-        let query = supabase
+      const buildPaymentsQuery = () =>
+        supabase
           .from("payments")
-          .select("id, created_at, amount, notes, order_id, payment_method_id, created_by", withCount ? { count: "exact" } : undefined)
+          .select("id, created_at, amount, notes, order_id, payment_method_id, created_by")
           .in("order_id", branchOrderIds)
           .gte("created_at", effectiveStartIso)
           .lte("created_at", effectiveEndIso);
 
-        if (completedPaymentsFilters?.methodId && completedPaymentsFilters.methodId !== "ALL") {
-          query = query.eq("payment_method_id", completedPaymentsFilters.methodId);
-        }
-
-        return query;
-      };
-
-      let summaryPaymentsQuery = buildPaymentsQuery(false);
-      let paymentsQuery = buildPaymentsQuery(true);
-
-      const orderSearch = sanitizeForIlike(completedPaymentsFilters?.orderQuery ?? "");
-      if (orderSearch) {
-        const parsedOrderNumber = Number(orderSearch);
-
-        const [ordersByCodeOrNumber, matchingTables] = await Promise.all([
-          Number.isNaN(parsedOrderNumber)
-            ? supabase
-                .from("orders")
-                .select("id")
-                .eq("branch_id", activeBranchId)
-                .ilike("order_code", `%${orderSearch}%`)
-            : supabase
-                .from("orders")
-                .select("id")
-                .eq("branch_id", activeBranchId)
-                .or(`order_number.eq.${parsedOrderNumber},order_code.ilike.%${orderSearch}%`),
-          supabase.from("restaurant_tables").select("id").eq("branch_id", activeBranchId).ilike("name", `%${orderSearch}%`),
-        ]);
-
-        if (ordersByCodeOrNumber.error) throw ordersByCodeOrNumber.error;
-        if (matchingTables.error) throw matchingTables.error;
-
-        const tableIds = (matchingTables.data ?? []).map((t) => t.id);
-        let ordersByTable: { id: string }[] = [];
-        if (tableIds.length > 0) {
-          const { data: ordersByTableData, error: ordersByTableError } = await supabase
-            .from("orders")
-            .select("id")
-            .eq("branch_id", activeBranchId)
-            .in("table_id", tableIds);
-          if (ordersByTableError) throw ordersByTableError;
-          ordersByTable = ordersByTableData ?? [];
-        }
-
-        const matchingOrderIds = [
-          ...new Set([...(ordersByCodeOrNumber.data ?? []).map((o) => o.id), ...ordersByTable.map((o) => o.id)]),
-        ];
-
-        if (matchingOrderIds.length === 0) {
-          return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
-        }
-        summaryPaymentsQuery = summaryPaymentsQuery.in("order_id", matchingOrderIds);
-        paymentsQuery = paymentsQuery.in("order_id", matchingOrderIds);
-      }
+      const summaryPaymentsQuery = buildPaymentsQuery();
+      let paymentsQuery = buildPaymentsQuery();
 
       const { data: summaryPayments, error: summaryPaymentsError } = await summaryPaymentsQuery;
       if (summaryPaymentsError) throw summaryPaymentsError;
@@ -1407,16 +1343,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
-      const sortBy = completedPaymentsFilters?.sortBy ?? "created_at";
-      const sortDir = completedPaymentsFilters?.sortDir ?? "desc";
-      const pageSize = completedPaymentsFilters?.pageSize ?? 20;
-      const page = Math.max(1, completedPaymentsFilters?.page ?? 1);
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
+      paymentsQuery = paymentsQuery.order("created_at", { ascending: false });
 
-      paymentsQuery = paymentsQuery.order(sortBy, { ascending: sortDir === "asc" }).range(from, to);
-
-      const { data: payments, error: paymentsError, count } = await paymentsQuery;
+      const { data: payments, error: paymentsError } = await paymentsQuery;
       if (paymentsError) throw paymentsError;
       if (!payments || payments.length === 0) {
         const summaryMethodIds = [...new Set(summaryPayments.map((payment) => payment.payment_method_id))];
@@ -1451,7 +1380,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
         const collectedTotal = roundMoney(methodSummary.reduce((sum, row) => sum + row.amount, 0));
 
-        return { rows: [], total: count ?? 0, methodSummary, collectedTotal };
+        return { rows: [], total: 0, methodSummary, collectedTotal };
       }
 
       const orderIds = [...new Set(payments.map((p) => p.order_id))];
@@ -1656,7 +1585,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const collectedTotal = roundMoney(methodSummary.reduce((sum, row) => sum + row.amount, 0));
 
-      return { rows, total: count ?? rows.length, methodSummary, collectedTotal };
+      return { rows, total: payments.length, methodSummary, collectedTotal };
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
     refetchInterval: 10000,
@@ -1851,6 +1780,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             orderedQuantity: Number(dbItem.quantity ?? 0),
             paidQuantityFromPayments: paidQtyMap[itemSelection.itemId] ?? 0,
             paidAt: dbItem.paid_at,
+            allowPaidAtFallback: false,
           });
           const pendingPayableQty = Math.max(0, payableQty - alreadyPaidQty);
 
@@ -1954,7 +1884,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             id: paymentId,
             order_id: orderId,
             payment_method_id: paymentSplit.methodId,
+            shift_id: shift.id,
             amount: paymentSplit.amount,
+            status: "active",
             notes: buildPaymentNote({
               paymentGroupId,
               index,
@@ -1983,6 +1915,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 .from("payments")
                 .update({
                   amount: payment.amount,
+                  shift_id: shift.id,
+                  status: "active",
                   notes: payment.notes,
                   created_by: payment.created_by,
                   created_at: payment.created_at,
@@ -2303,7 +2237,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     return [...new Set([...uniqueIds, ...groupedResults.flat()])];
   };
 
-  const requestPaymentReversal = useMutation({
+  const requestPaymentVoid = useMutation({
     mutationFn: async ({
       paymentId,
       reason,
@@ -2313,120 +2247,157 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       reason: string;
       paymentEntryIds?: string[];
     }) => {
-      if (!user) throw new Error("No user");
-      if (!reason.trim()) throw new Error("Debes ingresar un motivo");
-      const targetIds = await expandPaymentIdsByGroup(resolvePaymentIds(paymentId, paymentEntryIds));
-      const marker = buildMarker("REVERSAL_REQUESTED", user.id, reason);
+      const shift = shiftQuery.data;
+      if (!user) throw new Error("No se pudo identificar al usuario actual");
+      if (!shift?.id) throw new Error("No hay un turno activo para solicitar la anulacion");
+      if (!reason.trim()) throw new Error("Debes indicar un motivo para anular el pago");
 
-      const { data: payments, error: paymentsError } = await supabase
-        .from("payments")
-        .select("id, notes")
-        .in("id", targetIds);
-      if (paymentsError) throw paymentsError;
-      if (!payments || payments.length === 0) throw new Error("No se encontraron pagos para solicitar reverso");
-
-      for (const payment of payments) {
-        const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided) {
-          throw new Error("No puedes solicitar reverso de un pago ya reversado o anulado");
-        }
+      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
+      if (targetIds.length !== 1) {
+        throw new Error("La anulacion segura solo puede ejecutarse sobre un pago a la vez");
       }
 
-      await Promise.all(payments.map((payment) => updatePaymentNotes(payment.id, marker)));
+      const { data, error } = await supabase.rpc("request_void_payment" as never, {
+        p_payment_id: targetIds[0],
+        p_current_shift_id: shift.id,
+        p_reason: reason.trim(),
+        p_terminal_id: buildPosTerminalLabel(),
+      } as never);
+
+      if (error) throw error;
+      return data as string;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      toast.success("Solicitud de reverso registrada");
+      toast.success("Solicitud de anulacion registrada");
     },
     onError: (err: any) => toast.error(err.message),
   });
 
-  const reversePayment = useMutation({
+  const voidPaymentWithSupervisor = useMutation({
     mutationFn: async ({
       paymentId,
+      requestId,
       reason,
       paymentEntryIds,
+      supervisorIdentifier,
+      supervisorPassword,
     }: {
       paymentId: string;
+      requestId: string;
       reason: string;
       paymentEntryIds?: string[];
+      supervisorIdentifier: string;
+      supervisorPassword: string;
     }) => {
-      if (!user) throw new Error("No user");
-      if (!reason.trim()) throw new Error("Debes ingresar un motivo");
-      const targetIds = await expandPaymentIdsByGroup(resolvePaymentIds(paymentId, paymentEntryIds));
-
-      const { data: payments, error: paymentsError } = await supabase
-        .from("payments")
-        .select("id, order_id, notes")
-        .in("id", targetIds);
-      if (paymentsError) throw paymentsError;
-      if (!payments || payments.length === 0) throw new Error("No se encontraron pagos para reversar");
-
-      const marker = buildMarker("REVERSED", user.id, reason);
-      const affectedOrderIds = new Set<string>();
-
-      for (const payment of payments) {
-        const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided) {
-          throw new Error("No puedes reversar un pago ya reversado o anulado");
-        }
-        affectedOrderIds.add(payment.order_id);
+      const shift = shiftQuery.data;
+      if (!user) throw new Error("No se pudo identificar al usuario actual");
+      if (!shift?.id) throw new Error("No hay un turno activo para anular el pago");
+      if (!requestId) throw new Error("La solicitud de anulacion no existe");
+      if (!reason.trim()) throw new Error("Debes indicar un motivo para anular el pago");
+      if (!supervisorIdentifier.trim() || !supervisorPassword.trim()) {
+        throw new Error("Debes autenticar a un supervisor para continuar");
       }
 
-      await Promise.all(payments.map((payment) => updatePaymentNotes(payment.id, marker)));
-
-      let syncWarning: string | null = null;
-
-      if (affectedOrderIds.size > 0) {
-        try {
-          await Promise.all([...affectedOrderIds].map((orderId) => syncOrderPaymentState(orderId)));
-        } catch (syncError) {
-          console.error("No se pudo sincronizar el estado de pago tras reversar", syncError);
-          syncWarning =
-            syncError instanceof Error && syncError.message
-              ? syncError.message
-              : "El reverso se registro, pero no se pudo actualizar el estado de la orden automaticamente.";
-        }
+      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
+      if (targetIds.length !== 1) {
+        throw new Error("La anulacion segura solo puede ejecutarse sobre un pago a la vez");
       }
 
-      return { syncWarning };
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token?.trim();
+      if (!accessToken) {
+        throw new Error("Tu sesion ya no es valida. Vuelve a iniciar sesion.");
+      }
+
+      const { data, error } = await supabase.functions.invoke("void-payment", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: {
+          payment_id: targetIds[0],
+          request_id: requestId,
+          current_shift_id: shift.id,
+          reason: reason.trim(),
+          terminal_id: buildPosTerminalLabel(),
+          supervisor_identifier: supervisorIdentifier.trim(),
+          supervisor_password: supervisorPassword,
+        },
+      });
+
+      if (error) {
+        const rawMessage =
+          typeof error.message === "string" && error.message.trim()
+            ? error.message.trim()
+            : "No se pudo anular el pago";
+        const errorWithContext = error as {
+          context?: {
+            status?: number;
+            json?: () => Promise<unknown>;
+            text?: () => Promise<string>;
+          };
+        };
+        const responseContext = errorWithContext.context;
+        let detailedMessage = rawMessage;
+
+        if (responseContext?.json) {
+          try {
+            const payload = await responseContext.json();
+            if (payload && typeof payload === "object") {
+              const candidate =
+                "error" in payload && typeof payload.error === "string"
+                  ? payload.error
+                  : "message" in payload && typeof payload.message === "string"
+                    ? payload.message
+                    : null;
+              if (candidate?.trim()) detailedMessage = candidate.trim();
+            }
+          } catch {
+            // Ignore JSON parsing failures and fall back to text/raw message.
+          }
+        }
+
+        if (detailedMessage === rawMessage && responseContext?.text) {
+          try {
+            const textPayload = await responseContext.text();
+            if (textPayload.trim()) detailedMessage = textPayload.trim();
+          } catch {
+            // Ignore text parsing failures and keep the current message.
+          }
+        }
+
+        if (
+          /Failed to fetch|NetworkError|fetch|Failed to send a request to the Edge Function/i.test(
+            rawMessage
+          )
+        ) {
+          throw new Error(
+            "No se pudo conectar con la autorizacion de supervisor. Verifica que la funcion 'void-payment' este desplegada en Supabase."
+          );
+        }
+
+        if (responseContext?.status === 404) {
+          throw new Error(
+            "No se encontro la funcion de autorizacion de supervisor. Verifica que 'void-payment' este desplegada en Supabase."
+          );
+        }
+
+        throw new Error(detailedMessage);
+      }
+
+      return data;
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      toast.success("Pago reversado correctamente");
-      if (result?.syncWarning) {
-        toast.warning(result.syncWarning);
-      }
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
-
-  const approvePaymentReversal = useMutation({
-    mutationFn: async ({
-      paymentId,
-      reason,
-      approved,
-      paymentEntryIds,
-    }: {
-      paymentId: string;
-      reason: string;
-      approved: boolean;
-      paymentEntryIds?: string[];
-    }) => {
-      if (!user) throw new Error("No user");
-      const prefix = approved ? "REVERSAL_APPROVED" : "REVERSAL_REJECTED";
-      const marker = buildMarker(prefix, user.id, reason || "Sin observacion");
-      const targetIds = await expandPaymentIdsByGroup(resolvePaymentIds(paymentId, paymentEntryIds));
-      await Promise.all(targetIds.map((targetId) => updatePaymentNotes(targetId, marker)));
-    },
-    onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      toast.success(vars.approved ? "Solicitud de reverso aprobada" : "Solicitud de reverso rechazada");
+      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
+      toast.success("Pago anulado correctamente");
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -2570,9 +2541,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     getTransferProofReadiness,
     openCashRegister,
     payOrder,
-    requestPaymentReversal,
-    reversePayment,
-    approvePaymentReversal,
+    requestPaymentVoid,
+    voidPaymentWithSupervisor,
     closeCashRegister,
     annulCashOpening: annulCashOpening.mutateAsync,
     registerCashMovement: registerCashMovement.mutateAsync,

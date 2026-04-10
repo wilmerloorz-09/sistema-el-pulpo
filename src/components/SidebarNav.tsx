@@ -134,7 +134,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
                     activeCajaTab === "completed" && "bg-white/8 text-sidebar-foreground",
                   )}
                 >
-                  Pagos realizados
+                  Pagos del turno
                 </NavLink>
 
               </div>

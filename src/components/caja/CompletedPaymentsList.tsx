@@ -1,26 +1,12 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { MetricCard } from "@/components/ui/metric-card";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
+import SupervisorAuthorizationDialog from "@/components/caja/SupervisorAuthorizationDialog";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
-import type { CompletedPayment, CompletedPaymentsFilters, CompletedPaymentsMethodSummary, PaymentMethod } from "@/hooks/useCaja";
+import type { CompletedPayment, CompletedPaymentsFilters, CompletedPaymentsScope } from "@/hooks/useCaja";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
-import {
-  ChevronDown,
-  ChevronUp,
-  Clock3,
-  CreditCard,
-  Download,
-  History,
-  Loader2,
-  RotateCcw,
-  ShieldCheck,
-  ShoppingBag,
-  UtensilsCrossed,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UtensilsCrossed } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -29,8 +15,6 @@ function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[
     orderType: params.isTrayOrder ? "TAKEOUT" : params.orderType,
   });
 }
-
-type ActionType = "approve" | "reject";
 
 interface PaymentGroup {
   paymentId: string;
@@ -49,10 +33,6 @@ interface PaymentGroup {
     is_special: boolean;
     table_name: string | null;
     split_code: string | null;
-    total: number;
-    paid: number;
-    pending: number;
-    status: string;
   };
   items: {
     id: string;
@@ -69,19 +49,29 @@ interface PaymentGroup {
 interface Props {
   payments: CompletedPayment[];
   total: number;
-  methodSummary: CompletedPaymentsMethodSummary[];
   collectedTotal: number;
-  paymentMethods: PaymentMethod[];
   loading?: boolean;
   filters: CompletedPaymentsFilters;
   permissions: PermissionMap;
   actionLoading?: boolean;
-  cashierReverseWindowMinutes: number;
   onFiltersChange: (next: CompletedPaymentsFilters) => void;
-  onRequestReversal: (paymentId: string, reason: string, paymentEntryIds?: string[]) => Promise<void>;
-  onReversePayment: (paymentId: string, reason: string, paymentEntryIds?: string[]) => Promise<void>;
-  onApproveReversal: (paymentId: string, approve: boolean, reason: string, paymentEntryIds?: string[]) => Promise<void>;
+  onRequestVoid: (paymentId: string, reason: string, paymentEntryIds?: string[]) => Promise<string>;
+  onVoidWithSupervisor: (
+    paymentId: string,
+    requestId: string,
+    reason: string,
+    supervisorIdentifier: string,
+    supervisorPassword: string,
+    paymentEntryIds?: string[],
+  ) => Promise<void>;
 }
+
+const scopeOptions: { value: CompletedPaymentsScope; label: string }[] = [
+  { value: "ALL", label: "Todos" },
+  { value: "TABLE", label: "Mesa" },
+  { value: "TAKEOUT", label: "Para llevar" },
+  { value: "SPECIAL", label: "Especial" },
+];
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("es", {
@@ -93,49 +83,6 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function exportCsv(rows: CompletedPayment[]) {
-  const header = ["Fecha", "Hora", "Orden", "Tipo", "Mesa/Split", "Metodo", "Item", "Monto", "Estado", "Cajero"];
-  const csvRows = rows.map((row) => {
-    const date = new Date(row.created_at);
-    const fecha = date.toLocaleDateString("es-EC");
-    const hora = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
-    const orden = row.order_code ?? `#${row.order_number}`;
-    const tipo = row.order_type;
-    const mesaSplit = getCajaOrderOriginLabel({
-      orderType: row.order_type,
-      tableName: row.table_name,
-      splitCode: row.split_code,
-      isSpecial: row.is_special,
-      isTrayOrder: (row as { is_tray_order?: boolean | null }).is_tray_order,
-    });
-    const metodo = row.method_name;
-    const item = row.item_description ?? "";
-    const monto = row.amount.toFixed(2);
-    const estado = row.status;
-    const cajero = row.cashier_name;
-    return [fecha, hora, orden, tipo, mesaSplit, metodo, item, monto, estado, cajero]
-      .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-      .join(",");
-  });
-
-  const csvContent = [header.join(","), ...csvRows].join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const dateLabel = new Date().toISOString().slice(0, 10);
-  link.setAttribute("href", url);
-  link.setAttribute("download", `pagos-realizados-${dateLabel}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-function canCashierReverseDirectly(createdAt: string, windowMinutes: number): boolean {
-  const minutes = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60);
-  return minutes <= windowMinutes;
-}
-
 function getPermissionFlags(permissions: PermissionMap) {
   const canOperateCaja = canOperate(permissions, "caja");
   const canManageAdmin = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
@@ -143,41 +90,61 @@ function getPermissionFlags(permissions: PermissionMap) {
   return {
     canOperateCaja,
     canManageAdmin,
-    canRequestReversal: canOperateCaja || canManageAdmin,
-    canApproveReversal: canManageAdmin,
+    canStartVoid: canOperateCaja || canManageAdmin,
   };
+}
+
+function getEmptyMessage(scope: CompletedPaymentsScope) {
+  switch (scope) {
+    case "TABLE":
+      return "No hay pagos de mesa en el turno de hoy.";
+    case "TAKEOUT":
+      return "No hay pagos para llevar en el turno de hoy.";
+    case "SPECIAL":
+      return "No hay pagos especiales en el turno de hoy.";
+    default:
+      return "No hay pagos registrados en el turno de hoy.";
+  }
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("es-EC", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(amount);
 }
 
 export default function CompletedPaymentsList({
   payments,
   total,
-  methodSummary,
   collectedTotal,
-  paymentMethods,
   loading = false,
   filters,
   permissions,
-  cashierReverseWindowMinutes,
   actionLoading = false,
   onFiltersChange,
-  onRequestReversal,
-  onReversePayment,
-  onApproveReversal,
+  onRequestVoid,
+  onVoidWithSupervisor,
 }: Props) {
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [modalState, setModalState] = useState<{ open: boolean; mode: "request" | "execute"; payment: ReversalPaymentData | null }>({
+  const [modalState, setModalState] = useState<{ open: boolean; payment: ReversalPaymentData | null }>({
     open: false,
-    mode: "request",
     payment: null,
   });
-  const [actionDialog, setActionDialog] = useState<{ open: boolean; type: ActionType; paymentId: string | null; paymentEntryIds: string[] }>({
+  const [pendingAuthorization, setPendingAuthorization] = useState<{
+    open: boolean;
+    requestId: string | null;
+    payment: ReversalPaymentData | null;
+    reason: string;
+    paymentEntryIds: string[];
+  }>({
     open: false,
-    type: "approve",
-    paymentId: null,
+    requestId: null,
+    payment: null,
+    reason: "",
     paymentEntryIds: [],
   });
-  const [actionReason, setActionReason] = useState("");
 
   const permissionFlags = getPermissionFlags(permissions);
 
@@ -198,16 +165,12 @@ export default function CompletedPaymentsList({
           reversal_requested: row.reversal_requested,
           order: {
             id: row.order_id,
-            number: row.order_number,
+            number: row.order_number ?? 0,
             code: row.order_code,
             type: row.order_type,
             is_special: row.is_special,
             table_name: row.table_name,
             split_code: row.split_code,
-            total: row.order_total,
-            paid: row.order_paid_amount,
-            pending: row.order_pending_amount,
-            status: row.order_status,
           },
           items: [],
         });
@@ -228,39 +191,22 @@ export default function CompletedPaymentsList({
     return Array.from(map.values());
   }, [payments]);
 
-  const orderSummaries = useMemo(() => {
-    const map = new Map<string, PaymentGroup["order"]>();
-    for (const payment of groupedPayments) {
-      if (!map.has(payment.order.id)) {
-        map.set(payment.order.id, payment.order);
-      }
-    }
-    return Array.from(map.values());
-  }, [groupedPayments]);
+  const cashierOptions = useMemo(
+    () =>
+      Array.from(new Set(groupedPayments.map((payment) => payment.cashier_name).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b, "es")),
+    [groupedPayments],
+  );
 
-  const selectedOrder = useMemo(() => {
-    if (orderSummaries.length === 0) return null;
-    const resolvedOrderId = selectedOrderId ?? orderSummaries[0].id;
-    return orderSummaries.find((order) => order.id === resolvedOrderId) ?? orderSummaries[0];
-  }, [orderSummaries, selectedOrderId]);
+  const visiblePayments = useMemo(() => {
+    if (filters.cashierName === "ALL") return groupedPayments;
+    return groupedPayments.filter((payment) => payment.cashier_name === filters.cashierName);
+  }, [filters.cashierName, groupedPayments]);
 
-  const filteredGroups = useMemo(() => {
-    if (!selectedOrder) return groupedPayments;
-    return groupedPayments.filter((group) => group.order.id === selectedOrder.id);
-  }, [groupedPayments, selectedOrder]);
+  const visibleTotal = visiblePayments.length;
+  const visibleCollectedTotal = visiblePayments.reduce((sum, payment) => sum + payment.amount, 0);
 
-  const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
-  const currentPage = Math.min(filters.page, totalPages);
-
-  const setFilter = (next: Partial<CompletedPaymentsFilters>) => {
-    onFiltersChange({ ...filters, ...next, page: next.page ?? 1 });
-  };
-
-  const setPage = (page: number) => {
-    onFiltersChange({ ...filters, page: Math.max(1, Math.min(page, totalPages)) });
-  };
-
-  const openModalForPayment = (payment: PaymentGroup, mode: "request" | "execute") => {
+  const openModalForPayment = (payment: PaymentGroup) => {
     const methods = [...new Set(payment.items.map((item) => item.method_name))].join(", ");
     const tableLabel = getCajaOrderOriginLabel({
       orderType: payment.order.type,
@@ -272,7 +218,6 @@ export default function CompletedPaymentsList({
 
     setModalState({
       open: true,
-      mode,
       payment: {
         paymentId: payment.paymentId,
         orderId: payment.order.id,
@@ -285,155 +230,84 @@ export default function CompletedPaymentsList({
         status: payment.status,
         notes: payment.notes,
         methodsSummary: methods || payment.method_name,
-          items: payment.items.map((item) => ({
-            id: item.id,
-            paymentEntryId: item.paymentEntryId,
-            productName: item.product_name,
-            quantity: item.quantity,
-            tray_item_type: item.tray_item_type ?? null,
-            amount: item.amount,
-            methodName: item.method_name,
-            status: item.status,
+        items: payment.items.map((item) => ({
+          id: item.id,
+          paymentEntryId: item.paymentEntryId,
+          productName: item.product_name,
+          quantity: item.quantity,
+          tray_item_type: item.tray_item_type ?? null,
+          amount: item.amount,
+          methodName: item.method_name,
+          status: item.status,
         })),
       },
     });
   };
 
-  const closeAction = () => {
-    setActionDialog({ open: false, type: "approve", paymentId: null, paymentEntryIds: [] });
-    setActionReason("");
-  };
-
-  const executeAction = async () => {
-    if (!actionDialog.paymentId || !actionReason.trim()) return;
-    await onApproveReversal(actionDialog.paymentId, actionDialog.type === "approve", actionReason, actionDialog.paymentEntryIds);
-    closeAction();
-  };
-
   return (
-    <div className="space-y-3">
-      <div className="space-y-3 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/70 to-white p-4 shadow-[0_18px_45px_-38px_rgba(139,92,246,0.65)]">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-          <input value={filters.orderQuery} onChange={(e) => setFilter({ orderQuery: e.target.value })} placeholder="Buscar por orden o mesa" className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
-          <select value={filters.methodId} onChange={(e) => setFilter({ methodId: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
-            <option value="ALL">Todos los metodos</option>
-            {paymentMethods.map((method) => (
-              <option key={method.id} value={method.id}>{method.name}</option>
+    <div className="space-y-4">
+      <div className="rounded-[26px] border border-orange-200 bg-gradient-to-r from-white via-orange-50/50 to-white p-4 shadow-[0_20px_45px_-40px_rgba(249,115,22,0.55)]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="font-display text-base font-bold text-foreground">Pagos del turno</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Solo se muestran los pagos registrados hoy dentro del turno actual.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <div className="rounded-2xl border border-orange-200 bg-white px-3 py-2 text-sm shadow-sm">
+              <span className="text-muted-foreground">Pagos</span>
+              <p className="font-semibold text-foreground">{visibleTotal}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm shadow-sm">
+              <span className="text-muted-foreground">Total cobrado</span>
+              <p className="font-semibold text-foreground">{formatCurrency(visibleCollectedTotal)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <select
+            value={filters.scope}
+            onChange={(event) => onFiltersChange({ ...filters, scope: event.target.value as CompletedPaymentsScope })}
+            className="h-10 min-w-[170px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
+          >
+            {scopeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label === "ALL" ? "Todos" : option.label}
+              </option>
             ))}
           </select>
-          <input type="datetime-local" value={filters.fromDateTime} onChange={(e) => setFilter({ fromDateTime: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
-          <input type="datetime-local" value={filters.toDateTime} onChange={(e) => setFilter({ toDateTime: e.target.value })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm" />
-        </div>
 
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-          <select value={filters.sortBy} onChange={(e) => setFilter({ sortBy: e.target.value as CompletedPaymentsFilters["sortBy"] })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
-            <option value="created_at">Ordenar por fecha</option>
-            <option value="amount">Ordenar por monto</option>
+          <select
+            value={filters.cashierName}
+            onChange={(event) => onFiltersChange({ ...filters, cashierName: event.target.value })}
+            className="h-10 min-w-[190px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
+          >
+            <option value="ALL">Todos los cajeros</option>
+            {cashierOptions.map((cashierName) => (
+              <option key={cashierName} value={cashierName}>
+                {cashierName}
+              </option>
+            ))}
           </select>
-          <select value={filters.sortDir} onChange={(e) => setFilter({ sortDir: e.target.value as CompletedPaymentsFilters["sortDir"] })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
-            <option value="desc">Descendente</option>
-            <option value="asc">Ascendente</option>
-          </select>
-          <select value={String(filters.pageSize)} onChange={(e) => setFilter({ pageSize: Number(e.target.value) })} className="h-10 rounded-2xl border border-violet-200 bg-white/90 px-3 text-sm shadow-sm">
-            <option value="10">10 por pagina</option>
-            <option value="20">20 por pagina</option>
-            <option value="50">50 por pagina</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <p className="text-xs font-medium text-muted-foreground">Total DB: {total} pago(s) - Pagina {currentPage} de {totalPages}</p>
-          <button onClick={() => exportCsv(payments)} disabled={payments.length === 0} className="flex h-9 items-center gap-1.5 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs font-semibold shadow-sm disabled:opacity-50">
-            <Download className="h-3.5 w-3.5" /> Exportar CSV (pagina)
-          </button>
         </div>
       </div>
-
-      {methodSummary.length > 0 && (
-        <div className="space-y-3 rounded-xl border border-border bg-card p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="font-display text-sm font-bold text-foreground">Cobrado por metodo</h3>
-              <p className="text-xs text-muted-foreground">Resumen segun los filtros actuales.</p>
-            </div>
-            <div className="w-full sm:w-[280px]">
-              <MetricCard title="Total cobrado" value={`$${collectedTotal.toFixed(2)}`} description="Resumen segun filtros activos" icon={<CreditCard className="h-5 w-5" />} tone="emerald" className="py-2.5" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {methodSummary.map((method) => (
-              <MetricCard
-                key={method.methodId}
-                title={method.methodName}
-                value={`$${method.amount.toFixed(2)}`}
-                description="Cobrado por este metodo"
-                badge={`${method.paymentCount} pago(s)`}
-                icon={<CreditCard className="h-5 w-5" />}
-                tone="violet"
-                className="py-3"
-              />
-            ))}
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="py-10 text-center">
           <Loader2 className="mx-auto mb-2 h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Consultando pagos realizados...</p>
+          <p className="text-sm text-muted-foreground">Consultando pagos del turno...</p>
         </div>
-      ) : groupedPayments.length === 0 ? (
-        <div className="py-10 text-center">
-          <CreditCard className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
-          <p className="text-sm font-medium text-muted-foreground">Sin pagos para los filtros consultados</p>
+      ) : visiblePayments.length === 0 ? (
+        <div className="rounded-[26px] border border-slate-200 bg-white p-8 text-center shadow-[0_18px_40px_-36px_rgba(15,23,42,0.35)]">
+          <ReceiptText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm font-medium text-muted-foreground">{getEmptyMessage(filters.scope)}</p>
         </div>
       ) : (
-        <>
-          {selectedOrder && (
-            <div className="space-y-3 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/55 to-white p-4 shadow-[0_18px_45px_-38px_rgba(139,92,246,0.55)]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-display text-sm font-bold text-foreground">Resumen de cuenta</h3>
-                <select value={selectedOrder.id} onChange={(e) => setSelectedOrderId(e.target.value)} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-3 text-xs shadow-sm">
-                  {orderSummaries.map((order) => (
-                    <option key={order.id} value={order.id}>
-                      {order.code ?? `#${order.number}`} - {getCajaOrderOriginLabel({
-                        orderType: order.type,
-                        tableName: order.table_name,
-                        splitCode: order.split_code,
-                        isSpecial: order.is_special,
-                        isTrayOrder: (order as { is_tray_order?: boolean | null }).is_tray_order,
-                      })}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
-                <MetricCard title="Orden" value={selectedOrder.code ?? `#${selectedOrder.number}`} description="Cuenta seleccionada" icon={<History className="h-5 w-5" />} tone="slate" className="py-2.5" />
-                <MetricCard
-                  title={selectedOrder.is_special ? "Origen" : "Mesa"}
-                  value={getCajaOrderOriginLabel({
-                    orderType: selectedOrder.type,
-                    tableName: selectedOrder.table_name,
-                    splitCode: selectedOrder.split_code,
-                    isSpecial: selectedOrder.is_special,
-                    isTrayOrder: (selectedOrder as { is_tray_order?: boolean | null }).is_tray_order,
-                  })}
-                  description="Origen de la orden"
-                  icon={selectedOrder.is_special ? <CreditCard className="h-5 w-5" /> : selectedOrder.type === "TAKEOUT" ? <ShoppingBag className="h-5 w-5" /> : <UtensilsCrossed className="h-5 w-5" />}
-                  tone="sky"
-                  className="py-2.5"
-                />
-                <MetricCard title="Total cuenta" value={`$${selectedOrder.total.toFixed(2)}`} description="Importe completo" icon={<CreditCard className="h-5 w-5" />} tone="violet" className="py-2.5" />
-                <MetricCard title="Total pagado" value={`$${selectedOrder.paid.toFixed(2)}`} description="Pagos aplicados" icon={<ShieldCheck className="h-5 w-5" />} tone="emerald" className="py-2.5" />
-                <MetricCard title="Saldo pendiente" value={`$${selectedOrder.pending.toFixed(2)}`} description="Monto aun por cobrar" icon={<Clock3 className="h-5 w-5" />} tone="amber" className="py-2.5" />
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            {filteredGroups.map((payment) => {
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
+          <div className="divide-y divide-slate-200">
+            {visiblePayments.map((payment, index) => {
               const expanded = expandedPaymentId === payment.paymentId;
               const label = getCajaOrderOriginLabel({
                 orderType: payment.order.type,
@@ -447,76 +321,144 @@ export default function CompletedPaymentsList({
                 isSpecial: payment.order.is_special,
               });
               const blockedByState = payment.status === "REVERSED" || payment.status === "VOIDED";
-              const withinWindow = canCashierReverseDirectly(payment.created_at, cashierReverseWindowMinutes);
-              const canExecute = permissionFlags.canManageAdmin || (permissionFlags.canOperateCaja && withinWindow);
-              const canRequest = permissionFlags.canRequestReversal && !canExecute;
-              const entryIds = payment.items.map((item) => item.paymentEntryId);
+              const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
 
               return (
-                <div key={payment.paymentId} className="space-y-2 rounded-[24px] border border-violet-200 bg-gradient-to-r from-white via-violet-50/45 to-white p-3 shadow-[0_16px_40px_-36px_rgba(139,92,246,0.55)]">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm">
-                      {orderKind === "takeout" ? <ShoppingBag className="h-4 w-4 text-violet-600" /> : orderKind === "special" ? <CreditCard className="h-4 w-4 text-violet-600" /> : <UtensilsCrossed className="h-4 w-4 text-violet-600" />}
+                <div key={payment.paymentId} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/70"}>
+                  <div
+                    onClick={() => setExpandedPaymentId((current) => (current === payment.paymentId ? null : payment.paymentId))}
+                    className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(180px,1.1fr)_minmax(180px,0.9fr)_minmax(110px,0.7fr)_minmax(240px,1.2fr)_auto] sm:items-center sm:px-8"
+                  >
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
+                      aria-label={expanded ? "Ocultar detalle" : "Mostrar detalle"}
+                    >
+                      {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-bold text-foreground">{label}</span>
-                        <Badge variant="secondary" className="text-[10px]">{payment.order.code ?? `#${payment.order.number}`}</Badge>
-                        <PaymentStatusBadge status={payment.status} />
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                          {orderKind === "takeout" ? (
+                            <ShoppingBag className="h-4 w-4" />
+                          ) : orderKind === "special" ? (
+                            <CreditCard className="h-4 w-4" />
+                          ) : (
+                            <UtensilsCrossed className="h-4 w-4" />
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <PaymentStatusBadge status={payment.status} />
+                          </div>
+                        </div>
                       </div>
-                      <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                        <Clock3 className="h-3 w-3" /> {formatDateTime(payment.created_at)}
-                        <span>- Cajero: {payment.cashier_name}</span>
-                        <span>- Metodo: {payment.method_name}</span>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
+                        {payment.order.code ?? `#${payment.order.number}`}
                       </p>
                     </div>
-                    <div className="w-full rounded-2xl border border-violet-200 bg-white/90 px-3 py-2 text-center shadow-sm md:w-auto md:text-right">
-                      <span className="font-display text-base font-black text-foreground">${payment.amount.toFixed(2)}</span>
+
+                    <div className="sm:text-right">
+                      <p className="text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
                     </div>
-                    <button onClick={() => setExpandedPaymentId(expanded ? null : payment.paymentId)} className="flex h-10 w-full items-center justify-center rounded-2xl border border-violet-200 bg-white/90 shadow-sm md:h-9 md:w-9" title="Ver detalle">
-                      {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </button>
+
+                    <div className="min-w-0 sm:text-right">
+                      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 sm:justify-end">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 className="h-3.5 w-3.5" />
+                          {formatDateTime(payment.created_at)}
+                        </span>
+                        <span>Cajero: {payment.cashier_name}</span>
+                        <span>Metodo: {payment.method_name}</span>
+                        <span>{itemsLabel}</span>
+                      </p>
+                    </div>
+
+                    <div className="sm:justify-self-end">
+                      {!blockedByState && permissionFlags.canStartVoid ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openModalForPayment(payment);
+                          }}
+                          className="flex h-9 items-center gap-2 rounded-full border border-red-300 bg-red-50 px-4 text-sm font-semibold text-red-700 shadow-none hover:bg-red-100"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Anular
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedPaymentId((current) => (current === payment.paymentId ? null : payment.paymentId));
+                          }}
+                          className="flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-none hover:bg-slate-50"
+                        >
+                          Ver
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {expanded && (
-                    <div className="space-y-2 rounded-2xl border border-violet-200 bg-white/80 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">Items cubiertos</p>
-                      <div className="space-y-1">
-                        {payment.items.map((item) => (
-                          <div key={item.id + item.paymentEntryId} className="grid grid-cols-1 gap-2 rounded-2xl border border-violet-100 bg-violet-50/45 p-3 text-sm xl:grid-cols-5">
-                            <span className="font-medium text-foreground">{item.product_name}</span>
-                            <span className="text-muted-foreground">{item.tray_item_type === "C" ? "A granel" : `Cant: ${item.quantity}`}</span>
-                            <span className="text-muted-foreground">Metodo: {item.method_name}</span>
-                            <span className="text-muted-foreground">Estado: {item.status}</span>
-                            <span className="text-right font-semibold">${item.amount.toFixed(2)}</span>
+                    <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+                            <span className="inline-flex items-center gap-1">
+                              <Clock3 className="h-3.5 w-3.5" />
+                              {formatDateTime(payment.created_at)}
+                            </span>
+                            <span>Cajero: {payment.cashier_name}</span>
+                            <span>Metodo: {payment.method_name}</span>
+                            <span>{itemsLabel}</span>
+                          </p>
+                        </div>
+
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <div className="hidden grid-cols-[minmax(0,1.8fr)_120px_110px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:grid">
+                            <span>Detalle</span>
+                            <span>Metodo</span>
+                            <span className="text-right">Estado</span>
+                            <span className="text-right">Monto</span>
                           </div>
-                        ))}
-                      </div>
+                          <div className="divide-y divide-slate-100">
+                            {payment.items.map((item) => (
+                              <div
+                                key={item.id + item.paymentEntryId}
+                                className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_120px_110px_110px] sm:gap-3"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-slate-900">
+                                    {item.tray_item_type === "C" ? item.product_name : `${item.quantity}x ${item.product_name}`}
+                                  </p>
+                                </div>
+                                <div className="text-sm text-slate-600">{item.method_name}</div>
+                                <div className="text-sm text-slate-600 sm:text-right">{item.status}</div>
+                                <div className="font-semibold text-slate-900 sm:text-right">${item.amount.toFixed(2)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        {!blockedByState && canExecute && (
-                          <button className="flex h-8 items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-3 text-xs font-medium text-red-700" onClick={() => openModalForPayment(payment, "execute")}>
-                            <RotateCcw className="h-3.5 w-3.5" />
-                            {permissionFlags.canManageAdmin ? "Ejecutar reverso" : "Reversar pago"}
-                          </button>
-                        )}
-
-                        {!blockedByState && canRequest && (
-                          <button className="flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700" onClick={() => openModalForPayment(payment, "request")}>
-                            <RotateCcw className="h-3.5 w-3.5" /> Solicitar reverso
-                          </button>
-                        )}
-
-                        {permissionFlags.canApproveReversal && payment.reversal_requested && payment.status !== "REVERSED" && (
-                          <>
-                            <button className="flex h-8 items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 text-xs font-medium text-green-700" onClick={() => setActionDialog({ open: true, type: "approve", paymentId: payment.paymentId, paymentEntryIds: entryIds })}>
-                              <ShieldCheck className="h-3.5 w-3.5" /> Aprobar reverso
+                        <div className="flex flex-wrap gap-2">
+                          {!blockedByState && permissionFlags.canStartVoid && (
+                            <button
+                              type="button"
+                              className="flex h-10 items-center gap-2 rounded-2xl border border-red-300 bg-red-50 px-4 text-sm font-semibold text-red-700"
+                              onClick={() => openModalForPayment(payment)}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              Anular pago
                             </button>
-                            <button className="flex h-8 items-center gap-1 rounded-lg border border-gray-300 bg-gray-50 px-3 text-xs font-medium text-gray-700" onClick={() => setActionDialog({ open: true, type: "reject", paymentId: payment.paymentId, paymentEntryIds: entryIds })}>
-                              <History className="h-3.5 w-3.5" /> Rechazar solicitud
-                            </button>
-                          </>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -524,49 +466,73 @@ export default function CompletedPaymentsList({
               );
             })}
           </div>
-
-          <div className="flex items-center justify-end gap-2">
-            <button onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-4 text-xs font-semibold shadow-sm disabled:opacity-50">Anterior</button>
-            <button onClick={() => setPage(currentPage + 1)} disabled={currentPage >= totalPages} className="h-9 rounded-2xl border border-violet-200 bg-white/90 px-4 text-xs font-semibold shadow-sm disabled:opacity-50">Siguiente</button>
-          </div>
-        </>
+        </div>
       )}
 
       <PaymentReversalModal
         open={modalState.open}
         onOpenChange={(open) => setModalState((prev) => ({ ...prev, open }))}
-        mode={modalState.mode}
+        mode="execute"
         payment={modalState.payment}
         loading={actionLoading}
-        allowPartial={true}
-        titleOverride={modalState.mode === "request" ? "Solicitar reverso" : undefined}
+        allowPartial={false}
+        titleOverride="Anular pago"
+        submitLabelOverride="Solicitar autorizacion de supervisor"
         onSubmit={async ({ paymentId, reason, paymentEntryIds }) => {
-          if (modalState.mode === "request") {
-            await onRequestReversal(paymentId, reason, paymentEntryIds);
-            return;
-          }
-          await onReversePayment(paymentId, reason, paymentEntryIds);
+          const requestId = await onRequestVoid(paymentId, reason, paymentEntryIds);
+          setModalState({ open: false, payment: null });
+          setPendingAuthorization({
+            open: true,
+            requestId,
+            payment: modalState.payment,
+            reason,
+            paymentEntryIds: paymentEntryIds ?? [],
+          });
         }}
       />
 
-      <Dialog open={actionDialog.open} onOpenChange={(open) => !open && closeAction()}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{actionDialog.type === "approve" ? "Aprobar solicitud de reverso" : "Rechazar solicitud de reverso"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">Ingresa una observacion obligatoria para continuar.</p>
-            <Textarea value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Motivo..." rows={4} />
-          </div>
-          <DialogFooter>
-            <button onClick={closeAction} className="h-9 rounded-lg border border-border px-3 text-sm" disabled={actionLoading}>Cancelar</button>
-            <button onClick={executeAction} disabled={actionLoading || !actionReason.trim()} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50">
-              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Confirmar
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SupervisorAuthorizationDialog
+        open={pendingAuthorization.open}
+        onOpenChange={(open) =>
+          setPendingAuthorization((current) => ({
+            ...current,
+            open,
+          }))
+        }
+        loading={actionLoading}
+        paymentLabel={
+          pendingAuthorization.payment
+            ? `${pendingAuthorization.payment.tableLabel} - ${pendingAuthorization.payment.orderCode ?? `#${pendingAuthorization.payment.orderNumber}`}`
+            : "Pago"
+        }
+        amountLabel={
+          pendingAuthorization.payment
+            ? formatCurrency(pendingAuthorization.payment.amount)
+            : formatCurrency(0)
+        }
+        shiftLabel="Turno actual"
+        cashierName={pendingAuthorization.payment?.cashierName ?? "No identificado"}
+        paymentMethod={pendingAuthorization.payment?.methodsSummary ?? "Metodo"}
+        reason={pendingAuthorization.reason}
+        onConfirm={async ({ identifier, password }) => {
+          if (!pendingAuthorization.payment || !pendingAuthorization.requestId) return;
+          await onVoidWithSupervisor(
+            pendingAuthorization.payment.paymentId,
+            pendingAuthorization.requestId,
+            pendingAuthorization.reason,
+            identifier,
+            password,
+            pendingAuthorization.paymentEntryIds,
+          );
+          setPendingAuthorization({
+            open: false,
+            requestId: null,
+            payment: null,
+            reason: "",
+            paymentEntryIds: [],
+          });
+        }}
+      />
     </div>
   );
 }

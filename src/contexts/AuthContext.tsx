@@ -12,6 +12,9 @@ interface Profile {
   active_branch_id?: string | null;
   is_protected_superadmin?: boolean;
   avatar_url?: string | null;
+  current_app_session_id?: string | null;
+  current_app_session_started_at?: string | null;
+  current_app_session_device?: string | null;
 }
 
 interface AuthState {
@@ -29,14 +32,21 @@ interface AuthContextType extends AuthState {
 
 const SESSION_TIMEOUT_MS = 40 * 60 * 1000;
 const SESSION_ACTIVITY_STORAGE_KEY = "authSessionActivity";
+const OWNED_SESSION_STORAGE_KEY = "authOwnedSingleSession";
 const SESSION_ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
 const SESSION_EXPIRY_CHECK_INTERVAL_MS = 30 * 1000;
+const SINGLE_SESSION_CHECK_INTERVAL_MS = 15000;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 type SessionActivity = {
   userId: string;
   lastActivityAt: number;
+};
+
+type OwnedSingleSession = {
+  userId: string;
+  sessionId: string;
 };
 
 const resolveEdgeError = async (err: any): Promise<string> => {
@@ -88,6 +98,47 @@ const writeStoredSessionActivity = (userId: string, lastActivityAt: number) => {
   );
 };
 
+const generateClientSessionId = () =>
+  crypto.randomUUID?.() ?? `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+
+const readOwnedSingleSession = (): OwnedSingleSession | null => {
+  const raw = localStorage.getItem(OWNED_SESSION_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<OwnedSingleSession>;
+    if (typeof parsed.userId !== "string" || typeof parsed.sessionId !== "string") {
+      return null;
+    }
+    return parsed as OwnedSingleSession;
+  } catch {
+    return null;
+  }
+};
+
+const writeOwnedSingleSession = (userId: string, sessionId: string) => {
+  localStorage.setItem(
+    OWNED_SESSION_STORAGE_KEY,
+    JSON.stringify({
+      userId,
+      sessionId,
+    }),
+  );
+};
+
+const buildClientDeviceLabel = () => {
+  if (typeof navigator === "undefined") return "Dispositivo no identificado";
+
+  const userAgent = navigator.userAgent ?? "";
+  const platform = navigator.platform || "Plataforma desconocida";
+
+  if (/android|iphone|ipad|ipod|mobile/i.test(userAgent)) {
+    return `Movil - ${platform}`;
+  }
+
+  return `PC - ${platform}`;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AuthState>({
     session: null,
@@ -96,6 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading: true,
   });
   const expiringSessionRef = useRef(false);
+  const validatingSingleSessionRef = useRef(false);
 
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
@@ -107,15 +159,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(SESSION_ACTIVITY_STORAGE_KEY);
   }, []);
 
+  const clearOwnedSingleSession = useCallback(() => {
+    localStorage.removeItem(OWNED_SESSION_STORAGE_KEY);
+  }, []);
+
   const touchSessionActivity = useCallback((userId: string) => {
     writeStoredSessionActivity(userId, Date.now());
   }, []);
 
   const signOut = useCallback(async () => {
+    const ownedSession = readOwnedSingleSession();
     clearSessionTracking();
+    clearOwnedSingleSession();
     localStorage.removeItem("activeBranchId");
+
+    if (ownedSession?.sessionId) {
+      await supabase.rpc("clear_my_single_session" as never, {
+        p_session_id: ownedSession.sessionId,
+      } as never);
+    }
+
     await supabase.auth.signOut();
-  }, [clearSessionTracking]);
+  }, [clearOwnedSingleSession, clearSessionTracking]);
 
   const expireSession = useCallback(async () => {
     if (expiringSessionRef.current) return;
@@ -134,6 +199,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const profile = await fetchProfile(state.user.id);
     setState((prev) => ({ ...prev, profile }));
   }, [fetchProfile, state.user]);
+
+  const registerOwnedSingleSession = useCallback(async (userId: string, sessionId?: string) => {
+    const resolvedSessionId = sessionId ?? generateClientSessionId();
+
+    const { error } = await supabase.rpc("register_my_single_session" as never, {
+      p_session_id: resolvedSessionId,
+      p_device_label: buildClientDeviceLabel(),
+    } as never);
+
+    if (error) throw error;
+
+    writeOwnedSingleSession(userId, resolvedSessionId);
+    return resolvedSessionId;
+  }, []);
+
+  const forceSignOutDueToConcurrentSession = useCallback(async () => {
+    if (expiringSessionRef.current) return;
+    expiringSessionRef.current = true;
+
+    try {
+      const ownedSession = readOwnedSingleSession();
+      clearSessionTracking();
+      clearOwnedSingleSession();
+      localStorage.removeItem("activeBranchId");
+
+      if (ownedSession?.sessionId) {
+        await supabase.rpc("clear_my_single_session" as never, {
+          p_session_id: ownedSession.sessionId,
+        } as never);
+      }
+
+      await supabase.auth.signOut();
+      toast.error("Tu sesion fue cerrada porque se inicio sesion con este usuario en otro dispositivo.");
+    } finally {
+      expiringSessionRef.current = false;
+    }
+  }, [clearOwnedSingleSession, clearSessionTracking]);
 
   useEffect(() => {
     const {
@@ -179,6 +281,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, [clearSessionTracking, fetchProfile]);
+
+  useEffect(() => {
+    const userId = state.user?.id;
+    if (!userId) {
+      clearOwnedSingleSession();
+      return;
+    }
+
+    const validateSingleSession = async () => {
+      if (validatingSingleSessionRef.current) return;
+      validatingSingleSessionRef.current = true;
+
+      try {
+        const ownedSession = readOwnedSingleSession();
+        const currentProfile = await fetchProfile(userId);
+        setState((prev) => ({ ...prev, profile: currentProfile }));
+
+        if (!ownedSession || ownedSession.userId !== userId) {
+          await registerOwnedSingleSession(userId);
+          return;
+        }
+
+        const activeSessionId = currentProfile?.current_app_session_id ?? null;
+
+        if (!activeSessionId) {
+          await registerOwnedSingleSession(userId, ownedSession.sessionId);
+          return;
+        }
+
+        if (activeSessionId !== ownedSession.sessionId) {
+          await forceSignOutDueToConcurrentSession();
+        }
+      } finally {
+        validatingSingleSessionRef.current = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void validateSingleSession();
+      }
+    };
+
+    const handleFocus = () => {
+      void validateSingleSession();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    const intervalId = window.setInterval(() => {
+      void validateSingleSession();
+    }, SINGLE_SESSION_CHECK_INTERVAL_MS);
+
+    void validateSingleSession();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.clearInterval(intervalId);
+    };
+  }, [
+    clearOwnedSingleSession,
+    fetchProfile,
+    forceSignOutDueToConcurrentSession,
+    registerOwnedSingleSession,
+    state.user?.id,
+  ]);
 
   useEffect(() => {
     const userId = state.user?.id;

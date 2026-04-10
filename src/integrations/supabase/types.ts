@@ -828,26 +828,47 @@ export type Database = {
       }
       profiles: {
         Row: {
+          active_branch_id: string | null
+          avatar_url: string | null
           created_at: string
+          current_app_session_device: string | null
+          current_app_session_id: string | null
+          current_app_session_started_at: string | null
+          email: string | null
           full_name: string
           id: string
           is_active: boolean
+          is_protected_superadmin: boolean | null
           updated_at: string
           username: string
         }
         Insert: {
+          active_branch_id?: string | null
+          avatar_url?: string | null
           created_at?: string
+          current_app_session_device?: string | null
+          current_app_session_id?: string | null
+          current_app_session_started_at?: string | null
+          email?: string | null
           full_name: string
           id: string
           is_active?: boolean
+          is_protected_superadmin?: boolean | null
           updated_at?: string
           username: string
         }
         Update: {
+          active_branch_id?: string | null
+          avatar_url?: string | null
           created_at?: string
+          current_app_session_device?: string | null
+          current_app_session_id?: string | null
+          current_app_session_started_at?: string | null
+          email?: string | null
           full_name?: string
           id?: string
           is_active?: boolean
+          is_protected_superadmin?: boolean | null
           updated_at?: string
           username?: string
         }
@@ -1331,7 +1352,6 @@ export const Constants = {
     },
   },
 } as const
-
 
 
 

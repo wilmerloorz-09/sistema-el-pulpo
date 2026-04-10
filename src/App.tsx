@@ -101,13 +101,13 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
 
 const HomeRedirect = () => {
   const { loading } = useBranch();
-  const { preferredPath, isLoading } = usePreferredHomePath();
+  const { preferredPath, firstVisiblePath, canAccessAdmin, isLoading } = usePreferredHomePath();
 
   if (loading || isLoading) {
     return <LoadingScreen />;
   }
 
-  return <Navigate to={preferredPath ?? "/mesas"} replace />;
+  return <Navigate to={preferredPath ?? firstVisiblePath ?? (canAccessAdmin ? "/admin" : "/mesas")} replace />;
 };
 
 const SyncInit = () => {
@@ -283,11 +283,7 @@ const App = () => (
                 />
                 <Route
                   path="/reportes"
-                  element={
-                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]} requiresOpenShift>
-                      <Reportes />
-                    </ProtectedRoute>
-                  }
+                  element={<Navigate to="/" replace />}
                 />
                 <Route
                   path="/admin"

@@ -3,6 +3,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
+import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
+import { Button } from "@/components/ui/button";
 import { canManage, hasPermission, type AccessLevel } from "@/lib/permissions";
 
 interface Props {
@@ -44,11 +46,12 @@ const ProtectedRoute = ({
   requiresOpenShift = false,
   requiredShiftRoles,
 }: Props) => {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const location = useLocation();
-  const { preferredPath, canAccessAdmin, isLoading: preferredPathLoading } = usePreferredHomePath();
+  const { preferredPath, firstVisiblePath, canAccessAdmin, isLoading: preferredPathLoading } = usePreferredHomePath();
+  const { visibleItems } = useVisibleNavItems();
 
   if (loading) {
     return (
@@ -71,6 +74,9 @@ const ProtectedRoute = ({
   const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
   const fallback = (() => {
     if (preferredPath) return preferredPath;
+    if (firstVisiblePath) return firstVisiblePath;
+    const firstVisibleItem = visibleItems[0]?.to;
+    if (firstVisibleItem) return firstVisibleItem;
     const firstAllowed = currentModules.find((code) => MODULE_FALLBACK_PATH[code]);
     if (firstAllowed) return MODULE_FALLBACK_PATH[firstAllowed];
     if (isGlobalAdminWithoutBranches) return "/admin";
@@ -121,6 +127,18 @@ const ProtectedRoute = ({
                 ? "Los modulos operativos permanecen deshabilitados hasta que un administrador general o supervisor abra el turno desde Administracion."
                 : "Tu usuario esta deshabilitado para este turno. Solicita al administrador o supervisor que lo habilite desde Administracion."}
             </p>
+            {shiftOpen && !userEnabled && (
+              <div className="mt-5 flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-2xl"
+                  onClick={() => void signOut()}
+                >
+                  Ingresar con otro usuario
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -131,8 +149,9 @@ const ProtectedRoute = ({
     }
 
     if (!hasSupervisorBypass && !hasRequiredShiftRole) {
-      if (preferredPath && preferredPath !== location.pathname) {
-        return <Navigate to={preferredPath} replace />;
+      const operationalFallback = preferredPath ?? firstVisiblePath ?? visibleItems[0]?.to ?? null;
+      if (operationalFallback && operationalFallback !== location.pathname) {
+        return <Navigate to={operationalFallback} replace />;
       }
 
       const requestedAreas = (requiredShiftRoles ?? []).map((role) => SHIFT_ROLE_LABELS[role]).join(" o ");

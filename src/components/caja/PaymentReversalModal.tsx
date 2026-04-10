@@ -40,6 +40,7 @@ interface Props {
   loading?: boolean;
   allowPartial?: boolean;
   titleOverride?: string;
+  submitLabelOverride?: string;
   onSubmit: (params: {
     paymentId: string;
     reason: string;
@@ -65,6 +66,7 @@ export default function PaymentReversalModal({
   loading = false,
   allowPartial = true,
   titleOverride,
+  submitLabelOverride,
   onSubmit,
 }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -114,8 +116,8 @@ export default function PaymentReversalModal({
 
   const openConfirmation = () => {
     if (!canSubmit) {
-      if (!reason.trim()) setError("Debes ingresar un motivo de reverso.");
-      else if (selectedIds.size === 0) setError("Debes seleccionar al menos un item para reversar.");
+      if (!reason.trim()) setError("Debes ingresar una justificacion para continuar.");
+      else if (selectedIds.size === 0) setError("Debes seleccionar al menos un item del pago.");
       return;
     }
     setError(null);
@@ -138,7 +140,7 @@ export default function PaymentReversalModal({
     }
   };
 
-  const title = titleOverride ?? (mode === "request" ? "Solicitar reverso" : "Reversar pago");
+  const title = titleOverride ?? (mode === "request" ? "Solicitar anulacion" : "Anular pago");
 
   return (
     <>
@@ -188,14 +190,14 @@ export default function PaymentReversalModal({
                   <p className="font-semibold">{payment.methodsSummary}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Monto a reversar</p>
+                  <p className="text-xs text-muted-foreground">Monto a anular</p>
                   <p className="font-semibold text-destructive">${selectedAmount.toFixed(2)}</p>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">Detalle de items del pago</p>
+                <p className="text-sm font-medium text-foreground">Detalle de items del pago</p>
                   {allowPartial && (
                     <button onClick={toggleAll} className="text-xs text-primary hover:underline">
                       {selectedIds.size === selectableItems.length ? "Ninguno" : "Todos"}
@@ -225,11 +227,11 @@ export default function PaymentReversalModal({
               </div>
 
               <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">Motivo del reverso *</p>
+                <p className="text-sm font-medium text-foreground">Justificacion de la anulacion *</p>
                 <Textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Ej: error en metodo de pago, cobro duplicado, cliente cambio metodo de pago, error de cajero"
+                  placeholder="Ej: cobro duplicado, error en el metodo de pago, cliente cambio la forma de pago"
                   rows={3}
                 />
               </div>
@@ -251,7 +253,7 @@ export default function PaymentReversalModal({
               onClick={openConfirmation}
               disabled={!payment || !canSubmit}
             >
-              {mode === "request" ? "Enviar solicitud" : "Continuar"}
+              {submitLabelOverride ?? (mode === "request" ? "Enviar solicitud" : "Continuar")}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -260,11 +262,11 @@ export default function PaymentReversalModal({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirmar reverso</DialogTitle>
+            <DialogTitle>Confirmar anulacion</DialogTitle>
           </DialogHeader>
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 space-y-1">
             <p className="font-medium flex items-center gap-1">
-              <AlertTriangle className="h-4 w-4" /> Esta accion reversara el pago seleccionado.
+              <AlertTriangle className="h-4 w-4" /> Esta accion anulara el pago seleccionado.
             </p>
             <p>El monto dejara de contar como pagado y los items volveran a estado pendiente.</p>
           </div>
@@ -282,7 +284,7 @@ export default function PaymentReversalModal({
               disabled={loading}
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Confirmar reverso
+              Confirmar anulacion
             </button>
           </DialogFooter>
         </DialogContent>

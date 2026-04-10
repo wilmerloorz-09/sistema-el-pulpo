@@ -72,7 +72,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                   <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-violet-50 focus:text-violet-950 dark:focus:bg-violet-500/20">
                     <Link to="/caja?tab=completed" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
                       <div className="flex bg-violet-100 text-violet-600 p-2 rounded-[12px] dark:bg-violet-500/20 dark:text-violet-400 shadow-sm"><History className="h-4 w-4" /></div>
-                      <span className="text-sm">Pagos realizados</span>
+                      <span className="text-sm">Pagos del turno</span>
                     </Link>
                   </DropdownMenuItem>
 
