@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Ban, Minus, Plus, Trash2 } from "lucide-react";
+import { Minus, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -163,141 +163,69 @@ const OrderItemsList = ({
                     </>
                   )}
                 </p>
-
-                <div className="mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-[11px] text-muted-foreground sm:text-xs">
-                  <span className="shrink-0">Env: {item.quantity_sent ?? 0}</span>
-                  <span className="shrink-0">Desp: {item.quantity_dispatched ?? 0}</span>
-                  <span className="shrink-0">Falt: {item.quantity_remaining ?? 0}</span>
-                  <span className="shrink-0">Canc: {item.quantity_cancelled ?? 0}</span>
-                </div>
                 </div>
               </div>
 
-              <div className="flex shrink-0 flex-col items-end gap-2 self-start">
-                <div className="flex items-center justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      "h-8 w-8 rounded-xl",
-                      isPending
-                        ? "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100"
-                        : isRequestedCancel
-                          ? "border-border bg-muted text-muted-foreground cursor-not-allowed"
-                          : "border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100",
-                    )}
-                    disabled={controlDisabled || (!isPending && (!canCancelOperational || maxOperationalQty <= 0))}
-                    onClick={() => {
-                      if (isPending) {
-                        onRemove(item.id);
-                        return;
-                      }
+              {isPending && (
+                <div className="flex shrink-0 flex-col items-end gap-2 self-start">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 rounded-xl border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100"
+                      disabled={draftDisabled}
+                      onClick={() => onRemove(item.id)}
+                      title="Eliminar item"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
 
-                      if (onRequestCancel && !disableOperationalCancel) {
-                        onRequestCancel(item, maxOperationalQty || displayQuantity || 1);
-                      }
-                    }}
-                    title={isPending ? "Eliminar item" : "Anular todo el item"}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-
-                  {!isBulkItem ? (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
-                        disabled={controlDisabled}
-                        onClick={() => {
-                          if (isPending) {
+                    {!isBulkItem ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-xl border-border bg-background"
+                          disabled={draftDisabled}
+                          onClick={() => {
                             if (item.quantity > 1) {
                               onUpdateQty(item.id, item.quantity - 1, item.unit_price);
                             }
-                            return;
-                          }
+                          }}
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </Button>
 
-                          if (canCancelOperational && selectedOperationalQty > 1) {
-                            setOperationalQtyByItem((prev) => ({
-                              ...prev,
-                              [item.id]: selectedOperationalQty - 1,
-                            }));
-                          }
-                        }}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-
-                      <QuantityInput
-                        key={`${item.id}-${isPending ? "draft" : "cancel"}-${isPending ? displayQuantity : selectedOperationalQty}`}
-                        initialQuantity={isPending ? displayQuantity : selectedOperationalQty}
-                        min={1}
-                        max={isPending ? Math.max(1, item.quantity) : Math.max(1, maxOperationalQty || displayQuantity || 1)}
-                        disabled={controlDisabled}
-                        updateOnChange={!isPending}
-                        className={!isPending && !operationalDisabled ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)]" : undefined}
-                        onUpdate={(newQty) => {
-                          if (isPending) {
+                        <QuantityInput
+                          key={`${item.id}-draft-${displayQuantity}`}
+                          initialQuantity={displayQuantity}
+                          min={1}
+                          max={Math.max(1, item.quantity)}
+                          disabled={draftDisabled}
+                          updateOnChange={false}
+                          onUpdate={(newQty) => {
                             if (newQty <= 0) {
                               onRemove(item.id);
                             } else if (newQty !== item.quantity) {
                               onUpdateQty(item.id, newQty, item.unit_price);
                             }
-                            return;
-                          }
+                          }}
+                        />
 
-                          const normalized = Math.max(1, Math.min(maxOperationalQty || displayQuantity || 1, newQty));
-                          setOperationalQtyByItem((prev) => ({
-                            ...prev,
-                            [item.id]: normalized,
-                          }));
-                        }}
-                      />
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn("h-8 w-8 rounded-xl", operationalControlClass)}
-                        disabled={controlDisabled}
-                        onClick={() => {
-                          if (isPending) {
-                            onUpdateQty(item.id, item.quantity + 1, item.unit_price);
-                            return;
-                          }
-
-                          if (canCancelOperational && selectedOperationalQty < (maxOperationalQty || displayQuantity || 1)) {
-                            setOperationalQtyByItem((prev) => ({
-                              ...prev,
-                              [item.id]: selectedOperationalQty + 1,
-                            }));
-                          }
-                        }}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  ) : null}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-xl border-border bg-background"
+                          disabled={draftDisabled}
+                          onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-
-                {!isPending && (
-                  <Button
-                    variant="destructive"
-                    className={cn(
-                      "h-9 min-w-[6.75rem] rounded-xl px-4 font-display text-sm font-semibold",
-                      !operationalDisabled && "opacity-100 saturate-100",
-                    )}
-                    disabled={operationalDisabled}
-                    onClick={() => {
-                      if (onRequestCancel && !disableOperationalCancel) {
-                        onRequestCancel(item, selectedOperationalQty);
-                      }
-                    }}
-                  >
-                    <Ban className="h-4 w-4" />
-                    Anular
-                  </Button>
-                )}
-              </div>
+              )}
             </div>
           </div>
         );

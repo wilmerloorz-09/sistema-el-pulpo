@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -1189,6 +1189,22 @@ const Ordenes = () => {
         <div className="mt-4 rounded-xl bg-muted p-3 text-center text-xs text-muted-foreground">
           Modo consulta: sin acciones operativas sobre la orden.
         </div>
+      )}
+
+      {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+        <Button
+          variant="destructive"
+          className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+          onClick={() => {
+            setInlineCancelVisibleItems([]);
+            setInlineCancelQtyByItem({});
+            setInlineCancellationType("total");
+            setInlineCancelOpen(true);
+          }}
+        >
+          <Ban className="h-5 w-5" />
+          Anular orden
+        </Button>
       )}
 
       {isSent && (

@@ -26,6 +26,7 @@ interface PaymentGroup {
   method_name: string;
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
+  payment_opening_status: CompletedPayment["payment_opening_status"];
   order: {
     id: string;
     number: number;
@@ -165,6 +166,7 @@ export default function CompletedPaymentsList({
           method_name: row.method_name,
           reversal_requested: row.reversal_requested,
           order_has_voided_payments: row.order_has_voided_payments,
+          payment_opening_status: row.payment_opening_status,
           order: {
             id: row.order_id,
             number: row.order_number ?? 0,
@@ -249,50 +251,46 @@ export default function CompletedPaymentsList({
   return (
     <div className="space-y-4">
       <div className="rounded-[26px] border border-orange-200 bg-gradient-to-r from-white via-orange-50/50 to-white p-4 shadow-[0_20px_45px_-40px_rgba(249,115,22,0.55)]">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="font-display text-base font-bold text-foreground">Pagos del turno</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Solo se muestran los pagos registrados hoy dentro del turno actual.
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={filters.scope}
+              onChange={(event) => onFiltersChange({ ...filters, scope: event.target.value as CompletedPaymentsScope })}
+              className="h-10 min-w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
+            >
+              {scopeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label === "ALL" ? "Todos" : option.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filters.cashierName}
+              onChange={(event) => onFiltersChange({ ...filters, cashierName: event.target.value })}
+              className="h-10 min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
+            >
+              <option value="ALL">Todos los cajeros</option>
+              {cashierOptions.map((cashierName) => (
+                <option key={cashierName} value={cashierName}>
+                  {cashierName}
+                </option>
+              ))}
+            </select>
           </div>
+
           <div className="flex flex-wrap gap-2">
             <div className="rounded-2xl border border-orange-200 bg-white px-3 py-2 text-sm shadow-sm">
               <span className="text-muted-foreground">Pagos</span>
-              <p className="font-semibold text-foreground">{visibleTotal}</p>
+              <p className="text-center font-semibold text-foreground">{visibleTotal}</p>
             </div>
             <div className="rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm shadow-sm">
               <span className="text-muted-foreground">Total cobrado</span>
-              <p className="font-semibold text-foreground">{formatCurrency(visibleCollectedTotal)}</p>
+              <p className="text-right font-semibold text-foreground">{formatCurrency(visibleCollectedTotal)}</p>
             </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
-          <select
-            value={filters.scope}
-            onChange={(event) => onFiltersChange({ ...filters, scope: event.target.value as CompletedPaymentsScope })}
-            className="h-10 min-w-[170px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
-          >
-            {scopeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label === "ALL" ? "Todos" : option.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filters.cashierName}
-            onChange={(event) => onFiltersChange({ ...filters, cashierName: event.target.value })}
-            className="h-10 min-w-[190px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
-          >
-            <option value="ALL">Todos los cajeros</option>
-            {cashierOptions.map((cashierName) => (
-              <option key={cashierName} value={cashierName}>
-                {cashierName}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -324,14 +322,15 @@ export default function CompletedPaymentsList({
               });
               const normalizedStatus = (payment.status?.toString() || "").toUpperCase();
               const isVoidedOrReversed = normalizedStatus === "REVERSED" || normalizedStatus === "VOIDED";
-              const blockedByState = isVoidedOrReversed || payment.reversal_requested || payment.order_has_voided_payments;
+              const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
+              const blockedByState = isVoidedOrReversed || payment.reversal_requested || payment.order_has_voided_payments || blockedByClosedOpening;
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
 
               return (
                 <div key={payment.paymentId} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/70"}>
                   <div
                     onClick={() => setExpandedPaymentId((current) => (current === payment.paymentId ? null : payment.paymentId))}
-                    className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(180px,1.1fr)_minmax(180px,0.9fr)_minmax(110px,0.7fr)_minmax(240px,1.2fr)_auto] sm:items-center sm:px-8"
+                    className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(150px,1fr)_100px_minmax(160px,0.9fr)_minmax(110px,0.7fr)_minmax(240px,1.2fr)_112px] sm:items-center sm:px-8"
                   >
                     <div
                       className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
@@ -351,18 +350,22 @@ export default function CompletedPaymentsList({
                             <UtensilsCrossed className="h-4 w-4" />
                           )}
                         </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <PaymentStatusBadge status={payment.status} />
-                             {payment.reversal_requested && !isVoidedOrReversed && (
-                              <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                                Anulación Pendiente
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
+                        <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
                       </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <PaymentStatusBadge status={payment.status} />
+                      {payment.reversal_requested && !isVoidedOrReversed && (
+                        <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                          Anulación Pendiente
+                        </Badge>
+                      )}
+                      {blockedByClosedOpening && (
+                        <Badge className="border-slate-200 bg-slate-100 text-slate-700">
+                          Caja cerrada
+                        </Badge>
+                      )}
                     </div>
 
                     <div className="min-w-0">
@@ -376,19 +379,15 @@ export default function CompletedPaymentsList({
                     </div>
 
                     <div className="min-w-0 sm:text-right">
-                      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 sm:justify-end">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock3 className="h-3.5 w-3.5" />
-                          {formatDateTime(payment.created_at)}
-                        </span>
-                        <span>Cajero: {payment.cashier_name}</span>
-                        <span>Metodo: {payment.method_name}</span>
-                        <span>{itemsLabel}</span>
-                      </p>
+                      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        {formatDateTime(payment.created_at)}
+                      </span>
                     </div>
 
+
                     <div className="sm:justify-self-end">
-                      {!blockedByState && permissionFlags.canStartVoid ? (
+                      {!blockedByState && permissionFlags.canStartVoid && (
                         <button
                           type="button"
                           onClick={(event) => {
@@ -400,19 +399,9 @@ export default function CompletedPaymentsList({
                           <RotateCcw className="h-4 w-4" />
                           Anular
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setExpandedPaymentId((current) => (current === payment.paymentId ? null : payment.paymentId));
-                          }}
-                          className="flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-none hover:bg-slate-50"
-                        >
-                          Ver
-                        </button>
                       )}
                     </div>
+
                   </div>
 
                   {expanded && (
@@ -449,7 +438,7 @@ export default function CompletedPaymentsList({
                                   </p>
                                 </div>
                                 <div className="text-sm text-slate-600">{item.method_name}</div>
-                                <div className="text-sm text-slate-600 sm:text-right">{item.status}</div>
+                                <div className="sm:text-right"><PaymentStatusBadge status={item.status} /></div>
                                 <div className="font-semibold text-slate-900 sm:text-right">${item.amount.toFixed(2)}</div>
                               </div>
                             ))}

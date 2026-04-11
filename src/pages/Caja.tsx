@@ -88,6 +88,7 @@ const Caja = () => {
     branchReferenceTableCount,
     payableOrders,
     paymentMethods,
+    cashRegisterTemplates,
     completedPayments,
     completedPaymentsTotal,
     completedPaymentsMethodSummary,
@@ -569,9 +570,10 @@ const Caja = () => {
           </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
-            {shift.caja_status === "UNOPENED" ? (
+            {shift.caja_status !== "OPEN" ? (
               <OpenShiftForm
                 denominations={denominations}
+                templates={cashRegisterTemplates}
                 hasCashierUser={captureCandidates.length === 1}
                 cashierUserLabel={
                   captureCandidates.length === 1
@@ -581,8 +583,12 @@ const Caja = () => {
                 onOpen={({ counts }) => openCashRegister.mutate({ counts })}
                 opening={openCashRegister.isPending}
                 readOnly={!canOperateCaja}
-                title="Abrir Caja"
-                description={`Ingresa el conteo inicial de caja. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`}
+                title={shift.caja_status === "CLOSED" ? "Reabrir Caja" : "Abrir Caja"}
+                description={
+                  shift.caja_status === "CLOSED"
+                    ? `La caja fue cerrada antes, pero el turno sigue abierto. Ingresa un nuevo conteo inicial para reanudar cobros. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`
+                    : `Ingresa el conteo inicial de caja. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`
+                }
                 openingHistory={shift.openingHistory}
               />
             ) : (
@@ -883,7 +889,7 @@ const Caja = () => {
               "rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]",
               !isDesktop ? "p-4" : "p-5"
             )}>
-              <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos del turno ({completedPaymentsTotal})</h2>
+              <h2 className="mb-3 font-display text-sm font-bold text-foreground">Pagos del turno</h2>
               <CompletedPaymentsList
                 payments={completedPayments}
                 total={completedPaymentsTotal}

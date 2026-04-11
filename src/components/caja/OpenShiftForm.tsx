@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { CashRegisterOpeningHistoryEntry, Denomination } from "@/hooks/useCaja";
+import { useEffect, useState } from "react";
+import type { CashRegisterOpeningHistoryEntry, CashRegisterTemplate, Denomination } from "@/hooks/useCaja";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +18,7 @@ import CashRegisterOpeningHistory from "@/components/caja/CashRegisterOpeningHis
 
 interface Props {
   denominations: Denomination[];
+  templates?: CashRegisterTemplate[];
   hasCashierUser: boolean;
   cashierUserLabel?: string | null;
   onOpen: (payload: {
@@ -32,6 +33,7 @@ interface Props {
 
 export default function OpenShiftForm({
   denominations,
+  templates = [],
   hasCashierUser,
   cashierUserLabel = null,
   onOpen,
@@ -41,12 +43,35 @@ export default function OpenShiftForm({
   description = "Ingresa el conteo inicial de caja",
   openingHistory = [],
 }: Props) {
-  const [counts, setCounts] = useState<Record<string, number>>(() =>
-    Object.fromEntries(denominations.map((d) => [d.id, 0]))
-  );
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [selectedTemplateId, setSelectedTemplateId] = useState("manual");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const buildCountsMap = (templateCounts?: { denomination_id: string; qty: number }[]) => {
+    const templateMap = new Map((templateCounts ?? []).map((item) => [item.denomination_id, Math.max(0, Math.trunc(item.qty || 0))]));
+    return Object.fromEntries(denominations.map((d) => [d.id, templateMap.get(d.id) ?? 0]));
+  };
+
+  useEffect(() => {
+    setCounts((current) =>
+      Object.fromEntries(denominations.map((d) => [d.id, current[d.id] ?? 0]))
+    );
+  }, [denominations]);
+
+  useEffect(() => {
+    if (selectedTemplateId === "manual") return;
+    const template = templates.find((item) => item.id === selectedTemplateId);
+    if (!template) {
+      setSelectedTemplateId("manual");
+      return;
+    }
+    setCounts(buildCountsMap(template.counts));
+  }, [selectedTemplateId, templates]);
+
   const hasDenominations = denominations.length > 0;
+  const selectedTemplate = selectedTemplateId === "manual"
+    ? null
+    : templates.find((item) => item.id === selectedTemplateId) ?? null;
   const total = denominations.reduce((sum, denomination) => sum + denomination.value * (counts[denomination.id] ?? 0), 0);
   const hasPositiveOpeningTotal = total > 0;
   const canSubmit = hasDenominations && hasPositiveOpeningTotal && hasCashierUser;
@@ -120,6 +145,44 @@ export default function OpenShiftForm({
             </div>
           )}
 
+          {hasDenominations && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <label className="block text-sm font-semibold text-foreground" htmlFor="cash-template-select">
+                Plantilla de apertura
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Selecciona una plantilla para cargar cantidades automaticamente o deja Manual para capturarlas desde cero.
+              </p>
+              <select
+                id="cash-template-select"
+                value={selectedTemplateId}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setSelectedTemplateId(nextValue);
+                  if (nextValue === "manual") return;
+                  const template = templates.find((item) => item.id === nextValue);
+                  if (template) {
+                    setCounts(buildCountsMap(template.counts));
+                  }
+                }}
+                className="mt-3 h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                disabled={readOnly}
+              >
+                <option value="manual">Manual</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+              {selectedTemplate && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Plantilla aplicada: <span className="font-semibold text-foreground">{selectedTemplate.name}</span>. Puedes ajustar las cantidades manualmente antes de confirmar.
+                </p>
+              )}
+            </div>
+          )}
+
           {denominations.map((denomination) => (
             <div key={denomination.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
               <DenominationVisual
@@ -182,6 +245,9 @@ export default function OpenShiftForm({
             <AlertDialogDescription className="text-sm leading-6 text-muted-foreground">
               Se abrira la caja con un total inicial de <span className="font-bold text-foreground">${total.toFixed(2)}</span>.
               El usuario de caja asignado sera <span className="font-bold text-foreground">{cashierUserLabel ?? "sin asignar"}</span>.
+              {selectedTemplate && (
+                <> Se aplicara la plantilla <span className="font-bold text-foreground">{selectedTemplate.name}</span>.</>
+              )}
               Verifica los datos antes de continuar.
             </AlertDialogDescription>
           </AlertDialogHeader>

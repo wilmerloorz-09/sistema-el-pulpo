@@ -9,6 +9,34 @@ import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 
+export const ensureTableSnapshot = async (orderId: string) => {
+  try {
+    const { data: order } = await supabase.from("orders").select("table_id, table_name_snapshot, split_id").eq("id", orderId).single();
+    if (!order || order.table_name_snapshot) return; // already snapshotted
+    
+    let tableName = "Mesa";
+    let tableId = order.table_id;
+    
+    if (!tableId && order.split_id) {
+       const { data: split } = await supabase.from("table_splits").select("table_id").eq("id", order.split_id).single();
+       if (split?.table_id) tableId = split.table_id;
+    }
+    
+    if (tableId) {
+       const { data: table } = await supabase.from("restaurant_tables").select("name, visual_order").eq("id", tableId).single();
+       if (table) {
+          const baseName = (table.name || "Mesa").trim();
+          const hasNumber = /\d/.test(baseName);
+          tableName = hasNumber ? baseName : `${baseName} ${Number(table.visual_order ?? 0) + 1}`;
+       }
+    }
+    
+    await supabase.from("orders").update({ table_name_snapshot: tableName }).eq("id", orderId);
+  } catch (e) {
+    console.error("Failed to ensure table snapshot", e);
+  }
+};
+
 export interface Denomination {
   id: string;
   label: string;
@@ -70,6 +98,13 @@ export interface CashRegisterOpeningHistoryEntry {
   motivo_anulacion: string | null;
   is_current: boolean;
   payment_count: number;
+}
+
+export interface CashRegisterTemplate {
+  id: string;
+  name: string;
+  is_active: boolean;
+  counts: { denomination_id: string; qty: number }[];
 }
 
 export interface PendingPaymentCaptureRequest {
@@ -224,6 +259,7 @@ export interface CompletedPayment {
   item_amount: number;
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
+  payment_opening_status: "abierta" | "cerrada" | "anulada" | null;
 }
 
 export type CompletedPaymentsScope = "ALL" | "TABLE" | "TAKEOUT" | "SPECIAL";
@@ -1073,8 +1109,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const tableIds = [...new Set(orders.map((o) => o.table_id).filter(Boolean))] as string[];
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
-        const { data: tables } = await supabase.from("restaurant_tables").select("id, name").in("id", tableIds);
-        tablesMap = Object.fromEntries((tables ?? []).map((t) => [t.id, t.name]));
+        const { data: tables } = await supabase.from("restaurant_tables").select("id, name, visual_order").in("id", tableIds);
+        tablesMap = Object.fromEntries((tables ?? []).map((t) => [t.id, { name: t.name, visual_order: t.visual_order }]));
       }
 
       const splitIds = [...new Set(orders.map((o) => o.split_id).filter(Boolean))] as string[];
@@ -1117,6 +1153,16 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const orderItemIds = (items ?? []).map((item) => item.id);
+      const resolveTableName = (tableId: string | null, snapshotName?: string | null): string | null => {
+        if (tableId && (tablesMap as any)[tableId]) {
+          const t = (tablesMap as any)[tableId];
+          const baseName = (t.name || "Mesa").trim();
+          const hasNumber = /\d/.test(baseName);
+          return hasNumber ? baseName : `${baseName} ${Number(t.visual_order ?? 0) + 1}`;
+        }
+        return snapshotName || "Mesa";
+      };
+
       const [activePaymentItems, activePaymentsTotalByOrder] = await Promise.all([
         fetchActivePaymentItemsForOrderItems(orderItemIds),
         fetchActivePaymentsTotalByOrder(orderIds),
@@ -1204,7 +1250,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
-            table_name: (o.table_id ? tablesMap[o.table_id] : null) || (o as any).table_name_snapshot || null,
+            table_name: resolveTableName(o.table_id, (o as any).table_name_snapshot),
             table_name_snapshot: (o as any).table_name_snapshot,
             split_code: o.split_id ? splitsMap[o.split_id] : null,
             total: displayTotal,
@@ -1408,7 +1454,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const [ordersRes, methodsRes, profilesRes, allOrderPaymentsRes, allOrderItemsRes] = await Promise.all([
         supabase
           .from("orders")
-          .select("id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual")
+          .select("id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, table_name_snapshot")
           .in("id", orderIds)
           .eq("branch_id", activeBranchId),
         supabase.from("payment_methods").select("id, name").in("id", methodIds),
@@ -1434,8 +1480,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const [{ data: tables }, { data: splits }, { data: items }] = await Promise.all([
         tableIds.length > 0
-          ? supabase.from("restaurant_tables").select("id, name").in("id", tableIds)
-          : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+          ? supabase.from("restaurant_tables").select("id, name, visual_order").in("id", tableIds)
+          : Promise.resolve({ data: [] as { id: string; name: string; visual_order: number }[] }),
         splitIds.length > 0
           ? supabase.from("table_splits").select("id, split_code").in("id", splitIds)
           : Promise.resolve({ data: [] as { id: string; split_code: string }[] }),
@@ -1447,9 +1493,19 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const ordersMap = Object.fromEntries(orders.map((o) => [o.id, o]));
       const methodsMap = Object.fromEntries(methods.map((m) => [m.id, m.name]));
       const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, p.full_name || p.username || "Usuario"]));
-      const tablesMap = Object.fromEntries((tables ?? []).map((t) => [t.id, t.name]));
+      const tablesMap = Object.fromEntries((tables ?? []).map((t) => [t.id, { name: t.name, visual_order: t.visual_order }]));
       const splitsMap = Object.fromEntries((splits ?? []).map((s) => [s.id, s.split_code]));
       const itemsMap = Object.fromEntries((items ?? []).map((i) => [i.id, i]));
+
+      const resolveTableName = (tableId: string | null, snapshotName?: string | null): string | null => {
+        if (tableId && tablesMap[tableId]) {
+          const t = tablesMap[tableId];
+          const baseName = (t.name || "Mesa").trim();
+          const hasNumber = /\d/.test(baseName);
+          return hasNumber ? baseName : `${baseName} ${Number(t.visual_order ?? 0) + 1}`;
+        }
+        return snapshotName || "Mesa";
+      };
 
       const orderPaidMap: Record<string, number> = {};
       const orderRealTotalMap: Record<string, number> = {};
@@ -1483,6 +1539,19 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const rows: CompletedPayment[] = [];
+      const openings = [...(shiftQuery.data?.openingHistory ?? [])]
+        .sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime());
+
+      const resolvePaymentOpeningStatus = (createdAt: string): "abierta" | "cerrada" | "anulada" | null => {
+        const createdAtMs = new Date(createdAt).getTime();
+        const matchedOpening = openings.find((opening) => {
+          const openedAtMs = new Date(opening.opened_at).getTime();
+          const closedAtMs = opening.closed_at ? new Date(opening.closed_at).getTime() : Number.POSITIVE_INFINITY;
+          return openedAtMs <= createdAtMs && createdAtMs <= closedAtMs;
+        });
+        return matchedOpening?.status ?? null;
+      };
+
       for (const payment of payments) {
         const order = ordersMap[payment.order_id];
         if (!order) continue;
@@ -1508,6 +1577,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         if (itemRows.length > 0) {
           for (const paymentItem of itemRows) {
             const item = itemsMap[paymentItem.order_item_id];
+            const paymentOpeningStatus = resolvePaymentOpeningStatus(payment.created_at);
             rows.push({
               id: payment.id,
               payment_group_id: parsePaymentNotes(payment.notes).paymentGroupId ?? payment.id,
@@ -1520,7 +1590,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               order_code: order.order_code,
               order_type: order.order_type,
               is_special: Boolean((order as { is_special?: boolean | null }).is_special),
-              table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+              table_name: resolveTableName(order.table_id, (order as any).table_name_snapshot),
               split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
               order_total: orderTotal,
               order_paid_amount: paidAmount,
@@ -1537,10 +1607,12 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 item_amount: paymentItem.total_amount,
                 reversal_requested: meta.reversalRequested,
                 order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
+                payment_opening_status: paymentOpeningStatus,
               });
           }
         } else {
           const legacyItem = meta.itemId ? itemsMap[meta.itemId] : undefined;
+          const paymentOpeningStatus = resolvePaymentOpeningStatus(payment.created_at);
           rows.push({
             id: payment.id,
             payment_group_id: parsePaymentNotes(payment.notes).paymentGroupId ?? payment.id,
@@ -1553,7 +1625,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             order_code: order.order_code,
             order_type: order.order_type,
             is_special: Boolean((order as { is_special?: boolean | null }).is_special),
-            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            table_name: resolveTableName(order.table_id, (order as any).table_name_snapshot),
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             order_total: orderTotal,
             order_paid_amount: paidAmount,
@@ -1570,6 +1642,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               item_amount: Number(payment.amount),
               reversal_requested: meta.reversalRequested,
               order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
+              payment_opening_status: paymentOpeningStatus,
             });
         }
       }
@@ -1599,6 +1672,43 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
     refetchInterval: 10000,
+  });
+
+  const cashRegisterTemplatesQuery = useQuery({
+    queryKey: ["cash-register-templates", activeBranchId],
+    enabled: !!activeBranchId,
+    queryFn: async (): Promise<CashRegisterTemplate[]> => {
+      if (!activeBranchId) return [];
+
+      const { data, error } = await supabase
+        .from("cash_register_templates" as any)
+        .select(`
+          id,
+          name,
+          is_active,
+          cash_register_template_denoms (
+            denomination_id,
+            qty
+          )
+        `)
+        .eq("branch_id", activeBranchId)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+
+      return ((data ?? []) as any[]).map((row) => ({
+        id: row.id,
+        name: row.name,
+        is_active: Boolean(row.is_active),
+        counts: Array.isArray(row.cash_register_template_denoms)
+          ? row.cash_register_template_denoms.map((item: any) => ({
+              denomination_id: String(item.denomination_id),
+              qty: Math.max(0, Math.trunc(Number(item.qty ?? 0))),
+            }))
+          : [],
+      }));
+    },
   });
 
   const openCashRegister = useMutation({
@@ -1727,6 +1837,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           throw new Error("No hay suficientes denominaciones en caja para entregar el cambio");
         }
       }
+
+      // Ensure we lock in the table name before creating payments
+      await ensureTableSnapshot(orderId);
 
       const { data: orderData, error: orderDataError } = await supabase
           .from("orders")
@@ -2267,6 +2380,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         throw new Error("La anulacion segura solo puede ejecutarse sobre un pago a la vez");
       }
 
+      const { data: paymentTarget } = await supabase.from("payments").select("order_id").eq("id", targetIds[0]).single();
+      if (paymentTarget?.order_id) {
+        await ensureTableSnapshot(paymentTarget.order_id);
+      }
+
       const { data, error } = await supabase.rpc("request_void_payment" as never, {
         p_payment_id: targetIds[0],
         p_current_shift_id: shift.id,
@@ -2312,6 +2430,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
       if (targetIds.length !== 1) {
         throw new Error("La anulacion segura solo puede ejecutarse sobre un pago a la vez");
+      }
+
+      const { data: paymentInfo } = await supabase.from("payments").select("order_id").eq("id", targetIds[0]).single();
+      if (paymentInfo?.order_id) {
+        await ensureTableSnapshot(paymentInfo.order_id);
       }
 
       const {
@@ -2542,6 +2665,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     branchReferenceTableCount: branchTableSettingsQuery.data?.reference_table_count ?? 0,
     captureCandidates: captureCandidatesQuery.data ?? [],
     isLoadingCaptureCandidates: captureCandidatesQuery.isLoading,
+    cashRegisterTemplates: cashRegisterTemplatesQuery.data ?? [],
     pendingCaptureRequests: pendingCaptureRequestsQuery.data ?? [],
     isLoadingPendingCaptureRequests: pendingCaptureRequestsQuery.isLoading,
     refetchPendingCaptureRequests: pendingCaptureRequestsQuery.refetch,

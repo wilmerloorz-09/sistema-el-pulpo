@@ -103,7 +103,7 @@ export default function CancelOrderDialog({
   canAuthorizeCancel = true,
   isCancelRequested = false,
   visibleItems = [],
-  initialCancellationType = "partial",
+  initialCancellationType = "total",
   initialCancelQtyByItem = {},
   compactPresetMode = false,
   requiresAuthorizationOverride,

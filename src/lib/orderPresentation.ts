@@ -17,7 +17,9 @@ export function getOrderOriginLabel(params: {
     return "Para llevar";
   }
 
-  return params.splitCode?.trim() || params.tableName?.trim() || "Mesa";
+  const tableName = params.tableName?.trim() || "Mesa";
+  const splitCode = params.splitCode?.trim();
+  return splitCode ? `${tableName} ${splitCode}` : tableName;
 }
 
 export function getOrderKind(params: {

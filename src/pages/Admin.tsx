@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale } from "lucide-react";
+import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
+import CashRegisterTemplatesCrud from "@/components/admin/CashRegisterTemplatesCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
@@ -130,19 +131,26 @@ const TABS: AdminTab[] = [
     component: ModifiersCrud,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
-  {
+  /* {
     value: "payment-methods",
     label: "Metodos de Pago",
     icon: <CreditCard className="h-4 w-4" />,
     component: PaymentMethodsCrud,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
-  },
+  }, */
   {
     value: "denominations",
     label: "Denominaciones",
     icon: <Coins className="h-4 w-4" />,
     component: DenominationsCrud,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "cash-register-templates",
+    label: "Plantillas de caja",
+    icon: <FileStack className="h-4 w-4" />,
+    component: CashRegisterTemplatesCrud,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
     value: "users",
