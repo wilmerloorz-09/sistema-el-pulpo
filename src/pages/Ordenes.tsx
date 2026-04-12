@@ -1221,12 +1221,6 @@ const Ordenes = () => {
         </Button>
       )}
 
-      {isSent && (
-        <div className="mt-4 rounded-xl bg-primary/10 p-3 text-center">
-          <p className="text-sm font-medium text-primary">Orden en cocina</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Esperando despacho</p>
-        </div>
-      )}
     </div>
   );
 

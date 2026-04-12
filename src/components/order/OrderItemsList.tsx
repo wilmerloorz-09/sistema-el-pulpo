@@ -37,8 +37,54 @@ interface Props {
   disableOperationalCancel?: boolean;
 }
 
+type OrderItemStage = "sent" | "partial" | "dispatched" | "draft";
+
 function formatLineTotal(unitPrice: number, quantity: number) {
   return (Number(unitPrice ?? 0) * Number(quantity ?? 0)).toFixed(2);
+}
+
+function getOrderItemStage(item: OrderItem): OrderItemStage {
+  const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
+  const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
+
+  if (item.status === "DRAFT") {
+    return "draft";
+  }
+
+  if (dispatchedQty > 0 && remainingQty === 0) {
+    return "dispatched";
+  }
+
+  if (dispatchedQty > 0 && remainingQty > 0) {
+    return "partial";
+  }
+
+  return "sent";
+}
+
+function getOrderItemStageStyles(stage: OrderItemStage) {
+  switch (stage) {
+    case "sent":
+      return {
+        card: "border-orange-200 bg-orange-50/30",
+        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+      };
+    case "partial":
+      return {
+        card: "border-amber-200 bg-amber-50/30",
+        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+      };
+    case "dispatched":
+      return {
+        card: "border-emerald-200 bg-emerald-50/30",
+        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+      };
+    default:
+      return {
+        card: "border-orange-200 bg-white",
+        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+      };
+  }
 }
 
 const OrderItemsList = ({
@@ -68,6 +114,25 @@ const OrderItemsList = ({
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700">
+          <span className="h-2 w-2 rounded-full bg-white ring-1 ring-slate-300" />
+          No enviado
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-100 px-2 py-1 text-orange-800">
+          <span className="h-2 w-2 rounded-full bg-orange-500" />
+          En cocina
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-100 px-2 py-1 text-amber-900">
+          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          Parcial despachado
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 text-emerald-900">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          Despachado
+        </span>
+      </div>
+
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
         const isRequestedCancel = item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION";
@@ -91,24 +156,27 @@ const OrderItemsList = ({
         const trimmedItemNote = String(item.item_note ?? "").trim();
         const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
         const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
+        const itemStage = getOrderItemStage(item);
+        const itemStageStyles = getOrderItemStageStyles(itemStage);
 
         return (
           <div
             key={item.id}
             className={cn(
-              "rounded-2xl border bg-white px-3 py-3 transition-all",
+              "rounded-2xl border px-3 py-3 transition-all",
               isPending
-                ? "border-orange-200 shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
+                ? "shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
                 : operationalDisabled
-                  ? "border-border opacity-60"
-                  : "border-border"
+                  ? "opacity-60"
+                  : "",
+              itemStageStyles.card,
             )}
           >
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
               <div className="flex min-w-0 items-start gap-3">
                 {!isBulkItem ? (
-                  <Badge className="mt-0.5 min-w-[2.35rem] shrink-0 justify-center rounded-lg border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-1 text-[11px] font-black uppercase leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
-                    {displayQuantity}x
+                  <Badge className={cn("mt-0.5 min-w-[2.7rem] shrink-0 justify-center rounded-lg px-2 py-1 text-xs font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]", itemStageStyles.badge)}>
+                    {displayQuantity}
                   </Badge>
                 ) : null}
 
@@ -163,6 +231,13 @@ const OrderItemsList = ({
                     </>
                   )}
                 </p>
+
+                {!isPending && (
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-muted-foreground">
+                    <span>Despachado: {Number(item.quantity_dispatched ?? 0)}</span>
+                    <span>Falta: {Number(item.quantity_remaining ?? 0)}</span>
+                  </div>
+                )}
                 </div>
               </div>
 

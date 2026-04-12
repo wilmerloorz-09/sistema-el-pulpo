@@ -17,6 +17,8 @@ type CardItemSummary = OrderItemSummary & {
   hasNote: boolean;
 };
 
+type CardItemStage = "sent" | "partial" | "dispatched" | "neutral";
+
 function useElapsed(since: string | null | undefined) {
   const [elapsed, setElapsed] = useState(() => {
     if (!since) return 0;
@@ -66,6 +68,54 @@ function buildCardSummary(items: OrderItemSummary[]) {
   }
 
   return { visibleItems };
+}
+
+function getCardItemStage(item: OrderItemSummary, orderStatus: OrderSummary["status"]): CardItemStage {
+  const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
+  const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
+
+  if (orderStatus === "KITCHEN_DISPATCHED" || (dispatchedQty > 0 && remainingQty === 0)) {
+    return "dispatched";
+  }
+
+  if (dispatchedQty > 0 && remainingQty > 0) {
+    return "partial";
+  }
+
+  if (orderStatus === "SENT_TO_KITCHEN" || remainingQty > 0) {
+    return "sent";
+  }
+
+  return "neutral";
+}
+
+function getCardItemStageClasses(stage: CardItemStage) {
+  switch (stage) {
+    case "sent":
+      return {
+        container: "border-orange-200 bg-orange-50/70",
+        badge: "border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        total: "text-orange-700",
+      };
+    case "partial":
+      return {
+        container: "border-amber-200 bg-amber-50/80",
+        badge: "border-amber-300 bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950",
+        total: "text-amber-800",
+      };
+    case "dispatched":
+      return {
+        container: "border-emerald-200 bg-emerald-50/80",
+        badge: "border-emerald-300 bg-gradient-to-r from-emerald-500 to-teal-400 text-white",
+        total: "text-emerald-800",
+      };
+    default:
+      return {
+        container: "border-slate-200 bg-white",
+        badge: "border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        total: "text-primary",
+      };
+  }
 }
 
 interface OrderCardBaseProps {
@@ -173,12 +223,33 @@ export function OrderCardBase({
       )}
 
       <div className="max-h-[19rem] overflow-y-auto px-4 py-3 pr-3">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-100 px-2 py-1 text-orange-800">
+            <span className="h-2 w-2 rounded-full bg-orange-500" />
+            En cocina
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-100 px-2 py-1 text-amber-900">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            Parcial despachado
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 text-emerald-900">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Despachado
+          </span>
+        </div>
         <div className="space-y-3">
-          {visibleItems.map((item) => (
-            <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
+          {visibleItems.map((item) => {
+            const itemStage = getCardItemStage(item, order.status);
+            const itemStageClasses = getCardItemStageClasses(itemStage);
+
+            return (
+            <div
+              key={item.id}
+              className={cn("flex items-start justify-between gap-2 rounded-2xl border px-3 py-3 text-sm", itemStageClasses.container)}
+            >
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
-                  <Badge className="min-w-[2.35rem] justify-center rounded-md border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-1.5 py-0.5 text-[11px] font-black leading-none text-white shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]">
+                  <Badge className={cn("min-w-[2.35rem] justify-center rounded-md px-1.5 py-0.5 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(15,23,42,0.35)]", itemStageClasses.badge)}>
                     {(
                       isPendingCancellationView
                         ? item.quantity_requested
@@ -225,11 +296,11 @@ export function OrderCardBase({
                   </div>
                 </div>
               </div>
-              <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
+              <span className={cn("ml-auto shrink-0 text-sm font-semibold", itemStageClasses.total)}>
                 ${item.total ? item.total.toFixed(2) : "0.00"}
               </span>
             </div>
-          ))}
+          )})}
         </div>
       </div>
 
