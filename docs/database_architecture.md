@@ -47,6 +47,8 @@
 ### 4. Mesas
 - `restaurant_tables`
 - `table_splits`
+- `orders.table_order_position`
+- `orders.table_name_snapshot`
 - `branches.reference_table_count`
 - `cash_shifts.active_tables_count`
 
@@ -83,6 +85,9 @@
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
 
 ### Mesas / Unir / Dividir
+- `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas dentro de una mesa.
+- `table_splits` sigue existiendo, pero ya no es la fuente principal de numeracion/orden de tabs activos tras el rework de 2026-04-12.
+- `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre ordenes `DINE_IN`.
 - Reglas de esa RPC:
   - ambas ordenes deben ser `DINE_IN`
@@ -139,6 +144,9 @@
 - `get_branch_tables_overview(...)`
 - `move_dine_in_order_to_table(...)`
 - `move_dine_in_order_items_between_orders(...)`
+- `create_additional_dine_in_order(...)`
+- `delete_dine_in_table_order(...)`
+- `compact_table_order_positions(...)`
 
 ### Caja
 - `open_cash_register(...)`
@@ -197,6 +205,7 @@
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
 - `20260411223000_allow_move_of_unpaid_remaining_item_quantity.sql`
 - `20260411233000_assign_order_number_when_move_creates_operational_destination.sql`
+- `20260412103000_rework_table_orders_without_splits.sql`
 
 ### Comprobantes
 - `20260404170000_add_payment_proof_capture_tables.sql`

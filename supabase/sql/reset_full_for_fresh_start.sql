@@ -5,6 +5,8 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
+--   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
+--   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo
 --   - incluye movimientos entre ordenes DINE_IN por `Unir/Dividir`
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
@@ -45,6 +47,7 @@
 --   - wrapper opcional: `.\scripts\reset-payment-proofs-storage.ps1`
 -- - SI YA USAS ARBOL MENU MESA / PARA LLEVAR / A GRANEL, TODOS QUEDAN VACIOS
 -- - LAS RPCS/FUNCIONES PERMANECEN INTACTAS, INCLUIDAS LAS DE ALERTA DE MESERO (emit_order_ready_alert, get_mesero_ready_alerts, order_has_dispatch_after)
+-- - AUNQUE ESTE RESET SIGUE LIMPIANDO `table_splits`, LA BASE OPERATIVA ACTUAL DE TABS/CUENTAS DE MESA YA VIVE EN `orders.table_order_position`
 -- - TAMBIEN QUEDA INTACTA LA LOGICA DE ANULACION:
 --   - mesero: anulacion directa solo en categorias habilitadas y mientras no toque cantidades ya despachadas
 --   - items/ordenes despachados: requieren autorizacion si quien opera no tiene autoridad directa
@@ -265,6 +268,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes, anulaciones de pago, `Unir/Dividir` y alertas de listo)
+-- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - modulos, roles y permisos base intactos

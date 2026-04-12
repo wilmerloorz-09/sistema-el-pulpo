@@ -68,6 +68,14 @@
 
 ### 5. Ordenes, Mesas y Unir/Dividir
 - `Ordenes` mantiene la vista de lista expandible, no mosaico de cards.
+- El orden visible de cuentas dentro de una mesa ya no depende operativamente de `table_splits`:
+  - la UI usa `orders.table_order_position`
+  - la etiqueta visible de tabs/botones sigue el patron `Orden N` mientras no exista `order_number`
+  - cuando ya existe numeracion operativa, debe prevalecer `order_code` / `order_number`
+- Las pestañas del modulo `Ordenes` deben respetar etapas operativas reales:
+  - `Borradores` solo muestra lineas `DRAFT`
+  - `Enviadas`, `Despachadas`, `Pendiente de anulacion` y `Pagadas` no deben mezclar lineas que sigan en `DRAFT`
+- En listados historicos u ordenes desacopladas de mesa, el nombre visible de la mesa debe poder resolverse desde `orders.table_name_snapshot`.
 - `CancelOrderDialog` sigue el modelo de doble lista y no debe volver al esquema antiguo de inputs por fila.
 - En la vista de detalle de una orden de mesa existe tambien `Cerrar orden`:
   - libera la mesa soltando `table_id` / `split_id`
@@ -117,6 +125,9 @@
   - `Unir/Dividir` ya mueve items reales entre ordenes `DINE_IN`
   - el movimiento conserva modificadores e historial operativo
   - no puede mover cantidades ya comprometidas por pago
+  - las ordenes activas de una mesa ahora se ordenan por `orders.table_order_position`
+  - `table_splits` deja de ser la fuente principal para tabs/cuentas activas de mesa
+  - `table_name_snapshot` es parte base del fallback visual cuando una orden ya no tiene `table_id`
 - Caja / seguridad operativa:
   - session lock por `last_session_id` en `cash_shift_users`
 
@@ -139,10 +150,12 @@
    - `cash_movements`
    - estado visible de `Mesas` y `Ordenes`
 4. Cualquier cambio en `Unir/Dividir` debe preservar cantidades pagadas y la redistribucion de historial `READY` / `DISPATCHED`.
-5. Los resets SQL limpian datos transaccionales y metadata de comprobantes, pero los archivos del bucket `payment-proofs` se borran aparte.
+5. No asumir que `table_splits` siga modelando la pestaña visible principal de una mesa; despues del rework de 2026-04-12 el orden operativo vive en `orders.table_order_position`.
+6. Los resets SQL limpian datos transaccionales y metadata de comprobantes, pero los archivos del bucket `payment-proofs` se borran aparte.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota:
+   - `20260410183000_add_table_name_snapshot_to_orders.sql`
    - `20260409170000_secure_payment_void_same_shift_supervisor.sql`
    - `20260409213000_fix_voided_payment_reopens_order_state.sql`
    - `20260410180000_unassign_table_on_voided_payment.sql`
@@ -151,6 +164,7 @@
    - `20260411213000_move_dine_in_order_items_between_orders.sql`
    - `20260411223000_allow_move_of_unpaid_remaining_item_quantity.sql`
    - `20260411233000_assign_order_number_when_move_creates_operational_destination.sql`
+   - `20260412103000_rework_table_orders_without_splits.sql`
 2. Si falla anulacion de pago, revisar primero:
    - Edge Function `void-payment`
    - apertura de caja del pago

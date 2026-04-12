@@ -57,6 +57,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - debe liberar la mesa removiendo el vinculo operativo de la orden con `table_id` / `split_id`
   - la orden debe seguir activa para cobro en `Caja`
   - si existen otras divisiones activas, la mesa no debe quedar libre por completo
+- No asumir que `table_splits` siga siendo la fuente principal de tabs/cuentas activas:
+  - la numeracion/orden visible vigente vive en `orders.table_order_position`
+  - los labels historicos o desacoplados deben poder caer a `orders.table_name_snapshot`
 - `MergeSplitOrdersDialog` debe seguir apoyandose en `move_dine_in_order_items_between_orders(...)`.
 - Esa operacion debe mantener:
   - solo `DINE_IN`
@@ -69,6 +72,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 8. Snapshot operativo compartido
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
+- Regla explicita para el modulo `Ordenes`:
+  - una linea `DRAFT` no debe aparecer en pestañas operativas posteriores (`Enviadas`, `Despachadas`, `Pendiente de anulacion`, `Pagadas`)
+  - `Borradores` debe ser la unica pestaña que muestre lineas aun no enviadas
 
 ### 9. `BULK` / `A granel`
 - No volver a tratar `A granel` como compra por unidades en UI operativa.
@@ -115,14 +121,21 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 3. Si se toco caja, validar apertura/cobro/cierre o anulacion segun corresponda.
 4. Si se toco anulacion de pagos, validar total y parcial.
 5. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
-6. Actualizar estos docs cuando cambie la regla base:
+6. Si se toco numeracion/tabs de mesa o labels visibles de orden, validar:
+   - `orders.table_order_position`
+   - `table_name_snapshot`
+   - tabs de `Ordenes`
+   - combos de `MergeSplitOrdersDialog`
+   - `Mesas` / reingreso a una mesa
+7. Actualizar estos docs cuando cambie la regla base:
    - `docs/system_context.md`
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
-7. Si se tocan resets, actualizar tambien sus comentarios para reflejar:
+8. Si se tocan resets, actualizar tambien sus comentarios para reflejar:
    - anulaciones de pago
    - `Unir/Dividir`
+   - `table_order_position` / `table_name_snapshot` si cambia la base de ordenes de mesa
    - templates de caja
    - comprobantes de transferencia
    - diferencia entre cerrar caja y cerrar turno

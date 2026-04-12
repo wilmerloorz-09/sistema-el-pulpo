@@ -43,13 +43,25 @@
 ### 5. Ordenes
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
 - `Ordenes` usa lista expandible y detalle inline.
+- Las pestañas del modulo `Ordenes` son etapa-dependientes:
+  - `Borradores`
+  - `Enviadas`
+  - `Despachadas`
+  - `Pendiente de anulacion`
+  - `Anuladas`
+  - `Pagadas`
+- Regla vigente:
+  - una linea `DRAFT` no debe aparecer en pestañas operativas posteriores aunque la orden ya tenga historial enviado/despachado
 - `CancelOrderDialog` y `PaymentDialog` comparten el patron de doble lista.
 - `Orden especial` sigue siendo una variante de `orders`, no un modulo aparte.
 
 ### 6. Mesas y divisiones
 - `restaurant_tables` sigue siendo la entidad fisica real.
-- `table_splits` modela submesas.
+- `table_splits` queda como soporte legacy / compatibilidad, pero ya no es la base principal para la visualizacion de cuentas activas dentro de una mesa.
+- El orden visible actual de cuentas de mesa vive en `orders.table_order_position`.
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
+- `Ordenes` usa una lectura separada por mesa para tabs/cuentas activas y ya no debe depender de snapshots cacheados embebidos en una sola orden.
+- `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
 - `Cerrar orden` para cuentas de mesa opera soltando la orden de `table_id` / `split_id` y manteniendola cobrable en `Caja`.
 - El flujo `Unir/Dividir` ahora vive sobre `move_dine_in_order_items_between_orders(...)`.
 - Esa RPC:
@@ -105,6 +117,7 @@
   - `src/hooks/useOrder.ts`
   - `src/hooks/useOrdersByStatus.ts`
   - `src/hooks/useTablesWithStatus.ts`
+  - `src/components/order/OrderListRow.tsx`
   - `src/components/order/MergeSplitOrdersDialog.tsx`
   - `src/components/order/CancelOrderDialog.tsx`
   - `src/pages/Ordenes.tsx`
@@ -130,6 +143,7 @@
 4. Si una regla cruza `Ordenes`, `Despacho`, `Caja` y `Mesas`, debe apoyarse en snapshot operativo comun.
 5. Si se toca anulacion de pagos, revisar tambien reapertura de ordenes, stock de denominaciones y estado visible de mesa.
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
+7. Si se toca visualizacion de tabs/cuentas por mesa, revisar juntos `orders.table_order_position`, `useOrder`, `Ordenes.tsx`, `MergeSplitOrdersDialog` y fallbacks con `table_name_snapshot`.
 
 ## Notas de arquitectura actual
 - `BULK` ya es parte de la base operativa y no un experimento de UI.

@@ -5,6 +5,8 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
+--   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
+--   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
 --   - incluye movimientos entre ordenes DINE_IN por Unir/Dividir, junto con su redistribucion de historial READY/DISPATCHED
@@ -42,6 +44,7 @@
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
 --   - esto incluye anulacion total y parcial, pagos de reemplazo (`replacement_payment_id`) y desglose de devolucion en efectivo
 --   - al borrar orders y table_splits se eliminan tambien las divisiones reabiertas por anulacion de pago
+--   - aunque `table_splits` se limpia por compatibilidad, la base vigente de tabs/cuentas de mesa ya vive en `orders.table_order_position`
 --   - al borrar order_ready_events/order_dispatch_events y sus lineas tambien se limpia cualquier trazabilidad recreada por mover items entre ordenes
 --   - al borrar payment_capture_requests y payment_proofs se limpia el flujo operativo de comprobantes de transferencia
 -- - NO elimina archivos del bucket privado de Supabase Storage
@@ -158,6 +161,7 @@ COMMIT;
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
+-- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
 
