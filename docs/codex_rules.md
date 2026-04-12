@@ -1,346 +1,141 @@
 # Codex Rules
 
 ## Objetivo
-Preservar continuidad tecnica y funcional del POS entre sesiones sin perder decisiones ya tomadas.
+Preservar continuidad tecnica y funcional del POS sin revertir decisiones operativas ya consolidadas.
 
-## Reglas Obligatorias Vigentes
+## Reglas obligatorias vigentes
 
-### 1) Refactor incremental, no rediseno total
-- Reutilizar el flujo existente antes de abrir modelos paralelos innecesarios.
-- Si un cambio nuevo convive con legacy, documentar claramente que parte ya migro y cual sigue operando en el modelo anterior.
+### 1. Refactor incremental
+- No abrir un modelo nuevo si el flujo actual ya existe y puede extenderse.
+- Si convive legacy con modelo nuevo, documentar claramente que parte ya migro y que parte no.
 
-### 2) Seguridad en backend/BD primero
+### 2. Seguridad en backend/BD primero
 - La UI no define seguridad.
-- Validar siempre por permisos efectivos y sucursal activa en backend/BD.
+- Validar permisos reales por sucursal/modulo y, cuando aplique, por turno.
 
-### 3) Arbol de menu como fuente principal de estructura
-- La construccion jerarquica del menu se administra desde `Admin > Arbol Menu`.
-- Considerar siempre los dos alcances actuales del arbol:
-  - `Arbol Menu Mesa`
-  - `Arbol Menu Para Llevar`
-- Considerar tambien el arbol operativo de `A granel` cuando el flujo requiera productos por monto o entrega adicional.
-- No volver a depender de pantallas separadas de `Categorias`, `Subcategorias` o `Productos` para la estructura principal.
-- Nivel 1 es el unico nivel obligatorio y la unica capa fija para navegar en Ordenes; desde Nivel 2 en adelante no deben existir tratamientos especiales por nivel.
-- Los productos pueden existir desde Nivel 2 en adelante.
-- Si una categoria usa `manual_price_enabled`, preservar esa capacidad al editar nodos o al recalcular la carga del catalogo; no mover la regla a `products` por atajo.
+### 3. Catalogo
+- `menu_nodes` es la fuente principal de estructura.
+- Mantener soporte para `TABLE`, `TAKEOUT` y `BULK`.
+- No reintroducir CRUD principal separado de `Categorias/Subcategorias/Productos`.
+- Mientras `order_items.product_id` apunte a `products`, toda venta debe preservar puente legacy.
+- `manual_price_enabled` sigue viviendo en `menu_nodes`, no en `products`.
 
-### 4) Compatibilidad legacy obligatoria mientras siga la FK actual
-- Mientras `order_items.product_id` apunte a `products(id)`, no asumir que `menu_nodes` basta por si solo.
-- Cualquier cambio en `MenuNodesCrud`, `useMenuTree` o `MenuNavigator` debe considerar el espejo operativo en legacy.
-  - Regla adicional:
-    - en `TABLE`, al resolver un producto para vender, priorizar `menu_nodes.id` como espejo legacy y usar `menu_nodes.name` / `menu_nodes.price` como referencia visible antes de caer a `legacy_product_id`
-    - en `TAKEOUT`, no escribir categorias/subcategorias legacy por reflejo automatico
-    - en `TAKEOUT`, si se crea/edita producto, resolver el espejo en `products` sin fabricar subcategorias nuevas fuera del arbol `Mesa`
-    - en `BULK`, preservar el circuito de productos incluidos (`BULK -> TABLE`), la persistencia de instrucciones de entrega en `item_note` y guardar `tray_item_type = 'C'` para que las vistas operativas no lo traten como unidades
-    - no usar `add_tray_order_item` solo por ver `tray_item_type = 'C'`; ese RPC es exclusivo de ordenes con `is_tray_order = true`
+### 4. Modificadores
+- Catalogo base: `modifiers`.
+- Disponibilidad: `menu_node_modifiers`.
+- Seleccion real: `order_item_modifiers`.
+- No volver a concatenar modificadores como texto libre.
 
-### 4.1) Productos agotados deben reflejarse en venta
-- Si un nodo o producto se desactiva desde `Productos`, `Ordenes` debe reflejarlo como agotado.
-- No basta con cambiar color o etiqueta; debe bloquearse su seleccion operativa.
+### 5. Caja y turno no son lo mismo
+- No mezclar cierre de caja con cierre de turno.
+- `close_cash_register(...)` ya puede cerrar solo la caja.
+- Cualquier cambio debe respetar:
+  - `cash_shifts` como turno
+  - `cash_register_openings` como historial de aperturas
+  - `cash_shift_denoms` como caja fisica real
+- Si se toca apertura de caja, mantener soporte para:
+  - `cash_register_templates`
+  - `cash_register_template_denoms`
+  - `capture_user_id`
+  - `capture_device_label`
 
-### 4.2) Rendimiento y UX en el POS
-- Priorizar la carga paralela de datos fundamentales para minimizar la espera del usuario.
-- Implementar UI optimista siempre que sea posible para acciones frecuentes (agregar items, enviar a cocina).
-- El historial de "Pagos realizados" debe permanecer accesible independientemente de si la caja esta abierta o cerrada.
+### 6. Anulacion de pagos
+- El flujo oficial es:
+  - solicitud con `request_void_payment(...)`
+  - autorizacion/ejecucion con Edge Function `void-payment`
+  - cierre transaccional con `approve_and_void_payment(...)`
+- Preservar siempre:
+  - anulacion total y parcial
+  - devolucion por denominacion
+  - `replacement_payment_id` cuando queda saldo remanente
+  - reapertura correcta de orden/mesa/division cuando aplique
+- No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
+- Si el pago ya fue anulado, la apertura fue cerrada/anulada o no hay supervisor valido del turno, el flujo debe bloquearse.
 
-### 5) Modificadores: modelo estructurado obligatorio
-- Modificador no es texto libre concatenado.
-- Catalogo base por `modifiers`.
-- Disponibilidad por `menu_node_modifiers`.
-- Seleccion por `order_item_modifiers`.
-- Render consistente debajo del producto en todas las vistas operativas.
+### 7. Mesas / Unir / Dividir
+- Si se implementa o ajusta `Cerrar orden` para una cuenta de mesa:
+  - debe liberar la mesa removiendo el vinculo operativo de la orden con `table_id` / `split_id`
+  - la orden debe seguir activa para cobro en `Caja`
+  - si existen otras divisiones activas, la mesa no debe quedar libre por completo
+- `MergeSplitOrdersDialog` debe seguir apoyandose en `move_dine_in_order_items_between_orders(...)`.
+- Esa operacion debe mantener:
+  - solo `DINE_IN`
+  - exclusion de ordenes especiales
+  - preservacion de modificadores
+  - redistribucion de historial `READY` / `DISPATCHED`
+  - restriccion de mover solo cantidad no pagada disponible
+- Si el movimiento vuelve operativa una orden destino sin numeracion, respetar la asignacion de `order_number` y `order_code`.
 
-### 6) No borrar historico operativo
-- En catalogo y otras entidades con trazabilidad, preferir `is_active=false`.
-- Evitar deletes fisicos salvo que exista certeza de no afectar historial.
+### 8. Snapshot operativo compartido
+- Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
+- No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
 
-### 7) `order_code` y contadores
-- Si reaparece un problema de duplicados, revisar primero la migracion/correccion vigente antes de tocar la app.
-- Lo mismo aplica para `restaurant_tables.table_number`: primero revisar trigger/contador/BD antes de meter mas heuristicas en frontend.
+### 9. `BULK` / `A granel`
+- No volver a tratar `A granel` como compra por unidades en UI operativa.
+- Mantener:
+  - `menu_scope = 'BULK'`
+  - productos incluidos desde `TABLE`
+  - instrucciones `Entregar: ...`
+  - `tray_item_type = 'C'`
 
-### 7.1) Mesas: referencia de sucursal + capacidad por turno
-- No volver a tratar las mesas como CRUD operativo fila por fila en Admin.
-- `branches.reference_table_count` es solo referencia de sucursal.
-- `cash_shifts.active_tables_count` define cuantas mesas se muestran operativamente en el turno.
-- `restaurant_tables` se conserva como pool interno para FKs, ordenes y divisiones.
-- Si se cambia la cantidad de mesas visibles, preferir RPC/flujo transaccional de turno antes que updates sueltos desde frontend.
-- La apertura del turno debe vivir en `Admin > Turno`, no en `Caja`.
-- Los usuarios habilitados para operar durante el turno deben resolverse desde `cash_shift_users`.
-- `Admin > Turno` debe funcionar como formulario unico:
-  - cambios de mesas, usuarios y despacho quedan en borrador local
-  - solo `Abrir turno` o `Guardar` deben persistir cambios
-- Si no hay turno abierto, los modulos operativos deben quedar bloqueados y solo `Admin` debe seguir accesible para administradores/supervisores.
-- En `Admin > Turno`, la UX vigente de usuarios es `combo + agregar + tarjetas`; no volver al modelo de "todos visibles y luego desmarcar".
-- En `Admin > Turno`, `Despacho` ya no debe exponer switches manuales de vistas activas; `Mesa` se deriva de mesas activas y `Para llevar` queda disponible.
-- En el modelo simplificado vigente, `Usuario operativo` no se parte en roles base visibles; la capacidad concreta de `Mesas`, `Despacho`, `Caja` y `Autorizar anul.` se define dentro del turno por `cash_shift_users`.
-- Si se toca la apertura de `Mesa` u `Orden especial`, no volver a usar `insert` directo a `orders` desde frontend; usar RPC validada por turno para respetar `cash_shift_users.can_serve_tables`.
-- El mismo criterio aplica a altas de `order_items` y al envio de borradores a cocina/caja desde `Ordenes`: evitar `insert/update` directo desde frontend cuando el flujo dependa del turno operativo.
-- Si se implementa o toca `Cambiar mesa` para una orden `DINE_IN`, mantener siempre esta regla:
-  - destino libre: mover directo actualizando `orders.table_id`
-  - si la orden ya tenia division y el destino esta libre, debe salir de esa division y quedar con `orders.split_id = NULL`
-  - destino ocupado: crear nueva division en destino y mover la orden a esa division
-- No dejar una mesa compartida con un grupo en `split_id = null` y otro grupo con `split_id` distinto; si el destino ya estaba ocupado por una orden base, convertirla primero en division propia.
-- Si despues de mover o eliminar una division solo queda una orden activa en la mesa, esa orden debe colapsar a mesa base y dejar de mostrarse como `3A` o `3B`.
-- Visualmente, los `split_code` deben mostrarse normalizados como `3A`, `3B`, etc., sin espacio entre numero y letra.
+### 10. Comprobantes de transferencia
+- No romper separacion entre:
+  - captura
+  - almacenamiento
+  - OCR/analisis
+  - aprobacion/rechazo posterior
+- Si no hay OCR disponible, el flujo debe degradar a revision manual, no fallar.
+- La limpieza de metadata SQL y la limpieza del bucket `payment-proofs` son procesos separados.
 
-### 7.2) Cancelacion/Anulacion directa por categoria
-- La configuracion visible vive en `Admin > Turno`.
-- La UI actual trabaja solo con categorias `nivel 0`.
-- La primera categoria raiz queda reservada al administrador general.
-- No reintroducir una UI de "plato de cocina" por fila salvo cambio funcional explicito.
-- Si una categoria raiz no tiene productos aun, igual debe aparecer en el listado si sigue siendo una categoria activa valida.
-- Si se toca anulacion por item en `Ordenes`, respetar siempre esta regla:
-  - administrador general, administrador de sucursal, supervisor habilitado en turno o usuario con `can_authorize_order_cancel`: pueden resolver directo
-  - mesero normal: solo anulacion directa cuando `get_branch_cancel_policy_for_product(...)` devuelva `allow_direct_cancel = true`
-  - esa anulacion directa por mesero solo aplica mientras la seleccion no toque una linea/cantidad ya despachada
-  - si la seleccion ya corresponde a una orden/item despachado, debe pasar a autorizacion
-  - si no, el mismo flujo debe generar solicitud de anulacion y no aplicar cancelacion real
-
-### 7.3) Solicitudes pendientes de anulacion
-- Si un mesero o usuario sin autorizacion solicita una anulacion, la orden debe moverse a una pestana propia `Pendiente de anulacion`.
-- No dejar esas ordenes mezcladas en las tabs operativas normales mientras `cancel_requested_at` siga activo.
-- El usuario autorizado debe resolverlas desde esa cola, manteniendo visible que se trata de una solicitud y no de una anulacion ya aplicada.
-- Debe existir tambien la accion `Negar anulacion`; negar una solicitud limpia la marca pendiente y devuelve la orden a su estado operativo previo, sin aplicar cancelacion real sobre items.
-
-### 8) Snapshot operativo compartido
-- Si una pantalla clasifica estados de orden (`Enviada`, `Lista`, `Despachada`, `Por cobrar`), preferir snapshot operativo compartido sobre lecturas parciales.
-- No reconstruir reglas operativas criticas desde una sola tabla si ya existe un snapshot consolidado.
-- Si el frontend consume `get_order_operational_snapshot`, mantener compatibilidad temporal con la firma legacy mientras haya riesgo de bases remotas sin la migracion mas reciente; una orden despachada no debe desaparecer solo por cambio de nombres de columnas del RPC.
-- Si una orden parcial sigue activa y `orders.status` indica una etapa operativa valida (`SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED`) pero el snapshot no devuelve cantidad visible para esa etapa, no ocultarla del tablero: aplicar fallback controlado antes de dejarla fuera de todas las pestanas.
-- Si una orden `TAKEOUT` / bandeja ya fue cobrada pero aun no fue entregada, no sacarla del flujo logistico: debe seguir entrando a `Despacho`.
-- Si una orden `TAKEOUT` / bandeja cambia de nombre visible en frontend, no alterar por eso su modelo operativo; en `Caja` y `Despacho` debe mostrarse como `Para llevar`.
-
-## Convenciones de Implementacion
+## Convenciones de implementacion
 
 ### Frontend
-- Si cambia la navegacion del catalogo o el detalle de item, revisar consistencia en:
-  - Ordenes
-  - Cocina
-  - Despacho
-  - Ticket
-- Si cambia el flujo de `A granel`, revisar consistencia en:
-  - `Admin > Arbol Menu (BULK)`
-  - Ordenes
-  - Cocina
-  - Despacho
-  - Caja
-  - Ticket
-- Si cambia disponibilidad/agotado, revisar tambien:
-  - Productos
-  - Ordenes
-  - vistas de consulta relacionadas
-- Distinguir visualmente categoria vs producto; una categoria no debe mostrarse como item vendible con precio.
-- En `Caja`, diferenciar visualmente:
-  - caja fisica
-  - recaudacion por metodo
-- Si se implementa anulacion de apertura de caja, no anular el turno operativo: conservar historial separado de aperturas dentro del turno y regresar la caja a estado limpio.
-- La accion `Anular apertura` debe vivir dentro de `Resumen`, no en header ni sidebar.
-- Solo supervisor de sucursal o administrador general pueden verla/ejecutarla.
-- Si ya existen cobros en la caja actual, la anulacion debe bloquearse con mensaje claro al usuario.
-- `Cerrar Caja` tambien debe bloquearse si existen ordenes de la sucursal en cualquier estado distinto de `PAID` o `CANCELLED`.
-- Si se agregan `Movimientos de Caja`, no mezclarlos con `Recaudado`, pero si se trata de `Cambio de denominacion` deben reflejarse en `cash_shift_denoms` para que `Actual`/`Desglose` muestren la nueva composicion sin alterar el total.
-- Si se toca cobro en efectivo, no confiar en recalculos solo del cliente:
-  - las denominaciones recibidas y el cambio entregado deben persistirse en backend
-  - `Desglose de Caja` debe reflejar los nuevos billetes/monedas reales del turno
-- El flujo visible de `Movimientos` debe vivir dentro de `Caja > ShiftSummary`, no en el sidebar izquierdo.
-- `Cambio de denominacion` debe exigir monto mayor a `0`, motivo obligatorio y dejar `Impacto en caja: $0.00`.
-- El flujo visible vigente de `Movimientos` abre directo al registro; si se necesita historial, debe quedar detras de `Ver historial` y no como paso previo obligatorio.
-- En `Cambio de denominacion`, las denominaciones que salen de caja nunca pueden superar el stock actual disponible.
-- En movil, evitar tablas comprimidas o filas montadas; preferir tarjetas apiladas o layouts de una sola responsabilidad visual.
-- No forzar layouts desktop partidos en ancho insuficiente; si una pantalla no cabe bien en dos columnas, degradar a una sola columna estable.
-- Si se toca `MenuNavigator`:
-  - categorias/subniveles pueden seguir como cards
-  - productos deben mantenerse como filas de lista a ancho completo
-  - ese render de producto aplica por igual a `Mesa`, `Para llevar` y `Orden especial`
-  - en telefono, el grid general debe poder bajar a 2 columnas para niveles no-producto sin romper las filas de producto
-- En `Despacho`, para sucursales con alto volumen, priorizar la vista de lista tipo acordeon sobre el modelo de tarjetas (`cards`) individuales para mejorar la densidad de informacion y la velocidad operativa.
-- En `Ordenes`, la vista por pestanas (`Enviadas`, `Despachadas`, `Pendiente de anulacion`, `Canceladas`, `Pagadas`) debe mantenerse como lista expandible y no volver a un mosaico de tarjetas.
-- Si se toca `OrdersList`, conservar dentro de la fila o su expansion:
-  - origen de la orden
-  - codigo
-  - tiempo o evento visible
-  - total
-  - detalle de items por etapa
-  - botones de solicitar/anular/autorizar/negar cuando correspondan
-  - en movil, la fila resumen debe mantenerse en dos lineas compactas; no convertirla otra vez en card alta con datos apilados
-  - en movil, las pestanas de estado deben pasar a `Select`/combo para ahorrar espacio; la grilla de botones queda para pantallas mayores
-- Si se toca `CancelOrderDialog`, mantener el mismo modelo de seleccion de `PaymentDialog`:
-  - columna izquierda con cantidades aun anulables
-  - columna derecha con cantidades a aplicar en la anulacion actual
-  - acciones de mover una cantidad o mover todo por linea
-  - sin volver al esquema principal de inputs sueltos por fila
-  - sin mezclar ese selector con botones heredados de `parcial/total`; si hace falta distinguir `total`, debe calcularse desde la seleccion real
-  - no mostrar precios, subtotales ni totales monetarios en esa ventana; la anulacion se decide por cantidades y estado operativo
-  - renderizar el motivo de anulacion como `Select`/combo para ahorrar espacio vertical
-  - no agregar un `Alert` introductorio encima del selector dual; priorizar altura util para las listas
-  - no agregar una tarjeta resumen aparte con conteo de items seleccionados
-  - en el encabezado, mostrar siempre la referencia completa (`order_code` o fallback `#order_number`)
-  - en cada fila, permitir que el nombre del producto se vea completo y no renderizar metadatos en una segunda linea debajo
-  - en movil, cuando las dos listas quedan apiladas, usar flechas verticales (`abajo` / `arriba`) en lugar de laterales para mover items
-- En `Mesas`, si se muestran totales o divisiones en la tarjeta:
-  - telefono: usar badges compactos, con truncado si hace falta
-  - tablet: aumentar padding/tipografia sin romper la regla de esquinas
-- Si existe una alerta operativa para el mesero como `orden lista`, no montarla solo en la pagina de `Despacho`; debe vivir en una capa global del layout operativo para que siga funcionando en movil mientras el usuario navega por otras vistas.
-- Si se toca la alerta de `Listo`, respetar siempre esta regla:
-  - `Listo` del encabezado en `Despacho` es alerta pura
-  - no debe depender de mover cantidades a `READY`
-  - debe poder sonar varias veces sobre la misma orden
-  - debe detenerse apenas exista cualquier despacho posterior de esa orden
-- Si se toca el shell de navegacion:
-  - `>= 768px`: usar `sidebar` izquierda
-  - `< 768px`: usar `bottom nav` fija
-  - ambas navegaciones deben compartir la misma logica de visibilidad por permisos/turno
-  - el contenido principal debe dejar espacio inferior real para la barra movil
-  - si un modulo necesita subnavegacion contextual en desktop/tablet, integrarla en la `sidebar` antes de crear una segunda barra lateral dentro de la pagina
-  - en `Caja`, `Por cobrar` / `Pagos realizados` deben vivir en la `sidebar` para desktop/tablet y quedarse en la pagina solo para movil
-  - si esa subnavegacion necesita persistencia visual entre clics, preferir `query params` antes que estado local oculto
-- Si se toca el tema visual:
-  - escribir `data-theme` en `document.documentElement`
-  - mantener compatibilidad con la clase `dark` existente
-  - no introducir persistencia nueva en BD por intuicion; solo si el circuito remoto ya esta definido
-- En `Admin > Turno`, priorizar usabilidad movil:
-  - bloques verticales
-  - resumen adaptable a 1 o 2 columnas
-  - controles de despacho apilados
-  - boton principal a ancho completo en telefono
-- En tablet, `Admin` ya debe comportarse con tabs horizontales; no dejarlo en modo dropdown de telefono si ya hay ancho suficiente.
-- `BranchCancelPolicyEditor`, `DispatchConfig`, `ShiftSetupAdmin` y `UsersCrud` deben revisarse juntos cuando se hagan cambios recientes de UX en Admin.
-- Si se toca `CancelOrderDialog`, `CashRegisterMovementsDialog` o modales de `ShiftSummary`, revisar tambien:
-  - ancho real en telefono (`calc(100vw - margen)`)
-  - scroll vertical controlado
-  - botones de footer apilados en telefono
-  - cards internas sin comprimir inputs o textos
-  - en tablet, preferir usar el ancho extra para 2 columnas antes que dejar una ventana muy alta
-- Si se toca `PaymentDialog`, mantener estas reglas:
-  - orden normal: dos columnas visibles (`Items pendientes` y `Items a cobrar ahora`) desde tablet en adelante
-  - telefono: permitir una sola columna estable o bloques apilados antes que comprimir filas hasta hacerlas ilegibles
-  - No volver a seleccionar automaticamente todo el pendiente al abrir.
-  - El pago parcial no debe cerrar el modal mientras la orden siga existiendo en `Por cobrar`.
-  - El modal NO debe cerrarse automaticamente tras un cobro exitoso: debe permitir al usuario imprimir el ticket de venta manualmente.
-  - Los tickets deben seguir el estandar profesional de 80mm para impresoras termicas.
-  - Si el pago en efectivo cubre la totalidad, navegar automaticamente a la pantalla de confirmacion del ticket.
-  - los metodos de pago deben compactarse sin montarse entre si; si no caben en una sola linea, apilarlos
-  - si existen metodos duplicados por nombre visible, deduplicarlos en la UI antes de renderizar
-  - `Monedas y billetes` solo debe habilitarse cuando exista al menos un item en `Items a cobrar ahora`
-  - usar la imagen real del producto desde `menu_nodes.image_url` cuando exista; fallback a icono generico solo cuando falte
-  - si existe pago por `Transferencia`, el flujo debe poder preparar la captura del comprobante antes del `Confirmar cobro`
-  - no habilitar `Confirmar cobro` solo por haber digitado el monto de transferencia; el flujo debe considerar el estado real de la captura
-- Si se toca el capturador de comprobantes en `Caja`:
-  - la vista previa de una foto vertical debe mostrarse completa y centrada; no usar `object-cover` si eso recorta el comprobante
-  - manejar timeout, abort y errores del upload para evitar estados colgados en progreso indefinido
-  - si el backend devuelve error, intentar mostrar el `message` real antes de caer en un texto generico
-- Si se toca `OrderItemsList` en `Ordenes`, mantener comportamiento responsive explicito:
-  - telefono: descripcion a la izquierda y columna fija de stepper/boton a la derecha cuando el ancho lo permita
-  - tablet: mantener controles a la derecha y aprovechar el ancho extra sin empujar acciones al pie
-  - no volver a layouts donde el nombre del producto compita con stepper y accion en una sola fila angosta
-- Si el item es `A granel`, no mostrar cantidad comprada (`x1`, stepper o unidad) en vistas operativas; en su lugar, resaltar la instruccion `Entregar: ...` cuando exista.
-- Si se toca `DispatchCardBase` para `A granel`, no reintroducir stepper/cantidad visible; mantener solo el valor del item y la instruccion de entrega cuando aplique.
-- Si se toca la navegacion entre `Mesas` y `Ordenes`, preservar el origen de apertura:
-  - abrir una mesa desde `Mesas` puede navegar a `/ordenes`
-  - pero la navegacion visible debe seguir marcando `Mesas` mientras el flujo provenga de ahi
-  - esta regla tambien aplica al dividir mesa o cambiar entre submesas
+- Si tocas catalogo, validar `Ordenes`, `Despacho`, `Caja`, ticket y cualquier vista derivada.
+- Si tocas anulacion de pagos, validar:
+  - `CompletedPaymentsList`
+  - `PaymentReversalModal`
+  - `useCaja`
+  - `Mesas`
+  - estado visible de la orden reabierta
+- Si tocas `Unir/Dividir`, validar:
+  - `MergeSplitOrdersDialog`
+  - `Ordenes`
+  - `Mesas`
+  - cantidades movibles vs cantidades pagadas
+- En movil, no comprimir tablas hasta volverlas ilegibles; degradar a cards o listas compactas.
 
-### Admin
-- `Arbol Menu` es la vía principal para altas, ediciones, reordenamiento y bajas logicas del catalogo; no debe reintroducirse una pestana visible de `Productos` como superficie principal.
-- Las denominaciones de efectivo son ahora globales; su gestion queda reservada exclusivamente a administradores globales en `Admin > Denominaciones`.
-- Cuando se toque `Admin > Arbol Menu`, validar tambien:
-  - `Arbol Menu Mesa`
-  - `Arbol Menu Para Llevar`
-  - boton `Copiar desde Mesa`
-- `image_url` es la representacion visual principal del nodo y debe llenarse desde la subida de archivo a Storage.
-- El campo `icon` ya no debe exponerse en `Admin > Arbol Menu`; si persiste en BD, tratarlo solo como remanente legacy.
-- La pestana `Modificadores` solo administra el catalogo base; la asignacion a nodos debe hacerse en `Arbol Menu`.
-- No permitir cierre de turno si quedan ordenes o cobros pendientes; esa regla debe vivir en BD y no solo en frontend.
-- Administrador general y supervisor de sucursal deben poder operar caja por override administrativo, aunque no tengan `can_use_caja` marcado como usuario comun del turno.
-- Si se toca creacion de usuarios, validar el circuito completo:
-  - Auth
-  - `profiles`
-  - sucursal inicial
-  - rol de sucursal inicial
-  - rollback si la asignacion posterior falla
-- Si se toca Ordenes o Despacho, revisar tambien:
-  - RLS de tablas de eventos operativos
-  - reflejo en vivo entre usuarios/sesiones
-- Si se toca cancelacion de ordenes, validar siempre contra el snapshot operativo completo:
-  - no asumir que cancelar = solo `Pendiente + Listo`
-  - considerar tambien `Despachado no pagado` cuando la regla de negocio lo permita
-  - la ventana de cancelacion, las tarjetas de `Despachadas` y los calculos de `Caja` deben seguir exactamente la misma cuenta operativa
-- Si la anulacion se dispara desde una tarjeta filtrada por pestana, el dialogo debe respetar exactamente los items visibles de esa tarjeta; no mezclar otros items de la orden completa.
-- Si la anulacion se dispara desde una sola linea:
-  - la cantidad elegida en la tarjeta debe viajar al dialogo ya preseleccionada
-  - el dialogo compacto no debe volver a pedir tipo de cancelacion ni cantidad
-  - aunque la cantidad elegida coincida con todo lo anulable de esa linea, la operacion sigue siendo `partial`
-- Si se toca `Despacho`, validar tambien la unicidad de asignacion por usuario y la visibilidad final de tabs segun modo `SINGLE` / `SPLIT`.
-- Si se toca divisiones de mesa, validar tambien:
-  - que la nueva division quede seleccionada
-  - que no pueda crearse una division nueva si una anterior no tiene items
-  - que `Eliminar division` se bloquee si ya hubo cocina/listo/despacho/pago/cancelacion
-- En Caja, no mezclar montos de efectivo con montos no efectivos al presentar `Diferencia` o `Actual`.
-- Si el metodo efectivo no participa en un cobro final, no persistir ni reutilizar denominaciones temporales.
-- Si se toca `proof_capture_backend`:
-  - preservar la separacion entre captura, almacenamiento y validacion/aprobacion del comprobante
-  - no romper el comportamiento degradado cuando el entorno no tenga OCR disponible
-  - si se introduce OCR sin IA, guardar el resultado como asistencia (`match`, `mismatch`, `needs_review`, `unavailable`, `error`) y no como verdad bancaria absoluta
-  - si el despliegue requiere dependencias de sistema como `tesseract`, documentar explicitamente si el servicio debe correr en Docker y no en runtime nativo
+### Backend / BD
+- Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
+- Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
+- Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
 
-## Checklist Minimo Antes de Cerrar una Tarea
-1. `npx.cmd tsc --noEmit`
-2. Probar alta/edicion relevante en `Admin > Arbol Menu` si el cambio toca catalogo
-3. Probar flujo de orden si el cambio toca seleccion de productos
-4. Documentar impacto en:
+## Checklist minimo antes de cerrar una tarea
+1. Si hubo cambio de codigo, correr verificacion tecnica adecuada (`tsc`, tests o compilacion relevante).
+2. Si se toco catalogo, validar al menos un flujo de venta real.
+3. Si se toco caja, validar apertura/cobro/cierre o anulacion segun corresponda.
+4. Si se toco anulacion de pagos, validar total y parcial.
+5. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
+6. Actualizar estos docs cuando cambie la regla base:
    - `docs/system_context.md`
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
-5. Si se tocaron scripts de reset (`reset_full_for_fresh_start` / `reset_operational_for_fresh_start`), actualizar tambien sus comentarios para reflejar:
-  - orden especial
-  - arboles `TABLE` / `TAKEOUT` / `BULK`
-  - `manual_price_enabled` en `menu_nodes`
-  - productos incluidos para `A granel`
-  - modulo de comprobantes de transferencia (`payment_capture_requests`, `payment_proofs`, campos OCR/analisis y limpieza separada del bucket `payment-proofs`)
-  - alertas/listas operativas nuevas que siguen existiendo como funciones
-6. Si se tocó un flujo operativo entre modulos, validar que el estado coincida en `Ordenes`, `Despacho`, `Cocina` y `Caja`.
+7. Si se tocan resets, actualizar tambien sus comentarios para reflejar:
+   - anulaciones de pago
+   - `Unir/Dividir`
+   - templates de caja
+   - comprobantes de transferencia
+   - diferencia entre cerrar caja y cerrar turno
 
-7. Si se toco una Edge Function o una RPC critica, confirmar si requiere deploy o migracion remota antes de dar por cerrado el cambio.
-
-## Estado Base que Debe Mantenerse
+## Estado base que debe mantenerse
 - Login con email o username.
 - Sucursal activa como contexto operativo.
 - Permisos efectivos por modulo/sucursal.
-- Modificadores estructurados por nodo e item.
-- Navegacion del menu basada en arbol, con Nivel 1 como unica obligatoriedad.
-- Modulo `Productos` como superficie operativa para consulta y agotado/activacion.
-- `A granel` basado en `menu_scope = 'BULK'`, con productos incluidos provenientes de `TABLE` y reglas de entrega por monto.
-- Caja con:
-  - efectivo controlado por denominaciones
-  - transferencia/no efectivo como monto editable
-  - resumen de turno separado de recaudacion por metodo
-  - subnavegacion desktop/tablet resuelta desde el shell y no desde una columna lateral duplicada dentro de la pagina
-
-## 8.1) Regla vigente para Orden Especial
-- No introducir `SPECIAL` como nuevo `order_type` mientras el flujo operativo pueda resolverse con metadatos en `orders`.
-- El valor comercial real de la orden no se sobreescribe:
-  - se conserva en `order_items`
-  - el cobro excepcional se modela aparte en `orders.special_total_manual`
-- Si una orden especial se cobra en Caja:
-  - no forzar `payment_items`
-  - calcular saldo pendiente contra pagos activos de la cabecera
-- Si una orden `DINE_IN` se convierte en especial:
-  - preservar historial operativo
-  - liberar mesa/division actual
-  - guardar origen para auditoria
-- Si se muestra una orden en UI, no inferir automaticamente `Para llevar` solo porque `table_id` o `table_name` sea `NULL`; revisar `is_special`.
-- Si una orden de mesa ya tenia items despachados y se agregan items nuevos:
-  - al reenviarlos a cocina debe reabrirse la cabecera a `SENT_TO_KITCHEN`
-  - no dejar la orden congelada en `KITCHEN_DISPATCHED`, porque eso la saca de `Cocina` y `Despacho`
-
-## 9) Autonomía de Asistentes IA
-- **Aplicación Directa:** Los asistentes de IA (como Windsurf, Cursor, Gemini, etc.) tienen permitido y se les requiere aplicar los cambios de código directamente a los archivos del proyecto, omitiendo los pasos intermedios de pedir permiso o confirmación para proceder con la escritura de código, a menos que el flujo requiera revisión humana crítica de arquitectura o se rompa un sistema en producción.
-- `Orden Bandeja` no crea un `order_type` nuevo; usar `orders.is_tray_order`.
-- En `Caja` y `Despacho`, cuando la orden ya opera como entrega al cliente final, preferir la etiqueta visible `Para llevar`.
-- `order_items.product_id` nunca puede ser `NULL`, tampoco para items bandeja `A/B/C`.
-- `is_tray_category` y `manual_price_enabled` son reglas independientes.
-- `Tipo C` exige precio manual mayor a `0` en frontend y en la RPC `add_tray_order_item`.
-- `trayMode` en `MenuNavigator` debe ser opcional y no romper el arbol normal.
-- Los items `A granel` no deben volver a representarse como compra por unidades en vistas operativas; si se necesita referencia visual en `Despacho`, usar el valor del item, no un stepper de cantidad.
-
+- Gate adicional por turno cuando aplique.
+- Navegacion del menu sobre `menu_nodes`.
+- Persistencia de venta todavia compatible con `products`.
+- `BULK` operativo.
+- `Orden Especial` como metadata sobre `orders`.
+- `Orden Bandeja` como `is_tray_order`.
+- Caja fisica basada en denominaciones.
+- Flujo seguro de anulacion de pagos con supervisor.

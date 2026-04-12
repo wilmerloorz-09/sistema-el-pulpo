@@ -18,8 +18,7 @@ export function getOrderOriginLabel(params: {
   }
 
   const tableName = params.tableName?.trim() || "Mesa";
-  const splitCode = params.splitCode?.trim();
-  return splitCode ? `${tableName} ${splitCode}` : tableName;
+  return tableName;
 }
 
 export function getOrderKind(params: {

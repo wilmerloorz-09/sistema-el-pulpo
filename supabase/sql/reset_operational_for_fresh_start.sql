@@ -25,6 +25,8 @@
 -- - Conserva plantillas de apertura de caja y su composicion:
 --   - `cash_register_templates`
 --   - `cash_register_template_denoms`
+-- - Conserva la diferencia arquitectonica entre caja y turno:
+--   - cerrar caja sigue siendo distinto de cerrar turno
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero, las de orden especial y el sistema de tickets (80mm)
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
@@ -155,7 +157,7 @@ COMMIT;
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones de pago, divisiones reabiertas por anulacion y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
 

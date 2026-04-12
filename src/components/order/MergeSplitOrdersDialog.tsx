@@ -19,8 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchOrderDetail } from "@/hooks/useOrder";
-import { dbSelect } from "@/services/DatabaseService";
-import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronsDown, ChevronsUp, Loader2, X } from "lucide-react";
@@ -223,21 +222,26 @@ export default function MergeSplitOrdersDialog({
         .order("visual_order", { ascending: true });
       if (activeTablesError) throw activeTablesError;
 
-      const orders = await dbSelect<{
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
+        .select("id, order_number, order_code, table_id, table_name_snapshot, split_id, status, menu_scope")
+        .eq("branch_id", activeBranchId!)
+        .eq("order_type", "DINE_IN")
+        .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
+        .not("table_id", "is", null)
+        .order("created_at", { ascending: true });
+      if (ordersError) throw ordersError;
+
+      const orders = (ordersData ?? []) as Array<{
         id: string;
+        order_number: number | null;
         order_code: string | null;
         table_id: string | null;
+        table_name_snapshot: string | null;
         split_id: string | null;
         status: string;
         menu_scope: "TABLE" | "TAKEOUT";
-      }>("orders", {
-        select: "id, order_code, table_id, split_id, status, menu_scope",
-        branchId: activeBranchId!,
-        filters: [
-          { column: "order_type", op: "eq", value: "DINE_IN" },
-        ],
-        orderBy: { column: "created_at", ascending: true },
-      });
+      }>;
 
       const orderIds = orders.map((order) => order.id);
       if (orderIds.length === 0) return [];
@@ -277,14 +281,19 @@ export default function MergeSplitOrdersDialog({
       const orderOptions = orders
         .map((order) => {
           const table = order.table_id ? tableMap.get(order.table_id) : null;
-          const tableName = table?.name?.trim() || "Mesa";
+          const tableName =
+            table?.name?.trim()
+            || String(order.table_name_snapshot ?? "").trim()
+            || "Mesa";
           const splitCode = order.split_id ? splitMap.get(order.split_id) ?? null : null;
-          const label = getOrderOriginLabel({
+          const fallbackLabel = getOrderOriginLabel({
             orderType: "DINE_IN",
             tableName,
             splitCode,
             isSpecial: false,
           });
+          const orderRef = getOrderRef(order.order_code, order.order_number);
+          const label = orderRef ? `${tableName} (${orderRef})` : fallbackLabel;
 
           return {
             id: order.id,

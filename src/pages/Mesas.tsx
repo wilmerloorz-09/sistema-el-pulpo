@@ -523,7 +523,7 @@ const Mesas = () => {
                       )}
                       {table.splitCount > 0 && (
                         <span className="absolute left-2 top-2 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-secondary-foreground">
-                          {table.splitCount} {table.splitCount === 1 ? "division" : "divisiones"}
+                          {table.splitCount} {table.splitCount === 1 ? "orden" : "ordenes"}
                         </span>
                       )}
                     </>

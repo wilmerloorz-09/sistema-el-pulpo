@@ -38,34 +38,13 @@ interface OrderItem {
   modifiers: { id: string; modifier_id: string; description: string }[];
 }
 
-interface SiblingOrder {
+export interface SiblingOrder {
   id: string;
   order_number: number | null;
   order_code: string | null;
-  split_code: string;
+  split_code: string | null;
+  table_order_position: number | null;
   item_count: number;
-}
-
-function getSplitSortValue(splitCode: string): { prefix: string; rank: number; rawSuffix: string } {
-  const normalized = String(splitCode ?? "").trim();
-  const match = normalized.match(/^(.*?)(?:\s+([A-Z]|\d+))?$/i);
-  const prefix = String(match?.[1] ?? normalized).trim().toUpperCase();
-  const rawSuffix = String(match?.[2] ?? "").trim().toUpperCase();
-
-  if (!rawSuffix) {
-    return { prefix, rank: 0, rawSuffix };
-  }
-
-  if (/^\d+$/.test(rawSuffix)) {
-    return { prefix, rank: Number(rawSuffix), rawSuffix };
-  }
-
-  const charCode = rawSuffix.charCodeAt(0);
-  if (charCode >= 65 && charCode <= 90) {
-    return { prefix, rank: charCode - 64, rawSuffix };
-  }
-
-  return { prefix, rank: Number.MAX_SAFE_INTEGER, rawSuffix };
 }
 
 function isBlockedPaymentNotes(notes: string | null) {
@@ -94,6 +73,7 @@ interface Order {
   special_marked_at?: string | null;
   branch_id: string;
   table_id: string | null;
+  table_order_position: number | null;
   split_id: string | null;
   split_code?: string | null;
   table_name?: string;
@@ -111,13 +91,13 @@ export function getOrderQueryKey(orderId: string | null) {
   return ["order", orderId] as const;
 }
 
-async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
+export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
   const { data: siblingOrders, error: siblingOrdersError } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, split_id, status, order_items(id)")
+    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, order_items(id)")
     .eq("table_id", tableId)
-    .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
-    .not("split_id", "is", null);
+    .eq("order_type", "DINE_IN")
+    .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]);
 
   if (siblingOrdersError) throw siblingOrdersError;
   if (!siblingOrders || siblingOrders.length === 0) return [];
@@ -130,38 +110,30 @@ async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
   if (splitsError) throw splitsError;
 
   return siblingOrders
-    .filter((sibling) => sibling.status !== "DRAFT" || (Array.isArray((sibling as any).order_items) && (sibling as any).order_items.length > 0))
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
       order_code: (sibling as any).order_code ?? null,
-      split_code: splits?.find((split) => split.id === sibling.split_id)?.split_code ?? "",
+      split_code: splits?.find((split) => split.id === sibling.split_id)?.split_code ?? null,
+      table_order_position: Number((sibling as any).table_order_position ?? 0) || null,
       item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
     }))
     .sort((left, right) => {
-      const leftSort = getSplitSortValue(left.split_code);
-      const rightSort = getSplitSortValue(right.split_code);
+      const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
+      const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
 
-      if (leftSort.prefix !== rightSort.prefix) {
-        return leftSort.prefix.localeCompare(rightSort.prefix, "es");
+      if (leftPos !== rightPos) {
+        return leftPos - rightPos;
       }
 
-      if (leftSort.rank !== rightSort.rank) {
-        return leftSort.rank - rightSort.rank;
-      }
-
-      if (leftSort.rawSuffix !== rightSort.rawSuffix) {
-        return leftSort.rawSuffix.localeCompare(rightSort.rawSuffix, "es");
-      }
-
-      return left.order_number - right.order_number;
+      return Number(left.order_number ?? 0) - Number(right.order_number ?? 0);
     });
 }
 
 export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
   const { data: order, error } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, table_name_snapshot")
+    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, table_name_snapshot")
     .eq("id", orderId)
     .single() as any;
   if (error) throw error;
@@ -426,6 +398,7 @@ export function useOrder(orderId: string | null) {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
   });
 
@@ -456,6 +429,7 @@ export function useOrder(orderId: string | null) {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
   });
 
@@ -497,6 +471,7 @@ export function useOrder(orderId: string | null) {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
   });
 
@@ -517,6 +492,7 @@ export function useOrder(orderId: string | null) {
       const order = query.data;
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
@@ -556,9 +532,10 @@ export function useOrder(orderId: string | null) {
       return row as MoveTableResult;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["order"] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
@@ -574,6 +551,7 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -591,6 +569,7 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -616,13 +595,92 @@ export function useOrder(orderId: string | null) {
       return row;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["order"] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       toast.success("La orden ahora opera como orden especial");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const createTableOrder = useMutation({
+    mutationFn: async () => {
+      if (!orderId) {
+        throw new Error("No se encontro la orden base");
+      }
+
+      const { data, error } = await supabase.rpc("create_additional_dine_in_order", {
+        p_source_order_id: orderId,
+      });
+
+      if (error) throw error;
+      return String(data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      toast.success("Nueva orden creada en la mesa");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const deleteTableOrder = useMutation({
+    mutationFn: async () => {
+      if (!orderId) {
+        throw new Error("No se encontro la orden a eliminar");
+      }
+
+      const { data, error } = await supabase.rpc("delete_dine_in_table_order", {
+        p_order_id: orderId,
+      });
+
+      if (error) throw error;
+      return data ? String(data) : null;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const closeOrder = useMutation({
+    mutationFn: async () => {
+      const order = query.data;
+      if (!orderId || !order) {
+        throw new Error("No se encontro la orden a cerrar");
+      }
+
+      if (order.order_type !== "DINE_IN" || !order.table_id) {
+        throw new Error("Solo puedes cerrar ordenes activas de mesa");
+      }
+
+      if (order.status === "PAID" || order.status === "CANCELLED") {
+        throw new Error("La orden ya no puede cerrarse");
+      }
+
+      const { error } = await supabase.rpc("close_dine_in_order_for_payment", {
+        p_order_id: orderId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      toast.success("Orden cerrada y enviada a cobro");
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -635,8 +693,11 @@ export function useOrder(orderId: string | null) {
     updateQuantity,
     sendToKitchen,
     moveToTable,
+    createTableOrder,
+    deleteTableOrder,
     updateMenuScope,
     updateSpecialTotal,
     convertToSpecial,
+    closeOrder,
   };
 }

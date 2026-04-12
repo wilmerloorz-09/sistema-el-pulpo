@@ -28,20 +28,20 @@ interface TabInfo {
 
 const tabs: TabInfo[] = [
   {
-    key: "sent",
-    label: "Enviadas",
-    status: "SENT_TO_KITCHEN",
-    showCancel: true,
-    helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
-    icon: <Clock className="h-4 w-4" />,
-  },
-  {
     key: "draft",
     label: "Borradores",
     status: "DRAFT",
     showCancel: true,
     helperText: "Aqui ves las ordenes que aun no han sido enviadas a cocina.",
     icon: <ClipboardList className="h-4 w-4" />,
+  },
+  {
+    key: "sent",
+    label: "Enviadas",
+    status: "SENT_TO_KITCHEN",
+    showCancel: true,
+    helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
+    icon: <Clock className="h-4 w-4" />,
   },
   {
     key: "dispatched",
@@ -61,7 +61,7 @@ const tabs: TabInfo[] = [
   },
   {
     key: "cancelled",
-    label: "Canceladas",
+    label: "Anuladas",
     status: "CANCELLED",
     showCancel: false,
     helperText: "Aqui ves las cantidades anuladas y tambien las ordenes para llevar ya despachadas.",
@@ -366,7 +366,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
                   onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
                   onApproveCancellation={activeTab === "pendingCancellation" ? (selectedOrder) => setApprovalTarget(selectedOrder) : undefined}
                   onRejectCancel={activeTab === "pendingCancellation" ? (selectedOrder) => rejectCancellationRequestMutation.mutate({ orderId: selectedOrder.id }) : undefined}
-                  showCancelButton={currentTab.showCancel && !readOnly}
+                  showCancelButton={currentTab.showCancel && activeTab !== "draft" && !readOnly}
                   showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
                   readOnly={readOnly}
                   canAuthorizeCancel={canAuthorizeCancel}

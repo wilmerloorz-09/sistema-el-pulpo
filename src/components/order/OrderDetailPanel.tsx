@@ -154,7 +154,7 @@ export default function OrderDetailPanel({
           <div key={item.id} className="flex items-start gap-2 rounded-xl bg-background px-2 py-2">
             {item.tray_item_type !== "C" ? (
               <Badge className="min-w-[2.9rem] shrink-0 justify-center rounded-lg border-orange-300 bg-gradient-to-r from-orange-500 to-orange-400 px-2 py-1.5 text-sm font-black leading-none text-white shadow-[0_12px_22px_-18px_rgba(249,115,22,0.95)]">
-                {(isDispatchedView ? item.quantity : (item.quantity_total || item.quantity)) || 1}x
+                {(isDispatchedView ? item.quantity : (item.quantity_total || item.quantity)) || 1}
               </Badge>
             ) : null}
 

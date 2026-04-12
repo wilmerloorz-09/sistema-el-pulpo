@@ -211,7 +211,7 @@ export default function OrderListRow({
 
   const label = getOrderOriginLabel({
     orderType: order.order_type,
-    tableName: order.table_name,
+    tableName: order.table_name || order.table_name_snapshot || null,
     splitCode: order.split_code,
     isSpecial: order.is_special,
   });
@@ -484,7 +484,7 @@ export default function OrderListRow({
                     <div className="grid grid-cols-4 gap-2 text-xs sm:contents sm:text-sm">
                       <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-700 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
                         {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span> : null}
-                        {isBulkItem ? "A granel" : `${visibleQty}x`}
+                        {isBulkItem ? "A granel" : visibleQty}
                       </span>
                       <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
                         <span className="mr-1 font-medium text-slate-500 sm:hidden">Desp.</span>

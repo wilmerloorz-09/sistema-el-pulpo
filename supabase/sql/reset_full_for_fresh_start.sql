@@ -5,10 +5,13 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
+--   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo
+--   - incluye movimientos entre ordenes DINE_IN por `Unir/Dividir`
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 --   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
+--   - incluye templates persistentes de apertura de caja y su composicion por denominacion
 --   - incluye auditoria de cierre de turno (closed_by, closed_from_device, closed_from_user_agent)
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 --   - incluye todos los alcances de menu_nodes: `TABLE`, `TAKEOUT` y `BULK`
@@ -51,6 +54,8 @@
 --   - Despacho incluye acceso total a Productos
 --   - Ordenes y Productos tambien pueden habilitarse por separado
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
+-- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
+--   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
 
@@ -76,11 +81,14 @@ DECLARE
     'public.order_cancellations',
 
     -- Pagos / caja
+    'public.payment_void_requests',
     'public.payment_items',
     'public.cash_register_movements',
     'public.cash_register_openings',
     'public.cash_movements',
     'public.cash_shift_denoms',
+    'public.payment_proofs',
+    'public.payment_capture_requests',
     'public.payments',
     'public.operational_losses',
 
@@ -108,6 +116,8 @@ DECLARE
     'public.categories',
     'public.denominations',
     'public.payment_methods',
+    'public.cash_register_template_denoms',
+    'public.cash_register_templates',
 
     -- Caja / despacho / configuracion operativa por sucursal
     'public.cash_shift_users',
@@ -249,11 +259,12 @@ COMMIT;
 -- - 0 configuraciones/asignaciones de despacho
 -- - 0 usuarios habilitados por turno y 0 permisos operativos por turno
 -- - 0 auditoria de cierre de turno previa
+-- - 0 templates de apertura de caja y 0 composiciones predefinidas por denominacion
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes, anulaciones de pago, `Unir/Dividir` y alertas de listo)
 -- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - modulos, roles y permisos base intactos

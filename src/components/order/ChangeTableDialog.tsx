@@ -29,17 +29,17 @@ const STATUS_META: Record<TableWithStatus["status"], { label: string; badgeClass
   free: {
     label: "Libre",
     badgeClass: "border-sky-200 bg-sky-50 text-sky-700",
-    hint: "Se movera directamente a esta mesa sin crear una division nueva.",
+    hint: "Se movera directamente a esta mesa como la primera orden activa.",
   },
   occupied: {
     label: "Ocupada",
     badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
-    hint: "Se creara una nueva division en esta mesa para no mezclar grupos.",
+    hint: "Se agregara como una nueva orden dentro de esta mesa.",
   },
   to_pay: {
     label: "Por pagar",
     badgeClass: "border-amber-200 bg-amber-50 text-amber-800",
-    hint: "Se creara una nueva division en esta mesa para no mezclar grupos.",
+    hint: "Se agregara como una nueva orden dentro de esta mesa.",
   },
 };
 
@@ -61,7 +61,7 @@ export default function ChangeTableDialog({
   );
 
   const selectedTable = candidateTables.find((table) => table.id === selectedTableId) ?? null;
-  const originLabel = currentSplitCode?.trim() || currentTableName?.trim() || "Mesa actual";
+  const originLabel = currentTableName?.trim() || currentSplitCode?.trim() || "Mesa actual";
 
   useEffect(() => {
     if (!open) {
@@ -83,7 +83,7 @@ export default function ChangeTableDialog({
         <DialogHeader className="space-y-2">
           <DialogTitle className="font-display text-xl font-black text-foreground">Cambiar de mesa</DialogTitle>
           <DialogDescription>
-            Elige la mesa destino para mover esta orden `DINE_IN`. Si la mesa esta ocupada, el sistema creara una division nueva en destino.
+            Elige la mesa destino para mover esta orden `DINE_IN`. Si la mesa ya tiene actividad, la orden se agregara como otra orden dentro de esa mesa.
           </DialogDescription>
         </DialogHeader>
 
@@ -99,7 +99,7 @@ export default function ChangeTableDialog({
 
             <div className="mt-3 flex items-center gap-2 rounded-[18px] border border-orange-100 bg-orange-50/70 px-3 py-2 text-xs text-orange-700">
               <ArrowRightLeft className="h-4 w-4 shrink-0" />
-              La mesa destino definira si el movimiento es directo o por division.
+              La mesa destino definira si el movimiento queda como primera orden o como una orden adicional.
             </div>
           </div>
 
@@ -130,7 +130,7 @@ export default function ChangeTableDialog({
                         <div>
                           <p className="font-display text-base font-black text-foreground">{table.name}</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {table.splitCount > 0 ? `${table.splitCount} division(es) activas` : "Sin divisiones activas"}
+                            {table.splitCount > 0 ? `${table.splitCount} orden(es) activas` : "Sin ordenes activas"}
                           </p>
                         </div>
                         <Badge variant="outline" className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", status.badgeClass)}>

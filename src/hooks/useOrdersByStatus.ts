@@ -73,6 +73,7 @@ export interface OrderSummary {
   special_total_manual?: number | null;
   table_id: string | null;
   table_name: string | null;
+  table_name_snapshot?: string | null;
   created_at: string;
   sent_to_kitchen_at?: string | null;
   ready_at?: string | null;
@@ -118,6 +119,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         is_special: boolean | null;
         special_total_manual: number | null;
         table_id: string | null;
+        table_name_snapshot: string | null;
         created_at: string;
         sent_to_kitchen_at: string | null;
         ready_at: string | null;
@@ -127,7 +129,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         cancel_requested_at: string | null;
         total: number;
       }>("orders", {
-        select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+        select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
         branchId: activeBranchId,
         filters,
         orderBy: { column: "created_at", ascending: false },
@@ -335,9 +337,17 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       return orders
         .map((order) => {
+          const requiresOperationalItems =
+            sentView || readyView || dispatchedView || paidView || pendingCancellationView;
+
           const related = items
             .filter((item) => item.order_id === order.id)
             .map((item) => {
+              const baseItemStatus = String(item.status ?? "").toUpperCase();
+              if (requiresOperationalItems && baseItemStatus === "DRAFT") {
+                return null;
+              }
+
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(item.quantity ?? 0),
                 quantityReadyTotal: readyMap[item.id] ?? 0,
@@ -417,17 +427,23 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               return {
                 ...item,
+                base_status: baseItemStatus,
                 activeQuantity,
                 quantity: displayQuantity,
                 total: computeLineAmount(displayQuantity, Number(item.unit_price ?? 0)),
                 status: effectiveStatus,
               };
             })
-            .filter((item) => (status === "DRAFT" || item.status !== "DRAFT") && item.quantity > 0);
+            .filter((item): item is NonNullable<typeof item> => !!item && item.quantity > 0);
 
           const fallbackStageItems = items
             .filter((item) => item.order_id === order.id)
             .map((item) => {
+              const baseItemStatus = String(item.status ?? "").toUpperCase();
+              if (requiresOperationalItems && baseItemStatus === "DRAFT") {
+                return null;
+              }
+
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(item.quantity ?? 0),
                 quantityReadyTotal: readyMap[item.id] ?? 0,
@@ -471,13 +487,14 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
               return {
                 ...item,
+                base_status: baseItemStatus,
                 activeQuantity: unpaidActiveQuantity,
                 quantity: fallbackQuantity,
                 total: computeLineAmount(fallbackQuantity, Number(item.unit_price ?? 0)),
                 status: fallbackStatus,
               };
             })
-            .filter((item): item is NonNullable<typeof item> => !!item && (status === "DRAFT" || item.status !== "DRAFT") && item.quantity > 0);
+            .filter((item): item is NonNullable<typeof item> => !!item && item.quantity > 0);
 
           const shouldUseOrderStageFallback =
             !cancelledView &&
@@ -553,7 +570,10 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               : order.cancelled_at,
             cancel_requested_at: order.cancel_requested_at ?? null,
             split_code: null,
-            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            table_name: order.table_id
+              ? (tablesMap[order.table_id] ?? (String(order.table_name_snapshot ?? "").trim() || null))
+              : (String(order.table_name_snapshot ?? "").trim() || null),
+            table_name_snapshot: order.table_name_snapshot ?? null,
             total,
             item_count,
             items: formattedItems,

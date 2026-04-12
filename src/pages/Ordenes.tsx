@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useOrder } from "@/hooks/useOrder";
+import { fetchOrderDetail, fetchSiblingOrders, getOrderQueryKey, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,13 +22,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, Split, CircleDollarSign, Trash2, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
-import { formatSplitCodeLabel } from "@/lib/splitCode";
 import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
@@ -232,6 +231,46 @@ function OrdenesSkeleton() {
   );
 }
 
+const seedDraftTableOrderCache = (
+  qc: ReturnType<typeof useQueryClient>,
+  orderId: string,
+  source: {
+    branchId: string;
+    tableId: string;
+    tableName?: string;
+    createdAt: string;
+    tableOrderPosition: number;
+    siblings: Array<{
+      id: string;
+      order_number: number | null;
+      order_code: string | null;
+      split_code: string | null;
+      table_order_position: number | null;
+      item_count: number;
+    }>;
+  },
+) => {
+  qc.setQueryData(getOrderQueryKey(orderId), {
+    id: orderId,
+    order_number: null,
+    order_code: null,
+    status: "DRAFT",
+    order_type: "DINE_IN",
+    menu_scope: "TABLE",
+    is_special: false,
+    special_total_manual: null,
+    branch_id: source.branchId,
+    table_id: source.tableId,
+    table_order_position: source.tableOrderPosition,
+    split_id: null,
+    split_code: null,
+    table_name: source.tableName,
+    created_at: source.createdAt,
+    items: [],
+    siblings: source.siblings,
+  });
+};
+
 const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -245,7 +284,7 @@ const Ordenes = () => {
   const effectiveTrayType: TrayItemType = pendingTrayType ?? "B";
   const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
-  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, updateMenuScope, updateSpecialTotal, convertToSpecial } = useOrder(orderId);
+  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder } = useOrder(orderId);
   const trayMenuScope: MenuScope =
     effectiveTrayType === "A"
       ? "TABLE"
@@ -269,7 +308,9 @@ const Ordenes = () => {
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [removingSplit, setRemovingSplit] = useState(false);
+  const [redirectingAfterDelete, setRedirectingAfterDelete] = useState(false);
   const [showDeleteSplitConfirm, setShowDeleteSplitConfirm] = useState(false);
+  const [showCloseOrderConfirm, setShowCloseOrderConfirm] = useState(false);
   const [showChangeTableDialog, setShowChangeTableDialog] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
   const [mergeSplitOpen, setMergeSplitOpen] = useState(false);
@@ -284,6 +325,27 @@ const Ordenes = () => {
   const syncedOrderBranchRef = useRef<string | null>(null);
   const autoCleanupOrderRef = useRef<typeof order | null>(null);
   const isBulkScopeSelection = currentMenuScope === "BULK";
+
+  const currentTableOrder: SiblingOrder | null = order
+    ? {
+        id: order.id,
+        order_number: order.order_number,
+        order_code: order.order_code,
+        split_code: order.split_code ?? null,
+        table_order_position: order.table_order_position ?? 1,
+        item_count: order.items.length,
+      }
+    : null;
+
+  const tableOrdersQuery = useQuery({
+    queryKey: ["table-orders", order?.table_id ?? null],
+    queryFn: () => fetchSiblingOrders(order!.table_id!),
+    enabled: !!order?.table_id,
+    staleTime: 0,
+    refetchOnMount: "always",
+    gcTime: 2 * 60_000,
+    placeholderData: currentTableOrder ? [currentTableOrder] : undefined,
+  });
 
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
   // Operar en órdenes: permiso explícito del módulo, flags del turno, o administración global/sucursal.
@@ -309,6 +371,10 @@ const Ordenes = () => {
   useEffect(() => {
     autoCleanupOrderRef.current = order ?? null;
   }, [order]);
+
+  useEffect(() => {
+    setRedirectingAfterDelete(false);
+  }, [orderId]);
 
   useEffect(() => {
     if (!orderId || !order?.branch_id || !activeBranchId) return;
@@ -569,6 +635,10 @@ const Ordenes = () => {
   }
 
   if (!order) {
+    if (redirectingAfterDelete || removingSplit) {
+      return <OrdenesSkeleton />;
+    }
+
     return (
       <div className="p-4 text-center">
         <p className="text-sm text-destructive">Orden no encontrada</p>
@@ -577,6 +647,14 @@ const Ordenes = () => {
   }
 
   const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
+  const getTableOrderButtonLabel = (tableOrder: { order_number: number | null; table_order_position: number | null }) => {
+    const orderNumber = Number(tableOrder.order_number ?? 0);
+    if (orderNumber > 0) {
+      return String(orderNumber).padStart(4, "0").slice(-4);
+    }
+    return `Orden ${Number(tableOrder.table_order_position ?? 1)}`;
+  };
+
   const total = order.items.reduce((s, i) => s + i.total, 0);
   const draftItemsTotal = order.items
     .filter((item) => item.status === "DRAFT")
@@ -586,19 +664,38 @@ const Ordenes = () => {
   const hasDraftItems = order.items.some((i) => i.status === "DRAFT");
   const hasSentItems = order.items.some((i) => i.status !== "DRAFT");
   const isSent = order.status === "SENT_TO_KITCHEN";
-  const hasSiblings = order.siblings.length > 0;
+  const tableOrders = tableOrdersQuery.data?.length
+    ? tableOrdersQuery.data
+    : currentTableOrder
+      ? [currentTableOrder]
+      : [];
+  const mergedTableOrders = currentTableOrder
+    ? tableOrders
+        .map((tableOrder) => (tableOrder.id === currentTableOrder.id ? currentTableOrder : tableOrder))
+        .sort((left, right) => {
+          const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
+          const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
+
+          if (leftPos !== rightPos) {
+            return leftPos - rightPos;
+          }
+
+          return Number(left.order_number ?? 0) - Number(right.order_number ?? 0);
+        })
+    : tableOrders;
+  const hasSiblings = mergedTableOrders.length > 1;
   const hasOrderItems = order.items.length > 0;
-  const allExistingSplitsHaveItems = !hasSiblings || order.siblings.every((sibling) => sibling.item_count > 0);
+  const allExistingTableOrdersHaveItems = mergedTableOrders.every((sibling) => sibling.item_count > 0);
   const canSplit =
+    canOperateOrders &&
     order.order_type === "DINE_IN" &&
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
     order.items.length > 0 &&
-    allExistingSplitsHaveItems;
+    allExistingTableOrdersHaveItems;
   const canDeleteSplit =
     canOperateOrders &&
-    !!order.split_id &&
     hasSiblings &&
     !order.sent_to_kitchen_at &&
     !order.ready_at &&
@@ -612,7 +709,28 @@ const Ordenes = () => {
     order.status !== "PAID" &&
     order.status !== "CANCELLED";
   const canChangeTable = canShowChangeTable && hasOrderItems;
-  const canEditItems = canOperateOrders && order.status !== "PAID" && order.status !== "CANCELLED";
+  const canShowCloseOrder =
+    canOperateOrders &&
+    order.order_type === "DINE_IN" &&
+    !order.is_special &&
+    !!order.table_id &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED" &&
+    hasSentItems;
+  const allSentItemsDispatched = order.items
+    .filter((item) => item.status !== "DRAFT")
+    .every((item) => Number(item.quantity_remaining ?? 0) <= 0);
+  const canCloseOrder = canShowCloseOrder && !hasDraftItems && allSentItemsDispatched;
+  const isClosedForPayment =
+    order.order_type === "DINE_IN" &&
+    !order.is_special &&
+    !order.table_id &&
+    order.status === "KITCHEN_DISPATCHED";
+  const canEditItems =
+    canOperateOrders &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED" &&
+    !isClosedForPayment;
   const canShowConvertToSpecial =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
@@ -634,7 +752,7 @@ const Ordenes = () => {
       : order.is_special
       ? "ORDEN ESPECIAL"
       : order.order_type === "DINE_IN"
-        ? formatSplitCodeLabel(order.split_code) || (order.table_name ?? "").trim()
+        ? (order.table_name ?? "").trim()
         : "PARA LLEVAR";
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
@@ -658,82 +776,54 @@ const Ordenes = () => {
     if (!user || !order.table_id || !canOperateOrders) return;
     if (order.order_type !== "DINE_IN" || order.status === "PAID" || order.status === "CANCELLED") return;
     if (order.items.length <= 0) {
-      toast.error("La mesa debe tener al menos un item para dividirse");
+      toast.error("La orden actual debe tener al menos un item");
       return;
     }
-    if (!allExistingSplitsHaveItems) {
-      toast.error("No puedes crear una nueva division hasta que todas las divisiones anteriores tengan al menos un item");
+    if (!allExistingTableOrdersHaveItems) {
+      toast.error("No puedes crear una nueva orden hasta que todas las ordenes activas de la mesa tengan al menos un item");
       return;
     }
     setSplitting(true);
     try {
-      const tableName = order.table_name ?? "Mesa";
-      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-      if (!hasSiblings) {
-        const { data: splitA, error: errA } = await supabase
-          .from("table_splits")
-          .insert({ table_id: order.table_id, split_code: `${tableName}A` })
-          .select("id")
-          .single();
-        if (errA) throw errA;
-
-        const { data: splitB, error: errB } = await supabase
-          .from("table_splits")
-          .insert({ table_id: order.table_id, split_code: `${tableName}B` })
-          .select("id")
-          .single();
-        if (errB) throw errB;
-
-        const { error: updateCurrentError } = await supabase.from("orders").update({ split_id: splitA.id }).eq("id", order.id);
-        if (updateCurrentError) throw updateCurrentError;
-
-        const { data: newOrder, error: newOrderError } = await supabase
-          .from("orders")
-          .insert({
-          table_id: order.table_id,
-          split_id: splitB.id,
-          order_type: "DINE_IN" as const,
-          menu_scope: order.menu_scope ?? "TABLE",
-          created_by: user.id,
-          status: "DRAFT" as const,
-          branch_id: activeBranchId!,
-          })
-          .select("id")
-          .single();
-        if (newOrderError || !newOrder) throw newOrderError ?? new Error("No se pudo crear la nueva division");
-
-        toast.success("Mesa dividida en A y B");
-        navigate(`/ordenes?order=${newOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
-      } else {
-        const nextIndex = order.siblings.length;
-        const nextLetter = letters[nextIndex] ?? `${nextIndex + 1}`;
-
-        const { data: newSplit, error: splitErr } = await supabase
-          .from("table_splits")
-          .insert({ table_id: order.table_id, split_code: `${tableName}${nextLetter}` })
-          .select("id")
-          .single();
-        if (splitErr) throw splitErr;
-
-        const { data: newOrder, error: newOrderError } = await supabase
-          .from("orders")
-          .insert({
-          table_id: order.table_id,
-          split_id: newSplit.id,
-          order_type: "DINE_IN" as const,
-          menu_scope: order.menu_scope ?? "TABLE",
-          created_by: user.id,
-          status: "DRAFT" as const,
-          branch_id: activeBranchId!,
-          })
-          .select("id")
-          .single();
-        if (newOrderError || !newOrder) throw newOrderError ?? new Error("No se pudo crear la nueva division");
-
-        toast.success(`Sub-mesa ${tableName}${nextLetter} creada`);
-        navigate(`/ordenes?order=${newOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
+      const newOrderId = await createTableOrder.mutateAsync();
+      if (order.table_id) {
+        qc.setQueryData(["table-orders", order.table_id], [
+          ...tableOrders,
+          {
+            id: newOrderId,
+            order_number: null,
+            order_code: null,
+            split_code: null,
+            table_order_position: tableOrders.length + 1,
+            item_count: 0,
+          },
+        ] satisfies SiblingOrder[]);
       }
+      seedDraftTableOrderCache(qc, newOrderId, {
+        branchId: order.branch_id,
+        tableId: order.table_id,
+        tableName: order.table_name,
+        createdAt: new Date().toISOString(),
+        tableOrderPosition: mergedTableOrders.length + 1,
+        siblings: [
+          ...mergedTableOrders,
+          {
+            id: newOrderId,
+            order_number: null,
+            order_code: null,
+            split_code: null,
+            table_order_position: mergedTableOrders.length + 1,
+            item_count: 0,
+          },
+        ],
+      });
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(newOrderId),
+        queryFn: () => fetchOrderDetail(newOrderId),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
+      navigate(`/ordenes?order=${newOrderId}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
 
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
@@ -745,63 +835,56 @@ const Ordenes = () => {
   };
 
   const handleDeleteSplit = async () => {
-    if (!order.split_id || !canDeleteSplit) return;
+    if (!canDeleteSplit) return;
 
     setRemovingSplit(true);
+    setRedirectingAfterDelete(true);
     try {
-      const sourceTableId = order.table_id;
-      await supabase.from("orders").delete().eq("id", order.id);
-      await supabase.from("table_splits").update({ is_active: false }).eq("id", order.split_id);
-
-      if (sourceTableId) {
-        const { data: remainingOrders, error: remainingOrdersError } = await supabase
-          .from("orders")
-          .select("id, split_id, status, order_items(id)")
-          .eq("table_id", sourceTableId)
-          .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]);
-
-        if (remainingOrdersError) throw remainingOrdersError;
-
-        const activeRemainingOrders = (remainingOrders ?? []).filter((candidate) => {
-          const hasItems = Array.isArray(candidate.order_items) && candidate.order_items.length > 0;
-          return candidate.status !== "DRAFT" || hasItems;
-        });
-
-        if (activeRemainingOrders.length === 1 && activeRemainingOrders[0].split_id) {
-          const remaining = activeRemainingOrders[0];
-
-          const { error: collapseOrderError } = await supabase
-            .from("orders")
-            .update({ split_id: null })
-            .eq("id", remaining.id);
-          if (collapseOrderError) throw collapseOrderError;
-
-          const { error: deactivateSplitError } = await supabase
-            .from("table_splits")
-            .update({ is_active: false })
-            .eq("id", remaining.split_id);
-          if (deactivateSplitError) throw deactivateSplitError;
-        }
+      autoCleanupOrderRef.current = null;
+      const remainingOrderId = await deleteTableOrder.mutateAsync();
+      if (order.table_id) {
+        qc.setQueryData(
+          ["table-orders", order.table_id],
+          tableOrders.filter((tableOrder) => tableOrder.id !== order.id) satisfies SiblingOrder[],
+        );
       }
-
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["orders"] });
 
-      const remainingSibling = order.siblings.find((sibling) => sibling.id !== order.id);
-      toast.success("Division eliminada");
+      toast.success("Orden eliminada");
 
-      if (remainingSibling) {
-        navigate(`/ordenes?order=${remainingSibling.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
+      const fallbackRemainingOrderId = tableOrders.find((tableOrder) => tableOrder.id !== order.id)?.id ?? null;
+      const nextOrderId = remainingOrderId || fallbackRemainingOrderId;
+
+      if (nextOrderId) {
+        await qc.fetchQuery({
+          queryKey: getOrderQueryKey(nextOrderId),
+          queryFn: () => fetchOrderDetail(nextOrderId),
+          staleTime: 15_000,
+          gcTime: 10 * 60_000,
+        });
+        qc.removeQueries({ queryKey: ["order", orderId] });
+        navigate(`/ordenes?order=${nextOrderId}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
       } else {
+        qc.removeQueries({ queryKey: ["order", orderId] });
         navigate("/mesas", { replace: true });
       }
     } catch (err: any) {
-      toast.error(err.message || "No se pudo eliminar la division");
+      setRedirectingAfterDelete(false);
+      toast.error(err.message || "No se pudo eliminar la orden");
     } finally {
       setRemovingSplit(false);
       setShowDeleteSplitConfirm(false);
     }
+  };
+
+  const handleCloseOrder = () => {
+    closeOrder.mutate(undefined, {
+      onSuccess: () => {
+        setShowCloseOrderConfirm(false);
+        navigate("/mesas", { replace: true });
+      },
+    });
   };
 
   const handleChangeTable = (destinationTableId: string) => {
@@ -810,7 +893,7 @@ const Ordenes = () => {
         setShowChangeTableDialog(false);
         toast.success(
           result.destination_was_occupied
-            ? `Orden movida. Se creo ${result.split_code ?? "una nueva division"} en la mesa destino.`
+            ? "Orden movida. Se agrego como una nueva orden en la mesa destino."
             : "Orden movida directamente a la mesa destino.",
         );
       },
@@ -1205,20 +1288,39 @@ const Ordenes = () => {
         </div>
       )}
 
-      {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
-        <Button
-          variant="destructive"
-          className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-          onClick={() => {
-            setInlineCancelVisibleItems([]);
-            setInlineCancelQtyByItem({});
-            setInlineCancellationType("total");
-            setInlineCancelOpen(true);
-          }}
-        >
-          <Ban className="h-5 w-5" />
-          Anular orden
-        </Button>
+      {(canShowCloseOrder || (canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED")) && (
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {canShowCloseOrder && (
+            <Button
+              variant="outline"
+              className="h-12 w-full gap-2 rounded-xl border-emerald-300 bg-emerald-50 font-display text-base font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
+              onClick={() => setShowCloseOrderConfirm(true)}
+              disabled={closeOrder.isPending || !canCloseOrder}
+              title={!canCloseOrder ? "Solo puedes cerrar la orden cuando no haya items nuevos en borrador y todos los items enviados esten completamente despachados" : "Cerrar orden"}
+            >
+              {closeOrder.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <CircleDollarSign className="h-5 w-5" />}
+              Cerrar orden
+            </Button>
+          )}
+
+          {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+            <Button
+              variant="destructive"
+              className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+              disabled={hasDraftItems}
+              title={hasDraftItems ? "No puedes anular la orden mientras existan items nuevos en borrador" : "Anular orden"}
+              onClick={() => {
+                setInlineCancelVisibleItems([]);
+                setInlineCancelQtyByItem({});
+                setInlineCancellationType("total");
+                setInlineCancelOpen(true);
+              }}
+            >
+              <Ban className="h-5 w-5" />
+              Anular orden
+            </Button>
+          )}
+        </div>
       )}
 
     </div>
@@ -1263,51 +1365,10 @@ const Ordenes = () => {
                     Solo consulta
                   </span>
                 )}
-                {hasSiblings &&
-                  order.siblings.map((sib) => (
-                    <Button
-                      key={sib.id}
-                      variant={sib.id === order.id ? "default" : "outline"}
-                      size="sm"
-                      className="h-8 shrink-0 gap-1 rounded-lg px-2.5 text-[11px]"
-                      onClick={() => navigate(`/ordenes?order=${sib.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true })}
-                    >
-                      {formatSplitCodeLabel(sib.split_code)}
-                      <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                        {sib.item_count}
-                      </Badge>
-                    </Button>
-                  ))}
             </div>
 
             {order.table_id && (
               <div className="ml-auto flex shrink-0 items-center gap-1">
-                <Button
-                  variant={canSplit ? "default" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-9 w-9 shrink-0 rounded-lg p-0 2xl:h-7 2xl:w-7",
-                    canSplit
-                      ? "shadow-[0_14px_28px_-18px_rgba(249,115,22,0.8)]"
-                      : "text-muted-foreground",
-                  )}
-                  onClick={handleSplit}
-                  disabled={!canSplit || splitting}
-                  title={
-                    !canOperateOrders
-                      ? "No tienes permiso para dividir mesas"
-                      : order.items.length <= 0
-                        ? "La mesa debe tener al menos un item para dividirse"
-                        : !allExistingSplitsHaveItems
-                          ? "Todas las divisiones existentes deben tener al menos un item"
-                          : !canSplit
-                            ? "La mesa debe seguir activa para dividirse"
-                            : undefined
-                  }
-                >
-                  {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Split className="h-3.5 w-3.5" />}
-                </Button>
-
                 {hasSiblings && (
                   <Button
                     variant={canDeleteSplit ? "destructive" : "ghost"}
@@ -1320,16 +1381,86 @@ const Ordenes = () => {
                     disabled={!canDeleteSplit || removingSplit}
                     title={
                       !canDeleteSplit
-                        ? "Solo puedes eliminar la division si no ha sido despachada, pagada o cancelada"
-                        : "Eliminar esta division"
+                        ? "Solo puedes eliminar una orden borrador que aun no haya sido enviada, pagada o anulada"
+                        : "Eliminar esta orden"
                     }
                   >
-                    {removingSplit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    {removingSplit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
                   </Button>
                 )}
               </div>
             )}
           </div>
+
+          {order.table_id && (
+            <div className="scrollbar-none flex items-stretch gap-0 overflow-x-auto pb-1">
+                  {mergedTableOrders.map((tableOrder) => (
+                <button
+                  key={tableOrder.id}
+                  type="button"
+                  className={cn(
+                    "group flex h-10 shrink-0 items-center gap-2 border border-border bg-card px-3 text-[11px] font-semibold text-foreground transition-colors",
+                    "first:rounded-l-xl",
+                    tableOrder.id === order.id
+                      ? "border-orange-300 bg-orange-50 text-orange-900 shadow-[0_10px_20px_-18px_rgba(249,115,22,0.85)]"
+                      : "hover:bg-muted/60",
+                  )}
+                  onClick={() => navigate(`/ordenes?order=${tableOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true })}
+                >
+                  <span className="whitespace-nowrap">{getTableOrderButtonLabel(tableOrder)}</span>
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      "px-1.5 py-0 text-[10px]",
+                      tableOrder.id === order.id && "bg-orange-100 text-orange-700",
+                    )}
+                  >
+                    {tableOrder.item_count}
+                  </Badge>
+                  {tableOrder.id === order.id && canDeleteSplit && (
+                    <span
+                      role="button"
+                      aria-label="Eliminar orden activa"
+                      className={cn(
+                        "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-orange-700 opacity-0 transition-opacity",
+                        "group-hover:opacity-100",
+                      )}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setShowDeleteSplitConfirm(true);
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </span>
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={cn(
+                  "flex h-10 shrink-0 items-center justify-center border border-l-0 border-border bg-card px-3 text-muted-foreground transition-colors",
+                  "rounded-r-xl hover:bg-muted/60",
+                  (!canSplit || splitting) && "cursor-not-allowed opacity-50",
+                )}
+                onClick={handleSplit}
+                disabled={!canSplit || splitting}
+                title={
+                  !canOperateOrders
+                    ? "No tienes permiso para crear nuevas ordenes en la mesa"
+                    : order.items.length <= 0
+                      ? "La orden actual debe tener al menos un item"
+                      : !allExistingTableOrdersHaveItems
+                        ? "Todas las ordenes existentes deben tener al menos un item"
+                        : !canSplit
+                          ? "La mesa debe seguir activa para crear otra orden"
+                          : "Nueva orden"
+                }
+              >
+                {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
+              </button>
+            </div>
+          )}
 
           <div className="scrollbar-none flex items-center gap-2 overflow-x-auto pb-1">
             {canShowConvertToSpecial && (
@@ -1502,17 +1633,41 @@ const Ordenes = () => {
       )}
 
       <AlertDialog open={showDeleteSplitConfirm} onOpenChange={setShowDeleteSplitConfirm}>
-        <AlertDialogContent className="max-w-md">
+            <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar division</AlertDialogTitle>
+            <AlertDialogTitle>Eliminar orden</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminara la division seleccionada y su orden asociada. Esta accion solo debe hacerse si esa division aun no ha sido despachada.
+              Se eliminara la orden seleccionada dentro de la mesa. Esta accion solo debe hacerse si la orden aun no ha sido enviada a cocina.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={removingSplit}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteSplit} disabled={removingSplit || !canDeleteSplit}>
-              {removingSplit ? "Eliminando..." : "Eliminar division"}
+              {removingSplit ? "Eliminando..." : "Eliminar orden"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showCloseOrderConfirm} onOpenChange={setShowCloseOrderConfirm}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cerrar orden</AlertDialogTitle>
+            <AlertDialogDescription>
+              La orden se desvinculara de la mesa y quedara lista para pagar en Caja. Si la mesa tiene otras ordenes activas, esas ordenes seguiran ocupandola.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={closeOrder.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                handleCloseOrder();
+              }}
+              disabled={closeOrder.isPending}
+            >
+              {closeOrder.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirmar cierre
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

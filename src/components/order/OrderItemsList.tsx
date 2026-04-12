@@ -87,6 +87,32 @@ function getOrderItemStageStyles(stage: OrderItemStage) {
   }
 }
 
+function getOrderItemStageLabel(stage: OrderItemStage) {
+  switch (stage) {
+    case "draft":
+      return "No enviado";
+    case "sent":
+      return "En cocina";
+    case "partial":
+      return "Despacho parcial";
+    case "dispatched":
+      return "Despachado";
+  }
+}
+
+function getOrderItemStageLegendClass(stage: OrderItemStage) {
+  switch (stage) {
+    case "draft":
+      return "border-slate-200 bg-white text-slate-700";
+    case "sent":
+      return "border-orange-200 bg-orange-100 text-orange-800";
+    case "partial":
+      return "border-amber-200 bg-amber-100 text-amber-900";
+    case "dispatched":
+      return "border-emerald-200 bg-emerald-100 text-emerald-900";
+  }
+}
+
 const OrderItemsList = ({
   items,
   onRemove,
@@ -125,7 +151,7 @@ const OrderItemsList = ({
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-100 px-2 py-1 text-amber-900">
           <span className="h-2 w-2 rounded-full bg-amber-500" />
-          Parcial despachado
+          Despacho parcial
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 text-emerald-900">
           <span className="h-2 w-2 rounded-full bg-emerald-500" />
@@ -181,9 +207,24 @@ const OrderItemsList = ({
                 ) : null}
 
                 <div className="min-w-0 flex-1">
-                <p className="break-words whitespace-normal text-sm font-medium text-foreground">
-                  {item.description_snapshot}
-                </p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 flex-1 break-words whitespace-normal text-sm font-medium text-foreground">
+                    {item.description_snapshot}
+                  </p>
+                  <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold", getOrderItemStageLegendClass(itemStage))}>
+                    <span className={cn(
+                      "h-2 w-2 rounded-full",
+                      itemStage === "draft"
+                        ? "bg-white ring-1 ring-slate-300"
+                        : itemStage === "sent"
+                          ? "bg-orange-500"
+                          : itemStage === "partial"
+                            ? "bg-amber-500"
+                            : "bg-emerald-500",
+                    )} />
+                    {getOrderItemStageLabel(itemStage)}
+                  </span>
+                </div>
 
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   {item.tray_item_type ? (
