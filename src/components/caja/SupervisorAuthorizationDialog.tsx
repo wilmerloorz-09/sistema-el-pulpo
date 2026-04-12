@@ -54,7 +54,6 @@ export default function SupervisorAuthorizationDialog({
         identifier: identifier.trim(),
         password,
       });
-      onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo validar al supervisor.");
     }
@@ -104,25 +103,25 @@ export default function SupervisorAuthorizationDialog({
 
           <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4">
             <div className="space-y-2">
-              <Label htmlFor="void-supervisor-identifier">Usuario o correo del supervisor</Label>
+              <Label htmlFor="void-supervisor-identifier">Usuario o correo del autorizador</Label>
               <Input
                 id="void-supervisor-identifier"
                 value={identifier}
                 onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="Ej: supervisor1"
+                placeholder="Ej: supervisor1 o tu usuario admin"
                 autoComplete="username"
                 disabled={loading}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="void-supervisor-password">Contrasena del supervisor</Label>
+              <Label htmlFor="void-supervisor-password">Contrasena del autorizador</Label>
               <Input
                 id="void-supervisor-password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Ingresa la credencial del supervisor"
+                placeholder="Ingresa la credencial del autorizador"
                 autoComplete="current-password"
                 disabled={loading}
               />

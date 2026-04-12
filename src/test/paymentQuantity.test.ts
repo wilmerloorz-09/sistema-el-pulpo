@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeLineAmount, computePendingActiveQuantity, computePendingQuantity } from "@/lib/paymentQuantity";
+import { computeLineAmount, computeLineTotalWithContainer, computePendingActiveQuantity, computePendingQuantity } from "@/lib/paymentQuantity";
 
 describe("paymentQuantity", () => {
   it("calcula pendientes por cantidad en multiples pagos", () => {
@@ -37,5 +37,11 @@ describe("paymentQuantity", () => {
   it("calcula monto por linea usando cantidad parcial", () => {
     expect(computeLineAmount(2, 6.5)).toBe(13);
     expect(computeLineAmount(3, 1.25)).toBe(3.75);
+  });
+
+  it("calcula total activo y pendiente con cantidad actual tras anulacion parcial", () => {
+    expect(computeLineTotalWithContainer(2, 1.75)).toBe(3.5);
+    expect(computeLineTotalWithContainer(0, 1.75)).toBe(0);
+    expect(computeLineTotalWithContainer(2, 1.75, 0.5)).toBe(4);
   });
 });

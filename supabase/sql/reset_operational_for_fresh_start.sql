@@ -7,11 +7,13 @@
 --   - incluye ordenes especiales y sus pagos parciales/manuales
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
+--   - incluye movimientos entre ordenes DINE_IN por Unir/Dividir, junto con su redistribucion de historial READY/DISPATCHED
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
+--   - al limpiar cash_shift_users tambien se eliminan los session locks operativos (`last_session_id`) y cualquier toma de control vigente en Caja
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Conserva todos los arboles operativos de menu_nodes:
 --   - `TABLE`
@@ -20,6 +22,9 @@
 -- - Conserva tambien `menu_nodes.image_url` / `legacy_product_id`, por lo que Caja y Ordenes siguen pudiendo resolver imagen real de producto
 -- - Conserva la configuracion `manual_price_enabled` en categorias de `menu_nodes`
 -- - Conserva la configuracion de productos incluidos para `A granel` y sus reglas de entrega por monto
+-- - Conserva plantillas de apertura de caja y su composicion:
+--   - `cash_register_templates`
+--   - `cash_register_template_denoms`
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero, las de orden especial y el sistema de tickets (80mm)
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
@@ -33,7 +38,9 @@
 --   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
+--   - esto incluye anulacion total y parcial, pagos de reemplazo (`replacement_payment_id`) y desglose de devolucion en efectivo
 --   - al borrar orders y table_splits se eliminan tambien las divisiones reabiertas por anulacion de pago
+--   - al borrar order_ready_events/order_dispatch_events y sus lineas tambien se limpia cualquier trazabilidad recreada por mover items entre ordenes
 --   - al borrar payment_capture_requests y payment_proofs se limpia el flujo operativo de comprobantes de transferencia
 -- - NO elimina archivos del bucket privado de Supabase Storage
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
@@ -138,9 +145,13 @@ COMMIT;
 --   - las categorias habilitadas siguen marcadas
 --   - las lineas ya despachadas siguen requiriendo autorizacion para mesero
 -- - Configuracion y asignaciones de despacho intactas
+-- - Plantillas de apertura de caja intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
+-- - 0 session locks/toma de control vigente en Caja
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
 -- - 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
+-- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial
+-- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)

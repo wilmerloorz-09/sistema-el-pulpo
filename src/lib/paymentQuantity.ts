@@ -13,3 +13,12 @@ export function computePendingActiveQuantity(totalOrdered: number, totalPaid: nu
 export function computeLineAmount(quantity: number, unitPrice: number): number {
   return roundMoney(quantity * unitPrice);
 }
+
+export function computeLineTotalWithContainer(
+  quantity: number,
+  unitPrice: number,
+  containerCost = 0,
+): number {
+  if (quantity <= 0) return 0;
+  return roundMoney(computeLineAmount(quantity, unitPrice) + Math.max(0, containerCost));
+}

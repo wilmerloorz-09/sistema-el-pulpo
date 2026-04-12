@@ -14,6 +14,7 @@ import ThermalReceipt from "@/components/order/ThermalReceipt";
 import OrdersList from "@/components/order/OrdersList";
 import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
+import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -271,6 +272,7 @@ const Ordenes = () => {
   const [showDeleteSplitConfirm, setShowDeleteSplitConfirm] = useState(false);
   const [showChangeTableDialog, setShowChangeTableDialog] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
+  const [mergeSplitOpen, setMergeSplitOpen] = useState(false);
   const [inlineCancelOpen, setInlineCancelOpen] = useState(false);
   const [inlineCancelVisibleItems, setInlineCancelVisibleItems] = useState<OrderItemSummary[]>([]);
   const [inlineCancelQtyByItem, setInlineCancelQtyByItem] = useState<Record<string, number>>({});
@@ -535,7 +537,11 @@ const Ordenes = () => {
     return (
       <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
         <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
-          <OrdersList onCancelOrder={canCancelOrders ? setCancelOrder : undefined} readOnly={!canCancelOrders} />
+          <OrdersList
+            onCancelOrder={canCancelOrders ? setCancelOrder : undefined}
+            onOpenMergeSplitTool={canOperateOrders ? () => setMergeSplitOpen(true) : undefined}
+            readOnly={!canOperateOrders}
+          />
         </div>
         {cancelOrder && user && canCancelOrders && (
         <CancelOrderDialog
@@ -549,6 +555,11 @@ const Ordenes = () => {
           visibleItems={cancelOrder.items}
         />
       )}
+      <MergeSplitOrdersDialog
+        open={mergeSplitOpen}
+        onOpenChange={setMergeSplitOpen}
+        initialSourceOrderId={null}
+      />
       </div>
     );
   }
@@ -567,6 +578,9 @@ const Ordenes = () => {
 
   const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
   const total = order.items.reduce((s, i) => s + i.total, 0);
+  const draftItemsTotal = order.items
+    .filter((item) => item.status === "DRAFT")
+    .reduce((sum, item) => sum + item.total, 0);
   const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
   const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
   const hasDraftItems = order.items.some((i) => i.status === "DRAFT");
@@ -1169,17 +1183,17 @@ const Ordenes = () => {
           ) : hasSentItems ? (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar nuevos items - ${total.toFixed(2)}
+              Enviar nuevos items - ${draftItemsTotal.toFixed(2)}
             </>
           ) : isTakeout ? (
             <>
               <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja - ${total.toFixed(2)}
+              Enviar a caja - ${draftItemsTotal.toFixed(2)}
             </>
           ) : (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar a cocina - ${total.toFixed(2)}
+              Enviar a cocina - ${draftItemsTotal.toFixed(2)}
             </>
           )}
         </Button>
@@ -1591,6 +1605,12 @@ const Ordenes = () => {
         />
       )}
 
+      <MergeSplitOrdersDialog
+        open={mergeSplitOpen}
+        onOpenChange={setMergeSplitOpen}
+        initialSourceOrderId={null}
+      />
+
       <style>{`
         @media (max-width: 768px) {
           .ordenes-mobile-touch button,
@@ -1616,5 +1636,3 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
-
-

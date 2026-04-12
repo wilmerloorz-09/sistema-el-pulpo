@@ -327,6 +327,10 @@ export function DispatchCardBase({
           const canDispatch = item.quantity_dispatchable > 0;
           const remainingToDispatch = item.quantity_dispatchable;
           const dispatchedQuantity = item.quantity_dispatched;
+          const activeQuantity = Math.max(
+            remainingToDispatch + dispatchedQuantity,
+            Math.max(0, item.quantity_ordered - item.quantity_cancelled),
+          );
           const isFullyDispatched = item.quantity_pending_prepare === 0 && item.quantity_dispatchable === 0 && dispatchedQuantity > 0;
 
           return (
@@ -335,7 +339,7 @@ export function DispatchCardBase({
                 <div className="flex min-w-0 items-start gap-3">
                   {!isBulkItem ? (
                     <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
-                      {item.quantity_ordered}X
+                      {activeQuantity}X
                     </div>
                   ) : null}
                   <div className="min-w-0 flex-1">
@@ -377,7 +381,7 @@ export function DispatchCardBase({
                       ) : null}
                     </div>
                     <div className="mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground text-sm">
-                      {!isBulkItem ? <span className="shrink-0">Env: {item.quantity_ordered}</span> : null}
+                      {!isBulkItem ? <span className="shrink-0">Env: {activeQuantity}</span> : null}
                       <span className="shrink-0">Desp: {dispatchedQuantity}</span>
                       <span className="shrink-0">Falt: {remainingToDispatch}</span>
                       <span className="shrink-0">Canc: {item.quantity_cancelled}</span>

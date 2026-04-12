@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
+import { fetchOrderDetail } from "@/hooks/useOrder";
 import type { Database } from "@/integrations/supabase/types";
 
 // include CANCELLED since we'll add it to the enum via migration
@@ -101,16 +102,26 @@ export async function fetchTablesWithStatus(branchId: string): Promise<TablesWit
   if (voidedOrderIds.length > 0) {
     const { data: ordersData } = await (supabase
       .from("orders")
-      .select("id, order_number, order_code, table_id, status, is_special, order_type, created_at, special_total_manual, table_name_snapshot, order_items(unit_price, quantity)")
+      .select("id, order_number, order_code, table_id, status, is_special, order_type, created_at, special_total_manual, table_name_snapshot")
       .in("id", voidedOrderIds)
       .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]) as any);
-    
-    voidedOrders = (ordersData ?? []).map((order: any) => {
-      const total = (order.order_items ?? []).reduce((acc: number, item: any) => {
-        return acc + (Number(item.unit_price || 0) * Number(item.quantity || 0));
-      }, 0);
-      return { ...order, total };
-    });
+
+    const orderSummaries = (ordersData ?? []) as Array<Omit<VoidedOrder, "total">>;
+    const detailedOrders = await Promise.all(
+      orderSummaries.map(async (order) => {
+        const detail = await fetchOrderDetail(order.id);
+        const total = detail
+          ? detail.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0)
+          : Number(order.special_total_manual ?? 0);
+
+        return {
+          ...order,
+          total,
+        };
+      }),
+    );
+
+    voidedOrders = detailedOrders;
   }
 
   const voidedOrderIdSet = new Set(voidedOrders.map(o => o.id));

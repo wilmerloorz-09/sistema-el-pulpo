@@ -3,7 +3,7 @@ import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/Dat
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 import { generateUUID } from "@/lib/uuid";
-import { computeLineAmount } from "@/lib/paymentQuantity";
+import { computeLineTotalWithContainer } from "@/lib/paymentQuantity";
 import {
   buildOperationalMapsFromSnapshotRows,
   EMPTY_OPERATIONAL_MAPS,
@@ -34,6 +34,7 @@ interface OrderItem {
   quantity_remaining?: number;
   quantity_cancelled?: number;
   quantity_cancellable?: number;
+  paid_at?: string | null;
   modifiers: { id: string; modifier_id: string; description: string }[];
 }
 
@@ -65,6 +66,11 @@ function getSplitSortValue(splitCode: string): { prefix: string; rank: number; r
   }
 
   return { prefix, rank: Number.MAX_SAFE_INTEGER, rawSuffix };
+}
+
+function isBlockedPaymentNotes(notes: string | null) {
+  const raw = String(notes ?? "");
+  return raw.includes("REVERSED:") || raw.includes("VOIDED:") || raw.includes("TRANSFER_PROOF_PENDING:1");
 }
 
 export interface MoveTableResult {
@@ -108,7 +114,7 @@ export function getOrderQueryKey(orderId: string | null) {
 async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
   const { data: siblingOrders, error: siblingOrdersError } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, split_id, order_items(id)")
+    .select("id, order_number, order_code, split_id, status, order_items(id)")
     .eq("table_id", tableId)
     .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
     .not("split_id", "is", null);
@@ -124,6 +130,7 @@ async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
   if (splitsError) throw splitsError;
 
   return siblingOrders
+    .filter((sibling) => sibling.status !== "DRAFT" || (Array.isArray((sibling as any).order_items) && (sibling as any).order_items.length > 0))
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
@@ -173,7 +180,7 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
       ? supabase.from("table_splits").select("split_code").eq("id", order.split_id).single()
       : Promise.resolve({ data: null, error: null }),
     dbSelect<any>("order_items", {
-      select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, tray_item_type, tray_container_cost",
+      select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
       filters: [{ column: "order_id", op: "eq", value: orderId }],
       orderBy: { column: "created_at" },
     }),
@@ -195,6 +202,37 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
     ? buildOperationalMapsFromSnapshotRows(normalizedSnapshotRows)
     : EMPTY_OPERATIONAL_MAPS;
   const itemIds = items.map((item: any) => item.id);
+  const paidQuantityByItem: Record<string, number> = {};
+
+  if (itemIds.length > 0) {
+    const { data: paymentItems, error: paymentItemsError } = await supabase
+      .from("payment_items")
+      .select("payment_id, order_item_id, quantity_paid")
+      .in("order_item_id", itemIds);
+    if (paymentItemsError) throw paymentItemsError;
+
+    const paymentIds = [...new Set((paymentItems ?? []).map((row) => row.payment_id).filter(Boolean))];
+    let blockedPaymentIds = new Set<string>();
+
+    if (paymentIds.length > 0) {
+      const { data: payments, error: paymentsError } = await supabase
+        .from("payments")
+        .select("id, notes")
+        .in("id", paymentIds);
+      if (paymentsError) throw paymentsError;
+
+      blockedPaymentIds = new Set(
+        (payments ?? [])
+          .filter((payment) => isBlockedPaymentNotes(payment.notes))
+          .map((payment) => payment.id),
+      );
+    }
+
+    for (const row of paymentItems ?? []) {
+      if (blockedPaymentIds.has(row.payment_id)) continue;
+      paidQuantityByItem[row.order_item_id] = (paidQuantityByItem[row.order_item_id] ?? 0) + Number(row.quantity_paid ?? 0);
+    }
+  }
 
   let modifiersData: any[] = [];
   if (itemIds.length > 0) {
@@ -219,6 +257,14 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
         Number(snapshotRow?.quantity_cancelled_total ?? 0),
       );
       const activeQuantity = Math.max(0, originalQuantity - cancelledQuantity);
+      const effectivePaidQuantity = Math.max(
+        0,
+        Math.min(
+          activeQuantity,
+          paidQuantityByItem[item.id] ?? (item.paid_at ? activeQuantity : 0),
+        ),
+      );
+      const unpaidActiveQuantity = Math.max(0, activeQuantity - effectivePaidQuantity);
       const effectiveStatus = activeQuantity <= 0 ? "CANCELLED" : (item.status ?? "DRAFT");
       const quantitySent = effectiveStatus === "DRAFT" ? 0 : quantityOrdered;
       const quantityDispatched = Math.max(
@@ -238,11 +284,15 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
 
       return {
         ...item,
-        quantity: activeQuantity,
+        quantity: unpaidActiveQuantity,
         quantity_ordered: quantityOrdered,
         original_quantity: originalQuantity,
         cancelled_quantity: cancelledQuantity,
-        total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)) + (activeQuantity > 0 ? Number(item.tray_container_cost ?? 0) : 0),
+        total: computeLineTotalWithContainer(
+          unpaidActiveQuantity,
+          Number(item.unit_price ?? 0),
+          Number(item.tray_container_cost ?? 0),
+        ),
         status: effectiveStatus,
         tray_item_type: (item.tray_item_type ?? null) as "A" | "B" | "C" | null,
         tray_container_cost: Number(item.tray_container_cost ?? 0),
@@ -257,7 +307,7 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
                 Number(operationalMaps.pendingPrepareMap[item.id] ?? 0) + Number(operationalMaps.readyAvailableMap[item.id] ?? 0),
               ),
         quantity_cancelled: quantityCancelled,
-        quantity_cancellable: quantityCancellable,
+        quantity_cancellable: Math.min(quantityCancellable, unpaidActiveQuantity),
         modifiers: modifiersData
           .filter((modifier: any) => modifier.order_item_id === item.id)
           .map((modifier: any) => ({

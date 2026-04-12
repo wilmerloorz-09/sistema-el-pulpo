@@ -19,6 +19,14 @@ type VoidPaymentPayload = {
   terminal_id?: string | null;
   supervisor_identifier?: string;
   supervisor_password?: string;
+  payment_item_selections?: Array<{
+    payment_item_id?: string;
+    quantity?: number;
+  }>;
+  cash_refund_detail?: Array<{
+    denomination_id?: string;
+    qty?: number;
+  }>;
 };
 
 Deno.serve(async (req) => {
@@ -57,6 +65,12 @@ Deno.serve(async (req) => {
     const terminalId = String(payload.terminal_id ?? "").trim() || null;
     const supervisorIdentifier = String(payload.supervisor_identifier ?? "").trim();
     const supervisorPassword = String(payload.supervisor_password ?? "");
+    const paymentItemSelections = Array.isArray(payload.payment_item_selections)
+      ? payload.payment_item_selections
+      : [];
+    const cashRefundDetail = Array.isArray(payload.cash_refund_detail)
+      ? payload.cash_refund_detail
+      : [];
 
     if (!paymentId) return toJson({ error: "El pago no existe" }, 400);
     if (!requestId) return toJson({ error: "La solicitud de anulacion no existe" }, 400);
@@ -152,6 +166,8 @@ Deno.serve(async (req) => {
       p_requested_by_user_id: caller.id,
       p_supervisor_id: supervisorId,
       p_terminal_id: terminalId,
+      p_payment_item_selections: paymentItemSelections,
+      p_cash_refund_detail: cashRefundDetail,
     });
 
     if (approveError) {

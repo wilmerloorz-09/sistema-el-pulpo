@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { generateUUID } from "@/lib/uuid";
 import { dedupePaymentMethods, isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
-import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
+import { computeLineTotalWithContainer, roundMoney } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -206,6 +206,16 @@ export interface ItemPaymentInput {
 export interface PaymentSplitInput {
   methodId: string;
   amount: number;
+}
+
+export interface PaymentVoidSelectionInput {
+  paymentEntryId: string;
+  quantity: number;
+}
+
+export interface CashRefundDenomInput {
+  denomination_id: string;
+  qty: number;
 }
 
 export interface PayOrderParams {
@@ -1196,6 +1206,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 allowPaidAtFallback: false,
               });
               const pendingQty = Math.max(0, payableQty - paidQty);
+              const unitPrice = Number(i.unit_price ?? 0);
+              const trayContainerCost = Number(i.tray_container_cost ?? 0);
+              const activeLineTotal = computeLineTotalWithContainer(payableQty, unitPrice, trayContainerCost);
+              const pendingLineTotal = computeLineTotalWithContainer(pendingQty, unitPrice, trayContainerCost);
 
               return {
                 id: i.id,
@@ -1205,20 +1219,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
                 icon: menuNodeByLegacyProductId[i.product_id]?.icon ?? null,
                 description_snapshot: i.description_snapshot,
                 quantity: payableQty,
-                unit_price: Number(i.unit_price),
-                total: Number(i.total ?? computeLineAmount(payableQty, Number(i.unit_price))),
+                unit_price: unitPrice,
+                total: activeLineTotal,
                 tray_item_type: (i.tray_item_type ?? null) as "A" | "B" | "C" | null,
-                tray_container_cost: Number(i.tray_container_cost ?? 0),
+                tray_container_cost: trayContainerCost,
                 paid_at: i.paid_at,
                 quantity_paid: paidQty,
                 quantity_pending: pendingQty,
-                pending_total: pendingQty <= 0
-                  ? 0
-                  : roundMoney(
-                      Math.max(0, Number(i.total ?? 0) - Number(i.tray_container_cost ?? 0))
-                      * (pendingQty / Math.max(1, payableQty))
-                      + (pendingQty > 0 ? Number(i.tray_container_cost ?? 0) : 0),
-                    ),
+                pending_total: pendingLineTotal,
               };
             })
             .filter((item) => item.quantity > 0 || item.quantity_paid > 0 || item.quantity_pending > 0);
@@ -2327,12 +2335,6 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     if (updateError) throw updateError;
   };
 
-  const resolvePaymentIds = (paymentId: string, paymentEntryIds?: string[]) => {
-    const ids = (paymentEntryIds ?? []).filter(Boolean);
-    if (ids.length === 0) return [paymentId];
-    return [...new Set(ids)];
-  };
-
   const expandPaymentIdsByGroup = async (paymentIds: string[]) => {
     const uniqueIds = [...new Set(paymentIds.filter(Boolean))];
     if (uniqueIds.length === 0) return [];
@@ -2364,32 +2366,54 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     mutationFn: async ({
       paymentId,
       reason,
-      paymentEntryIds,
+      paymentSelections,
+      cashRefundDenoms,
     }: {
       paymentId: string;
       reason: string;
-      paymentEntryIds?: string[];
+      paymentSelections?: PaymentVoidSelectionInput[];
+      cashRefundDenoms?: CashRefundDenomInput[];
     }) => {
       const shift = shiftQuery.data;
       if (!user) throw new Error("No se pudo identificar al usuario actual");
       if (!shift?.id) throw new Error("No hay un turno activo para solicitar la anulacion");
       if (!reason.trim()) throw new Error("Debes indicar un motivo para anular el pago");
 
-      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
-      if (targetIds.length !== 1) {
-        throw new Error("La anulacion segura solo puede ejecutarse sobre un pago a la vez");
+      const normalizedSelections = (paymentSelections ?? [])
+        .map((selection) => ({
+          paymentEntryId: selection.paymentEntryId,
+          quantity: Number(selection.quantity ?? 0),
+        }))
+        .filter((selection) => selection.paymentEntryId && selection.quantity > 0);
+      if (normalizedSelections.length === 0) {
+        throw new Error("Debes seleccionar al menos una cantidad para anular");
       }
 
-      const { data: paymentTarget } = await supabase.from("payments").select("order_id").eq("id", targetIds[0]).single();
+      const normalizedRefundDenoms = (cashRefundDenoms ?? [])
+        .map((entry) => ({
+          denomination_id: entry.denomination_id,
+          qty: Math.max(0, Math.floor(Number(entry.qty ?? 0))),
+        }))
+        .filter((entry) => entry.denomination_id && entry.qty > 0);
+      if (normalizedRefundDenoms.length === 0) {
+        throw new Error("Debes indicar como se devolvera el efectivo");
+      }
+
+      const { data: paymentTarget } = await supabase.from("payments").select("order_id").eq("id", paymentId).single();
       if (paymentTarget?.order_id) {
         await ensureTableSnapshot(paymentTarget.order_id);
       }
 
       const { data, error } = await supabase.rpc("request_void_payment" as never, {
-        p_payment_id: targetIds[0],
+        p_payment_id: paymentId,
         p_current_shift_id: shift.id,
         p_reason: reason.trim(),
         p_terminal_id: buildPosTerminalLabel(),
+        p_payment_item_selections: normalizedSelections.map((selection) => ({
+          payment_item_id: selection.paymentEntryId,
+          quantity: selection.quantity,
+        })),
+        p_cash_refund_detail: normalizedRefundDenoms,
       } as never);
 
       if (error) throw error;
@@ -2407,14 +2431,16 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       paymentId,
       requestId,
       reason,
-      paymentEntryIds,
+      paymentSelections,
+      cashRefundDenoms,
       supervisorIdentifier,
       supervisorPassword,
     }: {
       paymentId: string;
       requestId: string;
       reason: string;
-      paymentEntryIds?: string[];
+      paymentSelections?: PaymentVoidSelectionInput[];
+      cashRefundDenoms?: CashRefundDenomInput[];
       supervisorIdentifier: string;
       supervisorPassword: string;
     }) => {
@@ -2427,12 +2453,27 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         throw new Error("Debes autenticar a un supervisor para continuar");
       }
 
-      const targetIds = resolvePaymentIds(paymentId, paymentEntryIds);
-      if (targetIds.length !== 1) {
-        throw new Error("La anulacion segura solo puede ejecutarse sobre un pago a la vez");
+      const normalizedSelections = (paymentSelections ?? [])
+        .map((selection) => ({
+          paymentEntryId: selection.paymentEntryId,
+          quantity: Number(selection.quantity ?? 0),
+        }))
+        .filter((selection) => selection.paymentEntryId && selection.quantity > 0);
+      if (normalizedSelections.length === 0) {
+        throw new Error("Debes seleccionar al menos una cantidad para anular");
       }
 
-      const { data: paymentInfo } = await supabase.from("payments").select("order_id").eq("id", targetIds[0]).single();
+      const normalizedRefundDenoms = (cashRefundDenoms ?? [])
+        .map((entry) => ({
+          denomination_id: entry.denomination_id,
+          qty: Math.max(0, Math.floor(Number(entry.qty ?? 0))),
+        }))
+        .filter((entry) => entry.denomination_id && entry.qty > 0);
+      if (normalizedRefundDenoms.length === 0) {
+        throw new Error("Debes indicar como se devolvera el efectivo");
+      }
+
+      const { data: paymentInfo } = await supabase.from("payments").select("order_id").eq("id", paymentId).single();
       if (paymentInfo?.order_id) {
         await ensureTableSnapshot(paymentInfo.order_id);
       }
@@ -2450,13 +2491,18 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           Authorization: `Bearer ${accessToken}`,
         },
         body: {
-          payment_id: targetIds[0],
+          payment_id: paymentId,
           request_id: requestId,
           current_shift_id: shift.id,
           reason: reason.trim(),
           terminal_id: buildPosTerminalLabel(),
           supervisor_identifier: supervisorIdentifier.trim(),
           supervisor_password: supervisorPassword,
+          payment_item_selections: normalizedSelections.map((selection) => ({
+            payment_item_id: selection.paymentEntryId,
+            quantity: selection.quantity,
+          })),
+          cash_refund_detail: normalizedRefundDenoms,
         },
       });
 

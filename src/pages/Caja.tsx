@@ -521,19 +521,21 @@ const Caja = () => {
               loading={isLoadingCompletedPayments}
               filters={completedFilters}
               permissions={permissions}
+              shiftDenoms={shift?.denoms ?? []}
               actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
               onFiltersChange={setCompletedFilters}
-              onRequestVoid={(paymentId, reason, paymentEntryIds) =>
-                requestPaymentVoid.mutateAsync({ paymentId, reason, paymentEntryIds })
+              onRequestVoid={(paymentId, reason, paymentSelections, cashRefundDenoms) =>
+                requestPaymentVoid.mutateAsync({ paymentId, reason, paymentSelections, cashRefundDenoms })
               }
-              onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentEntryIds) =>
+              onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms) =>
                 voidPaymentWithSupervisor.mutateAsync({
                   paymentId,
                   requestId,
                   reason,
                   supervisorIdentifier,
                   supervisorPassword,
-                  paymentEntryIds,
+                  paymentSelections,
+                  cashRefundDenoms,
                 })
               }
             />
@@ -897,19 +899,21 @@ const Caja = () => {
                 loading={isLoadingCompletedPayments}
                 filters={completedFilters}
                 permissions={permissions}
+                shiftDenoms={shift.denoms}
                 actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
                 onFiltersChange={setCompletedFilters}
-                onRequestVoid={(paymentId, reason, paymentEntryIds) =>
-                  requestPaymentVoid.mutateAsync({ paymentId, reason, paymentEntryIds })
+                onRequestVoid={(paymentId, reason, paymentSelections, cashRefundDenoms) =>
+                  requestPaymentVoid.mutateAsync({ paymentId, reason, paymentSelections, cashRefundDenoms })
                 }
-                onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentEntryIds) =>
+                onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms) =>
                   voidPaymentWithSupervisor.mutateAsync({
                     paymentId,
                     requestId,
                     reason,
                     supervisorIdentifier,
                     supervisorPassword,
-                    paymentEntryIds,
+                    paymentSelections,
+                    cashRefundDenoms,
                   })
                 }
               />

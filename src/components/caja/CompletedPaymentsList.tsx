@@ -3,7 +3,14 @@ import { Badge } from "@/components/ui/badge";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
 import SupervisorAuthorizationDialog from "@/components/caja/SupervisorAuthorizationDialog";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
-import type { CompletedPayment, CompletedPaymentsFilters, CompletedPaymentsScope } from "@/hooks/useCaja";
+import type {
+  CashRefundDenomInput,
+  CompletedPayment,
+  CompletedPaymentsFilters,
+  CompletedPaymentsScope,
+  PaymentVoidSelectionInput,
+  ShiftDenom,
+} from "@/hooks/useCaja";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UtensilsCrossed } from "lucide-react";
@@ -57,14 +64,21 @@ interface Props {
   permissions: PermissionMap;
   actionLoading?: boolean;
   onFiltersChange: (next: CompletedPaymentsFilters) => void;
-  onRequestVoid: (paymentId: string, reason: string, paymentEntryIds?: string[]) => Promise<string>;
+  shiftDenoms: ShiftDenom[];
+  onRequestVoid: (
+    paymentId: string,
+    reason: string,
+    paymentSelections: PaymentVoidSelectionInput[],
+    cashRefundDenoms: CashRefundDenomInput[],
+  ) => Promise<string>;
   onVoidWithSupervisor: (
     paymentId: string,
     requestId: string,
     reason: string,
     supervisorIdentifier: string,
     supervisorPassword: string,
-    paymentEntryIds?: string[],
+    paymentSelections: PaymentVoidSelectionInput[],
+    cashRefundDenoms: CashRefundDenomInput[],
   ) => Promise<void>;
 }
 
@@ -124,28 +138,50 @@ export default function CompletedPaymentsList({
   loading = false,
   filters,
   permissions,
+  shiftDenoms,
   actionLoading = false,
   onFiltersChange,
   onRequestVoid,
   onVoidWithSupervisor,
 }: Props) {
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
-  const [modalState, setModalState] = useState<{ open: boolean; payment: ReversalPaymentData | null }>({
+  const [modalState, setModalState] = useState<{
+    open: boolean;
+    mode: "request" | "execute";
+    payment: ReversalPaymentData | null;
+    draft: {
+      reason: string;
+      paymentSelections: PaymentVoidSelectionInput[];
+      cashRefundDenoms: CashRefundDenomInput[];
+    } | null;
+    autoOpenConfirm: boolean;
+  }>({
     open: false,
+    mode: "request",
     payment: null,
+    draft: null,
+    autoOpenConfirm: false,
   });
   const [pendingAuthorization, setPendingAuthorization] = useState<{
     open: boolean;
     requestId: string | null;
     payment: ReversalPaymentData | null;
     reason: string;
-    paymentEntryIds: string[];
+    paymentSelections: PaymentVoidSelectionInput[];
+    cashRefundDenoms: CashRefundDenomInput[];
+    selectedAmount: number;
+    supervisorIdentifier: string;
+    supervisorPassword: string;
   }>({
     open: false,
     requestId: null,
     payment: null,
     reason: "",
-    paymentEntryIds: [],
+    paymentSelections: [],
+    cashRefundDenoms: [],
+    selectedAmount: 0,
+    supervisorIdentifier: "",
+    supervisorPassword: "",
   });
 
   const permissionFlags = getPermissionFlags(permissions);
@@ -182,7 +218,7 @@ export default function CompletedPaymentsList({
 
       map.get(row.id)!.items.push({
         id: row.item_id ?? row.id,
-        paymentEntryId: row.id,
+        paymentEntryId: row.payment_item_id ?? row.id,
         product_name: row.item_description ?? "Item no especificado",
         quantity: row.item_paid_quantity ?? row.item_quantity ?? 1,
         tray_item_type: row.tray_item_type ?? null,
@@ -222,6 +258,7 @@ export default function CompletedPaymentsList({
 
     setModalState({
       open: true,
+      mode: "request",
       payment: {
         paymentId: payment.paymentId,
         orderId: payment.order.id,
@@ -245,6 +282,8 @@ export default function CompletedPaymentsList({
           status: item.status,
         })),
       },
+      draft: null,
+      autoOpenConfirm: false,
     });
   };
 
@@ -467,70 +506,158 @@ export default function CompletedPaymentsList({
         </div>
       )}
 
-      <PaymentReversalModal
-        open={modalState.open}
-        onOpenChange={(open) => setModalState((prev) => ({ ...prev, open }))}
-        mode="execute"
-        payment={modalState.payment}
-        loading={actionLoading}
-        allowPartial={false}
-        titleOverride="Anular pago"
-        submitLabelOverride="Solicitar autorizacion de supervisor"
-        onSubmit={async ({ paymentId, reason, paymentEntryIds }) => {
-          const requestId = await onRequestVoid(paymentId, reason, paymentEntryIds);
-          setModalState({ open: false, payment: null });
-          setPendingAuthorization({
-            open: true,
-            requestId,
-            payment: modalState.payment,
-            reason,
-            paymentEntryIds: paymentEntryIds ?? [],
-          });
-        }}
-      />
+      {modalState.payment ? (
+        <PaymentReversalModal
+          open={modalState.open}
+          onOpenChange={(open) =>
+            setModalState((prev) => ({
+              ...prev,
+              open,
+              autoOpenConfirm: open ? prev.autoOpenConfirm : false,
+            }))
+          }
+          mode={modalState.mode}
+          payment={modalState.payment}
+          shiftDenoms={shiftDenoms}
+          loading={actionLoading}
+          allowPartial={true}
+          titleOverride="Anular pago"
+          submitLabelOverride={
+            modalState.mode === "request"
+              ? "Solicitar autorizacion de supervisor"
+              : "Confirmar anulacion"
+          }
+          initialDraft={modalState.draft}
+          autoOpenConfirm={modalState.autoOpenConfirm}
+          onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms }) => {
+            if (modalState.mode === "request") {
+              const itemList = modalState.payment?.items ?? [];
+              const selectedAmount = paymentSelections.reduce((sum, selection) => {
+                const item = itemList.find((entry) => entry.paymentEntryId === selection.paymentEntryId);
+                const unitAmount = item && item.quantity > 0 ? item.amount / item.quantity : 0;
+                return sum + unitAmount * selection.quantity;
+              }, 0);
 
-      <SupervisorAuthorizationDialog
-        open={pendingAuthorization.open}
-        onOpenChange={(open) =>
-          setPendingAuthorization((current) => ({
-            ...current,
-            open,
-          }))
-        }
-        loading={actionLoading}
-        paymentLabel={
-          pendingAuthorization.payment
-            ? `${pendingAuthorization.payment.tableLabel} - ${pendingAuthorization.payment.orderCode ?? `#${pendingAuthorization.payment.orderNumber}`}`
-            : "Pago"
-        }
-        amountLabel={
-          pendingAuthorization.payment
-            ? formatCurrency(pendingAuthorization.payment.amount)
-            : formatCurrency(0)
-        }
-        shiftLabel="Turno actual"
-        cashierName={pendingAuthorization.payment?.cashierName ?? "No identificado"}
-        paymentMethod={pendingAuthorization.payment?.methodsSummary ?? "Metodo"}
-        reason={pendingAuthorization.reason}
-        onConfirm={async ({ identifier, password }) => {
-          if (!pendingAuthorization.payment || !pendingAuthorization.requestId) return;
-          await onVoidWithSupervisor(
-            pendingAuthorization.payment.paymentId,
-            pendingAuthorization.requestId,
-            pendingAuthorization.reason,
-            identifier,
-            password,
-            pendingAuthorization.paymentEntryIds,
-          );
+            const requestId = await onRequestVoid(paymentId, reason, paymentSelections, cashRefundDenoms);
+            setModalState({
+              open: true,
+              mode: "request",
+              payment: modalState.payment,
+              draft: {
+                reason,
+                paymentSelections,
+                cashRefundDenoms,
+              },
+              autoOpenConfirm: false,
+            });
+            setPendingAuthorization({
+              open: true,
+              requestId,
+              payment: modalState.payment,
+              reason,
+              paymentSelections,
+              cashRefundDenoms,
+              selectedAmount,
+              supervisorIdentifier: "",
+              supervisorPassword: "",
+            });
+            return;
+          }
+
+            setModalState({
+              open: false,
+              mode: "request",
+              payment: null,
+            draft: null,
+            autoOpenConfirm: false,
+          });
           setPendingAuthorization({
             open: false,
             requestId: null,
-            payment: null,
-            reason: "",
-            paymentEntryIds: [],
-          });
+              payment: null,
+              reason: "",
+              paymentSelections: [],
+              cashRefundDenoms: [],
+              selectedAmount: 0,
+              supervisorIdentifier: "",
+              supervisorPassword: "",
+            });
+          }}
+        />
+      ) : null}
+
+      {pendingAuthorization.open ? (
+        <SupervisorAuthorizationDialog
+          open={pendingAuthorization.open}
+          onOpenChange={(open) =>
+            setPendingAuthorization((current) =>
+              open
+                ? {
+                    ...current,
+                    open,
+                  }
+                : {
+                    open: false,
+                    requestId: null,
+                    payment: null,
+                    reason: "",
+                    paymentSelections: [],
+                    cashRefundDenoms: [],
+                    selectedAmount: 0,
+                    supervisorIdentifier: "",
+                    supervisorPassword: "",
+                  },
+            )
+          }
+          loading={actionLoading}
+          paymentLabel={
+            pendingAuthorization.payment
+              ? `${pendingAuthorization.payment.tableLabel} - ${pendingAuthorization.payment.orderCode ?? `#${pendingAuthorization.payment.orderNumber}`}`
+              : "Pago"
+          }
+          amountLabel={
+            pendingAuthorization.payment
+              ? formatCurrency(pendingAuthorization.selectedAmount || pendingAuthorization.payment.amount)
+              : formatCurrency(0)
+          }
+          shiftLabel="Turno actual"
+          cashierName={pendingAuthorization.payment?.cashierName ?? "No identificado"}
+          paymentMethod={pendingAuthorization.payment?.methodsSummary ?? "Metodo"}
+          reason={pendingAuthorization.reason}
+          onConfirm={async ({ identifier, password }) => {
+            if (!pendingAuthorization.payment || !pendingAuthorization.requestId) return;
+
+            await onVoidWithSupervisor(
+              pendingAuthorization.payment.paymentId,
+              pendingAuthorization.requestId,
+              pendingAuthorization.reason,
+              identifier,
+              password,
+              pendingAuthorization.paymentSelections,
+              pendingAuthorization.cashRefundDenoms,
+            );
+
+            setPendingAuthorization({
+              open: false,
+              requestId: null,
+              payment: null,
+              reason: "",
+              paymentSelections: [],
+              cashRefundDenoms: [],
+              selectedAmount: 0,
+              supervisorIdentifier: "",
+              supervisorPassword: "",
+            });
+            setModalState({
+              open: false,
+              mode: "request",
+              payment: null,
+              draft: null,
+              autoOpenConfirm: false,
+            });
         }}
-      />
+        />
+      ) : null}
     </div>
   );
 }
