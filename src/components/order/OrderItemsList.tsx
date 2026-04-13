@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -200,51 +201,87 @@ const OrderItemsList = ({
             )}
           >
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 sm:gap-3">
-              <div className="flex min-w-0 items-start gap-1.5 sm:gap-3">
+              <div
+                className={cn(
+                  "min-w-0 flex-1 grid gap-y-1",
+                  isBulkItem
+                    ? "grid-cols-[minmax(0,1fr)_auto]"
+                    : "grid-cols-[auto_minmax(0,1fr)_auto] gap-x-1.5 sm:gap-x-3",
+                )}
+              >
                 {!isBulkItem ? (
-                  <Badge className={cn("mt-0.5 min-w-[2.2rem] shrink-0 justify-center rounded-lg px-1.5 py-1 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)] sm:min-w-[2.7rem] sm:px-2 sm:text-xs", itemStageStyles.badge)}>
+                  <Badge
+                    className={cn(
+                      "col-start-1 row-start-1 min-w-[2.2rem] self-center justify-center rounded-lg px-1.5 py-1 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)] sm:min-w-[2.7rem] sm:px-2 sm:text-xs",
+                      itemStageStyles.badge,
+                    )}
+                  >
                     {displayQuantity}
                   </Badge>
                 ) : null}
 
-                <div className="min-w-0 flex-1">
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2">
-                  <p
-                    className="min-w-0 truncate whitespace-nowrap pr-1 text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:pr-0 sm:text-sm"
-                    title={item.description_snapshot}
-                  >
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:pr-0 sm:text-sm",
+                        isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1",
+                      )}
+                    >
+                      {item.description_snapshot}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" side="top" className="w-auto max-w-[18rem] break-words px-3 py-2 text-xs sm:text-sm">
                     {item.description_snapshot}
-                  </p>
-                  {itemStage !== "draft" ? (
-                    <span className={cn("col-start-2 row-start-1 inline-flex shrink-0 items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]", getOrderItemStageLegendClass(itemStage))}>
-                      <span className={cn(
+                  </PopoverContent>
+                </Popover>
+
+                {itemStage !== "draft" ? (
+                  <span
+                    className={cn(
+                      "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
+                      isBulkItem && "col-start-2",
+                      getOrderItemStageLegendClass(itemStage),
+                    )}
+                  >
+                    <span
+                      className={cn(
                         "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
                         itemStage === "sent"
                           ? "bg-orange-500"
                           : itemStage === "partial"
                             ? "bg-amber-500"
                             : "bg-emerald-500",
-                      )} />
-                      {getOrderItemStageLabel(itemStage)}
-                    </span>
-                  ) : null}
-                </div>
+                      )}
+                    />
+                    {getOrderItemStageLabel(itemStage)}
+                  </span>
+                ) : null}
 
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                  {item.tray_item_type ? (
-                    <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
-                  ) : null}
-                  {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
-                    <span className="text-[11px] font-semibold text-orange-600">
-                      + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
-                    </span>
-                  ) : null}
-                </div>
+                {(item.tray_item_type || (item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0)) ? (
+                  <div
+                    className={cn(
+                      "mt-0.5 flex flex-wrap items-center gap-1.5 sm:gap-2",
+                      isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
+                    )}
+                  >
+                    {item.tray_item_type ? (
+                      <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
+                    ) : null}
+                    {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                      <span className="text-[11px] font-semibold text-orange-600">
+                        + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {trimmedItemNote && (
                   <p
                     className={cn(
-                      "mt-1 break-words whitespace-normal",
+                      "mt-0.5 break-words whitespace-normal",
+                      isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
                       isDeliveryInstruction
                         ? "text-sm font-semibold text-orange-700"
                         : "text-xs italic text-muted-foreground",
@@ -254,7 +291,7 @@ const OrderItemsList = ({
                   </p>
                 )}
 
-                <p className="mt-1 text-[11px] text-muted-foreground sm:text-xs">
+                <p className={cn("-mt-1.5 text-[11px] text-muted-foreground sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
                   {isBulkItem ? (
                     <span className="font-semibold text-foreground">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                   ) : (
@@ -266,7 +303,7 @@ const OrderItemsList = ({
                 </p>
 
                 {item.modifiers.length > 0 && (
-                  <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
+                  <div className={cn("mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
                     {item.modifiers
                       .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
                       .map((modifier) => (
@@ -277,7 +314,6 @@ const OrderItemsList = ({
                   </div>
                 )}
 
-                </div>
               </div>
 
               {isPending && (
