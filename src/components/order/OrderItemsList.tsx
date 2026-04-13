@@ -208,15 +208,15 @@ const OrderItemsList = ({
                 ) : null}
 
                 <div className="min-w-0 flex-1">
-                <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2">
                   <p
-                    className="min-w-0 max-w-full flex-1 truncate whitespace-nowrap text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:text-sm"
+                    className="min-w-0 truncate whitespace-nowrap pr-1 text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:pr-0 sm:text-sm"
                     title={item.description_snapshot}
                   >
                     {item.description_snapshot}
                   </p>
                   {itemStage !== "draft" ? (
-                    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold sm:ml-auto sm:gap-1.5 sm:px-2 sm:text-[11px]", getOrderItemStageLegendClass(itemStage))}>
+                    <span className={cn("col-start-2 row-start-1 inline-flex shrink-0 items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]", getOrderItemStageLegendClass(itemStage))}>
                       <span className={cn(
                         "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
                         itemStage === "sent"
@@ -240,18 +240,6 @@ const OrderItemsList = ({
                     </span>
                   ) : null}
                 </div>
-
-                {item.modifiers.length > 0 && (
-                  <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
-                    {item.modifiers
-                      .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
-                      .map((modifier) => (
-                        <p key={modifier.id} className="break-words whitespace-normal">
-                          - {modifier.description}
-                        </p>
-                      ))}
-                  </div>
-                )}
 
                 {trimmedItemNote && (
                   <p
@@ -277,12 +265,18 @@ const OrderItemsList = ({
                   )}
                 </p>
 
-                {!isPending && (
-                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-medium text-muted-foreground sm:gap-x-3 sm:text-[11px]">
-                    <span>Despachado: {Number(item.quantity_dispatched ?? 0)}</span>
-                    <span>Falta: {Number(item.quantity_remaining ?? 0)}</span>
+                {item.modifiers.length > 0 && (
+                  <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
+                    {item.modifiers
+                      .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
+                      .map((modifier) => (
+                        <p key={modifier.id} className="break-words whitespace-normal">
+                          - {modifier.description}
+                        </p>
+                      ))}
                   </div>
                 )}
+
                 </div>
               </div>
 
