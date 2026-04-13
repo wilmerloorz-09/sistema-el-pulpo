@@ -140,21 +140,22 @@ const OrderItemsList = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700">
-          <span className="h-2 w-2 rounded-full bg-white ring-1 ring-slate-300" />
+      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto text-[11px] font-semibold sm:flex-wrap sm:gap-2 sm:text-[11px]">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 whitespace-nowrap text-slate-700 sm:gap-1.5 sm:px-2 sm:py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-white ring-1 ring-slate-300 sm:h-2 sm:w-2" />
           No enviado
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-100 px-2 py-1 text-orange-800">
-          <span className="h-2 w-2 rounded-full bg-orange-500" />
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200 bg-orange-100 px-2 py-1 whitespace-nowrap text-orange-800 sm:gap-1.5 sm:px-2 sm:py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-orange-500 sm:h-2 sm:w-2" />
           En cocina
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-100 px-2 py-1 text-amber-900">
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
-          Despacho parcial
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-100 px-2 py-1 whitespace-nowrap text-amber-900 sm:gap-1.5 sm:px-2 sm:py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 sm:h-2 sm:w-2" />
+          <span className="sm:hidden">Parcial</span>
+          <span className="hidden sm:inline">Despacho parcial</span>
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 text-emerald-900">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 whitespace-nowrap text-emerald-900 sm:gap-1.5 sm:px-2 sm:py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 sm:h-2 sm:w-2" />
           Despachado
         </span>
       </div>
@@ -189,7 +190,7 @@ const OrderItemsList = ({
           <div
             key={item.id}
             className={cn(
-              "rounded-2xl border px-3 py-3 transition-all",
+              "rounded-2xl border py-3 pl-1.5 pr-2.5 transition-all sm:px-3",
               isPending
                 ? "shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
                 : operationalDisabled
@@ -198,35 +199,38 @@ const OrderItemsList = ({
               itemStageStyles.card,
             )}
           >
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-              <div className="flex min-w-0 items-start gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 sm:gap-3">
+              <div className="flex min-w-0 items-start gap-1.5 sm:gap-3">
                 {!isBulkItem ? (
-                  <Badge className={cn("mt-0.5 min-w-[2.7rem] shrink-0 justify-center rounded-lg px-2 py-1 text-xs font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)]", itemStageStyles.badge)}>
+                  <Badge className={cn("mt-0.5 min-w-[2.2rem] shrink-0 justify-center rounded-lg px-1.5 py-1 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)] sm:min-w-[2.7rem] sm:px-2 sm:text-xs", itemStageStyles.badge)}>
                     {displayQuantity}
                   </Badge>
                 ) : null}
 
                 <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 flex-1 break-words whitespace-normal text-sm font-medium text-foreground">
+                <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+                  <p
+                    className="min-w-0 max-w-full flex-1 truncate whitespace-nowrap text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:text-sm"
+                    title={item.description_snapshot}
+                  >
                     {item.description_snapshot}
                   </p>
-                  <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold", getOrderItemStageLegendClass(itemStage))}>
-                    <span className={cn(
-                      "h-2 w-2 rounded-full",
-                      itemStage === "draft"
-                        ? "bg-white ring-1 ring-slate-300"
-                        : itemStage === "sent"
+                  {itemStage !== "draft" ? (
+                    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold sm:ml-auto sm:gap-1.5 sm:px-2 sm:text-[11px]", getOrderItemStageLegendClass(itemStage))}>
+                      <span className={cn(
+                        "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
+                        itemStage === "sent"
                           ? "bg-orange-500"
                           : itemStage === "partial"
                             ? "bg-amber-500"
                             : "bg-emerald-500",
-                    )} />
-                    {getOrderItemStageLabel(itemStage)}
-                  </span>
+                      )} />
+                      {getOrderItemStageLabel(itemStage)}
+                    </span>
+                  ) : null}
                 </div>
 
-                <div className="mt-1 flex flex-wrap items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
                   {item.tray_item_type ? (
                     <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
                   ) : null}
@@ -262,7 +266,7 @@ const OrderItemsList = ({
                   </p>
                 )}
 
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-[11px] text-muted-foreground sm:text-xs">
                   {isBulkItem ? (
                     <span className="font-semibold text-foreground">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                   ) : (
@@ -274,7 +278,7 @@ const OrderItemsList = ({
                 </p>
 
                 {!isPending && (
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-muted-foreground">
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px] font-medium text-muted-foreground sm:gap-x-3 sm:text-[11px]">
                     <span>Despachado: {Number(item.quantity_dispatched ?? 0)}</span>
                     <span>Falta: {Number(item.quantity_remaining ?? 0)}</span>
                   </div>
@@ -283,17 +287,17 @@ const OrderItemsList = ({
               </div>
 
               {isPending && (
-                <div className="flex shrink-0 flex-col items-end gap-2 self-start">
-                  <div className="flex items-center justify-end gap-1">
+                <div className="flex shrink-0 flex-col items-end gap-1.5 self-start sm:gap-2">
+                  <div className="flex items-center justify-end gap-0.5 sm:gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 rounded-xl border border-destructive/20 bg-red-50 text-destructive hover:bg-red-100"
+                      className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                       disabled={draftDisabled}
                       onClick={() => onRemove(item.id)}
                       title="Eliminar item"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 />
                     </Button>
 
                     {!isBulkItem ? (
@@ -301,7 +305,7 @@ const OrderItemsList = ({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 rounded-xl border-border bg-background"
+                          className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                           disabled={draftDisabled}
                           onClick={() => {
                             if (item.quantity > 1) {
@@ -309,7 +313,7 @@ const OrderItemsList = ({
                             }
                           }}
                         >
-                          <Minus className="h-3.5 w-3.5" />
+                          <Minus />
                         </Button>
 
                         <QuantityInput
@@ -331,11 +335,11 @@ const OrderItemsList = ({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 rounded-xl border-border bg-background"
+                          className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                           disabled={draftDisabled}
                           onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
                         >
-                          <Plus className="h-3.5 w-3.5" />
+                          <Plus />
                         </Button>
                       </>
                     ) : null}
@@ -399,9 +403,10 @@ const QuantityInput = ({
       min={min}
       max={max}
       className={cn(
-        "h-8 w-11 rounded-xl border-border bg-background px-1 text-center text-sm font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+        "!h-6 !w-8 rounded-md border-border bg-background !px-0.5 !text-[11px] text-center font-medium leading-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:!h-8 sm:!w-11 sm:rounded-xl sm:!px-1 sm:!text-sm sm:font-bold",
         className,
       )}
+      style={{ fontSize: "11px", lineHeight: 1 }}
       value={value}
       disabled={disabled}
       onChange={(e) => {
