@@ -88,6 +88,7 @@
 - `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas dentro de una mesa.
 - `table_splits` sigue existiendo, pero ya no es la fuente principal de numeracion/orden de tabs activos tras el rework de 2026-04-12.
 - `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
+- `get_branch_tables_overview(...)` ya ignora borradores vacios al calcular ocupacion operativa de mesa.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre ordenes `DINE_IN`.
 - Reglas de esa RPC:
   - ambas ordenes deben ser `DINE_IN`
@@ -97,6 +98,7 @@
   - desde la version actual, no mueve cantidad ya comprometida por pago
   - preserva y redistribuye `order_item_ready_events` y `order_item_dispatch_events`
   - si la orden destino sale de borrador operativo, puede asignar `order_number` y `order_code`
+- `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` ya validan permiso alineado al shift gate operativo actual.
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
@@ -206,6 +208,9 @@
 - `20260411223000_allow_move_of_unpaid_remaining_item_quantity.sql`
 - `20260411233000_assign_order_number_when_move_creates_operational_destination.sql`
 - `20260412103000_rework_table_orders_without_splits.sql`
+- `20260414123000_ignore_empty_draft_orders_in_tables_overview.sql`
+- `20260414133000_align_additional_table_order_permissions_with_shift_gate.sql`
+- `20260414143000_align_delete_table_order_permissions_with_shift_gate.sql`
 
 ### Comprobantes
 - `20260404170000_add_payment_proof_capture_tables.sql`

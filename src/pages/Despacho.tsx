@@ -115,15 +115,16 @@ const Despacho = () => {
         </div>
 
         {showTabs && (
-          <div className="mb-4 flex justify-start">
+          <div className="scrollbar-none mb-4 overflow-x-auto">
             <ToggleGroup
               type="single"
+              size="sm"
               value={scope}
               onValueChange={(value) => {
                 if (!value) return;
                 setActiveView(value as DispatchView);
               }}
-              className="rounded-2xl border border-border bg-muted/50 p-1.5 shadow-sm"
+              className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm"
             >
               {availableViews.map((view) => {
                 const Icon = getViewIcon(view);
@@ -133,14 +134,16 @@ const Despacho = () => {
                   <ToggleGroupItem
                     key={view}
                     value={view}
-                    className="relative rounded-xl px-4 py-2.5 text-sm font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm"
+                    className="relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm"
                     aria-label={getViewLabel(view)}
                   >
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4" />
-                      <span>{getViewLabel(view)}</span>
+                    <span className="flex items-center gap-1 whitespace-nowrap sm:gap-2">
+                      <Icon className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
+                      <span className="text-left leading-tight">
+                        {getViewLabel(view)}
+                      </span>
                       {count > 0 && (
-                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-[10px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in zoom-in duration-300">
+                        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in zoom-in duration-300 sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
                           {count}
                         </span>
                       )}

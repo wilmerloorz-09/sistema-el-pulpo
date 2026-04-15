@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -19,7 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchOrderDetail } from "@/hooks/useOrder";
-import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronsDown, ChevronsUp, Loader2, X } from "lucide-react";
@@ -28,6 +28,7 @@ interface MergeSplitOrdersDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialSourceOrderId?: string | null;
+  initialSourceOption?: TransferableOrderOption | null;
 }
 
 interface TransferableOrderOption {
@@ -62,6 +63,12 @@ interface DisplayTransferRow {
 }
 
 const clampQty = (value: number, max: number) => Math.max(0, Math.min(max, Math.floor(Number.isFinite(value) ? value : 0)));
+
+function formatCompactOrderLabel(tableName: string, orderNumber: number | null) {
+  const cleanTableName = tableName.trim() || "Mesa";
+  if (orderNumber == null || Number.isNaN(Number(orderNumber))) return cleanTableName;
+  return `${cleanTableName} (${String(orderNumber).padStart(4, "0").slice(-4)})`;
+}
 
 function filterOrdersByMode(items: TransferableOrderOption[], filter: "ALL" | "ACTIVE" | "FREE") {
   if (filter === "ACTIVE") {
@@ -177,13 +184,13 @@ export default function MergeSplitOrdersDialog({
   open,
   onOpenChange,
   initialSourceOrderId = null,
+  initialSourceOption = null,
 }: MergeSplitOrdersDialogProps) {
   type OrderFilterValue = "ALL" | "ACTIVE" | "FREE";
 
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const initialSourceRef = useRef<string | null>(initialSourceOrderId);
   const [leftOrderId, setLeftOrderId] = useState<string>(initialSourceOrderId ?? "");
   const [rightOrderId, setRightOrderId] = useState<string>("");
   const [leftSelectedQty, setLeftSelectedQty] = useState<Record<string, number>>({});
@@ -191,10 +198,10 @@ export default function MergeSplitOrdersDialog({
   const [leftOrderFilter, setLeftOrderFilter] = useState<OrderFilterValue>("ALL");
   const [rightOrderFilter, setRightOrderFilter] = useState<OrderFilterValue>("ALL");
   const [confirmingEmptyOrderCleanup, setConfirmingEmptyOrderCleanup] = useState(false);
+  const [didApplyInitialSource, setDidApplyInitialSource] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      initialSourceRef.current = initialSourceOrderId;
       setLeftOrderId(initialSourceOrderId ?? "");
       setRightOrderId("");
       setLeftSelectedQty({});
@@ -202,13 +209,10 @@ export default function MergeSplitOrdersDialog({
       setLeftOrderFilter("ALL");
       setRightOrderFilter("ALL");
       setConfirmingEmptyOrderCleanup(false);
+      setDidApplyInitialSource(false);
       return;
     }
-
-    if (!leftOrderId && initialSourceRef.current) {
-      setLeftOrderId(initialSourceRef.current);
-    }
-  }, [open, initialSourceOrderId, leftOrderId]);
+  }, [open, initialSourceOrderId]);
 
   const ordersQuery = useQuery({
     queryKey: ["merge-split-order-options", activeBranchId],
@@ -292,8 +296,7 @@ export default function MergeSplitOrdersDialog({
             splitCode,
             isSpecial: false,
           });
-          const orderRef = getOrderRef(order.order_code, order.order_number);
-          const label = orderRef ? `${tableName} (${orderRef})` : fallbackLabel;
+          const label = formatCompactOrderLabel(tableName, order.order_number) || fallbackLabel;
 
           return {
             id: order.id,
@@ -334,30 +337,37 @@ export default function MergeSplitOrdersDialog({
     },
   });
 
-  const leftOptions = useMemo(() => {
+  const mergedOrderOptions = useMemo(() => {
     const items = ordersQuery.data ?? [];
-    return filterOrdersByMode(items, leftOrderFilter).filter((order) => order.id !== rightOrderId);
-  }, [ordersQuery.data, leftOrderFilter, rightOrderId]);
+    if (!initialSourceOption) return items;
+    if (items.some((order) => order.id === initialSourceOption.id)) return items;
+    return [initialSourceOption, ...items];
+  }, [initialSourceOption, ordersQuery.data]);
+
+  const leftOptions = useMemo(() => {
+    return filterOrdersByMode(mergedOrderOptions, leftOrderFilter)
+      .filter((order) => order.id !== rightOrderId);
+  }, [mergedOrderOptions, leftOrderFilter, rightOrderId]);
 
   const rightOptions = useMemo(() => {
-    const items = ordersQuery.data ?? [];
-    return filterOrdersByMode(items, rightOrderFilter).filter((order) => order.id !== leftOrderId);
-  }, [ordersQuery.data, rightOrderFilter, leftOrderId]);
+    return filterOrdersByMode(mergedOrderOptions, rightOrderFilter)
+      .filter((order) => order.id !== leftOrderId);
+  }, [mergedOrderOptions, rightOrderFilter, leftOrderId]);
 
   const leftOrderQuery = useQuery({
     queryKey: ["merge-split-left-order", leftOrderId],
-    enabled: open && (ordersQuery.data ?? []).some((option) => option.id === leftOrderId && option.orderId),
+    enabled: open && mergedOrderOptions.some((option) => option.id === leftOrderId && option.orderId),
     queryFn: async () => {
-      const selected = (ordersQuery.data ?? []).find((option) => option.id === leftOrderId);
+      const selected = mergedOrderOptions.find((option) => option.id === leftOrderId);
       return selected?.orderId ? fetchOrderDetail(selected.orderId) : null;
     },
   });
 
   const rightOrderQuery = useQuery({
     queryKey: ["merge-split-right-order", rightOrderId],
-    enabled: open && (ordersQuery.data ?? []).some((option) => option.id === rightOrderId && option.orderId),
+    enabled: open && mergedOrderOptions.some((option) => option.id === rightOrderId && option.orderId),
     queryFn: async () => {
-      const selected = (ordersQuery.data ?? []).find((option) => option.id === rightOrderId);
+      const selected = mergedOrderOptions.find((option) => option.id === rightOrderId);
       return selected?.orderId ? fetchOrderDetail(selected.orderId) : null;
     },
   });
@@ -391,10 +401,20 @@ export default function MergeSplitOrdersDialog({
   }, [leftOrderId, rightOrderId]);
 
   useEffect(() => {
+    if (!open || !initialSourceOrderId || leftOrderId || didApplyInitialSource) return;
+    const hasInitialSource = mergedOrderOptions.some((order) => order.id === initialSourceOrderId);
+    if (hasInitialSource) {
+      setLeftOrderId(initialSourceOrderId);
+      setDidApplyInitialSource(true);
+    }
+  }, [open, initialSourceOrderId, leftOrderId, mergedOrderOptions, didApplyInitialSource]);
+
+  useEffect(() => {
     if (!leftOrderId) return;
+    if (ordersQuery.isLoading || !ordersQuery.data) return;
     if (leftOptions.some((order) => order.id === leftOrderId)) return;
     setLeftOrderId("");
-  }, [leftOptions, leftOrderId]);
+  }, [leftOptions, leftOrderId, ordersQuery.data, ordersQuery.isLoading]);
 
   useEffect(() => {
     if (!rightOrderId) return;
@@ -660,6 +680,25 @@ export default function MergeSplitOrdersDialog({
           <DialogHeader>
             <DialogTitle>Mover Items/Mesa</DialogTitle>
           </DialogHeader>
+          <div className="sticky top-0 z-10 -mx-1 flex gap-2 border-b border-stone-200/80 bg-white/95 px-1 pb-3 backdrop-blur">
+            <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+              <X className="h-4 w-4" />
+              Cerrar
+            </Button>
+            <Button onClick={submitMove} disabled={!canSubmit} className="flex-1">
+              {moveMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Moviendo...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  Aceptar
+                </>
+              )}
+            </Button>
+          </div>
 
         <div className="flex min-h-[26rem] flex-col space-y-4">
           <Label className="text-sm font-medium">Mover items entre mesas</Label>
@@ -676,7 +715,7 @@ export default function MergeSplitOrdersDialog({
           ) : (
             <div className="grid gap-3 lg:grid-cols-2">
               <section className="flex min-h-[22rem] flex-col space-y-2 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.18)]">
-                <div className="flex flex-wrap items-start justify-between gap-2.5">
+                <div className="flex items-start gap-2">
                   <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
                     <Select value={leftOrderFilter} onValueChange={(value) => setLeftOrderFilter(value as OrderFilterValue)}>
                       <SelectTrigger className="h-11 rounded-2xl border-orange-200">
@@ -690,7 +729,7 @@ export default function MergeSplitOrdersDialog({
                     </Select>
 
                     <Select value={leftOrderId} onValueChange={setLeftOrderId}>
-                      <SelectTrigger className="h-11 rounded-2xl border-orange-200">
+                      <SelectTrigger className="h-auto min-h-11 rounded-2xl border-orange-200 pr-2 text-left text-xs [&>span]:line-clamp-2 [&>span]:flex-1 [&>span]:text-left [&>span]:leading-tight sm:text-sm">
                         <SelectValue placeholder="Selecciona mesa o division" />
                       </SelectTrigger>
                       <SelectContent>
@@ -702,10 +741,9 @@ export default function MergeSplitOrdersDialog({
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" disabled={!canSelectAcrossSides} className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto" onClick={moveAllLeftToRight}>
+                  <Button type="button" variant="ghost" size="sm" disabled={!canSelectAcrossSides} className="h-11 w-9 shrink-0 rounded-full px-0 text-slate-600" onClick={moveAllLeftToRight}>
                     <ArrowDown className="h-4 w-4 sm:hidden" />
                     <ArrowRight className="hidden h-4 w-4 sm:block" />
-                    Todo
                   </Button>
                 </div>
 
@@ -747,7 +785,7 @@ export default function MergeSplitOrdersDialog({
               </section>
 
               <section className="flex min-h-[22rem] flex-col space-y-2 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.18)]">
-                <div className="flex flex-wrap items-start justify-between gap-2.5">
+                <div className="flex items-start gap-2">
                   <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
                     <Select value={rightOrderFilter} onValueChange={(value) => setRightOrderFilter(value as OrderFilterValue)}>
                       <SelectTrigger className="h-11 rounded-2xl border-orange-200">
@@ -761,7 +799,7 @@ export default function MergeSplitOrdersDialog({
                     </Select>
 
                     <Select value={rightOrderId} onValueChange={setRightOrderId}>
-                      <SelectTrigger className="h-11 rounded-2xl border-orange-200">
+                      <SelectTrigger className="h-auto min-h-11 rounded-2xl border-orange-200 pr-2 text-left text-xs [&>span]:line-clamp-2 [&>span]:flex-1 [&>span]:text-left [&>span]:leading-tight sm:text-sm">
                         <SelectValue placeholder="Selecciona mesa o division" />
                       </SelectTrigger>
                       <SelectContent>
@@ -773,10 +811,9 @@ export default function MergeSplitOrdersDialog({
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" disabled={!canSelectAcrossSides} className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto" onClick={moveAllRightToLeft}>
+                  <Button type="button" variant="ghost" size="sm" disabled={!canSelectAcrossSides} className="h-11 w-9 shrink-0 rounded-full px-0 text-slate-600" onClick={moveAllRightToLeft}>
                     <ArrowUp className="h-4 w-4 sm:hidden" />
                     <ArrowLeft className="hidden h-4 w-4 sm:block" />
-                    Todo
                   </Button>
                 </div>
 
@@ -821,26 +858,6 @@ export default function MergeSplitOrdersDialog({
           )}
 
         </div>
-
-          <DialogFooter className="flex-row gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
-              <X className="h-4 w-4" />
-              Cerrar
-            </Button>
-            <Button onClick={submitMove} disabled={!canSubmit} className="flex-1">
-              {moveMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Moviendo...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4" />
-                  Aceptar
-                </>
-              )}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
       <AlertDialog open={confirmingEmptyOrderCleanup} onOpenChange={setConfirmingEmptyOrderCleanup}>

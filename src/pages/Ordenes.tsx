@@ -19,10 +19,12 @@ import { TrayItemChip } from "@/components/order/TrayItemChip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -419,6 +421,10 @@ const Ordenes = () => {
     // para que tome el valor de la nueva orden desde la DB.
     setPendingMenuScopeSelection(null);
     setPendingTrayType(null);
+    setSelectedProduct(null);
+    setSelectedProductModifiers([]);
+    setSelectingProductId(null);
+    setShowCart(false);
   }, [orderId]);
 
   useEffect(() => {
@@ -624,7 +630,21 @@ const Ordenes = () => {
       <MergeSplitOrdersDialog
         open={mergeSplitOpen}
         onOpenChange={setMergeSplitOpen}
-        initialSourceOrderId={null}
+        initialSourceOrderId={order.id}
+        initialSourceOption={{
+          id: order.id,
+          orderId: order.id,
+          label: `${order.table_name ?? "Mesa"} (${String(order.order_number ?? 0).padStart(4, "0").slice(-4)})`,
+          orderCode: order.order_code,
+          tableName: order.table_name ?? "Mesa",
+          tableId: order.table_id,
+          splitCode: order.split_code ?? null,
+          splitId: order.split_id,
+          status: order.status,
+          menuScope: order.menu_scope,
+          sortKey: `0000-${order.table_name ?? "Mesa"}-${order.order_number ?? 0}`,
+          hasOperationalItems: order.items.some((item) => item.status !== "DRAFT"),
+        }}
       />
       </div>
     );
@@ -828,6 +848,32 @@ const Ordenes = () => {
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
     } catch (err: any) {
+      const rawMessage = String(err?.message ?? "");
+
+      if (rawMessage.includes("No se encontro la orden origen")) {
+        try {
+          const refreshedTableOrders = await fetchSiblingOrders(order.table_id);
+          qc.setQueryData(["table-orders", order.table_id], refreshedTableOrders);
+          qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+          qc.invalidateQueries({ queryKey: ["order"] });
+          qc.invalidateQueries({ queryKey: ["orders"] });
+
+          const fallbackOrderId = refreshedTableOrders[0]?.id ?? null;
+          if (fallbackOrderId) {
+            toast.error("La orden actual ya no estaba vigente. Te llevamos a la orden activa de la mesa.");
+            navigate(`/ordenes?order=${fallbackOrderId}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
+            return;
+          }
+
+          toast.error("La orden actual ya no estaba vigente. La mesa quedo disponible nuevamente.");
+          navigate("/mesas", { replace: true });
+          return;
+        } catch {
+          toast.error("La orden actual ya no estaba vigente. Recarga el estado de la mesa e intenta otra vez.");
+          return;
+        }
+      }
+
       toast.error(err.message);
     } finally {
       setSplitting(false);
@@ -1043,97 +1089,51 @@ const Ordenes = () => {
       ) : null}
 
       {order.order_type === "DINE_IN" ? (
-        <div className="scrollbar-none -mx-1 flex flex-nowrap items-center gap-x-2 overflow-x-auto px-1 pb-0.5 sm:gap-x-3 md:gap-x-5">
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
-            onClick={() => {
-              if (interactiveMenuScope === "TABLE") return;
-              setPendingMenuScopeSelection("TABLE");
-              updateMenuScope.mutate("TABLE", {
+        <div className="scrollbar-none -mx-1 overflow-x-auto px-1 pb-0.5">
+          <Tabs
+            value={interactiveMenuScope}
+            onValueChange={(value) => {
+              const nextScope = value as MenuScope;
+              if (interactiveMenuScope === nextScope) return;
+
+              if (nextScope === "BULK") {
+                setPendingMenuScopeSelection("BULK");
+                return;
+              }
+
+              setPendingMenuScopeSelection(nextScope);
+              updateMenuScope.mutate(nextScope, {
                 onError: () => setPendingMenuScopeSelection(null),
               });
             }}
-            disabled={updateMenuScope.isPending}
-            aria-pressed={interactiveMenuScope === "TABLE"}
           >
-            <span
-              className={cn(
-                "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                interactiveMenuScope === "TABLE" ? "border-primary" : "border-muted-foreground/50",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full transition-colors",
-                  interactiveMenuScope === "TABLE" ? "bg-primary" : "bg-transparent",
-                )}
-              />
-            </span>
-            <span className="inline-flex items-center gap-1 sm:gap-1.5">
-              <ChefHat className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-              Menu Mesas
-            </span>
-          </button>
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
-            onClick={() => {
-              if (interactiveMenuScope === "TAKEOUT") return;
-              setPendingMenuScopeSelection("TAKEOUT");
-              updateMenuScope.mutate("TAKEOUT", {
-                onError: () => setPendingMenuScopeSelection(null),
-              });
-            }}
-            disabled={updateMenuScope.isPending}
-            aria-pressed={interactiveMenuScope === "TAKEOUT"}
-          >
-            <span
-              className={cn(
-                "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                interactiveMenuScope === "TAKEOUT" ? "border-primary" : "border-muted-foreground/50",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full transition-colors",
-                  interactiveMenuScope === "TAKEOUT" ? "bg-primary" : "bg-transparent",
-                )}
-              />
-            </span>
-            <span className="inline-flex items-center gap-1 sm:gap-1.5">
-              <ShoppingBag className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-              Con envase
-            </span>
-          </button>
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
-            onClick={() => {
-              if (interactiveMenuScope === "BULK") return;
-              setPendingMenuScopeSelection("BULK");
-            }}
-            disabled={updateMenuScope.isPending}
-            aria-pressed={interactiveMenuScope === "BULK"}
-          >
-            <span
-              className={cn(
-                "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                interactiveMenuScope === "BULK" ? "border-primary" : "border-muted-foreground/50",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full transition-colors",
-                  interactiveMenuScope === "BULK" ? "bg-primary" : "bg-transparent",
-                )}
-              />
-            </span>
-            <span className="inline-flex items-center gap-1 sm:gap-1.5">
-              <Scale className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-              A granel
-            </span>
-          </button>
+            <TabsList className="h-auto min-w-max justify-start gap-1 rounded-[24px] border-amber-200 bg-gradient-to-r from-amber-50 via-white to-yellow-50 p-1.5">
+              <TabsTrigger
+                value="TABLE"
+                disabled={updateMenuScope.isPending}
+                className="min-h-11 min-w-[6.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.75rem] sm:gap-2 sm:px-3 sm:text-sm"
+              >
+                <ChefHat className="h-4 w-4 shrink-0" />
+                <span>Menu Mesas</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="TAKEOUT"
+                disabled={updateMenuScope.isPending}
+                className="min-h-11 min-w-[6.4rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.5rem] sm:gap-2 sm:px-3 sm:text-sm"
+              >
+                <ShoppingBag className="h-4 w-4 shrink-0" />
+                <span>Con envase</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="BULK"
+                disabled={updateMenuScope.isPending}
+                className="min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm"
+              >
+                <Scale className="h-4 w-4 shrink-0" />
+                <span>A granel</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       ) : null}
       <MenuNavigator
@@ -1168,12 +1168,6 @@ const Ordenes = () => {
           <h2 className="shrink-0 font-display text-sm font-bold">Orden</h2>
           <p className="truncate text-xs font-semibold text-muted-foreground">{getOrderRef(order.order_code, order.order_number)}</p>
         </div>
-        {mobile ? (
-          <Button variant="ghost" size="sm" className="h-11 px-3 gap-2 text-sm 2xl:hidden" onClick={() => setShowCart(false)}>
-            <Menu className="h-4 w-4" />
-            Ver menu
-          </Button>
-        ) : null}
       </div>
 
       <div className={cn("min-h-0", mobile && "flex-1")}>
@@ -1289,7 +1283,7 @@ const Ordenes = () => {
       )}
 
       {(canShowCloseOrder || (canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED")) && (
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-2 gap-3">
           {canShowCloseOrder && (
             <Button
               variant="outline"
@@ -1369,12 +1363,63 @@ const Ordenes = () => {
 
             {order.table_id && (
               <div className="ml-auto flex shrink-0 items-center gap-1">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 w-9 shrink-0 rounded-lg p-0 2xl:hidden"
+                      aria-label="Abrir menu de acciones"
+                    >
+                      <Menu className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 2xl:hidden">
+                    {canShowConvertToSpecial && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setConvertSpecialTotalInput(total.toFixed(2));
+                          setConvertSpecialDialogOpen(true);
+                        }}
+                        disabled={!canConvertToSpecial}
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        Convertir orden especial
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onClick={() => setMergeSplitOpen(true)}
+                      disabled={!canOperateOrders}
+                    >
+                      <ArrowRightLeft className="mr-2 h-4 w-4" />
+                      Mover Items/Mesa
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setShowChangeTableDialog(true)}
+                      disabled={!canChangeTable || moveToTable.isPending}
+                    >
+                      {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
+                      Cambiar mesa
+                    </DropdownMenuItem>
+                    {hasSiblings && (
+                      <DropdownMenuItem
+                        onClick={() => setShowDeleteSplitConfirm(true)}
+                        disabled={!canDeleteSplit || removingSplit}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        {removingSplit ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
+                        Eliminar orden
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
                 {hasSiblings && (
                   <Button
                     variant={canDeleteSplit ? "destructive" : "ghost"}
                     size="sm"
                     className={cn(
-                      "h-9 w-9 shrink-0 rounded-lg p-0 2xl:h-7 2xl:w-7",
+                      "hidden h-9 w-9 shrink-0 rounded-lg p-0 2xl:inline-flex 2xl:h-7 2xl:w-7",
                       !canDeleteSplit && "text-muted-foreground",
                     )}
                     onClick={() => setShowDeleteSplitConfirm(true)}
@@ -1393,72 +1438,91 @@ const Ordenes = () => {
           </div>
 
           {order.table_id && (
-            <div className="scrollbar-none flex items-stretch gap-0 overflow-x-auto pb-1">
-                  {mergedTableOrders.map((tableOrder) => (
+            <div className="flex items-center gap-2 pb-1">
+              <div className="scrollbar-none flex min-w-0 flex-1 items-stretch gap-0 overflow-x-auto pr-1">
+                {mergedTableOrders.map((tableOrder, index) => (
+                  <button
+                    key={tableOrder.id}
+                    type="button"
+                    className={cn(
+                      "group flex h-10 shrink-0 items-center gap-2 border border-border bg-card px-3 text-[11px] font-semibold text-foreground transition-colors",
+                      index === 0 && "rounded-l-xl",
+                      index === mergedTableOrders.length - 1 && "border-r-0",
+                      tableOrder.id === order.id
+                        ? "border-orange-300 bg-orange-50 text-orange-900 shadow-[0_10px_20px_-18px_rgba(249,115,22,0.85)]"
+                        : "hover:bg-muted/60",
+                    )}
+                    onClick={() => navigate(`/ordenes?order=${tableOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true })}
+                  >
+                    <span className="whitespace-nowrap">{getTableOrderButtonLabel(tableOrder)}</span>
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        "px-1.5 py-0 text-[10px]",
+                        tableOrder.id === order.id && "bg-orange-100 text-orange-700",
+                      )}
+                    >
+                      {tableOrder.item_count}
+                    </Badge>
+                    {tableOrder.id === order.id && canDeleteSplit && (
+                      <span
+                        role="button"
+                        aria-label="Eliminar orden activa"
+                        className={cn(
+                          "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-orange-700 opacity-0 transition-opacity",
+                          "group-hover:opacity-100",
+                        )}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setShowDeleteSplitConfirm(true);
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </span>
+                    )}
+                  </button>
+                ))}
                 <button
-                  key={tableOrder.id}
                   type="button"
                   className={cn(
-                    "group flex h-10 shrink-0 items-center gap-2 border border-border bg-card px-3 text-[11px] font-semibold text-foreground transition-colors",
-                    "first:rounded-l-xl",
-                    tableOrder.id === order.id
-                      ? "border-orange-300 bg-orange-50 text-orange-900 shadow-[0_10px_20px_-18px_rgba(249,115,22,0.85)]"
-                      : "hover:bg-muted/60",
+                    "flex h-10 shrink-0 items-center justify-center rounded-r-xl border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted/60",
+                    (!canSplit || splitting) && "cursor-not-allowed opacity-50",
                   )}
-                  onClick={() => navigate(`/ordenes?order=${tableOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true })}
+                  onClick={handleSplit}
+                  disabled={!canSplit || splitting}
+                  title={
+                    !canOperateOrders
+                      ? "No tienes permiso para crear nuevas ordenes en la mesa"
+                      : order.items.length <= 0
+                        ? "La orden actual debe tener al menos un item"
+                        : !allExistingTableOrdersHaveItems
+                          ? "Todas las ordenes existentes deben tener al menos un item"
+                          : !canSplit
+                            ? "La mesa debe seguir activa para crear otra orden"
+                            : "Nueva orden"
+                  }
                 >
-                  <span className="whitespace-nowrap">{getTableOrderButtonLabel(tableOrder)}</span>
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      "px-1.5 py-0 text-[10px]",
-                      tableOrder.id === order.id && "bg-orange-100 text-orange-700",
-                    )}
-                  >
-                    {tableOrder.item_count}
-                  </Badge>
-                  {tableOrder.id === order.id && canDeleteSplit && (
-                    <span
-                      role="button"
-                      aria-label="Eliminar orden activa"
-                      className={cn(
-                        "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-orange-700 opacity-0 transition-opacity",
-                        "group-hover:opacity-100",
-                      )}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setShowDeleteSplitConfirm(true);
-                      }}
-                    >
-                      <X className="h-3 w-3" />
-                    </span>
-                  )}
+                  {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
                 </button>
-              ))}
-              <button
-                type="button"
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
                 className={cn(
-                  "flex h-10 shrink-0 items-center justify-center border border-l-0 border-border bg-card px-3 text-muted-foreground transition-colors",
-                  "rounded-r-xl hover:bg-muted/60",
-                  (!canSplit || splitting) && "cursor-not-allowed opacity-50",
+                  "relative h-10 min-w-[46px] shrink-0 overflow-visible rounded-xl px-2 2xl:hidden",
+                  showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
                 )}
-                onClick={handleSplit}
-                disabled={!canSplit || splitting}
-                title={
-                  !canOperateOrders
-                    ? "No tienes permiso para crear nuevas ordenes en la mesa"
-                    : order.items.length <= 0
-                      ? "La orden actual debe tener al menos un item"
-                      : !allExistingTableOrdersHaveItems
-                        ? "Todas las ordenes existentes deben tener al menos un item"
-                        : !canSplit
-                          ? "La mesa debe seguir activa para crear otra orden"
-                          : "Nueva orden"
-                }
+                onClick={() => setShowCart((current) => !current)}
+                aria-label={showCart ? "Volver al menu" : "Ver orden"}
               >
-                {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
-              </button>
+                {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                {!showCart && itemCount > 0 && (
+                  <span className="absolute right-1 top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
+                    {itemCount}
+                  </span>
+                )}
+              </Button>
             </div>
           )}
 
@@ -1467,7 +1531,7 @@ const Ordenes = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:h-7"
+                className="hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:inline-flex 2xl:h-7"
                 onClick={() => {
                   setConvertSpecialTotalInput(total.toFixed(2));
                   setConvertSpecialDialogOpen(true);
@@ -1485,7 +1549,7 @@ const Ordenes = () => {
                   variant={canChangeTable ? "outline" : "ghost"}
                   size="sm"
                   className={cn(
-                    "h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:h-7",
+                    "hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:inline-flex 2xl:h-7",
                     !canChangeTable && "text-muted-foreground",
                   )}
                   onClick={() => setShowChangeTableDialog(true)}
@@ -1501,21 +1565,6 @@ const Ordenes = () => {
                   {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
                   Cambiar mesa
                 </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="relative ml-auto h-11 min-w-[52px] shrink-0 rounded-xl px-3 2xl:hidden"
-                  onClick={() => setShowCart(!showCart)}
-                >
-                  <ShoppingBag className="h-4 w-4" />
-                  {itemCount > 0 && (
-                    <span className="absolute right-1 top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">
-                      {itemCount}
-                    </span>
-                  )}
-                </Button>
-
               </>
             )}
           </div>
@@ -1757,7 +1806,21 @@ const Ordenes = () => {
       <MergeSplitOrdersDialog
         open={mergeSplitOpen}
         onOpenChange={setMergeSplitOpen}
-        initialSourceOrderId={null}
+        initialSourceOrderId={order.id}
+        initialSourceOption={{
+          id: order.id,
+          orderId: order.id,
+          label: `${order.table_name ?? "Mesa"} (${String(order.order_number ?? 0).padStart(4, "0").slice(-4)})`,
+          orderCode: order.order_code,
+          tableName: order.table_name ?? "Mesa",
+          tableId: order.table_id,
+          splitCode: order.split_code ?? null,
+          splitId: order.split_id,
+          status: order.status,
+          menuScope: order.menu_scope,
+          sortKey: `0000-${order.table_name ?? "Mesa"}-${order.order_number ?? 0}`,
+          hasOperationalItems: order.items.some((item) => item.status !== "DRAFT"),
+        }}
       />
 
       <style>{`

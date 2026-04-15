@@ -47,6 +47,9 @@
 --   - aunque `table_splits` se limpia por compatibilidad, la base vigente de tabs/cuentas de mesa ya vive en `orders.table_order_position`
 --   - al borrar order_ready_events/order_dispatch_events y sus lineas tambien se limpia cualquier trazabilidad recreada por mover items entre ordenes
 --   - al borrar payment_capture_requests y payment_proofs se limpia el flujo operativo de comprobantes de transferencia
+-- - Conserva tambien los ajustes recientes de abril 14:
+--   - `get_branch_tables_overview(...)` sigue ignorando borradores vacios
+--   - crear/eliminar cuentas adicionales sigue alineado al shift gate operativo
 -- - NO elimina archivos del bucket privado de Supabase Storage
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
 --   - metodo recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
@@ -157,6 +160,7 @@ COMMIT;
 -- - 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
 -- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial
 -- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
+-- - 0 borradores vacios residuales capaces de seguir ocupando una mesa en overview
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)

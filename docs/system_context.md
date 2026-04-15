@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-04-12)
+## Estado operativo vigente (2026-04-15)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -89,6 +89,11 @@
   - preserva historial `READY` y `DISPATCHED` redistribuyendolo
   - desde 2026-04-11 solo permite mover cantidad no pagada remanente
   - si la orden destino deja de ser borrador operativo, puede recibir `order_number` y `order_code` en ese momento
+- El dialogo `Mover Items/Mesa` ya debe iniciar con la orden activa seleccionada en la primera columna cuando se abre desde una orden de mesa.
+- Esa preseleccion inicial solo aplica al arranque del dialogo:
+  - despues el usuario puede cambiar filtro, origen y destino libremente
+  - la UI no debe volver a forzar la orden inicial
+- En los combos moviles de ese dialogo, la etiqueta compacta base esperada es `Mesa X (0002)`.
 - Si una orden origen queda sin items despues del movimiento, vuelve a `DRAFT`.
 
 ### 6. Orden especial
@@ -112,7 +117,7 @@
 
 ## Cambios recientes que ya deben considerarse "base"
 
-### 2026-04-11 / 2026-04-12
+### 2026-04-11 / 2026-04-15
 - Caja:
   - la caja puede cerrarse sin cerrar el turno
   - sigue existiendo historial de aperturas y anulaciones
@@ -128,6 +133,9 @@
   - las ordenes activas de una mesa ahora se ordenan por `orders.table_order_position`
   - `table_splits` deja de ser la fuente principal para tabs/cuentas activas de mesa
   - `table_name_snapshot` es parte base del fallback visual cuando una orden ya no tiene `table_id`
+  - `get_branch_tables_overview(...)` ya ignora borradores vacios para no seguir mostrando mesas ocupadas sin contenido operativo real
+  - crear/eliminar cuentas adicionales de mesa ya debe respetar el mismo shift gate operativo de `Ordenes`
+  - `MergeSplitOrdersDialog` ya arranca con la orden activa como origen visible y usa labels compactos `Mesa X (0002)` en combos
 - Caja / seguridad operativa:
   - session lock por `last_session_id` en `cash_shift_users`
 
@@ -165,6 +173,9 @@
    - `20260411223000_allow_move_of_unpaid_remaining_item_quantity.sql`
    - `20260411233000_assign_order_number_when_move_creates_operational_destination.sql`
    - `20260412103000_rework_table_orders_without_splits.sql`
+   - `20260414123000_ignore_empty_draft_orders_in_tables_overview.sql`
+   - `20260414133000_align_additional_table_order_permissions_with_shift_gate.sql`
+   - `20260414143000_align_delete_table_order_permissions_with_shift_gate.sql`
 2. Si falla anulacion de pago, revisar primero:
    - Edge Function `void-payment`
    - apertura de caja del pago

@@ -243,75 +243,87 @@ export function DispatchCardBase({
     <div className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
       <div
         onClick={onToggleExpand}
-        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center sm:px-8"
+        className="group cursor-pointer px-4 py-3 transition-colors hover:bg-slate-100/50 sm:grid sm:gap-3 sm:px-8 sm:py-3.5 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center"
       >
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
-          aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
-        >
-          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </div>
+        <div className="sm:contents">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 sm:contents">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800 sm:self-center"
+              aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
+            >
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
 
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-              {isTray ? (
-                <ShoppingBag className="h-4 w-4" />
-              ) : isTakeout ? (
-                <ShoppingBag className="h-4 w-4" />
-              ) : isSpecial ? (
-                <CreditCard className="h-4 w-4" />
-              ) : (
-                <UtensilsCrossed className="h-4 w-4" />
-              )}
-            </span>
-            <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
-              {label}
-            </p>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                  {isTray ? (
+                    <ShoppingBag className="h-4 w-4" />
+                  ) : isTakeout ? (
+                    <ShoppingBag className="h-4 w-4" />
+                  ) : isSpecial ? (
+                    <CreditCard className="h-4 w-4" />
+                  ) : (
+                    <UtensilsCrossed className="h-4 w-4" />
+                  )}
+                </span>
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                  <p className="truncate text-base font-semibold tracking-[-0.02em] text-slate-950 sm:text-lg">
+                    {label}
+                  </p>
+                  <p className="shrink-0 font-mono text-[10px] font-bold tracking-[0.08em] text-slate-700 sm:hidden">
+                    {getOrderRef(order.order_code, order.order_number)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-start-2 flex min-w-0 items-center justify-between gap-3 sm:contents">
+              <div className="min-w-0 sm:text-right">
+                <p className="truncate text-sm font-semibold text-slate-950">
+                  {summaryText}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 sm:contents">
+                <div className="shrink-0 sm:text-right">
+                  <div className={cn(
+                    "inline-flex items-center gap-1.5 font-mono text-sm font-semibold",
+                    isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500"
+                  )}>
+                    <Clock className="h-4 w-4 shrink-0" />
+                    {timeDisplay}
+                  </div>
+                </div>
+
+                <div className="shrink-0 sm:justify-self-end">
+                  {!readOnly ? (
+                    <Button
+                      type="button"
+                      variant="info"
+                      size="sm"
+                      disabled={isMarkingOrderReady || isMarkingReady || isDispatching}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMarkOrderReady(order);
+                      }}
+                      className="h-9 min-w-[6.5rem] gap-1.5 rounded-full px-4 text-sm font-semibold"
+                    >
+                      <Check className="h-4 w-4 shrink-0" />
+                      Listo
+                    </Button>
+                  ) : (
+                    <span className="px-4 text-xs text-muted-foreground">Solo consulta</span>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="min-w-0">
+        <div className="hidden min-w-0 sm:block">
           <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
             {getOrderRef(order.order_code, order.order_number)}
           </p>
-        </div>
-
-        <div className="sm:text-right">
-          <p className="text-sm font-semibold text-slate-950">
-            {summaryText}
-          </p>
-        </div>
-
-        <div className="sm:text-right">
-          <div className={cn(
-            "inline-flex items-center gap-1.5 font-mono text-sm font-semibold",
-            isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500"
-          )}>
-            <Clock className="h-4 w-4 shrink-0" />
-            {timeDisplay}
-          </div>
-        </div>
-
-        <div className="sm:justify-self-end">
-          {!readOnly ? (
-            <Button
-              type="button"
-              variant="info"
-              size="sm"
-              disabled={isMarkingOrderReady || isMarkingReady || isDispatching}
-              onClick={(e) => {
-                e.stopPropagation();
-                onMarkOrderReady(order);
-              }}
-              className="h-9 min-w-[6.5rem] gap-1.5 rounded-full px-4 text-sm font-semibold"
-            >
-              <Check className="h-4 w-4 shrink-0" />
-              Listo
-            </Button>
-          ) : (
-            <span className="px-4 text-xs text-muted-foreground">Solo consulta</span>
-          )}
         </div>
       </div>
 

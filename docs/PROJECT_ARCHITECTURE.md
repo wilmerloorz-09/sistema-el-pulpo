@@ -60,6 +60,7 @@
 - `table_splits` queda como soporte legacy / compatibilidad, pero ya no es la base principal para la visualizacion de cuentas activas dentro de una mesa.
 - El orden visible actual de cuentas de mesa vive en `orders.table_order_position`.
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
+- Esa lectura ya debe ignorar borradores vacios al resolver ocupacion operativa de mesa.
 - `Ordenes` usa una lectura separada por mesa para tabs/cuentas activas y ya no debe depender de snapshots cacheados embebidos en una sola orden.
 - `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
 - `Cerrar orden` para cuentas de mesa opera soltando la orden de `table_id` / `split_id` y manteniendola cobrable en `Caja`.
@@ -70,6 +71,11 @@
   - redistribuye historial `READY` y `DISPATCHED`
   - desde la version actual solo mueve cantidades no pagadas
   - asigna `order_number` / `order_code` a destino si deja de ser borrador operativo
+- `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` ya deben respetar el mismo shift gate operativo que el resto de `Ordenes`.
+- `MergeSplitOrdersDialog` es la superficie de esta operacion en desktop/movil:
+  - debe iniciar con la orden activa como origen cuando se abre desde una orden
+  - no debe seguir forzando esa orden despues de la primera interaccion del usuario
+  - usa labels compactos `Mesa X (0002)` para los combos de seleccion
 
 ### 7. Caja
 - `Caja` se divide en:
@@ -149,3 +155,4 @@
 - `BULK` ya es parte de la base operativa y no un experimento de UI.
 - El shell responsive (`sidebar` >= `768px`, `bottom nav` < `768px`) es solo frontend; no introduce persistencia.
 - El ticket termico de 80mm y la permanencia del modal tras el pago exitoso siguen siendo comportamiento base esperado.
+- En movil, el menu hamburguesa de `Ordenes` ya es una superficie valida para exponer acciones de cuenta como `Mover Items/Mesa`.

@@ -897,6 +897,17 @@ const ShiftSetupAdmin = () => {
     const cashierUserId =
       sanitizedEnabledUsers.find((entry) => entry.canUseCaja)?.userId ?? null;
 
+    // Clear any previously enabled cashier first so reassignments do not
+    // collide with the one-cashier-per-shift unique index.
+    const { error: clearCashierError } = await (supabase
+      .from("cash_shift_users" as never)
+      .update({ can_use_caja: false } as never)
+      .eq("shift_id", shiftId)
+      .eq("is_enabled", true)
+      .eq("can_use_caja", true) as any);
+
+    if (clearCashierError) throw clearCashierError;
+
     for (const entry of sanitizedEnabledUsers) {
       await setShiftUserEnabledCompat({
         shiftId,

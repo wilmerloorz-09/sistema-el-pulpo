@@ -68,6 +68,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - redistribucion de historial `READY` / `DISPATCHED`
   - restriccion de mover solo cantidad no pagada disponible
 - Si el movimiento vuelve operativa una orden destino sin numeracion, respetar la asignacion de `order_number` y `order_code`.
+- Si el dialogo se abre desde una orden activa:
+  - la primera columna debe iniciar con esa orden seleccionada
+  - esa preseleccion solo aplica al arranque; luego filtros/cambios del usuario no deben ser sobreescritos
+  - los combos deben usar labels compactos tipo `Mesa X (0002)` en movil
+- `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` deben seguir alineados con el shift gate vigente.
 
 ### 8. Snapshot operativo compartido
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
@@ -127,6 +132,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - tabs de `Ordenes`
    - combos de `MergeSplitOrdersDialog`
    - `Mesas` / reingreso a una mesa
+   - que `get_branch_tables_overview(...)` no vuelva a contar borradores vacios como ocupacion real
 7. Actualizar estos docs cuando cambie la regla base:
    - `docs/system_context.md`
    - `docs/PROJECT_ARCHITECTURE.md`
@@ -139,6 +145,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - templates de caja
    - comprobantes de transferencia
    - diferencia entre cerrar caja y cerrar turno
+   - overview de mesas ignorando borradores vacios
+   - permisos alineados al shift gate para crear/eliminar cuentas adicionales
 
 ## Estado base que debe mantenerse
 - Login con email o username.
