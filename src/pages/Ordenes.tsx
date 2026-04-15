@@ -696,21 +696,8 @@ const Ordenes = () => {
       <MergeSplitOrdersDialog
         open={mergeSplitOpen}
         onOpenChange={setMergeSplitOpen}
-        initialSourceOrderId={order.id}
-        initialSourceOption={{
-          id: order.id,
-          orderId: order.id,
-          label: `${order.table_name ?? "Mesa"} (${String(order.order_number ?? 0).padStart(4, "0").slice(-4)})`,
-          orderCode: order.order_code,
-          tableName: order.table_name ?? "Mesa",
-          tableId: order.table_id,
-          splitCode: order.split_code ?? null,
-          splitId: order.split_id,
-          status: order.status,
-          menuScope: order.menu_scope,
-          sortKey: `0000-${order.table_name ?? "Mesa"}-${order.order_number ?? 0}`,
-          hasOperationalItems: order.items.some((item) => item.status !== "DRAFT"),
-        }}
+        initialSourceOrderId={undefined}
+        initialSourceOption={undefined}
       />
       </div>
     );
