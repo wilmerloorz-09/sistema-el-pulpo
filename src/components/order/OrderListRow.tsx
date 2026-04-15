@@ -412,10 +412,6 @@ export default function OrderListRow({
       {isExpanded && (
         <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 bg-slate-50/90 px-4 py-2.5 text-xs font-medium text-slate-500">
-              Las cantidades mostradas aqui corresponden solo a la etapa operativa de esta pestana.
-            </div>
-
             <div className="hidden grid-cols-[minmax(0,1.75fr)_100px_90px_90px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:grid">
               <span>Detalle</span>
               <span className="text-right">{isPendingCancellationView ? "Solic." : "Cant."}</span>

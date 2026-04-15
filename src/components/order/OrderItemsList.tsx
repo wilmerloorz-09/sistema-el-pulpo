@@ -186,6 +186,8 @@ const OrderItemsList = ({
         const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
         const itemStage = getOrderItemStage(item);
         const itemStageStyles = getOrderItemStageStyles(itemStage);
+        const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
+        const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
 
         return (
           <div
@@ -238,25 +240,49 @@ const OrderItemsList = ({
                 </Popover>
 
                 {itemStage !== "draft" ? (
-                  <span
-                    className={cn(
-                      "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
-                      isBulkItem && "col-start-2",
-                      getOrderItemStageLegendClass(itemStage),
-                    )}
-                  >
+                  itemStage === "partial" ? (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
+                            isBulkItem && "col-start-2",
+                            getOrderItemStageLegendClass(itemStage),
+                          )}
+                        >
+                          <span
+                            className="h-1.5 w-1.5 rounded-full bg-amber-500 sm:h-2 sm:w-2"
+                          />
+                          {getOrderItemStageLabel(itemStage)}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" side="top" className="w-auto px-3 py-2 text-xs font-medium sm:text-sm">
+                        <div className="flex items-center gap-3 whitespace-nowrap">
+                          <span>Despachado: {dispatchedQty}</span>
+                          <span>Falta: {remainingQty}</span>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
                     <span
                       className={cn(
-                        "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
-                        itemStage === "sent"
-                          ? "bg-orange-500"
-                          : itemStage === "partial"
-                            ? "bg-amber-500"
-                            : "bg-emerald-500",
+                        "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
+                        isBulkItem && "col-start-2",
+                        getOrderItemStageLegendClass(itemStage),
                       )}
-                    />
-                    {getOrderItemStageLabel(itemStage)}
-                  </span>
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
+                          itemStage === "sent"
+                            ? "bg-orange-500"
+                            : "bg-emerald-500",
+                        )}
+                      />
+                      {getOrderItemStageLabel(itemStage)}
+                    </span>
+                  )
                 ) : null}
 
                 {(item.tray_item_type || (item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0)) ? (

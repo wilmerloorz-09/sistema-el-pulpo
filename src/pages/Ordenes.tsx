@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
-import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
+import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
@@ -71,6 +71,58 @@ interface ProductModifierOption {
 interface MenuProductLookupResult {
   product: SelectedProduct;
   modifiers: ProductModifierOption[];
+}
+
+const sortMenuNodes = (nodes: MenuNode[]) =>
+  [...nodes].sort((a, b) => {
+    if (a.display_order !== b.display_order) return a.display_order - b.display_order;
+    return a.name.localeCompare(b.name);
+  });
+
+function buildCompositeMenuNodes(scopeNodes: MenuNode[], tableNodes: MenuNode[]) {
+  const scopeRootNodes = sortMenuNodes(
+    scopeNodes.filter((node) => node.parent_id === null && node.node_type === "category"),
+  );
+  const tableRootNodes = sortMenuNodes(
+    tableNodes.filter((node) => node.parent_id === null && node.node_type === "category"),
+  );
+
+  const tableRootsToAppend = tableRootNodes.slice(1);
+  if (tableRootsToAppend.length === 0) {
+    return scopeNodes;
+  }
+
+  const allowedRootIds = new Set(tableRootsToAppend.map((node) => node.id));
+  const tableNodesById = new Map(tableNodes.map((node) => [node.id, node]));
+  const includedTableNodes = tableNodes.filter((node) => {
+    if (allowedRootIds.has(node.id)) return true;
+
+    let currentParentId = node.parent_id;
+    while (currentParentId) {
+      if (allowedRootIds.has(currentParentId)) return true;
+      currentParentId = tableNodesById.get(currentParentId)?.parent_id ?? null;
+    }
+
+    return false;
+  });
+
+  const nextRootDisplayOrder = scopeRootNodes.reduce(
+    (maxValue, node) => Math.max(maxValue, Number(node.display_order ?? 0)),
+    0,
+  );
+  const appendedRootDisplayOrder = new Map(
+    tableRootsToAppend.map((node, index) => [node.id, nextRootDisplayOrder + index + 1]),
+  );
+
+  const normalizedTableNodes = includedTableNodes.map((node) => ({
+    ...node,
+    display_order:
+      node.parent_id === null
+        ? (appendedRootDisplayOrder.get(node.id) ?? node.display_order)
+        : node.display_order,
+  }));
+
+  return [...scopeNodes, ...normalizedTableNodes];
 }
 
 /**
@@ -303,6 +355,20 @@ const Ordenes = () => {
       : persistedMenuScope;
   const tablesQuery = useTablesWithStatus();
   const tables = tablesQuery.data?.tables;
+  const scopeCompositeMenuQuery = useQuery({
+    queryKey: ["scope-composite-menu-tree", activeBranchId, currentMenuScope],
+    queryFn: async () => {
+      const [scopeNodes, tableNodes] = await Promise.all([
+        fetchMenuTreeNodes({ branchId: activeBranchId!, menuScope: currentMenuScope }),
+        fetchMenuTreeNodes({ branchId: activeBranchId!, menuScope: "TABLE" }),
+      ]);
+
+      return buildCompositeMenuNodes(scopeNodes, tableNodes);
+    },
+    enabled: !!activeBranchId && (currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK"),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+  });
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
   const [selectedProductModifiers, setSelectedProductModifiers] = useState<ProductModifierOption[]>([]);
@@ -1138,6 +1204,8 @@ const Ordenes = () => {
       ) : null}
       <MenuNavigator
         menuScope={currentMenuScope}
+        nodesOverride={currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK" ? scopeCompositeMenuQuery.data ?? null : null}
+        forceLoading={(currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK") && scopeCompositeMenuQuery.isLoading}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
         renderNodeAction={(node) =>

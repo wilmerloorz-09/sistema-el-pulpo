@@ -12,6 +12,8 @@ interface MenuNavigatorProps {
   renderNodeAction?: (node: MenuNode) => ReactNode;
   trayMode?: boolean;
   trayNodes?: MenuNode[];
+  nodesOverride?: MenuNode[] | null;
+  forceLoading?: boolean;
 }
 
 const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
@@ -150,6 +152,8 @@ const MenuNavigator = ({
   renderNodeAction,
   trayMode = false,
   trayNodes,
+  nodesOverride,
+  forceLoading = false,
 }: MenuNavigatorProps) => {
   const {
     visibleNodes,
@@ -162,7 +166,11 @@ const MenuNavigator = ({
     getChildren,
     loading,
     error,
-  } = useMenuTree({ includeInactive, menuScope, nodesOverride: trayMode && trayNodes ? trayNodes : null });
+  } = useMenuTree({
+    includeInactive,
+    menuScope,
+    nodesOverride: nodesOverride ?? (trayMode && trayNodes ? trayNodes : null),
+  });
 
   const panelRef = useRef<HTMLDivElement>(null);
   const searchPanelRef = useRef<HTMLDivElement>(null);
@@ -306,7 +314,7 @@ const MenuNavigator = ({
     [getChildren],
   );
   const showBreadcrumb = breadcrumb.length > 1;
-  if (loading) {
+  if (loading || forceLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3">
         <Skeleton className="h-11 rounded-2xl" />

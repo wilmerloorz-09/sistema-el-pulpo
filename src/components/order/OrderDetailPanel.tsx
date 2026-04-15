@@ -145,10 +145,6 @@ export default function OrderDetailPanel({
         </div>
       </div>
 
-      <div className="border-b border-border bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
-        Las cantidades mostradas aqui corresponden solo a la etapa operativa de esta pestana.
-      </div>
-
       <div className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
         {order.items?.filter((item) => item.status !== "DRAFT").map((item) => (
           <div key={item.id} className="flex items-start gap-2 rounded-xl bg-background px-2 py-2">

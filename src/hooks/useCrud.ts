@@ -26,6 +26,20 @@ interface UseCrudOptions<T> {
   onAfterSave?: () => void;
 }
 
+function getCrudErrorMessage(error: any) {
+  const message = error?.message ?? "Ocurrio un error inesperado";
+  const constraint = error?.details ?? error?.hint ?? "";
+
+  if (
+    typeof message === "string" &&
+    (message.includes("uq_branches_display_code") || constraint.includes("uq_branches_display_code"))
+  ) {
+    return "No se pudo crear la sucursal porque el codigo visible interno quedo duplicado. Actualiza las migraciones de la base y vuelve a intentar.";
+  }
+
+  return message;
+}
+
 export function useCrud<T extends { id: string }>({ table, queryKey, select = "*", orderBy, filters, branchScoped, onAfterSave }: UseCrudOptions<T>) {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -78,7 +92,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
       toast.success("Guardado correctamente");
       onAfterSave?.();
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any) => toast.error(getCrudErrorMessage(err)),
   });
 
   const deleteMutation = useMutation({
@@ -90,7 +104,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
       qc.invalidateQueries({ queryKey: [queryKey] });
       toast.success("Eliminado correctamente");
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any) => toast.error(getCrudErrorMessage(err)),
   });
 
   return {
