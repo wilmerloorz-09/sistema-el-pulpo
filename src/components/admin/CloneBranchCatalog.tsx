@@ -20,7 +20,7 @@ const CATALOG_ITEMS = [
   { key: "categories", label: "Categorias, subcategorias y productos" },
   { key: "modifiers", label: "Modificadores" },
   { key: "payment_methods", label: "Metodos de pago" },
-  { key: "denominations", label: "Denominaciones" },
+  { key: "denominations", label: "Denominaciones (globales compartidas)" },
 ] as const;
 
 type CatalogKey = (typeof CATALOG_ITEMS)[number]["key"];
@@ -75,8 +75,11 @@ async function cloneCatalogDirectly(
     }
 
     if (selectedItems.has("denominations")) {
-      const { error } = await supabase.from("denominations").delete().eq("branch_id", targetBranchId);
+      const { count, error } = await supabase
+        .from("denominations")
+        .select("id", { count: "exact", head: true });
       if (error) throw error;
+      stats.denominaciones_globales = count ?? 0;
     }
   }
 
@@ -111,19 +114,11 @@ async function cloneCatalogDirectly(
   }
 
   if (selectedItems.has("denominations")) {
-    const { data: denominations, error } = await supabase
+    const { count, error } = await supabase
       .from("denominations")
-      .select("label, value, display_order, image_url, is_active")
-      .eq("branch_id", sourceBranchId)
-      .order("display_order");
+      .select("id", { count: "exact", head: true });
     if (error) throw error;
-
-    if ((denominations ?? []).length > 0) {
-      const rows = (denominations ?? []).map((denomination) => ({ ...denomination, branch_id: targetBranchId }));
-      const { error: insertError } = await supabase.from("denominations").insert(rows);
-      if (insertError) throw insertError;
-      stats.denominaciones = rows.length;
-    }
+    stats.denominaciones_globales = count ?? 0;
   }
 
   if (selectedItems.has("categories")) {

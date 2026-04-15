@@ -120,7 +120,6 @@ Deno.serve(async (req) => {
       for (const [itemKey, tableName] of [
         ["modifiers", "modifiers"],
         ["payment_methods", "payment_methods"],
-        ["denominations", "denominations"],
       ] as const) {
         if (!selectedItems.has(itemKey)) continue;
 
@@ -128,6 +127,16 @@ Deno.serve(async (req) => {
         if (error) {
           return toJson({ error: `No se pudo limpiar ${tableName}: ${error.message}` }, 400);
         }
+      }
+
+      if (selectedItems.has("denominations")) {
+        const { count, error } = await adminClient
+          .from("denominations")
+          .select("id", { count: "exact", head: true });
+        if (error) {
+          return toJson({ error: `No se pudo leer denominaciones globales: ${error.message}` }, 400);
+        }
+        stats.denominaciones_globales = count ?? 0;
       }
     }
 
@@ -195,18 +204,12 @@ Deno.serve(async (req) => {
     }
 
     if (selectedItems.has("denominations")) {
-      const { data: denoms, error } = await adminClient
+      const { count, error } = await adminClient
         .from("denominations")
-        .select("label, value, display_order, is_active")
-        .eq("branch_id", source_branch_id);
+        .select("id", { count: "exact", head: true });
 
-      if (error) return toJson({ error: `No se pudo leer denominaciones: ${error.message}` }, 400);
-      if (denoms?.length) {
-        const rows = denoms.map((d: any) => ({ ...d, branch_id: target_branch_id }));
-        const { error: insertError } = await adminClient.from("denominations").insert(rows);
-        if (insertError) return toJson({ error: `No se pudo duplicar denominaciones: ${insertError.message}` }, 400);
-        stats.denominaciones = rows.length;
-      }
+      if (error) return toJson({ error: `No se pudo leer denominaciones globales: ${error.message}` }, 400);
+      stats.denominaciones_globales = count ?? 0;
     }
 
     if (selectedItems.has("categories")) {
