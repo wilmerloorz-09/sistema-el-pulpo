@@ -411,11 +411,10 @@ const Mesas = () => {
         </div>
       </section>
 
-      <div className="sticky top-0 z-30 bg-background px-2.5 pb-3 pt-2 sm:top-0 sm:px-4 sm:pt-3">
+      <div className="sticky top-14 z-30 bg-background px-2.5 pb-3 pt-2 md:top-0 sm:px-4 sm:pt-3">
         <div className="surface-glow px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="relative flex items-center justify-between gap-2">
             <div className="min-w-0 flex items-center gap-2">
-              <MobileMenuSheet />
               <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Mesas</h1>
             </div>
             <div className="scrollbar-none -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap">

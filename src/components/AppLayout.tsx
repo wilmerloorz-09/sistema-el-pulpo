@@ -13,6 +13,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { OrderReadyAlertCenter } from "@/hooks/useMeseroOrderReadyNotification";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MobileMenuSheet } from "./MobileMenuSheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const AppLayout = () => {
@@ -35,23 +36,32 @@ const AppLayout = () => {
         {isDesktop ? <SidebarNav isDark={isDark} onToggleTheme={toggle} onOpenAccount={() => setUserMenuOpen(true)} /> : null}
 
         <div className="flex min-h-dvh min-w-0 flex-col">
-          {isDesktop || !isOnline ? (
-            <header
-              className={
-                isDesktop
-                  ? "sticky top-0 z-40 h-0 overflow-hidden bg-white dark:bg-card"
-                  : "sticky top-0 z-40 border-b border-orange-200/80 bg-white px-2.5 py-2 sm:px-4 sm:py-2.5 dark:border-border dark:bg-card"
-              }
-            >
-              {!isDesktop && !isOnline && (
-                <div className="flex justify-end">
-                  <span className="inline-flex min-h-[34px] items-center gap-1 rounded-2xl border border-destructive/20 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-destructive shadow-sm">
-                    <WifiOff className="h-3 w-3" /> Sin conexion
+          {!isDesktop && (
+            <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-orange-200/80 bg-white px-2.5 dark:border-border dark:bg-card">
+              <div className="flex items-center gap-3">
+                <MobileMenuSheet />
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 p-1 dark:bg-orange-950/20">
+                    <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+                  </div>
+                  <span className="font-display text-sm font-black tracking-tight text-foreground sm:text-base">
+                    POS El pulpo
                   </span>
                 </div>
+              </div>
+              {!isOnline && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
+                  <WifiOff className="h-3 w-3" />
+                  <span className="hidden xs:inline">Sin conexion</span>
+                </span>
               )}
             </header>
-          ) : null}
+          )}
+          {isDesktop && !isOnline && (
+            <header className="sticky top-0 z-40 h-0 overflow-hidden bg-white dark:bg-card">
+              {/* Desktop keeps its invisible placeholder or we just hide it */}
+            </header>
+          )}
 
           <main className="mb-safe min-h-0 flex-1 pb-[calc(60px+env(safe-area-inset-bottom,0px)+0.75rem)] md:pb-0">
             <Outlet />

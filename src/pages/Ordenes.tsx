@@ -16,7 +16,6 @@ import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
-import { MobileMenuSheet } from "@/components/MobileMenuSheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1382,7 +1381,6 @@ const Ordenes = () => {
         <div className="min-w-0 w-full space-y-2">
           <div className="flex items-center justify-between gap-1">
             <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
-                <MobileMenuSheet />
                 <button
                   type="button"
                   onClick={handleMobileBackToMesas}
