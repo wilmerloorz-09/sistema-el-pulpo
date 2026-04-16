@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Outlet } from "react-router-dom";
-import { Building2, Fingerprint, KeyRound, LogOut, UserRound, WifiOff } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+import { Building2, Fingerprint, KeyRound, LogOut, UserRound, WifiOff, Menu } from "lucide-react";
 import BottomNav from "./BottomNav";
 import SidebarNav from "./SidebarNav";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -17,7 +17,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
   const { signOut, profile } = useAuth();
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname, location.search]);
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
   const { isOnline } = useNetwork();
   const { isDesktop } = useBreakpoint();

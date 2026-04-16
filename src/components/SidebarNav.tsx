@@ -13,6 +13,7 @@ interface SidebarNavProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenAccount: () => void;
+  className?: string;
 }
 
 function getInitials(name?: string | null) {
@@ -23,7 +24,7 @@ function getInitials(name?: string | null) {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
-const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) => {
+const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, className }: SidebarNavProps) => {
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
@@ -42,7 +43,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount }: SidebarNavProps) =
   }
 
   return (
-    <aside className="hidden w-[248px] flex-col self-start overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen">
+    <aside className={cn("hidden w-[248px] flex-col self-start overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen", className)}>
       <div className="shrink-0 border-b border-sidebar-border/80 px-4 py-4">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain" />

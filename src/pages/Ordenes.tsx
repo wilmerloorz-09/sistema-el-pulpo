@@ -16,6 +16,7 @@ import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
+import { MobileMenuSheet } from "@/components/MobileMenuSheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, Menu, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -1381,6 +1382,7 @@ const Ordenes = () => {
         <div className="min-w-0 w-full space-y-2">
           <div className="flex items-center justify-between gap-1">
             <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
+                <MobileMenuSheet />
                 <button
                   type="button"
                   onClick={handleMobileBackToMesas}
@@ -1426,7 +1428,7 @@ const Ordenes = () => {
                       className="h-9 w-9 shrink-0 rounded-lg p-0 2xl:hidden"
                       aria-label="Abrir menu de acciones"
                     >
-                      <Menu className="h-4 w-4" />
+                      <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 2xl:hidden">
