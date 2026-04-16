@@ -1,7 +1,10 @@
-import { UserRound } from "lucide-react";
+import { UserRound, ChevronRight } from "lucide-react";
 import { useLocation } from "react-router-dom";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { NavLink } from "@/components/NavLink";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,6 +16,7 @@ interface SidebarNavProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenAccount: () => void;
+  onClose?: () => void;
   className?: string;
 }
 
@@ -24,18 +28,15 @@ function getInitials(name?: string | null) {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
-const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, className }: SidebarNavProps) => {
+const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }: SidebarNavProps) => {
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
   const initials = getInitials(profile?.full_name);
   const accountLabel = profile?.full_name || profile?.username || "Mi cuenta";
   const location = useLocation();
-  const cajaTabParam = new URLSearchParams(location.search).get("tab");
-  const activeCajaTab =
-    location.pathname === "/caja" && (cajaTabParam === "completed" || cajaTabParam === "capture")
-      ? cajaTabParam
-      : "pending";
+  const [openHoverCard, setOpenHoverCard] = useState<string | null>(null);
+
   const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
 
   if (visibleItems.length === 0) {
@@ -43,7 +44,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, className }: Sidebar
   }
 
   return (
-    <aside className={cn("hidden w-[248px] flex-col self-start overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen", className)}>
+    <aside className={cn("hidden w-[248px] flex-col self-start border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen", className)}>
       <div className="shrink-0 border-b border-sidebar-border/80 px-4 py-4">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain" />
@@ -85,63 +86,133 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, className }: Sidebar
       </div>
 
       <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4">
-        {visibleItems.map((item) => (
-          <div key={item.to}>
-            <Tooltip delayDuration={120}>
-              <TooltipTrigger asChild>
-                <NavLink
-                  to={item.to}
-                  forceActive={
-                    (item.to === "/mesas" && (location.pathname === "/mesas" || fromMesas))
-                    || (item.to === "/ordenes" && location.pathname === "/ordenes" && !fromMesas)
+        {visibleItems.map((item) => {
+          const isItemActive = 
+            (item.to === "/mesas" && (location.pathname === "/mesas" || fromMesas)) ||
+            (item.to === "/ordenes" && location.pathname === "/ordenes" && !fromMesas) ||
+            (location.pathname === item.to);
+          
+          const hasSubItems = (item.subItems?.length ?? 0) > 0;
+
+          const navLink = !hasSubItems ? (
+            <NavLink
+              to={item.to}
+              forceActive={isItemActive}
+              suppressActive={item.to === "/ordenes" && fromMesas}
+              onClick={onClose}
+              className={cn(
+                "group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
+                "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
+              )}
+              activeClassName={cn(
+                "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
+                item.tone.active,
+              )}
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 transition-transform group-hover:scale-105">
+                {item.icon}
+              </span>
+              <span className="truncate text-sm font-bold">{item.label}</span>
+            </NavLink>
+          ) : (
+            <div
+              className={cn(
+                "group flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
+                "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
+                isItemActive && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
+                isItemActive && item.tone.active
+              )}
+              onClick={(e) => {
+                e.preventDefault();
+                setOpenHoverCard(prev => prev === item.to ? null : item.to);
+              }}
+            >
+              <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 transition-transform group-hover:scale-105">
+                {item.icon}
+              </span>
+              <span className="relative z-10 truncate text-sm font-bold">{item.label}</span>
+              <ChevronRight className={cn(
+                "relative z-10 ml-auto h-4 w-4 shrink-0 opacity-40 transition-transform duration-300",
+                (isItemActive || openHoverCard === item.to) && "rotate-90 opacity-100"
+              )} />
+            </div>
+          );
+
+          if (hasSubItems) {
+            return (
+              <HoverCard 
+                key={item.to} 
+                open={openHoverCard === item.to}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setOpenHoverCard(item.to);
+                  } else if (openHoverCard === item.to) {
+                    setOpenHoverCard(null);
                   }
-                  suppressActive={item.to === "/ordenes" && fromMesas}
-                  className={cn(
-                    "group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
-                    "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
-                  )}
-                  activeClassName={cn(
-                    "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
-                    item.tone.active,
-                  )}
+                }}
+                openDelay={0} 
+                closeDelay={500}
+              >
+                <HoverCardTrigger asChild>
+                  {navLink}
+                </HoverCardTrigger>
+                <HoverCardContent 
+                  side="right" 
+                  align="start" 
+                  sideOffset={4}
+                  className="z-[100] w-56 rounded-[24px] border border-white/10 bg-[#1a1614]/98 p-2 shadow-2xl backdrop-blur-xl"
+                  onMouseEnter={() => setOpenHoverCard(item.to)}
+                  onMouseLeave={() => setOpenHoverCard(null)}
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 transition-transform group-hover:scale-105">
-                    {item.icon}
-                  </span>
-                  <span className="truncate text-sm font-bold">{item.label}</span>
-                </NavLink>
-              </TooltipTrigger>
-              <TooltipContent side="right">{item.label}</TooltipContent>
-            </Tooltip>
+                  <div className="flex flex-col gap-1">
+                    <div className="mb-2 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40 border-b border-white/5 pb-2">
+                      {item.label}
+                    </div>
+                    {item.subItems?.map((subItem) => {
+                      const isSubActive = 
+                        (subItem.to === location.pathname + location.search) ||
+                        (subItem.end && location.pathname === subItem.to && !location.search);
 
-            {item.to === "/caja" && location.pathname === "/caja" ? (
-              <div className="ml-[3.25rem] mt-1 grid gap-1">
-                <NavLink
-                  to="/caja"
-                  end
-                  className={cn(
-                    "rounded-xl px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 transition-colors",
-                    "hover:bg-white/8 hover:text-sidebar-foreground",
-                    activeCajaTab !== "completed" && "bg-white/8 text-sidebar-foreground",
-                  )}
-                >
-                  Por cobrar
-                </NavLink>
-                <NavLink
-                  to="/caja?tab=completed"
-                  className={cn(
-                    "rounded-xl px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 transition-colors",
-                    "hover:bg-white/8 hover:text-sidebar-foreground",
-                    activeCajaTab === "completed" && "bg-white/8 text-sidebar-foreground",
-                  )}
-                >
-                  Pagos del turno
-                </NavLink>
+                      return (
+                        <NavLink
+                          key={subItem.to}
+                          to={subItem.to}
+                          end={subItem.end}
+                          onClick={() => {
+                            setOpenHoverCard(null);
+                            onClose?.();
+                          }}
+                          className={cn(
+                            "group/sub flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-sidebar-foreground/60 transition-all",
+                            "hover:bg-white/8 hover:text-sidebar-foreground",
+                            isSubActive && "bg-white/10 text-white shadow-sm shadow-black/20",
+                          )}
+                        >
+                          <div className={cn(
+                            "h-1.5 w-1.5 rounded-full transition-all",
+                            isSubActive ? "bg-primary scale-100" : "bg-white/10 scale-0 group-hover/sub:scale-100"
+                          )} />
+                          {subItem.label}
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                </HoverCardContent>
+              </HoverCard>
+            );
+          }
 
-              </div>
-            ) : null}
-          </div>
-        ))}
+          return (
+            <div key={item.to}>
+              <Tooltip delayDuration={120}>
+                <TooltipTrigger asChild>
+                  {navLink}
+                </TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            </div>
+          );
+        })}
       </nav>
 
       <div className="shrink-0 border-t border-sidebar-border/80 px-3 py-4">
@@ -164,7 +235,10 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, className }: Sidebar
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={onOpenAccount}
+                onClick={() => {
+                  onOpenAccount();
+                  onClose?.();
+                }}
                 className="flex h-12 w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 text-sidebar-foreground transition-colors hover:bg-white/12"
                 aria-label="Mi cuenta"
               >

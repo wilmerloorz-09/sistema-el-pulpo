@@ -5,6 +5,12 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { canView } from "@/lib/permissions";
 
+export interface NavSubItem {
+  to: string;
+  label: string;
+  end?: boolean;
+}
+
 export interface AppNavItem {
   to: string;
   label: string;
@@ -15,6 +21,7 @@ export interface AppNavItem {
     iconIdle: string;
   };
   visible: (permissions: Record<string, any>) => boolean;
+  subItems?: NavSubItem[];
 }
 
 const NAV_ITEMS: AppNavItem[] = [
@@ -79,6 +86,10 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-emerald-50 text-emerald-600",
     },
     visible: (permissions) => canView(permissions, "caja"),
+    subItems: [
+      { to: "/caja", label: "Por cobrar", end: true },
+      { to: "/caja?tab=completed", label: "Pagos del turno" },
+    ],
   },
   {
     to: "/reportes",

@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/button";
 import SidebarNav from "./SidebarNav";
 import { useTheme } from "@/hooks/useTheme";
 
-export function MobileMenuSheet() {
+interface MobileMenuSheetProps {
+  onOpenAccount: () => void;
+}
+
+export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const { isDark, toggle } = useTheme();
   
-  // No necesitamos el Account Dialog logica completa aqui, 
-  // pero mockeamos el handleOpenAccount si se necesita.
   const handleOpenAccount = () => {
     setMobileMenuOpen(false);
-    // Para no duplicar el Dialog de Mi Cuenta, asumiremos que BottomNav 
-    // sigue presente en AppLayout y tiene su boton...
-    // Idealmente pasariamos esto como prop, pero por ahora solo cerramos.
+    onOpenAccount();
   };
 
   useEffect(() => {
@@ -37,6 +37,7 @@ export function MobileMenuSheet() {
           isDark={isDark} 
           onToggleTheme={toggle} 
           onOpenAccount={handleOpenAccount} 
+          onClose={() => setMobileMenuOpen(false)}
           className="flex h-full w-full border-none md:flex" 
         />
       </SheetContent>

@@ -39,7 +39,7 @@ const AppLayout = () => {
           {!isDesktop && (
             <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-orange-200/80 bg-white px-2.5 dark:border-border dark:bg-card">
               <div className="flex items-center gap-3">
-                <MobileMenuSheet />
+                <MobileMenuSheet onOpenAccount={() => setUserMenuOpen(true)} />
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 p-1 dark:bg-orange-950/20">
                     <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
