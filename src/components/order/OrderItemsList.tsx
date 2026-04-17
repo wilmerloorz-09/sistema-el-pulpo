@@ -36,6 +36,7 @@ interface Props {
   onRequestCancel?: (item: OrderItem, qty: number) => void;
   disableDraftEditing?: boolean;
   disableOperationalCancel?: boolean;
+  alwaysShowControls?: boolean;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft";
@@ -121,6 +122,7 @@ const OrderItemsList = ({
   onRequestCancel,
   disableDraftEditing = false,
   disableOperationalCancel = false,
+  alwaysShowControls = false,
 }: Props) => {
   if (items.length === 0) {
     return (
@@ -141,32 +143,16 @@ const OrderItemsList = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto text-[11px] font-semibold sm:flex-wrap sm:gap-2 sm:text-[11px]">
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 whitespace-nowrap text-slate-700 sm:gap-1.5 sm:px-2 sm:py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-white ring-1 ring-slate-300 sm:h-2 sm:w-2" />
-          No enviado
-        </span>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200 bg-orange-100 px-2 py-1 whitespace-nowrap text-orange-800 sm:gap-1.5 sm:px-2 sm:py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-orange-500 sm:h-2 sm:w-2" />
-          En cocina
-        </span>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-100 px-2 py-1 whitespace-nowrap text-amber-900 sm:gap-1.5 sm:px-2 sm:py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 sm:h-2 sm:w-2" />
-          <span className="sm:hidden">Parcial</span>
-          <span className="hidden sm:inline">Despacho parcial</span>
-        </span>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 whitespace-nowrap text-emerald-900 sm:gap-1.5 sm:px-2 sm:py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 sm:h-2 sm:w-2" />
-          Despachado
-        </span>
-      </div>
+
 
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
+        const showControls = isPending || alwaysShowControls;
         const isRequestedCancel = item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION";
         const canCancelOperational = !isPending && !isRequestedCancel && !!onRequestCancel && !disableOperationalCancel;
         const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
         const draftDisabled = isPending && disableDraftEditing;
+        const controlsDisabled = alwaysShowControls ? false : draftDisabled;
         const operationalDisabled = (!isPending && disableOperationalCancel) || isRequestedCancel;
         const controlDisabled = isPending ? draftDisabled : operationalDisabled;
         const operationalControlClass = !isPending && !operationalDisabled
@@ -342,14 +328,14 @@ const OrderItemsList = ({
 
               </div>
 
-              {isPending && (
+              {showControls && (
                 <div className="flex shrink-0 flex-col items-end gap-1.5 self-start sm:gap-2">
                   <div className="flex items-center justify-end gap-0.5 sm:gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
                       className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                      disabled={draftDisabled}
+                      disabled={controlsDisabled}
                       onClick={() => onRemove(item.id)}
                       title="Eliminar item"
                     >
@@ -362,7 +348,7 @@ const OrderItemsList = ({
                           variant="ghost"
                           size="icon"
                           className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                          disabled={draftDisabled}
+                          disabled={controlsDisabled}
                           onClick={() => {
                             if (item.quantity > 1) {
                               onUpdateQty(item.id, item.quantity - 1, item.unit_price);
@@ -376,8 +362,8 @@ const OrderItemsList = ({
                           key={`${item.id}-draft-${displayQuantity}`}
                           initialQuantity={displayQuantity}
                           min={1}
-                          max={Math.max(1, item.quantity)}
-                          disabled={draftDisabled}
+                          max={alwaysShowControls ? 9999 : Math.max(1, item.quantity)}
+                          disabled={controlsDisabled}
                           updateOnChange={false}
                           onUpdate={(newQty) => {
                             if (newQty <= 0) {
@@ -392,7 +378,7 @@ const OrderItemsList = ({
                           variant="ghost"
                           size="icon"
                           className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                          disabled={draftDisabled}
+                          disabled={controlsDisabled}
                           onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
                         >
                           <Plus />

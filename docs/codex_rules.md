@@ -74,12 +74,15 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - los combos deben usar labels compactos tipo `Mesa X (0002)` en movil
 - `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` deben seguir alineados con el shift gate vigente.
 
-### 8. Snapshot operativo compartido
+### 8. Snapshot operativo compartido y Transaccionalidad
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
 - Regla explicita para el modulo `Ordenes`:
   - una linea `DRAFT` no debe aparecer en pestañas operativas posteriores (`Enviadas`, `Despachadas`, `Pendiente de anulacion`, `Pagadas`)
   - `Borradores` debe ser la unica pestaña que muestre lineas aun no enviadas
+- Regla especifica para la UI de Modificaciones (Buffered Edit):
+  - No exponer botones de modificacion (+/- o eliminar) para items despachados de manera generalizada. Su exposicion sin restriccion pertenece *solo* al ambiente buffer del modulo `Editar Orden`.
+  - Esta ventana debe seguir aplicando `lockOrder` en la DB para prevenir concurrencia y no mutar BD subyacente hasta el `Aceptar cambios`.
 
 ### 9. `BULK` / `A granel`
 - No volver a tratar `A granel` como compra por unidades en UI operativa.

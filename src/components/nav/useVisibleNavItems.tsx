@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, Camera } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -44,6 +44,17 @@ const NAV_ITEMS: AppNavItem[] = [
       active: "from-orange-500 to-amber-400",
       idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
       iconIdle: "bg-orange-50 text-orange-600",
+    },
+    visible: (permissions) => canView(permissions, "ordenes"),
+  },
+  {
+    to: "/editar-orden",
+    label: "Editar Orden",
+    icon: <Camera className="h-5 w-5" />,
+    tone: {
+      active: "from-amber-500 to-yellow-400",
+      idle: "hover:border-amber-200 hover:bg-amber-50/90 hover:text-amber-700",
+      iconIdle: "bg-amber-50 text-amber-600",
     },
     visible: (permissions) => canView(permissions, "ordenes"),
   },
@@ -138,7 +149,7 @@ export function useVisibleNavItems() {
         return true;
       }
 
-      if (item.to === "/mesas" || item.to === "/ordenes") {
+      if (item.to === "/mesas" || item.to === "/ordenes" || item.to === "/editar-orden") {
         if (!item.visible(permissions)) return false;
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);

@@ -32,19 +32,33 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
   const initials = getInitials(profile?.full_name);
   const accountLabel = profile?.full_name || profile?.username || "Cuenta";
   const location = useLocation();
-  const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
+
+
+  const searchParams = new URLSearchParams(location.search);
+  const fromMesas = location.pathname === "/ordenes" && searchParams.get("from") === "mesas";
+  const fromEditar = location.pathname === "/ordenes" && searchParams.get("from") === "editar";
 
   if (visibleItems.length === 0) {
     return null;
   }
 
-  const bottomNavItems = visibleItems.filter((item) => item.to === "/mesas" || item.to === "/ordenes");
+  const bottomNavItems = visibleItems.filter((item) => item.to === "/mesas" || item.to === "/ordenes" || item.to === "/caja" || item.to === "/editar-orden");
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 overflow-hidden border-t border-orange-200/80 bg-white shadow-[0_-18px_35px_-28px_rgba(15,23,42,0.4)] safe-bottom dark:border-border dark:bg-card md:hidden">
       <div className="mx-auto flex h-[60px] max-w-6xl items-center justify-center gap-32 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {bottomNavItems.map((item) => {
           const isCaja = item.to === "/caja";
+
+          let isItemActive = location.pathname === item.to;
+          if (fromMesas) {
+            if (item.to === "/mesas") isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
+          if (fromEditar) {
+            if (item.to === "/editar-orden") isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
 
           if (isCaja) {
             const isCajaActive = location.pathname.startsWith("/caja");
@@ -77,7 +91,6 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                       <span className="text-sm">Pagos del turno</span>
                     </Link>
                   </DropdownMenuItem>
-
                 </DropdownMenuContent>
               </DropdownMenu>
             );
@@ -87,11 +100,8 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
             <NavLink
               key={item.to}
               to={item.to}
-              forceActive={
-                (item.to === "/mesas" && (location.pathname === "/mesas" || fromMesas))
-                || (item.to === "/ordenes" && location.pathname === "/ordenes" && !fromMesas)
-              }
-              suppressActive={item.to === "/ordenes" && fromMesas}
+              forceActive={isItemActive}
+              suppressActive={!isItemActive}
               className={cn(
                 "group flex min-w-[4.65rem] shrink-0 snap-start flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all",
                 item.tone.idle,
@@ -101,7 +111,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                 item.tone.active,
               )}
             >
-              <span className={cn("flex h-9 w-9 items-center justify-center rounded-2xl transition-transform group-hover:scale-105", item.tone.iconIdle)}>
+              <span className={cn("flex h-9 w-9 items-center justify-center rounded-2xl transition-transform group-hover:scale-105", isItemActive ? "" : item.tone.iconIdle)}>
                 {item.icon}
               </span>
               <span className="max-w-[4.5rem] truncate text-center leading-none">{item.label}</span>

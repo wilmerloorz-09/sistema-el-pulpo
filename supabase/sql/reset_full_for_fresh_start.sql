@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- RESET TOTAL DEL SISTEMA POS PARA PRUEBAS DESDE CERO (MODO DESTRUCTIVO)
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -270,7 +270,7 @@ COMMIT;
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, solicitudes/anulaciones pendientes, anulaciones de pago, `Unir/Dividir` y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion, solicitudes/anulaciones pendientes, anulaciones de pago, `Unir/Dividir` y alertas de listo)
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 borradores vacios residuales capaces de aparecer como ocupacion real de mesa
 -- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
-import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
+import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -278,6 +278,14 @@ export function DispatchCardBase({
               </div>
             </div>
 
+            {order.locked_for_editing && (
+              <div className="col-start-2 sm:col-start-auto">
+                <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1 text-xs font-bold text-destructive">
+                  <Lock className="h-3 w-3" /> Editando
+                </span>
+              </div>
+            )}
+
             <div className="col-start-2 flex min-w-0 items-center justify-between gap-3 sm:contents">
               <div className="min-w-0 sm:text-right">
                 <p className="truncate text-sm font-semibold text-slate-950">
@@ -302,15 +310,15 @@ export function DispatchCardBase({
                       type="button"
                       variant="info"
                       size="sm"
-                      disabled={isMarkingOrderReady || isMarkingReady || isDispatching}
+                      disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching}
                       onClick={(e) => {
                         e.stopPropagation();
                         onMarkOrderReady(order);
                       }}
                       className="h-9 min-w-[6.5rem] gap-1.5 rounded-full px-4 text-sm font-semibold"
                     >
-                      <Check className="h-4 w-4 shrink-0" />
-                      Listo
+                      {order.locked_for_editing ? <Lock className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
+                      {order.locked_for_editing ? "Editando" : "Listo"}
                     </Button>
                   ) : (
                     <span className="px-4 text-xs text-muted-foreground">Solo consulta</span>
@@ -428,7 +436,7 @@ export function DispatchCardBase({
                         variant="success"
                         size="default"
                         className="min-w-[6.5rem] gap-1.5 px-3 md:min-w-[7rem]"
-                        disabled={isDispatching || isMarkingReady}
+                        disabled={order.locked_for_editing || isDispatching || isMarkingReady}
                         onClick={() => {
                           const remainingQty = Math.max(0, item.quantity_dispatchable - selectedQty);
                           setQtyByItem((current) => ({
@@ -438,8 +446,8 @@ export function DispatchCardBase({
                           onDispatchItem(order, item, selectedQty);
                         }}
                       >
-                        <Truck className="h-3.5 w-3.5" />
-                        Despachar
+                        {order.locked_for_editing ? <Lock className="h-3.5 w-3.5" /> : <Truck className="h-3.5 w-3.5" />}
+                        {order.locked_for_editing ? "Editando" : "Despachar"}
                       </Button>
                     )}
                   </div>

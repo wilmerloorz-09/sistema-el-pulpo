@@ -33,7 +33,7 @@
   - `modifiers`
 
 ### 3. Operacion de ordenes
-- `orders`
+- `orders` (incluye `locked_for_editing`)
 - `order_items`
 - `order_item_modifiers`
 - `order_cancellations`
@@ -83,6 +83,7 @@
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
 - `order_items.tray_item_type` sigue distinguiendo `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
+- `orders.locked_for_editing` modela transaccionalidad exclusiva para evitar condiciones de carrera entre cajeros/admin y cocina/despacho durante una edicion asincrona.
 
 ### Mesas / Unir / Dividir
 - `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas dentro de una mesa.

@@ -16,6 +16,7 @@ import AppLayout from "@/components/AppLayout";
 import Login from "./pages/Login";
 import Mesas from "./pages/Mesas";
 import Ordenes from "./pages/Ordenes";
+import EditarOrden from "./pages/EditarOrden";
 import Despacho from "./pages/Despacho";
 import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
@@ -254,6 +255,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders"]}>
                       <Ordenes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/editar-orden"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders"]}>
+                      <EditarOrden />
                     </ProtectedRoute>
                   }
                 />

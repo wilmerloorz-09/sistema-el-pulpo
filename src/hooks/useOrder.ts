@@ -685,6 +685,36 @@ export function useOrder(orderId: string | null) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const lockOrder = useMutation({
+    mutationFn: async () => {
+      if (!orderId) return;
+      await supabase.from("orders").update({ locked_for_editing: true } as any).eq("id", orderId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const unlockOrder = useMutation({
+    mutationFn: async () => {
+      if (!orderId) return;
+      await supabase.from("orders").update({ locked_for_editing: false } as any).eq("id", orderId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   return {
     order: query.data,
     isLoading: query.isLoading,
@@ -699,5 +729,7 @@ export function useOrder(orderId: string | null) {
     updateSpecialTotal,
     convertToSpecial,
     closeOrder,
+    lockOrder,
+    unlockOrder,
   };
 }

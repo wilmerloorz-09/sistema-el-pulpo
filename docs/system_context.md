@@ -136,6 +136,7 @@
   - `get_branch_tables_overview(...)` ya ignora borradores vacios para no seguir mostrando mesas ocupadas sin contenido operativo real
   - crear/eliminar cuentas adicionales de mesa ya debe respetar el mismo shift gate operativo de `Ordenes`
   - `MergeSplitOrdersDialog` ya arranca con la orden activa como origen visible y usa labels compactos `Mesa X (0002)` en combos
+  - "Edición de Orden" (flujo buffered): El modulo operar modificaciones usa ahora una copia temporal en `stagedItems` y aplica bloqueos físicos (`locked_for_editing`) que deshabilitan la UI de Cocina/Despacho previniendo carreras de concurrencia. Una vez aceptados, los items nuevos ejecutan directamente el stored procedure `dispatch_order_quantities`.
 - Caja / seguridad operativa:
   - session lock por `last_session_id` en `cash_shift_users`
 

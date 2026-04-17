@@ -37,14 +37,16 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const location = useLocation();
   const [openHoverCard, setOpenHoverCard] = useState<string | null>(null);
 
-  const fromMesas = location.pathname === "/ordenes" && new URLSearchParams(location.search).get("from") === "mesas";
+  const searchParams = new URLSearchParams(location.search);
+  const fromMesas = location.pathname === "/ordenes" && searchParams.get("from") === "mesas";
+  const fromEditar = location.pathname === "/ordenes" && searchParams.get("from") === "editar";
 
   if (visibleItems.length === 0) {
     return null;
   }
 
   return (
-    <aside className={cn("hidden w-[248px] flex-col self-start border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen", className)}>
+    <aside className={cn("hidden w-[248px] flex-col self-start border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen z-40", className)}>
       <div className="shrink-0 border-b border-sidebar-border/80 px-4 py-4">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain" />
@@ -87,10 +89,16 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
 
       <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4">
         {visibleItems.map((item) => {
-          const isItemActive = 
-            (item.to === "/mesas" && (location.pathname === "/mesas" || fromMesas)) ||
-            (item.to === "/ordenes" && location.pathname === "/ordenes" && !fromMesas) ||
-            (location.pathname === item.to);
+          let isItemActive = location.pathname === item.to;
+          
+          if (fromMesas) {
+            if (item.to === "/mesas") isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
+          if (fromEditar) {
+            if (item.to === "/editar-orden") isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
           
           const hasSubItems = (item.subItems?.length ?? 0) > 0;
 
@@ -98,7 +106,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
             <NavLink
               to={item.to}
               forceActive={isItemActive}
-              suppressActive={item.to === "/ordenes" && fromMesas}
+              suppressActive={!isItemActive}
               onClick={onClose}
               className={cn(
                 "group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
@@ -119,8 +127,8 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
               className={cn(
                 "group flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
                 "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
-                isItemActive && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
-                isItemActive && item.tone.active
+                location.pathname === item.to && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
+                location.pathname === item.to && item.tone.active
               )}
               onClick={(e) => {
                 e.preventDefault();
@@ -160,14 +168,11 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                   side="right" 
                   align="start" 
                   sideOffset={4}
-                  className="z-[100] w-56 rounded-[24px] border border-white/10 bg-[#1a1614]/98 p-2 shadow-2xl backdrop-blur-xl"
+                  className="z-[100] w-56 rounded-[24px] border border-sidebar-border bg-sidebar p-2 shadow-2xl"
                   onMouseEnter={() => setOpenHoverCard(item.to)}
                   onMouseLeave={() => setOpenHoverCard(null)}
                 >
                   <div className="flex flex-col gap-1">
-                    <div className="mb-2 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40 border-b border-white/5 pb-2">
-                      {item.label}
-                    </div>
                     {item.subItems?.map((subItem) => {
                       const isSubActive = 
                         (subItem.to === location.pathname + location.search) ||
@@ -183,14 +188,14 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                             onClose?.();
                           }}
                           className={cn(
-                            "group/sub flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-sidebar-foreground/60 transition-all",
-                            "hover:bg-white/8 hover:text-sidebar-foreground",
-                            isSubActive && "bg-white/10 text-white shadow-sm shadow-black/20",
+                            "group/sub flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-sidebar-foreground/70 transition-all",
+                            "hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground",
+                            isSubActive && "bg-sidebar-foreground/15 text-sidebar-foreground shadow-sm",
                           )}
                         >
                           <div className={cn(
                             "h-1.5 w-1.5 rounded-full transition-all",
-                            isSubActive ? "bg-primary scale-100" : "bg-white/10 scale-0 group-hover/sub:scale-100"
+                            isSubActive ? "bg-primary scale-100" : "bg-sidebar-foreground/20 scale-0 group-hover/sub:scale-100"
                           )} />
                           {subItem.label}
                         </NavLink>

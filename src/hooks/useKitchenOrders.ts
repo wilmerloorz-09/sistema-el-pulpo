@@ -34,6 +34,7 @@ export interface KitchenOrder {
   sent_at: string;
   pending_prepare_count: number;
   items: KitchenOrderItem[];
+  locked_for_editing?: boolean;
 }
 
 export interface ReadyOperationPayload {
@@ -67,8 +68,9 @@ export function useKitchenOrders() {
         split_id: string | null;
         updated_at: string;
         sent_to_kitchen_at: string | null;
+        locked_for_editing?: boolean | null;
       }>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, updated_at, sent_to_kitchen_at, status",
+        select: "id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, updated_at, sent_to_kitchen_at, status, locked_for_editing",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }],
         orderBy: { column: "updated_at", ascending: true },
@@ -191,6 +193,7 @@ export function useKitchenOrders() {
             sent_at: sentAt,
             pending_prepare_count: pendingPrepareCount,
             items: sortedBatchItems,
+            locked_for_editing: Boolean(order.locked_for_editing),
           };
         });
       });

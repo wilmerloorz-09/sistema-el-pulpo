@@ -338,7 +338,7 @@ const Ordenes = () => {
   const effectiveTrayType: TrayItemType = pendingTrayType ?? "B";
   const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
-  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder } = useOrder(orderId);
+  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder, lockOrder, unlockOrder } = useOrder(orderId);
   const trayMenuScope: MenuScope =
     effectiveTrayType === "A"
       ? "TABLE"
@@ -405,6 +405,16 @@ const Ordenes = () => {
       }
     : null;
 
+  const [fromEditarLocked, setFromEditarLocked] = useState(false);
+  const [stagedItems, setStagedItems] = useState(order?.items ?? []);
+  const [stagedDirty, setStagedDirty] = useState(false);
+
+  useEffect(() => {
+    if (order && !stagedDirty) {
+      setStagedItems(order.items);
+    }
+  }, [order?.items, stagedDirty]);
+
   const tableOrdersQuery = useQuery({
     queryKey: ["table-orders", order?.table_id ?? null],
     queryFn: () => fetchSiblingOrders(order!.table_id!),
@@ -443,6 +453,24 @@ const Ordenes = () => {
   useEffect(() => {
     setRedirectingAfterDelete(false);
   }, [orderId]);
+
+  const fromEditar = searchParams.get("from") === "editar";
+
+  useEffect(() => {
+    if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked) {
+      lockOrder.mutate();
+      setFromEditarLocked(true);
+    }
+  }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, lockOrder]);
+
+  useEffect(() => {
+    return () => {
+      if (fromEditar && orderId) {
+        // Unlock on unmount
+        supabase.from("orders").update({ locked_for_editing: false }).eq("id", orderId).then(() => {});
+      }
+    };
+  }, [fromEditar, orderId]);
 
   useEffect(() => {
     if (!orderId || !order?.branch_id || !activeBranchId) return;
@@ -538,8 +566,15 @@ const Ordenes = () => {
   }, []);
 
   const handleMobileBackToMesas = useCallback(() => {
+    const fromEditar = searchParams.get("from") === "editar";
+
     if (fromMesas) {
       navigate("/mesas", { replace: true });
+      return;
+    }
+    
+    if (fromEditar) {
+      navigate("/editar-orden", { replace: true });
       return;
     }
 
@@ -554,7 +589,7 @@ const Ordenes = () => {
     }
 
     navigate("/ordenes", { replace: true });
-  }, [fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
+  }, [fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id, searchParams]);
 
   const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
     if (!activeBranchId) return;
@@ -719,7 +754,8 @@ const Ordenes = () => {
     );
   }
 
-  const itemCount = order.items.reduce((s, i) => s + i.quantity, 0);
+  const itemsToUse = fromEditar ? stagedItems : order.items;
+  const itemCount = itemsToUse.reduce((s, i) => s + i.quantity, 0);
   const getTableOrderButtonLabel = (tableOrder: { order_number: number | null; table_order_position: number | null }) => {
     const orderNumber = Number(tableOrder.order_number ?? 0);
     if (orderNumber > 0) {
@@ -728,14 +764,14 @@ const Ordenes = () => {
     return `Orden ${Number(tableOrder.table_order_position ?? 1)}`;
   };
 
-  const total = order.items.reduce((s, i) => s + i.total, 0);
-  const draftItemsTotal = order.items
+  const total = itemsToUse.reduce((s, i) => s + i.total, 0);
+  const draftItemsTotal = itemsToUse
     .filter((item) => item.status === "DRAFT")
     .reduce((sum, item) => sum + item.total, 0);
   const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
   const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
-  const hasDraftItems = order.items.some((i) => i.status === "DRAFT");
-  const hasSentItems = order.items.some((i) => i.status !== "DRAFT");
+  const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
+  const hasSentItems = itemsToUse.some((i) => i.status !== "DRAFT");
   const isSent = order.status === "SENT_TO_KITCHEN";
   const tableOrders = tableOrdersQuery.data?.length
     ? tableOrdersQuery.data
@@ -757,14 +793,20 @@ const Ordenes = () => {
         })
     : tableOrders;
   const hasSiblings = mergedTableOrders.length > 1;
-  const hasOrderItems = order.items.length > 0;
+  const hasOrderItems = itemsToUse.length > 0;
   const allExistingTableOrdersHaveItems = mergedTableOrders.every((sibling) => sibling.item_count > 0);
+
+
+  const sourceParams = fromMesas ? "&from=mesas" : fromEditar ? "&from=editar" : "";
+  const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
+  const isLockedFromEditar = fromEditar && !hasDispatchedItems && order.status !== "KITCHEN_DISPATCHED" && order.status !== "PAID" && order.status !== "CANCELLED";
   const canSplit =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
+    !isLockedFromEditar &&
     order.items.length > 0 &&
     allExistingTableOrdersHaveItems;
   const canDeleteSplit =
@@ -774,13 +816,15 @@ const Ordenes = () => {
     !order.ready_at &&
     !order.dispatched_at &&
     order.status !== "PAID" &&
-    order.status !== "CANCELLED";
+    order.status !== "CANCELLED" &&
+    !isLockedFromEditar;
   const canShowChangeTable =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
     !!order.table_id &&
     order.status !== "PAID" &&
-    order.status !== "CANCELLED";
+    order.status !== "CANCELLED" &&
+    !fromEditar;
   const canChangeTable = canShowChangeTable && hasOrderItems;
   const canShowCloseOrder =
     canOperateOrders &&
@@ -789,8 +833,9 @@ const Ordenes = () => {
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
+    !isLockedFromEditar &&
     hasSentItems;
-  const allSentItemsDispatched = order.items
+  const allSentItemsDispatched = itemsToUse
     .filter((item) => item.status !== "DRAFT")
     .every((item) => Number(item.quantity_remaining ?? 0) <= 0);
   const canCloseOrder = canShowCloseOrder && !hasDraftItems && allSentItemsDispatched;
@@ -799,18 +844,21 @@ const Ordenes = () => {
     !order.is_special &&
     !order.table_id &&
     order.status === "KITCHEN_DISPATCHED";
+
   const canEditItems =
     canOperateOrders &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
-    !isClosedForPayment;
+    !isClosedForPayment &&
+    !isLockedFromEditar;
   const canShowConvertToSpecial =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
     !order.is_special &&
     !!order.table_id &&
     order.status !== "PAID" &&
-    order.status !== "CANCELLED";
+    order.status !== "CANCELLED" &&
+    !fromEditar;
   const canConvertToSpecial = canShowConvertToSpecial && hasOrderItems;
   const orderOriginLabel = getOrderOriginLabel({
     orderType: order.order_type,
@@ -896,7 +944,7 @@ const Ordenes = () => {
         staleTime: 15_000,
         gcTime: 10 * 60_000,
       });
-      navigate(`/ordenes?order=${newOrderId}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
+      navigate(`/ordenes?order=${newOrderId}${sourceParams}`, { replace: true });
 
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
@@ -914,7 +962,7 @@ const Ordenes = () => {
           const fallbackOrderId = refreshedTableOrders[0]?.id ?? null;
           if (fallbackOrderId) {
             toast.error("La orden actual ya no estaba vigente. Te llevamos a la orden activa de la mesa.");
-            navigate(`/ordenes?order=${fallbackOrderId}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
+            navigate(`/ordenes?order=${fallbackOrderId}${sourceParams}`, { replace: true });
             return;
           }
 
@@ -963,7 +1011,7 @@ const Ordenes = () => {
           gcTime: 10 * 60_000,
         });
         qc.removeQueries({ queryKey: ["order", orderId] });
-        navigate(`/ordenes?order=${nextOrderId}${fromMesas ? "&from=mesas" : ""}`, { replace: true });
+        navigate(`/ordenes?order=${nextOrderId}${sourceParams}`, { replace: true });
       } else {
         qc.removeQueries({ queryKey: ["order", orderId] });
         navigate("/mesas", { replace: true });
@@ -1210,7 +1258,9 @@ const Ordenes = () => {
     </div>
   ) : (
     <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
-      {order.status === "PAID" || order.status === "CANCELLED"
+      {isLockedFromEditar
+        ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados desde cocina."
+        : order.status === "PAID" || order.status === "CANCELLED"
         ? "Esta orden está pagada o cancelada: solo lectura (no puedes agregar ni editar ítems)."
         : "Modo consulta: no tienes permiso de operación en Órdenes para esta sucursal o tu usuario no tiene acceso operativo en el turno actual (revisa permisos del módulo Órdenes o asignación en caja)."}
     </div>
@@ -1286,9 +1336,28 @@ const Ordenes = () => {
         )}
 
         <OrderItemsList
-          items={order.items}
-          onRemove={(id) => removeItem.mutate(id)}
-          onUpdateQty={(id, qty, price) => updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price })}
+          items={fromEditar ? stagedItems : order.items}
+          alwaysShowControls={fromEditar}
+          onRemove={(id) => {
+            if (fromEditar) {
+              setStagedDirty(true);
+              setStagedItems((prev) => prev.filter((i) => i.id !== id));
+            } else {
+              removeItem.mutate(id);
+            }
+          }}
+          onUpdateQty={(id, qty, price) => {
+            if (fromEditar) {
+              setStagedDirty(true);
+              setStagedItems((prev) =>
+                prev.map((i) =>
+                  i.id === id ? { ...i, quantity: qty, total: qty * price } : i
+                )
+              );
+            } else {
+              updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
+            }
+          }}
           onRequestCancel={handleRequestInlineCancel}
           disableDraftEditing={!canEditItems}
           disableOperationalCancel={order.status === "PAID"}
@@ -1337,37 +1406,133 @@ const Ordenes = () => {
         </div>
       )}
 
-      {(canShowCloseOrder || (canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED")) && (
+      {(canShowCloseOrder || (canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED") || fromEditar) && (
         <div className="mt-4 grid grid-cols-2 gap-3">
-          {canShowCloseOrder && (
-            <Button
-              variant="outline"
-              className="h-12 w-full gap-2 rounded-xl border-emerald-300 bg-emerald-50 font-display text-base font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
-              onClick={() => setShowCloseOrderConfirm(true)}
-              disabled={closeOrder.isPending || !canCloseOrder}
-              title={!canCloseOrder ? "Solo puedes cerrar la orden cuando no haya items nuevos en borrador y todos los items enviados esten completamente despachados" : "Cerrar orden"}
-            >
-              {closeOrder.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <CircleDollarSign className="h-5 w-5" />}
-              Cerrar orden
-            </Button>
-          )}
+          {fromEditar ? (
+            <>
+              <Button
+                variant="outline"
+                className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+                onClick={async () => {
+                  try {
+                    await unlockOrder.mutateAsync();
+                    navigate("/mesas", { replace: true });
+                  } catch (e: any) {
+                    toast.error(e.message);
+                  }
+                }}
+              >
+                Cancelar cambios
+              </Button>
+              <Button
+                className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+                variant="info"
+                disabled={!stagedDirty && stagedItems.length === order.items.length}
+                onClick={async () => {
+                  // Aceptar cambios logic
+                  try {
+                    const originalIds = new Set(order.items.map((i) => i.id));
+                    const stagedIds = new Set(stagedItems.map((i) => i.id));
+                    
+                    // 1. Removed items
+                    const toRemove = order.items.filter((i) => !stagedIds.has(i.id) && i.status === "DRAFT");
+                    for (const req of toRemove) {
+                      await removeItem.mutateAsync(req.id);
+                    }
+                    
+                    // 2. Updated quantities
+                    for (const staged of stagedItems) {
+                      if (originalIds.has(staged.id)) {
+                        const original = order.items.find((i) => i.id === staged.id);
+                        if (original && original.quantity !== staged.quantity) {
+                          await updateQuantity.mutateAsync({ itemId: staged.id, quantity: staged.quantity, unit_price: staged.unit_price });
+                        }
+                      }
+                    }
+                    
+                    // 3. Add new items
+                    const toAdd = stagedItems.filter((i) => !originalIds.has(i.id));
+                    const newAddedIds = [];
+                    for (const req of toAdd) {
+                      const reqData = {
+                        product_id: req.product_id,
+                        description_snapshot: req.description_snapshot,
+                        item_note: req.item_note ?? null,
+                        unit_price: req.unit_price,
+                        quantity: req.quantity,
+                        modifier_ids: req.modifiers.map(m => m.modifier_id).filter(Boolean) as string[],
+                        tray_item_type: req.tray_item_type as "A" | "B" | "C" | undefined,
+                        tray_container_cost: req.tray_container_cost ?? 0,
+                      };
+                      
+                      const preAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
+                      await addItem.mutateAsync(reqData);
+                      
+                      const postAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
+                      const postIds = new Set((postAddItems.data ?? []).map(r => r.id));
+                      for (const pre of preAddItems.data ?? []) postIds.delete(pre.id);
 
-          {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
-            <Button
-              variant="destructive"
-              className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-              disabled={hasDraftItems}
-              title={hasDraftItems ? "No puedes anular la orden mientras existan items nuevos en borrador" : "Anular orden"}
-              onClick={() => {
-                setInlineCancelVisibleItems([]);
-                setInlineCancelQtyByItem({});
-                setInlineCancellationType("total");
-                setInlineCancelOpen(true);
-              }}
-            >
-              <Ban className="h-5 w-5" />
-              Anular orden
-            </Button>
+                      const newlyCreatedId = Array.from(postIds)[0];
+                      if (newlyCreatedId) {
+                         newAddedIds.push({ order_item_id: newlyCreatedId, quantity_dispatched: req.quantity });
+                      }
+                    }
+                    
+                    if (newAddedIds.length > 0 && user) {
+                      await supabase.rpc("dispatch_order_quantities", {
+                        p_order_id: orderId,
+                        p_dispatched_by: user.id,
+                        p_items: newAddedIds,
+                        p_operation_type: "partial",
+                        p_source_module: "dispatch",
+                        p_notes: "Añadido editando",
+                      });
+                    }
+                    
+                    await unlockOrder.mutateAsync();
+                    toast.success("Cambios aceptados y despachados");
+                    navigate("/mesas", { replace: true });
+                  } catch (e: any) {
+                    toast.error(e.message);
+                  }
+                }}
+              >
+                Aceptar cambios
+              </Button>
+            </>
+          ) : (
+            <>
+              {canShowCloseOrder && (
+                <Button
+                  variant="outline"
+                  className="h-12 w-full gap-2 rounded-xl border-emerald-300 bg-emerald-50 font-display text-base font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
+                  onClick={() => setShowCloseOrderConfirm(true)}
+                  disabled={closeOrder.isPending || !canCloseOrder}
+                  title={!canCloseOrder ? "Solo puedes cerrar la orden cuando no haya items nuevos en borrador y todos los items enviados esten completamente despachados" : "Cerrar orden"}
+                >
+                  {closeOrder.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <CircleDollarSign className="h-5 w-5" />}
+                  Cerrar orden
+                </Button>
+              )}
+
+              {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+                <Button
+                  variant="destructive"
+                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+                  disabled={hasDraftItems}
+                  title={hasDraftItems ? "No puedes anular la orden mientras existan items nuevos en borrador" : "Anular orden"}
+                  onClick={() => {
+                    setInlineCancelVisibleItems([]);
+                    setInlineCancelQtyByItem({});
+                    setInlineCancellationType("total");
+                    setInlineCancelOpen(true);
+                  }}
+                >
+                  <Ban className="h-5 w-5" />
+                  Anular orden
+                </Button>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1449,13 +1614,15 @@ const Ordenes = () => {
                       <ArrowRightLeft className="mr-2 h-4 w-4" />
                       Mover Items/Mesa
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setShowChangeTableDialog(true)}
-                      disabled={!canChangeTable || moveToTable.isPending}
-                    >
-                      {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
-                      Cambiar mesa
-                    </DropdownMenuItem>
+                    {canShowChangeTable && (
+                      <DropdownMenuItem
+                        onClick={() => setShowChangeTableDialog(true)}
+                        disabled={!canChangeTable || moveToTable.isPending}
+                      >
+                        {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
+                        Cambiar mesa
+                      </DropdownMenuItem>
+                    )}
                     {hasSiblings && (
                       <DropdownMenuItem
                         onClick={() => setShowDeleteSplitConfirm(true)}
@@ -1507,7 +1674,7 @@ const Ordenes = () => {
                         ? "border-orange-300 bg-orange-50 text-orange-900 shadow-[0_10px_20px_-18px_rgba(249,115,22,0.85)]"
                         : "hover:bg-muted/60",
                     )}
-                    onClick={() => navigate(`/ordenes?order=${tableOrder.id}${fromMesas ? "&from=mesas" : ""}`, { replace: true })}
+                    onClick={() => navigate(`/ordenes?order=${tableOrder.id}${sourceParams}`, { replace: true })}
                   >
                     <span className="whitespace-nowrap">{getTableOrderButtonLabel(tableOrder)}</span>
                     <Badge
@@ -1598,7 +1765,7 @@ const Ordenes = () => {
                 Convertir Ord. Espec.
               </Button>
             )}
-            {order.table_id && (
+            {canShowChangeTable && (
               <>
                 <Button
                   variant={canChangeTable ? "outline" : "ghost"}
@@ -1707,6 +1874,37 @@ const Ordenes = () => {
           isBulkScopeSelection ? buildBulkIncludedItemNote(unitPrice, quantity) : null
         )}
         onConfirm={(data) => {
+          if (fromEditar) {
+            setStagedDirty(true);
+            setStagedItems((prev) => [
+              ...prev,
+              {
+                id: `staged-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                product_id: data.product_id,
+                description_snapshot: data.description_snapshot,
+                item_note: data.item_note ?? null,
+                quantity: data.quantity,
+                quantity_ordered: data.quantity,
+                original_quantity: data.quantity,
+                cancelled_quantity: 0,
+                unit_price: data.unit_price,
+                total: data.quantity * data.unit_price + (data.quantity > 0 ? (data.tray_container_cost ?? 0) : 0),
+                status: "DRAFT",
+                tray_item_type: isTrayOrder ? effectiveTrayType : isBulkScopeSelection ? "C" : null,
+                tray_container_cost: 0,
+                quantity_sent: 0,
+                quantity_ready_available: 0,
+                quantity_dispatched: 0,
+                quantity_remaining: data.quantity,
+                quantity_cancelled: 0,
+                quantity_cancellable: 0,
+                modifiers: (isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids).map(id => ({ id: `temp-mod-${id}`, modifier_id: id, description: "" })),
+              } as any,
+            ]);
+            setSelectedProduct(null);
+            return;
+          }
+
           addItem.mutate({
             ...data,
             menu_node_id: selectedProduct?.menu_node_id ?? null,

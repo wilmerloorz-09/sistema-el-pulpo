@@ -49,6 +49,7 @@ export interface DispatchOrder {
   ready_available_count: number;
   dispatchable_count: number;
   items: DispatchOrderItem[];
+  locked_for_editing?: boolean;
 }
 
 export interface OperationPayload {
@@ -95,7 +96,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at")
+        .select("id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing")
         .eq("branch_id", activeBranchId)
         .in("status", ["SENT_TO_KITCHEN", "READY"])
         .order("updated_at", { ascending: true });
@@ -261,6 +262,7 @@ export function useDispatchOrders(scope: DispatchView) {
             ready_available_count: readyAvailableCount,
             dispatchable_count: dispatchableCount,
             items: sortedBatchItems,
+            locked_for_editing: Boolean(order.locked_for_editing),
           };
         });
       });

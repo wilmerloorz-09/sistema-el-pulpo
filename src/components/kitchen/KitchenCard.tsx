@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { KitchenOrder } from "@/hooks/useKitchenOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag } from "lucide-react";
+import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag, Lock } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -100,6 +100,12 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
               BANDEJA
             </Badge>
           )}
+          {order.locked_for_editing && (
+            <Badge variant="destructive" className="shrink-0 text-[10px] gap-1 px-1.5 flex items-center">
+              <Lock className="h-3 w-3" />
+              <span>Editando</span>
+            </Badge>
+          )}
         </div>
         <div
           className={cn(
@@ -185,9 +191,14 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
       </div>
 
       <div className="border-t border-border px-4 py-3">
-        <Button onClick={() => onOpenReadyDialog(order)} variant="info" className="h-11 w-full gap-2 rounded-xl font-display font-semibold">
-          <CheckCircle2 className="h-4 w-4" />
-          Marcar listo
+        <Button 
+          onClick={() => onOpenReadyDialog(order)} 
+          variant="info" 
+          className="h-11 w-full gap-2 rounded-xl font-display font-semibold"
+          disabled={order.locked_for_editing}
+        >
+          {order.locked_for_editing ? <Lock className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+          {order.locked_for_editing ? "Deshabilitado (Editando)" : "Marcar listo"}
         </Button>
       </div>
     </div>

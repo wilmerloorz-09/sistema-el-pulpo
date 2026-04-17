@@ -445,7 +445,7 @@ const Mesas = () => {
         <div className="min-w-0">
           <div
             className={cn(
-              "grid grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]",
+              "grid grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]",
             )}
           >
             {tables?.map((table, index) => {

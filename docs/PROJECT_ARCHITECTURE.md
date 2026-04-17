@@ -54,6 +54,11 @@
   - una linea `DRAFT` no debe aparecer en pestañas operativas posteriores aunque la orden ya tenga historial enviado/despachado
 - `CancelOrderDialog` y `PaymentDialog` comparten el patron de doble lista.
 - `Orden especial` sigue siendo una variante de `orders`, no un modulo aparte.
+- **Edición Transaccional Buffered**:
+  - El modulo `Editar Orden` opera en un buffer aislado (`stagedItems`) en UI.
+  - Se aplica un estado persistente `orders.locked_for_editing` a la base de datos protegiendo la orden de interacciones concurrentes de cocina y despacho.
+  - Los controles de items (+/- y eliminar) eliminan la protección pasiva e ignoran incondicionalmente el estado actual del item dentro de este modulo de edición aislando las mutaciones de cantidad a memoria hasta su finalizacion.
+  - Los diffs se comprometen de manera batch al pulsar `Aceptar cambios`, y se invoca instantáneamente el Auto-Despacho (via RPC) para los items añadidos tardíamente.
 
 ### 6. Mesas y divisiones
 - `restaurant_tables` sigue siendo la entidad fisica real.
