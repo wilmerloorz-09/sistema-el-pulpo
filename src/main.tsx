@@ -36,7 +36,33 @@ if ("serviceWorker" in navigator && isLocalAppHost) {
   });
 } else if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((error) => {
+    void (async () => {
+      let reloading = false;
+      const reloadForUpdate = () => {
+        if (reloading) return;
+        reloading = true;
+        window.location.reload();
+      };
+
+      navigator.serviceWorker.addEventListener("controllerchange", reloadForUpdate);
+
+      const registration = await navigator.serviceWorker.register("/sw.js", {
+        updateViaCache: "none",
+      });
+
+      registration.addEventListener("updatefound", () => {
+        const installingWorker = registration.installing;
+        if (!installingWorker) return;
+
+        installingWorker.addEventListener("statechange", () => {
+          if (installingWorker.state === "installed" && navigator.serviceWorker.controller) {
+            reloadForUpdate();
+          }
+        });
+      });
+
+      await registration.update();
+    })().catch((error) => {
       console.error("No se pudo registrar el service worker", error);
     });
   });

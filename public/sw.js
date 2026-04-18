@@ -1,4 +1,4 @@
-const CACHE_NAME = "elpulpo-v3";
+const CACHE_NAME = "elpulpo-v4";
 const APP_SHELL = [
   "/manifest.json",
   "/icons/icon-192.png",
@@ -29,6 +29,11 @@ function isStaticAsset(request, url) {
   if (request.method !== "GET") return false;
   if (url.origin !== self.location.origin) return false;
   return ["script", "style", "image", "font"].includes(request.destination);
+}
+
+function isVersionSensitiveAsset(request, url) {
+  if (!isStaticAsset(request, url)) return false;
+  return ["script", "style"].includes(request.destination);
 }
 
 async function networkFirst(request) {
@@ -65,6 +70,11 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   if (isSupabaseRequest(url)) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  if (isVersionSensitiveAsset(request, url)) {
     event.respondWith(networkFirst(request));
     return;
   }
