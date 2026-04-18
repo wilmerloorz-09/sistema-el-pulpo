@@ -1421,7 +1421,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           const meta = parsePaymentNotes(payment.notes);
             if (meta.reversed || meta.voided || meta.transferProofPending) continue;
           const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
-          current.amount += meta.tenderedAmount ?? Number(payment.amount);
+          current.amount += Number(payment.amount);
           current.paymentCount += 1;
           summaryMap.set(payment.payment_method_id, current);
         }
@@ -1660,7 +1660,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         const meta = parsePaymentNotes(payment.notes);
           if (meta.reversed || meta.voided || meta.transferProofPending) continue;
         const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
-        current.amount += meta.tenderedAmount ?? Number(payment.amount);
+        current.amount += Number(payment.amount);
         current.paymentCount += 1;
         summaryMap.set(payment.payment_method_id, current);
       }

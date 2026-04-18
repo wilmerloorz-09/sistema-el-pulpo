@@ -1,4 +1,5 @@
 import * as React from "react";
+import { parseDecimalInput, sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,9 +72,11 @@ export function AdminTable<T extends { id: string }>({
       if (col.type === "number") {
         return (
           <Input
-            type="number"
+            type="text"
+            inputMode="decimal"
+            pattern="[0-9]*[.,]?[0-9]*"
             value={editValues[col.key] ?? ""}
-            onChange={(e) => onFieldChange(col.key, parseFloat(e.target.value) || 0)}
+            onChange={(e) => onFieldChange(col.key, parseDecimalInput(sanitizeDecimalInput(e.target.value)))}
             className="h-10 rounded-xl text-sm"
           />
         );

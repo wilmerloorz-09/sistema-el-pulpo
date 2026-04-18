@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { parseDecimalInput, sanitizeDecimalInput, sanitizeIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
 import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
@@ -516,7 +517,7 @@ const MenuNodesCrud = ({
         if (form.node_type === "product") {
           if (!form.parent_id) throw new Error("El producto debe crearse desde el nivel 2 en adelante.");
           if (!isBulkScope) {
-            price = Number.parseFloat(form.price);
+            price = parseDecimalInput(form.price);
             if (!Number.isFinite(price) || price < 0) throw new Error("El producto requiere un precio valido");
           }
         }
@@ -1101,7 +1102,17 @@ const MenuNodesCrud = ({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Orden</Label>
-                  <Input value={form.display_order} onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))} className="rounded-xl" inputMode="numeric" />
+                  <Input
+                    value={form.display_order}
+                    onChange={(event) => {
+                      const nextOrder = sanitizeIntegerInput(event.target.value);
+                      setForm((prev) => ({ ...prev, display_order: nextOrder }));
+                    }}
+                    className="rounded-xl"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                  />
                 </div>
                 {isBulkScope && form.node_type === "product" ? (
                   <div className="space-y-1.5">
@@ -1115,9 +1126,14 @@ const MenuNodesCrud = ({
                     <Label>Precio</Label>
                     <Input
                       value={form.price}
-                      onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+                      onChange={(event) => {
+                        const nextPrice = sanitizeDecimalInput(event.target.value);
+                        setForm((prev) => ({ ...prev, price: nextPrice }));
+                      }}
                       className="rounded-xl"
+                      type="text"
                       inputMode="decimal"
+                      pattern="[0-9]*[.,]?[0-9]*"
                       disabled={form.node_type === "category"}
                       placeholder={form.node_type === "product" ? "0.00" : "Solo para productos"}
                     />

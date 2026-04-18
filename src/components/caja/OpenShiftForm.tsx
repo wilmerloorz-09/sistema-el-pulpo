@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { parseIntegerInput } from "@/lib/numericInput";
 import { AlertCircle, DollarSign, Loader2 } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import CashRegisterOpeningHistory from "@/components/caja/CashRegisterOpeningHistory";
@@ -196,10 +197,12 @@ export default function OpenShiftForm({
                 <div className="text-2xl font-black leading-none text-red-600">${denomination.value.toFixed(2)}</div>
               </div>
               <Input
-                type="number"
+                type="text"
                 min={0}
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={counts[denomination.id] ?? 0}
-                onChange={(e) => setCounts({ ...counts, [denomination.id]: parseInt(e.target.value, 10) || 0 })}
+                onChange={(e) => setCounts({ ...counts, [denomination.id]: parseIntegerInput(e.target.value) })}
                 className="h-9 w-20 rounded-lg text-center"
                 disabled={readOnly}
               />

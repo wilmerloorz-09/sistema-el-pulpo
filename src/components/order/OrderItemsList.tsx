@@ -38,6 +38,8 @@ interface Props {
   disableDraftEditing?: boolean;
   disableOperationalCancel?: boolean;
   alwaysShowControls?: boolean;
+  hideItemControls?: boolean;
+  editableItemIds?: string[];
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation";
@@ -138,6 +140,8 @@ const OrderItemsList = ({
   disableDraftEditing = false,
   disableOperationalCancel = false,
   alwaysShowControls = false,
+  hideItemControls = false,
+  editableItemIds = [],
 }: Props) => {
   if (items.length === 0) {
     return (
@@ -162,7 +166,8 @@ const OrderItemsList = ({
 
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
-        const showControls = isPending || alwaysShowControls;
+        const canShowControlsForItem = !hideItemControls || editableItemIds.includes(item.id);
+        const showControls = canShowControlsForItem && (isPending || alwaysShowControls);
         const isRequestedCancel =
           item.status === "ITEM_PENDING_CANCELLATION" ||
           item.status === "PENDING_CANCELLATION" ||

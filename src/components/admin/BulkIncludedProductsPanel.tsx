@@ -11,6 +11,7 @@ import {
   type EditableIncludedProductRange,
   type IncludedProductAssignment,
 } from "@/hooks/useBulkIncludedProducts";
+import { sanitizeDecimalInput, sanitizeIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 
 interface BulkIncludedProductsPanelProps {
@@ -95,7 +96,8 @@ const RangeEditor = ({ assignment, disabled, onSave, onRemoveProduct }: RangeEdi
   const isDirty = serializedRows !== serializedAssignment;
 
   const updateRow = (index: number, key: keyof EditableIncludedProductRange, value: string) => {
-    setRows((prev) => prev.map((row, rowIndex) => (rowIndex === index ? { ...row, [key]: value } : row)));
+    const nextValue = key === "included_quantity" ? sanitizeIntegerInput(value) : sanitizeDecimalInput(value);
+    setRows((prev) => prev.map((row, rowIndex) => (rowIndex === index ? { ...row, [key]: nextValue } : row)));
   };
 
   const addRow = () => {
@@ -181,7 +183,9 @@ const RangeEditor = ({ assignment, disabled, onSave, onRemoveProduct }: RangeEdi
                   <Input
                     value={row.amount_from}
                     onChange={(event) => updateRow(index, "amount_from", event.target.value)}
+                    type="text"
                     inputMode="decimal"
+                    pattern="[0-9]*[.,]?[0-9]*"
                     placeholder="0.00"
                     disabled={disabled || saving}
                   />
@@ -190,7 +194,9 @@ const RangeEditor = ({ assignment, disabled, onSave, onRemoveProduct }: RangeEdi
                   <Input
                     value={row.included_quantity}
                     onChange={(event) => updateRow(index, "included_quantity", event.target.value)}
+                    type="text"
                     inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="1"
                     disabled={disabled || saving}
                   />

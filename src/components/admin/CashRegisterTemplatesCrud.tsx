@@ -4,6 +4,7 @@ import { FileStack, Loader2, Pencil, Plus, Save, Shield, Trash2, X } from "lucid
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
+import { parseIntegerInput } from "@/lib/numericInput";
 import { generateUUID } from "@/lib/uuid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -277,11 +278,13 @@ export default function CashRegisterTemplatesCrud() {
                     <p className="text-2xl font-black leading-none text-red-600">${denomination.value.toFixed(2)}</p>
                   </div>
                   <Input
-                    type="number"
+                    type="text"
                     min={0}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={counts[denomination.id] ?? 0}
                     onChange={(event) => {
-                      const nextQty = Math.max(0, Math.trunc(Number(event.target.value) || 0));
+                      const nextQty = Math.max(0, Math.trunc(parseIntegerInput(event.target.value)));
                       setCounts((current) => ({ ...current, [denomination.id]: nextQty }));
                     }}
                     className="h-10 w-24 rounded-xl text-center"

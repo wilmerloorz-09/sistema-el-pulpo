@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+﻿import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchOrderDetail, fetchSiblingOrders, getOrderQueryKey, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
+import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
@@ -426,8 +427,8 @@ const Ordenes = () => {
   });
 
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
-  // Operar en órdenes: permiso explícito del módulo, flags del turno, o administración global/sucursal.
-  // Sin esto, un superadmin con `permissions` vacío en el RPC veía solo modo consulta aunque tuviera acceso total.
+  // Operar en Ã³rdenes: permiso explÃ­cito del mÃ³dulo, flags del turno, o administraciÃ³n global/sucursal.
+  // Sin esto, un superadmin con `permissions` vacÃ­o en el RPC veÃ­a solo modo consulta aunque tuviera acceso total.
   const canOperateOrders =
     isGlobalAdmin
     || canManageOrders
@@ -1043,6 +1044,86 @@ const Ordenes = () => {
     });
   };
 
+  const handleAcceptEditedOrderChanges = async () => {
+    try {
+      const originalIds = new Set(order.items.map((item) => item.id));
+      const stagedIds = new Set(stagedItems.map((item) => item.id));
+
+      // Remove draft items that were discarded while editing.
+      const toRemove = order.items.filter((item) => !stagedIds.has(item.id) && item.status === "DRAFT");
+      for (const item of toRemove) {
+        await removeItem.mutateAsync(item.id);
+      }
+
+      // Persist quantity updates for existing items.
+      for (const staged of stagedItems) {
+        if (!originalIds.has(staged.id)) continue;
+
+        const original = order.items.find((item) => item.id === staged.id);
+        if (original && original.quantity !== staged.quantity) {
+          await updateQuantity.mutateAsync({
+            itemId: staged.id,
+            quantity: staged.quantity,
+            unit_price: staged.unit_price,
+          });
+        }
+      }
+
+      // Create new items and capture the generated ids so we can dispatch them immediately.
+      const toAdd = stagedItems.filter((item) => !originalIds.has(item.id));
+      const newAddedIds: { order_item_id: string; quantity_dispatched: number }[] = [];
+
+      for (const item of toAdd) {
+        const reqData = {
+          product_id: item.product_id,
+          description_snapshot: item.description_snapshot,
+          item_note: item.item_note ?? null,
+          unit_price: item.unit_price,
+          quantity: item.quantity,
+          modifier_ids: item.modifiers.map((modifier) => modifier.modifier_id).filter(Boolean) as string[],
+          tray_item_type: item.tray_item_type as "A" | "B" | "C" | undefined,
+          tray_container_cost: item.tray_container_cost ?? 0,
+        };
+
+        const preAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
+        await addItem.mutateAsync(reqData);
+
+        const postAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
+        const postIds = new Set((postAddItems.data ?? []).map((row) => row.id));
+        for (const previous of preAddItems.data ?? []) {
+          postIds.delete(previous.id);
+        }
+
+        const newlyCreatedId = Array.from(postIds)[0];
+        if (newlyCreatedId) {
+          newAddedIds.push({ order_item_id: newlyCreatedId, quantity_dispatched: item.quantity });
+        }
+      }
+
+      if (newAddedIds.length > 0 && user) {
+        await supabase.rpc("dispatch_order_quantities", {
+          p_order_id: orderId,
+          p_dispatched_by: user.id,
+          p_items: newAddedIds,
+          p_operation_type: "partial",
+          p_source_module: "dispatch",
+          p_notes: isClosedForPayment ? "Añado editando orden cerrada" : "Añado editando orden despachada",
+        });
+      }
+
+      await unlockOrder.mutateAsync();
+      setStagedDirty(false);
+      toast.success(
+        isClosedForPayment
+          ? "Cambios aceptados. Los nuevos items quedaron cerrados para cobro."
+          : "Cambios aceptados. Los nuevos items quedaron despachados.",
+      );
+      navigate("/editar-orden", { replace: true });
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
   const handleChangeTable = (destinationTableId: string) => {
     moveToTable.mutate(destinationTableId, {
       onSuccess: (result) => {
@@ -1268,12 +1349,12 @@ const Ordenes = () => {
   ) : (
     <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
       {isLockedFromEditar
-        ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados desde cocina."
+        ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aÃºn no tiene Ã­tems despachados desde cocina."
         : hasPendingCancellationItems
         ? "Esta orden tiene al menos un item con anulacion pendiente: no puedes agregar ni editar items hasta resolver la solicitud."
         : order.status === "PAID" || order.status === "CANCELLED"
-        ? "Esta orden está pagada o cancelada: solo lectura (no puedes agregar ni editar ítems)."
-        : "Modo consulta: no tienes permiso de operación en Órdenes para esta sucursal o tu usuario no tiene acceso operativo en el turno actual (revisa permisos del módulo Órdenes o asignación en caja)."}
+        ? "Esta orden estÃ¡ pagada o cancelada: solo lectura (no puedes agregar ni editar Ã­tems)."
+        : "Modo consulta: no tienes permiso de operaciÃ³n en Ã“rdenes para esta sucursal o tu usuario no tiene acceso operativo en el turno actual (revisa permisos del mÃ³dulo Ã“rdenes o asignaciÃ³n en caja)."}
     </div>
   );
 
@@ -1325,7 +1406,7 @@ const Ordenes = () => {
                 <Input
                   inputMode="decimal"
                   value={specialTotalInput}
-                  onChange={(event) => setSpecialTotalInput(event.target.value)}
+                  onChange={(event) => setSpecialTotalInput(sanitizeDecimalInput(event.target.value))}
                   placeholder="Ingresa el total manual"
                   className="h-11 rounded-xl"
                 />
@@ -1349,6 +1430,8 @@ const Ordenes = () => {
         <OrderItemsList
           items={fromEditar ? stagedItems : order.items}
           alwaysShowControls={fromEditar}
+          hideItemControls={fromEditar}
+          editableItemIds={fromEditar ? stagedItems.filter((item) => item.id.startsWith("staged-")).map((item) => item.id) : []}
           onRemove={(id) => {
             if (fromEditar) {
               setStagedDirty(true);
@@ -1375,7 +1458,7 @@ const Ordenes = () => {
         />
       </div>
 
-      {canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+      {!fromEditar && canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
         <Button
           onClick={() => {
             sendToKitchen.mutate(undefined, {
@@ -1418,95 +1501,44 @@ const Ordenes = () => {
       )}
 
       {(canShowCloseOrder || (canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED") || fromEditar) && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div
+          className={cn(
+            "mt-4 grid gap-3",
+            fromEditar
+              ? "grid-cols-1 sm:grid-cols-2"
+              : "grid-cols-2",
+          )}
+        >
           {fromEditar ? (
             <>
-              <Button
-                variant="outline"
-                className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-                onClick={async () => {
-                  try {
-                    await unlockOrder.mutateAsync();
-                    navigate("/mesas", { replace: true });
-                  } catch (e: any) {
-                    toast.error(e.message);
+              {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+                <Button
+                  variant="destructive"
+                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+                  disabled={hasDraftItems || hasPendingCancellationItems}
+                  title={
+                    hasPendingCancellationItems
+                      ? "No puedes anular la orden mientras exista al menos un item con anulacion pendiente"
+                      : hasDraftItems
+                        ? "No puedes anular la orden mientras existan items nuevos en borrador"
+                        : "Anular orden"
                   }
-                }}
-              >
-                Cancelar cambios
-              </Button>
+                  onClick={() => {
+                    setInlineCancelVisibleItems([]);
+                    setInlineCancelQtyByItem({});
+                    setInlineCancellationType("total");
+                    setInlineCancelOpen(true);
+                  }}
+                >
+                  <Ban className="h-5 w-5" />
+                  Anular orden
+                </Button>
+              )}
               <Button
                 className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
                 variant="info"
                 disabled={!stagedDirty && stagedItems.length === order.items.length}
-                onClick={async () => {
-                  // Aceptar cambios logic
-                  try {
-                    const originalIds = new Set(order.items.map((i) => i.id));
-                    const stagedIds = new Set(stagedItems.map((i) => i.id));
-                    
-                    // 1. Removed items
-                    const toRemove = order.items.filter((i) => !stagedIds.has(i.id) && i.status === "DRAFT");
-                    for (const req of toRemove) {
-                      await removeItem.mutateAsync(req.id);
-                    }
-                    
-                    // 2. Updated quantities
-                    for (const staged of stagedItems) {
-                      if (originalIds.has(staged.id)) {
-                        const original = order.items.find((i) => i.id === staged.id);
-                        if (original && original.quantity !== staged.quantity) {
-                          await updateQuantity.mutateAsync({ itemId: staged.id, quantity: staged.quantity, unit_price: staged.unit_price });
-                        }
-                      }
-                    }
-                    
-                    // 3. Add new items
-                    const toAdd = stagedItems.filter((i) => !originalIds.has(i.id));
-                    const newAddedIds = [];
-                    for (const req of toAdd) {
-                      const reqData = {
-                        product_id: req.product_id,
-                        description_snapshot: req.description_snapshot,
-                        item_note: req.item_note ?? null,
-                        unit_price: req.unit_price,
-                        quantity: req.quantity,
-                        modifier_ids: req.modifiers.map(m => m.modifier_id).filter(Boolean) as string[],
-                        tray_item_type: req.tray_item_type as "A" | "B" | "C" | undefined,
-                        tray_container_cost: req.tray_container_cost ?? 0,
-                      };
-                      
-                      const preAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
-                      await addItem.mutateAsync(reqData);
-                      
-                      const postAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
-                      const postIds = new Set((postAddItems.data ?? []).map(r => r.id));
-                      for (const pre of preAddItems.data ?? []) postIds.delete(pre.id);
-
-                      const newlyCreatedId = Array.from(postIds)[0];
-                      if (newlyCreatedId) {
-                         newAddedIds.push({ order_item_id: newlyCreatedId, quantity_dispatched: req.quantity });
-                      }
-                    }
-                    
-                    if (newAddedIds.length > 0 && user) {
-                      await supabase.rpc("dispatch_order_quantities", {
-                        p_order_id: orderId,
-                        p_dispatched_by: user.id,
-                        p_items: newAddedIds,
-                        p_operation_type: "partial",
-                        p_source_module: "dispatch",
-                        p_notes: "Añadido editando",
-                      });
-                    }
-                    
-                    await unlockOrder.mutateAsync();
-                    toast.success("Cambios aceptados y despachados");
-                    navigate("/mesas", { replace: true });
-                  } catch (e: any) {
-                    toast.error(e.message);
-                  }
-                }}
+                onClick={handleAcceptEditedOrderChanges}
               >
                 Aceptar cambios
               </Button>
@@ -2035,7 +2067,7 @@ const Ordenes = () => {
               <Input
                 inputMode="decimal"
                 value={convertSpecialTotalInput}
-                onChange={(event) => setConvertSpecialTotalInput(event.target.value)}
+                onChange={(event) => setConvertSpecialTotalInput(sanitizeDecimalInput(event.target.value))}
                 placeholder="Ingresa el total a cobrar"
                 className="h-11 rounded-xl"
               />
@@ -2124,3 +2156,4 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
+

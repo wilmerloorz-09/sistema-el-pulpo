@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/ui/metric-card";
+import { parseIntegerInput } from "@/lib/numericInput";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
@@ -1297,11 +1298,13 @@ const ShiftSetupAdmin = () => {
               Mesas habilitadas del turno
             </label>
             <Input
-              type="number"
+              type="text"
               min={0}
               step={1}
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={activeTablesCount}
-              onChange={(event) => setActiveTablesCount(Math.max(0, parseInt(event.target.value, 10) || 0))}
+              onChange={(event) => setActiveTablesCount(Math.max(0, parseIntegerInput(event.target.value)))}
               className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
             />
           </div>

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RotateCcw, Users, Camera } from "lucide-react";
+import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RotateCcw, Users, ClipboardPen } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -188,7 +188,7 @@ const EditarOrden = () => {
         <div className="surface-glow px-3 py-2.5 sm:px-4 sm:py-3 border-amber-200/60 from-amber-50/40">
           <div className="relative flex items-center justify-between gap-2">
             <div className="min-w-0 flex items-center gap-2 text-amber-600 dark:text-amber-500">
-              <Camera className="h-5 w-5" />
+              <ClipboardPen className="h-5 w-5" />
               <h1 className="font-display text-lg font-bold sm:text-xl">Editar Orden</h1>
             </div>
             <div className="scrollbar-none -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap">
@@ -285,7 +285,7 @@ const EditarOrden = () => {
 
           {editableTables.length === 0 && (
             <div className="rounded-[24px] border border-orange-200 bg-white/80 p-6 text-center text-sm font-medium text-orange-800/70 shadow-sm">
-              <Camera className="mx-auto mb-2 h-10 w-10 opacity-40 text-orange-600" />
+              <ClipboardPen className="mx-auto mb-2 h-10 w-10 opacity-40 text-orange-600" />
               No hay mesas con órdenes despachadas o cerradas para editar.
             </div>
           )}

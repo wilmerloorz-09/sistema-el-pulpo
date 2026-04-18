@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageIcon, Minus, Plus, ShoppingBag } from "lucide-react";
+import { parseDecimalInput, parseIntegerInput, sanitizeDecimalInput, sanitizeIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 
 interface Modifier {
@@ -70,7 +71,7 @@ const AddItemDialog = ({
   if (!product) return null;
 
   const isManual = (priceModeOverride ?? product.price_mode) === "MANUAL";
-  const price = isManual ? parseFloat(manualPrice) || 0 : (product.unit_price ?? 0);
+  const price = isManual ? parseDecimalInput(manualPrice) : (product.unit_price ?? 0);
   const effectiveQuantity = hideQuantity ? 1 : quantity;
   const canAdd = effectiveQuantity > 0 && (!isManual || price > 0);
   const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
@@ -98,14 +99,15 @@ const AddItemDialog = ({
   };
 
   const handleManualQuantityChange = (value: string) => {
-    setQuantityInput(value);
+    const sanitizedValue = sanitizeIntegerInput(value);
+    setQuantityInput(sanitizedValue);
 
-    if (!value) {
+    if (!sanitizedValue) {
       setQuantity(0);
       return;
     }
 
-    const parsed = Number.parseInt(value, 10);
+    const parsed = parseIntegerInput(sanitizedValue);
     if (Number.isNaN(parsed)) {
       setQuantity(0);
       return;
@@ -151,11 +153,13 @@ const AddItemDialog = ({
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                 <Input
-                  type="number"
+                  type="text"
                   step="0.01"
                   min="0"
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
                   value={manualPrice}
-                  onChange={(event) => setManualPrice(event.target.value)}
+                  onChange={(event) => setManualPrice(sanitizeDecimalInput(event.target.value))}
                   placeholder="0.00"
                   className="h-11 rounded-xl pl-8 text-lg font-bold shadow-sm"
                   autoFocus
@@ -183,9 +187,11 @@ const AddItemDialog = ({
                   <Minus className="h-4 w-4" />
                 </Button>
                 <Input
-                  type="number"
+                  type="text"
                   min="0"
                   step="1"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={quantityInput}
                   onChange={(event) => handleManualQuantityChange(event.target.value)}
                   className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"

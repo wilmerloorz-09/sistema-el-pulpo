@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { MetricCard } from "@/components/ui/metric-card";
+import { parseIntegerInput, sanitizeDecimalInput } from "@/lib/numericInput";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
@@ -73,7 +74,7 @@ function buildSplitId() {
 }
 
 function parseMoneyInput(value: string) {
-  const normalized = value.replace(",", ".").trim();
+  const normalized = sanitizeDecimalInput(value).trim();
   if (!normalized) return 0;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -1167,7 +1168,7 @@ export default function PaymentDialog({
                         value={split ? (paymentSplitInputs[split.id] ?? formatMoneyInput(split.amount)) : formatMoneyInput(0)}
                         onChange={(e) => {
                           if (!split) return;
-                          const rawValue = e.target.value.replace(",", ".");
+                          const rawValue = sanitizeDecimalInput(e.target.value);
                           setPaymentSplitInputs((prev) => ({ ...prev, [split.id]: rawValue }));
                           setSplitAmount(split.id, parseMoneyInput(rawValue));
                         }}
@@ -1438,7 +1439,7 @@ export default function PaymentDialog({
                                   type="text"
                                   inputMode="decimal"
                                   value={specialAmountInput}
-                                  onChange={(event) => setSpecialAmountInput(event.target.value)}
+                                  onChange={(event) => setSpecialAmountInput(sanitizeDecimalInput(event.target.value))}
                                   placeholder="Ingresa el monto a cobrar"
                                   className="h-11 rounded-xl"
                                   disabled={readOnly}
@@ -1535,12 +1536,14 @@ export default function PaymentDialog({
                                       </div>
                                     ) : (
                                       <Input
-                                        type="number"
+                                        type="text"
                                         min={0}
                                         max={item.quantity_pending}
                                         step={1}
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         value={qtyToPay}
-                                        onChange={(e) => setItemQty(item.id, Number(e.target.value), item.quantity_pending)}
+                                        onChange={(e) => setItemQty(item.id, parseIntegerInput(e.target.value), item.quantity_pending)}
                                         className="h-8 w-[72px] text-xs"
                                         disabled={readOnly}
                                       />
@@ -1641,7 +1644,7 @@ export default function PaymentDialog({
                                   type="text"
                                   inputMode="decimal"
                                   value={(split?.amount ?? 0).toFixed(2)}
-                                  onChange={(e) => split && setSplitAmount(split.id, parseMoneyInput(e.target.value))}
+                                  onChange={(e) => split && setSplitAmount(split.id, parseMoneyInput(sanitizeDecimalInput(e.target.value)))}
                                   className={cn("h-9 w-full shrink-0 rounded-xl pl-3 text-left [appearance:textfield] sm:h-10", isCash && "col-span-full sm:col-auto")}
                                   readOnly={isCash}
                                   disabled={readOnly || !isSelected || isCash}
@@ -1908,13 +1911,14 @@ export default function PaymentDialog({
                             )}
                             <div className="flex min-w-[58px] items-center gap-1">
                               <Input
-                                type="number"
+                                type="text"
                                 min="0"
                                 step="1"
                                 inputMode="numeric"
+                                pattern="[0-9]*"
                                 value={cashDraftReceived[denomination.denomination_id] || 0}
-                                onChange={(event) => setDraftDenominationQty(denomination.denomination_id, Number.parseInt(event.target.value || "0", 10))}
-                                onBlur={(event) => setDraftDenominationQty(denomination.denomination_id, Number.parseInt(event.target.value || "0", 10))}
+                                onChange={(event) => setDraftDenominationQty(denomination.denomination_id, parseIntegerInput(event.target.value))}
+                                onBlur={(event) => setDraftDenominationQty(denomination.denomination_id, parseIntegerInput(event.target.value))}
                                 className="h-8 w-14 rounded-lg px-2 text-center text-sm font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 disabled={readOnly}
                               />
