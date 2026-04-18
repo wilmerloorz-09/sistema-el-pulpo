@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +9,10 @@ import { Copy, Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
+import { generateUUID } from "@/lib/uuid";
+import { cn } from "@/lib/utils";
+import { showSystemAlert } from "@/App";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from "@/components/ui/alert-dialog";
 
 interface Branch {
   id: string;
@@ -16,45 +20,33 @@ interface Branch {
   branch_code: string;
 }
 
-const CATALOG_ITEMS = [
-  { key: "categories", label: "Categorias, subcategorias y productos" },
-  { key: "modifiers", label: "Modificadores" },
-  { key: "payment_methods", label: "Metodos de pago" },
-  { key: "denominations", label: "Denominaciones (globales compartidas)" },
-] as const;
-
-type CatalogKey = (typeof CATALOG_ITEMS)[number]["key"];
 type CloneMode = "edge_function" | "direct_fallback" | null;
 
 async function cloneCatalogDirectly(
   sourceBranchId: string,
   targetBranchId: string,
-  selectedItems: Set<CatalogKey>,
   cleanFirst: boolean,
 ) {
   const stats: Record<string, number> = {};
+  const selectedItems = new Set(["categories", "modifiers", "tables"]);
 
   if (cleanFirst) {
     if (selectedItems.has("categories")) {
-      const { data: targetCategories, error: targetCategoriesError } = await supabase
-        .from("categories")
-        .select("id")
-        .eq("branch_id", targetBranchId);
-      if (targetCategoriesError) throw targetCategoriesError;
+      const { error: deleteMenuNodesError } = await supabase.from("menu_nodes" as never).delete().eq("branch_id", targetBranchId);
+      if (deleteMenuNodesError) throw deleteMenuNodesError;
 
+      const { data: targetCategories, error: targetCategoriesError } = await supabase.from("categories").select("id").eq("branch_id", targetBranchId);
+      if (targetCategoriesError) throw targetCategoriesError;
+      
       const categoryIds = (targetCategories ?? []).map((category) => category.id);
       if (categoryIds.length > 0) {
-        const { data: targetSubs, error: targetSubsError } = await supabase
-          .from("subcategories")
-          .select("id")
-          .in("category_id", categoryIds);
+        const { data: targetSubs, error: targetSubsError } = await supabase.from("subcategories").select("id").in("category_id", categoryIds);
         if (targetSubsError) throw targetSubsError;
 
         const subIds = (targetSubs ?? []).map((subcategory) => subcategory.id);
         if (subIds.length > 0) {
           const { error: deleteProductsError } = await supabase.from("products").delete().in("subcategory_id", subIds);
           if (deleteProductsError) throw deleteProductsError;
-
           const { error: deleteSubsError } = await supabase.from("subcategories").delete().in("category_id", categoryIds);
           if (deleteSubsError) throw deleteSubsError;
         }
@@ -68,124 +60,151 @@ async function cloneCatalogDirectly(
       const { error } = await supabase.from("modifiers").delete().eq("branch_id", targetBranchId);
       if (error) throw error;
     }
-
-    if (selectedItems.has("payment_methods")) {
-      const { error } = await supabase.from("payment_methods").delete().eq("branch_id", targetBranchId);
-      if (error) throw error;
-    }
-
-    if (selectedItems.has("denominations")) {
-      const { count, error } = await supabase
-        .from("denominations")
-        .select("id", { count: "exact", head: true });
-      if (error) throw error;
-      stats.denominaciones_globales = count ?? 0;
-    }
   }
 
+  const modifierMap = new Map<string, string>();
   if (selectedItems.has("modifiers")) {
-    const { data: modifiers, error } = await supabase
-      .from("modifiers")
-      .select("description, is_active")
-      .eq("branch_id", sourceBranchId);
+    const { data: modifiers, error } = await supabase.from("modifiers").select("*").eq("branch_id", sourceBranchId);
     if (error) throw error;
 
     if ((modifiers ?? []).length > 0) {
-      const rows = (modifiers ?? []).map((modifier) => ({ ...modifier, branch_id: targetBranchId }));
+      const rows = (modifiers ?? []).map((modifier) => {
+        const newId = generateUUID();
+        modifierMap.set(modifier.id, newId);
+        return { ...modifier, id: newId, branch_id: targetBranchId };
+      });
       const { error: insertError } = await supabase.from("modifiers").insert(rows);
       if (insertError) throw insertError;
       stats.modificadores = rows.length;
     }
   }
 
-  if (selectedItems.has("payment_methods")) {
-    const { data: methods, error } = await supabase
-      .from("payment_methods")
-      .select("name, is_active")
-      .eq("branch_id", sourceBranchId);
-    if (error) throw error;
-
-    if ((methods ?? []).length > 0) {
-      const rows = (methods ?? []).map((method) => ({ ...method, branch_id: targetBranchId }));
-      const { error: insertError } = await supabase.from("payment_methods").insert(rows);
-      if (insertError) throw insertError;
-      stats.metodos_pago = rows.length;
-    }
-  }
-
-  if (selectedItems.has("denominations")) {
-    const { count, error } = await supabase
-      .from("denominations")
-      .select("id", { count: "exact", head: true });
-    if (error) throw error;
-    stats.denominaciones_globales = count ?? 0;
-  }
-
   if (selectedItems.has("categories")) {
-    const { data: categories, error: categoriesError } = await supabase
-      .from("categories")
-      .select("id, description, display_order, is_active")
-      .eq("branch_id", sourceBranchId)
-      .order("display_order");
+    let displayOrderOffset = 0;
+    if (!cleanFirst) {
+      const { data: maxCat } = await supabase.from("categories").select("display_order").eq("branch_id", targetBranchId).order("display_order", { ascending: false }).limit(1).maybeSingle();
+      if (maxCat) displayOrderOffset = (maxCat.display_order ?? 0) + 10;
+    }
+
+    const categoryMap = new Map<string, string>();
+    const subcategoryMap = new Map<string, string>();
+    const productMap = new Map<string, string>();
+
+    const { data: categories, error: categoriesError } = await supabase.from("categories").select("*").eq("branch_id", sourceBranchId);
     if (categoriesError) throw categoriesError;
 
-    let totalSubs = 0;
-    let totalProducts = 0;
+    if ((categories ?? []).length > 0) {
+      const catRows = (categories ?? []).map((c) => {
+        const newId = generateUUID();
+        categoryMap.set(c.id, newId);
+        return { ...c, id: newId, branch_id: targetBranchId, display_order: c.display_order + displayOrderOffset };
+      });
+      const { error: insCatsError } = await supabase.from("categories").insert(catRows);
+      if (insCatsError) throw insCatsError;
+      stats.categorias = catRows.length;
 
-    for (const category of categories ?? []) {
-      const { data: newCategory, error: newCategoryError } = await supabase
-        .from("categories")
-        .insert({
-          description: category.description,
-          display_order: category.display_order,
-          is_active: category.is_active,
-          branch_id: targetBranchId,
-        })
-        .select("id")
-        .single();
-      if (newCategoryError) throw newCategoryError;
-      if (!newCategory) continue;
+      const catIds = (categories ?? []).map((c) => c.id);
+      const { data: subs, error: subsError } = await supabase.from("subcategories").select("*").in("category_id", catIds);
+      if (subsError) throw subsError;
 
-      const { data: subcategories, error: subcategoriesError } = await supabase
-        .from("subcategories")
-        .select("id, description, display_order, is_active")
-        .eq("category_id", category.id)
-        .order("display_order");
-      if (subcategoriesError) throw subcategoriesError;
+      if ((subs ?? []).length > 0) {
+        const subRows = (subs ?? []).map((s) => {
+          const newId = generateUUID();
+          subcategoryMap.set(s.id, newId);
+          return { ...s, id: newId, category_id: categoryMap.get(s.category_id) };
+        });
+        const { error: insSubsError } = await supabase.from("subcategories").insert(subRows);
+        if (insSubsError) throw insSubsError;
+        stats.subcategorias = subRows.length;
 
-      for (const subcategory of subcategories ?? []) {
-        const { data: newSubcategory, error: newSubcategoryError } = await supabase
-          .from("subcategories")
-          .insert({
-            description: subcategory.description,
-            display_order: subcategory.display_order,
-            is_active: subcategory.is_active,
-            category_id: newCategory.id,
-          })
-          .select("id")
-          .single();
-        if (newSubcategoryError) throw newSubcategoryError;
-        if (!newSubcategory) continue;
-        totalSubs += 1;
+        const subIds = (subs ?? []).map((s) => s.id);
+        const { data: prods, error: prodsError } = await supabase.from("products").select("*").in("subcategory_id", subIds);
+        if (prodsError) throw prodsError;
 
-        const { data: products, error: productsError } = await supabase
-          .from("products")
-          .select("description, unit_price, price_mode, is_active")
-          .eq("subcategory_id", subcategory.id);
-        if (productsError) throw productsError;
-
-        if ((products ?? []).length > 0) {
-          const rows = (products ?? []).map((product) => ({ ...product, subcategory_id: newSubcategory.id }));
-          const { error: insertProductsError } = await supabase.from("products").insert(rows);
-          if (insertProductsError) throw insertProductsError;
-          totalProducts += rows.length;
+        if ((prods ?? []).length > 0) {
+          const prodRows = (prods ?? []).map((p) => {
+            const newId = generateUUID();
+            productMap.set(p.id, newId);
+            return { ...p, id: newId, subcategory_id: subcategoryMap.get(p.subcategory_id) };
+          });
+          const { error: insProdsError } = await supabase.from("products").insert(prodRows);
+          if (insProdsError) throw insProdsError;
+          stats.productos = prodRows.length;
         }
       }
     }
 
-    stats.categorias = (categories ?? []).length;
-    stats.subcategorias = totalSubs;
-    stats.productos = totalProducts;
+    const menuNodeMap = new Map<string, string>();
+    const { data: nodes, error: nodesError } = await supabase.from("menu_nodes" as never).select("*").eq("branch_id", sourceBranchId).order("depth", { ascending: true });
+    if (nodesError) throw nodesError;
+
+    if ((nodes ?? []).length > 0) {
+      for (const n of nodes ?? []) {
+        menuNodeMap.set(n.id, generateUUID());
+      }
+      
+      const nodeRows = (nodes ?? []).map((n) => ({
+        ...n,
+        id: menuNodeMap.get(n.id),
+        branch_id: targetBranchId,
+        parent_id: n.parent_id ? menuNodeMap.get(n.parent_id) : null,
+        legacy_product_id: n.legacy_product_id ? (productMap.get(n.legacy_product_id) || n.legacy_product_id) : null,
+        display_order: n.depth === 0 ? n.display_order + displayOrderOffset : n.display_order
+      }));
+
+      const maxDepth = Math.max(...(nodes ?? []).map((n) => n.depth));
+      for (let d = 0; d <= maxDepth; d++) {
+        const layer = nodeRows.filter((n) => n.depth === d);
+        if (layer.length > 0) {
+          const { error: layerError } = await supabase.from("menu_nodes" as never).insert(layer);
+          if (layerError) throw layerError;
+        }
+      }
+      stats.menu_nodos = nodeRows.length;
+
+      const oldNodeIds = (nodes ?? []).map((n) => n.id);
+      const chunkSize = 500;
+      const allNodeMods = [];
+      const allBulkProducts = [];
+      
+      for (let i = 0; i < oldNodeIds.length; i += chunkSize) {
+        const chunk = oldNodeIds.slice(i, i + chunkSize);
+        const { data: modChunk, error: modError } = await supabase.from("menu_node_modifiers" as never).select("*").in("node_id", chunk);
+        if (modError) throw modError;
+        if (modChunk) allNodeMods.push(...modChunk);
+
+        const { data: bulkChunk, error: bulkError } = await supabase.from("bulk_included_products" as never).select("*").in("node_id", chunk);
+        if (bulkError && bulkError.code !== "PGRST116" && bulkError.code !== "42P01") {
+           // Ignore relation does not exist
+        } else if (bulkChunk) {
+           allBulkProducts.push(...bulkChunk);
+        }
+      }
+
+      if (allNodeMods.length > 0) {
+        const nodeModRows = allNodeMods.map((nm) => {
+           const newNodeId = menuNodeMap.get(nm.node_id);
+           const newModId = modifierMap.get(nm.modifier_id) || nm.modifier_id;
+           const { id, ...rest } = nm;
+           return { ...rest, node_id: newNodeId, modifier_id: newModId };
+        });
+        const { error: insNodeModsError } = await supabase.from("menu_node_modifiers" as never).insert(nodeModRows);
+        if (insNodeModsError) throw insNodeModsError;
+        stats.asignaciones_nodos_modificadores = nodeModRows.length;
+      }
+
+      if (allBulkProducts.length > 0) {
+        const bulkRows = allBulkProducts.map((bp) => {
+           const newNodeId = menuNodeMap.get(bp.node_id);
+           const newProductId = productMap.get(bp.product_id) || bp.product_id;
+           const { id, ...rest } = bp;
+           return { ...rest, node_id: newNodeId, product_id: newProductId };
+        });
+        const { error: insBulkError } = await supabase.from("bulk_included_products" as never).insert(bulkRows);
+        if (insBulkError) throw insBulkError;
+        stats.productos_bulto = bulkRows.length;
+      }
+    }
   }
 
   return stats;
@@ -195,8 +214,7 @@ const CloneBranchCatalog = () => {
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [cloning, setCloning] = useState(false);
-  const [cleanFirst, setCleanFirst] = useState(false);
-  const [selected, setSelected] = useState<Set<CatalogKey>>(new Set(CATALOG_ITEMS.map((item) => item.key)));
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<Record<string, number> | null>(null);
   const [cloneMode, setCloneMode] = useState<CloneMode>(null);
 
@@ -208,43 +226,41 @@ const CloneBranchCatalog = () => {
     },
   });
 
-  const toggle = (key: CatalogKey) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const handleClone = async () => {
-    if (!sourceId || !targetId || selected.size === 0) return;
+  const handleCloneRequest = () => {
+    if (!sourceId || !targetId) return;
     if (sourceId === targetId) {
       toast.error("Las sucursales deben ser diferentes");
       return;
     }
+    setConfirmOpen(true);
+  };
 
-    const targetName = branches.find((branch) => branch.id === targetId)?.name;
-    const sourceName = branches.find((branch) => branch.id === sourceId)?.name;
-    const labels = CATALOG_ITEMS.filter((item) => selected.has(item.key)).map((item) => item.label).join(", ");
-    const cleanWarning = cleanFirst
-      ? `\n\nATENCION: Se eliminaran primero los datos seleccionados de "${targetName}" antes de copiar.`
-      : "";
-
-    const confirmed = window.confirm(`Copiar ${labels} de "${sourceName}" a "${targetName}"?${cleanWarning}`);
-    if (!confirmed) return;
-
+  const executeClone = async () => {
+    setConfirmOpen(false);
     setCloning(true);
     setResult(null);
     setCloneMode(null);
 
     try {
+      const { count: operationalCount, error: countError } = await supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("branch_id", targetId);
+
+      if (countError) throw countError;
+
+      if ((operationalCount ?? 0) > 0) {
+        showSystemAlert("Seguridad del Sistema El Pulpo", "ERROR CRÍTICO:\n\nLa sucursal destino ya tiene órdenes o registros operacionales guardados. \n\nPor seguridad del sistema, no se puede vaciar ni duplicar el menú en esta sucursal.");
+        setCloning(false);
+        return;
+      }
+
       const res = await supabase.functions.invoke("clone-branch-catalog", {
         body: {
           source_branch_id: sourceId,
           target_branch_id: targetId,
-          items: Array.from(selected),
-          clean_first: cleanFirst,
+          items: ["categories", "modifiers", "tables"],
+          clean_first: true,
         },
       });
 
@@ -253,13 +269,14 @@ const CloneBranchCatalog = () => {
 
       setResult(res.data.stats ?? {});
       setCloneMode("edge_function");
-      toast.success("Catalogo duplicado correctamente");
+      toast.success("Menú duplicado correctamente por el servidor.");
     } catch (edgeError: any) {
       try {
-        const stats = await cloneCatalogDirectly(sourceId, targetId, selected, cleanFirst);
+        toast.info("Ejecutando duplicacion en modo cliente local (fallback)... Puede demorar un poco.", { duration: 5000 });
+        const stats = await cloneCatalogDirectly(sourceId, targetId, true);
         setResult(stats);
         setCloneMode("direct_fallback");
-        toast.success("Catalogo duplicado correctamente");
+        toast.success("Menú duplicado correctamente.");
       } catch (fallbackError: any) {
         const message = fallbackError?.message || edgeError?.message || "Error al duplicar";
         toast.error(message);
@@ -274,15 +291,15 @@ const CloneBranchCatalog = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Copy className="h-5 w-5" />
-          Duplicar catalogo entre sucursales
+          Duplicar menú entre sucursales
         </CardTitle>
-        <CardDescription>Selecciona que elementos copiar de una sucursal a otra.</CardDescription>
+        <CardDescription>Selecciona que elementos del menú y sus dependencias copiar de una sucursal a otra.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert variant="destructive" className="border-destructive/30 bg-destructive/10">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="text-xs">
-            Si no activas la limpieza previa, los registros se <strong>agregaran</strong> a la sucursal destino y podrian duplicarse.
+            Esta operacion obligatoriamente <strong>LIMPIARÁ</strong> y eliminará todos los elementos del menú actual en la sucursal destino antes de copiar. NO se permite si la sucursal ya tiene ordenes registradas.
           </AlertDescription>
         </Alert>
 
@@ -314,40 +331,17 @@ const CloneBranchCatalog = () => {
           </Select>
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">Elementos a duplicar</label>
-          <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-            {CATALOG_ITEMS.map((item) => (
-              <label key={item.key} className="flex cursor-pointer items-center gap-2 text-sm">
-                <Checkbox checked={selected.has(item.key)} onCheckedChange={() => toggle(item.key)} />
-                {item.label}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3">
-          <div className="flex items-center gap-2">
-            <Trash2 className="h-4 w-4 text-destructive" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Limpiar destino antes de copiar</p>
-              <p className="text-xs text-muted-foreground">Elimina los items seleccionados en la sucursal destino primero</p>
-            </div>
-          </div>
-          <Switch checked={cleanFirst} onCheckedChange={setCleanFirst} />
-        </div>
-
         <Button
-          onClick={handleClone}
-          disabled={!sourceId || !targetId || selected.size === 0 || cloning}
+          onClick={handleCloneRequest}
+          disabled={!sourceId || !targetId || cloning}
           className="w-full"
-          variant={cleanFirst ? "destructive" : "default"}
+          variant="destructive"
         >
           {cloning ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Duplicando...
             </>
-          ) : cleanFirst ? "Limpiar y duplicar catalogo" : "Duplicar catalogo"}
+          ) : "Limpiar destino y duplicar menú"}
         </Button>
 
         {result && (
@@ -356,7 +350,7 @@ const CloneBranchCatalog = () => {
               <p className="font-medium text-foreground">Registros copiados:</p>
               {cloneMode && (
                 <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
-                  {cloneMode === "edge_function" ? "Modo: Edge Function" : "Modo: Fallback directo"}
+                  {cloneMode === "edge_function" ? "Modo: Servidor" : "Modo: Fallback directo"}
                 </span>
               )}
             </div>
@@ -366,9 +360,26 @@ const CloneBranchCatalog = () => {
           </div>
         )}
       </CardContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Atención: Limpieza requerida
+            </AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line text-sm text-foreground/90 font-medium">
+              {`¿Copiar el menú completo de "${branches.find(b => b.id === sourceId)?.name}" a "${branches.find(b => b.id === targetId)?.name}"?\n\nSe eliminará por completo todo el menú actual configurado en la sucursal de destino.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cloning}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={executeClone} disabled={cloning} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Aceptar y limpiar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };
 
 export default CloneBranchCatalog;
-

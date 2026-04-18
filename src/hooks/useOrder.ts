@@ -20,6 +20,7 @@ interface OrderItem {
   description_snapshot: string;
   item_note?: string | null;
   quantity: number;
+  quantity_requested?: number;
   quantity_ordered?: number;
   original_quantity?: number;
   cancelled_quantity?: number;
@@ -83,6 +84,7 @@ interface Order {
   dispatched_at?: string | null;
   paid_at?: string | null;
   cancelled_at?: string | null;
+  cancel_requested_at?: string | null;
   items: OrderItem[];
   siblings: SiblingOrder[];
 }
@@ -133,7 +135,7 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
 export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
   const { data: order, error } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, table_name_snapshot")
+    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot")
     .eq("id", orderId)
     .single() as any;
   if (error) throw error;
@@ -216,6 +218,38 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
     modifiersData = mods ?? [];
   }
 
+  const pendingRequestQtyByItem: Record<string, number> = {};
+  if (order.cancel_requested_at) {
+    const { data: pendingCancellationHeader, error: pendingCancellationHeaderError } = await supabase
+      .from("order_cancellations")
+      .select("notes")
+      .eq("order_id", orderId)
+      .eq("status", "VOIDED")
+      .ilike("notes", "[PENDING_REQUEST]%")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (pendingCancellationHeaderError) throw pendingCancellationHeaderError;
+
+    const raw = String(pendingCancellationHeader?.notes ?? "").trim();
+    if (raw.startsWith("[PENDING_REQUEST]")) {
+      const jsonPart = raw.replace(/^\[PENDING_REQUEST\]\s*/, "").trim();
+      if (jsonPart) {
+        try {
+          const parsed = JSON.parse(jsonPart) as { items?: Array<{ order_item_id?: string; quantity_cancelled?: number }> };
+          for (const requestedItem of parsed.items ?? []) {
+            const requestedItemId = String(requestedItem?.order_item_id ?? "").trim();
+            const requestedQty = Math.max(0, Math.floor(Number(requestedItem?.quantity_cancelled ?? 0)));
+            if (!requestedItemId || requestedQty <= 0) continue;
+            pendingRequestQtyByItem[requestedItemId] = (pendingRequestQtyByItem[requestedItemId] ?? 0) + requestedQty;
+          }
+        } catch {
+          // Ignore malformed payloads in notes to avoid breaking order detail rendering.
+        }
+      }
+    }
+  }
+
   const enrichedItems: OrderItem[] = items
     .map((item: any) => {
       const snapshotRow = snapshotMap[item.id];
@@ -257,6 +291,7 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
       return {
         ...item,
         quantity: unpaidActiveQuantity,
+        quantity_requested: Math.max(0, pendingRequestQtyByItem[item.id] ?? 0),
         quantity_ordered: quantityOrdered,
         original_quantity: originalQuantity,
         cancelled_quantity: cancelledQuantity,

@@ -7,6 +7,7 @@
 --   - incluye ordenes especiales y sus pagos parciales/manuales
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
+--   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
 --   - incluye movimientos entre ordenes DINE_IN por Unir/Dividir, junto con su redistribucion de historial READY/DISPATCHED
@@ -43,6 +44,10 @@
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
 --   - esto incluye anulacion total y parcial, pagos de reemplazo (`replacement_payment_id`) y desglose de devolucion en efectivo
+--   - al borrar `orders`, `order_cancellations` y `order_item_cancellations` se limpian tambien:
+--     - `orders.cancel_requested_at`
+--     - cabeceras pendientes `[PENDING_REQUEST]`
+--     - solicitudes por item usadas por el tab `Pendiente de anulacion`
 --   - al borrar orders y table_splits se eliminan tambien las divisiones reabiertas por anulacion de pago
 --   - aunque `table_splits` se limpia por compatibilidad, la base vigente de tabs/cuentas de mesa ya vive en `orders.table_order_position`
 --   - al borrar order_ready_events/order_dispatch_events y sus lineas tambien se limpia cualquier trazabilidad recreada por mover items entre ordenes
@@ -157,7 +162,7 @@ COMMIT;
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
 -- - 0 session locks/toma de control vigente en Caja
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
--- - 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
+-- - 0 solicitudes/anulaciones pendientes por item/orden, 0 payloads `[PENDING_REQUEST]`, 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
 -- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial
 -- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
 -- - 0 borradores vacios residuales capaces de seguir ocupando una mesa en overview

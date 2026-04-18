@@ -74,7 +74,23 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - los combos deben usar labels compactos tipo `Mesa X (0002)` en movil
 - `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` deben seguir alineados con el shift gate vigente.
 
-### 8. Snapshot operativo compartido y Transaccionalidad
+### 8. Anulacion de ordenes / items
+- El flujo oficial de solicitud pendiente ya es parte base del sistema:
+  - `create_pending_order_cancellation_request(...)`
+  - `request_order_cancellation(...)`
+  - `clear_pending_order_cancellation_request(...)`
+  - `list_pending_order_cancellation_requests(...)`
+- No dar exito en frontend si la base no dejo al menos una marca real:
+  - `orders.cancel_requested_at`
+  - o cabecera `[PENDING_REQUEST]` en `order_cancellations`
+- No asumir que `order_item_cancellations` siempre existe o siempre persiste detalle completo:
+  - si falta, la autorizacion debe poder reconstruir desde `notes` + snapshot operativo
+- Regla UX obligatoria:
+  - si existe al menos un item con anulacion pendiente, la orden no debe permitir agregar items, editar items, `Cerrar orden` ni `Anular orden`
+  - el item afectado debe mostrarse como `Pendiente anulacion`
+- La pestaña `Pendiente de anulacion` debe priorizar lectura directa desde base/RPC, no fallback optimista como fuente final.
+
+### 9. Snapshot operativo compartido y Transaccionalidad
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
 - Regla explicita para el modulo `Ordenes`:
@@ -84,7 +100,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - No exponer botones de modificacion (+/- o eliminar) para items despachados de manera generalizada. Su exposicion sin restriccion pertenece *solo* al ambiente buffer del modulo `Editar Orden`.
   - Esta ventana debe seguir aplicando `lockOrder` en la DB para prevenir concurrencia y no mutar BD subyacente hasta el `Aceptar cambios`.
 
-### 9. `BULK` / `A granel`
+### 10. `BULK` / `A granel`
 - No volver a tratar `A granel` como compra por unidades en UI operativa.
 - Mantener:
   - `menu_scope = 'BULK'`
@@ -92,7 +108,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - instrucciones `Entregar: ...`
   - `tray_item_type = 'C'`
 
-### 10. Comprobantes de transferencia
+### 11. Comprobantes de transferencia
 - No romper separacion entre:
   - captura
   - almacenamiento
@@ -116,12 +132,25 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - `Ordenes`
   - `Mesas`
   - cantidades movibles vs cantidades pagadas
+- Si tocas anulacion pendiente de ordenes/items, validar:
+  - `useCancellation`
+  - `useOrdersByStatus`
+  - `useOrder`
+  - `OrderItemsList`
+  - `OrderDetailPanel`
+  - `Ordenes`
+  - visibilidad real en `Pendiente de anulacion` tras recargar
 - En movil, no comprimir tablas hasta volverlas ilegibles; degradar a cards o listas compactas.
 
 ### Backend / BD
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
+- Si cambias lectura de pendientes de anulacion, documentar tambien:
+  - la RPC fuente
+  - la marca en `orders`
+  - el formato de `notes` (`[PENDING_REQUEST]`)
+  - el fallback de reconstruccion si falta `order_item_cancellations`
 
 ## Checklist minimo antes de cerrar una tarea
 1. Si hubo cambio de codigo, correr verificacion tecnica adecuada (`tsc`, tests o compilacion relevante).
@@ -129,20 +158,26 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 3. Si se toco caja, validar apertura/cobro/cierre o anulacion segun corresponda.
 4. Si se toco anulacion de pagos, validar total y parcial.
 5. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
-6. Si se toco numeracion/tabs de mesa o labels visibles de orden, validar:
+6. Si se toco anulacion pendiente de orden/item, validar:
+   - que la solicitud quede guardada en BD
+   - que aparezca en `Pendiente de anulacion`
+   - que el item muestre `Pendiente anulacion`
+   - que la orden quede bloqueada para agregar/editar/cerrar/anular
+7. Si se toco numeracion/tabs de mesa o labels visibles de orden, validar:
    - `orders.table_order_position`
    - `table_name_snapshot`
    - tabs de `Ordenes`
    - combos de `MergeSplitOrdersDialog`
    - `Mesas` / reingreso a una mesa
    - que `get_branch_tables_overview(...)` no vuelva a contar borradores vacios como ocupacion real
-7. Actualizar estos docs cuando cambie la regla base:
+8. Actualizar estos docs cuando cambie la regla base:
    - `docs/system_context.md`
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
-8. Si se tocan resets, actualizar tambien sus comentarios para reflejar:
+9. Si se tocan resets, actualizar tambien sus comentarios para reflejar:
    - anulaciones de pago
+   - solicitudes pendientes de anulacion por orden/item
    - `Unir/Dividir`
    - `table_order_position` / `table_name_snapshot` si cambia la base de ordenes de mesa
    - templates de caja

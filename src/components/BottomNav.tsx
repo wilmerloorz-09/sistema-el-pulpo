@@ -42,11 +42,18 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
     return null;
   }
 
-  const bottomNavItems = visibleItems.filter((item) => item.to === "/mesas" || item.to === "/ordenes" || item.to === "/caja" || item.to === "/editar-orden");
+  const bottomNavItems = visibleItems.slice(0, 4);
+
+  const gridColsClass = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-2',
+    3: 'grid-cols-3',
+    4: 'grid-cols-4',
+  }[bottomNavItems.length] || 'grid-cols-4';
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 overflow-hidden border-t border-orange-200/80 bg-white shadow-[0_-18px_35px_-28px_rgba(15,23,42,0.4)] safe-bottom dark:border-border dark:bg-card md:hidden">
-      <div className="mx-auto flex h-[60px] max-w-6xl items-center justify-center gap-32 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className={cn("mx-auto grid h-[60px] w-full max-w-md items-center justify-items-center gap-1 px-1", gridColsClass)}>
         {bottomNavItems.map((item) => {
           const isCaja = item.to === "/caja";
 
@@ -67,7 +74,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                 <DropdownMenuTrigger asChild>
                   <button
                     className={cn(
-                      "group flex min-w-[4.65rem] shrink-0 snap-start flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all outline-none",
+                      "group flex w-full flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-1 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all outline-none",
                       isCajaActive ? item.tone.active : item.tone.idle,
                       isCajaActive && "border-white/20 bg-gradient-to-b text-white shadow-[0_16px_34px_-24px_rgba(249,115,22,0.92)] [&>span:first-child]:bg-white/15 [&>span:first-child]:text-white"
                     )}
@@ -103,7 +110,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
               forceActive={isItemActive}
               suppressActive={!isItemActive}
               className={cn(
-                "group flex min-w-[4.65rem] shrink-0 snap-start flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all",
+                "group flex w-full flex-col items-center justify-center gap-1 rounded-[18px] border border-transparent px-1 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground transition-all",
                 item.tone.idle,
               )}
               activeClassName={cn(

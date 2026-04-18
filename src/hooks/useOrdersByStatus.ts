@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { dbSelect, supabase } from "@/services/DatabaseService";
+import { supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
@@ -86,11 +86,57 @@ export interface OrderSummary {
   items: OrderItemSummary[];
 }
 
+async function fetchRowsDirect<T = any>(
+  table: string,
+  options: {
+    select: string;
+    branchId?: string | null;
+    filters?: Array<{ column: string; op: "eq" | "in" | "is" | "neq"; value: any }>;
+    orderBy?: { column: string; ascending?: boolean };
+  },
+): Promise<T[]> {
+  let query = supabase.from(table as any).select(options.select);
+
+  if (options.branchId) {
+    query = query.eq("branch_id", options.branchId);
+  }
+
+  for (const filter of options.filters ?? []) {
+    switch (filter.op) {
+      case "eq":
+        query = query.eq(filter.column, filter.value);
+        break;
+      case "in":
+        query = query.in(filter.column, filter.value);
+        break;
+      case "is":
+        query = query.is(filter.column, filter.value);
+        break;
+      case "neq":
+        query = query.neq(filter.column, filter.value);
+        break;
+    }
+  }
+
+  if (options.orderBy) {
+    query = query.order(options.orderBy.column, {
+      ascending: options.orderBy.ascending ?? true,
+    });
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as T[];
+}
+
 export function useOrdersByStatus(status: OrderStatus | null = null) {
   const { activeBranchId } = useBranch();
 
   return useQuery({
     queryKey: ["orders", activeBranchId, status],
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
 
@@ -110,7 +156,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         return [{ column: "status", op: "eq", value: status }];
       })();
 
-      let orders = await dbSelect<{
+      let orders = await fetchRowsDirect<{
         id: string;
         order_number: number | null;
         order_code: string | null;
@@ -137,6 +183,56 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       let cancelledOrdersMeta: Record<string, { cancelled_at: string | null }> = {};
       let pendingCancellationItemsByOrder: Record<string, Record<string, number>> = {};
+      let pendingHeaders: Array<{
+        order_id: string;
+        requested_at: string | null;
+        notes: string | null;
+      }> = [];
+
+      if (pendingCancellationView) {
+        const { data: pendingHeadersData, error: pendingHeadersError } = await (supabase as any).rpc(
+          "list_pending_order_cancellation_requests",
+          { p_branch_id: activeBranchId },
+        );
+        if (pendingHeadersError) throw pendingHeadersError;
+
+        pendingHeaders = pendingHeadersData ?? [];
+
+        const pendingOrderIds = [...new Set(pendingHeaders.map((header) => header.order_id).filter(Boolean))];
+        const knownOrderIds = new Set(orders.map((order) => order.id));
+        const missingPendingOrderIds = pendingOrderIds.filter((orderId) => !knownOrderIds.has(orderId));
+
+        if (missingPendingOrderIds.length > 0) {
+          const pendingOrders = await fetchRowsDirect<{
+            id: string;
+            order_number: number | null;
+            order_code: string | null;
+            status: OrderStatus;
+            order_type: string;
+            is_special: boolean | null;
+            special_total_manual: number | null;
+            table_id: string | null;
+            table_name_snapshot: string | null;
+            created_at: string;
+            sent_to_kitchen_at: string | null;
+            ready_at: string | null;
+            dispatched_at: string | null;
+            paid_at: string | null;
+            cancelled_at: string | null;
+            cancel_requested_at: string | null;
+            total: number;
+          }>("orders", {
+            select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+            branchId: activeBranchId,
+            filters: [{ column: "id", op: "in", value: missingPendingOrderIds }],
+            orderBy: { column: "created_at", ascending: false },
+          });
+
+          if (pendingOrders.length > 0) {
+            orders = [...orders, ...pendingOrders];
+          }
+        }
+      }
 
       if (cancelledView) {
         const { data: cancellationHeaders, error: cancellationHeadersError } = await supabase
@@ -167,67 +263,26 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       }
 
       const candidatePendingOrderIds = orders
-        .filter((order) => order.status !== "CANCELLED" && order.status !== "PAID" && !!order.cancel_requested_at)
+        .filter((order) => order.status !== "CANCELLED" && order.status !== "PAID")
         .map((order) => order.id);
 
       if (candidatePendingOrderIds.length > 0) {
-        const { data: pendingHeaders, error: pendingHeadersError } = await supabase
-          .from("order_cancellations")
-          .select("id, order_id, status, notes, created_at")
-          .in("order_id", candidatePendingOrderIds)
-          .eq("status", "VOIDED")
-          .ilike("notes", "[PENDING_REQUEST]%")
-          .order("created_at", { ascending: false });
-        if (pendingHeadersError) throw pendingHeadersError;
-
-        const allPendingHeaderIds = (pendingHeaders ?? []).map((header) => header.id);
-        const pendingItemsByHeaderId: Record<string, Array<{
-          order_cancellation_id: string;
-          order_id: string;
-          order_item_id: string;
-          quantity_cancelled: number | null;
-        }>> = {};
-        const pendingHeaderById = Object.fromEntries((pendingHeaders ?? []).map((header) => [header.id, header]));
-
-        if (allPendingHeaderIds.length > 0) {
-          const { data: pendingItems, error: pendingItemsError } = await supabase
-            .from("order_item_cancellations")
-            .select("order_cancellation_id, order_id, order_item_id, quantity_cancelled")
-            .in("order_cancellation_id", allPendingHeaderIds);
-          if (pendingItemsError) throw pendingItemsError;
-
-          for (const row of pendingItems ?? []) {
-            if (!pendingItemsByHeaderId[row.order_cancellation_id]) {
-              pendingItemsByHeaderId[row.order_cancellation_id] = [];
-            }
-            pendingItemsByHeaderId[row.order_cancellation_id]!.push(row);
-          }
+        if (pendingHeaders.length === 0) {
+          const { data: pendingHeadersData, error: pendingHeadersError } = await (supabase as any).rpc(
+            "list_pending_order_cancellation_requests",
+            { p_branch_id: activeBranchId },
+          );
+          if (pendingHeadersError) throw pendingHeadersError;
+          pendingHeaders = (pendingHeadersData ?? []).filter((header: any) => candidatePendingOrderIds.includes(header.order_id));
+        } else {
+          pendingHeaders = pendingHeaders.filter((header) => candidatePendingOrderIds.includes(header.order_id));
         }
 
-        const latestPendingHeaderByOrder: Record<string, string> = {};
         for (const header of pendingHeaders ?? []) {
-          const headerRows = pendingItemsByHeaderId[header.id] ?? [];
-          const fallbackMap = headerRows.length === 0 ? parsePendingRequestItemsFromNotes(header.notes) : {};
-          const hasFallbackItems = headerRows.length > 0 || Object.keys(fallbackMap).length > 0;
-          if (!hasFallbackItems) continue;
-          if (!latestPendingHeaderByOrder[header.order_id]) {
-            latestPendingHeaderByOrder[header.order_id] = header.id;
-          }
+          const orderMap = parsePendingRequestItemsFromNotes(header.notes);
+          if (Object.keys(orderMap).length === 0) continue;
+          pendingCancellationItemsByOrder[header.order_id] = orderMap;
         }
-
-        for (const [orderId, headerId] of Object.entries(latestPendingHeaderByOrder)) {
-          const orderMap: Record<string, number> = {};
-          const headerRows = pendingItemsByHeaderId[headerId] ?? [];
-          if (headerRows.length > 0) {
-            for (const row of headerRows) {
-              orderMap[row.order_item_id] = (orderMap[row.order_item_id] ?? 0) + Number(row.quantity_cancelled ?? 0);
-            }
-          } else {
-            Object.assign(orderMap, parsePendingRequestItemsFromNotes(pendingHeaderById[headerId]?.notes ?? null));
-          }
-          pendingCancellationItemsByOrder[orderId] = orderMap;
-        }
-
       }
 
       if (pendingCancellationView) {
@@ -235,15 +290,17 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           (order) =>
             order.status !== "CANCELLED" &&
             order.status !== "PAID" &&
-            !!order.cancel_requested_at &&
-            Object.keys(pendingCancellationItemsByOrder[order.id] ?? {}).length > 0,
+            (
+              !!order.cancel_requested_at ||
+              Object.keys(pendingCancellationItemsByOrder[order.id] ?? {}).length > 0
+            )
         );
       }
 
       const orderIds = orders.map((order) => order.id);
       if (orderIds.length === 0) return [];
 
-      const items = await dbSelect<{
+      const items = await fetchRowsDirect<{
         id: string;
         order_id: string;
         product_id?: string | null;
@@ -386,10 +443,11 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               const isTakeoutDispatchedOnCancelledTab =
                 cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
 
-              const pendingRequestedItems = pendingCancellationView
-                ? pendingCancellationItemsByOrder[order.id] ?? null
-                : pendingCancellationItemsByOrder[order.id] ?? null;
-              const pendingRequestedQuantity = Math.max(0, pendingRequestedItems?.[item.id] ?? 0);
+              const pendingRequestedItems = pendingCancellationItemsByOrder[order.id] ?? null;
+              const hasDraftItems = Object.keys(pendingRequestedItems ?? {}).length > 0;
+              const pendingRequestedQuantity = hasDraftItems
+                ? Math.max(0, pendingRequestedItems?.[item.id] ?? 0)
+                : unpaidActiveQuantity;
 
               const displayQuantity = cancelledView
                 ? isTakeoutDispatchedOnCancelledTab
@@ -516,10 +574,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             quantity: item.quantity,
             quantity_total: Number((item as any).activeQuantity ?? item.quantity ?? 0),
             quantity_requested: pendingCancellationView
-              ? Math.max(
-                  0,
-                  (pendingCancellationItemsByOrder[order.id] ?? {})[item.id] ?? item.quantity ?? 0,
-                )
+               ? (Object.keys(pendingCancellationItemsByOrder[order.id] ?? {}).length > 0
+                  ? Math.max(0, (pendingCancellationItemsByOrder[order.id] ?? {})[item.id] ?? 0)
+                  : item.quantity)
               : undefined,
             quantity_dispatched: Math.max(
               0,
@@ -581,6 +638,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         })
         .filter((order) => {
           if (order.items.length === 0) {
+            if (pendingCancellationView && order.cancel_requested_at) {
+              return true;
+            }
             return false;
           }
           if (dispatchedView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED") {

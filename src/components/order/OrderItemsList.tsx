@@ -14,6 +14,7 @@ interface OrderItem {
   description_snapshot: string;
   item_note?: string | null;
   quantity: number;
+  quantity_requested?: number;
   quantity_ordered?: number;
   quantity_sent?: number;
   quantity_ready_available?: number;
@@ -39,18 +40,23 @@ interface Props {
   alwaysShowControls?: boolean;
 }
 
-type OrderItemStage = "sent" | "partial" | "dispatched" | "draft";
+type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation";
 
 function formatLineTotal(unitPrice: number, quantity: number) {
   return (Number(unitPrice ?? 0) * Number(quantity ?? 0)).toFixed(2);
 }
 
 function getOrderItemStage(item: OrderItem): OrderItemStage {
+  const requestedQty = Math.max(0, Number(item.quantity_requested ?? 0));
   const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
   const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
 
   if (item.status === "DRAFT") {
     return "draft";
+  }
+
+  if (item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION" || requestedQty > 0) {
+    return "pendingCancellation";
   }
 
   if (dispatchedQty > 0 && remainingQty === 0) {
@@ -81,6 +87,11 @@ function getOrderItemStageStyles(stage: OrderItemStage) {
         card: "border-emerald-200 bg-emerald-50/30",
         badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
       };
+    case "pendingCancellation":
+      return {
+        card: "border-fuchsia-200 bg-fuchsia-50/40",
+        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+      };
     default:
       return {
         card: "border-orange-200 bg-white",
@@ -99,6 +110,8 @@ function getOrderItemStageLabel(stage: OrderItemStage) {
       return "Despacho parcial";
     case "dispatched":
       return "Despachado";
+    case "pendingCancellation":
+      return "Pendiente anulacion";
   }
 }
 
@@ -112,6 +125,8 @@ function getOrderItemStageLegendClass(stage: OrderItemStage) {
       return "border-amber-200 bg-amber-100 text-amber-900";
     case "dispatched":
       return "border-emerald-200 bg-emerald-100 text-emerald-900";
+    case "pendingCancellation":
+      return "border-fuchsia-200 bg-fuchsia-100 text-fuchsia-900";
   }
 }
 
@@ -148,7 +163,10 @@ const OrderItemsList = ({
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
         const showControls = isPending || alwaysShowControls;
-        const isRequestedCancel = item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION";
+        const isRequestedCancel =
+          item.status === "ITEM_PENDING_CANCELLATION" ||
+          item.status === "PENDING_CANCELLATION" ||
+          Math.max(0, Number(item.quantity_requested ?? 0)) > 0;
         const canCancelOperational = !isPending && !isRequestedCancel && !!onRequestCancel && !disableOperationalCancel;
         const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
         const draftDisabled = isPending && disableDraftEditing;

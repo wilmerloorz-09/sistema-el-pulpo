@@ -7,6 +7,8 @@
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
+--   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
+--   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo
 --   - incluye movimientos entre ordenes DINE_IN por `Unir/Dividir`
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
@@ -55,6 +57,11 @@
 --   - mesero: anulacion directa solo en categorias habilitadas y mientras no toque cantidades ya despachadas
 --   - items/ordenes despachados: requieren autorizacion si quien opera no tiene autoridad directa
 --   - administrador, supervisor y usuario con can_authorize_order_cancel siguen pudiendo resolver directo
+--   - la infraestructura de solicitud pendiente sigue existiendo:
+--     - `create_pending_order_cancellation_request(...)`
+--     - `request_order_cancellation(...)`
+--     - `clear_pending_order_cancellation_request(...)`
+--     - `list_pending_order_cancellation_requests(...)`
 -- - LAS REGLAS DE HERENCIA DE PERMISOS POR TURNO SIGUEN EXISTIENDO EN LA ESTRUCTURA:
 --   - Mesas incluye acceso a Ordenes
 --   - Despacho incluye acceso total a Productos
@@ -270,7 +277,7 @@ COMMIT;
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion, solicitudes/anulaciones pendientes, anulaciones de pago, `Unir/Dividir` y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, `Unir/Dividir` y alertas de listo)
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 borradores vacios residuales capaces de aparecer como ocupacion real de mesa
 -- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte

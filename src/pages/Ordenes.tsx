@@ -591,35 +591,6 @@ const Ordenes = () => {
     navigate("/ordenes", { replace: true });
   }, [fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id, searchParams]);
 
-  const handleSelectMenuProduct = useCallback(async (node: MenuNode) => {
-    if (!activeBranchId) return;
-
-    setSelectedProduct(null);
-    setSelectedProductModifiers([]);
-    setSelectingProductId(node.id);
-    try {
-      const lookup = await qc.fetchQuery({
-        queryKey: ["menu-product-lookup", activeBranchId, currentMenuScope, node.id, isTrayOrder ? effectiveTrayType : "STANDARD"],
-        queryFn: () =>
-          fetchMenuProductLookup({
-            branchId: activeBranchId,
-            node,
-            isTrayOrder,
-            trayType: effectiveTrayType,
-          }),
-        staleTime: 60_000,
-        gcTime: 10 * 60_000,
-      });
-
-      setSelectedProduct(lookup.product);
-      setSelectedProductModifiers(lookup.modifiers);
-    } catch (error: any) {
-      toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
-    } finally {
-      setSelectingProductId(null);
-    }
-  }, [activeBranchId, currentMenuScope, effectiveTrayType, isTrayOrder, qc]);
-
   const bulkIncludedPreviewQuery = useQuery({
     queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id],
     queryFn: async () => {
@@ -771,6 +742,11 @@ const Ordenes = () => {
   const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
   const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
   const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
+  const hasPendingCancellationItems = itemsToUse.some((item) =>
+    item.status === "PENDING_CANCELLATION" ||
+    item.status === "ITEM_PENDING_CANCELLATION" ||
+    Math.max(0, Number((item as any).quantity_requested ?? 0)) > 0,
+  );
   const hasSentItems = itemsToUse.some((i) => i.status !== "DRAFT");
   const isSent = order.status === "SENT_TO_KITCHEN";
   const tableOrders = tableOrdersQuery.data?.length
@@ -838,7 +814,7 @@ const Ordenes = () => {
   const allSentItemsDispatched = itemsToUse
     .filter((item) => item.status !== "DRAFT")
     .every((item) => Number(item.quantity_remaining ?? 0) <= 0);
-  const canCloseOrder = canShowCloseOrder && !hasDraftItems && allSentItemsDispatched;
+  const canCloseOrder = canShowCloseOrder && !hasDraftItems && !hasPendingCancellationItems && allSentItemsDispatched;
   const isClosedForPayment =
     order.order_type === "DINE_IN" &&
     !order.is_special &&
@@ -850,7 +826,40 @@ const Ordenes = () => {
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
     !isClosedForPayment &&
+    !hasPendingCancellationItems &&
     !isLockedFromEditar;
+  const handleSelectMenuProduct = async (node: MenuNode) => {
+    if (!activeBranchId) return;
+    if (hasPendingCancellationItems) {
+      toast.error("No puedes agregar items mientras exista al menos un item con anulacion pendiente.");
+      return;
+    }
+
+    setSelectedProduct(null);
+    setSelectedProductModifiers([]);
+    setSelectingProductId(node.id);
+    try {
+      const lookup = await qc.fetchQuery({
+        queryKey: ["menu-product-lookup", activeBranchId, currentMenuScope, node.id, isTrayOrder ? effectiveTrayType : "STANDARD"],
+        queryFn: () =>
+          fetchMenuProductLookup({
+            branchId: activeBranchId,
+            node,
+            isTrayOrder,
+            trayType: effectiveTrayType,
+          }),
+        staleTime: 60_000,
+        gcTime: 10 * 60_000,
+      });
+
+      setSelectedProduct(lookup.product);
+      setSelectedProductModifiers(lookup.modifiers);
+    } catch (error: any) {
+      toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
+    } finally {
+      setSelectingProductId(null);
+    }
+  };
   const canShowConvertToSpecial =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
@@ -1260,6 +1269,8 @@ const Ordenes = () => {
     <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
       {isLockedFromEditar
         ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados desde cocina."
+        : hasPendingCancellationItems
+        ? "Esta orden tiene al menos un item con anulacion pendiente: no puedes agregar ni editar items hasta resolver la solicitud."
         : order.status === "PAID" || order.status === "CANCELLED"
         ? "Esta orden está pagada o cancelada: solo lectura (no puedes agregar ni editar ítems)."
         : "Modo consulta: no tienes permiso de operación en Órdenes para esta sucursal o tu usuario no tiene acceso operativo en el turno actual (revisa permisos del módulo Órdenes o asignación en caja)."}
@@ -1508,7 +1519,13 @@ const Ordenes = () => {
                   className="h-12 w-full gap-2 rounded-xl border-emerald-300 bg-emerald-50 font-display text-base font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
                   onClick={() => setShowCloseOrderConfirm(true)}
                   disabled={closeOrder.isPending || !canCloseOrder}
-                  title={!canCloseOrder ? "Solo puedes cerrar la orden cuando no haya items nuevos en borrador y todos los items enviados esten completamente despachados" : "Cerrar orden"}
+                  title={
+                    hasPendingCancellationItems
+                      ? "No puedes cerrar la orden mientras exista al menos un item con anulacion pendiente"
+                      : !canCloseOrder
+                        ? "Solo puedes cerrar la orden cuando no haya items nuevos en borrador y todos los items enviados esten completamente despachados"
+                        : "Cerrar orden"
+                  }
                 >
                   {closeOrder.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <CircleDollarSign className="h-5 w-5" />}
                   Cerrar orden
@@ -1519,8 +1536,14 @@ const Ordenes = () => {
                 <Button
                   variant="destructive"
                   className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-                  disabled={hasDraftItems}
-                  title={hasDraftItems ? "No puedes anular la orden mientras existan items nuevos en borrador" : "Anular orden"}
+                  disabled={hasDraftItems || hasPendingCancellationItems}
+                  title={
+                    hasPendingCancellationItems
+                      ? "No puedes anular la orden mientras exista al menos un item con anulacion pendiente"
+                      : hasDraftItems
+                        ? "No puedes anular la orden mientras existan items nuevos en borrador"
+                        : "Anular orden"
+                  }
                   onClick={() => {
                     setInlineCancelVisibleItems([]);
                     setInlineCancelQtyByItem({});

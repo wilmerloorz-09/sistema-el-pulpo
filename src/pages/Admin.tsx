@@ -161,7 +161,7 @@ const TABS: AdminTab[] = [
   },
   {
     value: "clone",
-    label: "Duplicar",
+    label: "Duplicar menú",
     icon: <Copy className="h-4 w-4" />,
     component: CloneBranchCatalog,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_global"),

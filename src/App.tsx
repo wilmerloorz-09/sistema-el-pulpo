@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -10,7 +11,7 @@ import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { useEffect, useState } from "react";
 import { initSyncListeners } from "@/services/SyncService";
-import { Download, Share2, X } from "lucide-react";
+import { Download, Share2, X, AlertTriangle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Login from "./pages/Login";
@@ -25,6 +26,45 @@ import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+export const showSystemAlert = (title: string, message: string) => {
+  window.dispatchEvent(new CustomEvent("global-alert", { detail: { title, message } }));
+};
+
+const GlobalSystemAlert = () => {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      setTitle(e.detail.title ?? "Sistema El Pulpo");
+      setMessage(e.detail.message);
+      setOpen(true);
+    };
+    window.addEventListener("global-alert", handler);
+    return () => window.removeEventListener("global-alert", handler);
+  }, []);
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            {title}
+          </AlertDialogTitle>
+          <AlertDialogDescription className="whitespace-pre-line text-sm text-foreground/90 font-medium">
+            {message}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction onClick={() => setOpen(false)}>Aceptar</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+};
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -227,6 +267,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <GlobalSystemAlert />
         <InstallPrompt />
         <SyncInit />
         <BrowserRouter>

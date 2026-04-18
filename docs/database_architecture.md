@@ -84,6 +84,12 @@
 - `order_items.tray_item_type` sigue distinguiendo `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
 - `orders.locked_for_editing` modela transaccionalidad exclusiva para evitar condiciones de carrera entre cajeros/admin y cocina/despacho durante una edicion asincrona.
+- La anulacion pendiente por item/orden usa dos marcas complementarias:
+  - `orders.cancel_requested_at` / `orders.cancel_requested_by`
+  - cabecera en `order_cancellations` con `status = 'VOIDED'` y `notes` tipo `[PENDING_REQUEST] ...`
+- `order_item_cancellations` sigue siendo el detalle ideal por item, pero ya no debe asumirse como unica fuente:
+  - si falta ese detalle, la operacion puede reconstruirse desde el payload serializado en `notes`
+- La visibilidad del tab pendiente ya no debe depender de lecturas cacheadas del cliente; la fuente oficial es `list_pending_order_cancellation_requests(...)`.
 
 ### Mesas / Unir / Dividir
 - `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas dentro de una mesa.
@@ -142,6 +148,10 @@
 - `submit_order_draft_items(...)`
 - `convert_order_to_special(...)`
 - `get_order_operational_snapshot(...)`
+- `create_pending_order_cancellation_request(...)`
+- `request_order_cancellation(...)`
+- `clear_pending_order_cancellation_request(...)`
+- `list_pending_order_cancellation_requests(...)`
 
 ### Mesas
 - `get_branch_tables_overview(...)`
@@ -212,6 +222,8 @@
 - `20260414123000_ignore_empty_draft_orders_in_tables_overview.sql`
 - `20260414133000_align_additional_table_order_permissions_with_shift_gate.sql`
 - `20260414143000_align_delete_table_order_permissions_with_shift_gate.sql`
+- `20260418130000_list_pending_order_cancellation_requests.sql`
+- `20260418143000_align_pending_cancellation_request_visibility.sql`
 
 ### Comprobantes
 - `20260404170000_add_payment_proof_capture_tables.sql`
@@ -233,4 +245,10 @@
    - historial `READY`
    - historial `DISPATCHED`
    - numeracion operativa de la orden destino
-5. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
+5. Si se toca anulacion pendiente de ordenes/items, revisar consistencia entre:
+   - `orders.cancel_requested_at`
+   - `order_cancellations`
+   - `order_item_cancellations`
+   - payload `[PENDING_REQUEST]` en `notes`
+   - policies de lectura para usuarios habilitados por shift gate
+6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.

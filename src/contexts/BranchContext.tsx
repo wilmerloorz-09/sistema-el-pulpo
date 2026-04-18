@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
 import { allowedModulesFromPermissions, type PermissionMap } from "@/lib/permissions";
+import { toast } from "sonner";
 
 interface Branch {
   id: string;
@@ -93,12 +94,32 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    const { error } = await supabase.rpc("set_my_active_branch" as never, {
-      p_branch_id: branch.id,
-    } as never);
+    // Optimistic Update
+    const prevBranchId = access.active_branch_id;
+    setAccess((prev) => ({ ...prev, active_branch_id: branch.id }));
+    localStorage.setItem("activeBranchId", branch.id);
 
-    if (error) return;
-    await fetchAccess();
+    try {
+      const { error } = await supabase.rpc("set_my_active_branch" as never, {
+        p_branch_id: branch.id,
+      } as never);
+
+      if (error) {
+        console.error("Error cambiando sucursal:", error);
+        toast.error(`No se pudo cambiar de sucursal: ${error.message}`);
+        // Revert Optimistic Update
+        setAccess((prev) => ({ ...prev, active_branch_id: prevBranchId }));
+        if (prevBranchId) localStorage.setItem("activeBranchId", prevBranchId);
+        return;
+      }
+      await fetchAccess();
+    } catch (e: any) {
+      console.error("Catch error cambiando sucursal:", e);
+      toast.error(`Error catch: ${e.message}`);
+      // Revert Optimistic Update
+      setAccess((prev) => ({ ...prev, active_branch_id: prevBranchId }));
+      if (prevBranchId) localStorage.setItem("activeBranchId", prevBranchId);
+    }
   };
 
   const activeBranch = access.branches.find((branch) => branch.id === access.active_branch_id) ?? null;

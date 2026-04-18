@@ -12,6 +12,7 @@ interface MobileMenuSheetProps {
 
 export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const location = useLocation();
   const { isDark, toggle } = useTheme();
   
@@ -24,6 +25,19 @@ export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
     setMobileMenuOpen(false);
   }, [location.pathname, location.search]);
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.changedTouches[0].screenX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX !== null) {
+      const touchEndX = e.changedTouches[0].screenX;
+      if (touchStartX - touchEndX > 50) { // Si se desliza a la izquierda más de 50px
+        setMobileMenuOpen(false);
+      }
+    }
+  };
+
   return (
     <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
       <SheetTrigger asChild>
@@ -31,7 +45,12 @@ export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
           <Menu className="h-6 w-6" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-[248px] p-0 flex flex-col bg-sidebar text-sidebar-foreground border-sidebar-border border-r">
+      <SheetContent 
+        side="left" 
+        className="w-[248px] p-0 flex flex-col bg-sidebar text-sidebar-foreground border-sidebar-border border-r"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <SheetTitle className="sr-only">Menu principal</SheetTitle>
         <SidebarNav 
           isDark={isDark} 

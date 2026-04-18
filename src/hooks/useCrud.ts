@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
+import { showSystemAlert } from "@/App";
 
 type TableName = "categories" | "subcategories" | "products" | "modifiers" | "restaurant_tables" | "payment_methods" | "denominations" | "profiles" | "user_roles" | "branches" | "user_branches";
 
@@ -35,6 +36,10 @@ function getCrudErrorMessage(error: any) {
     (message.includes("uq_branches_display_code") || constraint.includes("uq_branches_display_code"))
   ) {
     return "No se pudo crear la sucursal porque el codigo visible interno quedo duplicado. Actualiza las migraciones de la base y vuelve a intentar.";
+  }
+
+  if (typeof message === "string" && message.includes("violates foreign key constraint")) {
+    return "⛔ Acción bloqueada por seguridad: Este registro no se puede eliminar porque tiene otros datos trabajando con él (historial, cajas o configuraciones). Primero debes eliminar lo que dependa de él.";
   }
 
   return message;
@@ -104,7 +109,14 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
       qc.invalidateQueries({ queryKey: [queryKey] });
       toast.success("Eliminado correctamente");
     },
-    onError: (err: any) => toast.error(getCrudErrorMessage(err)),
+    onError: (err: any) => {
+      const msg = getCrudErrorMessage(err);
+      if (msg.includes("Acción bloqueada por seguridad")) {
+        showSystemAlert("Seguridad del Sistema El Pulpo", msg);
+      } else {
+        toast.error(msg);
+      }
+    },
   });
 
   return {

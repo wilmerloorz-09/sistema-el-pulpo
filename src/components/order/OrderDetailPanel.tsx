@@ -10,6 +10,7 @@ interface OrderItem {
   id: string;
   description_snapshot: string;
   quantity: number;
+  quantity_requested?: number;
   quantity_total?: number;
   quantity_dispatched?: number;
   quantity_remaining?: number;
@@ -157,6 +158,11 @@ export default function OrderDetailPanel({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium text-foreground">{item.description_snapshot || "Item sin nombre"}</p>
+                {Math.max(0, Number(item.quantity_requested ?? 0)) > 0 && (
+                  <Badge className="border-fuchsia-200 bg-fuchsia-100 text-fuchsia-900">
+                    Pendiente anulacion
+                  </Badge>
+                )}
               </div>
               {item.modifiers && item.modifiers.length > 0 && (
                 <div className="mt-0.5 flex flex-col text-xs text-red-600">

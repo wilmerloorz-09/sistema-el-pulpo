@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-04-15)
+## Estado operativo vigente (2026-04-18)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -77,6 +77,18 @@
   - `Enviadas`, `Despachadas`, `Pendiente de anulacion` y `Pagadas` no deben mezclar lineas que sigan en `DRAFT`
 - En listados historicos u ordenes desacopladas de mesa, el nombre visible de la mesa debe poder resolverse desde `orders.table_name_snapshot`.
 - `CancelOrderDialog` sigue el modelo de doble lista y no debe volver al esquema antiguo de inputs por fila.
+- La solicitud de anulacion pendiente ya es parte base del flujo operativo:
+  - `create_pending_order_cancellation_request(...)` registra la cabecera pendiente
+  - `request_order_cancellation(...)` deja marcada la orden con `orders.cancel_requested_at`
+  - `clear_pending_order_cancellation_request(...)` limpia la solicitud pendiente al resolverla
+  - `list_pending_order_cancellation_requests(...)` es la lectura oficial de la pestaña `Pendiente de anulacion`
+- La persistencia vigente de una solicitud pendiente usa cabecera en `order_cancellations` con:
+  - `status = 'VOIDED'`
+  - `notes` prefijado con `[PENDING_REQUEST]`
+- Si el detalle por item en `order_item_cancellations` falta o no pudo persistirse, la autorizacion debe reconstruirse desde `notes` + `get_order_operational_snapshot(...)`.
+- Regla visible base:
+  - si un item tiene solicitud pendiente, debe mostrarse como `Pendiente anulacion`
+  - mientras exista al menos un item con anulacion pendiente, la orden no debe permitir agregar items, editar items, cerrar orden ni anular orden completa
 - En la vista de detalle de una orden de mesa existe tambien `Cerrar orden`:
   - libera la mesa soltando `table_id` / `split_id`
   - deja la orden activa para cobro en `Caja`
@@ -117,7 +129,7 @@
 
 ## Cambios recientes que ya deben considerarse "base"
 
-### 2026-04-11 / 2026-04-15
+### 2026-04-11 / 2026-04-18
 - Caja:
   - la caja puede cerrarse sin cerrar el turno
   - sigue existiendo historial de aperturas y anulaciones
@@ -137,6 +149,11 @@
   - crear/eliminar cuentas adicionales de mesa ya debe respetar el mismo shift gate operativo de `Ordenes`
   - `MergeSplitOrdersDialog` ya arranca con la orden activa como origen visible y usa labels compactos `Mesa X (0002)` en combos
   - "Edición de Orden" (flujo buffered): El modulo operar modificaciones usa ahora una copia temporal en `stagedItems` y aplica bloqueos físicos (`locked_for_editing`) que deshabilitan la UI de Cocina/Despacho previniendo carreras de concurrencia. Una vez aceptados, los items nuevos ejecutan directamente el stored procedure `dispatch_order_quantities`.
+- Mesas / Ordenes:
+  - `Pendiente de anulacion` ya consulta directo a base via `list_pending_order_cancellation_requests(...)`
+  - la solicitud pendiente ya debe marcar `orders.cancel_requested_at` via `request_order_cancellation(...)`
+  - `OrderItemsList` y el detalle de orden ya muestran badge `Pendiente anulacion` por item cuando existe cantidad solicitada
+  - la UI ya debe bloquear agregar/editar items, `Cerrar orden` y `Anular orden` si existe al menos un item con solicitud pendiente
 - Caja / seguridad operativa:
   - session lock por `last_session_id` en `cash_shift_users`
 
@@ -162,6 +179,11 @@
 5. No asumir que `table_splits` siga modelando la pestaña visible principal de una mesa; despues del rework de 2026-04-12 el orden operativo vive en `orders.table_order_position`.
 6. Los resets SQL limpian datos transaccionales y metadata de comprobantes, pero los archivos del bucket `payment-proofs` se borran aparte.
 
+7. La pestaña `Pendiente de anulacion` depende de marcas reales en DB:
+   - `orders.cancel_requested_at`
+   - y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`
+   Si ninguna existe, la UI no debe dar exito falso.
+
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota:
    - `20260410183000_add_table_name_snapshot_to_orders.sql`
@@ -177,6 +199,8 @@
    - `20260414123000_ignore_empty_draft_orders_in_tables_overview.sql`
    - `20260414133000_align_additional_table_order_permissions_with_shift_gate.sql`
    - `20260414143000_align_delete_table_order_permissions_with_shift_gate.sql`
+   - `20260418130000_list_pending_order_cancellation_requests.sql`
+   - `20260418143000_align_pending_cancellation_request_visibility.sql`
 2. Si falla anulacion de pago, revisar primero:
    - Edge Function `void-payment`
    - apertura de caja del pago
@@ -185,3 +209,9 @@
    - cantidades pagadas del item
    - snapshot operativo
    - estado activo de ambas ordenes `DINE_IN`
+4. Si falla `Pendiente de anulacion`, revisar primero:
+   - `create_pending_order_cancellation_request(...)`
+   - `request_order_cancellation(...)`
+   - `list_pending_order_cancellation_requests(...)`
+   - policies `SELECT` de `order_cancellations` y `order_item_cancellations`
+   - existencia de `orders.cancel_requested_at` o cabecera `[PENDING_REQUEST]` en `order_cancellations`

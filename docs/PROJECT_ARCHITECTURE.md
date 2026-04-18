@@ -52,6 +52,16 @@
   - `Pagadas`
 - Regla vigente:
   - una linea `DRAFT` no debe aparecer en pestañas operativas posteriores aunque la orden ya tenga historial enviado/despachado
+- La solicitud pendiente de anulacion ya tiene arquitectura propia:
+  - escritura: `create_pending_order_cancellation_request(...)`
+  - marcado oficial de orden: `request_order_cancellation(...)`
+  - limpieza al resolver: `clear_pending_order_cancellation_request(...)`
+  - lectura oficial del tab: `list_pending_order_cancellation_requests(...)`
+- La cabecera pendiente vive en `order_cancellations` con `notes` prefijado por `[PENDING_REQUEST]`.
+- Si `order_item_cancellations` no existe o no pudo persistir el detalle por item, la autorizacion debe reconstruir la seleccion desde `notes` + snapshot operativo.
+- Regla de interfaz consolidada:
+  - los items con solicitud pendiente deben mostrar `Pendiente anulacion`
+  - si existe al menos un item pendiente, la orden entra en modo bloqueado para agregar/editar items, `Cerrar orden` y `Anular orden`
 - `CancelOrderDialog` y `PaymentDialog` comparten el patron de doble lista.
 - `Orden especial` sigue siendo una variante de `orders`, no un modulo aparte.
 - **Edición Transaccional Buffered**:
@@ -67,6 +77,7 @@
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
 - Esa lectura ya debe ignorar borradores vacios al resolver ocupacion operativa de mesa.
 - `Ordenes` usa una lectura separada por mesa para tabs/cuentas activas y ya no debe depender de snapshots cacheados embebidos en una sola orden.
+- La pestaña `Pendiente de anulacion` ya debe consultar directo a base via RPC y no depender de cache local para decidir visibilidad.
 - `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
 - `Cerrar orden` para cuentas de mesa opera soltando la orden de `table_id` / `split_id` y manteniendola cobrable en `Caja`.
 - El flujo `Unir/Dividir` ahora vive sobre `move_dine_in_order_items_between_orders(...)`.
@@ -127,8 +138,11 @@
 - Ordenes y mesas:
   - `src/hooks/useOrder.ts`
   - `src/hooks/useOrdersByStatus.ts`
+  - `src/hooks/useCancellation.ts`
   - `src/hooks/useTablesWithStatus.ts`
   - `src/components/order/OrderListRow.tsx`
+  - `src/components/order/OrderItemsList.tsx`
+  - `src/components/order/OrderDetailPanel.tsx`
   - `src/components/order/MergeSplitOrdersDialog.tsx`
   - `src/components/order/CancelOrderDialog.tsx`
   - `src/pages/Ordenes.tsx`
@@ -155,6 +169,13 @@
 5. Si se toca anulacion de pagos, revisar tambien reapertura de ordenes, stock de denominaciones y estado visible de mesa.
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
 7. Si se toca visualizacion de tabs/cuentas por mesa, revisar juntos `orders.table_order_position`, `useOrder`, `Ordenes.tsx`, `MergeSplitOrdersDialog` y fallbacks con `table_name_snapshot`.
+8. Si se toca anulacion de ordenes/items, revisar juntos escritura, lectura y bloqueo de UI:
+   - `useCancellation.ts`
+   - `useOrdersByStatus.ts`
+   - `useOrder.ts`
+   - `OrderItemsList.tsx`
+   - `OrderDetailPanel.tsx`
+   - `Ordenes.tsx`
 
 ## Notas de arquitectura actual
 - `BULK` ya es parte de la base operativa y no un experimento de UI.
