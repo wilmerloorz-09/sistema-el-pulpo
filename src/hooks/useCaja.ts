@@ -2677,16 +2677,16 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         throw new Error("No se pudo identificar el turno activo para tomar el control");
       }
 
-      const { error } = await supabase
-        .from("cash_shift_users" as never)
-        .update({ last_session_id: sessionId } as any)
-        .eq("shift_id", resolvedShiftId)
-        .eq("user_id", user.id);
+      const { error } = await supabase.rpc("claim_cash_session_slot" as never, {
+        p_shift_id: resolvedShiftId,
+        p_session_id: sessionId,
+      } as never);
 
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+      toast.success("Sesion de Caja activada en este dispositivo.");
     },
     onError: (err: any) => {
       console.error("Error taking caja control:", err);

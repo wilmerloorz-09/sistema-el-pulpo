@@ -4,7 +4,7 @@
 - Frontend principal: React + TypeScript + React Query.
 - Backend principal: Supabase (PostgreSQL, Auth, Storage, Realtime, RPCs, Edge Functions).
 - Backend auxiliar: `proof_capture_backend` (Python/FastAPI) para captura y OCR basico de comprobantes.
-- Estrategia arquitectonica: migracion incremental desde modelo legacy hacia `menu_nodes`, sin romper operacion diaria.
+- Estrategia arquitectonica: migracion incremental desde modelo legacy hacia `menu_nodes`, sin romper la operacion diaria.
 
 ## Capas funcionales
 
@@ -18,7 +18,7 @@
 - Capa 1: permisos efectivos por modulo/sucursal.
 - Capa 2: capacidades por turno en `cash_shift_users`.
 - `get_my_branch_shift_gate(...)` sigue siendo el gate principal para habilitar vistas operativas.
-- `cash_shift_users.last_session_id` agrega control de sesion activa/toma de control para Caja.
+- `cash_shift_users.last_session_id` agrega control de sesion activa y toma de control para Caja.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -31,19 +31,18 @@
   - `subcategories`
   - `products`
 - Regla clave:
-  - la navegacion ya ocurre sobre `menu_nodes`
+  - la navegacion ocurre sobre `menu_nodes`
   - la venta sigue cerrando sobre `products` mientras `order_items.product_id` mantenga esa FK
 
 ### 4. Modificadores
 - Catalogo base: `modifiers`.
 - Disponibilidad por nodo: `menu_node_modifiers`.
 - Seleccion real del item: `order_item_modifiers`.
-- `subcategory_modifiers` queda como herencia legacy, no como arquitectura objetivo.
 
 ### 5. Ordenes
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
 - `Ordenes` usa lista expandible y detalle inline.
-- Las pestañas del modulo `Ordenes` son etapa-dependientes:
+- Las pestanas del modulo `Ordenes` son etapa-dependientes:
   - `Borradores`
   - `Enviadas`
   - `Despachadas`
@@ -51,49 +50,39 @@
   - `Anuladas`
   - `Pagadas`
 - Regla vigente:
-  - una linea `DRAFT` no debe aparecer en pestañas operativas posteriores aunque la orden ya tenga historial enviado/despachado
+  - una linea `DRAFT` no debe aparecer en etapas posteriores
 - La solicitud pendiente de anulacion ya tiene arquitectura propia:
   - escritura: `create_pending_order_cancellation_request(...)`
-  - marcado oficial de orden: `request_order_cancellation(...)`
+  - marcado oficial: `request_order_cancellation(...)`
   - limpieza al resolver: `clear_pending_order_cancellation_request(...)`
   - lectura oficial del tab: `list_pending_order_cancellation_requests(...)`
-- La cabecera pendiente vive en `order_cancellations` con `notes` prefijado por `[PENDING_REQUEST]`.
-- Si `order_item_cancellations` no existe o no pudo persistir el detalle por item, la autorizacion debe reconstruir la seleccion desde `notes` + snapshot operativo.
 - Regla de interfaz consolidada:
   - los items con solicitud pendiente deben mostrar `Pendiente anulacion`
   - si existe al menos un item pendiente, la orden entra en modo bloqueado para agregar/editar items, `Cerrar orden` y `Anular orden`
-- `CancelOrderDialog` y `PaymentDialog` comparten el patron de doble lista.
-- `Orden especial` sigue siendo una variante de `orders`, no un modulo aparte.
-- **Edición Transaccional Buffered**:
-  - El modulo `Editar Orden` opera en un buffer aislado (`stagedItems`) en UI.
-  - Se aplica un estado persistente `orders.locked_for_editing` a la base de datos protegiendo la orden de interacciones concurrentes de cocina y despacho.
-  - Los controles de items (+/- y eliminar) eliminan la protección pasiva e ignoran incondicionalmente el estado actual del item dentro de este modulo de edición aislando las mutaciones de cantidad a memoria hasta su finalizacion.
-  - Los diffs se comprometen de manera batch al pulsar `Aceptar cambios`, y se invoca instantáneamente el Auto-Despacho (via RPC) para los items añadidos tardíamente.
 
-### 6. Mesas y divisiones
+### 6. Editar Orden
+- `Editar Orden` es una arquitectura buffered, no una mutacion inline sobre la orden activa.
+- El modulo trabaja con `stagedItems` en memoria.
+- La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina y Despacho.
+- Los items originales despachados o cerrados permanecen sin controles directos de cantidad.
+- Los items nuevos agregados dentro de la sesion si pueden usar `+/-`, eliminar e input de cantidad.
+- Al pulsar `Aceptar cambios`:
+  - se comprometen los diffs en batch
+  - se registran las anulaciones derivadas del buffer
+  - los items nuevos pasan directo a estado operativo, no vuelven a mesa
+- El modulo usa `Aceptar cambios` como accion principal; `Enviar` no debe mostrarse ahi.
+
+### 7. Mesas y divisiones
 - `restaurant_tables` sigue siendo la entidad fisica real.
-- `table_splits` queda como soporte legacy / compatibilidad, pero ya no es la base principal para la visualizacion de cuentas activas dentro de una mesa.
+- `table_splits` queda como soporte legacy, pero ya no es la base principal para visualizacion de cuentas activas.
 - El orden visible actual de cuentas de mesa vive en `orders.table_order_position`.
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
-- Esa lectura ya debe ignorar borradores vacios al resolver ocupacion operativa de mesa.
-- `Ordenes` usa una lectura separada por mesa para tabs/cuentas activas y ya no debe depender de snapshots cacheados embebidos en una sola orden.
-- La pestaña `Pendiente de anulacion` ya debe consultar directo a base via RPC y no depender de cache local para decidir visibilidad.
+- Esa lectura ya ignora borradores vacios al resolver ocupacion operativa de mesa.
 - `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
-- `Cerrar orden` para cuentas de mesa opera soltando la orden de `table_id` / `split_id` y manteniendola cobrable en `Caja`.
-- El flujo `Unir/Dividir` ahora vive sobre `move_dine_in_order_items_between_orders(...)`.
-- Esa RPC:
-  - mueve items entre ordenes `DINE_IN`
-  - preserva modificadores
-  - redistribuye historial `READY` y `DISPATCHED`
-  - desde la version actual solo mueve cantidades no pagadas
-  - asigna `order_number` / `order_code` a destino si deja de ser borrador operativo
-- `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` ya deben respetar el mismo shift gate operativo que el resto de `Ordenes`.
-- `MergeSplitOrdersDialog` es la superficie de esta operacion en desktop/movil:
-  - debe iniciar con la orden activa como origen cuando se abre desde una orden
-  - no debe seguir forzando esa orden despues de la primera interaccion del usuario
-  - usa labels compactos `Mesa X (0002)` para los combos de seleccion
+- `Cerrar orden` para cuentas de mesa suelta `table_id` / `split_id` y mantiene la orden cobrable en `Caja`.
+- El flujo `Unir/Dividir` vive sobre `move_dine_in_order_items_between_orders(...)`.
 
-### 7. Caja
+### 8. Caja
 - `Caja` se divide en:
   - apertura/resumen del turno
   - ordenes por cobrar
@@ -102,13 +91,31 @@
   - anulacion de pagos
 - Diferencia de arquitectura vigente:
   - el turno puede seguir abierto aunque la caja se cierre
-  - `close_cash_register(...)` ya no bloquea por ordenes pendientes
-  - cerrar turno sigue siendo una decision operativa separada
-- Plantillas de apertura:
+  - `close_cash_register(...)` no equivale a cierre de turno
+- La caja fisica se compone desde `cash_shift_denoms.qty_current`.
+- Las plantillas de apertura viven en:
   - `cash_register_templates`
   - `cash_register_template_denoms`
+- El resumen ya usa efectivo neto aplicado, no `tendered` bruto.
 
-### 8. Anulacion de pagos
+### 9. Reportes de caja
+- La generacion del reporte vive en `src/pages/Caja.tsx`.
+- Existen dos modos:
+  - `shift`: reporte consolidado del turno
+  - `opening`: reporte por apertura de caja
+- El reporte consolidado:
+  - consolida aperturas cerradas del turno
+  - conserva la tabla `Historial de aperturas`
+- El reporte por apertura:
+  - filtra pagos y movimientos por rango temporal de la apertura
+  - sube el detalle de la apertura al encabezado
+  - agrega una segunda hoja con detalle de monedas y billetes al cierre
+  - incluye fila total en la tabla de denominaciones
+- La UI expone:
+  - boton global de consolidado
+  - boton de reimpresion por apertura cerrada
+
+### 10. Anulacion de pagos
 - Flujo de dos pasos:
   - solicitud: `request_void_payment(...)`
   - autorizacion + ejecucion: Edge Function `void-payment` -> RPC `approve_and_void_payment(...)`
@@ -118,9 +125,8 @@
   - devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda parte activa del pago
   - reapertura de orden / mesa si el saldo vuelve a estar pendiente
-- `CompletedPaymentsList` y `PaymentReversalModal` son la superficie visible de este flujo.
 
-### 9. Comprobantes de transferencia
+### 11. Comprobantes de transferencia
 - `PaymentDialog` puede preparar una sesion provisional de pago con comprobante.
 - Persistencia:
   - `payment_capture_requests`
@@ -128,7 +134,7 @@
 - Procesamiento:
   - Storage privado `payment-proofs`
   - OCR basico opcional con `tesseract`
-- `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo posterior.
+- `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo.
 
 ## Componentes y hooks clave
 - Catalogo:
@@ -140,7 +146,6 @@
   - `src/hooks/useOrdersByStatus.ts`
   - `src/hooks/useCancellation.ts`
   - `src/hooks/useTablesWithStatus.ts`
-  - `src/components/order/OrderListRow.tsx`
   - `src/components/order/OrderItemsList.tsx`
   - `src/components/order/OrderDetailPanel.tsx`
   - `src/components/order/MergeSplitOrdersDialog.tsx`
@@ -153,13 +158,13 @@
   - `src/components/caja/CompletedPaymentsList.tsx`
   - `src/components/caja/PaymentReversalModal.tsx`
   - `src/components/caja/ShiftSummary.tsx`
+  - `src/components/caja/CashRegisterOpeningHistory.tsx`
+  - `src/components/caja/OpenShiftForm.tsx`
   - `src/pages/Caja.tsx`
 - Shell y gate:
   - `src/components/AppLayout.tsx`
   - `src/components/BottomNav.tsx`
   - `src/hooks/useBranchShiftGate.ts`
-- Backend auxiliar:
-  - `proof_capture_backend/app/...`
 
 ## Principios vigentes
 1. Refactor incremental, no corte brusco del modelo legacy.
@@ -168,17 +173,5 @@
 4. Si una regla cruza `Ordenes`, `Despacho`, `Caja` y `Mesas`, debe apoyarse en snapshot operativo comun.
 5. Si se toca anulacion de pagos, revisar tambien reapertura de ordenes, stock de denominaciones y estado visible de mesa.
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
-7. Si se toca visualizacion de tabs/cuentas por mesa, revisar juntos `orders.table_order_position`, `useOrder`, `Ordenes.tsx`, `MergeSplitOrdersDialog` y fallbacks con `table_name_snapshot`.
-8. Si se toca anulacion de ordenes/items, revisar juntos escritura, lectura y bloqueo de UI:
-   - `useCancellation.ts`
-   - `useOrdersByStatus.ts`
-   - `useOrder.ts`
-   - `OrderItemsList.tsx`
-   - `OrderDetailPanel.tsx`
-   - `Ordenes.tsx`
-
-## Notas de arquitectura actual
-- `BULK` ya es parte de la base operativa y no un experimento de UI.
-- El shell responsive (`sidebar` >= `768px`, `bottom nav` < `768px`) es solo frontend; no introduce persistencia.
-- El ticket termico de 80mm y la permanencia del modal tras el pago exitoso siguen siendo comportamiento base esperado.
-- En movil, el menu hamburguesa de `Ordenes` ya es una superficie valida para exponer acciones de cuenta como `Mover Items/Mesa`.
+7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final.
+8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.

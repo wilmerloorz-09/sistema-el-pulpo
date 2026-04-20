@@ -15,7 +15,7 @@ interface Props {
     level: AccessLevel;
   };
   requiresOpenShift?: boolean;
-  requiredShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja">;
+  requiredShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canEditOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja">;
 }
 
 const MODULE_FALLBACK_PATH: Record<string, string> = {
@@ -34,6 +34,7 @@ const MODULE_FALLBACK_PATH: Record<string, string> = {
 const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number], string> = {
   canServeTables: "Mesas",
   canAccessOrders: "Ordenes",
+  canEditOrders: "Editar Ordenes",
   canDispatchOrders: "Despacho",
   canManageProducts: "Productos",
   canUseCaja: "Caja",

@@ -34,6 +34,8 @@ export function usePreferredHomePath() {
       preferredPath = "/mesas";
     } else if (hasSupervisorBypass || gate?.canAccessOrders) {
       preferredPath = "/ordenes";
+    } else if (hasSupervisorBypass || gate?.canEditOrders) {
+      preferredPath = "/editar-orden";
     } else if (canAccessDispatch) {
       preferredPath = "/despacho";
     } else if (hasSupervisorBypass || gate?.canManageProducts) {

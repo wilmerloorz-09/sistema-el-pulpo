@@ -30,6 +30,8 @@ interface Props {
   title?: string;
   description?: string;
   openingHistory?: CashRegisterOpeningHistoryEntry[];
+  onRegenerateShiftReport?: (() => void) | null;
+  onReprintOpeningReport?: ((entry: CashRegisterOpeningHistoryEntry) => void) | null;
 }
 
 export default function OpenShiftForm({
@@ -43,6 +45,8 @@ export default function OpenShiftForm({
   title = "Abrir Caja",
   description = "Ingresa el conteo inicial de caja",
   openingHistory = [],
+  onRegenerateShiftReport = null,
+  onReprintOpeningReport = null,
 }: Props) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [selectedTemplateId, setSelectedTemplateId] = useState("manual");
@@ -97,6 +101,8 @@ export default function OpenShiftForm({
           entries={openingHistory}
           title="Historial de aperturas"
           description="Las aperturas anuladas quedan registradas para este turno."
+          onRegenerateShiftReport={onRegenerateShiftReport}
+          onReprintOpeningReport={onReprintOpeningReport}
         />
       )}
 

@@ -7,6 +7,7 @@
 --   - incluye ordenes especiales y sus pagos parciales/manuales
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
+--   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden`
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
@@ -30,6 +31,11 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
+-- - Conserva la arquitectura de reportes de caja, pero borra la base operativa que esos reportes leen:
+--   - aperturas/cierres de `cash_register_openings`
+--   - pagos del rango
+--   - movimientos de caja
+--   - composicion actual de `cash_shift_denoms`
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero, las de orden especial y el sistema de tickets (80mm)
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
@@ -170,6 +176,7 @@ COMMIT;
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales, bloqueos de edicion, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
+-- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================

@@ -302,7 +302,7 @@ const App = () => (
                 <Route
                   path="/editar-orden"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders"]}>
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canEditOrders"]}>
                       <EditarOrden />
                     </ProtectedRoute>
                   }

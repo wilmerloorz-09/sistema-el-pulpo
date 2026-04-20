@@ -1,0 +1,70 @@
+CREATE OR REPLACE FUNCTION public.claim_cash_session_slot(
+  p_shift_id uuid,
+  p_session_id text
+)
+RETURNS TABLE (
+  last_session_id text,
+  secondary_session_id text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_actor_id uuid := auth.uid();
+  v_shift_user public.cash_shift_users%ROWTYPE;
+BEGIN
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'Debes iniciar sesion para tomar el control de Caja.';
+  END IF;
+
+  IF p_shift_id IS NULL OR NULLIF(BTRIM(COALESCE(p_session_id, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'El turno y la sesion son obligatorios.';
+  END IF;
+
+  SELECT *
+  INTO v_shift_user
+  FROM public.cash_shift_users
+  WHERE shift_id = p_shift_id
+    AND user_id = v_actor_id
+    AND is_enabled = true
+    AND can_use_caja = true
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tu usuario no tiene permiso de Caja en este turno.';
+  END IF;
+
+  IF COALESCE(v_shift_user.can_double_session, false) THEN
+    IF v_shift_user.last_session_id = p_session_id OR v_shift_user.secondary_session_id = p_session_id THEN
+      NULL;
+    ELSIF NULLIF(BTRIM(COALESCE(v_shift_user.last_session_id, '')), '') IS NULL THEN
+      UPDATE public.cash_shift_users
+      SET last_session_id = p_session_id
+      WHERE id = v_shift_user.id;
+    ELSIF NULLIF(BTRIM(COALESCE(v_shift_user.secondary_session_id, '')), '') IS NULL THEN
+      UPDATE public.cash_shift_users
+      SET secondary_session_id = p_session_id
+      WHERE id = v_shift_user.id;
+    ELSE
+      UPDATE public.cash_shift_users
+      SET secondary_session_id = p_session_id
+      WHERE id = v_shift_user.id;
+    END IF;
+  ELSE
+    UPDATE public.cash_shift_users
+    SET last_session_id = p_session_id,
+        secondary_session_id = NULL
+    WHERE id = v_shift_user.id;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    csu.last_session_id,
+    csu.secondary_session_id
+  FROM public.cash_shift_users csu
+  WHERE csu.id = v_shift_user.id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.claim_cash_session_slot(uuid, text) TO authenticated;

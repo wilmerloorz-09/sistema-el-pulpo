@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { CashRegisterOpeningHistoryEntry } from "@/hooks/useCaja";
 import { Clock3, FileText, ShieldAlert, UserRound } from "lucide-react";
 
@@ -8,6 +9,8 @@ interface Props {
   description?: string;
   className?: string;
   compact?: boolean;
+  onRegenerateShiftReport?: (() => void) | null;
+  onReprintOpeningReport?: ((entry: CashRegisterOpeningHistoryEntry) => void) | null;
 }
 
 function formatDateTime(value: string | null) {
@@ -39,8 +42,12 @@ export default function CashRegisterOpeningHistory({
   description = "Aqui ves las aperturas registradas en este turno.",
   className = "",
   compact = false,
+  onRegenerateShiftReport = null,
+  onReprintOpeningReport = null,
 }: Props) {
   if (entries.length === 0) return null;
+
+  const hasClosedEntry = entries.some((entry) => entry.status === "cerrada");
 
   return (
     <div className={`${compact ? "space-y-2 rounded-xl border border-rose-100 bg-white/90 p-2.5 shadow-sm" : "space-y-3 rounded-2xl border border-rose-100 bg-white/85 p-3 shadow-sm"} ${className}`.trim()}>
@@ -49,7 +56,14 @@ export default function CashRegisterOpeningHistory({
           <p className="text-sm font-semibold text-foreground">{title}</p>
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
-        <span className="text-xs text-muted-foreground">{entries.length} registro(s)</span>
+        <div className="flex items-center gap-2">
+          {hasClosedEntry && onRegenerateShiftReport && (
+            <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg px-3 text-xs" onClick={onRegenerateShiftReport}>
+              Reporte consolidado
+            </Button>
+          )}
+          <span className="text-xs text-muted-foreground">{entries.length} registro(s)</span>
+        </div>
       </div>
 
       <div className={compact ? "max-h-[240px] space-y-1.5 overflow-y-auto pr-1" : "space-y-2"}>
@@ -72,6 +86,17 @@ export default function CashRegisterOpeningHistory({
                     <Badge variant="secondary" className="border-emerald-200 text-emerald-700">
                       Actual
                     </Badge>
+                  )}
+                  {entry.status === "cerrada" && onReprintOpeningReport && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 rounded-lg px-2.5 text-[11px]"
+                      onClick={() => onReprintOpeningReport(entry)}
+                    >
+                      Reimprimir reporte
+                    </Button>
                   )}
                 </div>
                 <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">

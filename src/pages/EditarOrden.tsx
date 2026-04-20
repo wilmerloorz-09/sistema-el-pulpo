@@ -75,7 +75,7 @@ const EditarOrden = () => {
   const [isVoidedOrdersOpen, setIsVoidedOrdersOpen] = useState(false);
   const canOperateMesas =
     canOperate(permissions, "mesas")
-    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canEditOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {

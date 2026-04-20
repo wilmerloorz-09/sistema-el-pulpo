@@ -7,6 +7,7 @@
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
+--   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden`
 --   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo
@@ -16,6 +17,7 @@
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 --   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - incluye templates persistentes de apertura de caja y su composicion por denominacion
+--   - deja sin base transaccional los reportes de caja por apertura y el consolidado por turno
 --   - incluye auditoria de cierre de turno (closed_by, closed_from_device, closed_from_user_agent)
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
 --   - incluye todos los alcances de menu_nodes: `TABLE`, `TAKEOUT` y `BULK`
@@ -69,6 +71,7 @@
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
+--   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================
 
@@ -278,6 +281,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, `Unir/Dividir` y alertas de listo)
+-- - 0 base transaccional para reimprimir reportes de caja por apertura ni consolidado por turno
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 borradores vacios residuales capaces de aparecer como ocupacion real de mesa
 -- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte

@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
+import { useCancellation } from "@/hooks/useCancellation";
 import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
@@ -340,6 +341,7 @@ const Ordenes = () => {
   const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder, lockOrder, unlockOrder } = useOrder(orderId);
+  const { cancelOrderMutation } = useCancellation();
   const trayMenuScope: MenuScope =
     effectiveTrayType === "A"
       ? "TABLE"
@@ -446,6 +448,11 @@ const Ordenes = () => {
     hasDirectCancelRole
     || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel);
   const isTrayOrder = Boolean(order?.is_tray_order);
+  const canUseEditarOrden =
+    isGlobalAdmin
+    || canManageOrders
+    || Boolean(shiftGateQuery.data?.canEditOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {
     autoCleanupOrderRef.current = order ?? null;
@@ -455,7 +462,7 @@ const Ordenes = () => {
     setRedirectingAfterDelete(false);
   }, [orderId]);
 
-  const fromEditar = searchParams.get("from") === "editar";
+  const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
 
   useEffect(() => {
     if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked) {
@@ -776,6 +783,17 @@ const Ordenes = () => {
 
   const sourceParams = fromMesas ? "&from=mesas" : fromEditar ? "&from=editar" : "";
   const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
+  const hasVoidableItemsInEditar = itemsToUse.some((item) => {
+    if (item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION") {
+      return false;
+    }
+
+    return (
+      Number(item.quantity_dispatched ?? 0) > 0 ||
+      item.status === "DISPATCHED" ||
+      item.status === "PAID"
+    );
+  });
   const isLockedFromEditar = fromEditar && !hasDispatchedItems && order.status !== "KITCHEN_DISPATCHED" && order.status !== "PAID" && order.status !== "CANCELLED";
   const canSplit =
     canOperateOrders &&
@@ -1046,8 +1064,75 @@ const Ordenes = () => {
 
   const handleAcceptEditedOrderChanges = async () => {
     try {
+      const resolveMissingMenuNodeId = async (item: {
+        product_id?: string;
+        menu_node_id?: string | null;
+        tray_item_type?: "A" | "B" | "C" | null;
+      }) => {
+        if (item.menu_node_id) return item.menu_node_id;
+        if (!item.product_id || !order?.branch_id) return null;
+
+        const preferredScope =
+          item.tray_item_type === "C"
+            ? "BULK"
+            : order.order_type === "TAKEOUT"
+              ? "TAKEOUT"
+              : "TABLE";
+
+        const { data, error } = await supabase
+          .from("menu_nodes" as never)
+          .select("id, menu_scope")
+          .eq("branch_id", order.branch_id)
+          .eq("node_type", "product")
+          .eq("is_active", true)
+          .or(`legacy_product_id.eq.${item.product_id},id.eq.${item.product_id}`)
+          .order("display_order", { ascending: true });
+
+        if (error) throw error;
+
+        const rows = ((data ?? []) as Array<{ id: string; menu_scope?: string | null }>);
+        const preferredMatch = rows.find((row) => row.menu_scope === preferredScope);
+        return preferredMatch?.id ?? rows[0]?.id ?? null;
+      };
+
       const originalIds = new Set(order.items.map((item) => item.id));
       const stagedIds = new Set(stagedItems.map((item) => item.id));
+      const cancellationSelections = order.items
+        .filter((item) => originalIds.has(item.id) && item.status !== "DRAFT")
+        .map((item) => {
+          const staged = stagedItems.find((stagedItem) => stagedItem.id === item.id);
+          const targetQuantity = Math.max(0, Number(staged?.quantity ?? 0));
+          const currentQuantity = Math.max(0, Number(item.quantity ?? 0));
+          const quantityCancelled = Math.max(0, currentQuantity - targetQuantity);
+
+          if (quantityCancelled <= 0) return null;
+
+          return {
+            order_item_id: item.id,
+            quantity_cancelled: quantityCancelled,
+            status: item.status,
+            description_snapshot: item.description_snapshot,
+            unit_price: Number(item.unit_price ?? 0),
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (cancellationSelections.length > 0 && user) {
+        await cancelOrderMutation.mutateAsync({
+          orderId,
+          items: cancellationSelections,
+          userId: user.id,
+          cancellationType: "partial",
+          requiresAuthorization: false,
+          cancellationData: {
+            reason: "otro",
+            notes: isClosedForPayment
+              ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
+              : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
+            cancelledBy: user.id,
+          },
+        });
+      }
 
       // Remove draft items that were discarded while editing.
       const toRemove = order.items.filter((item) => !stagedIds.has(item.id) && item.status === "DRAFT");
@@ -1060,7 +1145,7 @@ const Ordenes = () => {
         if (!originalIds.has(staged.id)) continue;
 
         const original = order.items.find((item) => item.id === staged.id);
-        if (original && original.quantity !== staged.quantity) {
+        if (original && original.status === "DRAFT" && original.quantity !== staged.quantity) {
           await updateQuantity.mutateAsync({
             itemId: staged.id,
             quantity: staged.quantity,
@@ -1074,8 +1159,15 @@ const Ordenes = () => {
       const newAddedIds: { order_item_id: string; quantity_dispatched: number }[] = [];
 
       for (const item of toAdd) {
+        const resolvedMenuNodeId = await resolveMissingMenuNodeId(item as {
+          product_id?: string;
+          menu_node_id?: string | null;
+          tray_item_type?: "A" | "B" | "C" | null;
+        });
+
         const reqData = {
           product_id: item.product_id,
+          menu_node_id: resolvedMenuNodeId,
           description_snapshot: item.description_snapshot,
           item_note: item.item_note ?? null,
           unit_price: item.unit_price,
@@ -1515,12 +1607,12 @@ const Ordenes = () => {
                 <Button
                   variant="destructive"
                   className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-                  disabled={hasDraftItems || hasPendingCancellationItems}
+                  disabled={!hasVoidableItemsInEditar || hasPendingCancellationItems}
                   title={
                     hasPendingCancellationItems
                       ? "No puedes anular la orden mientras exista al menos un item con anulacion pendiente"
-                      : hasDraftItems
-                        ? "No puedes anular la orden mientras existan items nuevos en borrador"
+                      : !hasVoidableItemsInEditar
+                        ? "Solo puedes anular cuando existan items despachados o cerrados"
                         : "Anular orden"
                   }
                   onClick={() => {
@@ -1936,6 +2028,7 @@ const Ordenes = () => {
               {
                 id: `staged-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
                 product_id: data.product_id,
+                menu_node_id: selectedProduct?.menu_node_id ?? null,
                 description_snapshot: data.description_snapshot,
                 item_note: data.item_note ?? null,
                 quantity: data.quantity,

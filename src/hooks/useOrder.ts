@@ -271,20 +271,30 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
         ),
       );
       const unpaidActiveQuantity = Math.max(0, activeQuantity - effectivePaidQuantity);
-      const effectiveStatus = activeQuantity <= 0 ? "CANCELLED" : (item.status ?? "DRAFT");
-      const quantitySent = effectiveStatus === "DRAFT" ? 0 : quantityOrdered;
+      const quantityPendingPrepare = Math.max(0, Number(operationalMaps.pendingPrepareMap[item.id] ?? 0));
+      const quantityReadyAvailable = Math.max(0, Number(operationalMaps.readyAvailableMap[item.id] ?? 0));
       const quantityDispatched = Math.max(
         0,
         Number(operationalMaps.dispatchedTotalMap[item.id] ?? 0) - Number(operationalMaps.cancelledDispatchedMap[item.id] ?? 0),
       );
+      const hasOperationalProgress =
+        quantityDispatched > 0 ||
+        quantityReadyAvailable > 0 ||
+        (activeQuantity > 0 && quantityPendingPrepare < activeQuantity);
+      const effectiveStatus = activeQuantity <= 0
+        ? "CANCELLED"
+        : item.status === "DRAFT" && hasOperationalProgress
+          ? (quantityDispatched > 0 ? "DISPATCHED" : "SENT")
+          : (item.status ?? "DRAFT");
+      const quantitySent = effectiveStatus === "DRAFT" ? 0 : quantityOrdered;
       const quantityCancelled = Math.max(
         cancelledQuantity,
         Number(operationalMaps.cancelledTotalMap[item.id] ?? cancelledQuantity),
       );
       const quantityCancellable = Math.max(
         0,
-        Number(operationalMaps.pendingPrepareMap[item.id] ?? 0)
-          + Number(operationalMaps.readyAvailableMap[item.id] ?? 0)
+        quantityPendingPrepare
+          + quantityReadyAvailable
           + quantityDispatched,
       );
 
@@ -304,14 +314,14 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
         tray_item_type: (item.tray_item_type ?? null) as "A" | "B" | "C" | null,
         tray_container_cost: Number(item.tray_container_cost ?? 0),
         quantity_sent: quantitySent,
-        quantity_ready_available: Math.max(0, operationalMaps.readyAvailableMap[item.id] ?? 0),
+        quantity_ready_available: quantityReadyAvailable,
         quantity_dispatched: quantityDispatched,
         quantity_remaining:
           effectiveStatus === "DRAFT"
             ? Math.max(0, activeQuantity)
             : Math.max(
                 0,
-                Number(operationalMaps.pendingPrepareMap[item.id] ?? 0) + Number(operationalMaps.readyAvailableMap[item.id] ?? 0),
+                quantityPendingPrepare + quantityReadyAvailable,
               ),
         quantity_cancelled: quantityCancelled,
         quantity_cancellable: Math.min(quantityCancellable, unpaidActiveQuantity),

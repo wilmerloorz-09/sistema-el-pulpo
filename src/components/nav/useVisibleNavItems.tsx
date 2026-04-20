@@ -154,6 +154,9 @@ export function useVisibleNavItems() {
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
         }
+        if (item.to === "/editar-orden") {
+          return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canEditOrders);
+        }
         return hasSupervisorBypass
           || Boolean(shiftGateQuery.data?.canServeTables)
           || Boolean(shiftGateQuery.data?.canAccessOrders);
@@ -193,6 +196,7 @@ export function useVisibleNavItems() {
     isGlobalAdmin,
     permissions,
     shiftGateQuery.data?.canAccessOrders,
+    shiftGateQuery.data?.canEditOrders,
     shiftGateQuery.data?.canDispatchOrders,
     shiftGateQuery.data?.canManageProducts,
     shiftGateQuery.data?.canServeTables,

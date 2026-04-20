@@ -6,7 +6,6 @@
 - Identificadores operativos legibles:
   - `orders.order_number`
   - `orders.order_code`
-  - codigos visibles auxiliares donde aplique
 
 ## Dominios principales
 
@@ -33,7 +32,7 @@
   - `modifiers`
 
 ### 3. Operacion de ordenes
-- `orders` (incluye `locked_for_editing`)
+- `orders`
 - `order_items`
 - `order_item_modifiers`
 - `order_cancellations`
@@ -81,64 +80,46 @@
 - `orders.menu_scope` conserva el arbol visual usado por la orden.
 - `orders.is_special` y `orders.special_total_manual` modelan `Orden Especial`.
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
-- `order_items.tray_item_type` sigue distinguiendo `A/B/C`.
+- `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
-- `orders.locked_for_editing` modela transaccionalidad exclusiva para evitar condiciones de carrera entre cajeros/admin y cocina/despacho durante una edicion asincrona.
+- `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
   - `orders.cancel_requested_at` / `orders.cancel_requested_by`
   - cabecera en `order_cancellations` con `status = 'VOIDED'` y `notes` tipo `[PENDING_REQUEST] ...`
-- `order_item_cancellations` sigue siendo el detalle ideal por item, pero ya no debe asumirse como unica fuente:
-  - si falta ese detalle, la operacion puede reconstruirse desde el payload serializado en `notes`
-- La visibilidad del tab pendiente ya no debe depender de lecturas cacheadas del cliente; la fuente oficial es `list_pending_order_cancellation_requests(...)`.
 
 ### Mesas / Unir / Dividir
-- `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas dentro de una mesa.
-- `table_splits` sigue existiendo, pero ya no es la fuente principal de numeracion/orden de tabs activos tras el rework de 2026-04-12.
+- `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas.
+- `table_splits` sigue existiendo, pero ya no es la fuente principal de numeracion visible.
 - `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
-- `get_branch_tables_overview(...)` ya ignora borradores vacios al calcular ocupacion operativa de mesa.
+- `get_branch_tables_overview(...)` ignora borradores vacios al calcular ocupacion operativa.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre ordenes `DINE_IN`.
-- Reglas de esa RPC:
-  - ambas ordenes deben ser `DINE_IN`
-  - no pueden ser especiales
-  - deben pertenecer a la misma sucursal
-  - solo mueve cantidad operativamente disponible
-  - desde la version actual, no mueve cantidad ya comprometida por pago
-  - preserva y redistribuye `order_item_ready_events` y `order_item_dispatch_events`
-  - si la orden destino sale de borrador operativo, puede asignar `order_number` y `order_code`
-- `create_additional_dine_in_order(...)` y `delete_dine_in_table_order(...)` ya validan permiso alineado al shift gate operativo actual.
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
-- `cash_register_openings` representa historial real de aperturas/cierres/anulaciones de caja.
+- `cash_register_openings` representa historial real de aperturas, cierres y anulaciones de caja.
 - `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
-- Regla importante vigente:
-  - cerrar caja y cerrar turno ya no son la misma operacion
-  - `close_cash_register(...)` puede cerrar la caja del turno sin exigir cierre del turno
+- Cerrar caja y cerrar turno no son la misma operacion.
+- Los reportes por apertura deben reconstruirse desde:
+  - `cash_register_openings.opened_at`
+  - `cash_register_openings.closed_at`
+  - pagos dentro de ese rango
+  - movimientos dentro de ese rango
+  - `cash_shift_denoms.qty_current` para el detalle de cierre
 
 ### Anulacion de pagos
 - `payment_void_requests` concentra la solicitud y el ciclo de autorizacion/ejecucion.
-- Campos nuevos relevantes:
-  - `payment_item_selections jsonb`
+- Campos relevantes:
+  - `payment_item_selections`
   - `refund_amount`
-  - `cash_refund_detail jsonb`
+  - `cash_refund_detail`
   - `replacement_payment_id`
-- `payments` conserva el resultado:
-  - `status = 'voided'` cuando aplica
-  - notas/marcadores de auditoria (`VOID_REQUESTED`, `VOIDED`, etc.)
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
 - Las devoluciones en efectivo disminuyen `cash_shift_denoms.qty_current` y registran `cash_movements`.
 
 ### Comprobantes
 - `payment_capture_requests` usa `secure_token` y estados de ciclo de captura.
-- `payment_proofs` guarda metadata de archivo y campos OCR:
-  - `ocr_text`
-  - `analysis_status`
-  - `detected_amount`
-  - `amount_matches_expected`
-  - `analysis_summary`
-  - `analysis_error_code`
-  - `analysis_ran_at`
+- `payment_proofs` guarda metadata de archivo y campos OCR.
 
 ## RPCs y funciones clave
 
@@ -152,6 +133,7 @@
 - `request_order_cancellation(...)`
 - `clear_pending_order_cancellation_request(...)`
 - `list_pending_order_cancellation_requests(...)`
+- `dispatch_order_quantities(...)`
 
 ### Mesas
 - `get_branch_tables_overview(...)`
@@ -178,10 +160,6 @@
 - Edge Function relacionada:
   - `void-payment`
 
-### Comprobantes
-- RPCs/funciones SQL para `payment_capture_requests` y su limpieza operativa
-- backend externo `proof_capture_backend`
-
 ## Migraciones relevantes del estado actual
 
 ### Base catalogo / turnos / menus
@@ -204,7 +182,6 @@
 ### Pagos y anulaciones
 - `20260409170000_secure_payment_void_same_shift_supervisor.sql`
 - `20260409213000_fix_voided_payment_reopens_order_state.sql`
-- `20260409220000_restore_voided_dine_in_to_table_splits.sql`
 - `20260410180000_unassign_table_on_voided_payment.sql`
 - `20260411113000_block_void_payments_from_closed_openings.sql`
 - `20260411130000_single_void_per_order.sql`
@@ -224,31 +201,12 @@
 - `20260414143000_align_delete_table_order_permissions_with_shift_gate.sql`
 - `20260418130000_list_pending_order_cancellation_requests.sql`
 - `20260418143000_align_pending_cancellation_request_visibility.sql`
-
-### Comprobantes
-- `20260404170000_add_payment_proof_capture_tables.sql`
-- `proof_capture_backend/alembic/versions/20260404_000001_payment_proofs.py`
-- `proof_capture_backend/alembic/versions/20260405_000002_payment_proof_analysis_fields.py`
+- `20260418213017_guard_add_dine_in_order_item_null_menu_node.sql`
 
 ## Reglas de integridad
 1. No asumir que `menu_nodes` ya reemplazo la FK de `order_items.product_id`.
 2. No confundir cierre de caja con cierre de turno.
-3. Si se toca anulacion de pagos, revisar consistencia entre:
-   - `payments`
-   - `payment_items`
-   - `payment_void_requests`
-   - `cash_shift_denoms`
-   - `cash_movements`
-   - estado de `orders` / `table_splits`
-4. Si se toca `Unir/Dividir`, no romper:
-   - cantidades pagadas
-   - historial `READY`
-   - historial `DISPATCHED`
-   - numeracion operativa de la orden destino
-5. Si se toca anulacion pendiente de ordenes/items, revisar consistencia entre:
-   - `orders.cancel_requested_at`
-   - `order_cancellations`
-   - `order_item_cancellations`
-   - payload `[PENDING_REQUEST]` en `notes`
-   - policies de lectura para usuarios habilitados por shift gate
+3. Si se toca anulacion de pagos, revisar consistencia entre `payments`, `payment_items`, `payment_void_requests`, `cash_shift_denoms`, `cash_movements` y estado de `orders`.
+4. Si se toca `Unir/Dividir`, no romper cantidades pagadas, historial `READY` / `DISPATCHED` ni numeracion operativa.
+5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes y despacho directo de items nuevos.
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
