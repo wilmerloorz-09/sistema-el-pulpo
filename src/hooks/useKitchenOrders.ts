@@ -78,7 +78,8 @@ export function useKitchenOrders() {
 
       if (orders.length === 0) return [];
 
-      const tableIds = [...new Set(orders.map((o) => o.table_id).filter(Boolean))] as string[];
+      const tableIdSet = new Set<string>(orders.map((o: any) => o.table_id).filter(Boolean));
+      const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
         const tables = await dbSelect<{ id: string; name: string }>("restaurant_tables", {
@@ -88,11 +89,15 @@ export function useKitchenOrders() {
         tablesMap = Object.fromEntries(tables.map((t) => [t.id, t.name]));
       }
 
-      const splitIds = [...new Set(orders.map((o) => o.split_id).filter(Boolean))] as string[];
+      const splitIdSet = new Set<string>(orders.map((o: any) => o.split_id).filter(Boolean));
+      const splitIds = Array.from(splitIdSet);
       let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
-        const { data: splits } = await supabase.from("table_splits").select("id, split_code").in("id", splitIds);
-        splitsMap = Object.fromEntries((splits ?? []).map((s) => [s.id, s.split_code]));
+        const splits = await dbSelect<any>("table_splits", {
+          select: "id, split_code",
+          filters: [{ column: "id", op: "in", value: splitIds }]
+        });
+        splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
       }
 
       const orderIds = orders.map((o) => o.id);
@@ -115,14 +120,14 @@ export function useKitchenOrders() {
       const itemIds = items.map((item) => item.id);
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
-        const { data: mods } = await supabase
-          .from("order_item_modifiers")
-          .select("order_item_id, modifiers(description)")
-          .in("order_item_id", itemIds);
+        const mods = await dbSelect<any>("order_item_modifiers", {
+          select: "order_item_id, modifiers(description)",
+          filters: [{ column: "order_item_id", op: "in", value: itemIds }]
+        });
         for (const modifier of mods ?? []) {
-          const rawDescription = Array.isArray((modifier as any).modifiers)
-            ? (modifier as any).modifiers[0]?.description
-            : (modifier as any).modifiers?.description;
+          const rawDescription = Array.isArray(modifier.modifiers)
+            ? modifier.modifiers[0]?.description
+            : modifier.modifiers?.description;
           const description = String(rawDescription ?? "").trim();
           if (!description) continue;
           if (!modsMap[modifier.order_item_id]) modsMap[modifier.order_item_id] = [];

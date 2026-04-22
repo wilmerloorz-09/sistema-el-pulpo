@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { dbSelect } from "@/services/DatabaseService";
 
 interface Profile {
   id: string;
@@ -148,11 +149,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const expiringSessionRef = useRef(false);
   const validatingSingleSessionRef = useRef(false);
+  const lastWriteAtRef = useRef(0);
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
-    if (error) throw error;
-    return (data ?? null) as Profile | null;
+    const profiles = await dbSelect<any>("profiles", {
+      filters: [{ column: "id", op: "eq", value: userId }]
+    });
+    return (profiles?.[0] ?? null) as Profile | null;
   }, []);
 
   const clearSessionTracking = useCallback(() => {
@@ -174,9 +177,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem("activeBranchId");
 
     if (ownedSession?.sessionId) {
-      await supabase.rpc("clear_my_single_session" as never, {
+      await supabase.rpc("clear_my_single_session" as any, {
         p_session_id: ownedSession.sessionId,
-      } as never);
+      } as any);
     }
 
     await supabase.auth.signOut();
@@ -203,10 +206,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const registerOwnedSingleSession = useCallback(async (userId: string, sessionId?: string) => {
     const resolvedSessionId = sessionId ?? generateClientSessionId();
 
-    const { error } = await supabase.rpc("register_my_single_session" as never, {
+    const { error } = await supabase.rpc("register_my_single_session" as any, {
       p_session_id: resolvedSessionId,
       p_device_label: buildClientDeviceLabel(),
-    } as never);
+    } as any);
 
     if (error) throw error;
 
@@ -225,9 +228,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem("activeBranchId");
 
       if (ownedSession?.sessionId) {
-        await supabase.rpc("clear_my_single_session" as never, {
+        await supabase.rpc("clear_my_single_session" as any, {
           p_session_id: ownedSession.sessionId,
-        } as never);
+        } as any);
       }
 
       await supabase.auth.signOut();
@@ -362,8 +365,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       touchSessionActivity(userId);
     }
 
-    let lastWriteAt = 0;
-
     const checkSessionAge = async () => {
       const activity = readStoredSessionActivity();
 
@@ -379,8 +380,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const recordActivity = () => {
       const now = Date.now();
-      if (now - lastWriteAt < SESSION_ACTIVITY_WRITE_THROTTLE_MS) return;
-      lastWriteAt = now;
+      if (now - lastWriteAtRef.current < SESSION_ACTIVITY_WRITE_THROTTLE_MS) return;
+      lastWriteAtRef.current = now;
       touchSessionActivity(userId);
     };
 

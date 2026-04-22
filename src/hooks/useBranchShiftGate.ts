@@ -62,9 +62,9 @@ export function useBranchShiftGate() {
         };
       }
 
-      const { data, error } = await supabase.rpc("get_my_branch_shift_gate" as never, {
+      const { data, error } = await supabase.rpc("get_my_branch_shift_gate" as any, {
         p_branch_id: activeBranchId,
-      } as never);
+      } as any);
       if (error) throw error;
 
       const row = Array.isArray(data) ? data[0] : data;
@@ -97,14 +97,14 @@ export function useBranchShiftGate() {
       }
 
       const { data: shiftMetaRow, error: shiftMetaError } = await (supabase
-        .from("cash_shifts" as never)
+        .from("cash_shifts" as any)
         .select("cashier_id, capture_user_id")
         .eq("id", shiftId)
         .maybeSingle() as any);
       if (shiftMetaError) throw shiftMetaError;
 
       const { data: shiftUserRow, error: shiftUserError } = await (supabase
-        .from("cash_shift_users" as never)
+        .from("cash_shift_users" as any)
         .select("is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id")
         .eq("shift_id", shiftId)
         .eq("user_id", user.id)

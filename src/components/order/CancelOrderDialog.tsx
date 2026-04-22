@@ -276,11 +276,11 @@ export default function CancelOrderDialog({
   }, [open, loadingSnapshot, selectionScopeKey, initialSelectedQty]);
 
   const directCancelPolicyProductIds = useMemo(
-    () => [...new Set(
+    () => Array.from(new Set(
       normalizedVisibleItems
         .map((item) => String(item.product_id ?? "").trim())
-        .filter((productId) => productId.length > 0),
-    )],
+        .filter((productId) => productId.length > 0)
+    )),
     [normalizedVisibleItems],
   );
 

@@ -1,17 +1,8 @@
-/**
- * DatabaseService – Abstraction layer for data access.
- *
- * Phase 1: Read-through cache.
- *   - READ: Try Supabase first (if online), cache result locally. Fallback to IndexedDB.
- *   - WRITE: Pass-through to Supabase (offline writes come in Phase 2).
- *
- * Components should NEVER call supabase.from() directly for operational data.
- */
-
 import { supabase } from "@/integrations/supabase/client";
 import { localDb, type SyncQueueEntry } from "./localDb";
 import type { Table as DexieTable } from "dexie";
 import { generateUUID } from "@/lib/uuid";
+export { supabase };
 
 type TableName =
   | "categories"
@@ -30,7 +21,23 @@ type TableName =
   | "cash_shift_denoms"
   | "cash_movements"
   | "kitchen_notifications"
-  | "operational_losses";
+  | "operational_losses"
+  | "table_splits"
+  | "menu_nodes"
+  | "order_cancellations"
+  | "branches"
+  | "cash_shift_users"
+  | "payment_capture_requests"
+  | "profiles"
+  | "user_roles"
+  | "user_branches"
+  | "order_item_cancellations"
+  | "system_settings"
+  | "cash_register_templates"
+  | "cash_register_template_denoms"
+  | "menu_node_modifiers"
+  | "profiles"
+  | "branches";
 
 const CATALOG_TABLES: TableName[] = [
   "categories",
@@ -40,10 +47,12 @@ const CATALOG_TABLES: TableName[] = [
   "restaurant_tables",
   "denominations",
   "payment_methods",
+  "cash_register_templates",
+  "cash_register_template_denoms",
 ];
 
-function getDexieTable(table: TableName): DexieTable {
-  return (localDb as any)[table];
+function getDexieTable(table: TableName): DexieTable | undefined {
+  return (localDb as any)[table] as DexieTable | undefined;
 }
 
 function nowISO() {
@@ -124,8 +133,9 @@ async function fetchFromSupabase<T>(table: TableName, options: QueryOptions): Pr
 
 async function cacheLocally(table: TableName, records: any[], branchId?: string | null) {
   const dexieTable = getDexieTable(table);
-  const now = nowISO();
+  if (!dexieTable) return;
 
+  const now = nowISO();
   const enriched = records.map((r) => ({
     ...r,
     _sync_status: "synced" as const,
@@ -153,6 +163,7 @@ async function cacheLocally(table: TableName, records: any[], branchId?: string 
 
 async function fetchFromLocal<T>(table: TableName, options: QueryOptions): Promise<T[]> {
   const dexieTable = getDexieTable(table);
+  if (!dexieTable) return [];
 
   let collection = dexieTable.toCollection();
 
@@ -223,12 +234,14 @@ export async function dbInsert<T = any>(
 
     // Cache locally
     const dexieTable = getDexieTable(table);
-    await dexieTable.put({
-      ...(data as unknown as Record<string, unknown>),
-      _sync_status: "synced",
-      _synced_at: nowISO(),
-      _local_updated_at: nowISO(),
-    });
+    if (dexieTable) {
+      await dexieTable.put({
+        ...(data as unknown as Record<string, unknown>),
+        _sync_status: "synced",
+        _synced_at: nowISO(),
+        _local_updated_at: nowISO(),
+      });
+    }
 
     return data as T;
   }
@@ -244,6 +257,13 @@ export async function dbInsert<T = any>(
   };
 
   const dexieTable = getDexieTable(table);
+  if (!dexieTable) {
+    // If no local support, we can't really do "offline" insert as there is no queue or table.
+    // In this case, we'll have to error out or handle as online-required.
+    // For now, let's throw to be safe, but ideally these tables shouldn't be used offline.
+    throw new Error(`Table ${table} does not support offline operations.`);
+  }
+
   await dexieTable.put(localRecord);
 
   // Add to sync queue
@@ -279,17 +299,21 @@ export async function dbUpdate<T = any>(
 
     // Update local cache
     const dexieTable = getDexieTable(table);
-    await dexieTable.update(id, {
-      ...updates,
-      _sync_status: "synced",
-      _synced_at: nowISO(),
-      _local_updated_at: nowISO(),
-    });
+    if (dexieTable) {
+      await dexieTable.update(id, {
+        ...updates,
+        _sync_status: "synced",
+        _synced_at: nowISO(),
+        _local_updated_at: nowISO(),
+      });
+    }
     return;
   }
 
   // Offline
   const dexieTable = getDexieTable(table);
+  if (!dexieTable) throw new Error(`Table ${table} does not support offline operations.`);
+
   const existing = await dexieTable.get(id);
   const currentStatus = existing?._sync_status;
 
@@ -327,12 +351,14 @@ export async function dbUpsert<T = any>(
 
     if (record.id) {
       const dexieTable = getDexieTable(table);
-      await dexieTable.put({
-        ...record,
-        _sync_status: "synced",
-        _synced_at: nowISO(),
-        _local_updated_at: nowISO(),
-      });
+      if (dexieTable) {
+        await dexieTable.put({
+          ...record,
+          _sync_status: "synced",
+          _synced_at: nowISO(),
+          _local_updated_at: nowISO(),
+        });
+      }
     }
     return;
   }
@@ -360,12 +386,16 @@ export async function dbDelete(table: TableName, id: string): Promise<void> {
     if (error) throw error;
 
     const dexieTable = getDexieTable(table);
-    await dexieTable.delete(id);
+    if (dexieTable) {
+      await dexieTable.delete(id);
+    }
     return;
   }
 
   // Offline
   const dexieTable = getDexieTable(table);
+  if (!dexieTable) throw new Error(`Table ${table} does not support offline operations.`);
+
   const existing = await dexieTable.get(id);
 
   if (existing?._sync_status === "pending_create") {
@@ -534,7 +564,7 @@ export async function recalculateOrderTotal(orderId: string): Promise<number> {
   return total;
 }
 
-export { supabase } from "@/integrations/supabase/client";
+
 
 
 

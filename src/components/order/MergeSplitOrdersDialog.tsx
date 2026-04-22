@@ -265,8 +265,10 @@ export default function MergeSplitOrdersDialog({
 
       if (orders.length === 0) return [];
 
-      const tableIds = [...new Set(orders.map((order) => order.table_id).filter(Boolean))] as string[];
-      const splitIds = [...new Set(orders.map((order) => order.split_id).filter(Boolean))] as string[];
+      const tableIdSet = new Set<string>(orders.map((order) => order.table_id).filter(Boolean));
+      const tableIds = Array.from(tableIdSet);
+      const splitIdSet = new Set<string>(orders.map((order) => order.split_id).filter(Boolean));
+      const splitIds = Array.from(splitIdSet);
 
       const [tablesResult, splitsResult] = await Promise.all([
         tableIds.length > 0
@@ -507,12 +509,12 @@ export default function MergeSplitOrdersDialog({
       throw new Error("No se pudo preparar la mesa destino.");
     }
 
-    const { data, error } = await supabase.rpc("create_dine_in_order" as never, {
+    const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
       p_branch_id: activeBranchId,
       p_created_by: user.id,
       p_table_id: option.tableId,
       p_is_special: false,
-    } as never);
+    } as any);
     if (error) throw error;
 
     return String(data);

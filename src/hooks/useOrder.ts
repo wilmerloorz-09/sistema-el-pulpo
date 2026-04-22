@@ -94,30 +94,32 @@ export function getOrderQueryKey(orderId: string | null) {
 }
 
 export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
-  const { data: siblingOrders, error: siblingOrdersError } = await supabase
-    .from("orders")
-    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, order_items(id)")
-    .eq("table_id", tableId)
-    .eq("order_type", "DINE_IN")
-    .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]);
+  const siblingOrders = await dbSelect<any>("orders", {
+    select: "id, order_number, order_code, split_id, table_order_position, status, created_at, order_items(id)",
+    filters: [
+      { column: "table_id", op: "eq", value: tableId },
+      { column: "order_type", op: "eq", value: "DINE_IN" },
+      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }
+    ]
+  });
 
-  if (siblingOrdersError) throw siblingOrdersError;
   if (!siblingOrders || siblingOrders.length === 0) return [];
 
-  const splitIds = [...new Set(siblingOrders.map((sibling) => sibling.split_id).filter(Boolean))] as string[];
-  const { data: splits, error: splitsError } = await supabase
-    .from("table_splits")
-    .select("id, split_code")
-    .in("id", splitIds);
-  if (splitsError) throw splitsError;
+  const splitIds = Array.from(new Set(siblingOrders.map((sibling: any) => sibling.split_id).filter(Boolean))) as string[];
+  const splits = splitIds.length > 0 
+    ? await dbSelect("table_splits", {
+        select: "id, split_code",
+        filters: [{ column: "id", op: "in", value: splitIds }]
+      })
+    : [];
 
   return siblingOrders
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
-      order_code: (sibling as any).order_code ?? null,
-      split_code: splits?.find((split) => split.id === sibling.split_id)?.split_code ?? null,
-      table_order_position: Number((sibling as any).table_order_position ?? 0) || null,
+      order_code: sibling.order_code ?? null,
+      split_code: splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null,
+      table_order_position: Number(sibling.table_order_position ?? 0) || null,
       item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
     }))
     .sort((left, right) => {
@@ -133,12 +135,13 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
 }
 
 export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
-  const { data: order, error } = await supabase
-    .from("orders")
-    .select("id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot")
-    .eq("id", orderId)
-    .single() as any;
-  if (error) throw error;
+  const orders = await dbSelect<any>("orders", {
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
+    filters: [{ column: "id", op: "eq", value: orderId }]
+  });
+  
+  const order = orders[0];
+  if (!order) return null;
 
   const [
     tableResult,
@@ -148,25 +151,24 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
     siblings,
   ] = await Promise.all([
     order.table_id
-      ? supabase.from("restaurant_tables").select("name").eq("id", order.table_id).single()
-      : Promise.resolve({ data: null, error: null }),
+      ? dbSelect("restaurant_tables", { select: "name", filters: [{ column: "id", op: "eq", value: order.table_id }] })
+      : Promise.resolve([]),
     order.split_id
-      ? supabase.from("table_splits").select("split_code").eq("id", order.split_id).single()
-      : Promise.resolve({ data: null, error: null }),
+      ? dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] })
+      : Promise.resolve([]),
     dbSelect<any>("order_items", {
       select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
       filters: [{ column: "order_id", op: "eq", value: orderId }],
       orderBy: { column: "created_at" },
     }),
-    (supabase as any).rpc("get_order_operational_snapshot", {
+    supabase.rpc("get_order_operational_snapshot" as any, {
       p_order_id: orderId,
-    }) as Promise<{ data: OrderOperationalSnapshotRow[] | null; error: any }>,
+    }),
     order.table_id ? fetchSiblingOrders(order.table_id) : Promise.resolve([] as SiblingOrder[]),
   ]);
 
-  if (tableResult.error) throw tableResult.error;
-  if (splitResult.error) throw splitResult.error;
-  if (snapshotResult.error) throw snapshotResult.error;
+  const tableName = tableResult[0]?.name ?? order.table_name_snapshot;
+  const splitCode = (splitResult as any[])[0]?.split_code ?? null;
 
   const normalizedSnapshotRows = normalizeSnapshotRows((snapshotResult.data ?? []) as OrderOperationalSnapshotRow[]);
   const snapshotMap = Object.fromEntries(
@@ -175,25 +177,24 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
   const operationalMaps = normalizedSnapshotRows.length > 0
     ? buildOperationalMapsFromSnapshotRows(normalizedSnapshotRows)
     : EMPTY_OPERATIONAL_MAPS;
+    
   const itemIds = items.map((item: any) => item.id);
   const paidQuantityByItem: Record<string, number> = {};
 
   if (itemIds.length > 0) {
-    const { data: paymentItems, error: paymentItemsError } = await supabase
-      .from("payment_items")
-      .select("payment_id, order_item_id, quantity_paid")
-      .in("order_item_id", itemIds);
-    if (paymentItemsError) throw paymentItemsError;
+    const paymentItems = await dbSelect<any>("payment_items", {
+      select: "payment_id, order_item_id, quantity_paid",
+      filters: [{ column: "order_item_id", op: "in", value: itemIds }]
+    });
 
-    const paymentIds = [...new Set((paymentItems ?? []).map((row) => row.payment_id).filter(Boolean))];
+    const paymentIds = Array.from(new Set((paymentItems ?? []).map((row: any) => row.payment_id).filter(Boolean)));
     let blockedPaymentIds = new Set<string>();
 
     if (paymentIds.length > 0) {
-      const { data: payments, error: paymentsError } = await supabase
-        .from("payments")
-        .select("id, notes")
-        .in("id", paymentIds);
-      if (paymentsError) throw paymentsError;
+      const payments = await dbSelect<any>("payments", {
+        select: "id, notes",
+        filters: [{ column: "id", op: "in", value: paymentIds }]
+      });
 
       blockedPaymentIds = new Set(
         (payments ?? [])
@@ -210,26 +211,26 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
 
   let modifiersData: any[] = [];
   if (itemIds.length > 0) {
-    const { data: mods, error: modsError } = await supabase
-      .from("order_item_modifiers")
-      .select("id, modifier_id, order_item_id, modifiers(description)")
-      .in("order_item_id", itemIds);
-    if (modsError) throw modsError;
+    const mods = await dbSelect<any>("order_item_modifiers", {
+      select: "id, modifier_id, order_item_id, modifiers(description)",
+      filters: [{ column: "order_item_id", op: "in", value: itemIds }]
+    });
     modifiersData = mods ?? [];
   }
 
   const pendingRequestQtyByItem: Record<string, number> = {};
   if (order.cancel_requested_at) {
-    const { data: pendingCancellationHeader, error: pendingCancellationHeaderError } = await supabase
-      .from("order_cancellations")
-      .select("notes")
-      .eq("order_id", orderId)
-      .eq("status", "VOIDED")
-      .ilike("notes", "[PENDING_REQUEST]%")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (pendingCancellationHeaderError) throw pendingCancellationHeaderError;
+    const cancellations = await dbSelect<any>("order_cancellations", {
+      select: "notes",
+      filters: [
+        { column: "order_id", op: "eq", value: orderId },
+        { column: "status", op: "eq", value: "VOIDED" },
+        { column: "notes", op: "is" as any, value: "not.null" }
+      ],
+      orderBy: { column: "created_at", ascending: false }
+    });
+
+    const pendingCancellationHeader = cancellations.find(c => String(c.notes ?? "").startsWith("[PENDING_REQUEST]"));
 
     const raw = String(pendingCancellationHeader?.notes ?? "").trim();
     if (raw.startsWith("[PENDING_REQUEST]")) {
@@ -244,7 +245,7 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
             pendingRequestQtyByItem[requestedItemId] = (pendingRequestQtyByItem[requestedItemId] ?? 0) + requestedQty;
           }
         } catch {
-          // Ignore malformed payloads in notes to avoid breaking order detail rendering.
+          // Ignore
         }
       }
     }
@@ -338,8 +339,8 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
 
   return {
     ...order,
-    split_code: splitResult.data?.split_code ?? null,
-    table_name: tableResult.data?.name ?? (order as any).table_name_snapshot,
+    split_code: splitCode,
+    table_name: tableName,
     items: enrichedItems,
     siblings,
   } as Order;
@@ -368,10 +369,10 @@ export function useOrder(orderId: string | null) {
       tray_item_type?: "A" | "B" | "C";
       tray_container_cost?: number;
     }) => {
-      const shouldUseTrayRpc = query.data?.is_tray_order === true;
+      const isTrayOrder = query.data?.is_tray_order === true;
 
-      if (shouldUseTrayRpc) {
-        const { error } = await supabase.rpc("add_tray_order_item", {
+      if (isTrayOrder) {
+        const { error } = await supabase.rpc("add_tray_order_item" as any, {
           p_order_id: orderId!,
           p_product_id: params.product_id,
           p_quantity: params.quantity,
@@ -385,7 +386,7 @@ export function useOrder(orderId: string | null) {
         return;
       }
 
-      const { error } = await supabase.rpc("add_dine_in_order_item" as never, {
+      const { error } = await supabase.rpc("add_dine_in_order_item" as any, {
         p_order_id: orderId!,
         p_product_id: params.product_id,
         p_menu_node_id: params.menu_node_id ?? null,
@@ -396,7 +397,7 @@ export function useOrder(orderId: string | null) {
         p_modifier_ids: params.modifier_ids,
         p_tray_item_type: params.tray_item_type ?? null,
         p_tray_container_cost: params.tray_container_cost ?? 0,
-      } as never);
+      });
       if (error) throw error;
     },
     onMutate: async (params) => {
@@ -449,9 +450,15 @@ export function useOrder(orderId: string | null) {
 
   const removeItem = useMutation({
     mutationFn: async (itemId: string) => {
-      if (navigator.onLine) {
-        await supabase.from("order_item_modifiers").delete().eq("order_item_id", itemId);
+      const modifiers = await dbSelect<any>("order_item_modifiers", {
+        select: "id",
+        filters: [{ column: "order_item_id", op: "eq", value: itemId }]
+      });
+      
+      for (const mod of modifiers) {
+        await dbDelete("order_item_modifiers", mod.id);
       }
+      
       await dbDelete("order_items", itemId);
     },
     onMutate: async (itemId) => {
@@ -528,9 +535,9 @@ export function useOrder(orderId: string | null) {
       const draftItems = order.items.filter((item) => item.status === "DRAFT");
       if (draftItems.length === 0) return;
 
-      const { error } = await supabase.rpc("submit_order_draft_items" as never, {
+      const { error } = await supabase.rpc("submit_order_draft_items" as any, {
         p_order_id: orderId!,
-      } as never);
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -562,7 +569,7 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontro la orden a mover");
       }
 
-      const { data, error } = await supabase.rpc("move_dine_in_order_to_table", {
+      const { data, error } = await supabase.rpc("move_dine_in_order_to_table" as any, {
         p_order_id: orderId,
         p_destination_table_id: destinationTableId,
       });
@@ -625,7 +632,7 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontro la orden a convertir");
       }
 
-      const { data, error } = await supabase.rpc("convert_order_to_special", {
+      const { data, error } = await supabase.rpc("convert_order_to_special" as any, {
         p_order_id: orderId,
         p_special_total_manual: specialTotalManual,
       });
@@ -658,7 +665,7 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontro la orden base");
       }
 
-      const { data, error } = await supabase.rpc("create_additional_dine_in_order", {
+      const { data, error } = await supabase.rpc("create_additional_dine_in_order" as any, {
         p_source_order_id: orderId,
       });
 
@@ -681,7 +688,7 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontro la orden a eliminar");
       }
 
-      const { data, error } = await supabase.rpc("delete_dine_in_table_order", {
+      const { data, error } = await supabase.rpc("delete_dine_in_table_order" as any, {
         p_order_id: orderId,
       });
 
@@ -712,7 +719,7 @@ export function useOrder(orderId: string | null) {
         throw new Error("La orden ya no puede cerrarse");
       }
 
-      const { error } = await supabase.rpc("close_dine_in_order_for_payment", {
+      const { error } = await supabase.rpc("close_dine_in_order_for_payment" as any, {
         p_order_id: orderId,
       });
       if (error) throw error;
@@ -733,7 +740,7 @@ export function useOrder(orderId: string | null) {
   const lockOrder = useMutation({
     mutationFn: async () => {
       if (!orderId) return;
-      await supabase.from("orders").update({ locked_for_editing: true } as any).eq("id", orderId);
+      await dbUpdate("orders", orderId, { locked_for_editing: true });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
@@ -748,7 +755,7 @@ export function useOrder(orderId: string | null) {
   const unlockOrder = useMutation({
     mutationFn: async () => {
       if (!orderId) return;
-      await supabase.from("orders").update({ locked_for_editing: false } as any).eq("id", orderId);
+      await dbUpdate("orders", orderId, { locked_for_editing: false });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });

@@ -623,7 +623,7 @@ export default function PaymentDialog({
       return;
     }
 
-    if (shortageAmount > 0.01) {
+    if (shortageAmount > 0.005) {
       toast.error("El total recibido es menor al total a cobrar");
       return;
     }
@@ -633,7 +633,7 @@ export default function PaymentDialog({
         toast.error("Efectivo requiere registrar el monto recibido por denominaciones");
         return;
       }
-      if (totalReceived + 0.001 < cashAppliedAmount) {
+      if (totalReceived + 0.005 < cashAppliedAmount) {
         toast.error("El monto recibido en efectivo es menor al valor aplicado en efectivo");
         return;
       }
@@ -725,8 +725,8 @@ export default function PaymentDialog({
     paymentMethods.length > 0 &&
     paymentSplits.some((split) => split.amount > 0) &&
     !paying &&
-      shortageAmount <= 0.01 &&
-      (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.001 >= cashAppliedAmount))) &&
+      shortageAmount <= 0.005 &&
+      (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.005 >= cashAppliedAmount))) &&
       !(changeAmount > 0 && cannotMakeChange);
   const canConfirmPayment = canPay;
 
@@ -793,9 +793,9 @@ export default function PaymentDialog({
     if (!hasChargeSelection) return isSpecialOrder ? "Ingresa un monto para cobrar" : "Selecciona al menos una cantidad para cobrar";
     if (paymentMethods.length === 0) return "No hay metodos de pago activos";
     if (!paymentSplits.some((split) => split.amount > 0)) return "Ingresa al menos un monto de pago";
-    if (shortageAmount > 0.01) return `Faltan $${shortageAmount.toFixed(2)} por recibir`;
+    if (shortageAmount > 0.005) return `Faltan $${shortageAmount.toFixed(2)} por recibir`;
     if (cashSplit && cashAppliedAmount > 0 && !hasReceivedDenoms) return "Registra el monto recibido en efectivo";
-    if (cashSplit && cashAppliedAmount > 0 && totalReceived + 0.001 < cashAppliedAmount) {
+    if (cashSplit && cashAppliedAmount > 0 && totalReceived + 0.005 < cashAppliedAmount) {
       return `Efectivo recibido insuficiente: faltan $${(cashAppliedAmount - totalReceived).toFixed(2)}`;
     }
     if (changeAmount > 0 && cannotMakeChange) return "No hay cambio exacto disponible en caja";

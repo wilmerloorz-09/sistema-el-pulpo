@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/services/DatabaseService";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
@@ -24,20 +24,18 @@ export interface OrderItemSummary {
 }
 
 function parsePaymentNotes(notes: string | null) {
-  const segments = String(notes ?? "")
-    .split("|")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
+  const segments = String(notes ?? "").split("|").map((s) => s.trim()).filter(Boolean);
   let reversed = false;
   let voided = false;
+  let transferProofPending = false;
 
   for (const segment of segments) {
     if (segment.startsWith("REVERSED:")) reversed = true;
     if (segment.startsWith("VOIDED:")) voided = true;
+    if (segment === "TRANSFER_PROOF_PENDING:1") transferProofPending = true;
   }
 
-  return { reversed, voided };
+  return { reversed, voided, transferProofPending };
 }
 
 function parsePendingRequestItemsFromNotes(notes: string | null): Record<string, number> {
@@ -86,51 +84,9 @@ export interface OrderSummary {
   items: OrderItemSummary[];
 }
 
-async function fetchRowsDirect<T = any>(
-  table: string,
-  options: {
-    select: string;
-    branchId?: string | null;
-    filters?: Array<{ column: string; op: "eq" | "in" | "is" | "neq"; value: any }>;
-    orderBy?: { column: string; ascending?: boolean };
-  },
-): Promise<T[]> {
-  let query = supabase.from(table as any).select(options.select);
-
-  if (options.branchId) {
-    query = query.eq("branch_id", options.branchId);
-  }
-
-  for (const filter of options.filters ?? []) {
-    switch (filter.op) {
-      case "eq":
-        query = query.eq(filter.column, filter.value);
-        break;
-      case "in":
-        query = query.in(filter.column, filter.value);
-        break;
-      case "is":
-        query = query.is(filter.column, filter.value);
-        break;
-      case "neq":
-        query = query.neq(filter.column, filter.value);
-        break;
-    }
-  }
-
-  if (options.orderBy) {
-    query = query.order(options.orderBy.column, {
-      ascending: options.orderBy.ascending ?? true,
-    });
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []) as T[];
-}
-
 export function useOrdersByStatus(status: OrderStatus | null = null) {
   const { activeBranchId } = useBranch();
+  const qc = useQueryClient(); // Add useQueryClient if needed, wait, the original didn't have it.
 
   return useQuery({
     queryKey: ["orders", activeBranchId, status],
@@ -156,25 +112,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         return [{ column: "status", op: "eq", value: status }];
       })();
 
-      let orders = await fetchRowsDirect<{
-        id: string;
-        order_number: number | null;
-        order_code: string | null;
-        status: OrderStatus;
-        order_type: string;
-        is_special: boolean | null;
-        special_total_manual: number | null;
-        table_id: string | null;
-        table_name_snapshot: string | null;
-        created_at: string;
-        sent_to_kitchen_at: string | null;
-        ready_at: string | null;
-        dispatched_at: string | null;
-        paid_at: string | null;
-        cancelled_at: string | null;
-        cancel_requested_at: string | null;
-        total: number;
-      }>("orders", {
+      let orders = await dbSelect<any>("orders", {
         select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
         branchId: activeBranchId,
         filters,
@@ -183,45 +121,24 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       let cancelledOrdersMeta: Record<string, { cancelled_at: string | null }> = {};
       let pendingCancellationItemsByOrder: Record<string, Record<string, number>> = {};
-      let pendingHeaders: Array<{
-        order_id: string;
-        requested_at: string | null;
-        notes: string | null;
-      }> = [];
+      let pendingHeaders: any[] = [];
 
       if (pendingCancellationView) {
-        const { data: pendingHeadersData, error: pendingHeadersError } = await (supabase as any).rpc(
-          "list_pending_order_cancellation_requests",
+        const { data: pendingHeadersData, error: pendingHeadersError } = await supabase.rpc(
+          "list_pending_order_cancellation_requests" as any,
           { p_branch_id: activeBranchId },
         );
         if (pendingHeadersError) throw pendingHeadersError;
 
         pendingHeaders = pendingHeadersData ?? [];
 
-        const pendingOrderIds = [...new Set(pendingHeaders.map((header) => header.order_id).filter(Boolean))];
+        const pendingOrderIdSet = new Set<string>(pendingHeaders.map((header: any) => header.order_id).filter(Boolean));
+        const pendingOrderIds = Array.from(pendingOrderIdSet);
         const knownOrderIds = new Set(orders.map((order) => order.id));
         const missingPendingOrderIds = pendingOrderIds.filter((orderId) => !knownOrderIds.has(orderId));
 
         if (missingPendingOrderIds.length > 0) {
-          const pendingOrders = await fetchRowsDirect<{
-            id: string;
-            order_number: number | null;
-            order_code: string | null;
-            status: OrderStatus;
-            order_type: string;
-            is_special: boolean | null;
-            special_total_manual: number | null;
-            table_id: string | null;
-            table_name_snapshot: string | null;
-            created_at: string;
-            sent_to_kitchen_at: string | null;
-            ready_at: string | null;
-            dispatched_at: string | null;
-            paid_at: string | null;
-            cancelled_at: string | null;
-            cancel_requested_at: string | null;
-            total: number;
-          }>("orders", {
+          const pendingOrders = await dbSelect<any>("orders", {
             select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
             branchId: activeBranchId,
             filters: [{ column: "id", op: "in", value: missingPendingOrderIds }],
@@ -235,19 +152,17 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       }
 
       if (cancelledView) {
-        const { data: cancellationHeaders, error: cancellationHeadersError } = await supabase
-          .from("order_cancellations")
-          .select("order_id, status, created_at")
-          .eq("status", "APPLIED");
-
-        if (cancellationHeadersError) throw cancellationHeadersError;
+        const cancellationHeaders = await dbSelect<any>("order_cancellations", {
+          select: "order_id, status, created_at",
+          filters: [{ column: "status", op: "eq", value: "APPLIED" }]
+        });
 
         const cancelledOrderIds = new Set<string>();
         for (const header of cancellationHeaders ?? []) {
-          const orderId = (header as any).order_id as string | null;
+          const orderId = header.order_id as string | null;
           if (!orderId) continue;
           cancelledOrderIds.add(orderId);
-          const createdAt = (header as any).created_at ?? null;
+          const createdAt = header.created_at ?? null;
           const current = cancelledOrdersMeta[orderId]?.cancelled_at;
           if (!current || (createdAt && createdAt > current)) {
             cancelledOrdersMeta[orderId] = { cancelled_at: createdAt };
@@ -268,14 +183,14 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       if (candidatePendingOrderIds.length > 0) {
         if (pendingHeaders.length === 0) {
-          const { data: pendingHeadersData, error: pendingHeadersError } = await (supabase as any).rpc(
-            "list_pending_order_cancellation_requests",
+          const { data: pendingHeadersData, error: pendingHeadersError } = await supabase.rpc(
+            "list_pending_order_cancellation_requests" as any,
             { p_branch_id: activeBranchId },
           );
           if (pendingHeadersError) throw pendingHeadersError;
           pendingHeaders = (pendingHeadersData ?? []).filter((header: any) => candidatePendingOrderIds.includes(header.order_id));
         } else {
-          pendingHeaders = pendingHeaders.filter((header) => candidatePendingOrderIds.includes(header.order_id));
+          pendingHeaders = pendingHeaders.filter((header: any) => candidatePendingOrderIds.includes(header.order_id));
         }
 
         for (const header of pendingHeaders ?? []) {
@@ -300,19 +215,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       const orderIds = orders.map((order) => order.id);
       if (orderIds.length === 0) return [];
 
-      const items = await fetchRowsDirect<{
-        id: string;
-        order_id: string;
-        product_id?: string | null;
-        description_snapshot: string;
-        item_note?: string | null;
-        quantity: number;
-        unit_price?: number;
-        total: number;
-        status: string;
-        paid_at?: string | null;
-        tray_item_type?: "A" | "B" | "C" | null;
-      }>("order_items", {
+      const items = await dbSelect<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
@@ -332,21 +235,20 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       const paidQuantityByItem: Record<string, number> = {};
 
       if (itemIds.length > 0) {
-        const { data: paymentItems, error: paymentItemsError } = await supabase
-          .from("payment_items")
-          .select("payment_id, order_item_id, quantity_paid")
-          .in("order_item_id", itemIds);
-        if (paymentItemsError) throw paymentItemsError;
+        const paymentItems = await dbSelect<any>("payment_items", {
+          select: "payment_id, order_item_id, quantity_paid",
+          filters: [{ column: "order_item_id", op: "in", value: itemIds }]
+        });
 
-        const paymentIds = [...new Set((paymentItems ?? []).map((row) => row.payment_id).filter(Boolean))];
+        const paymentIdSet = new Set<string>((paymentItems ?? []).map((row: any) => row.payment_id).filter(Boolean));
+        const paymentIds = Array.from(paymentIdSet);
         let blockedPaymentIds = new Set<string>();
 
         if (paymentIds.length > 0) {
-          const { data: payments, error: paymentsError } = await supabase
-            .from("payments")
-            .select("id, notes")
-            .in("id", paymentIds);
-          if (paymentsError) throw paymentsError;
+          const payments = await dbSelect<any>("payments", {
+            select: "id, notes",
+            filters: [{ column: "id", op: "in", value: paymentIds }]
+          });
 
           blockedPaymentIds = new Set(
             (payments ?? [])
@@ -366,16 +268,15 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
-        const { data: mods, error: modsError } = await supabase
-          .from("order_item_modifiers")
-          .select("order_item_id, modifiers(description)")
-          .in("order_item_id", itemIds);
-        if (modsError) throw modsError;
+        const mods = await dbSelect<any>("order_item_modifiers", {
+          select: "order_item_id, modifiers(description)",
+          filters: [{ column: "order_item_id", op: "in", value: itemIds }]
+        });
 
         for (const modifier of mods ?? []) {
-          const rawDescription = Array.isArray((modifier as any).modifiers)
-            ? (modifier as any).modifiers[0]?.description
-            : (modifier as any).modifiers?.description;
+          const rawDescription = Array.isArray(modifier.modifiers)
+            ? modifier.modifiers[0]?.description
+            : modifier.modifiers?.description;
           const description = String(rawDescription ?? "").trim();
           if (!description) continue;
           if (!modsMap[modifier.order_item_id]) modsMap[modifier.order_item_id] = [];
@@ -383,12 +284,16 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         }
       }
 
-      const tableIds = [...new Set(orders.map((order) => order.table_id).filter(Boolean))] as string[];
+      const tableIdSet = new Set<string>(orders.map((order: any) => order.table_id).filter(Boolean));
+      const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
-        const { data: tables } = await supabase.from("restaurant_tables").select("id, name").in("id", tableIds);
+        const tables = await dbSelect<any>("restaurant_tables", {
+          select: "id, name",
+          filters: [{ column: "id", op: "in", value: tableIds }]
+        });
         if (tables) {
-          tablesMap = Object.fromEntries(tables.map((table: { id: string; name: string }) => [table.id, table.name]));
+          tablesMap = Object.fromEntries(tables.map((table: any) => [table.id, table.name]));
         }
       }
 

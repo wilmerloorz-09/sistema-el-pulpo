@@ -157,7 +157,7 @@ const MenuNodesCrud = ({
     queryKey: ["admin-menu-nodes", activeBranchId, menuScope],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("menu_nodes" as never)
+        .from("menu_nodes" as any)
         .select("*")
         .eq("branch_id", activeBranchId!)
         .eq("menu_scope", menuScope)
@@ -436,7 +436,7 @@ const MenuNodesCrud = ({
     }
 
     const { data: tableCategories, error: tableCategoriesError } = await supabase
-      .from("menu_nodes" as never)
+      .from("menu_nodes" as any)
       .select("id, parent_id, name, node_type, display_order")
       .eq("branch_id", activeBranchId)
       .eq("menu_scope", "TABLE")
@@ -552,7 +552,7 @@ const MenuNodesCrud = ({
             : null;
 
         const { data: savedMenuNode, error: menuNodeError } = await supabase
-          .from("menu_nodes" as never)
+          .from("menu_nodes" as any)
           .upsert({
             id,
             branch_id: activeBranchId,
@@ -571,7 +571,7 @@ const MenuNodesCrud = ({
               form.node_type === "product"
                 ? currentLegacyProductId
                 : null,
-          } as never)
+          } as any)
           .select("*")
           .single();
         if (menuNodeError) throw menuNodeError;
@@ -645,8 +645,8 @@ const MenuNodesCrud = ({
           if (productError) throw productError;
 
           const { error: syncLegacyRefError } = await supabase
-            .from("menu_nodes" as never)
-            .update({ legacy_product_id: legacyProductId } as never)
+            .from("menu_nodes" as any)
+            .update({ legacy_product_id: legacyProductId } as any)
             .eq("id", id);
           if (syncLegacyRefError) throw syncLegacyRefError;
         }
@@ -711,8 +711,8 @@ const MenuNodesCrud = ({
       if (!window.confirm(message)) return false;
 
       const { error: menuNodeError } = await supabase
-        .from("menu_nodes" as never)
-        .update({ is_active: nextIsActive } as never)
+        .from("menu_nodes" as any)
+        .update({ is_active: nextIsActive } as any)
         .eq("id", node.id);
       if (menuNodeError) throw menuNodeError;
 
@@ -785,7 +785,7 @@ const MenuNodesCrud = ({
 
       // 2. Delete from menu_nodes
       const { error: menuNodeError } = await supabase
-        .from("menu_nodes" as never)
+        .from("menu_nodes" as any)
         .delete()
         .eq("id", node.id);
       if (menuNodeError) throw menuNodeError;

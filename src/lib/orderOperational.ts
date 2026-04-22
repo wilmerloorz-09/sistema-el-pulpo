@@ -168,8 +168,9 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
   }
 
   try {
+    const uniqueOrderIds = Array.from(new Set(orderIds));
     const snapshots = await Promise.all(
-      [...new Set(orderIds)].map(async (orderId) => {
+      uniqueOrderIds.map(async (orderId) => {
         const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", {
           p_order_id: orderId,
         });

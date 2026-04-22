@@ -70,7 +70,7 @@ const UsersCrud = () => {
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["admin-users-access"],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("admin_list_users_access" as never);
+      const { data, error } = await supabase.rpc("admin_list_users_access" as any);
       if (error) throw error;
       return (data ?? []) as unknown as UserRow[];
     },
@@ -79,7 +79,7 @@ const UsersCrud = () => {
   const { data: catalog } = useQuery({
     queryKey: ["admin-access-catalog"],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("admin_list_access_catalog" as never);
+      const { data, error } = await supabase.rpc("admin_list_access_catalog" as any);
       if (error) throw error;
       return (data ?? { branches: [], branch_roles: [], global_roles: [] }) as unknown as AccessCatalog;
     },
@@ -143,12 +143,12 @@ const UsersCrud = () => {
 
   const saveAssignment = useMutation({
     mutationFn: async ({ user_id, branch_id, role_code }: { user_id: string; branch_id: string; role_code: string }) => {
-      const { error } = await supabase.rpc("assign_user_branch_role" as never, {
+      const { error } = await supabase.rpc("assign_user_branch_role" as any, {
         p_target_user_id: user_id,
         p_branch_id: branch_id,
         p_role_code: role_code,
         p_reason: "Asignacion desde administracion",
-      } as never);
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -163,12 +163,12 @@ const UsersCrud = () => {
 
   const removeAssignment = useMutation({
     mutationFn: async ({ user_id, branch_id, role_code }: { user_id: string; branch_id: string; role_code: string }) => {
-      const { error } = await supabase.rpc("remove_user_branch_role" as never, {
+      const { error } = await supabase.rpc("remove_user_branch_role" as any, {
         p_target_user_id: user_id,
         p_branch_id: branch_id,
         p_role_code: role_code,
         p_reason: "Remocion desde administracion",
-      } as never);
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -181,10 +181,10 @@ const UsersCrud = () => {
   const toggleAdmin = useMutation({
     mutationFn: async ({ user_id, enable }: { user_id: string; enable: boolean }) => {
       const fn = enable ? "assign_user_global_role" : "remove_user_global_role";
-      const { error } = await supabase.rpc(fn as never, {
+      const { error } = await supabase.rpc(fn as any, {
         p_target_user_id: user_id,
         p_role_code: "administrador",
-      } as never);
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {

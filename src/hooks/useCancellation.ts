@@ -4,6 +4,9 @@ import {
   notifyKitchenItemCancelled as notifyKitchenItemCancelledDB,
   notifyKitchenOrderCancelled as notifyKitchenOrderCancelledDB,
   dbSelect,
+  dbInsert,
+  dbUpdate,
+  dbDelete,
   supabase,
 } from "@/services/DatabaseService";
 import { toast } from "sonner";
@@ -152,7 +155,7 @@ function buildSelectionsFromOperationalSnapshot(
         status: "PENDING_CANCELLATION",
       } satisfies CancelOrderItemSelection;
     })
-    .filter((item): item is CancelOrderItemSelection => item !== null);
+    .filter((item) => item !== null) as CancelOrderItemSelection[];
 }
 
 function applyCancellationToOrderCache(
@@ -265,23 +268,23 @@ export function useCancellation() {
     const now = new Date().toISOString();
     const draftId = generateUUID();
 
-    const { data: existingDrafts, error: existingDraftsError } = await supabase
-      .from("order_cancellations")
-      .select("id, notes")
-      .eq("order_id", orderId)
-      .eq("status", "VOIDED")
-      .ilike("notes", "[PENDING_REQUEST]%");
-    if (existingDraftsError) throw existingDraftsError;
+    const existingDrafts = await dbSelect<any>("order_cancellations", {
+      select: "id, notes",
+      filters: [
+        { column: "order_id", op: "eq", value: orderId },
+        { column: "status", op: "eq", value: "VOIDED" },
+        { column: "notes", op: "ilike" as any, value: "[PENDING_REQUEST]%" }
+      ]
+    });
 
     const existingDraftIds = (existingDrafts ?? []).map((row) => row.id);
     const mergedItemsMap = new Map<string, number>();
 
     if (existingDraftIds.length > 0) {
-      const { data: existingDetailRows, error: existingDetailRowsError } = await supabase
-        .from("order_item_cancellations")
-        .select("order_cancellation_id, order_item_id, quantity_cancelled")
-        .in("order_cancellation_id", existingDraftIds);
-      if (existingDetailRowsError) throw existingDetailRowsError;
+      const existingDetailRows = await dbSelect<any>("order_item_cancellations", {
+        select: "order_cancellation_id, order_item_id, quantity_cancelled",
+        filters: [{ column: "order_cancellation_id", op: "in", value: existingDraftIds }]
+      });
 
       for (const row of existingDetailRows ?? []) {
         const orderItemId = String(row.order_item_id ?? "").trim();
@@ -316,20 +319,21 @@ export function useCancellation() {
     };
 
     if (existingDraftIds.length > 0) {
-      const { error: deleteDetailError } = await supabase
-        .from("order_item_cancellations")
-        .delete()
-        .in("order_cancellation_id", existingDraftIds);
-      if (deleteDetailError) throw deleteDetailError;
-
-      const { error: deleteHeaderError } = await supabase
-        .from("order_cancellations")
-        .delete()
-        .in("id", existingDraftIds);
-      if (deleteHeaderError) throw deleteHeaderError;
+      for (const id of existingDraftIds) {
+        // Bulk delete items first
+        const itemsToDelete = await dbSelect<any>("order_item_cancellations", {
+          select: "id",
+          filters: [{ column: "order_cancellation_id", op: "eq", value: id }]
+        });
+        for (const item of itemsToDelete) {
+          await dbDelete("order_item_cancellations", item.id);
+        }
+        // Then the header
+        await dbDelete("order_cancellations", id);
+      }
     }
 
-    const { error: headerError } = await supabase.from("order_cancellations").insert({
+    await dbInsert("order_cancellations", {
       id: draftId,
       order_id: orderId,
       cancellation_type: cancellationType,
@@ -338,11 +342,10 @@ export function useCancellation() {
       created_by: userId,
       status: "VOIDED",
       created_at: now,
-    } as any);
-    if (headerError) throw headerError;
+    });
 
     try {
-      const snapshotResponse = await (supabase as any).rpc("get_order_operational_snapshot", {
+      const snapshotResponse = await (supabase as any).rpc("get_order_operational_snapshot" as any, {
         p_order_id: orderId,
       });
       if (snapshotResponse.error) throw snapshotResponse.error;
@@ -410,8 +413,9 @@ export function useCancellation() {
       });
 
       if (detailRows.length > 0) {
-        const { error: detailError } = await supabase.from("order_item_cancellations").insert(detailRows as any);
-        if (detailError) throw detailError;
+        for (const row of detailRows) {
+          await dbInsert("order_item_cancellations", row);
+        }
       }
     } catch (detailPersistenceError) {
       if (
@@ -430,34 +434,17 @@ export function useCancellation() {
     const now = new Date().toISOString();
 
     try {
-      const { error } = await (supabase.from("orders") as any)
-        .update({
-          cancel_requested_by: userId,
-          cancel_requested_at: now,
-        })
-        .eq("id", orderId);
-
-      if (!error) return;
-
-      console.warn("Error en primer intento de fallback de solicitud de anulacion (RLS?):", error);
-
-      const { error: retryError } = await (supabase.from("orders") as any)
-        .update({
-          cancel_requested_at: now,
-        })
-        .eq("id", orderId);
-
-      if (retryError) {
-        console.error("Error definitivo en fallback de solicitud de anulacion:", retryError);
-        throw retryError;
-      }
+      await dbUpdate("orders", orderId, {
+        cancel_requested_by: userId,
+        cancel_requested_at: now,
+      });
     } catch (fallbackError) {
       throw fallbackError;
     }
   };
 
   const ensureOrderCancellationRequested = async (orderId: string, userId: string) => {
-    const response = await supabase.rpc("request_order_cancellation", {
+    const response = await supabase.rpc("request_order_cancellation" as any, {
       p_order_id: orderId,
       p_user_id: userId,
     });
@@ -475,24 +462,22 @@ export function useCancellation() {
     const attempts = 3;
 
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const [{ data: orderRow, error: orderError }, { data: pendingRows, error: pendingError }] = await Promise.all([
-        supabase
-          .from("orders")
-          .select("id, cancel_requested_at")
-          .eq("id", orderId)
-          .maybeSingle(),
-        supabase
-          .from("order_cancellations")
-          .select("id")
-          .eq("order_id", orderId)
-          .eq("status", "VOIDED")
-          .ilike("notes", "[PENDING_REQUEST]%")
-          .limit(1),
+      const [orderResult, pendingRows] = await Promise.all([
+        dbSelect<any>("orders", {
+          select: "id, cancel_requested_at",
+          filters: [{ column: "id", op: "eq", value: orderId }]
+        }),
+        dbSelect<any>("order_cancellations", {
+          select: "id",
+          filters: [
+            { column: "order_id", op: "eq", value: orderId },
+            { column: "status", op: "eq", value: "VOIDED" },
+            { column: "notes", op: "ilike" as any, value: "[PENDING_REQUEST]%" }
+          ]
+        }),
       ]);
 
-      if (orderError) throw orderError;
-      if (pendingError) throw pendingError;
-
+      const orderRow = Array.isArray(orderResult) ? orderResult[0] : orderResult;
       const hasOrderFlag = Boolean(orderRow?.cancel_requested_at);
       const hasPendingHeader = Array.isArray(pendingRows) && pendingRows.length > 0;
       if (hasOrderFlag || hasPendingHeader) return;
@@ -509,7 +494,7 @@ export function useCancellation() {
     const requestedItems = parsePendingRequestItemsFromNotes(notes);
     if (requestedItems.length === 0) return [];
 
-    const snapshotResponse = await (supabase as any).rpc("get_order_operational_snapshot", {
+    const snapshotResponse = await (supabase as any).rpc("get_order_operational_snapshot" as any, {
       p_order_id: orderId,
     });
     if (snapshotResponse.error) throw snapshotResponse.error;
@@ -526,7 +511,7 @@ export function useCancellation() {
       const createAuthorizationRequest = async () => {
         let requestStoredWithoutDraft = false;
 
-        const { error } = await supabase.rpc("create_pending_order_cancellation_request", {
+        const { error } = await supabase.rpc("create_pending_order_cancellation_request" as any, {
           p_order_id: orderId,
           p_user_id: userId,
           p_reason: reason,
@@ -597,7 +582,7 @@ export function useCancellation() {
       };
 
       try {
-        const { error } = await supabase.rpc("cancel_order_quantities", {
+        const { error } = await supabase.rpc("cancel_order_quantities" as any, {
           p_order_id: orderId,
           p_cancelled_by: userId,
           p_reason: reason,
@@ -676,7 +661,7 @@ export function useCancellation() {
       const createAuthorizationRequest = async () => {
         let requestStoredWithoutDraft = false;
 
-        const { error } = await supabase.rpc("create_pending_order_cancellation_request", {
+        const { error } = await supabase.rpc("create_pending_order_cancellation_request" as any, {
           p_order_id: orderId,
           p_user_id: userId,
           p_reason: reason,
@@ -758,7 +743,7 @@ export function useCancellation() {
 
       let data;
       try {
-        const response = await supabase.rpc("cancel_order_quantities", {
+        const response = await supabase.rpc("cancel_order_quantities" as any, {
           p_order_id: orderId,
           p_cancelled_by: userId,
           p_reason: reason,
@@ -835,7 +820,7 @@ export function useCancellation() {
 
   const rejectCancellationRequestMutation = useMutation({
     mutationFn: async ({ orderId }: { orderId: string }) => {
-      const { error } = await supabase.rpc("clear_pending_order_cancellation_request", {
+      const { error } = await supabase.rpc("clear_pending_order_cancellation_request" as any, {
         p_order_id: orderId,
       });
       if (error) throw error;
@@ -910,7 +895,7 @@ export function useCancellation() {
           throw new Error("No se encontro una solicitud pendiente para esta orden");
         }
 
-        const { data, error } = await supabase.rpc("cancel_order_quantities", {
+        const { data, error } = await supabase.rpc("cancel_order_quantities" as any, {
           p_order_id: orderId,
           p_cancelled_by: userId,
           p_reason: "Solicitud pendiente aprobada",
@@ -923,7 +908,7 @@ export function useCancellation() {
         });
         if (error) throw error;
 
-        const { error: clearPendingError } = await supabase.rpc("clear_pending_order_cancellation_request", {
+        const { error: clearPendingError } = await supabase.rpc("clear_pending_order_cancellation_request" as any, {
           p_order_id: orderId,
         });
         if (clearPendingError) throw clearPendingError;
@@ -1025,7 +1010,7 @@ export function useCancellation() {
         }));
       }
 
-      const { data, error } = await supabase.rpc("cancel_order_quantities", {
+      const { data, error } = await supabase.rpc("cancel_order_quantities" as any, {
         p_order_id: orderId,
         p_cancelled_by: userId,
         p_reason: draft.reason || "Sin especificar",
@@ -1038,7 +1023,7 @@ export function useCancellation() {
       });
       if (error) throw error;
 
-      const { error: clearPendingError } = await supabase.rpc("clear_pending_order_cancellation_request", {
+      const { error: clearPendingError } = await supabase.rpc("clear_pending_order_cancellation_request" as any, {
         p_order_id: orderId,
       });
       if (clearPendingError) throw clearPendingError;

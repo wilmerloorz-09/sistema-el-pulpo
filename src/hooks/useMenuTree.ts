@@ -79,7 +79,7 @@ export async function fetchMenuTreeNodes(params: {
   const includeInactive = params.includeInactive ?? false;
 
   let queryBuilder = supabase
-    .from("menu_nodes" as never)
+    .from("menu_nodes" as any)
     .select(MENU_TREE_SELECT)
     .eq("branch_id", params.branchId)
     .eq("menu_scope", menuScope)

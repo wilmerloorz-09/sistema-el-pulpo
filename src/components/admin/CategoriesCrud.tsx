@@ -1,4 +1,4 @@
-﻿import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -35,13 +35,13 @@ const CategoriesCrud = () => {
     mutationFn: async ({ current, target }: { current: Category; target: Category }) => {
       const tempOrder = -1000000 - Number(current.display_order || 0);
 
-      let error = (await supabase.from("categories").update({ display_order: tempOrder } as never).eq("id", current.id)).error;
+      let error = (await supabase.from("categories").update({ display_order: tempOrder } as any).eq("id", current.id)).error;
       if (error) throw error;
 
-      error = (await supabase.from("categories").update({ display_order: current.display_order } as never).eq("id", target.id)).error;
+      error = (await supabase.from("categories").update({ display_order: current.display_order } as any).eq("id", target.id)).error;
       if (error) throw error;
 
-      error = (await supabase.from("categories").update({ display_order: target.display_order } as never).eq("id", current.id)).error;
+      error = (await supabase.from("categories").update({ display_order: target.display_order } as any).eq("id", current.id)).error;
       if (error) throw error;
     },
     onSuccess: () => {

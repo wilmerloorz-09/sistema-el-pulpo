@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dbSelect } from '@/services/DatabaseService';
 import { localDb } from '@/services/localDb';
 import { processSyncQueue, getPendingSyncCount } from '@/services/SyncService';
+import { useBranch } from '@/contexts/BranchContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -22,6 +23,7 @@ export interface OrderWithStatus {
  */
 export function useReportesData() {
   const qc = useQueryClient();
+  const { activeBranchId } = useBranch();
 
   // Ordenes locales (IndexedDB)
   const localOrders = useQuery({
@@ -60,51 +62,39 @@ export function useReportesData() {
 
   // Ordenes remotas (Supabase)
   const remoteOrders = useQuery({
-    queryKey: ['reports-remote-orders'],
+    queryKey: ['reports-remote-orders', activeBranchId],
     queryFn: async () => {
-      if (!navigator.onLine) {
+      if (!navigator.onLine || !activeBranchId) {
         return [];
       }
 
       try {
         const { data: orders, error } = await supabase
           .from('orders')
-          .select('id, order_number, order_code, status, created_at')
+          .select('id, order_number, order_code, status, created_at, order_items(total)')
+          .eq('branch_id', activeBranchId)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        const result: OrderWithStatus[] = [];
-
-        for (const order of orders || []) {
-          const { data: items } = await supabase
-            .from('order_items')
-            .select('total')
-            .eq('order_id', order.id);
-
-          const total = items?.reduce((sum, item) => sum + item.total, 0) || 0;
-
-          result.push({
-            id: order.id,
-            order_number: order.order_number,
-            order_code: order.order_code,
-            status: order.status,
-            created_at: order.created_at,
-            total,
-            items_count: items?.length || 0,
-            sync_status: 'synced',
-            source: 'supabase',
-          });
-        }
-
-        return result;
+        return (orders || []).map((order: any) => ({
+          id: order.id,
+          order_number: order.order_number,
+          order_code: order.order_code,
+          status: order.status,
+          created_at: order.created_at,
+          total: order.order_items?.reduce((sum: number, item: any) => sum + (item.total || 0), 0) || 0,
+          items_count: order.order_items?.length || 0,
+          sync_status: 'synced' as const,
+          source: 'supabase' as const,
+        }));
       } catch (error) {
         console.error('Error fetching remote orders:', error);
         return [];
       }
     },
-    refetchInterval: 10000, // Actualizar cada 10s
-    enabled: navigator.onLine,
+    refetchInterval: 60000, // Reduced frequency (1 min) for performance
+    enabled: navigator.onLine && !!activeBranchId,
   });
 
   // Contador de pendientes

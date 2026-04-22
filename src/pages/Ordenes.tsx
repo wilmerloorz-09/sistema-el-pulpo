@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchOrderDetail, fetchSiblingOrders, getOrderQueryKey, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
@@ -196,7 +196,7 @@ async function fetchMenuProductLookup(params: {
 
   const modifierNodeIds = [params.node.id, ...(params.node.ancestor_ids ?? [])];
   const { data: links, error: linksError } = await supabase
-    .from("menu_node_modifiers" as never)
+    .from("menu_node_modifiers" as any)
     .select("node_id, modifier_id, display_order, is_active")
     .in("node_id", modifierNodeIds)
     .eq("is_active", true)
@@ -208,7 +208,8 @@ async function fetchMenuProductLookup(params: {
     modifier_id: string;
     display_order?: number | null;
   }>;
-  const modifierIds = [...new Set(modifierLinks.map((link) => link.modifier_id).filter(Boolean))] as string[];
+  const modifierIdSet = new Set<string>(modifierLinks.map((link) => link.modifier_id).filter(Boolean));
+  const modifierIds = Array.from(modifierIdSet);
 
   let modifiers: ProductModifierOption[] = [];
   if (modifierIds.length > 0) {
@@ -605,7 +606,7 @@ const Ordenes = () => {
       if (!activeBranchId || !selectedProduct?.menu_node_id || !isBulkScopeSelection) return [] as BulkIncludedPreviewAssignment[];
 
       const { data: assignments, error: assignmentsError } = await supabase
-        .from("bulk_included_products" as never)
+        .from("bulk_included_products" as any)
         .select("id, included_node_id, display_order")
         .eq("menu_node_id", selectedProduct.menu_node_id)
         .eq("is_active", true)
@@ -621,13 +622,13 @@ const Ordenes = () => {
 
       const includedNodeIds = assignmentRows.map((row) => row.included_node_id);
       const { data: includedNodes, error: includedNodesError } = await supabase
-        .from("menu_nodes" as never)
+        .from("menu_nodes" as any)
         .select("id, name")
         .in("id", includedNodeIds);
       if (includedNodesError) throw includedNodesError;
 
       const { data: ranges, error: rangesError } = await supabase
-        .from("bulk_included_product_ranges" as never)
+        .from("bulk_included_product_ranges" as any)
         .select("id, bulk_included_product_id, amount_from, amount_to, included_quantity, display_order")
         .in("bulk_included_product_id", assignmentRows.map((row) => row.id))
         .order("display_order", { ascending: true });
@@ -1080,7 +1081,7 @@ const Ordenes = () => {
               : "TABLE";
 
         const { data, error } = await supabase
-          .from("menu_nodes" as never)
+          .from("menu_nodes" as any)
           .select("id, menu_scope")
           .eq("branch_id", order.branch_id)
           .eq("node_type", "product")

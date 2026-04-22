@@ -80,28 +80,28 @@ export function getTablesWithStatusQueryKey(branchId: string | null | undefined)
 }
 
 export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {
-  const { data, error } = await supabase.rpc("get_branch_tables_overview" as never, {
+  const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
     p_branch_id: branchId,
-  } as never);
+  } as any);
   if (error) throw error;
 
   const rows = (data ?? []) as TablesOverviewRow[];
   
   // 1. Fetch ALL voided payments for this branch
   const { data: voidedPayments } = await (supabase
-    .from("payments")
+    .from("payments" as any)
     .select("order_id, orders!inner(branch_id)")
     .eq("orders.branch_id", branchId)
     .ilike("notes", "%VOIDED%") as any);
   
-  const voidedOrderIds = [...new Set((voidedPayments ?? []).map((p: any) => String(p.order_id)))]
-    .filter((id) => id && id !== "undefined" && id !== "null") as string[];
+  const paymentOrderIdSet = new Set<string>((voidedPayments ?? []).map((p: any) => String(p.order_id)));
+  const voidedOrderIds = Array.from(paymentOrderIdSet).filter((id) => id && id !== "undefined" && id !== "null");
   
   // 2. Fetch the orders for those voided payments (those that are still active)
   let voidedOrders: VoidedOrder[] = [];
   if (voidedOrderIds.length > 0) {
     const { data: ordersData } = await (supabase
-      .from("orders")
+      .from("orders" as any)
       .select("id, order_number, order_code, table_id, status, is_special, order_type, created_at, special_total_manual, table_name_snapshot")
       .in("id", voidedOrderIds)
       .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]) as any);
@@ -240,7 +240,7 @@ export function useTablesWithStatus() {
         {
           event: "*",
           schema: "public",
-          table: "order_ready_events",
+          table: "order_ready_events" as any,
         },
         invalidateTables,
       )
@@ -249,7 +249,7 @@ export function useTablesWithStatus() {
         {
           event: "*",
           schema: "public",
-          table: "order_item_ready_events",
+          table: "order_item_ready_events" as any,
         },
         invalidateTables,
       )
@@ -258,7 +258,7 @@ export function useTablesWithStatus() {
         {
           event: "*",
           schema: "public",
-          table: "order_dispatch_events",
+          table: "order_dispatch_events" as any,
         },
         invalidateTables,
       )
@@ -267,7 +267,7 @@ export function useTablesWithStatus() {
         {
           event: "*",
           schema: "public",
-          table: "order_item_dispatch_events",
+          table: "order_item_dispatch_events" as any,
         },
         invalidateTables,
       )

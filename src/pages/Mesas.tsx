@@ -141,7 +141,8 @@ const Mesas = () => {
       });
     }
 
-    const warmOrderIds = [...new Set((tables ?? []).map((table) => table.activeOrderId).filter(Boolean))] as string[];
+    const warmOrderIdSet = new Set<string>((tables ?? []).map((table) => table.activeOrderId).filter(Boolean));
+    const warmOrderIds = Array.from(warmOrderIdSet);
     for (const warmOrderId of warmOrderIds) {
       void qc.prefetchQuery({
         queryKey: getOrderQueryKey(warmOrderId),
@@ -195,7 +196,7 @@ const Mesas = () => {
       navigate(`/ordenes?order=${orderId}&from=mesas`);
 
       supabase
-        .from("orders")
+        .from("orders" as any)
         .insert({
           id: orderId,
           order_type: "TAKEOUT" as const,
@@ -228,12 +229,12 @@ const Mesas = () => {
     setCreatingSpecial(true);
     try {
       const now = new Date().toISOString();
-      const { data, error } = await supabase.rpc("create_dine_in_order" as never, {
+      const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
         p_branch_id: activeBranchId,
         p_created_by: user.id,
         p_table_id: null,
         p_is_special: true,
-      } as never);
+      } as any);
 
       if (error) throw error;
 
@@ -275,12 +276,12 @@ const Mesas = () => {
       setCreating(table.id);
       try {
         const now = new Date().toISOString();
-        const { data, error } = await supabase.rpc("create_dine_in_order" as never, {
+        const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
           p_branch_id: activeBranchId!,
           p_created_by: user.id,
           p_table_id: table.id,
           p_is_special: false,
-        } as never);
+        } as any);
 
         if (error) throw error;
 

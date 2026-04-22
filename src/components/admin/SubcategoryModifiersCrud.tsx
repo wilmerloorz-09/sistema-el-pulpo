@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -92,7 +92,7 @@ const SubcategoryModifiersCrud = () => {
     queryFn: async () => {
       if (!selectedSubcategory) return [];
       const { data, error } = await supabase
-        .from("subcategory_modifiers" as never)
+        .from("subcategory_modifiers" as any)
         .select("id, subcategory_id, modifier_id, is_active, display_order, modifiers(description)")
         .eq("subcategory_id", selectedSubcategory)
         .order("display_order", { ascending: true });
@@ -117,12 +117,12 @@ const SubcategoryModifiersCrud = () => {
       if (!selectedSubcategory) throw new Error("Selecciona una subcategoria");
       if (!selectedModifier) throw new Error("Selecciona un modificador");
       const nextOrder = assignments.length > 0 ? Math.max(...assignments.map((a) => Number(a.display_order ?? 0))) + 1 : 1;
-      const { error } = await supabase.from("subcategory_modifiers" as never).insert({
+      const { error } = await supabase.from("subcategory_modifiers" as any).insert({
         subcategory_id: selectedSubcategory,
         modifier_id: selectedModifier,
         is_active: true,
         display_order: nextOrder,
-      } as never);
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -135,7 +135,7 @@ const SubcategoryModifiersCrud = () => {
 
   const updateAssignment = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<AssignmentRow> }) => {
-      const { error } = await supabase.from("subcategory_modifiers" as never).update(patch as never).eq("id", id);
+      const { error } = await supabase.from("subcategory_modifiers" as any).update(patch as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -149,13 +149,13 @@ const SubcategoryModifiersCrud = () => {
     mutationFn: async ({ current, target }: { current: AssignmentRow; target: AssignmentRow }) => {
       const tempOrder = -1000000 - Number(current.display_order || 0);
 
-      let error = (await supabase.from("subcategory_modifiers" as never).update({ display_order: tempOrder } as never).eq("id", current.id)).error;
+      let error = (await supabase.from("subcategory_modifiers" as any).update({ display_order: tempOrder } as any).eq("id", current.id)).error;
       if (error) throw error;
 
-      error = (await supabase.from("subcategory_modifiers" as never).update({ display_order: current.display_order } as never).eq("id", target.id)).error;
+      error = (await supabase.from("subcategory_modifiers" as any).update({ display_order: current.display_order } as any).eq("id", target.id)).error;
       if (error) throw error;
 
-      error = (await supabase.from("subcategory_modifiers" as never).update({ display_order: target.display_order } as never).eq("id", current.id)).error;
+      error = (await supabase.from("subcategory_modifiers" as any).update({ display_order: target.display_order } as any).eq("id", current.id)).error;
       if (error) throw error;
     },
     onSuccess: () => {
@@ -166,7 +166,7 @@ const SubcategoryModifiersCrud = () => {
 
   const removeAssignment = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("subcategory_modifiers" as never).delete().eq("id", id);
+      const { error } = await supabase.from("subcategory_modifiers" as any).delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {

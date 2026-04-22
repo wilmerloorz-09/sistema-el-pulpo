@@ -101,7 +101,8 @@ const EditarOrden = () => {
       });
     }
 
-    const warmOrderIds = [...new Set((editableTables ?? []).map((table) => table.activeOrderId).filter(Boolean))] as string[];
+    const warmOrderIdSet = new Set<string>((editableTables ?? []).map((table) => table.activeOrderId).filter(Boolean));
+    const warmOrderIds = Array.from(warmOrderIdSet);
     for (const warmOrderId of warmOrderIds) {
       void qc.prefetchQuery({
         queryKey: getOrderQueryKey(warmOrderId),

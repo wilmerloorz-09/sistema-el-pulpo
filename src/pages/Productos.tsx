@@ -42,7 +42,7 @@ const Productos = () => {
     setPendingNodeId(node.id);
     try {
       const { data: branchNodes, error: branchNodesError } = await supabase
-        .from("menu_nodes" as never)
+        .from("menu_nodes" as any)
         .select("id, parent_id")
         .eq("branch_id", activeBranchId);
       if (branchNodesError) throw branchNodesError;
@@ -68,8 +68,8 @@ const Productos = () => {
       }
 
       const { error } = await supabase
-        .from("menu_nodes" as never)
-        .update({ is_active: !node.is_active } as never)
+        .from("menu_nodes" as any)
+        .update({ is_active: !node.is_active } as any)
         .eq("branch_id", activeBranchId)
         .in("id", [...targetIds]);
       if (error) throw error;

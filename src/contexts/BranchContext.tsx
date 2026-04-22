@@ -58,7 +58,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setLoading(true);
     }
     try {
-      const { data, error } = await supabase.rpc("get_my_access_context" as never);
+      const { data, error } = await supabase.rpc("get_my_access_context" as any);
       if (error) throw error;
 
       const next = (data ?? emptyAccess) as unknown as AccessContextPayload;
@@ -100,9 +100,9 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem("activeBranchId", branch.id);
 
     try {
-      const { error } = await supabase.rpc("set_my_active_branch" as never, {
+      const { error } = await supabase.rpc("set_my_active_branch" as any, {
         p_branch_id: branch.id,
-      } as never);
+      } as any);
 
       if (error) {
         console.error("Error cambiando sucursal:", error);

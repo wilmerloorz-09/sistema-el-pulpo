@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect, dbUpsert, dbDelete } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { showSystemAlert } from "@/App";
@@ -56,27 +56,19 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
   const query = useQuery({
     queryKey: [queryKey, isBranchScoped ? activeBranchId : null],
     queryFn: async () => {
-      let q = supabase.from(table as any).select(select);
-
-      // Filter by branch
-      if (isBranchScoped && activeBranchId) {
-        q = q.eq("branch_id", activeBranchId);
-      }
-
-      // Extra filters
+      const dbFilters: any[] = [];
       if (filters) {
         for (const f of filters) {
-          if (f.op === "eq") q = q.eq(f.column, f.value);
-          if (f.op === "in") q = q.in(f.column, f.value);
+          dbFilters.push({ column: f.column, op: f.op, value: f.value });
         }
       }
 
-      if (orderBy) {
-        q = q.order(orderBy.column, { ascending: orderBy.ascending ?? true });
-      }
-      const { data, error } = await q;
-      if (error) throw error;
-      return data as unknown as T[];
+      return dbSelect<any>(table as any, {
+        select,
+        branchId: isBranchScoped ? activeBranchId : null,
+        filters: dbFilters,
+        orderBy,
+      });
     },
     enabled: isBranchScoped ? !!activeBranchId : true,
   });
@@ -88,8 +80,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
       if (isBranchScoped && activeBranchId && !payload.branch_id) {
         payload.branch_id = activeBranchId;
       }
-      const { error } = await supabase.from(table as any).upsert(payload);
-      if (error) throw error;
+      await dbUpsert(table as any, payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [queryKey] });
@@ -102,8 +93,7 @@ export function useCrud<T extends { id: string }>({ table, queryKey, select = "*
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from(table as any).delete().eq("id", id);
-      if (error) throw error;
+      await dbDelete(table as any, id);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [queryKey] });

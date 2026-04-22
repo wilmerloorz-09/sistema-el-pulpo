@@ -32,7 +32,7 @@ async function cloneCatalogDirectly(
 
   if (cleanFirst) {
     if (selectedItems.has("categories")) {
-      const { error: deleteMenuNodesError } = await supabase.from("menu_nodes" as never).delete().eq("branch_id", targetBranchId);
+      const { error: deleteMenuNodesError } = await supabase.from("menu_nodes" as any).delete().eq("branch_id", targetBranchId);
       if (deleteMenuNodesError) throw deleteMenuNodesError;
 
       const { data: targetCategories, error: targetCategoriesError } = await supabase.from("categories").select("id").eq("branch_id", targetBranchId);
@@ -135,7 +135,7 @@ async function cloneCatalogDirectly(
     }
 
     const menuNodeMap = new Map<string, string>();
-    const { data: nodes, error: nodesError } = await supabase.from("menu_nodes" as never).select("*").eq("branch_id", sourceBranchId).order("depth", { ascending: true });
+    const { data: nodes, error: nodesError } = await supabase.from("menu_nodes" as any).select("*").eq("branch_id", sourceBranchId).order("depth", { ascending: true });
     if (nodesError) throw nodesError;
 
     if ((nodes ?? []).length > 0) {
@@ -156,7 +156,7 @@ async function cloneCatalogDirectly(
       for (let d = 0; d <= maxDepth; d++) {
         const layer = nodeRows.filter((n) => n.depth === d);
         if (layer.length > 0) {
-          const { error: layerError } = await supabase.from("menu_nodes" as never).insert(layer);
+          const { error: layerError } = await supabase.from("menu_nodes" as any).insert(layer);
           if (layerError) throw layerError;
         }
       }
@@ -169,11 +169,11 @@ async function cloneCatalogDirectly(
       
       for (let i = 0; i < oldNodeIds.length; i += chunkSize) {
         const chunk = oldNodeIds.slice(i, i + chunkSize);
-        const { data: modChunk, error: modError } = await supabase.from("menu_node_modifiers" as never).select("*").in("node_id", chunk);
+        const { data: modChunk, error: modError } = await supabase.from("menu_node_modifiers" as any).select("*").in("node_id", chunk);
         if (modError) throw modError;
         if (modChunk) allNodeMods.push(...modChunk);
 
-        const { data: bulkChunk, error: bulkError } = await supabase.from("bulk_included_products" as never).select("*").in("node_id", chunk);
+        const { data: bulkChunk, error: bulkError } = await supabase.from("bulk_included_products" as any).select("*").in("node_id", chunk);
         if (bulkError && bulkError.code !== "PGRST116" && bulkError.code !== "42P01") {
            // Ignore relation does not exist
         } else if (bulkChunk) {
@@ -188,7 +188,7 @@ async function cloneCatalogDirectly(
            const { id, ...rest } = nm;
            return { ...rest, node_id: newNodeId, modifier_id: newModId };
         });
-        const { error: insNodeModsError } = await supabase.from("menu_node_modifiers" as never).insert(nodeModRows);
+        const { error: insNodeModsError } = await supabase.from("menu_node_modifiers" as any).insert(nodeModRows);
         if (insNodeModsError) throw insNodeModsError;
         stats.asignaciones_nodos_modificadores = nodeModRows.length;
       }
@@ -200,7 +200,7 @@ async function cloneCatalogDirectly(
            const { id, ...rest } = bp;
            return { ...rest, node_id: newNodeId, product_id: newProductId };
         });
-        const { error: insBulkError } = await supabase.from("bulk_included_products" as never).insert(bulkRows);
+        const { error: insBulkError } = await supabase.from("bulk_included_products" as any).insert(bulkRows);
         if (insBulkError) throw insBulkError;
         stats.productos_bulto = bulkRows.length;
       }

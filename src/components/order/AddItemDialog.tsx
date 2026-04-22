@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,15 @@ const AddItemDialog = ({
   const [quantityInput, setQuantityInput] = useState("1");
   const [manualPrice, setManualPrice] = useState("");
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
+ 
+  useEffect(() => {
+    if (open) {
+      setQuantity(1);
+      setQuantityInput("1");
+      setManualPrice("");
+      setSelectedMods([]);
+    }
+  }, [open, product?.id]);
 
   const sortedModifiers = useMemo(
     () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),

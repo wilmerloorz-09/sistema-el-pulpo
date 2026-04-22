@@ -45,7 +45,7 @@ const ModifiersCrud = () => {
         description,
         is_active: Boolean(values.is_active),
         branch_id: activeBranchId,
-      } as never);
+      } as any);
 
       if (error) throw error;
     },

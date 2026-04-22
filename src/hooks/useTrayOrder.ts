@@ -27,7 +27,7 @@ export function useTrayOrder() {
         throw new Error("No hay sucursal activa o usuario autenticado.");
       }
 
-      const { data, error } = await supabase.rpc("create_tray_order", {
+      const { data, error } = await supabase.rpc("create_tray_order" as any, {
         p_branch_id: activeBranchId,
         p_created_by: user.id,
       });
@@ -43,7 +43,7 @@ export function useTrayOrder() {
 
   const addTrayItem = useMutation({
     mutationFn: async (params: AddTrayItemParams) => {
-      const { data, error } = await supabase.rpc("add_tray_order_item", {
+      const { data, error } = await supabase.rpc("add_tray_order_item" as any, {
         p_order_id: params.orderId,
         p_product_id: params.productId,
         p_quantity: params.quantity,

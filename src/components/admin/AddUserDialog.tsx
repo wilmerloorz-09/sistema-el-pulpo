@@ -168,12 +168,12 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
       }
 
       if (!isAdmin && selectedBranchId && branchRoleCode) {
-        const { error: assignErr } = await supabase.rpc("assign_user_branch_role" as never, {
+        const { error: assignErr } = await supabase.rpc("assign_user_branch_role" as any, {
           p_target_user_id: createdUserId,
           p_branch_id: selectedBranchId,
           p_role_code: branchRoleCode,
           p_reason: "Asignacion inicial al crear usuario",
-        } as never);
+        } as any);
         if (assignErr && !isAlreadyExistsAssignmentError(assignErr)) throw assignErr;
 
         const { error: activeBranchErr } = await supabase.rpc("set_user_active_branch", {
@@ -185,10 +185,10 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
       }
 
       if (isAdmin) {
-        const { error: adminErr } = await supabase.rpc("assign_user_global_role" as never, {
+        const { error: adminErr } = await supabase.rpc("assign_user_global_role" as any, {
           p_target_user_id: createdUserId,
           p_role_code: "administrador",
-        } as never);
+        } as any);
         if (adminErr && !isAlreadyExistsAssignmentError(adminErr)) throw adminErr;
       }
     },

@@ -82,20 +82,20 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
 
       if (selectedUserType === "administrador") {
         if (!isAdmin) {
-          const { error } = await supabase.rpc("assign_user_global_role" as never, {
+          const { error } = await supabase.rpc("assign_user_global_role" as any, {
             p_target_user_id: user.id,
             p_role_code: "administrador",
-          } as never);
+          } as any);
           if (error) throw error;
         }
 
         for (const assignment of user.branch_assignments) {
-          const { error } = await supabase.rpc("remove_user_branch_role" as never, {
+          const { error } = await supabase.rpc("remove_user_branch_role" as any, {
             p_target_user_id: user.id,
             p_branch_id: assignment.branch_id,
             p_role_code: assignment.role_code,
             p_reason: "Limpiar asignaciones de sucursal al convertir en administrador",
-          } as never);
+          } as any);
           if (error) throw error;
         }
 
@@ -107,20 +107,20 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
       }
 
       if (isAdmin) {
-        const { error } = await supabase.rpc("remove_user_global_role" as never, {
+        const { error } = await supabase.rpc("remove_user_global_role" as any, {
           p_target_user_id: user.id,
           p_role_code: "administrador",
-        } as never);
+        } as any);
         if (error) throw error;
       }
 
       for (const assignment of user.branch_assignments) {
-        const { error } = await supabase.rpc("remove_user_branch_role" as never, {
+        const { error } = await supabase.rpc("remove_user_branch_role" as any, {
           p_target_user_id: user.id,
           p_branch_id: assignment.branch_id,
           p_role_code: assignment.role_code,
           p_reason: "Reemplazo de asignacion unica por sucursal",
-        } as never);
+        } as any);
         if (error) throw error;
       }
 
@@ -129,12 +129,12 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
         selectedUserType as "supervisor" | "usuario_operativo",
       );
 
-      const { error: assignError } = await supabase.rpc("assign_user_branch_role" as never, {
+      const { error: assignError } = await supabase.rpc("assign_user_branch_role" as any, {
         p_target_user_id: user.id,
         p_branch_id: selectedBranchId,
         p_role_code: resolvedBranchRoleCode,
         p_reason: "Asignacion unica desde administracion",
-      } as never);
+      } as any);
       if (assignError) throw assignError;
 
       const { error: activeBranchError } = await supabase.rpc("set_user_active_branch", {

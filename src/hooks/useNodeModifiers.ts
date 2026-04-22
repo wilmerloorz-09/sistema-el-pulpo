@@ -72,7 +72,7 @@ export function useNodeModifiers(nodeId: string) {
 
       const [{ data: nodes, error: nodesError }, { data: modifiers, error: modifiersError }] = await Promise.all([
         supabase
-          .from("menu_nodes" as never)
+          .from("menu_nodes" as any)
           .select("id, parent_id, name")
           .eq("branch_id", activeBranchId),
         supabase
@@ -105,7 +105,7 @@ export function useNodeModifiers(nodeId: string) {
 
       const relevantNodeIds = [nodeId, ...ancestorChain.map((node) => node.id)];
       const { data: links, error: linksError } = await supabase
-        .from("menu_node_modifiers" as never)
+        .from("menu_node_modifiers" as any)
         .select("id, node_id, modifier_id, is_active, display_order")
         .eq("is_active", true)
         .in("node_id", relevantNodeIds)
@@ -180,7 +180,7 @@ export function useNodeModifiers(nodeId: string) {
     setActionPending(true);
     try {
       const { data, error } = await supabase
-        .from("menu_node_modifiers" as never)
+        .from("menu_node_modifiers" as any)
         .select("id, modifier_id, is_active, display_order")
         .eq("node_id", nodeId);
 
@@ -200,14 +200,14 @@ export function useNodeModifiers(nodeId: string) {
       const nextDisplayOrder = usedOrders.length > 0 ? Math.max(...usedOrders) + 1 : 0;
 
       const { error: upsertError } = await supabase
-        .from("menu_node_modifiers" as never)
+        .from("menu_node_modifiers" as any)
         .upsert({
           id: existingAssignment?.id,
           node_id: nodeId,
           modifier_id: modifierId,
           is_active: true,
           display_order: Number(existingAssignment?.display_order ?? nextDisplayOrder),
-        } as never, { onConflict: "node_id,modifier_id" });
+        } as any, { onConflict: "node_id,modifier_id" });
 
       if (upsertError) throw upsertError;
 
@@ -223,8 +223,8 @@ export function useNodeModifiers(nodeId: string) {
     setActionPending(true);
     try {
       const { error } = await supabase
-        .from("menu_node_modifiers" as never)
-        .update({ is_active: false } as never)
+        .from("menu_node_modifiers" as any)
+        .update({ is_active: false } as any)
         .eq("id", menuNodeModifierId);
 
       if (error) throw error;

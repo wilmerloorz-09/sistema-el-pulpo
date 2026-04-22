@@ -247,7 +247,8 @@ export default function CompletedPaymentsList({
   const visibleCollectedTotal = visiblePayments.reduce((sum, payment) => sum + payment.amount, 0);
 
   const openModalForPayment = (payment: PaymentGroup) => {
-    const methods = [...new Set(payment.items.map((item) => item.method_name))].join(", ");
+    const methodSet = new Set<string>(payment.items.map((item) => item.method_name));
+    const methods = Array.from(methodSet).join(", ");
     const tableLabel = getCajaOrderOriginLabel({
       orderType: payment.order.type,
       tableName: payment.order.table_name,

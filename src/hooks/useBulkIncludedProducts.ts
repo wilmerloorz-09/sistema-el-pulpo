@@ -155,7 +155,7 @@ export function useBulkIncludedProducts(nodeId: string) {
       if (!activeBranchId || !nodeId) return emptyState;
 
       const { data: nodes, error: nodesError } = await supabase
-        .from("menu_nodes" as never)
+        .from("menu_nodes" as any)
         .select("id, parent_id, name, node_type, menu_scope, display_order, is_active, legacy_product_id")
         .eq("branch_id", activeBranchId)
         .order("depth", { ascending: true })
@@ -269,7 +269,7 @@ export function useBulkIncludedProducts(nodeId: string) {
       });
 
       const { data: assignments, error: assignmentsError } = await supabase
-        .from("bulk_included_products" as never)
+        .from("bulk_included_products" as any)
         .select("id, menu_node_id, included_node_id, is_active, display_order")
         .eq("menu_node_id", nodeId)
         .eq("is_active", true)
@@ -283,7 +283,7 @@ export function useBulkIncludedProducts(nodeId: string) {
       let rangeRows: BulkIncludedProductRangeRow[] = [];
       if (assignmentIds.length > 0) {
         const { data: ranges, error: rangesError } = await supabase
-          .from("bulk_included_product_ranges" as never)
+          .from("bulk_included_product_ranges" as any)
           .select("id, bulk_included_product_id, amount_from, amount_to, included_quantity, display_order")
           .in("bulk_included_product_id", assignmentIds)
           .order("display_order", { ascending: true });
@@ -355,7 +355,7 @@ export function useBulkIncludedProducts(nodeId: string) {
     setActionPending(true);
     try {
       const { data, error } = await supabase
-        .from("bulk_included_products" as never)
+        .from("bulk_included_products" as any)
         .select("id, included_node_id, is_active, display_order")
         .eq("menu_node_id", nodeId);
 
@@ -374,14 +374,14 @@ export function useBulkIncludedProducts(nodeId: string) {
       const nextDisplayOrder = usedOrders.length > 0 ? Math.max(...usedOrders) + 1 : 0;
 
       const { error: upsertError } = await supabase
-        .from("bulk_included_products" as never)
+        .from("bulk_included_products" as any)
         .upsert({
           id: existing?.id,
           menu_node_id: nodeId,
           included_node_id: includedNodeId,
           is_active: true,
           display_order: Number(existing?.display_order ?? nextDisplayOrder),
-        } as never, { onConflict: "menu_node_id,included_node_id" });
+        } as any, { onConflict: "menu_node_id,included_node_id" });
 
       if (upsertError) throw toError(upsertError, "No se pudo guardar el producto incluido.");
 
@@ -397,8 +397,8 @@ export function useBulkIncludedProducts(nodeId: string) {
     setActionPending(true);
     try {
       const { error } = await supabase
-        .from("bulk_included_products" as never)
-        .update({ is_active: false } as never)
+        .from("bulk_included_products" as any)
+        .update({ is_active: false } as any)
         .eq("id", assignmentId);
 
       if (error) throw toError(error, "No se pudo quitar el producto incluido.");
@@ -460,7 +460,7 @@ export function useBulkIncludedProducts(nodeId: string) {
     try {
       if (idsToDelete.length > 0) {
         const { error: deleteError } = await supabase
-          .from("bulk_included_product_ranges" as never)
+          .from("bulk_included_product_ranges" as any)
           .delete()
           .in("id", idsToDelete);
 
@@ -481,8 +481,8 @@ export function useBulkIncludedProducts(nodeId: string) {
 
         if (existingPayload.length > 0) {
           const { error: upsertError } = await supabase
-            .from("bulk_included_product_ranges" as never)
-            .upsert(existingPayload as never[]);
+            .from("bulk_included_product_ranges" as any)
+            .upsert(existingPayload as any[]);
 
           if (upsertError) throw toError(upsertError, "No se pudieron actualizar las reglas existentes.");
         }
@@ -499,8 +499,8 @@ export function useBulkIncludedProducts(nodeId: string) {
 
         if (newPayload.length > 0) {
           const { error: insertError } = await supabase
-            .from("bulk_included_product_ranges" as never)
-            .insert(newPayload as never[]);
+            .from("bulk_included_product_ranges" as any)
+            .insert(newPayload as any[]);
 
           if (insertError) throw toError(insertError, "No se pudieron crear las reglas nuevas.");
         }

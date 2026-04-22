@@ -304,9 +304,9 @@ const ShiftSetupAdmin = () => {
     queryKey: ["shift-admin-users", activeBranchId, shiftQuery.data?.id ?? "closed"],
     queryFn: async () => {
       if (!activeBranchId) return [] as ShiftUserRow[];
-      const { data, error } = await supabase.rpc("list_shift_users_for_branch" as never, {
+      const { data, error } = await supabase.rpc("list_shift_users_for_branch" as any, {
         p_branch_id: activeBranchId,
-      } as never);
+      } as any);
       if (error) throw error;
       const baseRows = ((data ?? []) as ShiftUserRow[]).filter((row) => row.is_profile_active);
       const shiftId = shiftQuery.data?.id;
@@ -316,7 +316,7 @@ const ShiftSetupAdmin = () => {
       }
 
       const { data: shiftUsersData, error: shiftUsersError } = await (supabase
-        .from("cash_shift_users" as never)
+        .from("cash_shift_users" as any)
         .select("user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor")
         .eq("shift_id", shiftId) as any);
 
@@ -420,9 +420,9 @@ const ShiftSetupAdmin = () => {
     queryKey: ["shift-admin-cancel-policy", activeBranchId],
     queryFn: async () => {
       if (!activeBranchId) return [] as BranchCancelPolicyDraftRow[];
-      const { data, error } = await supabase.rpc("list_branch_cancel_policy_nodes" as never, {
+      const { data, error } = await supabase.rpc("list_branch_cancel_policy_nodes" as any, {
         p_branch_id: activeBranchId,
-      } as never);
+      } as any);
       if (error) throw error;
       const normalizedRows = ((data ?? []) as BranchCancelPolicyDraftRow[]).map((row) => ({
         ...row,
@@ -816,10 +816,10 @@ const ShiftSetupAdmin = () => {
         allow_direct_cancel: row.allow_direct_cancel,
       }));
 
-    const { error } = await supabase.rpc("save_branch_cancel_policy" as never, {
+    const { error } = await supabase.rpc("save_branch_cancel_policy" as any, {
       p_branch_id: activeBranchId,
       p_policies: payload,
-    } as never);
+    } as any);
 
     if (!error) return;
 
@@ -834,7 +834,7 @@ const ShiftSetupAdmin = () => {
 
       if (!row.is_kitchen_plate && !row.allow_direct_cancel) {
         const { error: deleteError } = await (supabase
-          .from("branch_cancel_policy" as never)
+          .from("branch_cancel_policy" as any)
           .delete()
           .eq("branch_id", activeBranchId)
           .eq("menu_node_id", row.menu_node_id) as any);
@@ -843,14 +843,14 @@ const ShiftSetupAdmin = () => {
       }
 
       const { error: upsertError } = await (supabase
-        .from("branch_cancel_policy" as never)
+        .from("branch_cancel_policy" as any)
         .upsert({
           branch_id: activeBranchId,
           menu_node_id: row.menu_node_id,
           is_kitchen_plate: row.is_kitchen_plate,
           allow_direct_cancel: row.allow_direct_cancel,
           updated_by: user?.id ?? null,
-        } as never, {
+        } as any, {
           onConflict: "branch_id,menu_node_id",
           ignoreDuplicates: false,
         }) as any);
@@ -876,7 +876,7 @@ const ShiftSetupAdmin = () => {
 
     if (!sanitizedParams.isEnabled) {
       const { error: deleteError } = await (supabase
-        .from("cash_shift_users" as never)
+        .from("cash_shift_users" as any)
         .delete()
         .eq("shift_id", sanitizedParams.shiftId)
         .eq("user_id", sanitizedParams.userId) as any);
@@ -886,7 +886,7 @@ const ShiftSetupAdmin = () => {
     }
 
     const { error: upsertError } = await (supabase
-      .from("cash_shift_users" as never)
+      .from("cash_shift_users" as any)
       .upsert({
         shift_id: sanitizedParams.shiftId,
         user_id: sanitizedParams.userId,
@@ -900,7 +900,7 @@ const ShiftSetupAdmin = () => {
         can_authorize_order_cancel: sanitizedParams.canAuthorizeOrderCancel,
         can_double_session: sanitizedParams.canDoubleSession && sanitizedParams.canUseCaja,
         is_supervisor: sanitizedParams.isSupervisor,
-      } as never, {
+      } as any, {
         onConflict: "shift_id,user_id",
         ignoreDuplicates: false,
       }) as any);
@@ -930,8 +930,8 @@ const ShiftSetupAdmin = () => {
     // Clear any previously enabled cashier first so reassignments do not
     // collide with the one-cashier-per-shift unique index.
     const { error: clearCashierError } = await (supabase
-      .from("cash_shift_users" as never)
-      .update({ can_use_caja: false } as never)
+      .from("cash_shift_users" as any)
+      .update({ can_use_caja: false } as any)
       .eq("shift_id", shiftId)
       .eq("is_enabled", true)
       .eq("can_use_caja", true) as any);
@@ -1030,12 +1030,12 @@ const ShiftSetupAdmin = () => {
         is_supervisor: entry.isSupervisor,
       }));
 
-    const { data, error } = await supabase.rpc("open_cash_shift_with_tables" as never, {
+    const { data, error } = await supabase.rpc("open_cash_shift_with_tables" as any, {
       p_cashier_id: user.id,
       p_branch_id: activeBranchId,
       p_active_tables_count: normalizedCount,
       p_enabled_users: enabledUsersJson,
-    } as never);
+    } as any);
 
     if (!error) {
       const shiftId = (data as string | null) ?? (await resolveCurrentOpenShiftId());
@@ -1064,13 +1064,13 @@ const ShiftSetupAdmin = () => {
     }
 
     const legacyUserIds = enabledUsersJson.map((entry) => entry.user_id);
-    const { data: legacyData, error: legacyError } = await supabase.rpc("open_cash_shift_with_tables" as never, {
+    const { data: legacyData, error: legacyError } = await supabase.rpc("open_cash_shift_with_tables" as any, {
       p_cashier_id: user.id,
       p_branch_id: activeBranchId,
       p_active_tables_count: normalizedCount,
       p_denoms: [],
       p_enabled_user_ids: legacyUserIds,
-    } as never);
+    } as any);
 
     if (legacyError) throw legacyError;
 
@@ -1121,11 +1121,11 @@ const ShiftSetupAdmin = () => {
       await persistCancelPolicyDraft();
 
       const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
-      const { error: tablesError } = await supabase.rpc("configure_shift_active_tables" as never, {
+      const { error: tablesError } = await supabase.rpc("configure_shift_active_tables" as any, {
         p_branch_id: activeBranchId,
         p_shift_id: shiftQuery.data.id,
         p_active_tables_count: normalizedCount,
-      } as never);
+      } as any);
       if (tablesError) throw tablesError;
 
       const sanitizedEnabledUsers = shiftUsersState
@@ -1149,7 +1149,7 @@ const ShiftSetupAdmin = () => {
 
       const enabledUserIdsForShift = sanitizedEnabledUsers.map((entry) => entry.userId);
       const deleteQuery = (supabase
-        .from("cash_shift_users" as never)
+        .from("cash_shift_users" as any)
         .delete()
         .eq("shift_id", shiftQuery.data.id) as any);
 
@@ -1169,13 +1169,13 @@ const ShiftSetupAdmin = () => {
   const closeShiftMutation = useMutation({
     mutationFn: async () => {
       if (!activeBranchId || !shiftQuery.data?.id) throw new Error("No hay turno abierto");
-      const { error } = await supabase.rpc("close_cash_shift_with_tables" as never, {
+      const { error } = await supabase.rpc("close_cash_shift_with_tables" as any, {
         p_shift_id: shiftQuery.data.id,
         p_branch_id: activeBranchId,
         p_notes: "Cierre desde Administracion > Turno",
         p_closed_from_device: buildClosureDeviceLabel(),
         p_closed_from_user_agent: navigator.userAgent ?? "",
-      } as never);
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {

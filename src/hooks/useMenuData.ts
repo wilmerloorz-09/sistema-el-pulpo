@@ -87,24 +87,24 @@ export function useMenuData(menuScope: MenuScope = "TABLE") {
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const { data: productNodes, error: productNodesError } = await supabase
-        .from("menu_nodes" as never)
-        .select("id, legacy_product_id, name, price, display_order, is_active, icon, image_url, parent_id")
-        .eq("branch_id", activeBranchId)
-        .eq("menu_scope", menuScope)
-        .eq("node_type", "product")
-        .eq("is_active", true);
+      const productNodes = await dbSelect<any>("menu_nodes", {
+        select: "id, legacy_product_id, name, price, display_order, is_active, icon, image_url, parent_id",
+        filters: [
+          { column: "branch_id", op: "eq", value: activeBranchId },
+          { column: "menu_scope", op: "eq", value: menuScope },
+          { column: "node_type", op: "eq", value: "product" },
+          { column: "is_active", op: "eq", value: true }
+        ]
+      });
 
-      if (productNodesError) throw productNodesError;
-
-      const { data: menuNodes, error: menuNodesError } = await supabase
-        .from("menu_nodes" as never)
-        .select("id, parent_id, node_type, manual_price_enabled")
-        .eq("branch_id", activeBranchId)
-        .eq("menu_scope", menuScope)
-        .eq("is_active", true);
-
-      if (menuNodesError) throw menuNodesError;
+      const menuNodes = await dbSelect<any>("menu_nodes", {
+        select: "id, parent_id, node_type, manual_price_enabled",
+        filters: [
+          { column: "branch_id", op: "eq", value: activeBranchId },
+          { column: "menu_scope", op: "eq", value: menuScope },
+          { column: "is_active", op: "eq", value: true }
+        ]
+      });
 
       const nodeRows = (productNodes ?? []) as Array<{
         id: string;
@@ -131,13 +131,12 @@ export function useMenuData(menuScope: MenuScope = "TABLE") {
         }
         return false;
       };
-      const productIds = [
-        ...new Set(
-          nodeRows
-            .map((node) => node.legacy_product_id ?? node.id)
-            .filter(Boolean),
-        ),
-      ] as string[];
+      const productIdSet = new Set<string>(
+        nodeRows
+          .map((node) => node.legacy_product_id ?? node.id)
+          .filter(Boolean)
+      );
+      const productIds = Array.from(productIdSet);
       if (productIds.length === 0) return [];
 
       const legacyProducts = await dbSelect<Omit<Product, "menu_node_id">>("products", {
@@ -180,30 +179,31 @@ export function useMenuData(menuScope: MenuScope = "TABLE") {
       const activeProducts = products.data ?? [];
       if (activeProducts.length === 0) return [];
 
-      const { data: menuNodes, error: menuNodesError } = await supabase
-        .from("menu_nodes" as never)
-        .select("id, parent_id, node_type")
-        .eq("branch_id", activeBranchId)
-        .eq("menu_scope", menuScope)
-        .eq("is_active", true);
-
-      if (menuNodesError) throw menuNodesError;
+      const menuNodes = await dbSelect<any>("menu_nodes", {
+        select: "id, parent_id, node_type",
+        filters: [
+          { column: "branch_id", op: "eq", value: activeBranchId },
+          { column: "menu_scope", op: "eq", value: menuScope },
+          { column: "is_active", op: "eq", value: true }
+        ]
+      });
 
       const nodeRows = (menuNodes ?? []) as unknown as MenuNodeRef[];
       if (nodeRows.length === 0) return [];
 
       const nodeIds = nodeRows.map((node) => node.id);
-      const { data: links, error: linksError } = await supabase
-        .from("menu_node_modifiers" as never)
-        .select("node_id, modifier_id, display_order, is_active")
-        .in("node_id", nodeIds)
-        .eq("is_active", true)
-        .order("display_order", { ascending: true });
-
-      if (linksError) throw linksError;
+      const links = await dbSelect<any>("menu_node_modifiers", {
+        select: "node_id, modifier_id, display_order, is_active",
+        filters: [
+          { column: "node_id", op: "in", value: nodeIds },
+          { column: "is_active", op: "eq", value: true }
+        ],
+        orderBy: { column: "display_order", ascending: true }
+      });
 
       const linkRows = (links ?? []) as unknown as MenuNodeModifierLink[];
-      const modifierIds = [...new Set(linkRows.map((link) => link.modifier_id).filter(Boolean))] as string[];
+      const modifierIdSet = new Set<string>(linkRows.map((link) => link.modifier_id).filter(Boolean));
+      const modifierIds = Array.from(modifierIdSet);
       if (modifierIds.length === 0) return [];
 
       const mods = await dbSelect<{ id: string; description: string }>("modifiers", {

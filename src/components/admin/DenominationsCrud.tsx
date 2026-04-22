@@ -130,13 +130,13 @@ const DenominationsCrud = () => {
     mutationFn: async ({ current, target }: { current: Denomination; target: Denomination }) => {
       const tempOrder = -1000000 - Number(current.display_order || 0);
 
-      let error = (await supabase.from("denominations").update({ display_order: tempOrder } as never).eq("id", current.id)).error;
+      let error = (await supabase.from("denominations").update({ display_order: tempOrder } as any).eq("id", current.id)).error;
       if (error) throw error;
 
-      error = (await supabase.from("denominations").update({ display_order: current.display_order } as never).eq("id", target.id)).error;
+      error = (await supabase.from("denominations").update({ display_order: current.display_order } as any).eq("id", target.id)).error;
       if (error) throw error;
 
-      error = (await supabase.from("denominations").update({ display_order: target.display_order } as never).eq("id", current.id)).error;
+      error = (await supabase.from("denominations").update({ display_order: target.display_order } as any).eq("id", current.id)).error;
       if (error) throw error;
     },
     onSuccess: () => {
@@ -192,7 +192,7 @@ const DenominationsCrud = () => {
           display_order: displayOrder,
           image_url: imageUrlToPersist || null,
           is_active: Boolean(values.is_active),
-        } as never);
+        } as any);
         if (error) throw error;
 
         if (previousManagedPath && (removeImage || uploadedImagePath) && previousManagedPath !== uploadedImagePath) {
