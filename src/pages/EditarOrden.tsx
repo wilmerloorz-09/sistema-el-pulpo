@@ -62,7 +62,7 @@ const EditarOrden = () => {
   // FILTER: Only show tables that have an order that is "KITCHEN_DISPATCHED" (item despachado) OR table is "to_pay" (orden cerrada)
   const allTables = tablesQuery.data?.tables ?? [];
   const editableTables = allTables.filter(
-    (table) => table.status === "occupied" || table.status === "to_pay"
+    (table) => table.orderStatus === "KITCHEN_DISPATCHED" || table.status === "to_pay"
   );
   
   const voidedOrders = tablesQuery.data?.voidedOrders ?? [];

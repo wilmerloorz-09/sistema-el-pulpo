@@ -25,6 +25,7 @@ interface CancelOrderDialogProps {
   initialCancelQtyByItem?: Record<string, number>;
   compactPresetMode?: boolean;
   requiresAuthorizationOverride?: boolean;
+  onBufferedCancel?: (items: any[], cancelData: { reason: string; notes: string }) => void;
 }
 
 interface SnapshotItem {
@@ -107,6 +108,7 @@ export default function CancelOrderDialog({
   initialCancelQtyByItem = {},
   compactPresetMode = false,
   requiresAuthorizationOverride,
+  onBufferedCancel,
 }: CancelOrderDialogProps) {
   const { activeBranchId } = useBranch();
   const [reason, setReason] = useState<CancellationReason | "">("");
@@ -387,6 +389,25 @@ export default function CancelOrderDialog({
 
   const handleConfirm = () => {
     if (!canSubmit) return;
+    
+    if (onBufferedCancel) {
+      onBufferedCancel(
+        selectedItems.map((item) => ({
+          order_item_id: item.order_item_id,
+          quantity_cancelled: item.selected_cancel_qty,
+          status: item.item_status,
+          description_snapshot: item.description_snapshot,
+          unit_price: item.unit_price,
+          quantity_cancelled_pending: item.quantity_cancelled_pending,
+          quantity_cancelled_ready: item.quantity_cancelled_ready,
+          quantity_cancelled_dispatched: item.quantity_cancelled_dispatched,
+        })),
+        { reason, notes }
+      );
+      onOpenChange(false);
+      return;
+    }
+
     cancelOrderMutation.mutate({
       orderId,
       userId,

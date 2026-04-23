@@ -90,13 +90,6 @@ class AdminErrorBoundary extends React.Component<AdminErrorBoundaryProps, AdminE
 
 const TABS: AdminTab[] = [
   {
-    value: "shift",
-    label: "Turno",
-    icon: <PlayCircle className="h-4 w-4" />,
-    component: ShiftSetupAdmin,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
-  },
-  {
     value: "branches",
     label: "Sucursales",
     icon: <Building2 className="h-4 w-4" />,

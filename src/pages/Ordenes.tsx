@@ -412,6 +412,7 @@ const Ordenes = () => {
   const [fromEditarLocked, setFromEditarLocked] = useState(false);
   const [stagedItems, setStagedItems] = useState(order?.items ?? []);
   const [stagedDirty, setStagedDirty] = useState(false);
+  const [stagedCancellationData, setStagedCancellationData] = useState<{ reason: string; notes: string } | null>(null);
 
   useEffect(() => {
     if (order && !stagedDirty) {
@@ -436,6 +437,7 @@ const Ordenes = () => {
     isGlobalAdmin
     || canManageOrders
     || canOperate(permissions, "ordenes")
+    || canOperate(permissions, "mesas")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.canAccessOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
@@ -464,6 +466,12 @@ const Ordenes = () => {
   }, [orderId]);
 
   const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
+
+  useEffect(() => {
+    if (fromEditar && order && (order.status === "PAID" || order.status === "CANCELLED")) {
+      navigate("/editar-orden", { replace: true });
+    }
+  }, [fromEditar, order?.status, navigate]);
 
   useEffect(() => {
     if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked) {
@@ -575,8 +583,6 @@ const Ordenes = () => {
   }, []);
 
   const handleMobileBackToMesas = useCallback(() => {
-    const fromEditar = searchParams.get("from") === "editar";
-
     if (fromMesas) {
       navigate("/mesas", { replace: true });
       return;
@@ -598,7 +604,7 @@ const Ordenes = () => {
     }
 
     navigate("/ordenes", { replace: true });
-  }, [fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id, searchParams]);
+  }, [fromEditar, fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
 
   const bulkIncludedPreviewQuery = useQuery({
     queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id],
@@ -718,7 +724,7 @@ const Ordenes = () => {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || shiftGateQuery.isLoading) {
     return <OrdenesSkeleton />;
   }
 
@@ -783,6 +789,12 @@ const Ordenes = () => {
 
 
   const sourceParams = fromMesas ? "&from=mesas" : fromEditar ? "&from=editar" : "";
+  
+  // Lock para Editar Orden: solo permite entrar si ya existe AL MENOS un item despachado (desde cocina)
+  // o si el estado general de la orden ya es KITCHEN_DISPATCHED.
+  const hasDispatchedItemsInOriginal = order.items.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
+  const isLockedFromEditar = fromEditar && !hasDispatchedItemsInOriginal && order.status !== "KITCHEN_DISPATCHED" && order.status !== "PAID" && order.status !== "CANCELLED";
+
   const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
   const hasVoidableItemsInEditar = itemsToUse.some((item) => {
     if (item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION") {
@@ -795,7 +807,6 @@ const Ordenes = () => {
       item.status === "PAID"
     );
   });
-  const isLockedFromEditar = fromEditar && !hasDispatchedItems && order.status !== "KITCHEN_DISPATCHED" && order.status !== "PAID" && order.status !== "CANCELLED";
   const canSplit =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
@@ -838,14 +849,13 @@ const Ordenes = () => {
   const isClosedForPayment =
     order.order_type === "DINE_IN" &&
     !order.is_special &&
-    !order.table_id &&
+    !!order.table_id &&
     order.status === "KITCHEN_DISPATCHED";
 
   const canEditItems =
-    canOperateOrders &&
+    (canOperateOrders || fromEditar) &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
-    !isClosedForPayment &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
@@ -1096,64 +1106,11 @@ const Ordenes = () => {
         return preferredMatch?.id ?? rows[0]?.id ?? null;
       };
 
-      const originalIds = new Set(order.items.map((item) => item.id));
+      // Snapshot order.items BEFORE any mutations to prevent temp IDs injected
+      // by optimistic updates from leaking into DB calls later.
+      const originalOrderItems = [...order.items];
+      const originalIds = new Set(originalOrderItems.map((item) => item.id));
       const stagedIds = new Set(stagedItems.map((item) => item.id));
-      const cancellationSelections = order.items
-        .filter((item) => originalIds.has(item.id) && item.status !== "DRAFT")
-        .map((item) => {
-          const staged = stagedItems.find((stagedItem) => stagedItem.id === item.id);
-          const targetQuantity = Math.max(0, Number(staged?.quantity ?? 0));
-          const currentQuantity = Math.max(0, Number(item.quantity ?? 0));
-          const quantityCancelled = Math.max(0, currentQuantity - targetQuantity);
-
-          if (quantityCancelled <= 0) return null;
-
-          return {
-            order_item_id: item.id,
-            quantity_cancelled: quantityCancelled,
-            status: item.status,
-            description_snapshot: item.description_snapshot,
-            unit_price: Number(item.unit_price ?? 0),
-          };
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-
-      if (cancellationSelections.length > 0 && user) {
-        await cancelOrderMutation.mutateAsync({
-          orderId,
-          items: cancellationSelections,
-          userId: user.id,
-          cancellationType: "partial",
-          requiresAuthorization: false,
-          cancellationData: {
-            reason: "otro",
-            notes: isClosedForPayment
-              ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
-              : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
-            cancelledBy: user.id,
-          },
-        });
-      }
-
-      // Remove draft items that were discarded while editing.
-      const toRemove = order.items.filter((item) => !stagedIds.has(item.id) && item.status === "DRAFT");
-      for (const item of toRemove) {
-        await removeItem.mutateAsync(item.id);
-      }
-
-      // Persist quantity updates for existing items.
-      for (const staged of stagedItems) {
-        if (!originalIds.has(staged.id)) continue;
-
-        const original = order.items.find((item) => item.id === staged.id);
-        if (original && original.status === "DRAFT" && original.quantity !== staged.quantity) {
-          await updateQuantity.mutateAsync({
-            itemId: staged.id,
-            quantity: staged.quantity,
-            unit_price: staged.unit_price,
-          });
-        }
-      }
 
       // Create new items and capture the generated ids so we can dispatch them immediately.
       const toAdd = stagedItems.filter((item) => !originalIds.has(item.id));
@@ -1191,6 +1148,67 @@ const Ordenes = () => {
         if (newlyCreatedId) {
           newAddedIds.push({ order_item_id: newlyCreatedId, quantity_dispatched: item.quantity });
         }
+      }
+
+      // Remove draft items that were discarded while editing.
+      const toRemove = originalOrderItems.filter((item) => !stagedIds.has(item.id) && item.status === "DRAFT");
+      for (const item of toRemove) {
+        await removeItem.mutateAsync(item.id);
+      }
+
+      // Persist quantity updates for existing items.
+      for (const staged of stagedItems) {
+        if (!originalIds.has(staged.id)) continue;
+
+        const original = originalOrderItems.find((item) => item.id === staged.id);
+        if (original && original.status === "DRAFT" && original.quantity !== staged.quantity) {
+          await updateQuantity.mutateAsync({
+            itemId: staged.id,
+            quantity: staged.quantity,
+            unit_price: staged.unit_price,
+          });
+        }
+      }
+
+      const cancellationSelections = originalOrderItems
+        .filter((item) => originalIds.has(item.id) && item.status !== "DRAFT")
+        .map((item) => {
+          const staged = stagedItems.find((stagedItem) => stagedItem.id === item.id);
+          const targetQuantity = Math.max(0, Number(staged?.quantity ?? 0));
+          const currentQuantity = Math.max(0, Number(item.quantity ?? 0));
+          const quantityCancelled = Math.max(0, currentQuantity - targetQuantity);
+
+          if (quantityCancelled <= 0) return null;
+
+          return {
+            order_item_id: item.id,
+            quantity_cancelled: quantityCancelled,
+            status: item.status,
+            description_snapshot: item.description_snapshot,
+            unit_price: Number(item.unit_price ?? 0),
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (cancellationSelections.length > 0 && user) {
+        const isTotalCancellation = stagedItems.every((item) => item.quantity === 0);
+
+        await cancelOrderMutation.mutateAsync({
+          orderId,
+          items: cancellationSelections,
+          userId: user.id,
+          cancellationType: isTotalCancellation ? "total" : "partial",
+          requiresAuthorization: false,
+          cancellationData: {
+            reason: stagedCancellationData?.reason ?? "otro",
+            notes: stagedCancellationData?.notes
+              ? stagedCancellationData.notes
+              : isClosedForPayment
+                ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
+                : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
+            cancelledBy: user.id,
+          },
+        });
       }
 
       if (newAddedIds.length > 0 && user) {
@@ -1284,6 +1302,7 @@ const Ordenes = () => {
       },
     qty: number,
   ) => {
+    if (fromEditar) return;
     const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
     if (maxQty <= 0) {
       toast.error("Este item ya no tiene cantidad anulable.");
@@ -1440,14 +1459,42 @@ const Ordenes = () => {
       />
     </div>
   ) : (
-    <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
-      {isLockedFromEditar
-        ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aÃºn no tiene Ã­tems despachados desde cocina."
-        : hasPendingCancellationItems
-        ? "Esta orden tiene al menos un item con anulacion pendiente: no puedes agregar ni editar items hasta resolver la solicitud."
-        : order.status === "PAID" || order.status === "CANCELLED"
-        ? "Esta orden estÃ¡ pagada o cancelada: solo lectura (no puedes agregar ni editar Ã­tems)."
-        : "Modo consulta: no tienes permiso de operaciÃ³n en Ã“rdenes para esta sucursal o tu usuario no tiene acceso operativo en el turno actual (revisa permisos del mÃ³dulo Ã“rdenes o asignaciÃ³n en caja)."}
+    <div className="flex flex-col items-center justify-center space-y-4 rounded-3xl border border-dashed border-border bg-card/50 p-8 text-center">
+      <div className="rounded-full bg-muted p-4">
+        <Ban className="h-8 w-8 text-muted-foreground" />
+      </div>
+      <div className="max-w-md space-y-2">
+        <p className="text-base font-bold text-foreground">
+          {isLockedFromEditar
+            ? "Mesa no editable"
+            : hasPendingCancellationItems
+            ? "Anulación pendiente"
+            : order.status === "PAID" || order.status === "CANCELLED"
+            ? "Orden finalizada"
+            : !canOperateOrders
+            ? "Acceso restringido"
+            : "Consulta restringida"}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {isLockedFromEditar
+            ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados desde cocina."
+            : hasPendingCancellationItems
+            ? "Esta orden tiene al menos un item con anulacion pendiente: no puedes agregar ni editar items hasta resolver la solicitud."
+            : order.status === "PAID" || order.status === "CANCELLED"
+            ? "Esta orden ya ha sido pagada o cancelada y se encuentra en modo solo lectura."
+            : !canOperateOrders
+            ? "No tienes permiso de operación en Órdenes para esta sucursal o tu turno no tiene acceso operativo."
+            : "No puedes agregar más items en este estado de la orden o modo de acceso."}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        className="h-11 rounded-xl px-8"
+        onClick={handleMobileBackToMesas}
+      >
+        <ChevronLeft className="mr-2 h-4 w-4" />
+        Volver a la lista
+      </Button>
     </div>
   );
 
@@ -1522,13 +1569,19 @@ const Ordenes = () => {
 
         <OrderItemsList
           items={fromEditar ? stagedItems : order.items}
-          alwaysShowControls={fromEditar}
-          hideItemControls={fromEditar}
-          editableItemIds={fromEditar ? stagedItems.filter((item) => item.id.startsWith("staged-")).map((item) => item.id) : []}
+          alwaysShowControls={false}
+          hideItemControls={false}
+          editableItemIds={[]}
           onRemove={(id) => {
             if (fromEditar) {
               setStagedDirty(true);
-              setStagedItems((prev) => prev.filter((i) => i.id !== id));
+              setStagedItems((prev) => {
+                const item = prev.find(i => i.id === id);
+                if (item && item.status !== "DRAFT") {
+                  return prev.map(i => i.id === id ? { ...i, quantity: 0, total: 0 } : i);
+                }
+                return prev.filter((i) => i.id !== id);
+              });
             } else {
               removeItem.mutate(id);
             }
@@ -1545,7 +1598,7 @@ const Ordenes = () => {
               updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
             }
           }}
-          onRequestCancel={handleRequestInlineCancel}
+          onRequestCancel={fromEditar ? undefined : handleRequestInlineCancel}
           disableDraftEditing={!canEditItems}
           disableOperationalCancel={order.status === "PAID"}
         />
@@ -1604,16 +1657,35 @@ const Ordenes = () => {
         >
           {fromEditar ? (
             <>
+              <Button
+                variant="outline"
+                className="h-12 w-full gap-2 rounded-xl border-slate-200 font-display text-base font-semibold text-slate-600 hover:bg-slate-50"
+                onClick={() => navigate("/editar-orden")}
+              >
+                <X className="h-5 w-5" />
+                Cancelar edición
+              </Button>
+              {canEditItems && (
+                <Button
+                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+                  variant="info"
+                  disabled={!stagedDirty && stagedItems.length === order.items.length}
+                  onClick={handleAcceptEditedOrderChanges}
+                >
+                  <Sparkles className="h-5 w-5" />
+                  Aceptar cambios
+                </Button>
+              )}
               {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
                 <Button
                   variant="destructive"
-                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-                  disabled={!hasVoidableItemsInEditar || hasPendingCancellationItems}
+                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold sm:col-span-2"
+                  disabled={hasDraftItems || hasPendingCancellationItems}
                   title={
                     hasPendingCancellationItems
                       ? "No puedes anular la orden mientras exista al menos un item con anulacion pendiente"
-                      : !hasVoidableItemsInEditar
-                        ? "Solo puedes anular cuando existan items despachados o cerrados"
+                      : hasDraftItems
+                        ? "No puedes anular la orden mientras existan items nuevos en borrador"
                         : "Anular orden"
                   }
                   onClick={() => {
@@ -1627,14 +1699,6 @@ const Ordenes = () => {
                   Anular orden
                 </Button>
               )}
-              <Button
-                className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-                variant="info"
-                disabled={!stagedDirty && stagedItems.length === order.items.length}
-                onClick={handleAcceptEditedOrderChanges}
-              >
-                Aceptar cambios
-              </Button>
             </>
           ) : (
             <>
@@ -2202,6 +2266,26 @@ const Ordenes = () => {
           initialCancellationType={inlineCancellationType}
           initialCancelQtyByItem={inlineCancelQtyByItem}
           compactPresetMode={true}
+          onBufferedCancel={fromEditar ? (items, cancelData) => {
+            setStagedCancellationData(cancelData);
+            setStagedDirty(true);
+            setStagedItems((prev) => {
+              let next = [...prev];
+              for (const cancelledItem of items) {
+                const existingIndex = next.findIndex((i) => i.id === cancelledItem.order_item_id);
+                if (existingIndex >= 0) {
+                  const existing = next[existingIndex];
+                  const newQty = Math.max(0, existing.quantity - cancelledItem.quantity_cancelled);
+                  next[existingIndex] = {
+                    ...existing,
+                    quantity: newQty,
+                    total: newQty * existing.unit_price,
+                  };
+                }
+              }
+              return next;
+            });
+          } : undefined}
         />
       )}
 

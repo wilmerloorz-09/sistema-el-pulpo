@@ -23,6 +23,7 @@ import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
+import Turno from "./pages/Turno";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -334,6 +335,14 @@ const App = () => (
                 <Route
                   path="/reportes"
                   element={<Navigate to="/" replace />}
+                />
+                <Route
+                  path="/turno"
+                  element={
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
+                      <Turno />
+                    </ProtectedRoute>
+                  }
                 />
                 <Route
                   path="/admin"

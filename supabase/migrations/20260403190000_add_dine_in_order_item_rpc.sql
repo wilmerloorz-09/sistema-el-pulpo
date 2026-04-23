@@ -67,7 +67,7 @@ BEGIN
   END IF;
 
   IF v_order.status IN ('PAID', 'CANCELLED') THEN
-    RAISE EXCEPTION 'No se pueden agregar items a una orden cerrada.';
+    RAISE EXCEPTION 'No se pueden agregar items a una orden pagada o cancelada.';
   END IF;
 
   SELECT

@@ -143,6 +143,14 @@ const OrderItemsList = ({
   hideItemControls = false,
   editableItemIds = [],
 }: Props) => {
+  const total = items.reduce((sum, i) => sum + i.total, 0);
+  const [operationalQtyByItem, setOperationalQtyByItem] = useState<Record<string, number>>({});
+
+  const buildDefaultOperationalQty = (item: OrderItem) => {
+    const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
+    return maxQty > 0 ? maxQty : 0;
+  };
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
@@ -151,14 +159,6 @@ const OrderItemsList = ({
       </div>
     );
   }
-
-  const total = items.reduce((sum, i) => sum + i.total, 0);
-  const [operationalQtyByItem, setOperationalQtyByItem] = useState<Record<string, number>>({});
-
-  const buildDefaultOperationalQty = (item: OrderItem) => {
-    const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
-    return maxQty > 0 ? maxQty : 0;
-  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -181,7 +181,7 @@ const OrderItemsList = ({
         const operationalControlClass = !isPending && !operationalDisabled
           ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)] hover:border-orange-300 hover:bg-orange-50"
           : "border-border bg-background";
-        const displayQuantity = Math.max(1, item.quantity);
+        const displayQuantity = item.quantity;
         const requestedOperationalQty = (operationalQtyByItem[item.id] ?? buildDefaultOperationalQty(item)) || 1;
         const selectedOperationalQty = Math.max(
           1,
@@ -207,8 +207,8 @@ const OrderItemsList = ({
                 ? "shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
                 : operationalDisabled
                   ? "opacity-60"
-                  : "",
-              itemStageStyles.card,
+                  : displayQuantity === 0 ? "opacity-50 border-red-200 bg-red-50/50" : "",
+              displayQuantity > 0 ? itemStageStyles.card : "",
             )}
           >
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 sm:gap-3">
@@ -225,6 +225,7 @@ const OrderItemsList = ({
                     className={cn(
                       "col-start-1 row-start-1 min-w-[2.2rem] self-center justify-center rounded-lg px-1.5 py-1 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)] sm:min-w-[2.7rem] sm:px-2 sm:text-xs",
                       itemStageStyles.badge,
+                      displayQuantity === 0 && "opacity-50 bg-red-500 text-white"
                     )}
                   >
                     {displayQuantity}
@@ -238,6 +239,7 @@ const OrderItemsList = ({
                       className={cn(
                         "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:pr-0 sm:text-sm",
                         isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1",
+                        displayQuantity === 0 && "line-through text-red-600/70"
                       )}
                     >
                       {item.description_snapshot}
@@ -258,6 +260,7 @@ const OrderItemsList = ({
                             "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
                             isBulkItem && "col-start-2",
                             getOrderItemStageLegendClass(itemStage),
+                            displayQuantity === 0 && "opacity-50"
                           )}
                         >
                           <span
@@ -279,6 +282,7 @@ const OrderItemsList = ({
                         "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
                         isBulkItem && "col-start-2",
                         getOrderItemStageLegendClass(itemStage),
+                        displayQuantity === 0 && "opacity-50"
                       )}
                     >
                       <span
@@ -328,11 +332,11 @@ const OrderItemsList = ({
 
                 <p className={cn("-mt-1.5 text-[11px] text-muted-foreground sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
                   {isBulkItem ? (
-                    <span className="font-semibold text-foreground">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
+                    <span className={cn("font-semibold text-foreground", displayQuantity === 0 && "line-through text-red-600/70")}>${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                   ) : (
                     <>
                       ${item.unit_price.toFixed(2)} x {displayQuantity} ={" "}
-                      <span className="font-semibold text-foreground">${formatLineTotal(item.unit_price, displayQuantity)}</span>
+                      <span className={cn("font-semibold text-foreground", displayQuantity === 0 && "line-through text-red-600/70")}>${formatLineTotal(item.unit_price, displayQuantity)}</span>
                     </>
                   )}
                 </p>
@@ -359,7 +363,7 @@ const OrderItemsList = ({
                       size="icon"
                       className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                       disabled={controlsDisabled}
-                      onClick={() => onRemove(item.id)}
+                      onClick={() => onUpdateQty(item.id, 0, item.unit_price)}
                       title="Eliminar item"
                     >
                       <Trash2 />
@@ -371,9 +375,9 @@ const OrderItemsList = ({
                           variant="ghost"
                           size="icon"
                           className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                          disabled={controlsDisabled}
+                          disabled={controlsDisabled || displayQuantity === 0}
                           onClick={() => {
-                            if (item.quantity > 1) {
+                            if (item.quantity > 0) {
                               onUpdateQty(item.id, item.quantity - 1, item.unit_price);
                             }
                           }}
@@ -384,13 +388,13 @@ const OrderItemsList = ({
                         <QuantityInput
                           key={`${item.id}-draft-${displayQuantity}`}
                           initialQuantity={displayQuantity}
-                          min={1}
+                          min={0}
                           max={alwaysShowControls ? 9999 : Math.max(1, item.quantity)}
                           disabled={controlsDisabled}
                           updateOnChange={false}
                           onUpdate={(newQty) => {
-                            if (newQty <= 0) {
-                              onRemove(item.id);
+                            if (newQty < 0) {
+                              onUpdateQty(item.id, 0, item.unit_price);
                             } else if (newQty !== item.quantity) {
                               onUpdateQty(item.id, newQty, item.unit_price);
                             }

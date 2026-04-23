@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -45,7 +45,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
       iconIdle: "bg-orange-50 text-orange-600",
     },
-    visible: (permissions) => canView(permissions, "ordenes"),
+    visible: (permissions) => canView(permissions, "ordenes") || canView(permissions, "mesas"),
   },
   {
     to: "/editar-orden",
@@ -56,7 +56,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-amber-200 hover:bg-amber-50/90 hover:text-amber-700",
       iconIdle: "bg-amber-50 text-amber-600",
     },
-    visible: (permissions) => canView(permissions, "ordenes"),
+    visible: (permissions) => canView(permissions, "ordenes") || canView(permissions, "mesas"),
   },
   {
     to: "/despacho",
@@ -114,6 +114,18 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: () => false,
   },
   {
+    to: "/turno",
+    label: "Turno",
+    icon: <PlayCircle className="h-5 w-5" />,
+    tone: {
+      active: "from-orange-400 to-amber-300",
+      idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
+      iconIdle: "bg-orange-50 text-orange-600",
+    },
+    visible: (permissions) =>
+      canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
+  },
+  {
     to: "/admin",
     label: "Administración",
     icon: <Settings className="h-5 w-5" />,
@@ -142,7 +154,7 @@ export function useVisibleNavItems() {
       }
 
       if (!hasOperationalShift) {
-        return item.to === "/admin" && canAccessAdmin;
+        return (item.to === "/admin" || item.to === "/turno") && canAccessAdmin;
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {
