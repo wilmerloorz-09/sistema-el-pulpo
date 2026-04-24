@@ -63,7 +63,7 @@ function nowISO() {
 
 interface QueryOptions {
   select?: string;
-  filters?: Array<{ column: string; op: "eq" | "in" | "is" | "neq"; value: any }>;
+  filters?: Array<{ column: string; op: "eq" | "in" | "is" | "neq" | "gte" | "lte"; value: any }>;
   orderBy?: { column: string; ascending?: boolean };
   branchId?: string | null;
 }
@@ -115,6 +115,12 @@ async function fetchFromSupabase<T>(table: TableName, options: QueryOptions): Pr
           break;
         case "neq":
           query = query.neq(f.column, f.value);
+          break;
+        case "gte":
+          query = query.gte(f.column, f.value);
+          break;
+        case "lte":
+          query = query.lte(f.column, f.value);
           break;
       }
     }
@@ -189,6 +195,12 @@ async function fetchFromLocal<T>(table: TableName, options: QueryOptions): Promi
           break;
         case "is":
           results = results.filter((r: any) => r[f.column] === f.value);
+          break;
+        case "gte":
+          results = results.filter((r: any) => r[f.column] >= f.value);
+          break;
+        case "lte":
+          results = results.filter((r: any) => r[f.column] <= f.value);
           break;
       }
     }

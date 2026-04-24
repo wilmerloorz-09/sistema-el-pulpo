@@ -47,6 +47,7 @@ interface UseMenuTreeReturn {
   countDescendantDepth: (nodeId: string) => number;
   loading: boolean;
   error: string | null;
+  refetch: () => void;
 }
 
 const sortNodes = (nodes: MenuNode[]) =>
@@ -77,6 +78,8 @@ export async function fetchMenuTreeNodes(params: {
 }) {
   const menuScope = params.menuScope ?? "TABLE";
   const includeInactive = params.includeInactive ?? false;
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), 15_000);
 
   let queryBuilder = supabase
     .from("menu_nodes" as any)
@@ -91,9 +94,18 @@ export async function fetchMenuTreeNodes(params: {
     queryBuilder = queryBuilder.eq("is_active", true);
   }
 
-  const { data, error } = await queryBuilder;
-  if (error) throw error;
-  return (data ?? []) as unknown as MenuNode[];
+  try {
+    const { data, error } = await (queryBuilder as any).abortSignal(controller.signal);
+    if (error) throw error;
+    return (data ?? []) as unknown as MenuNode[];
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error("La carga de productos tardo demasiado. Revisa la conexion e intenta otra vez.");
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
 }
 
 export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn {
@@ -280,5 +292,8 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
     countDescendantDepth,
     loading: overrideNodes ? false : query.isLoading,
     error: overrideNodes ? null : query.error instanceof Error ? query.error.message : null,
+    refetch: () => {
+      void query.refetch();
+    },
   };
 }

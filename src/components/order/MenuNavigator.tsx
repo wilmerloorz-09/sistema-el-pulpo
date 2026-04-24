@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, History, ImageIcon, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, History, ImageIcon, RefreshCw, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 
@@ -166,6 +167,7 @@ const MenuNavigator = ({
     getChildren,
     loading,
     error,
+    refetch,
   } = useMenuTree({
     includeInactive,
     menuScope,
@@ -179,7 +181,21 @@ const MenuNavigator = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [showSlowLoading, setShowSlowLoading] = useState(false);
   const visibleSignature = useMemo(() => visibleNodes.map((node) => node.id).join("|"), [visibleNodes]);
+
+  useEffect(() => {
+    if (!loading && !forceLoading) {
+      setShowSlowLoading(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowSlowLoading(true);
+    }, 8000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [forceLoading, loading]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -314,6 +330,27 @@ const MenuNavigator = ({
     [getChildren],
   );
   const showBreadcrumb = breadcrumb.length > 1;
+  if ((loading || forceLoading) && showSlowLoading) {
+    return (
+      <div className="rounded-3xl border border-orange-200 bg-white/80 px-4 py-8 text-center shadow-sm">
+        <p className="font-semibold text-foreground">Los productos estan tardando en cargar</p>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          Esto puede pasar si la conexion con la base de datos esta lenta o si la sucursal no respondio a tiempo.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-4 rounded-2xl"
+          onClick={refetch}
+          disabled={forceLoading}
+        >
+          <RefreshCw className="h-4 w-4" />
+          Reintentar
+        </Button>
+      </div>
+    );
+  }
+
   if (loading || forceLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3">

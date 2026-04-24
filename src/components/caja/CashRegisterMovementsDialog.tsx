@@ -15,9 +15,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Textarea } from "@/components/ui/textarea";
 import DenominationVisual from "@/components/caja/DenominationVisual";
-import { parseIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { AlertCircle, ArrowRightLeft, Clock, Coins, DollarSign, Loader2 } from "lucide-react";
 
@@ -163,16 +163,11 @@ function DenominationEditorSection({
               )}
             </div>
 
-            <Input
-              type="text"
-              min="0"
-              step="1"
-              inputMode="numeric"
-              pattern="[0-9]*"
+            <NumericInput
               value={counts[option.id] ?? 0}
+              min={0}
               max={enforceAvailable ? option.currentQty : undefined}
-              onChange={(event) => onChange(option.id, parseIntegerInput(event.target.value))}
-              onBlur={(event) => onChange(option.id, parseIntegerInput(event.target.value))}
+              onValueChange={(value) => onChange(option.id, value)}
               className="h-8 rounded-lg px-1.5 text-center text-xs font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none sm:h-9 sm:px-2 sm:text-sm"
             />
 

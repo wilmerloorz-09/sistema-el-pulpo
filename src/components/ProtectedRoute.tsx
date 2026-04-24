@@ -5,7 +5,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { Button } from "@/components/ui/button";
-import { canManage, hasPermission, type AccessLevel } from "@/lib/permissions";
+import { hasPermission, type AccessLevel } from "@/lib/permissions";
 
 interface Props {
   children: React.ReactNode;
@@ -128,18 +128,28 @@ const ProtectedRoute = ({
                 ? "Los modulos operativos permanecen deshabilitados hasta que un administrador general o supervisor abra el turno desde Administracion."
                 : "Tu usuario esta deshabilitado para este turno. Solicita al administrador o supervisor que lo habilite desde Administracion."}
             </p>
-            {shiftOpen && !userEnabled && (
-              <div className="mt-5 flex justify-center">
+            <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+              {canAccessAdmin && (
                 <Button
                   type="button"
                   variant="outline"
                   className="rounded-2xl"
-                  onClick={() => void signOut()}
+                  onClick={() => {
+                    window.location.href = "/turno";
+                  }}
                 >
-                  Ingresar con otro usuario
+                  Abrir turno
                 </Button>
-              </div>
-            )}
+              )}
+              <Button
+                type="button"
+                variant={canAccessAdmin ? "ghost" : "outline"}
+                className="rounded-2xl"
+                onClick={() => void signOut()}
+              >
+                Ingresar con otro usuario
+              </Button>
+            </div>
           </div>
         </div>
       );

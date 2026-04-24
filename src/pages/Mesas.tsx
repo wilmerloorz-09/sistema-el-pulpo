@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RotateCcw, ShoppingBag, Sparkles, Users } from "lucide-react";
+import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RefreshCw, RotateCcw, ShoppingBag, Sparkles, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { MobileMenuSheet } from "@/components/MobileMenuSheet";
 
@@ -315,6 +316,21 @@ const Mesas = () => {
       navigate(`/ordenes?order=${table.activeOrderId}&from=mesas`);
     }
   };
+
+  if (tablesQuery.isError) {
+    return (
+      <div className="p-4">
+        <div className="rounded-[24px] border border-orange-200 bg-white/80 p-5 text-center text-sm text-muted-foreground shadow-sm">
+          <p className="font-semibold text-foreground">No se pudieron cargar las mesas</p>
+          <p className="mt-2">{tablesQuery.error instanceof Error ? tablesQuery.error.message : "Intenta nuevamente."}</p>
+          <Button type="button" variant="outline" className="mt-4 rounded-2xl" onClick={() => tablesQuery.refetch()}>
+            <RefreshCw className="h-4 w-4" />
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || !tables) {
     return (

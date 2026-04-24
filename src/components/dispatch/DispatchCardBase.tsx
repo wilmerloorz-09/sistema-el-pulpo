@@ -133,7 +133,7 @@ function QuantityStepper({
         <Minus className="h-3.5 w-3.5" />
       </button>
       <input
-        type="number"
+        type="text"
         inputMode="numeric"
         min={min}
         max={max}

@@ -6,13 +6,11 @@ import { useBranch } from "@/contexts/BranchContext";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Badge } from "@/components/ui/badge";
-import { MetricCard } from "@/components/ui/metric-card";
-import { parseIntegerInput } from "@/lib/numericInput";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
-  CheckCircle2,
   LayoutGrid,
   Loader2,
   Plus,
@@ -1211,9 +1209,6 @@ const ShiftSetupAdmin = () => {
   const enabledViewLabels = enabledViews.map((view) => view.label);
   const shiftUsers = shiftUsersQuery.data ?? [];
   const latestShiftAudit = latestShiftAuditQuery.data;
-  const shiftStatusDescription = isOpen
-    ? "La sucursal ya puede operar con la configuracion actual."
-    : "Configura usuarios, vistas y mesas antes de abrir la jornada.";
 
   return (
     <>
@@ -1257,61 +1252,23 @@ const ShiftSetupAdmin = () => {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <MetricCard
-            title="Estado"
-            value={isOpen ? "Abierto" : "Cerrado"}
-            description={shiftStatusDescription}
-            icon={<PlayCircle className="h-5 w-5" />}
-            tone={isOpen ? "emerald" : "amber"}
-          />
-          <MetricCard
-            title="Usuarios del turno"
-            value={`${shiftUsersState.length}`}
-            description="Usuarios operativos habilitados"
-            icon={<Users className="h-5 w-5" />}
-            tone={shiftUsersState.length > 0 ? "violet" : "rose"}
-          />
-          <MetricCard
-            title="Despacho"
-            value={(workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT" ? `${enabledDispatchUserIds.length} asignados` : "Modo unico"}
-            description={
-              (workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT"
-                ? missingDispatchViews.length > 0
-                  ? `Falta cubrir: ${missingDispatchViews.join(", ")}`
-                  : "Todas las vistas activas tienen despachador"
-                : "Cualquier usuario habilitado puede atender la vista"
-            }
-            icon={<Truck className="h-5 w-5" />}
-            tone={hasSetupIssues ? "rose" : "emerald"}
-          />
-        </div>
-
-        <div className={`mt-4 rounded-[20px] border px-3 py-3 sm:rounded-[22px] sm:px-4 ${hasSetupIssues ? "border-amber-200 bg-amber-50/90" : "border-emerald-200 bg-emerald-50/90"}`}>
-          <div className="flex items-start gap-3">
-            {hasSetupIssues ? (
+        {hasSetupIssues && (
+          <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50/90 px-3 py-3 sm:rounded-[22px] sm:px-4">
+            <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-            ) : (
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
-            )}
             <div className="space-y-1">
-              <p className={`text-sm font-bold ${hasSetupIssues ? "text-amber-900" : "text-emerald-900"}`}>
-                {hasSetupIssues ? "Faltan condiciones para abrir o guardar el turno" : "La configuracion del turno esta lista"}
+              <p className="text-sm font-bold text-amber-900">
+                Faltan condiciones para abrir o guardar el turno
               </p>
-              {hasSetupIssues ? (
-                <ul className="space-y-1 text-sm text-amber-800">
-                  {setupIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-emerald-800">
-                  Puedes abrir el turno o guardar los cambios actuales sin bloquear la operacion de la sucursal.
-                </p>
-              )}
+              <ul className="space-y-1 text-sm text-amber-800">
+                {setupIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            </div>
             </div>
           </div>
-        </div>
+        )}
 
         {!isOpen && latestShiftAudit?.status === "CLOSED" && (
           <div className="mt-4 rounded-[20px] border border-slate-200 bg-slate-50/90 px-3 py-3 text-sm text-slate-700 sm:rounded-[22px] sm:px-4">
@@ -1343,28 +1300,18 @@ const ShiftSetupAdmin = () => {
               </div>
               <div>
                 <h4 className="text-sm font-black text-foreground sm:text-base">Numero de mesas</h4>
-                <p className="text-xs text-muted-foreground sm:text-sm">
-                  Define cuantas mesas estaran operativas en esta jornada.
-                </p>
               </div>
             </div>
-            <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
-              Referencial sucursal: {referenceCount}
-            </Badge>
           </div>
 
           <div className="mt-4 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-100 via-white to-cyan-100 p-3.5 shadow-sm sm:p-4">
             <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
               Mesas habilitadas del turno
             </label>
-            <Input
-              type="text"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              pattern="[0-9]*"
+            <NumericInput
               value={activeTablesCount}
-              onChange={(event) => setActiveTablesCount(Math.max(0, parseIntegerInput(event.target.value)))}
+              onValueChange={setActiveTablesCount}
+              min={0}
               className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
             />
           </div>
@@ -1387,9 +1334,6 @@ const ShiftSetupAdmin = () => {
             </div>
             <div>
               <h4 className="text-sm font-black text-foreground sm:text-base">Usuarios habilitados</h4>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                Agrega solo los usuarios que operaran en este turno y luego define sus roles.
-              </p>
             </div>
           </div>
           <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
@@ -1548,9 +1492,6 @@ const ShiftSetupAdmin = () => {
                         <span className="text-muted-foreground">Sesion doble</span>
                       </label>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Mesas siempre incluye Ordenes. Despacho siempre incluye Productos. Editar Ordenes habilita el modulo Editar Orden. Sesion doble solo aplica a Caja y permite hasta 2 dispositivos simultaneos. Caja solo puede quedar habilitada para un usuario por turno.
-                    </p>
                   </div>
                 );
               })}

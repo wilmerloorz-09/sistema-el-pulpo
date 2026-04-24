@@ -130,7 +130,6 @@ export default function CancelOrderDialog({
         description_snapshot: item.description_snapshot ?? "",
         tray_item_type: item.tray_item_type ?? null,
       }))
-      .sort((a, b) => a.id.localeCompare(b.id)),
   ), [visibleItems]);
 
   const normalizedVisibleItems = useMemo(
@@ -165,6 +164,11 @@ export default function CancelOrderDialog({
     [normalizedVisibleItems],
   );
 
+  const visibleItemOrder = useMemo(
+    () => new Map(normalizedVisibleItems.map((item, index) => [item.id, index])),
+    [normalizedVisibleItems],
+  );
+
   const items = useMemo(
     () => snapshotItems
       .filter((item) => visibleItemMap.size === 0 || visibleItemMap.has(item.order_item_id))
@@ -180,8 +184,13 @@ export default function CancelOrderDialog({
             : item.quantity_cancellable,
         };
       })
-      .filter((item) => item.quantity_cancellable > 0),
-    [snapshotItems, visibleItemMap],
+      .filter((item) => item.quantity_cancellable > 0)
+      .sort((left, right) => {
+        if (visibleItemOrder.size === 0) return 0;
+        return (visibleItemOrder.get(left.order_item_id) ?? Number.MAX_SAFE_INTEGER)
+          - (visibleItemOrder.get(right.order_item_id) ?? Number.MAX_SAFE_INTEGER);
+      }),
+    [snapshotItems, visibleItemMap, visibleItemOrder],
   );
 
   const scopeIncludesWholeOrder = useMemo(

@@ -79,7 +79,19 @@ export function getTablesWithStatusQueryKey(branchId: string | null | undefined)
   return ["tables-with-status", branchId ?? null] as const;
 }
 
-export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {
+const withTablesTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      reject(new Error("La carga de mesas tardo demasiado. Revisa la conexion e intenta otra vez."));
+    }, timeoutMs);
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => globalThis.clearTimeout(timeoutId));
+  });
+
+async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWithStatusData> {
   const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
     p_branch_id: branchId,
   } as any);
@@ -153,6 +165,10 @@ export async function fetchTablesWithStatus(branchId: string): Promise<TablesWit
   });
 
   return { tables, voidedOrders };
+}
+
+export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {
+  return withTablesTimeout(fetchTablesWithStatusInternal(branchId));
 }
 
 export function useTablesWithStatus() {

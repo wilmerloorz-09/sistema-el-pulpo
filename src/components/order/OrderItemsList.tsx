@@ -467,7 +467,7 @@ const QuantityInput = ({
 
   return (
     <Input
-      type="number"
+      type="text"
       inputMode="numeric"
       min={min}
       max={max}

@@ -93,6 +93,18 @@ export function getOrderQueryKey(orderId: string | null) {
   return ["order", orderId] as const;
 }
 
+const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      reject(new Error("La orden tardo demasiado en cargar. Intenta abrir la mesa nuevamente."));
+    }, timeoutMs);
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => globalThis.clearTimeout(timeoutId));
+  });
+
 export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
   const siblingOrders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, split_id, table_order_position, status, created_at, order_items(id)",
@@ -134,7 +146,7 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
     });
 }
 
-export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
+async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
     filters: [{ column: "id", op: "eq", value: orderId }]
@@ -344,6 +356,10 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
     items: enrichedItems,
     siblings,
   } as Order;
+}
+
+export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
+  return withOrderDetailTimeout(fetchOrderDetailInternal(orderId));
 }
 
 export function useOrder(orderId: string | null) {

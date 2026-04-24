@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
+import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchShiftGate, TAB_SESSION_ID } from "@/hooks/useBranchShiftGate";
@@ -292,6 +292,8 @@ const buildCashClosureReportHtml = (params: {
       table { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
       th, td { border:1px solid #e5e7eb; padding:8px; text-align:left; vertical-align:top; }
       th { background:#f3f4f6; }
+      tbody tr:nth-child(odd) { background:#ffffff; }
+      tbody tr:nth-child(even) { background:#f8fafc; }
       .num { text-align:right; white-space:nowrap; }
       .muted { color:#6b7280; text-align:center; }
       .notes { white-space:pre-wrap; margin-top:8px; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fafafa; }
@@ -982,13 +984,17 @@ const Caja = () => {
     );
   }
 
-  const handleRegenerateShiftReport = () => {
+  const handleRegenerateShiftReport = async () => {
+    const freshMovements = shift?.id
+      ? await fetchCashRegisterMovementsForShift(shift.id)
+      : cashRegisterMovements;
+
     const reportWindow = openCashClosureReportWindow({
       branchName: activeBranch?.name ?? "Sucursal",
       shift,
       completedPayments,
       methodSummary: completedPaymentsMethodSummary,
-      movements: cashRegisterMovements,
+      movements: freshMovements,
       closureNotes: shift.notes ?? undefined,
       reportMode: "shift",
     });
@@ -998,14 +1004,18 @@ const Caja = () => {
     }
   };
 
-  const handleReprintOpeningReport = (opening: CashOpeningSnapshot) => {
+  const handleReprintOpeningReport = async (opening: CashOpeningSnapshot) => {
+    const freshMovements = shift?.id
+      ? await fetchCashRegisterMovementsForShift(shift.id)
+      : cashRegisterMovements;
+
     const reportWindow = openCashClosureReportWindow({
       ...scopeReportToOpening({
         branchName: activeBranch?.name ?? "Sucursal",
         shift,
         opening,
         completedPayments,
-        movements: cashRegisterMovements,
+        movements: freshMovements,
         closureNotes: opening.notes ?? undefined,
       }),
       reportMode: "opening",

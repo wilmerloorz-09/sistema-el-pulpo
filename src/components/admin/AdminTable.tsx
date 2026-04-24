@@ -1,8 +1,8 @@
 import * as React from "react";
-import { parseDecimalInput, sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Switch } from "@/components/ui/switch";
 import { Pencil, Trash2, Plus, Save, X, Loader2 } from "lucide-react";
 
@@ -71,12 +71,10 @@ export function AdminTable<T extends { id: string }>({
 
       if (col.type === "number") {
         return (
-          <Input
-            type="text"
-            inputMode="decimal"
-            pattern="[0-9]*[.,]?[0-9]*"
+          <NumericInput
+            mode="decimal"
             value={editValues[col.key] ?? ""}
-            onChange={(e) => onFieldChange(col.key, parseDecimalInput(sanitizeDecimalInput(e.target.value)))}
+            onValueChange={(value) => onFieldChange(col.key, value)}
             className="h-10 rounded-xl text-sm"
           />
         );

@@ -4,10 +4,10 @@ import { FileStack, Loader2, Pencil, Plus, Save, Shield, Trash2, X } from "lucid
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
-import { parseIntegerInput } from "@/lib/numericInput";
 import { generateUUID } from "@/lib/uuid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import DenominationVisual from "@/components/caja/DenominationVisual";
@@ -277,16 +277,10 @@ export default function CashRegisterTemplatesCrud() {
                     <p className="text-sm font-semibold text-foreground">{denomination.label}</p>
                     <p className="text-2xl font-black leading-none text-red-600">${denomination.value.toFixed(2)}</p>
                   </div>
-                  <Input
-                    type="text"
-                    min={0}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
+                  <NumericInput
                     value={counts[denomination.id] ?? 0}
-                    onChange={(event) => {
-                      const nextQty = Math.max(0, Math.trunc(parseIntegerInput(event.target.value)));
-                      setCounts((current) => ({ ...current, [denomination.id]: nextQty }));
-                    }}
+                    onValueChange={(nextQty) => setCounts((current) => ({ ...current, [denomination.id]: nextQty }))}
+                    min={0}
                     className="h-10 w-24 rounded-xl text-center"
                   />
                   <span className="w-24 text-right text-sm font-semibold text-foreground">

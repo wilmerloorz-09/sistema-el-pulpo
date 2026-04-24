@@ -14,8 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { MetricCard } from "@/components/ui/metric-card";
-import { parseIntegerInput, sanitizeDecimalInput } from "@/lib/numericInput";
+import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
@@ -1535,15 +1536,11 @@ export default function PaymentDialog({
                                         A granel
                                       </div>
                                     ) : (
-                                      <Input
-                                        type="text"
+                                      <NumericInput
                                         min={0}
                                         max={item.quantity_pending}
-                                        step={1}
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
                                         value={qtyToPay}
-                                        onChange={(e) => setItemQty(item.id, parseIntegerInput(e.target.value), item.quantity_pending)}
+                                        onValueChange={(value) => setItemQty(item.id, value, item.quantity_pending)}
                                         className="h-8 w-[72px] text-xs"
                                         disabled={readOnly}
                                       />
@@ -1640,11 +1637,10 @@ export default function PaymentDialog({
                                   </Button>
                                 ) : null}
 
-                                <Input
-                                  type="text"
-                                  inputMode="decimal"
+                                <NumericInput
+                                  mode="decimal"
                                   value={(split?.amount ?? 0).toFixed(2)}
-                                  onChange={(e) => split && setSplitAmount(split.id, parseMoneyInput(sanitizeDecimalInput(e.target.value)))}
+                                  onValueChange={(value) => split && setSplitAmount(split.id, value)}
                                   className={cn("h-9 w-full shrink-0 rounded-xl pl-3 text-left [appearance:textfield] sm:h-10", isCash && "col-span-full sm:col-auto")}
                                   readOnly={isCash}
                                   disabled={readOnly || !isSelected || isCash}
@@ -1910,15 +1906,10 @@ export default function PaymentDialog({
                               </button>
                             )}
                             <div className="flex min-w-[58px] items-center gap-1">
-                              <Input
-                                type="text"
-                                min="0"
-                                step="1"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
+                              <NumericInput
+                                min={0}
                                 value={cashDraftReceived[denomination.denomination_id] || 0}
-                                onChange={(event) => setDraftDenominationQty(denomination.denomination_id, parseIntegerInput(event.target.value))}
-                                onBlur={(event) => setDraftDenominationQty(denomination.denomination_id, parseIntegerInput(event.target.value))}
+                                onValueChange={(value) => setDraftDenominationQty(denomination.denomination_id, value)}
                                 className="h-8 w-14 rounded-lg px-2 text-center text-sm font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 disabled={readOnly}
                               />

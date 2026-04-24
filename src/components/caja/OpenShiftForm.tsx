@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { parseIntegerInput } from "@/lib/numericInput";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { AlertCircle, DollarSign, Loader2 } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import CashRegisterOpeningHistory from "@/components/caja/CashRegisterOpeningHistory";
@@ -140,18 +140,6 @@ export default function OpenShiftForm({
             </div>
           )}
 
-          {hasCashierUser && (
-            <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-sm font-semibold text-foreground">Usuario de Caja</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Este usuario abrira caja, cobrara las ordenes y desde su misma cuenta podra capturar comprobantes.
-              </p>
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                {cashierUserLabel ?? "Usuario configurado"}
-              </div>
-            </div>
-          )}
-
           {hasDenominations && (
             <div className="rounded-xl border border-border bg-card p-4">
               <label className="block text-sm font-semibold text-foreground" htmlFor="cash-template-select">
@@ -202,13 +190,10 @@ export default function OpenShiftForm({
               <div className="min-w-0 flex-1">
                 <div className="text-2xl font-black leading-none text-red-600">${denomination.value.toFixed(2)}</div>
               </div>
-              <Input
-                type="text"
-                min={0}
-                inputMode="numeric"
-                pattern="[0-9]*"
+              <NumericInput
                 value={counts[denomination.id] ?? 0}
-                onChange={(e) => setCounts({ ...counts, [denomination.id]: parseIntegerInput(e.target.value) })}
+                onValueChange={(value) => setCounts({ ...counts, [denomination.id]: value })}
+                min={0}
                 className="h-9 w-20 rounded-lg text-center"
                 disabled={readOnly}
               />

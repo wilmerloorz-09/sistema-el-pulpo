@@ -395,7 +395,6 @@ const Ordenes = () => {
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
-  const autoCleanupOrderRef = useRef<typeof order | null>(null);
   const isBulkScopeSelection = currentMenuScope === "BULK";
 
   const currentTableOrder: SiblingOrder | null = order
@@ -458,10 +457,6 @@ const Ordenes = () => {
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {
-    autoCleanupOrderRef.current = order ?? null;
-  }, [order]);
-
-  useEffect(() => {
     setRedirectingAfterDelete(false);
   }, [orderId]);
 
@@ -479,6 +474,13 @@ const Ordenes = () => {
       setFromEditarLocked(true);
     }
   }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, lockOrder]);
+
+  useEffect(() => {
+    if (!orderId || isLoading || shiftGateQuery.isLoading) return;
+    if (order || redirectingAfterDelete || removingSplit) return;
+
+    navigate(fromEditar ? "/editar-orden" : "/mesas", { replace: true });
+  }, [fromEditar, isLoading, navigate, order, orderId, redirectingAfterDelete, removingSplit, shiftGateQuery.isLoading]);
 
   useEffect(() => {
     return () => {
@@ -537,40 +539,6 @@ const Ordenes = () => {
     setSelectingProductId(null);
     setShowCart(false);
   }, [orderId]);
-
-  useEffect(() => {
-    return () => {
-      const currentOrder = autoCleanupOrderRef.current;
-      const shouldAutoDeleteEmptyDraft =
-        !!currentOrder &&
-        currentOrder.status === "DRAFT" &&
-        currentOrder.items.length === 0 &&
-        (!currentOrder.is_special || Number(currentOrder.special_total_manual ?? 0) <= 0);
-
-      if (!shouldAutoDeleteEmptyDraft) return;
-
-      void (async () => {
-        // Delete any orphan items first (FK constraint)
-        await supabase
-          .from("order_items")
-          .delete()
-          .eq("order_id", currentOrder.id);
-
-        await supabase
-          .from("orders")
-          .delete()
-          .eq("id", currentOrder.id)
-          .eq("status", "DRAFT");
-
-        await Promise.all([
-          qc.invalidateQueries({ queryKey: ["order", currentOrder.id] }),
-          qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
-          qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
-          qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
-        ]);
-      })();
-    };
-  }, [orderId, qc]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
   const interactiveMenuScope =
@@ -729,15 +697,7 @@ const Ordenes = () => {
   }
 
   if (!order) {
-    if (redirectingAfterDelete || removingSplit) {
-      return <OrdenesSkeleton />;
-    }
-
-    return (
-      <div className="p-4 text-center">
-        <p className="text-sm text-destructive">Orden no encontrada</p>
-      </div>
-    );
+    return <OrdenesSkeleton />;
   }
 
   const itemsToUse = fromEditar ? stagedItems : order.items;
@@ -1026,7 +986,6 @@ const Ordenes = () => {
     setRemovingSplit(true);
     setRedirectingAfterDelete(true);
     try {
-      autoCleanupOrderRef.current = null;
       const remainingOrderId = await deleteTableOrder.mutateAsync();
       if (order.table_id) {
         qc.setQueryData(
@@ -1689,7 +1648,7 @@ const Ordenes = () => {
                         : "Anular orden"
                   }
                   onClick={() => {
-                    setInlineCancelVisibleItems([]);
+                    setInlineCancelVisibleItems(itemsToUse);
                     setInlineCancelQtyByItem({});
                     setInlineCancellationType("total");
                     setInlineCancelOpen(true);
@@ -1734,7 +1693,7 @@ const Ordenes = () => {
                         : "Anular orden"
                   }
                   onClick={() => {
-                    setInlineCancelVisibleItems([]);
+                    setInlineCancelVisibleItems(itemsToUse);
                     setInlineCancelQtyByItem({});
                     setInlineCancellationType("total");
                     setInlineCancelOpen(true);

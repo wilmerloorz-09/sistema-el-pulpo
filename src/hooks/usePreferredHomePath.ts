@@ -3,7 +3,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
-import { canManage } from "@/lib/permissions";
+import { canView } from "@/lib/permissions";
 
 export function usePreferredHomePath() {
   const { branches, isGlobalAdmin, permissions } = useBranch();
@@ -13,8 +13,8 @@ export function usePreferredHomePath() {
 
   return useMemo(() => {
     const canAccessAdmin = isGlobalAdmin
-      || canManage(permissions, "admin_sucursal")
-      || canManage(permissions, "admin_global");
+      || canView(permissions, "admin_sucursal")
+      || canView(permissions, "admin_global");
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const gate = shiftGateQuery.data;
     const hasSupervisorBypass = Boolean(gate?.isSupervisor);

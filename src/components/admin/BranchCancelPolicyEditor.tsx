@@ -21,6 +21,27 @@ function getMenuScopeLabel(menuScope?: "TABLE" | "TAKEOUT" | "BULK" | null) {
   return "Menu mesa";
 }
 
+function normalizeCategoryName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+function getCancelPolicyRowSortOrder(row: BranchCancelPolicyDraftRow) {
+  const normalizedName = normalizeCategoryName(row.menu_node_name);
+
+  if (row.menu_scope === "TABLE" && normalizedName === "PLATOS") return 0;
+  if (row.menu_scope === "TAKEOUT" && normalizedName.includes("PLATOS")) return 1;
+  if (row.menu_scope === "BULK" && normalizedName.includes("PLATOS")) return 2;
+  if (normalizedName === "BEBIDAS") return 3;
+  if (normalizedName === "VARIOS") return 4;
+
+  return 99;
+}
+
 interface BranchCancelPolicyEditorProps {
   rows: BranchCancelPolicyDraftRow[];
   isGlobalAdmin: boolean;
@@ -39,6 +60,17 @@ export default function BranchCancelPolicyEditor({
   disabled = false,
   className,
 }: BranchCancelPolicyEditorProps) {
+  const sortedRows = [...rows].sort((a, b) => {
+    const orderDifference = getCancelPolicyRowSortOrder(a) - getCancelPolicyRowSortOrder(b);
+    if (orderDifference !== 0) return orderDifference;
+
+    if (a.menu_scope !== b.menu_scope) {
+      return (a.menu_scope ?? "").localeCompare(b.menu_scope ?? "");
+    }
+
+    return a.menu_node_name.localeCompare(b.menu_node_name);
+  });
+
   return (
     <section
       className={cn(
@@ -46,26 +78,17 @@ export default function BranchCancelPolicyEditor({
         className,
       )}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-center gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700">
             <Shield className="h-5 w-5" />
           </div>
           <div>
             <h4 className="text-sm font-black text-foreground sm:text-base">
-              Cancelacion/Anulacion directa de orden por categoria
+              Anulacion sin autorizacion
             </h4>
-            <p className="text-xs text-muted-foreground sm:text-sm">
-              Marca que categorias nivel 0 permiten anulacion directa por mesero.
-            </p>
           </div>
         </div>
-        <Badge
-          variant="outline"
-          className="w-fit border-rose-200 bg-rose-50 text-rose-700"
-        >
-          {rows.length} categorias nivel 0
-        </Badge>
       </div>
 
       <div className="mt-4 space-y-3">
@@ -75,7 +98,7 @@ export default function BranchCancelPolicyEditor({
           </div>
         ) : (
           <div className="divide-y divide-rose-100 overflow-hidden rounded-2xl bg-white/70">
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const isLocked = disabled || (!isGlobalAdmin && row.is_primary_root_category);
 
               return (

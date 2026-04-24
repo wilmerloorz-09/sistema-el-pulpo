@@ -167,6 +167,27 @@ export interface CashRegisterMovementDetail {
   };
 }
 
+export async function fetchCashRegisterMovementsForShift(shiftId: string): Promise<CashRegisterMovement[]> {
+  const { data, error } = await supabase.rpc("list_cash_register_movements" as any, {
+    p_turno_id: shiftId,
+  } as any);
+  if (error) throw error;
+
+  return ((data ?? []) as any[]).map((row) => ({
+    id: row.id,
+    shiftId: row.shift_id,
+    branchId: row.branch_id,
+    movementType: row.movement_type,
+    amount: Number(row.amount ?? 0),
+    reason: row.reason ?? "",
+    movementDetail: (row.movement_detail ?? null) as CashRegisterMovementDetail | null,
+    recordedBy: row.recorded_by,
+    recordedByName: row.recorded_by_name ?? null,
+    recordedByUsername: row.recorded_by_username ?? null,
+    createdAt: row.created_at,
+  })) as CashRegisterMovement[];
+}
+
 export interface PayableOrder {
   id: string;
   order_number: number | null;
@@ -1067,26 +1088,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const shift = shiftQuery.data;
       if (!shift) return [];
 
-      const { data, error } = await supabase.rpc("list_cash_register_movements" as any, {
-        p_turno_id: shift.id,
-      } as any);
-      if (error) throw error;
-
-      return ((data ?? []) as any[]).map((row) => ({
-        id: row.id,
-        shiftId: row.shift_id,
-        branchId: row.branch_id,
-        movementType: row.movement_type,
-        amount: Number(row.amount ?? 0),
-        reason: row.reason ?? "",
-        movementDetail: (row.movement_detail ?? null) as CashRegisterMovementDetail | null,
-        recordedBy: row.recorded_by,
-        recordedByName: row.recorded_by_name ?? null,
-        recordedByUsername: row.recorded_by_username ?? null,
-        createdAt: row.created_at,
-      })) as CashRegisterMovement[];
+      return fetchCashRegisterMovementsForShift(shift.id);
     },
-    enabled: !!shiftQuery.data?.id && shiftQuery.data?.caja_status === "OPEN",
+    enabled: !!shiftQuery.data?.id,
   });
 
   const ordersQuery = useQuery({
@@ -1380,7 +1384,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         select: "id, created_at, amount, notes, order_id, payment_method_id, created_by",
         filters: [
           { column: "order_id", op: "in", value: branchOrderIds },
-          { column: "created_at", op: "is" as any, value: `gte.${effectiveStartIso},lte.${effectiveEndIso}` }
+          { column: "created_at", op: "gte", value: effectiveStartIso },
+          { column: "created_at", op: "lte", value: effectiveEndIso },
         ],
         orderBy: { column: "created_at", ascending: false }
       });

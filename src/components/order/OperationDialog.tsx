@@ -9,9 +9,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Loader2 } from "lucide-react";
-import { parseIntegerInput } from "@/lib/numericInput";
 import { getOrderRef } from "@/lib/orderPresentation";
 
 interface OperationItem {
@@ -112,21 +111,13 @@ export default function OperationDialog({ open, onOpenChange, order, mode, proce
                     </div>
                     <div className="w-24">
                       <Label htmlFor={`${mode}-${item.id}`} className="text-[11px] text-muted-foreground">Cantidad</Label>
-                      <Input
+                      <NumericInput
                         id={`${mode}-${item.id}`}
-                        type="text"
                         min={0}
                         max={item.available}
-                        step={1}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
                         disabled={operationType === "total" || item.available <= 0}
                         value={operationType === "total" ? item.available : qtyByItem[item.id] ?? 0}
-                        onChange={(e) => {
-                          const next = parseIntegerInput(e.target.value);
-                          const clamped = Math.max(0, Math.min(item.available, next));
-                          setQtyByItem((prev) => ({ ...prev, [item.id]: clamped }));
-                        }}
+                        onValueChange={(value) => setQtyByItem((prev) => ({ ...prev, [item.id]: value }))}
                         className="h-8"
                       />
                     </div>

@@ -3,10 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Loader2, Store, TableProperties } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
-import { parseIntegerInput } from "@/lib/numericInput";
 
 const TablesCrud = () => {
   const qc = useQueryClient();
@@ -120,14 +119,10 @@ const TablesCrud = () => {
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Mesas referenciales
             </label>
-            <Input
-              type="text"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              pattern="[0-9]*"
+            <NumericInput
               value={referenceCount}
-              onChange={(event) => setReferenceCount(Math.max(0, parseIntegerInput(event.target.value)))}
+              onValueChange={setReferenceCount}
+              min={0}
               className="h-11 w-36 rounded-2xl text-center text-lg font-black"
             />
             <p className="mt-3 text-xs text-muted-foreground">
