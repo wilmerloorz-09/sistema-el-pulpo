@@ -182,7 +182,6 @@ export default function DispatchConfig({
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-foreground">Modo de asignacion</h3>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <button
             onClick={() => handleModeChange("SINGLE")}

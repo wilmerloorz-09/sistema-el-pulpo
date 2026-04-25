@@ -1,5 +1,4 @@
 import { Shield } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
@@ -131,15 +130,6 @@ export default function BranchCancelPolicyEditor({
                       </p>
                     </div>
                   </div>
-
-                  {row.is_primary_root_category && (
-                    <Badge
-                      variant="outline"
-                      className="w-fit self-start border-sky-200 bg-sky-50 text-[10px] text-sky-800 sm:self-center sm:text-xs"
-                    >
-                      Solo admin general
-                    </Badge>
-                  )}
                 </label>
               );
             })}

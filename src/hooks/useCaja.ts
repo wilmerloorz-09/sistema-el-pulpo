@@ -1926,6 +1926,36 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       await Promise.all(cashMovementsPromises);
 
+      const cashDenomDeltaById = new Map<string, number>();
+      for (const rd of effectiveCashReceivedDenoms) {
+        cashDenomDeltaById.set(rd.denomination_id, (cashDenomDeltaById.get(rd.denomination_id) ?? 0) + rd.qty);
+      }
+      for (const cd of effectiveCashChangeDenoms) {
+        cashDenomDeltaById.set(cd.denomination_id, (cashDenomDeltaById.get(cd.denomination_id) ?? 0) - cd.qty);
+      }
+
+      if (cashDenomDeltaById.size > 0) {
+        const currentQtyByDenomId = new Map(
+          shift.denoms.map((denomination) => [
+            denomination.denomination_id,
+            Number(denomination.qty_current ?? 0),
+          ]),
+        );
+
+        await Promise.all(
+          Array.from(cashDenomDeltaById.entries()).map(async ([denominationId, qtyDelta]) => {
+            const nextQty = (currentQtyByDenomId.get(denominationId) ?? 0) + qtyDelta;
+            const { error: updateDenomError } = await supabase
+              .from("cash_shift_denoms")
+              .update({ qty_current: nextQty })
+              .eq("shift_id", shift.id)
+              .eq("denomination_id", denominationId);
+
+            if (updateDenomError) throw updateDenomError;
+          }),
+        );
+      }
+
       const refreshedShiftDenoms = await dbSelect<any>("cash_shift_denoms", {
         select: "denomination_id, qty_current",
         filters: [{ column: "shift_id", op: "eq", value: shift.id }]
@@ -2331,8 +2361,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
     requestPaymentVoid,
     voidPaymentWithSupervisor,
     closeCashRegister,
-    annulCashOpening: annulCashOpening.mutateAsync,
-    registerCashMovement: registerCashMovement.mutateAsync,
+    annulCashOpening,
+    registerCashMovement,
     takeCajaControl: takeCajaControl.mutateAsync,
   };
 }

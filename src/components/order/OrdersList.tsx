@@ -10,7 +10,6 @@ import { canManage } from "@/lib/permissions";
 import OrderListRow from "./OrderListRow";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -229,15 +228,15 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
 
   return (
     <div className="w-full">
-      <div className="surface-glow mb-5 px-3 py-3">
-        <div className="relative flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex shrink-0 flex-wrap items-center gap-2 px-2">
+      <div className="surface-glow mb-4 px-3 py-3 sm:px-5 sm:py-4">
+        <div className="relative flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
               <ClipboardList className="h-5 w-5" />
             </div>
-            <h2 className="font-display text-xl font-black text-foreground">Todas las ordenes</h2>
+            <h2 className="font-display text-lg font-bold text-foreground">Todas las ordenes</h2>
             <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-              {totalOrders} total
+              ({totalOrders} total)
             </span>
             {readOnly && (
               <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
@@ -245,99 +244,49 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
               </span>
             )}
           </div>
+          {!readOnly && onOpenMergeSplitTool && (
+            <Button
+              type="button"
+              variant="info"
+              className="h-10 shrink-0 rounded-2xl px-3 text-xs font-semibold sm:px-4 sm:text-sm"
+              onClick={onOpenMergeSplitTool}
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+              Mover Items/Mesa
+            </Button>
+          )}
+        </div>
+      </div>
 
-          <div className="flex-1">
-            <div className="flex items-stretch gap-2 md:hidden">
-              <div className="min-w-0 flex-1">
-                <Select value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
-                  <SelectTrigger className="h-12 rounded-[22px] border-orange-200 bg-white/92 px-4 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
-                    <div className="flex min-w-0 flex-1 items-center gap-2 pr-2">
-                      <span className="shrink-0 text-primary">{currentTab.icon}</span>
-                      <span className="truncate text-sm font-semibold text-foreground">{currentTab.label}</span>
-                      {getTabCount(currentTab.key) > 0 && (
-                        <span className="shrink-0 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                          {getTabCount(currentTab.key)}
-                        </span>
-                      )}
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tabs.map((tab) => {
-                      const count = getTabCount(tab.key);
+      <div className="mb-4 flex items-start">
+        <div className="scrollbar-none min-w-0 flex-1 overflow-x-auto">
+          <div className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm">
+            {tabs.map((tab) => {
+              const count = getTabCount(tab.key);
+              const isActive = activeTab === tab.key;
 
-                      return (
-                        <SelectItem key={tab.key} value={tab.key}>
-                          <div className="flex w-full items-center justify-between gap-3">
-                            <span className="truncate">{tab.label}</span>
-                            {count > 0 && (
-                              <span className="shrink-0 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                                {count}
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {!readOnly && onOpenMergeSplitTool && (
-                <Button
-                  type="button"
-                  variant="info"
-                  className="h-12 shrink-0 rounded-[22px] px-4 font-semibold"
-                  onClick={onOpenMergeSplitTool}
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cn(
+                    "relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm",
+                    isActive && "border border-primary/20 bg-background text-primary shadow-sm",
+                  )}
+                  aria-label={tab.label}
                 >
-                  <ArrowRightLeft className="h-4 w-4" />
-                  Mover Items/Mesa
-                </Button>
-              )}
-            </div>
-
-            <div className="hidden items-start gap-2 md:flex">
-              <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 rounded-[24px] border border-orange-200 bg-white/75 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)] md:grid-cols-3 lg:grid-cols-6">
-                {tabs.map((tab) => {
-                  const count = getTabCount(tab.key);
-                  const isActive = activeTab === tab.key;
-
-                  return (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveTab(tab.key)}
-                      className={cn(
-                        "flex min-h-[52px] items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
-                        isActive
-                          ? "bg-gradient-to-r from-orange-500 to-orange-400 text-white shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
-                          : "border border-transparent bg-white/70 text-muted-foreground hover:border-orange-200 hover:bg-orange-50 hover:text-foreground",
-                      )}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {tab.icon}
-                        <span>{tab.label}</span>
-                      </div>
-                      {count > 0 && (
-                        <Badge variant={isActive ? "secondary" : "outline"} className={cn("h-6 px-2 text-xs", isActive ? "border-white/30 bg-white/20 text-white" : "border-orange-200 bg-white text-primary")}>
-                          {count}
-                        </Badge>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {!readOnly && onOpenMergeSplitTool && (
-                <Button
-                  type="button"
-                  variant="info"
-                  className="h-[68px] shrink-0 rounded-[24px] px-5 font-semibold"
-                  onClick={onOpenMergeSplitTool}
-                >
-                  <ArrowRightLeft className="h-4 w-4" />
-                  Mover Items/Mesa
-                </Button>
-              )}
-            </div>
+                  <span className="flex items-center gap-1 whitespace-nowrap sm:gap-2">
+                    <span className="shrink-0 [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-4 sm:[&_svg]:w-4">{tab.icon}</span>
+                    <span className="text-left leading-tight">{tab.label}</span>
+                    {count > 0 && (
+                      <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
+                        {count}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

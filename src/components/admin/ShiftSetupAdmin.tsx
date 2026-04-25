@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Badge } from "@/components/ui/badge";
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
   LayoutGrid,
@@ -41,6 +41,16 @@ interface ShiftUserRow {
   can_authorize_order_cancel: boolean;
   can_double_session: boolean;
   is_supervisor: boolean;
+}
+
+interface ZeroValueSpecialOrder {
+  id: string;
+  order_code: string | null;
+  order_number: number | null;
+  status: string;
+  paid_at: string | null;
+  special_total_manual: number | null;
+  total: number | null;
 }
 
 const OPERATIVE_ROLE_KEYS: Array<keyof Pick<
@@ -253,6 +263,10 @@ const ShiftSetupAdmin = () => {
     title: "",
     description: "",
   });
+  const [zeroSpecialCloseDialog, setZeroSpecialCloseDialog] = useState(false);
+  const [zeroValueSpecialOrders, setZeroValueSpecialOrders] = useState<ZeroValueSpecialOrder[]>([]);
+  const [checkingZeroValueSpecialOrders, setCheckingZeroValueSpecialOrders] = useState(false);
+  const [payingZeroValueSpecialOrders, setPayingZeroValueSpecialOrders] = useState(false);
 
   const { config: dispatchConfig, assignments, isLoading: dispatchLoading } = useDispatchConfig();
 
@@ -1183,6 +1197,97 @@ const ShiftSetupAdmin = () => {
     onError: (err: any) => showShiftSetupError(err, setWarningDialog),
   });
 
+  const loadZeroValueSpecialOrders = async () => {
+    if (!activeBranchId) return [];
+
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id, order_code, order_number, status, paid_at, special_total_manual, total")
+      .eq("branch_id", activeBranchId)
+      .eq("is_special", true)
+      .not("status", "in", "(PAID,CANCELLED)");
+
+    if (error) throw error;
+    return ((data ?? []) as ZeroValueSpecialOrder[]).filter((order) => {
+      const specialTotal = order.special_total_manual == null ? null : Number(order.special_total_manual);
+      const orderTotal = order.total == null ? null : Number(order.total);
+      const zeroValue = Number(specialTotal ?? orderTotal ?? 0) <= 0;
+      const blocksShiftClose =
+        order.status === "SENT_TO_KITCHEN"
+        || order.status === "READY"
+        || (order.status === "KITCHEN_DISPATCHED" && !order.paid_at);
+
+      return zeroValue && blocksShiftClose;
+    });
+  };
+
+  const handleCloseShiftClick = async () => {
+    if (closeShiftMutation.isPending || checkingZeroValueSpecialOrders) return;
+
+    setCheckingZeroValueSpecialOrders(true);
+    try {
+      const specialOrders = await loadZeroValueSpecialOrders();
+
+      if (specialOrders.length > 0) {
+        setZeroValueSpecialOrders(specialOrders);
+        setZeroSpecialCloseDialog(true);
+        return;
+      }
+
+      closeShiftMutation.mutate();
+    } catch (err: any) {
+      showShiftSetupError(err, setWarningDialog);
+    } finally {
+      setCheckingZeroValueSpecialOrders(false);
+    }
+  };
+
+  const handleContinueCloseWithZeroSpecialOrders = async () => {
+    if (!activeBranchId || zeroValueSpecialOrders.length === 0) {
+      setZeroSpecialCloseDialog(false);
+      closeShiftMutation.mutate();
+      return;
+    }
+
+    setPayingZeroValueSpecialOrders(true);
+    try {
+      const now = new Date().toISOString();
+      const orderIds = zeroValueSpecialOrders.map((order) => order.id);
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          status: "PAID",
+          paid_at: now,
+          closed_at: now,
+          updated_at: now,
+        })
+        .eq("branch_id", activeBranchId)
+        .eq("is_special", true)
+        .in("id", orderIds);
+
+      if (error) throw error;
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["order"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false }),
+        qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
+      ]);
+
+      toast.success("Ordenes especiales de $0 marcadas como pagadas");
+      setZeroSpecialCloseDialog(false);
+      setZeroValueSpecialOrders([]);
+      closeShiftMutation.mutate();
+    } catch (err: any) {
+      showShiftSetupError(err, setWarningDialog);
+    } finally {
+      setPayingZeroValueSpecialOrders(false);
+    }
+  };
+
   if (!activeBranchId) {
     return (
       <div className="rounded-[24px] border border-orange-200 bg-white/80 p-4 text-sm text-muted-foreground shadow-sm">
@@ -1221,9 +1326,6 @@ const ShiftSetupAdmin = () => {
             </div>
             <div>
               <h3 className="font-display text-base font-black text-foreground sm:text-lg">Configuracion del turno operativo</h3>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                {activeBranch?.name ?? "Sucursal activa"}: define mesas, usuarios y como se repartira el despacho antes de abrir.
-              </p>
             </div>
           </div>
 
@@ -1242,10 +1344,10 @@ const ShiftSetupAdmin = () => {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => closeShiftMutation.mutate()}
-                disabled={closeShiftMutation.isPending}
+                onClick={handleCloseShiftClick}
+                disabled={closeShiftMutation.isPending || checkingZeroValueSpecialOrders}
               >
-                {closeShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+                {closeShiftMutation.isPending || checkingZeroValueSpecialOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
                 Cerrar turno
               </Button>
             )}
@@ -1424,64 +1526,64 @@ const ShiftSetupAdmin = () => {
                       </Button>
                     </div>
 
-                    <div className="mt-1.5 grid gap-1.5 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm md:grid-cols-2 xl:grid-cols-4">
-                      <label className="flex items-center gap-2 text-xs">
+                    <div className="mt-1.5 grid grid-cols-3 gap-1.5 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm">
+                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_serve_tables ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_serve_tables", c === true)}
                         />
-                        <span className="text-muted-foreground">Mesero (Mesas)</span>
+                        <span className="min-w-0 text-muted-foreground">Mesero (Mesas)</span>
                       </label>
                       <label
-                        className="flex items-center gap-2 text-xs"
+                        className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
                         title={userState?.can_serve_tables ? "Mesas habilita Ordenes automaticamente" : "Habilita acceso al modulo Ordenes sin acceso a Mesas"}
                       >
                         <Checkbox
                           checked={userState?.can_access_orders ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_access_orders", c === true)}
                         />
-                        <span className="text-muted-foreground">Ordenes</span>
+                        <span className="min-w-0 text-muted-foreground">Ordenes</span>
                       </label>
-                      <label className="flex items-center gap-2 text-xs">
+                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_edit_orders ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_edit_orders", c === true)}
                         />
-                        <span className="text-muted-foreground">Editar Ordenes</span>
+                        <span className="min-w-0 text-muted-foreground">Editar Ordenes</span>
                       </label>
-                      <label className="flex items-center gap-2 text-xs">
+                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_dispatch_orders ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_dispatch_orders", c === true)}
                         />
-                        <span className="text-muted-foreground">Despacho</span>
+                        <span className="min-w-0 text-muted-foreground">Despacho</span>
                       </label>
                       <label
-                        className="flex items-center gap-2 text-xs"
+                        className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
                         title={userState?.can_dispatch_orders ? "Despacho habilita Productos automaticamente" : "Habilita acceso total al modulo Productos para este turno"}
                       >
                         <Checkbox
                           checked={userState?.can_manage_products ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_manage_products", c === true)}
                         />
-                        <span className="text-muted-foreground">Productos</span>
+                        <span className="min-w-0 text-muted-foreground">Productos</span>
                       </label>
-                      <label className="flex items-center gap-2 text-xs">
+                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_use_caja ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_use_caja", c === true)}
                         />
-                        <span className="text-muted-foreground">Caja</span>
+                        <span className="min-w-0 text-muted-foreground">Caja</span>
                       </label>
-                      <label className="flex items-center gap-2 text-xs">
+                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_authorize_order_cancel ?? false}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_authorize_order_cancel", c === true)}
                         />
-                        <span className="text-muted-foreground">Autorizar anul.</span>
+                        <span className="min-w-0 text-muted-foreground">Autorizar anul.</span>
                       </label>
                       <label
-                        className="flex items-center gap-2 text-xs"
+                        className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
                         title={userState?.can_use_caja ? "Permite hasta 2 sesiones simultaneas de Caja para este usuario" : "Primero habilita Caja para usar Sesion doble"}
                       >
                         <Checkbox
@@ -1489,7 +1591,7 @@ const ShiftSetupAdmin = () => {
                           disabled={!(userState?.can_use_caja ?? false)}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_double_session", c === true)}
                         />
-                        <span className="text-muted-foreground">Sesion doble</span>
+                        <span className="min-w-0 text-muted-foreground">Sesion doble</span>
                       </label>
                     </div>
                   </div>
@@ -1508,9 +1610,6 @@ const ShiftSetupAdmin = () => {
             </div>
             <div>
               <h4 className="text-sm font-black text-foreground sm:text-base">Metodo de despacho</h4>
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                Define si despacho trabaja con un solo flujo o por tipo de orden, y quienes atenderan cada caso.
-              </p>
             </div>
           </div>
         </div>
@@ -1552,6 +1651,48 @@ const ShiftSetupAdmin = () => {
         </div>
       </section>
       </div>
+
+      <AlertDialog
+        open={zeroSpecialCloseDialog}
+        onOpenChange={(open) => {
+          if (payingZeroValueSpecialOrders || closeShiftMutation.isPending) return;
+          setZeroSpecialCloseDialog(open);
+        }}
+      >
+        <AlertDialogContent className="max-w-md rounded-[24px] border border-orange-200 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-5 shadow-[0_30px_80px_-42px_rgba(249,115,22,0.55)]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-lg font-black text-orange-950">
+              Ordenes especiales con valor $0
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm leading-6 text-orange-900/80">
+              Existen {zeroValueSpecialOrders.length} orden(es) especiales con valor $0. Para cerrar el turno, el sistema puede marcarlas como pagadas automaticamente y continuar con el cierre.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel
+              disabled={payingZeroValueSpecialOrders || closeShiftMutation.isPending}
+              className="w-full sm:w-auto"
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={payingZeroValueSpecialOrders || closeShiftMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                handleContinueCloseWithZeroSpecialOrders();
+              }}
+              className="w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto"
+            >
+              {payingZeroValueSpecialOrders || closeShiftMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Power className="h-4 w-4" />
+              )}
+              Continuar cierre
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={warningDialog.open} onOpenChange={(open) => setWarningDialog((prev) => ({ ...prev, open }))}>
         <AlertDialogContent className="max-w-md rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">

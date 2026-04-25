@@ -147,7 +147,7 @@ function DenominationEditorSection({
         {options.map((option) => (
           <div
             key={option.id}
-            className="grid grid-cols-[auto_minmax(0,1fr)_56px_64px] items-center gap-2 rounded-lg border border-orange-200 bg-white px-2 py-1.5 sm:grid-cols-[auto_minmax(0,1fr)_64px_72px] sm:rounded-xl sm:py-2"
+            className="grid min-h-[74px] grid-cols-[auto_minmax(0,1fr)_56px_64px] items-center gap-2 rounded-lg border border-orange-200 bg-white px-2 py-1.5 sm:grid-cols-[auto_minmax(0,1fr)_64px_72px] sm:rounded-xl sm:py-2"
           >
             <DenominationVisual
               label={option.label}
@@ -160,6 +160,9 @@ function DenominationEditorSection({
               <p className="text-xs font-medium text-red-600">${option.value.toFixed(2)}</p>
               {showAvailable && (
                 <p className="text-[11px] text-muted-foreground">Disponible: {option.currentQty}</p>
+              )}
+              {!showAvailable && (
+                <p className="text-[11px] text-transparent">Disponible: 0</p>
               )}
             </div>
 
@@ -281,6 +284,7 @@ export default function CashRegisterMovementsDialog({
   const [reason, setReason] = useState("");
   const [fromCounts, setFromCounts] = useState<Record<string, number>>({});
   const [toCounts, setToCounts] = useState<Record<string, number>>({});
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   const trimmedReason = reason.trim();
   const fromLines = useMemo(() => buildDetailLines(denominationOptions, fromCounts), [denominationOptions, fromCounts]);
@@ -301,6 +305,7 @@ export default function CashRegisterMovementsDialog({
     setFromCounts({});
     setToCounts({});
     setShowHistory(false);
+    setRegisterError(null);
   };
 
   const handleCountChange = (
@@ -337,6 +342,7 @@ export default function CashRegisterMovementsDialog({
     if (!canConfirm) return;
 
     try {
+      setRegisterError(null);
       await onRegister({
         type: "cambio_denominacion",
         amount: Number(totalFrom.toFixed(2)),
@@ -353,8 +359,8 @@ export default function CashRegisterMovementsDialog({
       });
       resetRegisterForm();
       onOpenChange(false);
-    } catch {
-      // El mensaje ya lo muestra la mutacion compartida.
+    } catch (error: any) {
+      setRegisterError(error?.message || "No se pudo registrar el cambio de denominacion.");
     }
   };
 
@@ -368,9 +374,9 @@ export default function CashRegisterMovementsDialog({
         }
       }}
     >
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] lg:max-w-6xl">
+      <DialogContent className="scrollbar-none max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] lg:max-w-6xl">
         <DialogHeader>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3 pr-10 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <DialogTitle className="font-display flex items-center gap-2">
                 <Coins className="h-5 w-5 text-primary" />
@@ -385,7 +391,7 @@ export default function CashRegisterMovementsDialog({
               type="button"
               variant="outline"
               size="sm"
-              className="w-full self-start sm:w-auto"
+              className="w-full self-start sm:w-auto sm:max-w-[180px]"
               onClick={() => setShowHistory((prev) => !prev)}
             >
               {showHistory ? "Ocultar historial" : `Ver historial (${movements.length})`}
@@ -458,25 +464,6 @@ export default function CashRegisterMovementsDialog({
             />
           </div>
 
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-emerald-800">Impacto en caja</p>
-                <p className="text-xs text-emerald-700/80">
-                  El efectivo total no cambia; solo cambia la composicion de denominaciones.
-                </p>
-              </div>
-              <span className="font-display text-xl font-black text-emerald-700">$0.00</span>
-            </div>
-          </div>
-
-          {!hasSource && !hasTarget && (
-            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              Debes indicar que denominaciones salen de caja y cuales ingresan a caja.
-            </div>
-          )}
-
           {(hasSource || hasTarget) && !totalsMatch && (
             <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -488,6 +475,13 @@ export default function CashRegisterMovementsDialog({
             <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <AlertCircle className="h-4 w-4 shrink-0" />
               No puedes cambiar mas unidades de las que existen actualmente en caja.
+            </div>
+          )}
+
+          {registerError && (
+            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {registerError}
             </div>
           )}
 
@@ -525,6 +519,7 @@ export default function CashRegisterMovementsDialog({
             Cancelar
           </Button>
           <Button
+            type="button"
             variant="success"
             onClick={handleRegister}
             disabled={!canRegister || !canConfirm}

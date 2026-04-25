@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CashRegisterMovement, CashShift } from "@/hooks/useCaja";
+import type { CashRegisterMovement, CashRegisterMovementDetail, CashShift } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,7 @@ interface Props {
     type: "entrada" | "salida" | "cambio_denominacion";
     amount: number;
     reason: string;
+    detail?: CashRegisterMovementDetail | null;
   }) => Promise<void>;
   closing: boolean;
   annulling?: boolean;
@@ -328,54 +329,70 @@ export default function ShiftSummary({
       </Dialog>
 
       <Dialog open={showDenoms} onOpenChange={setShowDenoms}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-xl">
+        <DialogContent className="scrollbar-none max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] xl:max-w-6xl">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               <Coins className="h-5 w-5 text-primary" /> Desglose de Caja
             </DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-xl border border-border p-3">
-              <div className="flex items-center justify-between">
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-2xl border border-sky-200 bg-sky-50/50 p-2.5">
+              <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold text-foreground">Apertura</span>
-                <span className="font-display text-base font-bold text-foreground">${totalInitial.toFixed(2)}</span>
+                <span className="font-display text-lg font-black text-sky-700">${totalInitial.toFixed(2)}</span>
               </div>
-              <div className="space-y-1">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
                 {sortedDenoms.map((denomination) => (
-                  <div key={`initial-${denomination.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-10 w-10 rounded-xl" iconClassName="h-4 w-4" />
-                      <span className="truncate text-sm font-semibold text-foreground">${denomination.value.toFixed(2)}</span>
+                  <div key={`initial-${denomination.id}`} className="grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border border-sky-100 bg-white p-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-1.5 py-1">
+                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
+                      <span className="truncate text-sm font-black tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="tabular-nums text-sm font-bold text-foreground">{denomination.qty_initial}</span>
-                      <span className="w-16 text-right text-xs text-muted-foreground">
-                        ${(denomination.qty_initial * denomination.value).toFixed(2)}
-                      </span>
+                    <div className="rounded-lg border-t border-sky-100 bg-white px-1.5 py-1.5">
+                    <div className="grid grid-cols-2 items-end gap-1.5">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700">Cant.</p>
+                        <p className="mt-0.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-center text-sm font-black tabular-nums text-slate-950">{denomination.qty_initial}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700">Total</p>
+                        <p className="mt-0.5 text-sm font-black tabular-nums text-slate-800">
+                          ${(denomination.qty_initial * denomination.value).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="space-y-2 rounded-xl border border-border p-3">
-              <div className="flex items-center justify-between">
+            <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-2.5">
+              <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold text-foreground">Actual</span>
-                <span className="font-display text-base font-bold text-primary">${totalCurrent.toFixed(2)}</span>
+                <span className="font-display text-lg font-black text-primary">${totalCurrent.toFixed(2)}</span>
               </div>
-              <div className="space-y-1">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
                 {sortedDenoms.map((denomination) => (
-                  <div key={`current-${denomination.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-10 w-10 rounded-xl" iconClassName="h-4 w-4" />
-                      <span className="truncate text-sm font-semibold text-foreground">${denomination.value.toFixed(2)}</span>
+                  <div key={`current-${denomination.id}`} className="grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border border-emerald-100 bg-white p-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-emerald-50/80 px-1.5 py-1">
+                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
+                      <span className="truncate text-sm font-black tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="tabular-nums text-sm font-bold text-foreground">{denomination.qty_current}</span>
-                      <span className="w-16 text-right text-xs text-muted-foreground">
-                        ${(denomination.qty_current * denomination.value).toFixed(2)}
-                      </span>
+                    <div className="rounded-lg border-t border-emerald-100 bg-white px-1.5 py-1.5">
+                    <div className="grid grid-cols-2 items-end gap-1.5">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-700">Cant.</p>
+                        <p className="mt-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-center text-sm font-black tabular-nums text-slate-950">{denomination.qty_current}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-700">Total</p>
+                        <p className="mt-0.5 text-sm font-black tabular-nums text-slate-800">
+                          ${(denomination.qty_current * denomination.value).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
                     </div>
                   </div>
                 ))}
@@ -560,7 +577,7 @@ export default function ShiftSummary({
         canRegister={!readOnly}
         registering={registeringMovement}
         onRegister={async (payload) => {
-          if (!onRegisterMovement) return;
+          if (!onRegisterMovement) throw new Error("No hay una accion configurada para registrar el movimiento.");
           await onRegisterMovement(payload);
         }}
       />

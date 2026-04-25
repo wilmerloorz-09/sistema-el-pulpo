@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, LayoutGrid, Loader2, Users } from "lucide-react";
+import { ArrowRightLeft, Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -82,9 +81,6 @@ export default function ChangeTableDialog({
       <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:max-w-2xl">
         <DialogHeader className="space-y-2">
           <DialogTitle className="font-display text-xl font-black text-foreground">Cambiar de mesa</DialogTitle>
-          <DialogDescription>
-            Elige la mesa destino para mover esta orden `DINE_IN`. Si la mesa ya tiene actividad, la orden se agregara como otra orden dentro de esa mesa.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -104,9 +100,9 @@ export default function ChangeTableDialog({
           </div>
 
           <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {candidateTables.length === 0 ? (
-                <div className="rounded-[22px] border border-dashed border-border bg-muted/40 px-4 py-8 text-center text-sm text-muted-foreground sm:col-span-2">
+                <div className="col-span-2 rounded-[22px] border border-dashed border-border bg-muted/40 px-4 py-8 text-center text-sm text-muted-foreground">
                   No hay otra mesa activa disponible para mover esta orden.
                 </div>
               ) : (
@@ -120,27 +116,22 @@ export default function ChangeTableDialog({
                       type="button"
                       onClick={() => setSelectedTableId(table.id)}
                       className={cn(
-                        "rounded-[22px] border p-4 text-left transition-all",
+                        "rounded-[18px] border p-3 text-left transition-all",
                         selected
                           ? "border-orange-400 bg-orange-50 shadow-[0_18px_34px_-28px_rgba(249,115,22,0.9)]"
                           : "border-orange-100 bg-white/85 hover:border-orange-200 hover:bg-orange-50/50",
                       )}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-display text-base font-black text-foreground">{table.name}</p>
+                      <div className="flex flex-col gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-display text-sm font-black text-foreground">{table.name}</p>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {table.splitCount > 0 ? `${table.splitCount} orden(es) activas` : "Sin ordenes activas"}
                           </p>
                         </div>
-                        <Badge variant="outline" className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", status.badgeClass)}>
+                        <Badge variant="outline" className={cn("w-fit rounded-full px-2 py-0.5 text-[10px] font-bold", status.badgeClass)}>
                           {status.label}
                         </Badge>
-                      </div>
-
-                      <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                        {table.status === "free" ? <LayoutGrid className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-                        <span>{status.hint}</span>
                       </div>
                     </button>
                   );
@@ -159,11 +150,11 @@ export default function ChangeTableDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={moving}>
+        <DialogFooter className="flex-row gap-2 space-x-0">
+          <Button className="flex-1" variant="outline" onClick={() => onOpenChange(false)} disabled={moving}>
             Cancelar
           </Button>
-          <Button onClick={() => selectedTable && onConfirm(selectedTable.id)} disabled={!selectedTable || moving}>
+          <Button className="flex-1" onClick={() => selectedTable && onConfirm(selectedTable.id)} disabled={!selectedTable || moving}>
             {moving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightLeft className="h-4 w-4" />}
             Confirmar cambio
           </Button>

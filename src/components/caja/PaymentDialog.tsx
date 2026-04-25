@@ -398,7 +398,7 @@ export default function PaymentDialog({
   const appliedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.appliedAmount, 0));
   const receivedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.receivedAmount, 0));
   const shortageAmount = roundMoney(Math.max(0, currentChargeTotal - appliedSplitTotal));
-  const changeAmount = roundMoney(Math.max(0, receivedSplitTotal - currentChargeTotal));
+  const changeAmount = roundMoney(cashPreview?.overpayAmount ?? 0);
 
   const changeDenomBreakdown = useMemo(() => {
     if (changeAmount <= 0) return [];

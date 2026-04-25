@@ -472,7 +472,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
           const effectiveItems = shouldUseOrderStageFallback ? fallbackStageItems : related;
 
-          const formattedItems: OrderItemSummary[] = effectiveItems.map((item) => ({
+          let formattedItems: OrderItemSummary[] = effectiveItems.map((item) => ({
             id: item.id,
             product_id: item.product_id ?? undefined,
             description_snapshot: item.description_snapshot,
@@ -498,10 +498,38 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             item_note: item.item_note ?? null,
           }));
 
-          const total = effectiveItems.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+          if (paidView && Boolean(order.is_special) && order.status === "PAID" && formattedItems.length === 0) {
+            formattedItems = items
+              .filter((item) => item.order_id === order.id)
+              .map((item) => {
+                const quantity = Math.max(0, Number(item.quantity ?? 0));
+                if (quantity <= 0) return null;
+
+                return {
+                  id: item.id,
+                  product_id: item.product_id ?? undefined,
+                  description_snapshot: item.description_snapshot,
+                  quantity,
+                  quantity_total: quantity,
+                  quantity_dispatched: Math.max(0, dispatchedTotalMap[item.id] ?? 0),
+                  quantity_remaining: Math.max(
+                    0,
+                    (pendingPrepareMap[item.id] ?? 0) + (readyAvailableMap[item.id] ?? 0),
+                  ),
+                  total: Number(item.total ?? computeLineAmount(quantity, Number(item.unit_price ?? 0))),
+                  status: "PAID",
+                  tray_item_type: item.tray_item_type ?? null,
+                  modifiers: modsMap[item.id] || [],
+                  item_note: item.item_note ?? null,
+                } satisfies OrderItemSummary;
+              })
+              .filter((item): item is OrderItemSummary => Boolean(item));
+          }
+
+          const total = formattedItems.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
           const item_count = pendingCancellationView
             ? formattedItems.length
-            : effectiveItems.reduce((count, item) => count + Number(item.quantity ?? 0), 0);
+            : formattedItems.reduce((count, item) => count + Number(item.quantity ?? 0), 0);
 
           const isTakeoutDispatchedOnCancelledTab =
             cancelledView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED";
