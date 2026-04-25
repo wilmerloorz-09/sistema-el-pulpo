@@ -5,6 +5,8 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
+--   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
+--   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden`
@@ -69,6 +71,12 @@
 --   - Despacho incluye acceso total a Productos
 --   - Ordenes y Productos tambien pueden habilitarse por separado
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
+-- - TAMBIEN PERMANECE INTACTA LA REGLA UI DE CIERRE DE TURNO:
+--   - si hay ordenes especiales pendientes con valor `$0`, se debe pedir confirmacion
+--   - al continuar, esas ordenes se marcan `PAID` y luego se invoca el cierre normal del turno
+--   - el conteo debe limitarse a estados realmente bloqueantes: SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
+-- - TAMBIEN PERMANECE INTACTA LA REGLA DE VISIBILIDAD:
+--   - ordenes especiales `PAID` deben aparecer en Pagadas aunque no tengan cantidades pagadas por item
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios

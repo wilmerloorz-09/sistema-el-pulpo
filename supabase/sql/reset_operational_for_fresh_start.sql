@@ -5,6 +5,8 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
+--   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
+--   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden`
@@ -31,12 +33,17 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
+--   - cerrar turno puede resolver ordenes especiales pendientes de `$0` solo con confirmacion explicita antes de invocar el cierre normal
+--   - el conteo de esa confirmacion solo debe incluir SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
 -- - Conserva la arquitectura de reportes de caja, pero borra la base operativa que esos reportes leen:
 --   - aperturas/cierres de `cash_register_openings`
 --   - pagos del rango
 --   - movimientos de caja
 --   - composicion actual de `cash_shift_denoms`
 -- - Conserva las RPCs/funciones operativas, incluidas las de alerta de mesero, las de orden especial y el sistema de tickets (80mm)
+-- - Conserva la regla visual de Ordenes:
+--   - ordenes especiales `PAID` deben aparecer en Pagadas aunque no tengan cantidades pagadas por item
+--   - `special_total_manual` es el valor manual visible/cobrable de la orden especial
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 --   - por eso se mantiene que un mesero pueda anular directo solo en las categorias habilitadas por turno/sucursal
@@ -172,6 +179,8 @@ COMMIT;
 -- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial
 -- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
 -- - 0 borradores vacios residuales capaces de seguir ocupando una mesa en overview
+-- - 0 ordenes especiales `$0` pendientes capaces de bloquear cierre de turno
+-- - 0 ordenes especiales `PAID` historicas ocultas por falta de detalle cobrado en `payment_items`
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)

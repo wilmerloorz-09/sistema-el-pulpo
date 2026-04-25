@@ -79,6 +79,8 @@
 ### Ordenes
 - `orders.menu_scope` conserva el arbol visual usado por la orden.
 - `orders.is_special` y `orders.special_total_manual` modelan `Orden Especial`.
+- En `Orden Especial`, `special_total_manual` es el valor manual visible/cobrable. No asumir que coincide con `orders.total` ni con `sum(order_items.total)`.
+- Las ordenes especiales con `status = 'PAID'` deben considerarse pagadas aunque el detalle de cobro por item no exista o no represente cantidades visibles en `payment_items`.
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
@@ -100,6 +102,11 @@
 - `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
 - Cerrar caja y cerrar turno no son la misma operacion.
+- `close_cash_shift_with_tables(...)` sigue siendo el cierre final del turno. Antes de llamarlo desde UI, `Admin > Turno` puede resolver ordenes especiales pendientes con valor `$0` mediante confirmacion explicita, marcandolas `PAID`.
+- Para ese flujo, solo cuentan como bloqueantes las ordenes especiales `$0` en estados:
+  - `SENT_TO_KITCHEN`
+  - `READY`
+  - `KITCHEN_DISPATCHED` con `paid_at IS NULL`
 - Los reportes por apertura deben reconstruirse desde:
   - `cash_register_openings.opened_at`
   - `cash_register_openings.closed_at`

@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-04-19)
+## Estado operativo vigente (2026-04-25)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -33,6 +33,14 @@
 - `cash_shift_users.last_session_id` se usa para session lock y toma de control vigente en Caja.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
+- Al cerrar turno, si existen ordenes especiales pendientes con valor operativo `$0`, el sistema debe mostrar una confirmacion:
+  - `Cancelar`
+  - `Continuar cierre`
+- Al confirmar, esas ordenes especiales `$0` se marcan como `PAID` y luego continua el cierre normal del turno.
+- El conteo de esa confirmacion solo debe incluir ordenes especiales `$0` que realmente bloquean cierre:
+  - `SENT_TO_KITCHEN`
+  - `READY`
+  - `KITCHEN_DISPATCHED` sin `paid_at`
 
 ### 3. Caja y pagos
 - `Caja` trabaja con:
@@ -88,6 +96,7 @@
   - `Pendiente de anulacion`
   - `Anuladas`
   - `Pagadas`
+- La pestana `Pagadas` debe mostrar ordenes especiales `PAID` aunque no tengan cantidades cobradas visibles por `payment_items`; en ese caso usa los items reales como detalle visual y `special_total_manual` como valor presentado de la orden.
 - `CancelOrderDialog` sigue el modelo de doble lista.
 - La solicitud de anulacion pendiente ya es parte base del flujo operativo:
   - `create_pending_order_cancellation_request(...)`
@@ -121,6 +130,8 @@
 ### 7. Orden especial
 - `Orden Especial` sigue siendo metadata sobre `orders`, no un `order_type` nuevo.
 - Usa `orders.is_special` y `orders.special_total_manual`.
+- Para ordenes especiales, `special_total_manual` es el valor manual visible/cobrable aunque `orders.total` o la suma de `order_items.total` difieran.
+- Una orden especial `$0` puede quedar como flujo operativo valido hasta despacho; si bloquea cierre de turno, se resuelve por confirmacion explicita en `Admin > Turno`.
 
 ### 8. Comprobantes de transferencia
 - El backend dedicado `proof_capture_backend` sigue vigente.
@@ -132,7 +143,7 @@
 
 ## Cambios recientes que ya deben considerarse base
 
-### 2026-04-11 / 2026-04-19
+### 2026-04-11 / 2026-04-25
 - Caja:
   - la caja puede cerrarse sin cerrar el turno
   - el resumen usa efectivo neto aplicado en vez de monto bruto recibido
@@ -151,6 +162,8 @@
   - crear/eliminar cuentas adicionales ya respeta el shift gate operativo
   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios`
   - los items nuevos aceptados desde `Editar Orden` pasan directo a estado operativo
+  - las ordenes especiales pagadas aparecen en `Pagadas` aunque el pago no tenga cantidades por item visibles
+  - el cierre de turno puede confirmar y autopagar ordenes especiales pendientes con valor `$0`
 - Caja / seguridad operativa:
   - session lock por `last_session_id` en `cash_shift_users`
 

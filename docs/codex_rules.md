@@ -22,6 +22,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 4. Caja y turno no son lo mismo
 - No mezclar cierre de caja con cierre de turno.
 - `close_cash_register(...)` puede cerrar solo la caja.
+- `close_cash_shift_with_tables(...)` es cierre de turno. Si el flujo UI debe resolver ordenes especiales `$0`, debe hacerlo con confirmacion explicita antes de llamar al cierre.
+- Para ordenes especiales `$0`, no inflar conteos con borradores vacios ni pagadas historicas: contar solo `SENT_TO_KITCHEN`, `READY` y `KITCHEN_DISPATCHED` sin `paid_at`.
 - Respetar:
   - `cash_shifts` como turno
   - `cash_register_openings` como historial de aperturas
@@ -92,6 +94,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
 - Una linea `DRAFT` no debe aparecer en pestanas operativas posteriores.
+- En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
+- No asumir que `orders.total` de una orden especial coincide con `special_total_manual` o con `sum(order_items.total)`.
 
 ### 11. Comprobantes de transferencia
 - No romper separacion entre captura, almacenamiento, OCR/analisis y aprobacion/rechazo posterior.

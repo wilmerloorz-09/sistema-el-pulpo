@@ -56,11 +56,19 @@ const isAlreadyExistsAssignmentError = (error: any) => {
 const defaultForm = {
   full_name: "",
   username: "",
+  identity_number: "",
+  home_address: "",
+  phone: "",
   email: "",
   password: "",
   confirmPassword: "",
   user_type: "usuario_operativo" as "administrador" | "supervisor" | "usuario_operativo",
 };
+
+const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
+const FULL_NAME_PATTERN = /^[\p{L}\s]+$/u;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TEN_DIGIT_PATTERN = /^\d{10}$/;
 
 const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: AddUserDialogProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +78,14 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const [selectedBranchId, setSelectedBranchId] = useState("");
 
   const isAdmin = form.user_type === "administrador";
+  const isSupervisor = form.user_type === "supervisor";
+  const usernameValid = USERNAME_PATTERN.test(form.username);
+  const fullNameValid = FULL_NAME_PATTERN.test(form.full_name.trim());
+  const identityNumberValid = TEN_DIGIT_PATTERN.test(form.identity_number);
+  const homeAddressValid = form.home_address.trim().length > 0;
+  const emailValid = EMAIL_PATTERN.test(form.email.trim());
+  const phoneValid = TEN_DIGIT_PATTERN.test(form.phone);
+  const passwordValid = form.password.length >= 6;
 
   const handleClose = () => {
     setForm(defaultForm);
@@ -115,6 +131,9 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
         password: form.password,
         full_name: form.full_name,
         username: form.username.trim(),
+        identity_number: form.identity_number.trim() || null,
+        home_address: form.home_address.trim() || null,
+        phone: form.phone.trim() || null,
         branch_roles:
           !isAdmin && selectedBranchId && branchRoleCode
             ? [{ branch_id: selectedBranchId, role_code: branchRoleCode }]
@@ -202,13 +221,16 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
 
   const passwordsMatch = form.password === form.confirmPassword;
   const canSubmit =
-    !!form.full_name &&
-    !!form.username &&
-    !!form.email &&
-    !!form.password &&
+    usernameValid &&
+    fullNameValid &&
+    identityNumberValid &&
+    homeAddressValid &&
+    emailValid &&
+    phoneValid &&
+    passwordValid &&
     !!form.confirmPassword &&
     passwordsMatch &&
-    (isAdmin || !!selectedBranchId);
+    (!isSupervisor || !!selectedBranchId);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
@@ -251,38 +273,89 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
 
         <div className="space-y-6 p-6">
           <div className="space-y-3">
-            <h4 className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Datos del perfil</h4>
-
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre Completo</label>
-                <Input
-                  placeholder="Ej: Juan Perez"
-                  value={form.full_name}
-                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-                  className="h-10 rounded-xl border-slate-200"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre de Usuario</label>
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre de usuario</label>
                 <Input
                   placeholder="Ej: jperez"
                   value={form.username}
-                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  onChange={(e) => setForm({ ...form, username: e.target.value.replace(/[^A-Za-z0-9]/g, "") })}
                   className="h-10 rounded-xl border-slate-200"
                 />
+                {form.username && !usernameValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras y numeros</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">No. de cedula</label>
+                <Input
+                  placeholder="Ej: 1300000000"
+                  value={form.identity_number}
+                  maxLength={10}
+                  inputMode="numeric"
+                  onChange={(e) => setForm({ ...form, identity_number: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  className="h-10 rounded-xl border-slate-200"
+                />
+                {form.identity_number && !identityNumberValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">La cedula debe tener exactamente 10 numeros</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Correo Electronico</label>
+              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre completo</label>
+                <Input
+                  placeholder="Ej: Juan Perez"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
+                  className="h-10 rounded-xl border-slate-200"
+                />
+                {form.full_name && !fullNameValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
+                )}
+              </div>
+
+            <div className="space-y-1.5">
+              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Direccion domiciliaria</label>
               <Input
-                placeholder="correo@ejemplo.com"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="Direccion del domicilio"
+                value={form.home_address}
+                onChange={(e) => setForm({ ...form, home_address: e.target.value })}
                 className="h-10 rounded-xl border-slate-200"
               />
+              {form.home_address && !homeAddressValid && (
+                <p className="ml-1 text-[11px] font-medium text-destructive">La direccion es obligatoria</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Correo electronico</label>
+                <Input
+                  placeholder="correo@ejemplo.com"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="h-10 rounded-xl border-slate-200"
+                />
+                {form.email && !emailValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Ingresa un correo valido</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Telefono</label>
+                <Input
+                  placeholder="Ej: 0999999999"
+                  value={form.phone}
+                  maxLength={10}
+                  inputMode="numeric"
+                  onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  className="h-10 rounded-xl border-slate-200"
+                />
+                {form.phone && !phoneValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">El telefono debe tener exactamente 10 numeros</p>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -295,6 +368,9 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className="h-10 rounded-xl border-slate-200"
                 />
+                {form.password && !passwordValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Minimo 6 caracteres</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Confirmar Contrasena</label>
@@ -355,7 +431,9 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5 text-primary" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sucursal asignada</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Sucursal asignada {isSupervisor ? "" : "(opcional)"}
+                </span>
               </div>
               <Select value={selectedBranchId || undefined} onValueChange={setSelectedBranchId}>
                 <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
@@ -369,8 +447,21 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   ))}
                 </SelectContent>
               </Select>
+              {!isSupervisor && selectedBranchId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 rounded-xl px-3 text-xs text-muted-foreground"
+                  onClick={() => setSelectedBranchId("")}
+                >
+                  Dejar sin sucursal
+                </Button>
+              )}
               <p className="ml-1 text-[11px] italic text-muted-foreground">
-                Cada usuario operativo o supervisor solo puede estar asignado a una sucursal.
+                {isSupervisor
+                  ? "El supervisor debe tener una sucursal asignada."
+                  : "El usuario operativo puede crearse sin sucursal y asignarse despues."}
               </p>
             </div>
           )}

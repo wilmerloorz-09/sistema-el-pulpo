@@ -23,6 +23,9 @@ interface UserRow {
   full_name: string;
   username: string;
   email?: string | null;
+  identity_number?: string | null;
+  home_address?: string | null;
+  phone?: string | null;
   is_active: boolean;
   active_branch_id: string | null;
   avatar_url?: string | null;
@@ -44,6 +47,11 @@ interface EditUserDialogProps {
   } | undefined;
 }
 
+const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
+const FULL_NAME_PATTERN = /^[\p{L}\s]+$/u;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TEN_DIGIT_PATTERN = /^\d{10}$/;
+
 const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }: EditUserDialogProps) => {
   const { profile, refreshProfile } = useAuth();
   const isProtected = Boolean(user.is_protected_superadmin);
@@ -54,6 +62,9 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const [editValues, setEditValues] = useState({
     full_name: user.full_name,
     username: user.username,
+    identity_number: user.identity_number ?? "",
+    home_address: user.home_address ?? "",
+    phone: user.phone ?? "",
   });
 
   const currentUserType = isAdmin
@@ -71,12 +82,26 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId);
 
   const isNewAdmin = selectedUserType === "administrador";
+  const isNewSupervisor = selectedUserType === "supervisor";
+  const usernameValid = USERNAME_PATTERN.test(editValues.username);
+  const fullNameValid = FULL_NAME_PATTERN.test(editValues.full_name.trim());
+  const identityNumberValid = TEN_DIGIT_PATTERN.test(editValues.identity_number);
+  const homeAddressValid = editValues.home_address.trim().length > 0;
+  const emailValid = EMAIL_PATTERN.test(user.email ?? "");
+  const phoneValid = TEN_DIGIT_PATTERN.test(editValues.phone);
+  const canSaveProfile = usernameValid && fullNameValid && identityNumberValid && homeAddressValid && emailValid && phoneValid;
 
   const saveUser = useMutation({
     mutationFn: async () => {
       const { error: profileError } = await supabase
         .from("profiles")
-        .update({ full_name: editValues.full_name, username: editValues.username })
+        .update({
+          full_name: editValues.full_name,
+          username: editValues.username,
+          identity_number: editValues.identity_number.trim() || null,
+          home_address: editValues.home_address.trim() || null,
+          phone: editValues.phone.trim() || null,
+        } as any)
         .eq("id", user.id);
       if (profileError) throw profileError;
 
@@ -102,8 +127,8 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
         return;
       }
 
-      if (!selectedBranchId) {
-        throw new Error("Selecciona una sucursal para este usuario.");
+      if (selectedUserType === "supervisor" && !selectedBranchId) {
+        throw new Error("Selecciona una sucursal para el supervisor.");
       }
 
       if (isAdmin) {
@@ -122,6 +147,14 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           p_reason: "Reemplazo de asignacion unica por sucursal",
         } as any);
         if (error) throw error;
+      }
+
+      if (!selectedBranchId) {
+        const { error: clearBranchError } = await (supabase.from("profiles") as any)
+          .update({ active_branch_id: null })
+          .eq("id", user.id);
+        if (clearBranchError) throw clearBranchError;
+        return;
       }
 
       const resolvedBranchRoleCode = resolveRoleCodeFromCatalog(
@@ -251,25 +284,86 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
 
         <div className="space-y-6 p-6">
           <div className="space-y-3">
-            <h4 className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Datos del perfil</h4>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre Completo</label>
-                <Input
-                  value={editValues.full_name}
-                  onChange={(e) => setEditValues({ ...editValues, full_name: e.target.value })}
-                  className="h-10 rounded-xl border-slate-200"
-                  disabled={isProtected}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre de Usuario</label>
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre de usuario</label>
                 <Input
                   value={editValues.username}
-                  onChange={(e) => setEditValues({ ...editValues, username: e.target.value })}
+                  onChange={(e) => setEditValues({ ...editValues, username: e.target.value.replace(/[^A-Za-z0-9]/g, "") })}
                   className="h-10 rounded-xl border-slate-200"
                   disabled={isProtected}
                 />
+                {editValues.username && !usernameValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras y numeros</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">No. de cedula</label>
+                <Input
+                  value={editValues.identity_number}
+                  maxLength={10}
+                  inputMode="numeric"
+                  onChange={(e) => setEditValues({ ...editValues, identity_number: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  className="h-10 rounded-xl border-slate-200"
+                  disabled={isProtected}
+                />
+                {editValues.identity_number && !identityNumberValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">La cedula debe tener exactamente 10 numeros</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre completo</label>
+              <Input
+                value={editValues.full_name}
+                onChange={(e) => setEditValues({ ...editValues, full_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
+                className="h-10 rounded-xl border-slate-200"
+                disabled={isProtected}
+              />
+              {editValues.full_name && !fullNameValid && (
+                <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Direccion domiciliaria</label>
+              <Input
+                value={editValues.home_address}
+                onChange={(e) => setEditValues({ ...editValues, home_address: e.target.value })}
+                className="h-10 rounded-xl border-slate-200"
+                disabled={isProtected}
+              />
+              {editValues.home_address && !homeAddressValid && (
+                <p className="ml-1 text-[11px] font-medium text-destructive">La direccion es obligatoria</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Correo electronico</label>
+                <Input
+                  value={user.email ?? ""}
+                  className="h-10 rounded-xl border-slate-200 bg-slate-50 text-muted-foreground"
+                  disabled
+                />
+                {user.email && !emailValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Correo invalido</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Telefono</label>
+                <Input
+                  value={editValues.phone}
+                  maxLength={10}
+                  inputMode="numeric"
+                  onChange={(e) => setEditValues({ ...editValues, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  className="h-10 rounded-xl border-slate-200"
+                  disabled={isProtected}
+                />
+                {editValues.phone && !phoneValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">El telefono debe tener exactamente 10 numeros</p>
+                )}
               </div>
             </div>
           </div>
@@ -287,8 +381,8 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
                   if (val === "administrador") {
                     setSelectedBranchId("");
                   }
-                  if (val !== "administrador" && !selectedBranchId) {
-                    setSelectedBranchId(initialBranchId || catalog?.branches[0]?.id || "");
+                  if (val === "supervisor" && !selectedBranchId) {
+                    setSelectedBranchId(initialBranchId || "");
                   }
                 }}
                 disabled={isProtected || saveUser.isPending}
@@ -308,7 +402,9 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <Building2 className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sucursal asignada</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Sucursal asignada {isNewSupervisor ? "" : "(opcional)"}
+                  </span>
                 </div>
                 <Select
                   value={selectedBranchId || undefined}
@@ -326,6 +422,18 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
                     ))}
                   </SelectContent>
                 </Select>
+                {!isNewSupervisor && selectedBranchId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded-xl px-3 text-xs text-muted-foreground"
+                    disabled={isProtected || saveUser.isPending}
+                    onClick={() => setSelectedBranchId("")}
+                  >
+                    Dejar sin sucursal
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -344,7 +452,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
             <Button
               size="sm"
               onClick={() => saveUser.mutate()}
-              disabled={saveUser.isPending || (!isNewAdmin && !selectedBranchId)}
+              disabled={saveUser.isPending || !canSaveProfile || (isNewSupervisor && !selectedBranchId)}
               className="h-9 rounded-xl px-6 text-xs font-bold shadow-sm"
             >
               {saveUser.isPending ? (

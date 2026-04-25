@@ -51,6 +51,9 @@
   - `Pagadas`
 - Regla vigente:
   - una linea `DRAFT` no debe aparecer en etapas posteriores
+- `Orden Especial` es metadata de `orders` (`is_special`, `special_total_manual`), no un `order_type` nuevo.
+- En ordenes especiales, `special_total_manual` es el valor manual visible/cobrable; puede diferir de `orders.total` y de la suma real de `order_items.total`.
+- La pestana `Pagadas` debe incluir ordenes especiales con `status = 'PAID'` aun si no existen cantidades cobradas por item en `payment_items`; la UI debe usar los items reales para poder mostrarlas.
 - La solicitud pendiente de anulacion ya tiene arquitectura propia:
   - escritura: `create_pending_order_cancellation_request(...)`
   - marcado oficial: `request_order_cancellation(...)`
@@ -92,6 +95,10 @@
 - Diferencia de arquitectura vigente:
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
+- Cierre de turno desde `Admin > Turno`:
+  - si hay ordenes especiales pendientes con valor operativo `$0`, la UI debe pedir confirmacion antes de cerrar
+  - si el usuario continua, esas ordenes se marcan `PAID` y despues se invoca `close_cash_shift_with_tables(...)`
+  - el conteo debe limitarse a ordenes que realmente bloquean cierre (`SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED` sin `paid_at`)
 - La caja fisica se compone desde `cash_shift_denoms.qty_current`.
 - Las plantillas de apertura viven en:
   - `cash_register_templates`

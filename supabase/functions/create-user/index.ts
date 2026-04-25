@@ -48,11 +48,42 @@ Deno.serve(async (req) => {
     const password = String(payload?.password ?? "");
     const full_name = String(payload?.full_name ?? "").trim();
     const username = String(payload?.username ?? "").trim();
+    const identity_number = String(payload?.identity_number ?? "").trim() || null;
+    const home_address = String(payload?.home_address ?? "").trim() || null;
+    const phone = String(payload?.phone ?? "").trim() || null;
     const branch_roles = payload?.branch_roles;
     const global_roles = payload?.global_roles;
 
     if (!email || !password || !full_name || !username) {
       return toJson({ error: "Faltan campos requeridos" }, 400);
+    }
+
+    if (!/^[A-Za-z0-9]+$/.test(username)) {
+      return toJson({ error: "El nombre de usuario solo puede tener letras y numeros" }, 400);
+    }
+
+    if (!/^[\p{L}\s]+$/u.test(full_name)) {
+      return toJson({ error: "El nombre completo solo puede tener letras" }, 400);
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return toJson({ error: "Ingresa un correo valido" }, 400);
+    }
+
+    if (!identity_number || !/^\d{10}$/.test(identity_number)) {
+      return toJson({ error: "La cedula debe tener exactamente 10 numeros" }, 400);
+    }
+
+    if (!home_address) {
+      return toJson({ error: "La direccion domiciliaria es obligatoria" }, 400);
+    }
+
+    if (!phone || !/^\d{10}$/.test(phone)) {
+      return toJson({ error: "El telefono debe tener exactamente 10 numeros" }, 400);
+    }
+
+    if (password.length < 6) {
+      return toJson({ error: "La contrasena debe tener minimo 6 caracteres" }, 400);
     }
 
     const { data: existingUsername, error: existingUsernameError } = await adminClient
@@ -98,10 +129,6 @@ Deno.serve(async (req) => {
       ? [...new Set(global_roles.map((role: unknown) => String(role).trim()).filter(Boolean))]
       : [];
 
-    if (branchRoleList.length === 0 && globalRoleList.length === 0) {
-      return toJson({ error: "Debes asignar al menos un rol global o una sucursal con rol" }, 400);
-    }
-
     const branchIds = [...new Set(branchRoleList.map((entry) => entry.branch_id))];
 
     if (branchIds.length > 0) {
@@ -141,6 +168,19 @@ Deno.serve(async (req) => {
     const userId = authData.user.id;
 
     try {
+      const { error: profileDetailsError } = await adminClient
+        .from("profiles")
+        .update({
+          identity_number,
+          home_address,
+          phone,
+        })
+        .eq("id", userId);
+
+      if (profileDetailsError) {
+        throw new Error(`No se pudieron guardar los datos adicionales del usuario: ${profileDetailsError.message}`);
+      }
+
       if (globalRoleList.length > 0) {
         const { data: globalRolesData, error: globalRolesError } = await adminClient
           .from("roles")
@@ -238,25 +278,6 @@ Deno.serve(async (req) => {
 
         if (activeError) {
           throw new Error(`No se pudo definir sucursal activa: ${activeError.message}`);
-        }
-      } else {
-        const { data: firstBranch } = await adminClient
-          .from("branches")
-          .select("id")
-          .eq("is_active", true)
-          .order("name")
-          .limit(1)
-          .maybeSingle();
-
-        if (firstBranch?.id) {
-          const { error: fallbackBranchError } = await adminClient
-            .from("profiles")
-            .update({ active_branch_id: firstBranch.id })
-            .eq("id", userId);
-
-          if (fallbackBranchError) {
-            throw new Error(`No se pudo definir sucursal activa inicial: ${fallbackBranchError.message}`);
-          }
         }
       }
     } catch (assignmentError) {

@@ -2317,12 +2317,15 @@ export type Database = {
           current_app_session_id: string | null
           current_app_session_started_at: string | null
           email: string | null
-          full_name: string
-          id: string
-          is_active: boolean
-          is_payment_proof_capture_operator: boolean
-          is_protected_superadmin: boolean
-          role: string | null
+            full_name: string
+            home_address: string | null
+            id: string
+            identity_number: string | null
+            is_active: boolean
+            is_payment_proof_capture_operator: boolean
+            is_protected_superadmin: boolean
+            phone: string | null
+            role: string | null
           updated_at: string
           user_code: string | null
           username: string
@@ -2336,12 +2339,15 @@ export type Database = {
           current_app_session_id?: string | null
           current_app_session_started_at?: string | null
           email?: string | null
-          full_name: string
-          id: string
-          is_active?: boolean
-          is_payment_proof_capture_operator?: boolean
-          is_protected_superadmin?: boolean
-          role?: string | null
+            full_name: string
+            home_address?: string | null
+            id: string
+            identity_number?: string | null
+            is_active?: boolean
+            is_payment_proof_capture_operator?: boolean
+            is_protected_superadmin?: boolean
+            phone?: string | null
+            role?: string | null
           updated_at?: string
           user_code?: string | null
           username: string
@@ -2355,12 +2361,15 @@ export type Database = {
           current_app_session_id?: string | null
           current_app_session_started_at?: string | null
           email?: string | null
-          full_name?: string
-          id?: string
-          is_active?: boolean
-          is_payment_proof_capture_operator?: boolean
-          is_protected_superadmin?: boolean
-          role?: string | null
+            full_name?: string
+            home_address?: string | null
+            id?: string
+            identity_number?: string | null
+            is_active?: boolean
+            is_payment_proof_capture_operator?: boolean
+            is_protected_superadmin?: boolean
+            phone?: string | null
+            role?: string | null
           updated_at?: string
           user_code?: string | null
           username?: string

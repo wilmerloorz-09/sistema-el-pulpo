@@ -32,6 +32,9 @@ interface UserRow {
   full_name: string;
   username: string;
   email?: string | null;
+  identity_number?: string | null;
+  home_address?: string | null;
+  phone?: string | null;
   is_active: boolean;
   active_branch_id: string | null;
   avatar_url?: string | null;
@@ -228,6 +231,8 @@ const UsersCrud = () => {
     const matchSearch = !search ||
       u.full_name.toLowerCase().includes(search.toLowerCase()) ||
       (u.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (u.identity_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (u.phone ?? '').toLowerCase().includes(search.toLowerCase()) ||
       u.username.toLowerCase().includes(search.toLowerCase());
     const isAdmin = u.global_roles.some((r) => r.code === "administrador");
     const isSupervisor = !isAdmin && u.branch_assignments.some((a) => a.role_code === "supervisor");
@@ -304,7 +309,7 @@ const UsersCrud = () => {
           <div className="relative min-w-[180px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Buscar nombre, email..."
+              placeholder="Buscar nombre, email, cedula..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="h-9 rounded-xl border-slate-200 pl-9 text-sm"
@@ -423,6 +428,11 @@ const UsersCrud = () => {
                       {user.full_name}
                     </p>
                     <p className="truncate text-[11px] text-muted-foreground">{user.email ?? `@${user.username}`}</p>
+                    {(user.identity_number || user.phone) && (
+                      <p className="truncate text-[10px] text-slate-400">
+                        {[user.identity_number ? `CI: ${user.identity_number}` : null, user.phone].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
                   </div>
 
                   {/* Tipo de usuario */}

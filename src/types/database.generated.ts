@@ -1040,32 +1040,41 @@ export type Database = {
       }
       profiles: {
         Row: {
-          branch_id: string | null
-          created_at: string
-          full_name: string
-          id: string
-          is_active: boolean
-          role: string | null
+            branch_id: string | null
+            created_at: string
+            full_name: string
+            home_address: string | null
+            id: string
+            identity_number: string | null
+            is_active: boolean
+            phone: string | null
+            role: string | null
           updated_at: string
           username: string
         }
         Insert: {
-          branch_id?: string | null
-          created_at?: string
-          full_name: string
-          id: string
-          is_active?: boolean
-          role?: string | null
+            branch_id?: string | null
+            created_at?: string
+            full_name: string
+            home_address?: string | null
+            id: string
+            identity_number?: string | null
+            is_active?: boolean
+            phone?: string | null
+            role?: string | null
           updated_at?: string
           username: string
         }
         Update: {
-          branch_id?: string | null
-          created_at?: string
-          full_name?: string
-          id?: string
-          is_active?: boolean
-          role?: string | null
+            branch_id?: string | null
+            created_at?: string
+            full_name?: string
+            home_address?: string | null
+            id?: string
+            identity_number?: string | null
+            is_active?: boolean
+            phone?: string | null
+            role?: string | null
           updated_at?: string
           username?: string
         }
