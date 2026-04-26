@@ -55,8 +55,8 @@ interface ZeroValueSpecialOrder {
 
 const OPERATIVE_ROLE_KEYS: Array<keyof Pick<
   ShiftUserRow,
-  "can_serve_tables" | "can_access_orders" | "can_edit_orders" | "can_dispatch_orders" | "can_manage_products" | "can_use_caja" | "is_supervisor"
->> = ["can_serve_tables", "can_access_orders", "can_edit_orders", "can_dispatch_orders", "can_manage_products", "can_use_caja", "is_supervisor"];
+  "can_serve_tables" | "can_access_orders" | "can_edit_orders" | "can_dispatch_orders" | "can_manage_products" | "can_use_caja" | "can_authorize_order_cancel" | "is_supervisor"
+>> = ["can_serve_tables", "can_access_orders", "can_edit_orders", "can_dispatch_orders", "can_manage_products", "can_use_caja", "can_authorize_order_cancel", "is_supervisor"];
 
 type ShiftUserRoleKey = keyof Pick<
   ShiftUserRow,
@@ -121,6 +121,7 @@ function sanitizeShiftUserCapability<T extends {
     || user.canDispatchOrders
     || user.canManageProducts
     || user.canUseCaja
+    || user.canAuthorizeOrderCancel
     || user.isSupervisor;
 
   if (!user.isEnabled || hasOperationalRole) {
@@ -634,7 +635,7 @@ const ShiftSetupAdmin = () => {
     workingDispatchConfig?.dispatch_mode,
     enabledDispatchUserIds.length,
     enabledUserIds.length,
-    shiftUsersState.length,
+    shiftUsersState,
     missingDispatchViews,
   ]);
 
@@ -972,18 +973,46 @@ const ShiftSetupAdmin = () => {
     const cashierUserId =
       sanitizedEnabledUsers.find((entry) => entry.canUseCaja)?.userId ?? null;
 
+    const oldCashierQuery = (supabase
+      .from("cash_shift_users" as any)
+      .delete()
+      .eq("shift_id", shiftId)
+      .eq("is_enabled", true)
+      .eq("can_use_caja", true)
+      .eq("can_serve_tables", false)
+      .eq("can_access_orders", false)
+      .eq("can_edit_orders", false)
+      .eq("can_dispatch_orders", false)
+      .eq("can_manage_products", false)
+      .eq("can_authorize_order_cancel", false)
+      .eq("is_supervisor", false) as any);
+
+    const { error: deleteOnlyCajaError } = cashierUserId
+      ? await oldCashierQuery.neq("user_id", cashierUserId)
+      : await oldCashierQuery;
+
+    if (deleteOnlyCajaError) throw deleteOnlyCajaError;
+
     // Clear any previously enabled cashier first so reassignments do not
     // collide with the one-cashier-per-shift unique index.
-    const { error: clearCashierError } = await (supabase
+    const clearCashierQuery = (supabase
       .from("cash_shift_users" as any)
-      .update({ can_use_caja: false } as any)
+      .update({ can_use_caja: false, can_double_session: false } as any)
       .eq("shift_id", shiftId)
       .eq("is_enabled", true)
       .eq("can_use_caja", true) as any);
 
+    const { error: clearCashierError } = cashierUserId
+      ? await clearCashierQuery.neq("user_id", cashierUserId)
+      : await clearCashierQuery;
+
     if (clearCashierError) throw clearCashierError;
 
     for (const entry of sanitizedEnabledUsers) {
+      if (entry.userId === cashierUserId) {
+        continue;
+      }
+
       await setShiftUserEnabledCompat({
         shiftId,
         userId: entry.userId,
