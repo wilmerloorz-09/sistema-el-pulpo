@@ -73,6 +73,15 @@ const ProtectedRoute = ({
   }
 
   const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
+  const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
+  const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
+  const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
+  const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
+  const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
+    ? true
+    : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
+  const hasShiftAccess = requiresOpenShift && shiftOpen && userEnabled && (hasSupervisorBypass || hasRequiredShiftRole);
+
   const fallback = (() => {
     if (preferredPath) return preferredPath;
     if (firstVisiblePath) return firstVisiblePath;
@@ -85,33 +94,7 @@ const ProtectedRoute = ({
     return "/";
   })();
 
-  if (requiredPermission) {
-    const hasRequiredPermission = hasPermission(permissions, requiredPermission.module, requiredPermission.level)
-      || (isGlobalAdmin && requiredPermission.module === "admin_global");
-
-    if (!hasRequiredPermission) {
-      return <Navigate to={fallback} replace />;
-    }
-  }
-
-  if (allowedModules && allowedModules.length > 0) {
-    const hasModule = allowedModules.some((moduleCode) => currentModules.includes(moduleCode))
-      || (isGlobalAdmin && allowedModules.includes("admin_global"));
-
-    if (!hasModule) {
-      return <Navigate to={fallback} replace />;
-    }
-  }
-
   if (requiresOpenShift) {
-    const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
-    const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
-    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
-    const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
-    const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
-      ? true
-      : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
-
     if (!shiftOpen || !userEnabled) {
       if (canAccessAdmin) {
         return <Navigate to="/admin" replace />;
@@ -179,6 +162,24 @@ const ProtectedRoute = ({
           </div>
         </div>
       );
+    }
+  }
+
+  if (requiredPermission && !hasShiftAccess) {
+    const hasRequiredPermission = hasPermission(permissions, requiredPermission.module, requiredPermission.level)
+      || (isGlobalAdmin && requiredPermission.module === "admin_global");
+
+    if (!hasRequiredPermission) {
+      return <Navigate to={fallback} replace />;
+    }
+  }
+
+  if (allowedModules && allowedModules.length > 0 && !hasShiftAccess) {
+    const hasModule = allowedModules.some((moduleCode) => currentModules.includes(moduleCode))
+      || (isGlobalAdmin && allowedModules.includes("admin_global"));
+
+    if (!hasModule) {
+      return <Navigate to={fallback} replace />;
     }
   }
 

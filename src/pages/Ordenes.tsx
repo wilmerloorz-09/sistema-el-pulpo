@@ -70,6 +70,20 @@ interface ProductModifierOption {
   description: string;
 }
 
+interface TakeoutCajaPreview {
+  orderLabel: string;
+  items: Array<{
+    id: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    total: number;
+    modifiers: string[];
+    note: string | null;
+  }>;
+  total: number;
+}
+
 interface MenuProductLookupResult {
   product: SelectedProduct;
   modifiers: ProductModifierOption[];
@@ -393,6 +407,7 @@ const Ordenes = () => {
   const [specialTotalInput, setSpecialTotalInput] = useState("");
   const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
+  const [takeoutCajaPreview, setTakeoutCajaPreview] = useState<TakeoutCajaPreview | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
   const isBulkScopeSelection = currentMenuScope === "BULK";
@@ -546,9 +561,29 @@ const Ordenes = () => {
       ? pendingMenuScopeSelection
       : currentMenuScope;
 
-  const printReceipt = useCallback(() => {
-    window.print();
-  }, []);
+  const buildTakeoutCajaPreview = useCallback((sourceOrder = order): TakeoutCajaPreview | null => {
+    if (!sourceOrder) return null;
+
+    const visibleItems = sourceOrder.items
+      .filter((item) => Number(item.quantity ?? 0) > 0)
+      .map((item) => ({
+        id: item.id,
+        description: item.description_snapshot || "Item sin nombre",
+        quantity: Number(item.quantity ?? 0),
+        unitPrice: Number(item.unit_price ?? 0),
+        total: Number(item.total ?? 0),
+        modifiers: (item.modifiers ?? [])
+          .map((modifier) => String(modifier.description ?? "").trim())
+          .filter(Boolean),
+        note: String(item.item_note ?? "").trim() || null,
+      }));
+
+    return {
+      orderLabel: getOrderRef(sourceOrder.order_code, sourceOrder.order_number),
+      items: visibleItems,
+      total: visibleItems.reduce((sum, item) => sum + item.total, 0),
+    };
+  }, [order]);
 
   const handleMobileBackToMesas = useCallback(() => {
     if (fromMesas) {
@@ -1567,10 +1602,10 @@ const Ordenes = () => {
         <Button
           onClick={() => {
             sendToKitchen.mutate(undefined, {
-              onSuccess: () => {
+              onSuccess: async () => {
                 if (isTakeout) {
-                  printReceipt();
-                  setTimeout(() => navigate("/mesas"), 500);
+                  const updatedOrder = orderId ? await fetchOrderDetail(orderId) : order;
+                  setTakeoutCajaPreview(buildTakeoutCajaPreview(updatedOrder ?? order));
                 }
               },
             });
@@ -2091,6 +2126,65 @@ const Ordenes = () => {
         }}
         adding={addItem.isPending}
       />
+
+      <Dialog open={!!takeoutCajaPreview} onOpenChange={(open) => !open && setTakeoutCajaPreview(null)}>
+        <DialogContent className="max-w-lg rounded-3xl border border-orange-200 p-0">
+          <DialogHeader className="border-b border-orange-100 bg-gradient-to-r from-orange-50 to-amber-50 px-5 py-4">
+            <DialogTitle className="font-display text-lg font-black text-foreground">
+              Orden enviada a Caja
+            </DialogTitle>
+            <DialogDescription className="space-y-1">
+              <span className="block text-xs font-bold uppercase tracking-widest text-orange-700">Numero de orden</span>
+              <span className="block font-mono text-3xl font-black tracking-wide text-slate-950">
+                {takeoutCajaPreview?.orderLabel ?? "--"}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[55vh] space-y-3 overflow-y-auto px-5 py-4">
+            {takeoutCajaPreview?.items.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-bold text-slate-900">{item.description}</p>
+                    {item.modifiers.length > 0 && (
+                      <div className="mt-1 space-y-0.5 text-xs font-semibold text-red-600">
+                        {item.modifiers.map((modifier, index) => (
+                          <p key={`${item.id}-modifier-${index}`}>- {modifier}</p>
+                        ))}
+                      </div>
+                    )}
+                    {item.note && (
+                      <p className="mt-1 break-words text-xs italic text-slate-500">Nota: {item.note}</p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs font-bold text-slate-500">Cant. {item.quantity}</p>
+                    <p className="text-sm font-black text-slate-950">${item.total.toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center justify-between border-t border-slate-200 px-1 pt-4">
+              <span className="text-sm font-bold uppercase tracking-wide text-slate-500">Total</span>
+              <span className="text-2xl font-black text-slate-950">${(takeoutCajaPreview?.total ?? 0).toFixed(2)}</span>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-slate-100 px-5 py-4">
+            <Button
+              className="w-full rounded-xl"
+              onClick={() => {
+                setTakeoutCajaPreview(null);
+                navigate("/mesas");
+              }}
+            >
+              Aceptar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {order && (
         <ThermalReceipt

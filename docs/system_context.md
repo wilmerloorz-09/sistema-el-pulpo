@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-04-25)
+## Estado operativo vigente (2026-04-26)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -24,6 +24,16 @@
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
+- Los usuarios con rol operativo ya no requieren sucursal fija asignada para ingresar al sistema.
+- Los usuarios operativos se validan contra la habilitacion del turno abierto:
+  - deben estar en `cash_shift_users`
+  - el turno debe estar `OPEN`
+  - sus capacidades visibles salen del turno, no solo de permisos estaticos de sucursal
+- Los usuarios con rol supervisor si requieren sucursal asignada obligatoriamente.
+- Un usuario solo puede estar habilitado en un turno abierto a la vez.
+- En `Admin > Turno`, el combo puede mostrar usuarios que ya estan habilitados en otro turno, pero al pulsar `Agregar` debe validarse y mostrar una ventana indicando la sucursal donde ya esta habilitado.
+- La BD mantiene la restriccion final mediante trigger/RPC para impedir que se guarde un usuario en dos turnos abiertos.
+- No se puede abrir ni guardar un turno sin al menos un usuario habilitado con rol operativo.
 - `cash_shift_users` define capacidades operativas reales dentro del turno:
   - `can_serve_tables`
   - `can_dispatch_orders`
@@ -141,6 +151,27 @@
 - OCR basico sin IA sigue disponible cuando el entorno tiene `tesseract`.
 - Si no hay `tesseract`, el comprobante se guarda y queda en revision manual.
 
+### 9. Usuarios
+- Crear/editar usuario incluye datos de contacto extendidos:
+  - nombre de usuario
+  - cedula
+  - nombre completo
+  - direccion domiciliaria
+  - correo
+  - telefono
+  - contrasena / confirmacion
+  - tipo de usuario
+  - sucursal
+- Validaciones vigentes:
+  - nombre de usuario: solo letras y numeros
+  - cedula: solo numeros, exactamente 10 digitos
+  - nombre completo: solo letras y espacios
+  - correo: formato valido
+  - telefono: solo numeros, exactamente 10 digitos
+  - contrasena: minimo 6 caracteres
+- El combo de sucursal permite `Sin sucursal` para usuarios operativos.
+- La sucursal solo es obligatoria para usuarios con rol supervisor.
+
 ## Cambios recientes que ya deben considerarse base
 
 ### 2026-04-11 / 2026-04-25
@@ -167,6 +198,22 @@
 - Caja / seguridad operativa:
   - session lock por `last_session_id` en `cash_shift_users`
 
+### 2026-04-26
+- Usuarios:
+  - cedula, direccion y telefono forman parte del perfil administrable.
+  - sucursal deja de ser obligatoria para usuarios operativos.
+  - supervisor requiere sucursal obligatoria.
+  - `Sin sucursal` es opcion valida para operativos en crear/editar usuario.
+- Acceso operativo:
+  - operativos sin sucursal ingresan si estan habilitados en un turno abierto.
+  - `get_my_access_context(...)`, `set_my_active_branch(...)` y el gate de frontend deben considerar sucursales derivadas de turno abierto.
+  - la navegacion operativa se calcula desde roles del turno cuando existe habilitacion.
+- Turno:
+  - un turno abierto debe conservar al menos un usuario operativo habilitado.
+  - un usuario no puede estar habilitado en mas de un turno abierto.
+  - el combo de `Agregar usuario al turno` muestra usuarios disponibles para elegir, pero valida al agregar y avisa si el usuario ya esta habilitado en otra sucursal.
+  - la BD conserva la defensa final con `assert_user_single_open_shift(...)` y `get_user_open_shift_conflict(...)`.
+
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
 2. No mezclar cerrar caja con cerrar turno.
@@ -187,3 +234,8 @@
    - `cash_register_openings.opened_at` / `closed_at`
    - filtrado de `completedPayments` y `cashRegisterMovements`
    - `cash_shift_denoms.qty_current`
+6. Si falla acceso de usuario operativo, revisar:
+   - que exista turno `OPEN`
+   - que el usuario este en `cash_shift_users.is_enabled = true`
+   - que tenga al menos una capacidad operativa
+   - que no este intentando habilitarse en otro turno abierto

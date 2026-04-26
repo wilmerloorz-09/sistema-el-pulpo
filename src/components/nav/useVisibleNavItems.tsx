@@ -162,7 +162,6 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/mesas" || item.to === "/ordenes" || item.to === "/editar-orden") {
-        if (!item.visible(permissions)) return false;
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
         }
@@ -175,14 +174,12 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/productos") {
-        if (!item.visible(permissions)) return false;
         return hasSupervisorBypass
           || Boolean(shiftGateQuery.data?.canDispatchOrders)
           || Boolean(shiftGateQuery.data?.canManageProducts);
       }
 
       if (item.to === "/caja") {
-        if (!item.visible(permissions)) return false;
         return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canUseCaja);
       }
 

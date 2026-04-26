@@ -69,6 +69,7 @@ const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
 const FULL_NAME_PATTERN = /^[\p{L}\s]+$/u;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TEN_DIGIT_PATTERN = /^\d{10}$/;
+const NO_BRANCH_VALUE = "__sin_sucursal__";
 
 const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: AddUserDialogProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -435,11 +436,17 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   Sucursal asignada {isSupervisor ? "" : "(opcional)"}
                 </span>
               </div>
-              <Select value={selectedBranchId || undefined} onValueChange={setSelectedBranchId}>
+              <Select
+                value={selectedBranchId || (isSupervisor ? undefined : NO_BRANCH_VALUE)}
+                onValueChange={(value) => setSelectedBranchId(value === NO_BRANCH_VALUE ? "" : value)}
+              >
                 <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
                   <SelectValue placeholder="Seleccionar sucursal..." />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
+                  {!isSupervisor && (
+                    <SelectItem value={NO_BRANCH_VALUE}>Sin sucursal</SelectItem>
+                  )}
                   {(catalog?.branches ?? []).map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name}
@@ -447,17 +454,6 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   ))}
                 </SelectContent>
               </Select>
-              {!isSupervisor && selectedBranchId && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 rounded-xl px-3 text-xs text-muted-foreground"
-                  onClick={() => setSelectedBranchId("")}
-                >
-                  Dejar sin sucursal
-                </Button>
-              )}
               <p className="ml-1 text-[11px] italic text-muted-foreground">
                 {isSupervisor
                   ? "El supervisor debe tener una sucursal asignada."

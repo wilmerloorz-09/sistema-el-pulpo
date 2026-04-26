@@ -410,7 +410,7 @@ const buildCashClosureReportHtml = (params: {
           <tbody>${closingDenominationRows ? `${closingDenominationRows}
             <tr>
               <td colspan="3"><strong>Total</strong></td>
-              <td class="num"><strong>${escapeHtml(String(closingDenominationCount))}</strong></td>
+              <td class="num"></td>
               <td class="num"><strong>${escapeHtml(formatMoney(totalCurrent))}</strong></td>
             </tr>` : '<tr><td colspan="5" class="muted">Sin denominaciones registradas al cierre.</td></tr>'}</tbody>
         </table>

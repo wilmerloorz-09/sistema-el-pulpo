@@ -51,6 +51,7 @@ const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
 const FULL_NAME_PATTERN = /^[\p{L}\s]+$/u;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TEN_DIGIT_PATTERN = /^\d{10}$/;
+const NO_BRANCH_VALUE = "__sin_sucursal__";
 
 const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }: EditUserDialogProps) => {
   const { profile, refreshProfile } = useAuth();
@@ -368,7 +369,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[0.85fr_1.15fr]">
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
                 <Shield className="h-3.5 w-3.5 text-primary" />
@@ -400,21 +401,29 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
 
             {!isNewAdmin && (
               <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
+                <div className="flex min-h-[18px] items-center gap-1.5 whitespace-nowrap">
                   <Building2 className="h-3.5 w-3.5 text-primary" />
                   <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Sucursal asignada {isNewSupervisor ? "" : "(opcional)"}
+                    Sucursal asignada
                   </span>
+                  {!isNewSupervisor && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                      (opcional)
+                    </span>
+                  )}
                 </div>
                 <Select
-                  value={selectedBranchId || undefined}
-                  onValueChange={setSelectedBranchId}
+                  value={selectedBranchId || (isNewSupervisor ? undefined : NO_BRANCH_VALUE)}
+                  onValueChange={(value) => setSelectedBranchId(value === NO_BRANCH_VALUE ? "" : value)}
                   disabled={isProtected || saveUser.isPending}
                 >
                   <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
                     <SelectValue placeholder="Seleccionar sucursal" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
+                    {!isNewSupervisor && (
+                      <SelectItem value={NO_BRANCH_VALUE}>Sin sucursal</SelectItem>
+                    )}
                     {(catalog?.branches ?? []).map((branch) => (
                       <SelectItem key={branch.id} value={branch.id}>
                         {branchesMap[branch.id] ?? branch.name}
@@ -422,18 +431,6 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
                     ))}
                   </SelectContent>
                 </Select>
-                {!isNewSupervisor && selectedBranchId && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 rounded-xl px-3 text-xs text-muted-foreground"
-                    disabled={isProtected || saveUser.isPending}
-                    onClick={() => setSelectedBranchId("")}
-                  >
-                    Dejar sin sucursal
-                  </Button>
-                )}
               </div>
             )}
           </div>

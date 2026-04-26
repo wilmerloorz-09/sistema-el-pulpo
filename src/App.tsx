@@ -96,6 +96,7 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
 
 const BranchGate = ({ children }: { children: React.ReactNode }) => {
   const { branches, activeBranch, setActiveBranch, loading, isGlobalAdmin } = useBranch();
+  const { signOut } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -108,9 +109,17 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
 
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4 text-center">
-        <div>
+        <div className="space-y-4">
           <p className="font-display text-lg font-bold text-foreground">Sin sucursales asignadas</p>
           <p className="mt-1 text-sm text-muted-foreground">Contacta al administrador.</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-xl"
+            onClick={() => void signOut()}
+          >
+            Ingresar con otro usuario
+          </Button>
         </div>
       </div>
     );

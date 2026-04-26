@@ -253,6 +253,7 @@ const ShiftSetupAdmin = () => {
   const [activeTablesCount, setActiveTablesCount] = useState(0);
   const [shiftUsersState, setShiftUsersState] = useState<ShiftUserRow[]>([]);
   const [selectedUserToAdd, setSelectedUserToAdd] = useState("");
+  const [checkingUserToAdd, setCheckingUserToAdd] = useState(false);
   const [cancelPolicyState, setCancelPolicyState] = useState<BranchCancelPolicyDraftRow[]>([]);
   const [cancelPoliciesDirty, setCancelPoliciesDirty] = useState(false);
 
@@ -701,14 +702,46 @@ const ShiftSetupAdmin = () => {
     });
   };
 
-  const addSelectedUser = () => {
+  const addSelectedUser = async () => {
     if (!selectedUserToAdd) {
       toast.error("Selecciona un usuario para agregar al turno");
       return;
     }
 
-    toggleUser(selectedUserToAdd, true);
-    setSelectedUserToAdd("");
+    if (!activeBranchId) {
+      toast.error("No hay sucursal activa");
+      return;
+    }
+
+    const selectedUser = allBranchUsers.find((branchUser) => branchUser.user_id === selectedUserToAdd);
+    const selectedUserName = selectedUser?.full_name || selectedUser?.username || "El usuario";
+
+    setCheckingUserToAdd(true);
+    try {
+      const { data, error } = await supabase.rpc("get_user_open_shift_conflict" as any, {
+        p_user_id: selectedUserToAdd,
+        p_branch_id: activeBranchId,
+      } as any);
+
+      if (error) throw error;
+
+      const conflict = ((data ?? []) as Array<{ branch_name: string | null }>)[0];
+      if (conflict) {
+        setWarningDialog({
+          open: true,
+          title: "Usuario ya habilitado",
+          description: `${selectedUserName} no se puede agregar porque esta habilitado en el turno de la sucursal ${conflict.branch_name ?? "otra sucursal"}.`,
+        });
+        return;
+      }
+
+      toggleUser(selectedUserToAdd, true);
+      setSelectedUserToAdd("");
+    } catch (error: any) {
+      showShiftSetupError(error, setWarningDialog);
+    } finally {
+      setCheckingUserToAdd(false);
+    }
   };
 
   const updateUserRole = (userId: string, role: ShiftUserRoleKey, value: boolean) => {
@@ -1028,6 +1061,11 @@ const ShiftSetupAdmin = () => {
       isSupervisor: u.is_supervisor,
     }))
       .filter((entry) => entry.isEnabled);
+
+    if (sanitizedEnabledUsers.length === 0) {
+      throw new Error("Debe haber por lo menos un usuario habilitado para abrir el turno.");
+    }
+
     const enabledUsersJson = sanitizedEnabledUsers
       .map((entry) => ({
         user_id: entry.user_id,
@@ -1156,6 +1194,10 @@ const ShiftSetupAdmin = () => {
           isSupervisor: entry.is_supervisor,
         }))
         .filter((entry) => entry.isEnabled);
+
+      if (sanitizedEnabledUsers.length === 0) {
+        throw new Error("Debe haber por lo menos un usuario habilitado para guardar el turno.");
+      }
 
       await persistShiftUsersForShift(shiftQuery.data.id, sanitizedEnabledUsers);
 
@@ -1468,10 +1510,14 @@ const ShiftSetupAdmin = () => {
                 <Button
                   type="button"
                   onClick={addSelectedUser}
-                  disabled={!selectedUserToAdd}
+                  disabled={!selectedUserToAdd || checkingUserToAdd}
                   className="h-11 w-full gap-2 rounded-2xl xl:h-12 xl:w-auto"
                 >
-                  <Plus className="h-4 w-4" />
+                  {checkingUserToAdd ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
                   Agregar
                 </Button>
               </div>
@@ -1629,21 +1675,21 @@ const ShiftSetupAdmin = () => {
       <section className="rounded-[22px] border border-orange-200 bg-gradient-to-r from-white via-orange-50 to-amber-50 p-4 shadow-sm sm:rounded-[26px]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
           {isOpen ? (
-            <Button
-              variant="secondary"
-              onClick={() => saveShiftMutation.mutate()}
-              disabled={!hasLocalChanges || saveShiftMutation.isPending}
-              className="h-12 w-full md:w-auto"
-            >
+              <Button
+                variant="secondary"
+                onClick={() => saveShiftMutation.mutate()}
+                disabled={!hasLocalChanges || hasSetupIssues || saveShiftMutation.isPending}
+                className="h-12 w-full md:w-auto"
+              >
               {saveShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Guardar
             </Button>
           ) : (
-            <Button
-              onClick={() => openShiftMutation.mutate()}
-              disabled={openShiftMutation.isPending}
-              className="h-12 w-full md:w-auto"
-            >
+              <Button
+                onClick={() => openShiftMutation.mutate()}
+                disabled={hasSetupIssues || openShiftMutation.isPending}
+                className="h-12 w-full md:w-auto"
+              >
               {openShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
               Abrir turno
             </Button>
