@@ -8,6 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
@@ -150,6 +152,23 @@ function sameMembers(left: string[], right: string[]) {
   return leftSorted.every((value, index) => value === rightSorted[index]);
 }
 
+function getCajaUserIds(rows: ShiftUserRow[]) {
+  return rows
+    .filter((row) => row.is_enabled !== false && row.can_use_caja)
+    .map((row) => row.user_id)
+    .sort();
+}
+
+function formatUserList(rows: ShiftUserRow[], userIds: string[]) {
+  if (userIds.length === 0) return "Ninguno";
+  return userIds
+    .map((userId) => {
+      const row = rows.find((item) => item.user_id === userId);
+      return row?.full_name || row?.username || "Usuario";
+    })
+    .join(", ");
+}
+
 function isMissingFunctionOrSchemaError(error: any, functionName?: string) {
   const message = String(error?.message ?? "");
   if (message.includes("schema cache")) return true;
@@ -163,6 +182,27 @@ function isRecoverableCancelPolicyRpcError(error: any) {
     isMissingFunctionOrSchemaError(error, "save_branch_cancel_policy")
     || message.includes("El nodo indicado no es una categoria raiz valida para esta sucursal")
   );
+}
+
+async function resolveFunctionInvokeError(err: any) {
+  const context = err?.context;
+  if (context && typeof context.text === "function") {
+    try {
+      const raw = await context.text();
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          return parsed?.error || raw;
+        } catch {
+          return raw;
+        }
+      }
+    } catch {
+      // ignore body parsing failures
+    }
+  }
+
+  return err?.message || "No se pudo validar la contrasena";
 }
 
 function showShiftSetupError(
@@ -249,7 +289,7 @@ function formatDateTime(value: string | null | undefined) {
 
 const ShiftSetupAdmin = () => {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { activeBranchId, activeBranch, isGlobalAdmin } = useBranch();
   const [activeTablesCount, setActiveTablesCount] = useState(0);
   const [shiftUsersState, setShiftUsersState] = useState<ShiftUserRow[]>([]);
@@ -269,6 +309,10 @@ const ShiftSetupAdmin = () => {
   const [zeroValueSpecialOrders, setZeroValueSpecialOrders] = useState<ZeroValueSpecialOrder[]>([]);
   const [checkingZeroValueSpecialOrders, setCheckingZeroValueSpecialOrders] = useState(false);
   const [payingZeroValueSpecialOrders, setPayingZeroValueSpecialOrders] = useState(false);
+  const [cashierChangeDialogOpen, setCashierChangeDialogOpen] = useState(false);
+  const [cashierChangePassword, setCashierChangePassword] = useState("");
+  const [cashierChangePasswordError, setCashierChangePasswordError] = useState("");
+  const [validatingCashierChangePassword, setValidatingCashierChangePassword] = useState(false);
 
   const { config: dispatchConfig, assignments, isLoading: dispatchLoading } = useDispatchConfig();
 
@@ -484,8 +528,24 @@ const ShiftSetupAdmin = () => {
     () => persistedEnabledUsersData.map((row) => row.user_id),
     [persistedEnabledUsersData],
   );
+  const persistedCajaUserIds = useMemo(
+    () => getCajaUserIds(persistedEnabledUsersData),
+    [persistedEnabledUsersData],
+  );
   const persistedEnabledUserIdsKey = persistedEnabledUserIds.join("|");
   const enabledUserIds = useMemo(() => shiftUsersState.map((userState) => userState.user_id), [shiftUsersState]);
+  const draftCajaUserIds = useMemo(
+    () => getCajaUserIds(shiftUsersState),
+    [shiftUsersState],
+  );
+  const hasCashierUserChange = isOpen && !sameMembers(persistedCajaUserIds, draftCajaUserIds);
+  const cashierChangeSummary = useMemo(
+    () => ({
+      previous: formatUserList(persistedEnabledUsersData, persistedCajaUserIds),
+      next: formatUserList(shiftUsersState, draftCajaUserIds),
+    }),
+    [draftCajaUserIds, persistedCajaUserIds, persistedEnabledUsersData, shiftUsersState],
+  );
   const persistedCancelPolicies = useMemo(
     () => cancelPolicyQuery.data ?? [],
     [cancelPolicyQuery.data],
@@ -688,6 +748,68 @@ const ShiftSetupAdmin = () => {
   const validateSetup = () => {
     if (setupIssues.length > 0) {
       throw new Error(setupIssues[0]);
+    }
+  };
+
+  const verifyCurrentUserPassword = async (password: string) => {
+    if (!user) throw new Error("No hay usuario autenticado");
+
+    const identifier = profile?.username || profile?.email || user.email;
+    if (!identifier) {
+      throw new Error("No se pudo identificar al usuario actual para validar la contrasena.");
+    }
+
+    const res = await supabase.functions.invoke("login-with-identifier", {
+      body: {
+        identifier,
+        password,
+      },
+    });
+
+    if (res.error) {
+      throw new Error(await resolveFunctionInvokeError(res.error));
+    }
+
+    if (res.data?.error) {
+      throw new Error(res.data.error);
+    }
+
+    if (res.data?.user?.id !== user.id) {
+      throw new Error("La contrasena no corresponde al usuario que esta realizando el cambio.");
+    }
+  };
+
+  const handleSaveShiftClick = () => {
+    if (hasCashierUserChange) {
+      setCashierChangePassword("");
+      setCashierChangePasswordError("");
+      setCashierChangeDialogOpen(true);
+      return;
+    }
+
+    saveShiftMutation.mutate();
+  };
+
+  const handleConfirmCashierChange = async () => {
+    const password = cashierChangePassword.trim();
+
+    if (!password) {
+      setCashierChangePasswordError("Ingresa tu contrasena para confirmar el cambio de cajero.");
+      return;
+    }
+
+    setValidatingCashierChangePassword(true);
+    setCashierChangePasswordError("");
+
+    try {
+      await verifyCurrentUserPassword(password);
+      setCashierChangeDialogOpen(false);
+      setCashierChangePassword("");
+      saveShiftMutation.mutate();
+    } catch (error: any) {
+      setCashierChangePasswordError(error?.message || "No se pudo validar la contrasena.");
+    } finally {
+      setValidatingCashierChangePassword(false);
     }
   };
 
@@ -1706,8 +1828,8 @@ const ShiftSetupAdmin = () => {
           {isOpen ? (
               <Button
                 variant="secondary"
-                onClick={() => saveShiftMutation.mutate()}
-                disabled={!hasLocalChanges || hasSetupIssues || saveShiftMutation.isPending}
+                onClick={handleSaveShiftClick}
+                disabled={!hasLocalChanges || hasSetupIssues || saveShiftMutation.isPending || validatingCashierChangePassword}
                 className="h-12 w-full md:w-auto"
               >
               {saveShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1726,6 +1848,89 @@ const ShiftSetupAdmin = () => {
         </div>
       </section>
       </div>
+
+      <Dialog
+        open={cashierChangeDialogOpen}
+        onOpenChange={(open) => {
+          if (validatingCashierChangePassword || saveShiftMutation.isPending) return;
+          setCashierChangeDialogOpen(open);
+          if (!open) {
+            setCashierChangePassword("");
+            setCashierChangePasswordError("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-black text-amber-950">
+              Confirmar cambio de cajero
+            </DialogTitle>
+            <DialogDescription className="space-y-2 text-sm leading-6 text-amber-900/80">
+              <span className="block">
+                Se va a realizar el cambio del usuario con permiso de cajero en un turno abierto.
+              </span>
+              <span className="block font-semibold text-amber-950">
+                Actual: {cashierChangeSummary.previous}
+              </span>
+              <span className="block font-semibold text-amber-950">
+                Nuevo: {cashierChangeSummary.next}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="cashier-change-password" className="text-xs font-bold uppercase tracking-[0.16em] text-amber-800">
+              Contrasena de quien realiza el cambio
+            </Label>
+            <Input
+              id="cashier-change-password"
+              type="password"
+              value={cashierChangePassword}
+              onChange={(event) => {
+                setCashierChangePassword(event.target.value);
+                setCashierChangePasswordError("");
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleConfirmCashierChange();
+                }
+              }}
+              autoComplete="current-password"
+              disabled={validatingCashierChangePassword || saveShiftMutation.isPending}
+              className="h-11 rounded-2xl border-amber-200 bg-white"
+            />
+            {cashierChangePasswordError ? (
+              <p className="text-sm font-medium text-red-700">{cashierChangePasswordError}</p>
+            ) : null}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={validatingCashierChangePassword || saveShiftMutation.isPending}
+              onClick={() => setCashierChangeDialogOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={validatingCashierChangePassword || saveShiftMutation.isPending}
+              onClick={() => void handleConfirmCashierChange()}
+              className="w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto"
+            >
+              {validatingCashierChangePassword || saveShiftMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Confirmar y guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={zeroSpecialCloseDialog}
