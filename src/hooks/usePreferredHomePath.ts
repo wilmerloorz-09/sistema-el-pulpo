@@ -15,6 +15,7 @@ export function usePreferredHomePath() {
     const canAccessAdmin = isGlobalAdmin
       || canView(permissions, "admin_sucursal")
       || canView(permissions, "admin_global");
+    const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const gate = shiftGateQuery.data;
     const hasSupervisorBypass = Boolean(gate?.isSupervisor);
@@ -27,7 +28,7 @@ export function usePreferredHomePath() {
     if (isGlobalAdminWithoutBranches) {
       preferredPath = "/admin";
     } else if (!gate?.shiftOpen || !gate?.userEnabled) {
-      preferredPath = canAccessAdmin ? "/admin" : null;
+      preferredPath = canAccessAdmin ? "/admin" : (canAccessTurno ? "/turno" : null);
     } else if (gate?.isCaptureDeviceOnly) {
       preferredPath = "/caja";
     } else if (hasSupervisorBypass || gate?.canServeTables) {
@@ -44,6 +45,8 @@ export function usePreferredHomePath() {
       preferredPath = "/caja";
     } else if (canAccessAdmin) {
       preferredPath = "/admin";
+    } else if (canAccessTurno) {
+      preferredPath = "/turno";
     }
 
     return {

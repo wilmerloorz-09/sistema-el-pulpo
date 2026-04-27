@@ -123,7 +123,7 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-orange-50 text-orange-600",
     },
     visible: (permissions) =>
-      canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
+      canView(permissions, "turno") || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
     to: "/admin",
@@ -146,6 +146,7 @@ export function useVisibleNavItems() {
   return useMemo(() => {
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
+    const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
     const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && Boolean(shiftGateQuery.data?.userEnabled);
     const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
     const visibleItems = NAV_ITEMS.filter((item) => {
@@ -154,7 +155,7 @@ export function useVisibleNavItems() {
       }
 
       if (!hasOperationalShift) {
-        return (item.to === "/admin" || item.to === "/turno") && canAccessAdmin;
+        return (item.to === "/admin" && canAccessAdmin) || (item.to === "/turno" && canAccessTurno);
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {

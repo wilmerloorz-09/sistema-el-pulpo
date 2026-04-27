@@ -348,7 +348,7 @@ const App = () => (
                 <Route
                   path="/turno"
                   element={
-                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
+                    <ProtectedRoute allowedModules={["turno", "admin_sucursal", "admin_global"]}>
                       <Turno />
                     </ProtectedRoute>
                   }

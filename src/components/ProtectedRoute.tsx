@@ -27,6 +27,7 @@ const MODULE_FALLBACK_PATH: Record<string, string> = {
   caja: "/caja",
   reportes_sucursal: "/reportes",
   reportes_globales: "/reportes",
+  turno: "/turno",
   admin_sucursal: "/admin",
   admin_global: "/admin",
 };
@@ -51,7 +52,7 @@ const ProtectedRoute = ({
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const location = useLocation();
-  const { preferredPath, firstVisiblePath, canAccessAdmin, isLoading: preferredPathLoading } = usePreferredHomePath();
+  const { preferredPath, firstVisiblePath, canAccessAdmin: preferredCanAccessAdmin, isLoading: preferredPathLoading } = usePreferredHomePath();
   const { visibleItems } = useVisibleNavItems();
 
   if (loading) {
@@ -73,6 +74,10 @@ const ProtectedRoute = ({
   }
 
   const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
+  const canAccessAdmin = isGlobalAdmin
+    || hasPermission(permissions, "admin_sucursal", "VIEW")
+    || hasPermission(permissions, "admin_global", "VIEW");
+  const canAccessTurno = canAccessAdmin || hasPermission(permissions, "turno", "VIEW");
   const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
   const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
   const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
@@ -90,14 +95,15 @@ const ProtectedRoute = ({
     const firstAllowed = currentModules.find((code) => MODULE_FALLBACK_PATH[code]);
     if (firstAllowed) return MODULE_FALLBACK_PATH[firstAllowed];
     if (isGlobalAdminWithoutBranches) return "/admin";
-    if (canAccessAdmin) return "/admin";
+    if (canAccessAdmin || preferredCanAccessAdmin) return "/admin";
+    if (canAccessTurno) return "/turno";
     return "/";
   })();
 
   if (requiresOpenShift) {
     if (!shiftOpen || !userEnabled) {
-      if (canAccessAdmin) {
-        return <Navigate to="/admin" replace />;
+      if (canAccessTurno) {
+        return <Navigate to={canAccessAdmin ? "/admin" : "/turno"} replace />;
       }
 
       return (
@@ -112,7 +118,7 @@ const ProtectedRoute = ({
                 : "Tu usuario esta deshabilitado para este turno. Solicita al administrador o supervisor que lo habilite desde Administracion."}
             </p>
             <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-              {canAccessAdmin && (
+              {canAccessTurno && (
                 <Button
                   type="button"
                   variant="outline"
@@ -126,7 +132,7 @@ const ProtectedRoute = ({
               )}
               <Button
                 type="button"
-                variant={canAccessAdmin ? "ghost" : "outline"}
+                variant={canAccessTurno ? "ghost" : "outline"}
                 className="rounded-2xl"
                 onClick={() => void signOut()}
               >
