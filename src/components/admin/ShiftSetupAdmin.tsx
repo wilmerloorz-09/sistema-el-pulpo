@@ -539,6 +539,7 @@ const ShiftSetupAdmin = () => {
     [shiftUsersState],
   );
   const hasCashierUserChange = isOpen && !sameMembers(persistedCajaUserIds, draftCajaUserIds);
+  const loggedUserName = profile?.full_name || profile?.username || user?.email || "usuario logueado";
   const cashierChangeSummary = useMemo(
     () => ({
       previous: formatUserList(persistedEnabledUsersData, persistedCajaUserIds),
@@ -1867,7 +1868,10 @@ const ShiftSetupAdmin = () => {
             </DialogTitle>
             <DialogDescription className="space-y-2 text-sm leading-6 text-amber-900/80">
               <span className="block">
-                Se va a realizar el cambio del usuario con permiso de cajero en un turno abierto.
+                Se va a realizar el cambio del usuario con permiso de cajero en un turno abierto. Confirma con la contrasena del usuario logueado.
+              </span>
+              <span className="block font-semibold text-amber-950">
+                Usuario logueado: {loggedUserName}
               </span>
               <span className="block font-semibold text-amber-950">
                 Actual: {cashierChangeSummary.previous}
@@ -1880,7 +1884,7 @@ const ShiftSetupAdmin = () => {
 
           <div className="space-y-2">
             <Label htmlFor="cashier-change-password" className="text-xs font-bold uppercase tracking-[0.16em] text-amber-800">
-              Contrasena de quien realiza el cambio
+              Contrasena del usuario logueado
             </Label>
             <Input
               id="cashier-change-password"
