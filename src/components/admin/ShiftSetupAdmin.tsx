@@ -1884,7 +1884,7 @@ const ShiftSetupAdmin = () => {
 
           <div className="space-y-2">
             <Label htmlFor="cashier-change-password" className="text-xs font-bold uppercase tracking-[0.16em] text-amber-800">
-              Contrasena del usuario logueado
+              Ingrese su contrasena para confirmar
             </Label>
             <Input
               id="cashier-change-password"
