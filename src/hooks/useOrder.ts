@@ -148,7 +148,7 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
 
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   

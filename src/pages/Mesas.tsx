@@ -9,7 +9,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { useTrayOrder } from "@/hooks/useTrayOrder";
 import { cn } from "@/lib/utils";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
@@ -87,6 +86,7 @@ const seedDraftOrderCache = (
     order_type: "DINE_IN",
     menu_scope: "TABLE",
     is_special: isSpecial,
+    is_tray_order: false,
     special_total_manual: null,
     branch_id: branchId,
     table_id: tableId,
@@ -106,18 +106,17 @@ const Mesas = () => {
   const { user } = useAuth();
   const { activeBranchId, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
-  const { createTrayOrder } = useTrayOrder();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingSpecial, setCreatingSpecial] = useState(false);
-  const [creatingTray, setCreatingTray] = useState(false);
+  const [creatingTakeout, setCreatingTakeout] = useState(false);
   const [isVoidedOrdersOpen, setIsVoidedOrdersOpen] = useState(false);
   const canOperateMesas =
     canOperate(permissions, "mesas")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.isSupervisor);
-  const canCreateTrayOrder = canOperateMesas;
+  const canCreateTakeoutOrder = canOperateMesas;
 
   useEffect(() => {
     if (!activeBranchId) return;
@@ -167,9 +166,9 @@ const Mesas = () => {
     }
   };
 
-  const handleTrayOrder = async () => {
-    if (!canCreateTrayOrder || !user || !activeBranchId) return;
-    setCreatingTray(true);
+  const handleTakeoutOrder = async () => {
+    if (!canCreateTakeoutOrder || !user || !activeBranchId) return;
+    setCreatingTakeout(true);
     try {
       const orderId = generateUUID();
       const now = new Date().toISOString();
@@ -182,7 +181,7 @@ const Mesas = () => {
         order_type: "TAKEOUT",
         menu_scope: "TAKEOUT",
         is_special: false,
-        is_tray_order: true,
+        is_tray_order: false,
         special_total_manual: null,
         branch_id: activeBranchId,
         table_id: null,
@@ -205,7 +204,7 @@ const Mesas = () => {
           created_by: user.id,
           status: "DRAFT" as const,
           branch_id: activeBranchId,
-          is_tray_order: true,
+          is_tray_order: false,
         })
         .then(({ error }) => {
           if (error) toast.error("Error al registrar orden para llevar");
@@ -219,9 +218,9 @@ const Mesas = () => {
           }
         });
     } catch (err: any) {
-      toast.error(err.message || "Error al abrir orden bandeja");
+      toast.error(err.message || "Error al abrir orden para llevar");
     } finally {
-      setCreatingTray(false);
+      setCreatingTakeout(false);
     }
   };
 
@@ -362,21 +361,21 @@ const Mesas = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0 }}
-              onClick={handleTrayOrder}
-              disabled={creatingTray || !canCreateTrayOrder}
+              onClick={handleTakeoutOrder}
+              disabled={creatingTakeout || !canCreateTakeoutOrder}
               className={cn(
                 "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(245,158,11,0.42)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
                 "border-amber-300 bg-gradient-to-br from-amber-50 via-white to-yellow-100 dark:border-amber-800 dark:from-amber-950/20 dark:via-card dark:to-yellow-950/25",
-                canCreateTrayOrder ? "hover:border-amber-400 hover:bg-amber-50" : "cursor-not-allowed opacity-60",
+                canCreateTakeoutOrder ? "hover:border-amber-400 hover:bg-amber-50" : "cursor-not-allowed opacity-60",
               )}
             >
-              {creatingTray ? (
+              {creatingTakeout ? (
                 <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-amber-700" />
               ) : (
                 <ShoppingBag className="h-4.5 w-4.5 shrink-0 text-amber-700" />
               )}
               <span className="block min-w-0 pr-7 font-display text-sm font-black text-amber-700 sm:text-base">Para Llevar</span>
-              {canCreateTrayOrder && !creatingTray && (
+              {canCreateTakeoutOrder && !creatingTakeout && (
                 <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-700/70" />
               )}
             </motion.button>

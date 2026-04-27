@@ -482,7 +482,9 @@ const Caja = () => {
     canOperate(permissions, "caja")
     || isGlobalAdmin
     || canManage(permissions, "admin_sucursal")
-    || canManage(permissions, "admin_global");
+    || canManage(permissions, "admin_global")
+    || Boolean(shiftGateQuery.data?.canUseCaja)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
   const canAnnulOpening =
     isGlobalAdmin
     || canManage(permissions, "admin_sucursal")
@@ -1443,11 +1445,7 @@ const Caja = () => {
                 onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
                 getTransferProofReadiness={getTransferProofReadiness}
                 paying={payOrder.isPending}
-                readOnly={!canOperateCaja || !isSessionAuthorized}
-                onTakeControl={() => {
-                  const shiftId = shiftGateQuery.data?.shiftId;
-                  if (shiftId) void takeCajaControl({ sessionId: TAB_SESSION_ID, shiftId });
-                }}
+                readOnly={!canOperateCaja}
               />
             </div>
           ) : activeTab === "completed" ? (
