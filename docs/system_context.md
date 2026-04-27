@@ -23,7 +23,11 @@
 - `TAKEOUT` y `Orden Bandeja` comparten base operativa; visualmente deben presentarse como `Para llevar`.
 
 ### 2. Turno, caja y acceso operativo
-- `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
+- `Turno` es un modulo propio (`module_code = 'turno'`) para configurar, abrir, guardar y cerrar el turno.
+- `Admin > Turno` sigue siendo la superficie administrativa historica, pero el acceso operativo a esa pantalla ya no depende exclusivamente de `admin_sucursal`.
+- El supervisor por defecto solo debe tener acceso al modulo `Turno`; ya no debe recibir `Administracion` / `admin_sucursal` por defecto.
+- Administrador global y administrador de sucursal conservan acceso administrativo completo.
+- Las funciones/RLS de configuracion del turno deben usar `can_manage_shift_admin(...)` cuando la accion pertenece al modulo Turno.
 - Los usuarios con rol operativo ya no requieren sucursal fija asignada para ingresar al sistema.
 - Los usuarios operativos se validan contra la habilitacion del turno abierto:
   - deben estar en `cash_shift_users`
@@ -42,6 +46,9 @@
   - `is_supervisor`
 - `cash_shift_users.last_session_id` se usa para session lock y toma de control vigente en Caja.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
+- Si un turno ya esta abierto y se cambia el usuario con permiso de cajero (`can_use_caja`), al pulsar `Guardar` la UI debe mostrar advertencia, indicar cajero actual/nuevo y pedir la contrasena del usuario logueado. El guardado solo continua si esa contrasena valida contra el mismo usuario autenticado.
+- La politica de visualizacion de `cash_shifts` debe permitir ver el turno abierto a usuarios con `can_manage_shift_admin(...)`, ademas de operadores de caja y cajero del turno.
+- `list_branch_cancel_policy_nodes(...)` y `save_branch_cancel_policy(...)` forman parte de Turno para esta pantalla; deben aceptar `can_manage_shift_admin(...)` y no exigir `admin_sucursal` al supervisor.
 - Cerrar caja ya no implica cerrar turno.
 - Al cerrar turno, si existen ordenes especiales pendientes con valor operativo `$0`, el sistema debe mostrar una confirmacion:
   - `Cancelar`
@@ -213,6 +220,9 @@
   - un usuario no puede estar habilitado en mas de un turno abierto.
   - el combo de `Agregar usuario al turno` muestra usuarios disponibles para elegir, pero valida al agregar y avisa si el usuario ya esta habilitado en otra sucursal.
   - la BD conserva la defensa final con `assert_user_single_open_shift(...)` y `get_user_open_shift_conflict(...)`.
+  - `turno` queda como modulo propio para supervisor; supervisor por defecto ya no recibe `admin_sucursal`.
+  - `can_manage_shift_admin(...)` es el helper comun para abrir/cerrar/configurar turno, administrar usuarios del turno, ver `cash_shifts`, despacho ligado a turno y politica de anulacion directa desde Turno.
+  - si cambia el usuario con permiso de cajero en un turno abierto, la UI exige confirmacion con la contrasena del usuario logueado antes de guardar.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
@@ -239,3 +249,7 @@
    - que el usuario este en `cash_shift_users.is_enabled = true`
    - que tenga al menos una capacidad operativa
    - que no este intentando habilitarse en otro turno abierto
+7. Si falla el supervisor en Turno, revisar:
+   - que tenga permiso `turno: MANAGE` en la sucursal
+   - que no se este usando una funcion vieja que aun exija `can_manage_branch_admin(...)`
+   - que `cash_shifts` permita SELECT via `can_manage_shift_admin(...)`

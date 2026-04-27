@@ -14,6 +14,7 @@
 - `user_branches`
 - `user_branch_roles`
 - `user_branch_modules`
+- `modules` / `role_permissions`
 - `cash_shift_users`
 - `webauthn_credentials`
 - `webauthn_challenges`
@@ -98,9 +99,18 @@
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
+- `turno` es modulo propio para administrar apertura, cierre y configuracion de turno.
+- El rol `supervisor` por defecto conserva `turno: MANAGE` y ya no debe heredar `admin_sucursal`.
+- `can_manage_shift_admin(p_user_id, p_branch_id)` es la funcion comun para permisos de Turno:
+  - global admin
+  - `turno: MANAGE`
+  - `admin_sucursal: MANAGE`
+  - `admin_global: MANAGE`
+- Las policies/RPCs de Turno deben apoyarse en `can_manage_shift_admin(...)`, no solo en `can_manage_branch_admin(...)`.
 - `cash_register_openings` representa historial real de aperturas, cierres y anulaciones de caja.
 - `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
+- `cash_shift_users.can_use_caja` representa el usuario con permiso de cajero dentro del turno. En turno abierto, cambiar ese usuario requiere confirmacion de frontend con la contrasena del usuario autenticado que realiza el cambio.
 - Cerrar caja y cerrar turno no son la misma operacion.
 - `close_cash_shift_with_tables(...)` sigue siendo el cierre final del turno. Antes de llamarlo desde UI, `Admin > Turno` puede resolver ordenes especiales pendientes con valor `$0` mediante confirmacion explicita, marcandolas `PAID`.
 - Para ese flujo, solo cuentan como bloqueantes las ordenes especiales `$0` en estados:
@@ -151,6 +161,14 @@
 - `compact_table_order_positions(...)`
 
 ### Caja
+- `can_manage_shift_admin(...)`
+- `list_shift_users_for_branch(...)`
+- `get_user_open_shift_conflict(...)`
+- `open_cash_shift_with_tables(...)`
+- `close_cash_shift_with_tables(...)`
+- `configure_shift_active_tables(...)`
+- `list_branch_cancel_policy_nodes(...)`
+- `save_branch_cancel_policy(...)`
 - `open_cash_register(...)`
 - `close_cash_register(...)`
 - `anular_apertura_caja(...)`
@@ -185,6 +203,10 @@
 - `20260410190000_cash_register_templates.sql`
 - `20260411100000_allow_cash_close_with_pending_orders.sql`
 - `20260411103000_allow_reopen_cash_register_in_open_shift.sql`
+- `20260426143000_harden_shift_user_capability_check_for_stale_clients.sql`
+- `20260426150000_supervisor_turno_only_access.sql`
+- `20260426151500_allow_turno_users_to_view_cash_shifts.sql`
+- `20260426153000_allow_turno_users_to_list_cancel_policy_nodes.sql`
 
 ### Pagos y anulaciones
 - `20260409170000_secure_payment_void_same_shift_supervisor.sql`
@@ -217,3 +239,5 @@
 4. Si se toca `Unir/Dividir`, no romper cantidades pagadas, historial `READY` / `DISPATCHED` ni numeracion operativa.
 5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes y despacho directo de items nuevos.
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
+7. No reintroducir `admin_sucursal` al supervisor por defecto para resolver acceso a Turno; corregir la RPC/policy para usar `can_manage_shift_admin(...)`.
+8. Si se toca `cash_shift_users.can_use_caja`, mantener la regla de un cajero activo por turno y la confirmacion de cambio en turno abierto.
