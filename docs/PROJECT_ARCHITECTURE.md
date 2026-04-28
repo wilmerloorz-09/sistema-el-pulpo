@@ -18,7 +18,8 @@
 - Capa 1: permisos efectivos por modulo/sucursal.
 - Capa 2: capacidades por turno en `cash_shift_users`.
 - `get_my_branch_shift_gate(...)` sigue siendo el gate principal para habilitar vistas operativas.
-- `cash_shift_users.last_session_id` agrega control de sesion activa y toma de control para Caja.
+- `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa y toma de control para Caja.
+- `cash_shift_users.can_double_session` permite una segunda sesion solo para usuarios habilitados en turno abierto con acceso a Caja; esa segunda sesion se registra en `profiles.current_app_secondary_session_id` y campos auxiliares.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -41,6 +42,8 @@
 
 ### 5. Ordenes
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
+- Las lecturas de orden deben incluir `orders.created_by` cuando la pantalla visualiza ordenes.
+- El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.full_name`, `username`, `email` o `Usuario`.
 - `Ordenes` usa lista expandible y detalle inline.
 - Las pestanas del modulo `Ordenes` son etapa-dependientes:
   - `Borradores`
@@ -96,6 +99,8 @@
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
 - Cierre de turno desde `Admin > Turno`:
+  - antes de bloquear por borradores, se cancelan automaticamente borradores vacios/no enviados mediante `cancel_empty_draft_orders_for_branch(...)`
+  - `list_branch_closure_blocking_orders(...)` no debe tratar como bloqueante un `DRAFT` sin pagos ni items operativos
   - si hay ordenes especiales pendientes con valor operativo `$0`, la UI debe pedir confirmacion antes de cerrar
   - si el usuario continua, esas ordenes se marcan `PAID` y despues se invoca `close_cash_shift_with_tables(...)`
   - el conteo debe limitarse a ordenes que realmente bloquean cierre (`SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED` sin `paid_at`)
@@ -182,3 +187,5 @@
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
 7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final.
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
+9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` usando la resolucion central de perfil.
+10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.

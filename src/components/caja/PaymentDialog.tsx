@@ -29,7 +29,7 @@ import {
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, Wallet, WalletCards } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, UserRound, Wallet, WalletCards } from "lucide-react";
 import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "./PaymentReceipt";
@@ -1337,11 +1337,17 @@ export default function PaymentDialog({
               </span>
             )}
           </DialogTitle>
-          <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+          <div className="mt-1 text-xs text-slate-500 sm:text-sm">
+            {order?.created_by_name && (
+              <span className="mb-1 flex items-center gap-1.5 font-semibold text-slate-600">
+                <UserRound className="h-3.5 w-3.5" />
+                {order.created_by_name}
+              </span>
+            )}
             {isSpecialOrder
               ? "Registra el cobro especial con el monto manual y mantiene visibles los items reales como referencia."
               : "Mueve a la derecha solo lo que vas a cobrar en esta operacion."}
-          </p>
+          </div>
         </DialogHeader>
 
         {order && !isSpecialOrder ? (

@@ -1120,6 +1120,8 @@ function buildPendingOrderSummaryFromOrderCache(currentOrder: any, requestedAt: 
     special_total_manual: currentOrder.special_total_manual ?? null,
     table_id: currentOrder.table_id ?? null,
     table_name: currentOrder.table_name ?? null,
+    created_by: currentOrder.created_by ?? null,
+    created_by_name: currentOrder.created_by_name ?? null,
     created_at: currentOrder.created_at,
     sent_to_kitchen_at: currentOrder.sent_to_kitchen_at ?? null,
     ready_at: currentOrder.ready_at ?? null,

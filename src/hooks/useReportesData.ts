@@ -5,6 +5,7 @@ import { processSyncQueue, getPendingSyncCount } from '@/services/SyncService';
 import { useBranch } from '@/contexts/BranchContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { buildUserDisplayMap } from '@/lib/userDisplay';
 
 export interface OrderWithStatus {
   id: string;
@@ -12,6 +13,8 @@ export interface OrderWithStatus {
   order_code: string | null;
   status: string;
   created_at: string;
+  created_by: string | null;
+  created_by_name: string | null;
   total: number;
   items_count: number;
   sync_status: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete';
@@ -30,6 +33,14 @@ export function useReportesData() {
     queryKey: ['reports-local-orders'],
     queryFn: async () => {
       const orders = await localDb.orders.toArray();
+      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      const creatorProfiles = navigator.onLine && creatorIds.length > 0
+        ? (await dbSelect<any>('profiles', {
+          select: 'id, full_name, username, email',
+          filters: [{ column: 'id', op: 'in', value: creatorIds }],
+        }))
+        : [];
+      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
       const result: OrderWithStatus[] = [];
 
       for (const order of orders) {
@@ -46,6 +57,8 @@ export function useReportesData() {
           order_code: order.order_code,
           status: order.status,
           created_at: order.created_at,
+          created_by: order.created_by ?? null,
+          created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? 'Usuario') : null,
           total,
           items_count: items.length,
           sync_status: order._sync_status,
@@ -71,11 +84,19 @@ export function useReportesData() {
       try {
         const { data: orders, error } = await supabase
           .from('orders')
-          .select('id, order_number, order_code, status, created_at, order_items(total)')
+          .select('id, order_number, order_code, status, created_by, created_at, order_items(total)')
           .eq('branch_id', activeBranchId)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
+        const creatorIds = Array.from(new Set((orders || []).map((order: any) => order.created_by).filter(Boolean))) as string[];
+        const creatorProfiles = creatorIds.length > 0
+          ? await dbSelect<any>('profiles', {
+            select: 'id, full_name, username, email',
+            filters: [{ column: 'id', op: 'in', value: creatorIds }],
+          })
+          : [];
+        const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
         return (orders || []).map((order: any) => ({
           id: order.id,
@@ -83,6 +104,8 @@ export function useReportesData() {
           order_code: order.order_code,
           status: order.status,
           created_at: order.created_at,
+          created_by: order.created_by ?? null,
+          created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? 'Usuario') : null,
           total: order.order_items?.reduce((sum: number, item: any) => sum + (item.total || 0), 0) || 0,
           items_count: order.order_items?.length || 0,
           sync_status: 'synced' as const,

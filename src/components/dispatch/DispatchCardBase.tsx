@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
-import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock } from "lucide-react";
+import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -271,12 +271,25 @@ export function DispatchCardBase({
                   <p className="truncate text-base font-semibold tracking-[-0.02em] text-slate-950 sm:text-lg">
                     {label}
                   </p>
+                  {order.created_by_name && (
+                    <p className="mt-0.5 hidden items-center gap-1.5 truncate text-xs font-semibold text-slate-500 sm:flex">
+                      <UserRound className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{order.created_by_name}</span>
+                    </p>
+                  )}
                   <p className="shrink-0 font-mono text-[10px] font-bold tracking-[0.08em] text-slate-700 sm:hidden">
                     {getOrderRef(order.order_code, order.order_number)}
                   </p>
                 </div>
               </div>
             </div>
+
+            {order.created_by_name && (
+              <div className="col-start-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500 sm:hidden">
+                <UserRound className="h-3.5 w-3.5" />
+                <span className="truncate">{order.created_by_name}</span>
+              </div>
+            )}
 
             {order.locked_for_editing && (
               <div className="col-start-2 sm:col-start-auto">

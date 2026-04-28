@@ -4,6 +4,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import { buildUserDisplayMap } from "@/lib/userDisplay";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "PENDING_CANCELLATION";
 
@@ -72,6 +73,8 @@ export interface OrderSummary {
   table_id: string | null;
   table_name: string | null;
   table_name_snapshot?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
   created_at: string;
   sent_to_kitchen_at?: string | null;
   ready_at?: string | null;
@@ -113,7 +116,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       })();
 
       let orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+        select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
         branchId: activeBranchId,
         filters,
         orderBy: { column: "created_at", ascending: false },
@@ -139,7 +142,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
         if (missingPendingOrderIds.length > 0) {
           const pendingOrders = await dbSelect<any>("orders", {
-            select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+            select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
             branchId: activeBranchId,
             filters: [{ column: "id", op: "in", value: missingPendingOrderIds }],
             orderBy: { column: "created_at", ascending: false },
@@ -214,6 +217,15 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       const orderIds = orders.map((order) => order.id);
       if (orderIds.length === 0) return [];
+
+      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      const creatorProfiles = creatorIds.length > 0
+        ? await dbSelect<any>("profiles", {
+            select: "id, full_name, username, email",
+            filters: [{ column: "id", op: "in", value: creatorIds }],
+          })
+        : [];
+      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
       const items = await dbSelect<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type",
@@ -560,6 +572,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               : order.cancelled_at,
             cancel_requested_at: order.cancel_requested_at ?? null,
             split_code: null,
+            created_by: order.created_by ?? null,
+            created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
             table_name: order.table_id
               ? (tablesMap[order.table_id] ?? (String(order.table_name_snapshot ?? "").trim() || null))
               : (String(order.table_name_snapshot ?? "").trim() || null),

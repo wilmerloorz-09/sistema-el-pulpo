@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronUp, Clock, Ban, CreditCard, Package, ShoppingBag, UtensilsCrossed } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock, Ban, CreditCard, Package, ShoppingBag, UtensilsCrossed, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -337,6 +337,12 @@ export default function OrderListRow({
               {renderActions(true)}
             </div>
           </div>
+          {order.created_by_name && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+              <UserRound className="h-3.5 w-3.5" />
+              <span className="truncate">{order.created_by_name}</span>
+            </div>
+          )}
         </div>
 
         <div
@@ -360,6 +366,12 @@ export default function OrderListRow({
             <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
               {label}
             </p>
+            {order.created_by_name && (
+              <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs font-semibold text-slate-500">
+                <UserRound className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{order.created_by_name}</span>
+              </p>
+            )}
           </div>
         </div>
 

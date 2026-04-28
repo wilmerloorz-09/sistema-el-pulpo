@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye, Ban } from "lucide-react";
+import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye, Ban, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
@@ -219,6 +219,13 @@ export function OrderCardBase({
       {isCancelRequested && order.status !== "CANCELLED" && (
         <div className="border-y border-amber-200 bg-amber-100/80 px-4 py-2 text-center text-xs font-bold text-amber-900 shadow-inner">
           Anulacion solicitada
+        </div>
+      )}
+
+      {order.created_by_name && (
+        <div className="flex items-center gap-1.5 border-b border-border bg-white/55 px-4 py-2 text-xs font-semibold text-muted-foreground">
+          <UserRound className="h-3.5 w-3.5" />
+          <span className="truncate">{order.created_by_name}</span>
         </div>
       )}
 

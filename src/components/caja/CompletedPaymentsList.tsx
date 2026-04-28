@@ -13,7 +13,7 @@ import type {
 } from "@/hooks/useCaja";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
-import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UtensilsCrossed } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -40,6 +40,7 @@ interface PaymentGroup {
     code: string | null;
     type: "DINE_IN" | "TAKEOUT";
     is_special: boolean;
+    created_by_name: string | null;
     table_name: string | null;
     split_code: string | null;
   };
@@ -209,6 +210,7 @@ export default function CompletedPaymentsList({
             code: row.order_code,
             type: row.order_type,
             is_special: row.is_special,
+            created_by_name: row.created_by_name,
             table_name: row.table_name,
             split_code: row.split_code,
           },
@@ -454,6 +456,12 @@ export default function CompletedPaymentsList({
                               {formatDateTime(payment.created_at)}
                             </span>
                             <span>Cajero: {payment.cashier_name}</span>
+                            {payment.order.created_by_name && (
+                              <span className="inline-flex items-center gap-1">
+                                <UserRound className="h-3.5 w-3.5" />
+                                {payment.order.created_by_name}
+                              </span>
+                            )}
                             <span>Metodo: {payment.method_name}</span>
                             <span>{itemsLabel}</span>
                           </p>

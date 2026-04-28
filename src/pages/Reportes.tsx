@@ -11,7 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, RefreshCw, Loader2, Smartphone, Cloud } from 'lucide-react';
+import { AlertCircle, RefreshCw, Loader2, Smartphone, Cloud, UserRound } from 'lucide-react';
 import { getOrderRef } from '@/lib/orderPresentation';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -143,6 +143,7 @@ const Reportes = () => {
                     <TableHead>Orden #</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Items</TableHead>
+                    <TableHead>Genero</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Sincronizacion</TableHead>
                     <TableHead>Fecha</TableHead>
@@ -161,6 +162,14 @@ const Reportes = () => {
                       </TableCell>
                       <TableCell className="text-center">
                         {order.items_count}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {order.created_by_name ? (
+                          <span className="inline-flex items-center gap-1">
+                            <UserRound className="h-3.5 w-3.5" />
+                            {order.created_by_name}
+                          </span>
+                        ) : "Usuario"}
                       </TableCell>
                       <TableCell className="font-semibold">
                         ${order.total.toFixed(2)}
@@ -208,6 +217,7 @@ const Reportes = () => {
                     <TableHead>Orden #</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Items</TableHead>
+                    <TableHead>Genero</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead className="text-center">Fuente</TableHead>
                     <TableHead>Fecha</TableHead>
@@ -226,6 +236,14 @@ const Reportes = () => {
                       </TableCell>
                       <TableCell className="text-center">
                         {order.items_count}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {order.created_by_name ? (
+                          <span className="inline-flex items-center gap-1">
+                            <UserRound className="h-3.5 w-3.5" />
+                            {order.created_by_name}
+                          </span>
+                        ) : "Usuario"}
                       </TableCell>
                       <TableCell className="font-semibold">
                         ${order.total.toFixed(2)}

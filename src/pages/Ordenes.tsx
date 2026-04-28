@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X, UserRound } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -1498,8 +1498,20 @@ const Ordenes = () => {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="shrink-0 font-display text-sm font-bold">Orden</h2>
           <p className="truncate text-xs font-semibold text-muted-foreground">{getOrderRef(order.order_code, order.order_number)}</p>
+          {order.created_by_name && (
+            <p className="hidden min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-muted-foreground sm:flex">
+              <UserRound className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{order.created_by_name}</span>
+            </p>
+          )}
         </div>
       </div>
+      {order.created_by_name && (
+        <p className="mb-3 flex items-center gap-1.5 truncate text-xs font-semibold text-muted-foreground sm:hidden">
+          <UserRound className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{order.created_by_name}</span>
+        </p>
+      )}
 
       <div className={cn("min-h-0", mobile && "flex-1")}>
         {order.is_special && (

@@ -38,6 +38,7 @@
 -- - Elimina usuarios no protegidos y sus metadatos:
 --   - incluye roles desglosados y herencia de permisos
 --   - incluye avatares y configuraciones de perfil modernizadas
+--   - limpia session locks de app del superadmin protegido, incluida la segunda sesion autorizada para Caja
 -- - Conserva solo el superadmin principal protegido
 -- - Preserva estructura base del sistema: modulos, roles, permisos, funciones, migraciones
 --
@@ -70,7 +71,11 @@
 --   - Mesas incluye acceso a Ordenes
 --   - Despacho incluye acceso total a Productos
 --   - Ordenes y Productos tambien pueden habilitarse por separado
+--   - la doble sesion de Caja sigue dependiendo de `cash_shift_users.can_double_session`
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
+-- - TAMBIEN PERMANECE INTACTA LA LIMPIEZA CENTRAL DE CIERRE DE TURNO:
+--   - `cancel_empty_draft_orders_for_branch(...)` cancela borradores no enviados sin pagos ni items operativos
+--   - `list_branch_closure_blocking_orders(...)` no debe bloquear por borradores vacios
 -- - TAMBIEN PERMANECE INTACTA LA REGLA UI DE CIERRE DE TURNO:
 --   - si hay ordenes especiales pendientes con valor `$0`, se debe pedir confirmacion
 --   - al continuar, esas ordenes se marcan `PAID` y luego se invoca el cierre normal del turno
@@ -90,6 +95,7 @@ DECLARE
   v_protected_count integer;
   v_protected_user_id uuid;
   v_table text;
+  v_session_column text;
   v_tables text[] := ARRAY[
     -- Seguridad efimera / sesiones
     'public.webauthn_challenges',
@@ -206,6 +212,28 @@ BEGIN
     WHERE active_branch_id IS NOT NULL;
   END IF;
 
+  -- Limpia session locks efimeros de la app antes/despues del borrado.
+  -- Incluye la segunda sesion permitida para Caja por `can_double_session`.
+  FOREACH v_session_column IN ARRAY ARRAY[
+    'current_app_session_id',
+    'current_app_session_started_at',
+    'current_app_session_device',
+    'current_app_secondary_session_id',
+    'current_app_secondary_session_started_at',
+    'current_app_secondary_session_device'
+  ]
+  LOOP
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'profiles'
+        AND column_name = v_session_column
+    ) THEN
+      EXECUTE format('UPDATE public.profiles SET %I = NULL;', v_session_column);
+    END IF;
+  END LOOP;
+
   FOREACH v_table IN ARRAY v_tables
   LOOP
     IF to_regclass(v_table) IS NOT NULL THEN
@@ -282,6 +310,7 @@ COMMIT;
 -- - 0 categorias habilitadas para anulacion directa por mesero
 -- - 0 configuraciones/asignaciones de despacho
 -- - 0 usuarios habilitados por turno y 0 permisos operativos por turno
+-- - 0 session locks de app en perfiles, incluida la sesion secundaria de Caja
 -- - 0 auditoria de cierre de turno previa
 -- - 0 templates de apertura de caja y 0 composiciones predefinidas por denominacion
 -- - 0 nodos de menu/categorias/subcategorias/productos/modificadores
@@ -292,6 +321,7 @@ COMMIT;
 -- - 0 base transaccional para reimprimir reportes de caja por apertura ni consolidado por turno
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 borradores vacios residuales capaces de aparecer como ocupacion real de mesa
+-- - 0 borradores no enviados residuales capaces de bloquear cierre de turno
 -- - 0 metadatos de comprobantes en base de datos (incluye OCR/analisis); los archivos del bucket `payment-proofs` deben vaciarse aparte
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - modulos, roles y permisos base intactos

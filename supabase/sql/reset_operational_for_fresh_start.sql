@@ -20,6 +20,7 @@
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
 --   - al limpiar cash_shift_users tambien se eliminan los session locks operativos (`last_session_id`) y cualquier toma de control vigente en Caja
+--   - tambien limpia los session locks guardados en `profiles`, incluida la segunda sesion autorizada para Caja
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Conserva todos los arboles operativos de menu_nodes:
 --   - `TABLE`
@@ -33,6 +34,7 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
+--   - el cierre de turno cancela borradores no enviados sin pagos ni items operativos antes de evaluar bloqueos
 --   - cerrar turno puede resolver ordenes especiales pendientes de `$0` solo con confirmacion explicita antes de invocar el cierre normal
 --   - el conteo de esa confirmacion solo debe incluir SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
 -- - Conserva la arquitectura de reportes de caja, pero borra la base operativa que esos reportes leen:
@@ -54,6 +56,7 @@
 --   - dispatch_assignments
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
+--   - al borrar cash_shift_users se limpia tambien la habilitacion `can_double_session`; el reset ademas limpia las columnas de sesion secundaria en profiles
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
 --   - esto incluye anulacion total y parcial, pagos de reemplazo (`replacement_payment_id`) y desglose de devolucion en efectivo
@@ -86,6 +89,7 @@ BEGIN;
 DO $$
 DECLARE
   v_table text;
+  v_session_column text;
   v_tables text[] := ARRAY[
     -- Seguridad efimera / sesiones
     'public.webauthn_challenges',
@@ -136,6 +140,31 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Limpia session locks efimeros en perfiles conservados.
+  -- Incluye la segunda sesion permitida para Caja por `can_double_session`.
+  IF to_regclass('public.profiles') IS NOT NULL THEN
+    FOREACH v_session_column IN ARRAY ARRAY[
+      'current_app_session_id',
+      'current_app_session_started_at',
+      'current_app_session_device',
+      'current_app_secondary_session_id',
+      'current_app_secondary_session_started_at',
+      'current_app_secondary_session_device'
+    ]
+    LOOP
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'profiles'
+          AND column_name = v_session_column
+      ) THEN
+        EXECUTE format('UPDATE public.profiles SET %I = NULL;', v_session_column);
+      END IF;
+    END LOOP;
+    RAISE NOTICE 'Session locks de app limpiados en profiles';
+  END IF;
+
   IF to_regclass('public.restaurant_tables') IS NOT NULL THEN
     UPDATE public.restaurant_tables
     SET is_active = false;
@@ -173,12 +202,13 @@ COMMIT;
 -- - Configuracion y asignaciones de despacho intactas
 -- - Plantillas de apertura de caja intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
--- - 0 session locks/toma de control vigente en Caja
+-- - 0 session locks/toma de control vigente en Caja, incluida la segunda sesion de app
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
 -- - 0 solicitudes/anulaciones pendientes por item/orden, 0 payloads `[PENDING_REQUEST]`, 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
 -- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial
 -- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
 -- - 0 borradores vacios residuales capaces de seguir ocupando una mesa en overview
+-- - 0 borradores no enviados residuales capaces de bloquear cierre de turno
 -- - 0 ordenes especiales `$0` pendientes capaces de bloquear cierre de turno
 -- - 0 ordenes especiales `PAID` historicas ocultas por falta de detalle cobrado en `payment_items`
 -- - archivos en Supabase Storage no se borran con este SQL

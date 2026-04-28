@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { KitchenOrder } from "@/hooks/useKitchenOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag, Lock } from "lucide-react";
+import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag, Lock, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -119,7 +119,13 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
       </div>
 
       <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        {summaryParts.join(" - ") || "Sin pendientes por preparar"}
+        <div>{summaryParts.join(" - ") || "Sin pendientes por preparar"}</div>
+        {order.created_by_name && (
+          <div className="mt-1 flex items-center gap-1.5 font-semibold">
+            <UserRound className="h-3.5 w-3.5" />
+            <span className="truncate">{order.created_by_name}</span>
+          </div>
+        )}
       </div>
 
       <div className="max-h-[19rem] space-y-2 overflow-y-auto px-4 py-3 pr-3">

@@ -8,6 +8,7 @@ import { dedupePaymentMethods, isCashPaymentMethodName, isTransferPaymentMethodN
 import { computeLineTotalWithContainer, roundMoney } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
+import { buildUserDisplayMap } from "@/lib/userDisplay";
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -195,6 +196,8 @@ export interface PayableOrder {
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
   is_tray_order?: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
   special_total_manual: number | null;
   special_real_total: number;
   special_paid_amount: number;
@@ -285,6 +288,8 @@ export interface CompletedPayment {
   order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
   table_name: string | null;
   split_code: string | null;
   order_total: number;
@@ -1099,7 +1104,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (!activeBranchId) return [];
 
       const orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, created_at, special_total_manual, table_name_snapshot",
+        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }],
         orderBy: { column: "updated_at" }
@@ -1130,6 +1135,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const orderIds = orders.map((o) => o.id);
+      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      const creatorProfiles = creatorIds.length > 0
+        ? await dbSelect<any>("profiles", {
+            select: "id, full_name, username, email",
+            filters: [{ column: "id", op: "in", value: creatorIds }],
+          })
+        : [];
+      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
       const items = await dbSelect<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, paid_at, tray_item_type, tray_container_cost",
         filters: [{ column: "order_id", op: "in", value: orderIds }]
@@ -1254,6 +1267,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             order_type: o.order_type,
             is_special: isSpecial,
             is_tray_order: isTrayOrder,
+            created_by: o.created_by ?? null,
+            created_by_name: o.created_by ? (creatorNameMap[o.created_by] ?? "Usuario") : null,
             special_total_manual: specialManualTotal,
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
@@ -1417,7 +1432,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const [orders, methods, profiles, allOrderPayments, allOrderItems] = await Promise.all([
         dbSelect<any>("orders", {
-          select: "id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, table_name_snapshot",
+          select: "id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, created_by, table_name_snapshot",
           filters: [
             { column: "id", op: "in", value: orderIds },
             { column: "branch_id", op: "eq", value: activeBranchId }
@@ -1446,6 +1461,14 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const ordersMap = Object.fromEntries(orders.map((o) => [o.id, o]));
       const methodsMap = Object.fromEntries(methods.map((m) => [m.id, m.name]));
       const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, p.full_name || p.username || "Usuario"]));
+      const orderCreatorIds = Array.from(new Set((orders ?? []).map((order: any) => order.created_by).filter(Boolean))) as string[];
+      const orderCreatorProfiles = orderCreatorIds.length > 0
+        ? await dbSelect<any>("profiles", {
+            select: "id, full_name, username, email",
+            filters: [{ column: "id", op: "in", value: orderCreatorIds }],
+          })
+        : [];
+      const orderCreatorNameMap = buildUserDisplayMap(orderCreatorProfiles);
       const tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, { name: t.name, visual_order: t.visual_order }]));
       const splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
       const itemsMap = Object.fromEntries(allOrderItems.map((i) => [i.id, i]));
@@ -1543,6 +1566,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               order_code: (order as any).order_code ?? null,
               order_type: order.order_type,
               is_special: Boolean(order.is_special),
+              created_by: (order as any).created_by ?? null,
+              created_by_name: (order as any).created_by ? (orderCreatorNameMap[(order as any).created_by] ?? "Usuario") : null,
               table_name: resolveTableName(order.table_id, (order as any).table_name_snapshot),
               split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
               order_total: orderTotal,
@@ -1578,6 +1603,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             order_code: (order as any).order_code ?? null,
             order_type: order.order_type,
             is_special: Boolean(order.is_special),
+            created_by: (order as any).created_by ?? null,
+            created_by_name: (order as any).created_by ? (orderCreatorNameMap[(order as any).created_by] ?? "Usuario") : null,
             table_name: resolveTableName(order.table_id, (order as any).table_name_snapshot),
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             order_total: orderTotal,

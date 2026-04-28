@@ -12,6 +12,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 2. Seguridad en backend/BD primero
 - La UI no define seguridad.
 - Validar permisos reales por sucursal/modulo y, cuando aplique, por turno.
+- Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
 
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
@@ -23,6 +24,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No mezclar cierre de caja con cierre de turno.
 - `close_cash_register(...)` puede cerrar solo la caja.
 - `close_cash_shift_with_tables(...)` es cierre de turno. Si el flujo UI debe resolver ordenes especiales `$0`, debe hacerlo con confirmacion explicita antes de llamar al cierre.
+- Antes de bloquear cierre por borradores, usar la logica central que cancela borradores no enviados sin cobros ni items operativos.
+- Un `DRAFT` vacio o con solo items `DRAFT` no debe impedir cerrar turno.
 - Para ordenes especiales `$0`, no inflar conteos con borradores vacios ni pagadas historicas: contar solo `SENT_TO_KITCHEN`, `READY` y `KITCHEN_DISPATCHED` sin `paid_at`.
 - Respetar:
   - `cash_shifts` como turno
@@ -93,6 +96,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 10. Snapshot operativo compartido
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
+- Toda pantalla que visualiza ordenes debe mostrar el usuario creador desde `orders.created_by`.
+- Resolver nombres de usuario con el helper central (`full_name`, `username`, `email`, `Usuario`) y no duplicar fallbacks distintos por pantalla.
 - Una linea `DRAFT` no debe aparecer en pestanas operativas posteriores.
 - En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
 - No asumir que `orders.total` de una orden especial coincide con `special_total_manual` o con `sum(order_items.total)`.
@@ -123,6 +128,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
+- Si agregas columnas de sesion/perfil operativo, actualiza los resets para limpiar valores efimeros.
 
 ## Checklist minimo antes de cerrar una tarea
 1. Si hubo cambio de codigo, correr verificacion tecnica adecuada.

@@ -8,6 +8,7 @@ import { computeLineAmount } from "@/lib/paymentQuantity";
 import type { OrderStatus } from "@/types/cancellation";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { DispatchView } from "@/hooks/useDispatchAccess";
+import { buildUserDisplayMap } from "@/lib/userDisplay";
 
 export interface DispatchOrderItem {
   id: string;
@@ -36,6 +37,8 @@ export interface DispatchOrder {
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
   is_tray_order?: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
   table_name: string | null;
   split_code: string | null;
   status: OrderStatus;
@@ -183,6 +186,8 @@ function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<st
       order_type: order.order_type as "DINE_IN" | "TAKEOUT",
       is_special: Boolean(order.is_special),
       is_tray_order: Boolean(order.is_tray_order),
+      created_by: order.created_by ?? null,
+      created_by_name: order.created_by_name ?? null,
       table_name: order.table_name ?? null,
       split_code: order.split_code ?? null,
       status: order.status,
@@ -213,13 +218,22 @@ export function useDispatchOrders(scope: DispatchView) {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing",
+        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }],
         orderBy: { column: "updated_at", ascending: true }
       });
 
       if (!orders || orders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+
+      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      const creatorProfiles = creatorIds.length > 0
+        ? await dbSelect<any>("profiles", {
+            select: "id, full_name, username, email",
+            filters: [{ column: "id", op: "in", value: creatorIds }],
+          })
+        : [];
+      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
       const dispatchMode = configLoading ? "SINGLE" : config?.dispatch_mode || "SINGLE";
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
@@ -292,6 +306,7 @@ export function useDispatchOrders(scope: DispatchView) {
       const cards = permittedOrders.flatMap((order) => {
         const orderWithContext = {
           ...order,
+          created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
           table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
         };

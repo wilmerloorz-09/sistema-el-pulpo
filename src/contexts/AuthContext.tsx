@@ -16,6 +16,9 @@ interface Profile {
   current_app_session_id?: string | null;
   current_app_session_started_at?: string | null;
   current_app_session_device?: string | null;
+  current_app_secondary_session_id?: string | null;
+  current_app_secondary_session_started_at?: string | null;
+  current_app_secondary_session_device?: string | null;
 }
 
 interface AuthState {
@@ -306,14 +309,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        const activeSessionId = currentProfile?.current_app_session_id ?? null;
+        const activeSessionIds = [
+          currentProfile?.current_app_session_id ?? null,
+          currentProfile?.current_app_secondary_session_id ?? null,
+        ].filter((value): value is string => Boolean(value));
 
-        if (!activeSessionId) {
+        if (activeSessionIds.length === 0) {
           await registerOwnedSingleSession(userId, ownedSession.sessionId);
           return;
         }
 
-        if (activeSessionId !== ownedSession.sessionId) {
+        if (!activeSessionIds.includes(ownedSession.sessionId)) {
           await forceSignOutDueToConcurrentSession();
         }
       } finally {

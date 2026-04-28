@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
-import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, X, Ban } from "lucide-react";
+import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, X, Ban, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
@@ -46,6 +46,7 @@ interface Order {
   cancelled_by?: string;
   cancellation_reason?: string;
   item_count?: number;
+  created_by_name?: string | null;
 }
 
 interface OrderDetailPanelProps {
@@ -124,6 +125,12 @@ export default function OrderDetailPanel({
             {order.order_code ?? String(order.order_number ?? "")}
           </span>
         </div>
+        {"created_by_name" in order && order.created_by_name && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <UserRound className="h-3.5 w-3.5" />
+            <span className="truncate">{order.created_by_name}</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <div
             className={cn(

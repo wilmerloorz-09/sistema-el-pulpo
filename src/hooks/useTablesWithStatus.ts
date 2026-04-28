@@ -5,6 +5,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import { fetchOrderDetail } from "@/hooks/useOrder";
 import type { Database } from "@/integrations/supabase/types";
+import { buildUserDisplayMap } from "@/lib/userDisplay";
 
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -27,6 +28,7 @@ export interface TableWithStatus {
   itemCount: number;
   elapsedMinutes: number;
   hasVoidedPayment: boolean;
+  created_by_name?: string | null;
 }
 
 export interface VoidedOrder {
@@ -38,6 +40,8 @@ export interface VoidedOrder {
   is_special: boolean;
   order_type: "DINE_IN" | "TAKEOUT";
   created_at: string;
+  created_by?: string | null;
+  created_by_name?: string | null;
   special_total_manual: number | null;
   table_name_snapshot?: string | null;
   total?: number;
@@ -98,6 +102,26 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   if (error) throw error;
 
   const rows = (data ?? []) as TablesOverviewRow[];
+  const activeOrderIds = Array.from(
+    new Set(rows.map((row) => row.active_order_id).filter((id): id is string => Boolean(id))),
+  );
+  const activeOrders = activeOrderIds.length > 0
+    ? ((await supabase
+      .from("orders" as any)
+      .select("id, created_by")
+      .in("id", activeOrderIds) as any).data ?? [])
+    : [];
+  const activeCreatorIds = Array.from(
+    new Set((activeOrders ?? []).map((order: any) => order.created_by).filter(Boolean)),
+  ) as string[];
+  const activeCreatorProfiles = activeCreatorIds.length > 0
+    ? ((await supabase
+      .from("profiles" as any)
+      .select("id, full_name, username, email")
+      .in("id", activeCreatorIds) as any).data ?? [])
+    : [];
+  const activeOrdersMap = Object.fromEntries((activeOrders ?? []).map((order: any) => [order.id, order]));
+  const activeCreatorNameMap = buildUserDisplayMap(activeCreatorProfiles);
   
   // 1. Fetch ALL voided payments for this branch
   const { data: voidedPayments } = await (supabase
@@ -114,11 +138,19 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   if (voidedOrderIds.length > 0) {
     const { data: ordersData } = await (supabase
       .from("orders" as any)
-      .select("id, order_number, order_code, table_id, status, is_special, order_type, created_at, special_total_manual, table_name_snapshot")
+      .select("id, order_number, order_code, table_id, status, is_special, order_type, created_by, created_at, special_total_manual, table_name_snapshot")
       .in("id", voidedOrderIds)
       .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]) as any);
 
     const orderSummaries = (ordersData ?? []) as Array<Omit<VoidedOrder, "total">>;
+    const voidedCreatorIds = Array.from(new Set(orderSummaries.map((order) => order.created_by).filter(Boolean))) as string[];
+    const voidedCreatorProfiles = voidedCreatorIds.length > 0
+      ? ((await supabase
+        .from("profiles" as any)
+        .select("id, full_name, username, email")
+        .in("id", voidedCreatorIds) as any).data ?? [])
+      : [];
+    const voidedCreatorNameMap = buildUserDisplayMap(voidedCreatorProfiles);
     const detailedOrders = await Promise.all(
       orderSummaries.map(async (order) => {
         const detail = await fetchOrderDetail(order.id);
@@ -128,6 +160,7 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
 
         return {
           ...order,
+          created_by_name: order.created_by ? (voidedCreatorNameMap[order.created_by] ?? "Usuario") : null,
           total,
         };
       }),
@@ -161,6 +194,11 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       itemCount: hasVoidedPayment ? 0 : Number(row.item_count ?? 0),
       elapsedMinutes: hasVoidedPayment ? 0 : Number(row.elapsed_minutes ?? 0),
       hasVoidedPayment,
+      created_by_name: effectiveOrderId
+        ? (activeOrdersMap[effectiveOrderId]?.created_by
+          ? (activeCreatorNameMap[activeOrdersMap[effectiveOrderId].created_by] ?? "Usuario")
+          : null)
+        : null,
     };
   });
 

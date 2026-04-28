@@ -77,6 +77,8 @@
 - `BULK` puede operar con `price = NULL` y reglas de entrega en tablas auxiliares.
 
 ### Ordenes
+- `orders.created_by` es la fuente del usuario que genero la orden y debe acompañar las lecturas operativas visibles.
+- Para mostrar el nombre, resolver contra `profiles.full_name`, luego `profiles.username`, luego `profiles.email`, con fallback `Usuario`.
 - `orders.menu_scope` conserva el arbol visual usado por la orden.
 - `orders.is_special` y `orders.special_total_manual` modelan `Orden Especial`.
 - En `Orden Especial`, `special_total_manual` es el valor manual visible/cobrable. No asumir que coincide con `orders.total` ni con `sum(order_items.total)`.
@@ -101,8 +103,12 @@
 - `cash_register_openings` representa historial real de aperturas, cierres y anulaciones de caja.
 - `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
+- `cash_shift_users.can_double_session` habilita una segunda sesion de app solo para usuarios de caja en turno abierto.
+- Las sesiones de app se registran en `profiles.current_app_session_id` y, cuando aplica doble sesion, en `profiles.current_app_secondary_session_id` con timestamp/dispositivo auxiliar.
 - Cerrar caja y cerrar turno no son la misma operacion.
 - `close_cash_shift_with_tables(...)` sigue siendo el cierre final del turno. Antes de llamarlo desde UI, `Admin > Turno` puede resolver ordenes especiales pendientes con valor `$0` mediante confirmacion explicita, marcandolas `PAID`.
+- Antes de cerrar turno, `cancel_empty_draft_orders_for_branch(...)` cancela borradores no enviados sin cobros ni items operativos.
+- `list_branch_closure_blocking_orders(...)` solo debe reportar `DRAFT` como bloqueante si tiene pagos o items no `DRAFT`.
 - Para ese flujo, solo cuentan como bloqueantes las ordenes especiales `$0` en estados:
   - `SENT_TO_KITCHEN`
   - `READY`
@@ -153,6 +159,8 @@
 ### Caja
 - `open_cash_register(...)`
 - `close_cash_register(...)`
+- `cancel_empty_draft_orders_for_branch(...)`
+- `list_branch_closure_blocking_orders(...)`
 - `anular_apertura_caja(...)`
 - `list_cash_register_openings(...)`
 - `registrar_movimiento_caja(...)`
@@ -209,6 +217,8 @@
 - `20260418130000_list_pending_order_cancellation_requests.sql`
 - `20260418143000_align_pending_cancellation_request_visibility.sql`
 - `20260418213017_guard_add_dine_in_order_item_null_menu_node.sql`
+- `20260428100000_support_double_app_session_for_cash_users.sql`
+- `20260428104000_centralize_shift_close_unsubmitted_draft_cleanup.sql`
 
 ## Reglas de integridad
 1. No asumir que `menu_nodes` ya reemplazo la FK de `order_items.product_id`.
@@ -217,3 +227,4 @@
 4. Si se toca `Unir/Dividir`, no romper cantidades pagadas, historial `READY` / `DISPATCHED` ni numeracion operativa.
 5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes y despacho directo de items nuevos.
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
+7. Los resets operativos deben limpiar session locks en `profiles`, incluidas columnas de sesion secundaria, para evitar bloqueos heredados.

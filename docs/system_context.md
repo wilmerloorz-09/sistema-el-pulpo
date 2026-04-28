@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-04-26)
+## Estado operativo vigente (2026-04-28)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -39,10 +39,18 @@
   - `can_dispatch_orders`
   - `can_use_caja`
   - `can_authorize_order_cancel`
+  - `can_double_session`
   - `is_supervisor`
-- `cash_shift_users.last_session_id` se usa para session lock y toma de control vigente en Caja.
+- `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
+- Si un usuario del turno tiene `cash_shift_users.can_double_session = true` y `can_use_caja = true`, puede conservar una segunda sesion simultanea mediante:
+  - `profiles.current_app_secondary_session_id`
+  - `profiles.current_app_secondary_session_started_at`
+  - `profiles.current_app_secondary_session_device`
+- La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
+- Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
+- Una orden `DRAFT` solo debe bloquear cierre si tiene pagos o items no `DRAFT`.
 - Al cerrar turno, si existen ordenes especiales pendientes con valor operativo `$0`, el sistema debe mostrar una confirmacion:
   - `Cancelar`
   - `Continuar cierre`
@@ -107,6 +115,9 @@
   - `Anuladas`
   - `Pagadas`
 - La pestana `Pagadas` debe mostrar ordenes especiales `PAID` aunque no tengan cantidades cobradas visibles por `payment_items`; en ese caso usa los items reales como detalle visual y `special_total_manual` como valor presentado de la orden.
+- En toda superficie donde se visualicen ordenes, debe mostrarse el usuario que genero la orden a partir de `orders.created_by`.
+- El nombre visible del generador se resuelve desde `profiles.full_name`, luego `profiles.username`, luego `profiles.email`; si no hay datos disponibles, usar `Usuario`.
+- Esta visibilidad aplica a Ordenes, detalle de orden, Cocina, Despacho, Caja, pagos completados, Mesas/Editar Orden y Reportes.
 - `CancelOrderDialog` sigue el modelo de doble lista.
 - La solicitud de anulacion pendiente ya es parte base del flujo operativo:
   - `create_pending_order_cancellation_request(...)`
@@ -214,6 +225,18 @@
   - el combo de `Agregar usuario al turno` muestra usuarios disponibles para elegir, pero valida al agregar y avisa si el usuario ya esta habilitado en otra sucursal.
   - la BD conserva la defensa final con `assert_user_single_open_shift(...)` y `get_user_open_shift_conflict(...)`.
 
+### 2026-04-28
+- Sesiones:
+  - existe soporte de segunda sesion de app para usuarios de caja habilitados con `cash_shift_users.can_double_session = true`.
+  - las columnas secundarias de sesion viven en `profiles` y deben limpiarse en resets operativos.
+- Cierre de turno:
+  - `cancel_empty_draft_orders_for_branch(...)` centraliza la limpieza de borradores vacios/no enviados.
+  - `list_branch_closure_blocking_orders(...)` solo reporta `DRAFT` como bloqueante si tiene pagos o items operativos no `DRAFT`.
+  - Las referencias de bloqueo distinguen `Orden especial`, `Bandeja`, `Para llevar`, mesa/division u orden generica.
+- Ordenes:
+  - todas las vistas de orden deben exponer el nombre del usuario creador sin depender del usuario conectado.
+  - `src/lib/userDisplay.ts` centraliza la resolucion de nombre visible de perfil.
+
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
 2. No mezclar cerrar caja con cerrar turno.
@@ -239,3 +262,4 @@
    - que el usuario este en `cash_shift_users.is_enabled = true`
    - que tenga al menos una capacidad operativa
    - que no este intentando habilitarse en otro turno abierto
+   - si usa doble sesion, que tenga `can_use_caja = true` y `can_double_session = true` en el turno abierto

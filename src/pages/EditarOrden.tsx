@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RotateCcw, Users, ClipboardPen } from "lucide-react";
+import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RotateCcw, UserRound, Users, ClipboardPen } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -259,6 +259,14 @@ const EditarOrden = () => {
                     {config.icon}
                     <span>{config.label}</span>
                   </div>
+                  {table.created_by_name && (
+                    <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
+                      <span className="flex min-w-0 items-center gap-1">
+                        <UserRound className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{table.created_by_name}</span>
+                      </span>
+                    </div>
+                  )}
                   {showSingleTotal && (
                     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-amber-300 bg-white/95 px-3 py-1.5 text-[13px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:left-auto sm:right-3 sm:translate-x-0 sm:px-4 sm:py-2.5 sm:text-base">
                       {formatCurrency(table.totalDue)}
@@ -333,6 +341,12 @@ const EditarOrden = () => {
                   </div>
                   <div className="flex flex-col min-w-0">
                     <span className="font-display font-black text-red-900 dark:text-red-300 truncate">{title}</span>
+                    {order.created_by_name && (
+                      <span className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-red-600/80">
+                        <UserRound className="h-3 w-3" />
+                        {order.created_by_name}
+                      </span>
+                    )}
                     <span className="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full w-fit dark:bg-red-950/50">Pendiente de cobro</span>
                   </div>
                   <div className="ml-auto text-right">

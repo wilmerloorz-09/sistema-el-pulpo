@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import { buildUserDisplayMap } from "@/lib/userDisplay";
 
 export interface KitchenOrderItem {
   id: string;
@@ -29,6 +30,8 @@ export interface KitchenOrder {
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
   is_tray_order?: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
   table_name: string | null;
   split_code: string | null;
   sent_at: string;
@@ -64,19 +67,29 @@ export function useKitchenOrders() {
         order_type: string;
         is_special: boolean | null;
         is_tray_order?: boolean | null;
+        created_by?: string | null;
         table_id: string | null;
         split_id: string | null;
         updated_at: string;
         sent_to_kitchen_at: string | null;
         locked_for_editing?: boolean | null;
       }>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, is_tray_order, table_id, split_id, updated_at, sent_to_kitchen_at, status, locked_for_editing",
+        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, updated_at, sent_to_kitchen_at, status, locked_for_editing",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }],
         orderBy: { column: "updated_at", ascending: true },
       });
 
       if (orders.length === 0) return [];
+
+      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      const creatorProfiles = creatorIds.length > 0
+        ? await dbSelect<any>("profiles", {
+            select: "id, full_name, username, email",
+            filters: [{ column: "id", op: "in", value: creatorIds }],
+          })
+        : [];
+      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
       const tableIdSet = new Set<string>(orders.map((o: any) => o.table_id).filter(Boolean));
       const tableIds = Array.from(tableIdSet);
@@ -193,6 +206,8 @@ export function useKitchenOrders() {
             order_type: order.order_type as "DINE_IN" | "TAKEOUT",
             is_special: Boolean(order.is_special),
             is_tray_order: Boolean(order.is_tray_order),
+            created_by: order.created_by ?? null,
+            created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
             table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             sent_at: sentAt,

@@ -10,6 +10,7 @@ import {
   normalizeSnapshotRows,
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
+import { getUserDisplayName } from "@/lib/userDisplay";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -78,6 +79,8 @@ interface Order {
   split_id: string | null;
   split_code?: string | null;
   table_name?: string;
+  created_by?: string | null;
+  created_by_name?: string | null;
   created_at: string;
   sent_to_kitchen_at?: string | null;
   ready_at?: string | null;
@@ -148,7 +151,7 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
 
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   
@@ -161,6 +164,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     items,
     snapshotResult,
     siblings,
+    creatorProfiles,
   ] = await Promise.all([
     order.table_id
       ? dbSelect("restaurant_tables", { select: "name", filters: [{ column: "id", op: "eq", value: order.table_id }] })
@@ -177,6 +181,12 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       p_order_id: orderId,
     }),
     order.table_id ? fetchSiblingOrders(order.table_id) : Promise.resolve([] as SiblingOrder[]),
+    order.created_by
+      ? dbSelect<any>("profiles", {
+          select: "id, full_name, username, email",
+          filters: [{ column: "id", op: "eq", value: order.created_by }],
+        })
+      : Promise.resolve([]),
   ]);
 
   const tableName = tableResult[0]?.name ?? order.table_name_snapshot;
@@ -353,6 +363,8 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     ...order,
     split_code: splitCode,
     table_name: tableName,
+    created_by: order.created_by ?? null,
+    created_by_name: order.created_by ? getUserDisplayName(creatorProfiles?.[0] ?? null) : null,
     items: enrichedItems,
     siblings,
   } as Order;
