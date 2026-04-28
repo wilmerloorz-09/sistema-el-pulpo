@@ -20,8 +20,6 @@
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
 --   - al limpiar cash_shift_users tambien se eliminan los session locks operativos (`last_session_id`) y cualquier toma de control vigente en Caja
---   - conserva el modulo `turno` y el helper `can_manage_shift_admin(...)`
---   - conserva que supervisor por defecto administre Turno sin recibir Administracion / `admin_sucursal`
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
 -- - Conserva todos los arboles operativos de menu_nodes:
 --   - `TABLE`
@@ -35,7 +33,6 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
---   - cambiar el usuario con permiso de cajero en turno abierto sigue requiriendo confirmacion con la contrasena del usuario logueado
 --   - cerrar turno puede resolver ordenes especiales pendientes de `$0` solo con confirmacion explicita antes de invocar el cierre normal
 --   - el conteo de esa confirmacion solo debe incluir SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
 -- - Conserva la arquitectura de reportes de caja, pero borra la base operativa que esos reportes leen:
@@ -57,7 +54,6 @@
 --   - dispatch_assignments
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
---   - al borrar cash_shift_users se elimina cualquier cajero vigente del turno, pero no cambia la regla de confirmacion para reasignarlo en un turno abierto futuro
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
 --   - esto incluye anulacion total y parcial, pagos de reemplazo (`replacement_payment_id`) y desglose de devolucion en efectivo
@@ -178,8 +174,6 @@ COMMIT;
 -- - Plantillas de apertura de caja intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
 -- - 0 session locks/toma de control vigente en Caja
--- - 0 cajero asignado por turno abierto; si luego se cambia en un turno abierto, la UI debe pedir la contrasena del usuario logueado
--- - modulo `turno`, helper `can_manage_shift_admin(...)` y supervisor sin Administracion por defecto intactos
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
 -- - 0 solicitudes/anulaciones pendientes por item/orden, 0 payloads `[PENDING_REQUEST]`, 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
 -- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial

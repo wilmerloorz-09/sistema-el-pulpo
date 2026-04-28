@@ -17,9 +17,6 @@
 ### 2. Permisos y gate operativo
 - Capa 1: permisos efectivos por modulo/sucursal.
 - Capa 2: capacidades por turno en `cash_shift_users`.
-- `turno` es modulo propio para administrar el turno operativo sin exponer todo `admin_sucursal`.
-- El rol `supervisor` por defecto debe tener `turno: MANAGE` y no `admin_sucursal`.
-- El helper backend comun para la superficie Turno es `can_manage_shift_admin(...)`; incluye global admin, `turno: MANAGE`, `admin_sucursal: MANAGE` y `admin_global: MANAGE`.
 - `get_my_branch_shift_gate(...)` sigue siendo el gate principal para habilitar vistas operativas.
 - `cash_shift_users.last_session_id` agrega control de sesion activa y toma de control para Caja.
 
@@ -98,10 +95,6 @@
 - Diferencia de arquitectura vigente:
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
-- En Turno abierto, cambiar el usuario con `can_use_caja` es una accion sensible:
-  - el frontend debe advertir el cambio de cajero actual/nuevo
-  - debe pedir la contrasena del usuario logueado
-  - solo debe guardar si la validacion confirma que la contrasena pertenece al mismo usuario autenticado
 - Cierre de turno desde `Admin > Turno`:
   - si hay ordenes especiales pendientes con valor operativo `$0`, la UI debe pedir confirmacion antes de cerrar
   - si el usuario continua, esas ordenes se marcan `PAID` y despues se invoca `close_cash_shift_with_tables(...)`
@@ -179,12 +172,6 @@
   - `src/components/AppLayout.tsx`
   - `src/components/BottomNav.tsx`
   - `src/hooks/useBranchShiftGate.ts`
-- Turno:
-  - `src/components/admin/ShiftSetupAdmin.tsx`
-  - `src/components/admin/BranchCancelPolicyEditor.tsx`
-  - `src/hooks/usePreferredHomePath.ts`
-  - `src/components/nav/useVisibleNavItems.tsx`
-  - `src/components/ProtectedRoute.tsx`
 
 ## Principios vigentes
 1. Refactor incremental, no corte brusco del modelo legacy.
@@ -195,5 +182,3 @@
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
 7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final.
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
-9. Si se toca Turno, no devolver `admin_sucursal` al supervisor por defecto; usar `turno` + `can_manage_shift_admin(...)`.
-10. Si se toca cambio de cajero en turno abierto, mantener confirmacion con contrasena del usuario logueado.
