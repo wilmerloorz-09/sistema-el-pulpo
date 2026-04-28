@@ -12,8 +12,6 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 2. Seguridad en backend/BD primero
 - La UI no define seguridad.
 - Validar permisos reales por sucursal/modulo y, cuando aplique, por turno.
-- Para la superficie Turno, usar `turno` + `can_manage_shift_admin(...)`.
-- No resolver problemas de acceso del supervisor devolviendole `admin_sucursal` por defecto.
 
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
@@ -23,10 +21,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 4. Caja y turno no son lo mismo
 - No mezclar cierre de caja con cierre de turno.
-- `Turno` es modulo propio; supervisor por defecto solo debe tener acceso a Turno, no a Administracion.
 - `close_cash_register(...)` puede cerrar solo la caja.
 - `close_cash_shift_with_tables(...)` es cierre de turno. Si el flujo UI debe resolver ordenes especiales `$0`, debe hacerlo con confirmacion explicita antes de llamar al cierre.
-- Si se cambia el usuario con permiso de cajero (`cash_shift_users.can_use_caja`) en un turno abierto, el frontend debe pedir confirmacion con la contrasena del usuario logueado antes de guardar.
 - Para ordenes especiales `$0`, no inflar conteos con borradores vacios ni pagadas historicas: contar solo `SENT_TO_KITCHEN`, `READY` y `KITCHEN_DISPATCHED` sin `paid_at`.
 - Respetar:
   - `cash_shifts` como turno
@@ -109,12 +105,6 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ## Convenciones de implementacion
 
 ### Frontend
-- Si tocas `ShiftSetupAdmin`, validar:
-  - supervisor con modulo `Turno` sin Administracion
-  - visualizacion de turno abierto
-  - guardado de usuarios del turno
-  - confirmacion con contrasena del usuario logueado cuando cambia `can_use_caja`
-  - politica de anulacion directa desde Turno
 - Si tocas catalogo, validar `Ordenes`, `Despacho`, `Caja`, ticket y vistas derivadas.
 - Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas` y estado visible de la orden reabierta.
 - Si tocas `Unir/Dividir`, validar `MergeSplitOrdersDialog`, `Ordenes`, `Mesas` y cantidades movibles vs cantidades pagadas.
@@ -133,24 +123,21 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
-- Las RPC/policies relacionadas con Turno deben aceptar `can_manage_shift_admin(...)` cuando correspondan al modulo `turno`.
-- `list_branch_cancel_policy_nodes(...)`, `save_branch_cancel_policy(...)`, `cash_shift_users`, `cash_shifts` y configuracion de despacho ligada a Turno no deben bloquear al supervisor solo por no tener `admin_sucursal`.
 
 ## Checklist minimo antes de cerrar una tarea
 1. Si hubo cambio de codigo, correr verificacion tecnica adecuada.
 2. Si se toco caja, validar apertura, cobro, cierre o anulacion segun corresponda.
-3. Si se toco Turno, validar supervisor con permiso `turno`, administrador, apertura/guardado/cierre, cambio de cajero y politicas de anulacion.
-4. Si se toco reporteria de caja, validar consolidado y por apertura.
-5. Si se toco anulacion de pagos, validar total y parcial.
-6. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
-7. Si se toco `Editar Orden`, validar:
+3. Si se toco reporteria de caja, validar consolidado y por apertura.
+4. Si se toco anulacion de pagos, validar total y parcial.
+5. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
+6. Si se toco `Editar Orden`, validar:
    - `Aceptar cambios`
    - estado final de items nuevos
    - anulaciones derivadas del buffer
    - bloqueo/desbloqueo correcto
-8. Actualizar estos docs cuando cambie la regla base:
+7. Actualizar estos docs cuando cambie la regla base:
    - `docs/system_context.md`
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
-9. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes.
+8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes.

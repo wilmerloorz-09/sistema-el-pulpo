@@ -1808,6 +1808,10 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       }
 
       const now = new Date().toISOString();
+      const shouldMarkSpecialAsPaid =
+        isSpecial
+        && orderData.special_total_manual != null
+        && roundMoney(Number(activePaymentsByOrder[orderId] ?? 0) + appliedTotal) >= roundMoney(Number(orderData.special_total_manual));
       const paymentGroupId = preparedTransferProofSession?.paymentGroupId ?? generateUUID();
       const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
       let anchorPaymentId: string | null = null;
@@ -1985,6 +1989,20 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       } catch (syncError) {
         console.error("No se pudo sincronizar el estado de pago de la orden", syncError);
         paymentStateWarning = syncError instanceof Error ? syncError.message : "Error de sincronización";
+      }
+
+      if (shouldMarkSpecialAsPaid && syncSummary?.status !== "PAID") {
+        await dbUpdate("orders", orderId, {
+          status: "PAID",
+          paid_at: now,
+          closed_at: now,
+          updated_at: now,
+        });
+        syncSummary = {
+          orderId,
+          status: "PAID",
+          paidAt: now,
+        } as Awaited<ReturnType<typeof syncOrderPaymentState>>;
       }
 
       return {

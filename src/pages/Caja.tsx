@@ -93,6 +93,7 @@ const scopeReportToOpening = (params: {
   completedPayments: ReturnType<typeof useCaja>["completedPayments"];
   movements: ReturnType<typeof useCaja>["cashRegisterMovements"];
   closureNotes?: string;
+  denominationSnapshot?: CashShiftSnapshot["denoms"];
 }) => {
   const openedAtMs = new Date(params.opening.opened_at).getTime();
   const closedAtMs = new Date(params.opening.closed_at ?? params.opening.opened_at).getTime();
@@ -123,10 +124,22 @@ const scopeReportToOpening = (params: {
     return movementTime >= openedAtMs && movementTime <= closedAtMs;
   });
 
+  const scopedDenoms = params.denominationSnapshot ?? [];
+  const manualMovementTotal = filteredMovements.reduce((sum, movement) => {
+    if (movement.movementType === "entrada") return sum + Number(movement.amount ?? 0);
+    if (movement.movementType === "salida") return sum - Number(movement.amount ?? 0);
+    return sum;
+  }, 0);
+  const cashMethodTotal = Array.from(methodSummaryMap.values())
+    .filter((entry) => /efectivo/i.test(entry.methodName))
+    .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
+  const estimatedCurrentTotal = Number(params.opening.initial_total ?? 0) + cashMethodTotal + manualMovementTotal;
+
   return {
     branchName: params.branchName,
     shift: {
       ...params.shift,
+      denoms: scopedDenoms,
       openingHistory: [params.opening],
     },
     completedPayments: filteredPayments,
@@ -140,6 +153,12 @@ const scopeReportToOpening = (params: {
       .sort((left, right) => right.amount - left.amount || left.methodName.localeCompare(right.methodName)),
     movements: filteredMovements,
     closureNotes: params.closureNotes,
+    openingCashTotals: {
+      initial: Number(params.opening.initial_total ?? 0),
+      current: scopedDenoms.length > 0
+        ? scopedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0)
+        : estimatedCurrentTotal,
+    },
   };
 };
 
@@ -151,6 +170,10 @@ const buildCashClosureReportHtml = (params: {
   movements: ReturnType<typeof useCaja>["cashRegisterMovements"];
   closureNotes?: string;
   reportMode?: "shift" | "opening";
+  openingCashTotals?: {
+    initial: number;
+    current: number;
+  };
 }) => {
   const sortedDenoms = [...params.shift.denoms]
     .filter((denomination) => denomination.value > 0)
@@ -159,8 +182,10 @@ const buildCashClosureReportHtml = (params: {
       return a.value - b.value;
     });
 
-  const totalInitial = sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_initial, 0);
-  const totalCurrent = sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0);
+  const totalInitial = params.openingCashTotals?.initial
+    ?? sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_initial, 0);
+  const totalCurrent = params.openingCashTotals?.current
+    ?? sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0);
   const closingDenominationCount = sortedDenoms.reduce(
     (sum, denomination) => sum + Number(denomination.qty_current ?? 0),
     0,
@@ -270,6 +295,7 @@ const buildCashClosureReportHtml = (params: {
 
   const isOpeningReport = params.reportMode === "opening";
   const currentOpening = params.shift.openingHistory[0] ?? null;
+  const hasDenominationSnapshot = sortedDenoms.length > 0;
   const paymentsSectionTitle = isOpeningReport ? "Pagos de la apertura" : "Pagos del turno";
   const movementsSectionTitle = isOpeningReport ? "Movimientos de la apertura" : "Movimientos del turno";
   const reportTitle = isOpeningReport ? "Reporte por apertura de caja" : "Reporte consolidado del turno";
@@ -401,6 +427,7 @@ const buildCashClosureReportHtml = (params: {
         </div>
       </div>
 
+      ${hasDenominationSnapshot ? `
       <div class="section">
         <h2>Detalle de denominaciones</h2>
         <table>
@@ -415,6 +442,12 @@ const buildCashClosureReportHtml = (params: {
             </tr>` : '<tr><td colspan="5" class="muted">Sin denominaciones registradas al cierre.</td></tr>'}</tbody>
         </table>
       </div>
+    ` : `
+      <div class="section">
+        <h2>Detalle de denominaciones</h2>
+        <div class="notes">Esta apertura historica no tiene un desglose de billetes y monedas guardado. Se muestran los totales y cobros de su rango para evitar reutilizar el conteo de otra apertura.</div>
+      </div>
+    `}
     ` : ""}
   </body>
 </html>`;
@@ -428,6 +461,10 @@ const openCashClosureReportWindow = (params: {
   movements: ReturnType<typeof useCaja>["cashRegisterMovements"];
   closureNotes?: string;
   reportMode?: "shift" | "opening";
+  openingCashTotals?: {
+    initial: number;
+    current: number;
+  };
 }) => {
   const reportWindow = window.open("", "_blank", "width=1024,height=900");
   if (!reportWindow) {
@@ -1366,6 +1403,7 @@ const Caja = () => {
                   ...scopeReportToOpening({
                     ...reportSnapshot,
                     opening: closedOpening,
+                    denominationSnapshot: shift.denoms,
                   }),
                   reportMode: "opening",
                 }
