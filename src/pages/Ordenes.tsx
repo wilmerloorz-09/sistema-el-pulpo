@@ -2044,7 +2044,7 @@ const Ordenes = () => {
         }}
         priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
         manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
-        confirmLabel={isTrayOrder ? "Agregar item bandeja" : "Agregar"}
+        confirmLabel="Agregar"
         hideQuantity={isBulkScopeSelection}
         extraContent={({ unitPrice, quantity }) => {
           if (!isBulkScopeSelection) return null;
