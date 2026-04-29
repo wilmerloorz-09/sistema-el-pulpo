@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
+import { isTemporaryOrderItemId } from "@/hooks/useOrder";
 
 interface OrderItem {
   id: string;
@@ -166,8 +167,9 @@ const OrderItemsList = ({
 
       {items.map((item) => {
         const isPending = item.status === "DRAFT";
+        const isTemporaryItem = isTemporaryOrderItemId(item.id);
         const canShowControlsForItem = !hideItemControls || editableItemIds.includes(item.id);
-        const showControls = canShowControlsForItem && (isPending || alwaysShowControls);
+        const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || alwaysShowControls);
         const isRequestedCancel =
           item.status === "ITEM_PENDING_CANCELLATION" ||
           item.status === "PENDING_CANCELLATION" ||

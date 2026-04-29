@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { fetchOrderDetail, fetchSiblingOrders, getOrderQueryKey, useOrder, type SiblingOrder } from "@/hooks/useOrder";
+import { fetchOrderDetail, fetchSiblingOrders, getOrderQueryKey, isTemporaryOrderItemId, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -752,6 +752,7 @@ const Ordenes = () => {
   const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
   const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
   const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
+  const hasTemporaryDraftItems = itemsToUse.some((i) => i.status === "DRAFT" && isTemporaryOrderItemId(i.id));
   const hasPendingCancellationItems = itemsToUse.some((item) =>
     item.status === "PENDING_CANCELLATION" ||
     item.status === "ITEM_PENDING_CANCELLATION" ||
@@ -1622,10 +1623,11 @@ const Ordenes = () => {
               },
             });
           }}
-          disabled={sendToKitchen.isPending}
+          disabled={sendToKitchen.isPending || addItem.isPending || hasTemporaryDraftItems}
+          title={addItem.isPending || hasTemporaryDraftItems ? "Espera a que el item termine de guardarse" : undefined}
           className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
         >
-          {sendToKitchen.isPending ? (
+          {sendToKitchen.isPending || addItem.isPending || hasTemporaryDraftItems ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : hasSentItems ? (
             <>

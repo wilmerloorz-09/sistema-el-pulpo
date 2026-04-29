@@ -64,6 +64,10 @@ function formatEventTimeWithLabel(iso: string | null | undefined, status: string
   }
 }
 
+function formatMoney(value: number | null | undefined) {
+  return `$${Number(value ?? 0).toFixed(2)}`;
+}
+
 function QuantityStepper({
   value,
   min,
@@ -232,6 +236,7 @@ export function DispatchCardBase({
     [order.items],
   );
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
+  const orderTotal = order.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
 
   const summaryParts: string[] = [];
   if (order.pending_prepare_count > 0) summaryParts.push(`${order.pending_prepare_count} pendientes`);
@@ -303,6 +308,9 @@ export function DispatchCardBase({
               <div className="min-w-0 sm:text-right">
                 <p className="truncate text-sm font-semibold text-slate-950">
                   {summaryText}
+                </p>
+                <p className="mt-1 text-sm font-black text-emerald-700 sm:text-base">
+                  Total {formatMoney(orderTotal)}
                 </p>
               </div>
 
@@ -419,6 +427,13 @@ export function DispatchCardBase({
                       <span className="shrink-0">Falt: {remainingToDispatch}</span>
                       <span className="shrink-0">Canc: {item.quantity_cancelled}</span>
                     </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-800">
+                      {isBulkItem ? (
+                        <span>{formatMoney(item.total)}</span>
+                      ) : (
+                        <span>{formatMoney(item.unit_price)} x {activeQuantity} = {formatMoney(item.total)}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -469,6 +484,11 @@ export function DispatchCardBase({
             </div>
           );
         })}
+            </div>
+            <div className="flex items-center justify-end border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+              <span className="text-sm font-black text-slate-950">
+                Total: {formatMoney(orderTotal)}
+              </span>
             </div>
           </div>
         </div>

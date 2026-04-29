@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
-import { generateUUID } from "@/lib/uuid";
 import { computeLineTotalWithContainer } from "@/lib/paymentQuantity";
 import {
   buildOperationalMapsFromSnapshotRows,
@@ -38,6 +37,10 @@ interface OrderItem {
   quantity_cancellable?: number;
   paid_at?: string | null;
   modifiers: { id: string; modifier_id: string; description: string }[];
+}
+
+export function isTemporaryOrderItemId(itemId: string | null | undefined) {
+  return String(itemId ?? "").startsWith("temp-");
 }
 
 export interface SiblingOrder {
@@ -400,7 +403,7 @@ export function useOrder(orderId: string | null) {
       const isTrayOrder = query.data?.is_tray_order === true;
 
       if (isTrayOrder) {
-        const { error } = await supabase.rpc("add_tray_order_item" as any, {
+        const { data, error } = await supabase.rpc("add_tray_order_item" as any, {
           p_order_id: orderId!,
           p_product_id: params.product_id,
           p_quantity: params.quantity,
@@ -411,10 +414,10 @@ export function useOrder(orderId: string | null) {
           p_modifier_ids: params.modifier_ids,
         });
         if (error) throw error;
-        return;
+        return String(data);
       }
 
-      const { error } = await supabase.rpc("add_dine_in_order_item" as any, {
+      const { data, error } = await supabase.rpc("add_dine_in_order_item" as any, {
         p_order_id: orderId!,
         p_product_id: params.product_id,
         p_menu_node_id: params.menu_node_id ?? null,
@@ -427,14 +430,16 @@ export function useOrder(orderId: string | null) {
         p_tray_container_cost: params.tray_container_cost ?? 0,
       });
       if (error) throw error;
+      return String(data);
     },
     onMutate: async (params) => {
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
       const previousOrder = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
+      const tempId = `temp-${Date.now()}`;
       
       if (previousOrder) {
         const optimisticItem: OrderItem = {
-          id: `temp-${Date.now()}`,
+          id: tempId,
           product_id: params.product_id,
           description_snapshot: params.description_snapshot,
           item_note: params.item_note ?? null,
@@ -461,7 +466,23 @@ export function useOrder(orderId: string | null) {
           items: [...previousOrder.items, optimisticItem],
         });
       }
-      return { previousOrder };
+      return { previousOrder, tempId };
+    },
+    onSuccess: (createdItemId, _params, context) => {
+      if (!createdItemId || !context?.tempId) return;
+
+      qc.setQueryData(getOrderQueryKey(orderId), (current: Order | undefined) => {
+        if (!current) return current;
+
+        return {
+          ...current,
+          items: current.items.map((item) =>
+            item.id === context.tempId
+              ? { ...item, id: createdItemId }
+              : item,
+          ),
+        };
+      });
     },
     onError: (err: any, _, context) => {
       if (context?.previousOrder) {
@@ -470,7 +491,6 @@ export function useOrder(orderId: string | null) {
       toast.error(err.message);
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
@@ -478,6 +498,10 @@ export function useOrder(orderId: string | null) {
 
   const removeItem = useMutation({
     mutationFn: async (itemId: string) => {
+      if (isTemporaryOrderItemId(itemId)) {
+        throw new Error("El item aun se esta guardando. Espera un momento e intenta de nuevo.");
+      }
+
       const modifiers = await dbSelect<any>("order_item_modifiers", {
         select: "id",
         filters: [{ column: "order_item_id", op: "eq", value: itemId }]
@@ -515,6 +539,10 @@ export function useOrder(orderId: string | null) {
 
   const updateQuantity = useMutation({
     mutationFn: async ({ itemId, quantity, unit_price }: { itemId: string; quantity: number; unit_price: number }) => {
+      if (isTemporaryOrderItemId(itemId)) {
+        throw new Error("El item aun se esta guardando. Espera un momento e intenta de nuevo.");
+      }
+
       await dbUpdate("order_items", itemId, { quantity, total: quantity * unit_price });
     },
     onMutate: async ({ itemId, quantity, unit_price }) => {

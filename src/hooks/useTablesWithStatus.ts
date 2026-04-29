@@ -173,12 +173,17 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
 
   const tables = rows.map((row) => {
     const hasVoidedPayment = row.active_order_id ? voidedOrderIdSet.has(row.active_order_id) : false;
+    const isEmptyDraft =
+      row.active_order_status === "DRAFT"
+      && Number(row.total_due ?? 0) <= 0
+      && parseSplitTotals(row.split_totals).length === 0;
     
     // If the active order on this table has a voided payment, we 'liberate' the table visual status
     // so it can be used for new orders, but we still track that it has a voided order for this branch.
-    const effectiveStatus = hasVoidedPayment ? "free" : (row.status ?? "free");
+    const effectiveStatus = hasVoidedPayment || isEmptyDraft ? "free" : (row.status ?? "free");
     const effectiveOrderId = hasVoidedPayment ? undefined : (row.active_order_id ?? undefined);
     const effectiveOrderStatus = hasVoidedPayment ? undefined : (row.active_order_status ?? undefined);
+    const effectiveSplitTotals = hasVoidedPayment || isEmptyDraft ? [] : parseSplitTotals(row.split_totals);
 
     return {
       id: row.table_id,
@@ -188,13 +193,13 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       status: effectiveStatus,
       activeOrderId: effectiveOrderId,
       orderStatus: effectiveOrderStatus,
-      splitCount: hasVoidedPayment ? 0 : Number(row.split_count ?? 0),
-      totalDue: hasVoidedPayment ? 0 : Number(row.total_due ?? 0),
-      splitTotals: hasVoidedPayment ? [] : parseSplitTotals(row.split_totals),
-      itemCount: hasVoidedPayment ? 0 : Number(row.item_count ?? 0),
-      elapsedMinutes: hasVoidedPayment ? 0 : Number(row.elapsed_minutes ?? 0),
+      splitCount: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.split_count ?? 0),
+      totalDue: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.total_due ?? 0),
+      splitTotals: effectiveSplitTotals,
+      itemCount: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.item_count ?? 0),
+      elapsedMinutes: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.elapsed_minutes ?? 0),
       hasVoidedPayment,
-      created_by_name: effectiveOrderId
+      created_by_name: effectiveStatus !== "free" && effectiveOrderId
         ? (activeOrdersMap[effectiveOrderId]?.created_by
           ? (activeCreatorNameMap[activeOrdersMap[effectiveOrderId].created_by] ?? "Usuario")
           : null)

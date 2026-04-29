@@ -20,6 +20,7 @@ export interface DispatchOrderItem {
   quantity_dispatchable: number;
   quantity_dispatched: number;
   quantity_cancelled: number;
+  unit_price: number;
   tray_item_type?: "A" | "B" | "C" | null;
   tray_container_cost?: number;
   status: string;
@@ -127,6 +128,7 @@ function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<st
         quantity_dispatchable: quantityPendingPrepare + quantityReadyAvailable,
         quantity_dispatched: quantities.quantityDispatchedAvailable,
         quantity_cancelled: quantities.quantityCancelledTotal,
+        unit_price: Number(item.unit_price ?? 0),
         tray_item_type: item.tray_item_type ?? null,
         tray_container_cost: Number(item.tray_container_cost ?? 0),
         status: item.status ?? "SENT",
