@@ -18,6 +18,7 @@
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
+--   - al limpiar cash_shifts tambien se borra `opened_at`, que la UI muestra como fecha/hora de apertura del turno abierto
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
 --   - al limpiar cash_shift_users tambien se eliminan los session locks operativos (`last_session_id`) y cualquier toma de control vigente en Caja
 --   - tambien limpia los session locks guardados en `profiles`, incluida la segunda sesion autorizada para Caja
@@ -90,6 +91,7 @@ DO $$
 DECLARE
   v_table text;
   v_session_column text;
+  v_had_profile_full_name_constraint boolean := false;
   v_tables text[] := ARRAY[
     -- Seguridad efimera / sesiones
     'public.webauthn_challenges',
@@ -143,6 +145,19 @@ BEGIN
   -- Limpia session locks efimeros en perfiles conservados.
   -- Incluye la segunda sesion permitida para Caja por `can_double_session`.
   IF to_regclass('public.profiles') IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'public.profiles'::regclass
+        AND conname = 'profiles_full_name_letters_only'
+    )
+    INTO v_had_profile_full_name_constraint;
+
+    IF v_had_profile_full_name_constraint THEN
+      ALTER TABLE public.profiles
+        DROP CONSTRAINT profiles_full_name_letters_only;
+    END IF;
+
     FOREACH v_session_column IN ARRAY ARRAY[
       'current_app_session_id',
       'current_app_session_started_at',
@@ -162,6 +177,13 @@ BEGIN
         EXECUTE format('UPDATE public.profiles SET %I = NULL;', v_session_column);
       END IF;
     END LOOP;
+
+    IF v_had_profile_full_name_constraint THEN
+      ALTER TABLE public.profiles
+        ADD CONSTRAINT profiles_full_name_letters_only
+        CHECK (full_name ~ U&'^[A-Za-z\00C1\00C9\00CD\00D3\00DA\00DC\00D1\00E1\00E9\00ED\00F3\00FA\00FC\00F1[:space:]]+$') NOT VALID;
+    END IF;
+
     RAISE NOTICE 'Session locks de app limpiados en profiles';
   END IF;
 
@@ -202,6 +224,7 @@ COMMIT;
 -- - Configuracion y asignaciones de despacho intactas
 -- - Plantillas de apertura de caja intactas
 -- - 0 usuarios habilitados por turno y 0 auditoria de cierre previa
+-- - 0 turnos abiertos y 0 fecha/hora de apertura visible en `Admin > Turno`
 -- - 0 session locks/toma de control vigente en Caja, incluida la segunda sesion de app
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
 -- - 0 solicitudes/anulaciones pendientes por item/orden, 0 payloads `[PENDING_REQUEST]`, 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos

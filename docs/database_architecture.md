@@ -100,6 +100,7 @@
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
+- `cash_shifts.opened_at` es la fecha/hora de apertura del turno y se presenta en `Admin > Turno` mientras el turno esta `OPEN`.
 - `cash_register_openings` representa historial real de aperturas, cierres y anulaciones de caja.
 - `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.

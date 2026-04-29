@@ -24,6 +24,7 @@
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
+- Cuando existe un turno `OPEN`, `Admin > Turno` debe mostrar la fecha y hora de apertura tomada de `cash_shifts.opened_at`.
 - Los usuarios con rol operativo ya no requieren sucursal fija asignada para ingresar al sistema.
 - Los usuarios operativos se validan contra la habilitacion del turno abierto:
   - deben estar en `cash_shift_users`

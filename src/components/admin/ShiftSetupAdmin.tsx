@@ -1523,7 +1523,7 @@ const ShiftSetupAdmin = () => {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Badge
               variant="outline"
               className={
@@ -1534,6 +1534,11 @@ const ShiftSetupAdmin = () => {
             >
               {isOpen ? "Turno abierto" : "Turno cerrado"}
             </Badge>
+            {isOpen && (
+              <Badge variant="outline" className="border-emerald-200 bg-white/80 text-emerald-800">
+                Apertura: {formatDateTime(shiftQuery.data?.opened_at)}
+              </Badge>
+            )}
             {isOpen && (
               <Button
                 variant="destructive"

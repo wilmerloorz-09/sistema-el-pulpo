@@ -29,6 +29,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Para ordenes especiales `$0`, no inflar conteos con borradores vacios ni pagadas historicas: contar solo `SENT_TO_KITCHEN`, `READY` y `KITCHEN_DISPATCHED` sin `paid_at`.
 - Respetar:
   - `cash_shifts` como turno
+  - `cash_shifts.opened_at` como fecha/hora visible de apertura del turno abierto en `Admin > Turno`
   - `cash_register_openings` como historial de aperturas
   - `cash_shift_denoms` como caja fisica real
 - Si se toca apertura de caja, mantener soporte para:

@@ -967,7 +967,7 @@ const Caja = () => {
   if (activeTab === "completed" && (!shift || shift.caja_status !== "OPEN")) {
     return (
       <div className="min-h-full bg-slate-50 px-4 pt-4 pb-8 sm:px-6 sm:pt-6 lg:px-10">
-        <div className="mx-auto max-w-6xl space-y-6">
+        <div className="w-full space-y-6">
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <div>
               <h1 className="text-[2.2rem] font-semibold tracking-[-0.04em] text-slate-950">
@@ -1068,7 +1068,7 @@ const Caja = () => {
   if (shift.caja_status !== "OPEN") {
     return (
       <div className="bg-slate-50 px-4 py-2 sm:px-6 lg:px-10">
-        <div className="mx-auto max-w-6xl space-y-6">
+        <div className="w-full space-y-6">
           <div className="border-b border-slate-200 pb-4">
             <h1 className="text-[2.2rem] font-semibold tracking-[-0.04em] text-slate-950">
               Caja · {activeBranch?.name ?? "Sucursal"}
@@ -1427,7 +1427,7 @@ const Caja = () => {
 
   return (
     <div className="min-h-full bg-slate-50 px-4 pt-3 pb-0 sm:px-6 sm:pt-4 lg:px-10">
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="w-full space-y-6">
         <div className="border-b border-slate-200 pb-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>

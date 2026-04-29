@@ -99,6 +99,7 @@
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
 - Cierre de turno desde `Admin > Turno`:
+  - si el turno esta abierto, el encabezado visible muestra la apertura del turno usando `cash_shifts.opened_at`
   - antes de bloquear por borradores, se cancelan automaticamente borradores vacios/no enviados mediante `cancel_empty_draft_orders_for_branch(...)`
   - `list_branch_closure_blocking_orders(...)` no debe tratar como bloqueante un `DRAFT` sin pagos ni items operativos
   - si hay ordenes especiales pendientes con valor operativo `$0`, la UI debe pedir confirmacion antes de cerrar

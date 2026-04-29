@@ -17,6 +17,7 @@
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
+--   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
 --   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - incluye templates persistentes de apertura de caja y su composicion por denominacion
 --   - deja sin base transaccional los reportes de caja por apertura y el consolidado por turno
@@ -96,6 +97,7 @@ DECLARE
   v_protected_user_id uuid;
   v_table text;
   v_session_column text;
+  v_had_profile_full_name_constraint boolean := false;
   v_tables text[] := ARRAY[
     -- Seguridad efimera / sesiones
     'public.webauthn_challenges',
@@ -197,6 +199,19 @@ BEGIN
 
   RAISE NOTICE 'Superadmin protegido preservado: %', v_protected_user_id;
 
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'public.profiles'::regclass
+      AND conname = 'profiles_full_name_letters_only'
+  )
+  INTO v_had_profile_full_name_constraint;
+
+  IF v_had_profile_full_name_constraint THEN
+    ALTER TABLE public.profiles
+      DROP CONSTRAINT profiles_full_name_letters_only;
+  END IF;
+
   -- Evita FK a sucursales antes de borrarlas.
   -- Aqui hay que limpiar la referencia para TODOS los perfiles existentes,
   -- no solo para el superadmin protegido.
@@ -293,6 +308,12 @@ BEGIN
     SET active_branch_id = NULL
     WHERE id = v_protected_user_id;
   END IF;
+
+  IF v_had_profile_full_name_constraint THEN
+    ALTER TABLE public.profiles
+      ADD CONSTRAINT profiles_full_name_letters_only
+      CHECK (full_name ~ U&'^[A-Za-z\00C1\00C9\00CD\00D3\00DA\00DC\00D1\00E1\00E9\00ED\00F3\00FA\00FC\00F1[:space:]]+$') NOT VALID;
+  END IF;
 END $$;
 
 -- Reinicia secuencias legacy si existen.
@@ -310,6 +331,7 @@ COMMIT;
 -- - 0 categorias habilitadas para anulacion directa por mesero
 -- - 0 configuraciones/asignaciones de despacho
 -- - 0 usuarios habilitados por turno y 0 permisos operativos por turno
+-- - 0 turnos abiertos y 0 fecha/hora de apertura visible en `Admin > Turno`
 -- - 0 session locks de app en perfiles, incluida la sesion secundaria de Caja
 -- - 0 auditoria de cierre de turno previa
 -- - 0 templates de apertura de caja y 0 composiciones predefinidas por denominacion
