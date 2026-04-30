@@ -14,7 +14,6 @@ import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
-import { generateUUID } from "@/lib/uuid";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +97,37 @@ const seedDraftOrderCache = (
   });
 };
 
+const seedTakeoutOrderCache = (
+  qc: ReturnType<typeof useQueryClient>,
+  orderId: string,
+  {
+    branchId,
+    createdAt,
+  }: {
+    branchId: string;
+    createdAt: string;
+  },
+) => {
+  qc.setQueryData(getOrderQueryKey(orderId), {
+    id: orderId,
+    order_number: null,
+    order_code: null,
+    status: "DRAFT",
+    order_type: "TAKEOUT",
+    menu_scope: "TAKEOUT",
+    is_special: false,
+    is_tray_order: false,
+    special_total_manual: null,
+    branch_id: branchId,
+    table_id: null,
+    split_id: null,
+    table_name: undefined,
+    created_at: createdAt,
+    items: [],
+    siblings: [],
+  });
+};
+
 const Mesas = () => {
   const tablesQuery = useTablesWithStatus();
   const tables = tablesQuery.data?.tables;
@@ -170,53 +200,31 @@ const Mesas = () => {
     if (!canCreateTakeoutOrder || !user || !activeBranchId) return;
     setCreatingTakeout(true);
     try {
-      const orderId = generateUUID();
       const now = new Date().toISOString();
+      const { data, error } = await supabase.rpc("create_takeout_order" as any, {
+        p_branch_id: activeBranchId,
+        p_created_by: user.id,
+      } as any);
 
-      qc.setQueryData(getOrderQueryKey(orderId), {
-        id: orderId,
-        order_number: null,
-        order_code: null,
-        status: "DRAFT",
-        order_type: "TAKEOUT",
-        menu_scope: "TAKEOUT",
-        is_special: false,
-        is_tray_order: false,
-        special_total_manual: null,
-        branch_id: activeBranchId,
-        table_id: null,
-        split_id: null,
-        table_name: undefined,
-        created_at: now,
-        items: [],
-        siblings: []
+      if (error) throw error;
+
+      const orderId = String(data);
+
+      seedTakeoutOrderCache(qc, orderId, {
+        branchId: activeBranchId,
+        createdAt: now,
       });
 
       toast.success("Abriendo nueva orden para llevar...");
       navigate(`/ordenes?order=${orderId}&from=mesas`);
-
-      supabase
-        .from("orders" as any)
-        .insert({
-          id: orderId,
-          order_type: "TAKEOUT" as const,
-          menu_scope: "TAKEOUT",
-          created_by: user.id,
-          status: "DRAFT" as const,
-          branch_id: activeBranchId,
-          is_tray_order: false,
-        })
-        .then(({ error }) => {
-          if (error) toast.error("Error al registrar orden para llevar");
-          else {
-            qc.prefetchQuery({
-              queryKey: getOrderQueryKey(orderId),
-              queryFn: () => fetchOrderDetail(orderId),
-              staleTime: 15_000,
-              gcTime: 10 * 60_000,
-            });
-          }
-        });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(orderId),
+        queryFn: () => fetchOrderDetail(orderId),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
     } catch (err: any) {
       toast.error(err.message || "Error al abrir orden para llevar");
     } finally {
