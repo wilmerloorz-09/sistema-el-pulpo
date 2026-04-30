@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
+import { dbSelect, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineTotalWithContainer } from "@/lib/paymentQuantity";
@@ -502,16 +502,12 @@ export function useOrder(orderId: string | null) {
         throw new Error("El item aun se esta guardando. Espera un momento e intenta de nuevo.");
       }
 
-      const modifiers = await dbSelect<any>("order_item_modifiers", {
-        select: "id",
-        filters: [{ column: "order_item_id", op: "eq", value: itemId }]
+      const { error } = await supabase.rpc("set_draft_order_item_quantity" as any, {
+        p_item_id: itemId,
+        p_quantity: 0,
+        p_unit_price: null,
       });
-      
-      for (const mod of modifiers) {
-        await dbDelete("order_item_modifiers", mod.id);
-      }
-      
-      await dbDelete("order_items", itemId);
+      if (error) throw error;
     },
     onMutate: async (itemId) => {
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
@@ -543,7 +539,12 @@ export function useOrder(orderId: string | null) {
         throw new Error("El item aun se esta guardando. Espera un momento e intenta de nuevo.");
       }
 
-      await dbUpdate("order_items", itemId, { quantity, total: quantity * unit_price });
+      const { error } = await supabase.rpc("set_draft_order_item_quantity" as any, {
+        p_item_id: itemId,
+        p_quantity: quantity,
+        p_unit_price: unit_price,
+      });
+      if (error) throw error;
     },
     onMutate: async ({ itemId, quantity, unit_price }) => {
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });

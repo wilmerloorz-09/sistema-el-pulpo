@@ -365,7 +365,7 @@ const OrderItemsList = ({
                       size="icon"
                       className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                       disabled={controlsDisabled}
-                      onClick={() => onUpdateQty(item.id, 0, item.unit_price)}
+                      onClick={() => onRemove(item.id)}
                       title="Eliminar item"
                     >
                       <Trash2 />
