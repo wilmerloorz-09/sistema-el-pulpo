@@ -6,11 +6,13 @@ import { NavLink } from "@/components/NavLink";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
+import { useAppVersion } from "@/hooks/useAppVersion";
 
 interface SidebarNavProps {
   isDark: boolean;
@@ -28,6 +30,17 @@ function getInitials(name?: string | null) {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
+function formatLocalBuildTime(value?: string | null) {
+  if (!value) return "No disponible";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("es-EC", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(date);
+}
+
 const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }: SidebarNavProps) => {
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
@@ -36,6 +49,8 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const accountLabel = profile?.full_name || profile?.username || "Mi cuenta";
   const location = useLocation();
   const [openHoverCard, setOpenHoverCard] = useState<string | null>(null);
+  const [isVersionOpen, setIsVersionOpen] = useState(false);
+  const appVersion = useAppVersion();
 
   const searchParams = new URLSearchParams(location.search);
   const fromMesas = location.pathname === "/ordenes" && searchParams.get("from") === "mesas";
@@ -52,7 +67,19 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
           <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain" />
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sidebar-foreground/55">Sistema</p>
-            <p className="truncate font-display text-lg font-black text-sidebar-foreground">El Pulpo</p>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <p className="truncate font-display text-lg font-black text-sidebar-foreground">El Pulpo</p>
+              {appVersion.version ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md px-1 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-sidebar-foreground/45 transition-colors hover:bg-white/10 hover:text-sidebar-foreground/80"
+                  onClick={() => setIsVersionOpen(true)}
+                  title="Ver version instalada"
+                >
+                  v.{appVersion.version}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -267,6 +294,32 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
           </Tooltip>
         </div>
       </div>
+
+      <Dialog open={isVersionOpen} onOpenChange={setIsVersionOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Version instalada</DialogTitle>
+            <DialogDescription>
+              Confirma si este equipo esta usando el ultimo despliegue.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-2xl border border-orange-100 bg-orange-50/60 p-4 text-sm">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Version</p>
+              <p className="mt-1 break-all font-mono text-base font-black text-foreground">
+                {appVersion.fullVersion ?? appVersion.version ?? "No disponible"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Build</p>
+              <p className="mt-1 text-sm font-bold text-foreground" title={appVersion.builtAt ?? undefined}>
+                {formatLocalBuildTime(appVersion.builtAt)}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </aside>
   );
 };
