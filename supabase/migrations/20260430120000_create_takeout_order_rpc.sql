@@ -97,3 +97,5 @@ $$;
 
 REVOKE ALL ON FUNCTION public.create_takeout_order(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_takeout_order(uuid, uuid) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

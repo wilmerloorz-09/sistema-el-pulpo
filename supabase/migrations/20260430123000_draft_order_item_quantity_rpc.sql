@@ -121,3 +121,5 @@ $$;
 
 REVOKE ALL ON FUNCTION public.set_draft_order_item_quantity(uuid, integer, numeric) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.set_draft_order_item_quantity(uuid, integer, numeric) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
