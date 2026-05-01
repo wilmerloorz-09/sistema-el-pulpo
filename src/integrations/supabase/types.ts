@@ -121,6 +121,7 @@ export type Database = {
           name: string
           reference_table_count: number
           updated_at: string
+          workflow_mode: string
         }
         Insert: {
           address?: string | null
@@ -132,6 +133,7 @@ export type Database = {
           name: string
           reference_table_count?: number
           updated_at?: string
+          workflow_mode?: string
         }
         Update: {
           address?: string | null
@@ -143,6 +145,7 @@ export type Database = {
           name?: string
           reference_table_count?: number
           updated_at?: string
+          workflow_mode?: string
         }
         Relationships: []
       }
