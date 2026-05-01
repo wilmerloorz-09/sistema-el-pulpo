@@ -24,6 +24,7 @@ interface OrderItem {
   quantity_ordered?: number;
   original_quantity?: number;
   cancelled_quantity?: number;
+  quantity_paid?: number;
   unit_price: number;
   total: number;
   status: string;
@@ -344,6 +345,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
         quantity_ordered: quantityOrdered,
         original_quantity: originalQuantity,
         cancelled_quantity: cancelledQuantity,
+        quantity_paid: effectivePaidQuantity,
         total: computeLineTotalWithContainer(
           activeQuantity,
           Number(item.unit_price ?? 0),

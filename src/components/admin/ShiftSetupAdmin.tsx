@@ -322,12 +322,13 @@ const ShiftSetupAdmin = () => {
       if (!activeBranchId) return null;
       const { data, error } = await supabase
         .from("branches")
-        .select("reference_table_count")
+        .select("reference_table_count, workflow_mode")
         .eq("id", activeBranchId)
         .single();
       if (error) throw error;
       return {
         referenceTableCount: Number(data.reference_table_count ?? 0),
+        workflowMode: String((data as any).workflow_mode ?? "DISPATCH_THEN_CASH"),
       };
     },
     enabled: !!activeBranchId,
@@ -511,7 +512,7 @@ const ShiftSetupAdmin = () => {
 
   const referenceCount = branchSettingsQuery.data?.referenceTableCount ?? 0;
   const isOpen = Boolean(shiftQuery.data);
-  const isCashThenDispatch = true;
+  const isCashThenDispatch = branchSettingsQuery.data?.workflowMode === "CASH_THEN_DISPATCH";
   const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
   const persistedEnabledUsersRawData = useMemo(
@@ -821,7 +822,17 @@ const ShiftSetupAdmin = () => {
         const userRow = allBranchUsers.find((branchUser) => branchUser.user_id === userId);
         if (!userRow) return prev;
 
-        return [...prev, normalizeShiftUser({ ...userRow, is_enabled: true }, true)];
+        const isFirstShiftUser = prev.length === 0;
+        const defaultShiftUser = normalizeShiftUser({
+          ...userRow,
+          is_enabled: true,
+          can_serve_tables: isCashThenDispatch ? isFirstShiftUser : true,
+          can_access_orders: isCashThenDispatch ? isFirstShiftUser : true,
+          can_use_caja: isCashThenDispatch ? isFirstShiftUser : false,
+          can_double_session: false,
+        }, !isCashThenDispatch);
+
+        return [...prev, defaultShiftUser];
       }
       return prev.filter((u) => u.user_id !== userId);
     });
@@ -876,13 +887,19 @@ const ShiftSetupAdmin = () => {
           return normalizeShiftUser({
             ...u,
             can_serve_tables: value,
+            can_access_orders: value ? true : u.can_access_orders,
             can_use_caja: value,
             can_double_session: value ? u.can_double_session : false,
           }, false);
         }
 
         if (value) {
-          return normalizeShiftUser({ ...u, can_use_caja: false, can_double_session: false }, false);
+          return normalizeShiftUser({
+            ...u,
+            can_serve_tables: false,
+            can_use_caja: false,
+            can_double_session: false,
+          }, false);
         }
 
         return u;

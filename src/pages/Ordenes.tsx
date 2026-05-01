@@ -558,6 +558,7 @@ const Ordenes = () => {
 
   const isTakeout = order?.order_type === "TAKEOUT";
   const shouldRedirectToCaja = isTakeout || Boolean(order?.is_special) || activeBranch?.workflow_mode === 'CASH_THEN_DISPATCH';
+  const shouldAutoOpenOrderInCaja = activeBranch?.workflow_mode === "CASH_THEN_DISPATCH";
 
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
@@ -842,6 +843,20 @@ const Ordenes = () => {
     order.status !== "CANCELLED" &&
     !isLockedFromEditar &&
     hasSentItems;
+  const sentItems = itemsToUse.filter((item) => item.status !== "DRAFT");
+  const isPaidItem = (item: typeof itemsToUse[number]) => {
+    const status = String(item.status ?? "");
+    const orderedQuantity = Math.max(0, Number(item.quantity_ordered ?? item.original_quantity ?? item.quantity ?? 0));
+    const pendingQuantity = Math.max(0, Number(item.quantity ?? 0));
+
+    return (
+      status === "PAID" ||
+      Boolean(item.paid_at) ||
+      Math.max(0, Number((item as any).quantity_paid ?? 0)) > 0 ||
+      (orderedQuantity > 0 && pendingQuantity <= 0 && !status.includes("CANCEL"))
+    );
+  };
+  const hasPaidItems = sentItems.some(isPaidItem);
   const allSentItemsDispatched = itemsToUse
     .filter((item) => item.status !== "DRAFT")
     .every((item) => Number(item.quantity_remaining ?? 0) <= 0);
@@ -856,6 +871,8 @@ const Ordenes = () => {
     (canOperateOrders || fromEditar) &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
+    !hasPaidItems &&
+    !hasDispatchedItems &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
@@ -1615,7 +1632,9 @@ const Ordenes = () => {
           onClick={() => {
             sendToKitchen.mutate(undefined, {
               onSuccess: async () => {
-                // Stay here to keep viewing the order
+                if (shouldAutoOpenOrderInCaja && orderId) {
+                  navigate(`/caja?order=${encodeURIComponent(orderId)}`);
+                }
               },
             });
           }}
@@ -1701,10 +1720,18 @@ const Ordenes = () => {
                 </Button>
               )}
 
-              {!fromEditar && hasSentItems && canEditItems && (
+              {!fromEditar && hasSentItems && (canEditItems || hasPaidItems || hasDispatchedItems) && (
                 <Button
                   variant="outline"
                   className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100"
+                  disabled={!canEditItems}
+                  title={
+                    hasPaidItems
+                      ? "No puedes editar una orden con items pagados"
+                      : hasDispatchedItems
+                        ? "No puedes editar una orden con items despachados"
+                      : "Editar orden"
+                  }
                   onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${fromMesas ? "&origin=mesas" : ""}`)}
                 >
                   <Pencil className="h-5 w-5" />
@@ -2375,4 +2402,3 @@ const Ordenes = () => {
 };
 
 export default Ordenes;
-
