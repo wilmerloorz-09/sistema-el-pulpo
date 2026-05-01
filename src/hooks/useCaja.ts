@@ -653,8 +653,9 @@ function resolvePaidQuantity(params: {
 function getPayableQuantityForOrderType(
   orderType: "DINE_IN" | "TAKEOUT",
   quantities: ReturnType<typeof computeOperationalQuantities>,
+  workflowMode: string,
 ) {
-  if (orderType === "TAKEOUT") {
+  if (orderType === "TAKEOUT" || workflowMode === "CASH_THEN_DISPATCH") {
     return Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
   }
 
@@ -663,8 +664,9 @@ function getPayableQuantityForOrderType(
 
 export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   const { user } = useAuth();
-  const { activeBranchId } = useBranch();
+  const { activeBranch, activeBranchId } = useBranch();
   const qc = useQueryClient();
+  const activeWorkflowMode = activeBranch?.workflow_mode ?? "DISPATCH_THEN_CASH";
 
   const denomsQuery = useQuery({
     queryKey: ["denominations"],
@@ -1099,7 +1101,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   });
 
   const ordersQuery = useQuery({
-    queryKey: ["payable-orders", activeBranchId],
+    queryKey: ["payable-orders", activeBranchId, activeWorkflowMode],
     queryFn: async () => {
       if (!activeBranchId) return [];
 
@@ -1210,7 +1212,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
               const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
               const payableQty = (o as { is_special?: boolean | null }).is_special
                 ? activeOrderedQty
-                : getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT", quantities);
+                : getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT", quantities, activeWorkflowMode);
               const paidQty = resolvePaidQuantity({
                 payableQuantity: payableQty,
                 orderedQuantity: Number(i.quantity ?? 0),

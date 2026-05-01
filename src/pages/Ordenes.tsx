@@ -346,7 +346,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeBranchId, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
+  const { activeBranch, activeBranchId, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -556,6 +556,9 @@ const Ordenes = () => {
   }, [orderId]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
+  const branchWorkflowMode = activeBranch?.workflow_mode ?? "DISPATCH_THEN_CASH";
+  const isCashThenDispatch = branchWorkflowMode === "CASH_THEN_DISPATCH";
+  const sendsDraftItemsToCaja = isTakeout || isCashThenDispatch;
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
       ? pendingMenuScopeSelection
@@ -1616,7 +1619,7 @@ const Ordenes = () => {
           onClick={() => {
             sendToKitchen.mutate(undefined, {
               onSuccess: async () => {
-                if (isTakeout) {
+                if (sendsDraftItemsToCaja) {
                   const updatedOrder = orderId ? await fetchOrderDetail(orderId) : order;
                   setTakeoutCajaPreview(buildTakeoutCajaPreview(updatedOrder ?? order));
                 }
@@ -1634,7 +1637,7 @@ const Ordenes = () => {
               <ChefHat className="h-5 w-5" />
               Enviar nuevos items - ${draftItemsTotal.toFixed(2)}
             </>
-          ) : isTakeout ? (
+          ) : sendsDraftItemsToCaja ? (
             <>
               <CircleDollarSign className="h-5 w-5" />
               Enviar a caja - ${draftItemsTotal.toFixed(2)}

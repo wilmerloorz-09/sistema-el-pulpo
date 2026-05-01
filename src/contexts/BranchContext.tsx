@@ -9,6 +9,7 @@ interface Branch {
   name: string;
   address: string | null;
   is_active: boolean;
+  workflow_mode?: "DISPATCH_THEN_CASH" | "CASH_THEN_DISPATCH";
 }
 
 interface AccessContextPayload {
