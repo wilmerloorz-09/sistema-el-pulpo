@@ -12,6 +12,7 @@
 - Auth: Supabase Auth.
 - Perfil operativo: `profiles`.
 - Sucursal activa: `profiles.active_branch_id`.
+- Configuracion operativa por sucursal: `branches.workflow_mode`.
 - El frontend no debe asumir permisos solo por layout; la validacion final vive en BD/RPCs.
 
 ### 2. Permisos y gate operativo
@@ -44,6 +45,10 @@
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
 - Las lecturas de orden deben incluir `orders.created_by` cuando la pantalla visualiza ordenes.
 - El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.full_name`, `username`, `email` o `Usuario`.
+- El envio de borradores usa `submit_order_draft_items(...)`, que decide si la orden va a cocina/despacho o queda cobrable en Caja segun `branches.workflow_mode`.
+- Flujos por sucursal:
+  - `DISPATCH_THEN_CASH`: mesas/especiales van primero a despacho y luego a Caja; `TAKEOUT` conserva cobro primero.
+  - `CASH_THEN_DISPATCH`: mesa, para llevar y especial van primero a Caja y luego a despacho.
 - `Ordenes` usa lista expandible y detalle inline.
 - Las pestanas del modulo `Ordenes` son etapa-dependientes:
   - `Borradores`
@@ -98,6 +103,10 @@
 - Diferencia de arquitectura vigente:
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
+- La lista de ordenes por cobrar depende de `branches.workflow_mode`:
+  - en `DISPATCH_THEN_CASH`, una mesa no especial cobra cantidades despachadas
+  - en `CASH_THEN_DISPATCH`, una mesa no especial cobra la cantidad ordenada activa completa antes del despacho
+  - `TAKEOUT` y `Orden Especial` siguen cobrando la cantidad/valor activo completo
 - Cierre de turno desde `Admin > Turno`:
   - si el turno esta abierto, el encabezado visible muestra la apertura del turno usando `cash_shifts.opened_at`
   - antes de bloquear por borradores, se cancelan automaticamente borradores vacios/no enviados mediante `cancel_empty_draft_orders_for_branch(...)`
@@ -190,3 +199,4 @@
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
 9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` usando la resolucion central de perfil.
 10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.
+11. Si se toca envio/cobro/despacho de ordenes, revisar `branches.workflow_mode`, `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.

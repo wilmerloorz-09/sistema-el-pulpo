@@ -9,6 +9,10 @@
 
 ## Dominios principales
 
+### 0. Sucursales
+- `branches`
+- `branches.workflow_mode`
+
 ### 1. Identidad y acceso
 - `profiles`
 - `user_branches`
@@ -87,6 +91,10 @@
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`.
+- `submit_order_draft_items(...)` lee `branches.workflow_mode` para decidir el primer destino de una orden enviada:
+  - `DISPATCH_THEN_CASH`: mesas/especiales pasan a `SENT_TO_KITCHEN`; `TAKEOUT` pasa a `KITCHEN_DISPATCHED` para cobro primero.
+  - `CASH_THEN_DISPATCH`: cualquier orden enviada queda en `KITCHEN_DISPATCHED` para cobro primero y despacho despues.
+- `sync_order_payment_state_internal(...)` debe considerar `CASH_THEN_DISPATCH` como flujo cobrable por cantidad ordenada activa, igual que `TAKEOUT`.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
   - `orders.cancel_requested_at` / `orders.cancel_requested_by`
   - cabecera en `order_cancellations` con `status = 'VOIDED'` y `notes` tipo `[PENDING_REQUEST] ...`
@@ -107,6 +115,10 @@
 - `cash_shift_users.can_double_session` habilita una segunda sesion de app solo para usuarios de caja en turno abierto.
 - Las sesiones de app se registran en `profiles.current_app_session_id` y, cuando aplica doble sesion, en `profiles.current_app_secondary_session_id` con timestamp/dispositivo auxiliar.
 - Cerrar caja y cerrar turno no son la misma operacion.
+- `branches.workflow_mode` afecta la cantidad cobrable:
+  - `DISPATCH_THEN_CASH`: mesas cobran cantidades despachadas.
+  - `CASH_THEN_DISPATCH`: mesas cobran cantidades ordenadas activas antes de despacho.
+  - `TAKEOUT` y `Orden Especial` siguen cobrando cantidad/valor activo completo.
 - `close_cash_shift_with_tables(...)` sigue siendo el cierre final del turno. Antes de llamarlo desde UI, `Admin > Turno` puede resolver ordenes especiales pendientes con valor `$0` mediante confirmacion explicita, marcandolas `PAID`.
 - Antes de cerrar turno, `cancel_empty_draft_orders_for_branch(...)` cancela borradores no enviados sin cobros ni items operativos.
 - `list_branch_closure_blocking_orders(...)` solo debe reportar `DRAFT` como bloqueante si tiene pagos o items no `DRAFT`.
@@ -179,6 +191,7 @@
 ## Migraciones relevantes del estado actual
 
 ### Base catalogo / turnos / menus
+- `20260430130000_add_branch_workflow_mode.sql`
 - `20260312110000_add_menu_nodes_tree.sql`
 - `20260313143000_move_modifier_assignments_to_menu_nodes.sql`
 - `20260315090000_branch_reference_tables_and_shift_active_count.sql`
@@ -220,6 +233,7 @@
 - `20260418213017_guard_add_dine_in_order_item_null_menu_node.sql`
 - `20260428100000_support_double_app_session_for_cash_users.sql`
 - `20260428104000_centralize_shift_close_unsubmitted_draft_cleanup.sql`
+- `20260501100000_apply_branch_workflow_to_order_submission.sql`
 
 ## Reglas de integridad
 1. No asumir que `menu_nodes` ya reemplazo la FK de `order_items.product_id`.
@@ -229,3 +243,4 @@
 5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes y despacho directo de items nuevos.
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
 7. Los resets operativos deben limpiar session locks en `profiles`, incluidas columnas de sesion secundaria, para evitar bloqueos heredados.
+8. Si se cambia envio, cobro o despacho de ordenes, respetar `branches.workflow_mode`; no basar la regla solo en `orders.order_type`.

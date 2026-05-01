@@ -12,7 +12,17 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 2. Seguridad en backend/BD primero
 - La UI no define seguridad.
 - Validar permisos reales por sucursal/modulo y, cuando aplique, por turno.
+- Las reglas de flujo por sucursal deben vivir en BD/RPC y no solo en texto/botones del frontend.
 - Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
+
+### 2.1 Flujo de trabajo por sucursal
+- `branches.workflow_mode` es la fuente oficial del flujo:
+  - `DISPATCH_THEN_CASH`: `Despacho - Caja`.
+  - `CASH_THEN_DISPATCH`: `Caja - Despacho`.
+- `DISPATCH_THEN_CASH` mantiene el comportamiento tradicional: mesa/especial primero pasan a cocina/despacho y luego a Caja; `TAKEOUT` sigue cobrando primero.
+- `CASH_THEN_DISPATCH` obliga a que mesa, para llevar y especial pasen primero por Caja y luego a despacho.
+- Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.
+- Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
@@ -127,6 +137,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### Backend / BD
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
+- Toda regla de flujo `Despacho - Caja` / `Caja - Despacho` debe respetar `branches.workflow_mode`.
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
 - Si agregas columnas de sesion/perfil operativo, actualiza los resets para limpiar valores efimeros.
@@ -148,3 +159,4 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes.
+9. Si se toco flujo de ordenes por sucursal, validar ambos modos: `DISPATCH_THEN_CASH` y `CASH_THEN_DISPATCH`.

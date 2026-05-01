@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-04-28)
+## Estado operativo vigente (2026-05-01)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -50,6 +50,10 @@
 - La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
+- Cada sucursal define su flujo de trabajo en `branches.workflow_mode`:
+  - `DISPATCH_THEN_CASH` (`Despacho - Caja`) conserva el flujo tradicional: mesas/especiales van primero a cocina/despacho y luego se cierran para cobro; `Para llevar` sigue yendo primero a Caja.
+  - `CASH_THEN_DISPATCH` (`Caja - Despacho`) envia cualquier orden enviada desde mesa, para llevar u orden especial primero a Caja; luego de pagar pasa a despacho, con el mismo comportamiento operativo que `Para llevar`.
+- `get_my_access_context(...)` debe devolver `workflow_mode` en cada sucursal disponible para que UI, Caja y Ordenes compartan la misma decision.
 - Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
 - Una orden `DRAFT` solo debe bloquear cierre si tiene pagos o items no `DRAFT`.
 - Al cerrar turno, si existen ordenes especiales pendientes con valor operativo `$0`, el sistema debe mostrar una confirmacion:
@@ -70,6 +74,7 @@
   - `PaymentReversalModal`
 - La caja fisica se reconstruye desde `cash_shift_denoms` + `cash_movements`.
 - El resumen de caja ya debe mostrar efectivo neto aplicado, no efectivo bruto recibido antes del cambio.
+- En sucursales `CASH_THEN_DISPATCH`, Caja debe considerar cobrable la cantidad ordenada activa completa, no solo la cantidad despachada, incluso para ordenes de mesa.
 - Existen plantillas persistentes para apertura de caja:
   - `cash_register_templates`
   - `cash_register_template_denoms`
@@ -238,6 +243,15 @@
   - todas las vistas de orden deben exponer el nombre del usuario creador sin depender del usuario conectado.
   - `src/lib/userDisplay.ts` centraliza la resolucion de nombre visible de perfil.
 
+### 2026-05-01
+- Sucursales:
+  - `branches.workflow_mode` es parte base del CRUD y del contexto de acceso.
+  - `DISPATCH_THEN_CASH` mantiene el flujo actual `Despacho - Caja`.
+  - `CASH_THEN_DISPATCH` cambia mesas, para llevar y especiales a cobro primero y despacho despues.
+- Ordenes / Caja:
+  - `submit_order_draft_items(...)` decide el estado inicial operativo segun el flujo de la sucursal.
+  - `sync_order_payment_state_internal(...)` y `useCaja` calculan cantidades cobrables completas cuando la sucursal trabaja `Caja - Despacho`.
+
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
 2. No mezclar cerrar caja con cerrar turno.
@@ -247,6 +261,7 @@
 6. La pestana `Pendiente de anulacion` depende de marcas reales en DB:
    - `orders.cancel_requested_at`
    - y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`
+7. Cualquier cambio en envio de ordenes o cobro debe respetar `branches.workflow_mode`; no codificar decisiones solo por `order_type`.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
