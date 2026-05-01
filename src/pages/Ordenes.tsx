@@ -1619,7 +1619,12 @@ const Ordenes = () => {
           onClick={() => {
             sendToKitchen.mutate(undefined, {
               onSuccess: async () => {
-                if (sendsDraftItemsToCaja) {
+                if (isCashThenDispatch) {
+                  navigate("/caja");
+                  return;
+                }
+
+                if (isTakeout) {
                   const updatedOrder = orderId ? await fetchOrderDetail(orderId) : order;
                   setTakeoutCajaPreview(buildTakeoutCajaPreview(updatedOrder ?? order));
                 }
