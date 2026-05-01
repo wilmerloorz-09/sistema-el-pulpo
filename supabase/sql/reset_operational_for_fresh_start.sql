@@ -17,9 +17,8 @@
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
--- - Conserva el check `Mesero-Cajero`, persistido en `branches.workflow_mode`:
---   - apagado (`DISPATCH_THEN_CASH`) mantiene despacho primero y caja despues para mesa/especial
---   - encendido (`CASH_THEN_DISPATCH`) mantiene caja primero y despacho despues para mesa, para llevar y especial
+-- - Conserva el flujo global Caja primero y Despacho despues para mesa, para llevar y especial
+-- - `branches.workflow_mode` queda solo como compatibilidad interna forzada a `CASH_THEN_DISPATCH`
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra `opened_at`, que la UI muestra como fecha/hora de apertura del turno abierto
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
@@ -38,8 +37,8 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
---   - el flujo de cobro/despacho sigue saliendo de `branches.workflow_mode`
---   - en `CASH_THEN_DISPATCH`, Caja cobra cantidades ordenadas activas antes del despacho
+--   - el flujo de cobro/despacho es global: Caja primero y Despacho despues
+--   - Caja cobra cantidades ordenadas activas antes del despacho
 --   - el cierre de turno cancela borradores no enviados sin pagos ni items operativos antes de evaluar bloqueos
 --   - cerrar turno puede resolver ordenes especiales pendientes de `$0` solo con confirmacion explicita antes de invocar el cierre normal
 --   - el conteo de esa confirmacion solo debe incluir SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
@@ -220,7 +219,7 @@ COMMIT;
 -- POST RESET ESPERADO
 -- - Usuarios intactos
 -- - Sucursales intactas
--- - Flujo de trabajo por sucursal intacto (`branches.workflow_mode`)
+-- - Flujo global Caja - Despacho intacto
 -- - Referencia de mesas intacta
 -- - Mesas internas intactas, pero desactivadas
 -- - Politicas de cancelacion/anulacion por categoria intactas

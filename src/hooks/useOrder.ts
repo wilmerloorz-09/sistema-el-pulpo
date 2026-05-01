@@ -10,7 +10,6 @@ import {
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
 import { getUserDisplayName } from "@/lib/userDisplay";
-import { useBranch } from "@/contexts/BranchContext";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -393,8 +392,6 @@ export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
 
 export function useOrder(orderId: string | null) {
   const qc = useQueryClient();
-  const { activeBranch } = useBranch();
-  const branchWorkflowMode = activeBranch?.workflow_mode ?? "DISPATCH_THEN_CASH";
 
   const query = useQuery({
     queryKey: getOrderQueryKey(orderId),
@@ -621,14 +618,9 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
 
       const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
-      const sendsToCaja = order?.order_type === "TAKEOUT" || branchWorkflowMode === "CASH_THEN_DISPATCH";
-      const message = sendsToCaja
-        ? hasSentAlready
-          ? "Nuevos items listos para cobrar"
-          : "Orden lista para cobrar en caja"
-        : hasSentAlready
-          ? "Nuevos items enviados a cocina"
-          : "Orden enviada a cocina";
+      const message = hasSentAlready
+        ? "Nuevos items listos para cobrar"
+        : "Orden lista para cobrar en caja";
 
       toast.success(message);
     },

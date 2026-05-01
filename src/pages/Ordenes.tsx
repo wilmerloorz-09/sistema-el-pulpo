@@ -346,7 +346,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeBranch, activeBranchId, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
+  const { activeBranchId, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -556,9 +556,7 @@ const Ordenes = () => {
   }, [orderId]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
-  const branchWorkflowMode = activeBranch?.workflow_mode ?? "DISPATCH_THEN_CASH";
-  const isCashThenDispatch = branchWorkflowMode === "CASH_THEN_DISPATCH";
-  const sendsDraftItemsToCaja = isTakeout || isCashThenDispatch;
+  const sendsDraftItemsToCaja = true;
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
       ? pendingMenuScopeSelection
@@ -1619,15 +1617,7 @@ const Ordenes = () => {
           onClick={() => {
             sendToKitchen.mutate(undefined, {
               onSuccess: async () => {
-                if (isCashThenDispatch) {
-                  navigate(`/caja?order=${encodeURIComponent(orderId)}`);
-                  return;
-                }
-
-                if (isTakeout) {
-                  const updatedOrder = orderId ? await fetchOrderDetail(orderId) : order;
-                  setTakeoutCajaPreview(buildTakeoutCajaPreview(updatedOrder ?? order));
-                }
+                navigate(`/caja?order=${encodeURIComponent(orderId)}`);
               },
             });
           }}

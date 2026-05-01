@@ -12,15 +12,14 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 2. Seguridad en backend/BD primero
 - La UI no define seguridad.
 - Validar permisos reales por sucursal/modulo y, cuando aplique, por turno.
-- Las reglas de flujo por sucursal deben vivir en BD/RPC y no solo en texto/botones del frontend.
+- Las reglas de flujo global deben vivir en BD/RPC y no solo en texto/botones del frontend.
 - Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
 
-### 2.1 Mesero-Cajero por sucursal
-- En el CRUD de sucursales la configuracion visible se llama `Mesero-Cajero` y se maneja con un check.
-- El check `Mesero-Cajero` apagado guarda `branches.workflow_mode = DISPATCH_THEN_CASH`.
-- El check `Mesero-Cajero` encendido guarda `branches.workflow_mode = CASH_THEN_DISPATCH`.
-- `DISPATCH_THEN_CASH` mantiene el comportamiento tradicional: mesa/especial primero pasan a cocina/despacho y luego a Caja; `TAKEOUT` sigue cobrando primero.
-- `CASH_THEN_DISPATCH` obliga a que mesa, para llevar y especial pasen primero por Caja y luego a despacho.
+### 2.1 Flujo global Caja - Despacho
+- Todas las sucursales trabajan sin excepcion con cobro primero y despacho despues.
+- El CRUD de sucursales no debe mostrar un campo de flujo ni un check `Mesero-Cajero`.
+- `branches.workflow_mode` queda como compatibilidad interna y debe estar forzado a `CASH_THEN_DISPATCH`.
+- Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
 - Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 
@@ -137,7 +136,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### Backend / BD
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
-- Toda regla de flujo `Despacho - Caja` / `Caja - Despacho` debe respetar `branches.workflow_mode`.
+- Toda regla de flujo debe respetar el flujo global Caja - Despacho; no reintroducir decisiones por sucursal.
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
 - Si agregas columnas de sesion/perfil operativo, actualiza los resets para limpiar valores efimeros.
@@ -159,4 +158,4 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes.
-9. Si se toco flujo de ordenes por sucursal, validar ambos modos: `DISPATCH_THEN_CASH` y `CASH_THEN_DISPATCH`.
+9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.

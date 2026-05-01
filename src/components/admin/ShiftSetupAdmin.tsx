@@ -511,7 +511,7 @@ const ShiftSetupAdmin = () => {
 
   const referenceCount = branchSettingsQuery.data?.referenceTableCount ?? 0;
   const isOpen = Boolean(shiftQuery.data);
-  const isCashThenDispatch = activeBranch?.workflow_mode === "CASH_THEN_DISPATCH";
+  const isCashThenDispatch = true;
   const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
   const persistedEnabledUsersRawData = useMemo(

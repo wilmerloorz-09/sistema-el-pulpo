@@ -664,9 +664,9 @@ function getPayableQuantityForOrderType(
 
 export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   const { user } = useAuth();
-  const { activeBranch, activeBranchId } = useBranch();
+  const { activeBranchId } = useBranch();
   const qc = useQueryClient();
-  const activeWorkflowMode = activeBranch?.workflow_mode ?? "DISPATCH_THEN_CASH";
+  const activeWorkflowMode = "CASH_THEN_DISPATCH";
 
   const denomsQuery = useQuery({
     queryKey: ["denominations"],

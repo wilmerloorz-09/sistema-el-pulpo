@@ -50,10 +50,9 @@
 - La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
-- Cada sucursal define si opera con `Mesero-Cajero` desde el CRUD de sucursales:
-  - check apagado: guarda `DISPATCH_THEN_CASH` y conserva el flujo tradicional; mesas/especiales van primero a cocina/despacho y luego se cierran para cobro; `Para llevar` sigue yendo primero a Caja.
-  - check encendido: guarda `CASH_THEN_DISPATCH` y envia cualquier orden desde mesa, para llevar u orden especial primero a Caja; luego de pagar pasa a despacho, con el mismo comportamiento operativo que `Para llevar`.
-- `get_my_access_context(...)` debe devolver `workflow_mode` en cada sucursal disponible para que UI, Caja y Ordenes compartan la misma decision.
+- Todas las sucursales trabajan con el mismo flujo: mesa, para llevar y orden especial pasan primero a Caja; luego de pagar pasan a Despacho.
+- El CRUD de sucursales no expone campo de flujo ni check `Mesero-Cajero`.
+- `branches.workflow_mode` se conserva solo como compatibilidad interna y queda forzado a `CASH_THEN_DISPATCH`.
 - Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
 - Una orden `DRAFT` solo debe bloquear cierre si tiene pagos o items no `DRAFT`.
 - Al cerrar turno, si existen ordenes especiales pendientes con valor operativo `$0`, el sistema debe mostrar una confirmacion:
@@ -74,7 +73,7 @@
   - `PaymentReversalModal`
 - La caja fisica se reconstruye desde `cash_shift_denoms` + `cash_movements`.
 - El resumen de caja ya debe mostrar efectivo neto aplicado, no efectivo bruto recibido antes del cambio.
-- En sucursales `CASH_THEN_DISPATCH`, Caja debe considerar cobrable la cantidad ordenada activa completa, no solo la cantidad despachada, incluso para ordenes de mesa.
+- Caja debe considerar cobrable la cantidad ordenada activa completa, no solo la cantidad despachada, incluso para ordenes de mesa.
 - Existen plantillas persistentes para apertura de caja:
   - `cash_register_templates`
   - `cash_register_template_denoms`
@@ -245,12 +244,12 @@
 
 ### 2026-05-01
 - Sucursales:
-  - `branches.workflow_mode` es parte base del CRUD y del contexto de acceso, pero el CRUD lo muestra como check `Mesero-Cajero`.
-  - check apagado (`DISPATCH_THEN_CASH`) mantiene el flujo actual.
-  - check encendido (`CASH_THEN_DISPATCH`) cambia mesas, para llevar y especiales a cobro primero y despacho despues.
+  - El flujo ya no se configura por sucursal.
+  - `branches.workflow_mode` queda forzado a `CASH_THEN_DISPATCH` por compatibilidad interna.
+  - El CRUD no muestra campo de flujo ni check `Mesero-Cajero`.
 - Ordenes / Caja:
-  - `submit_order_draft_items(...)` decide el estado inicial operativo segun el flujo de la sucursal.
-  - `sync_order_payment_state_internal(...)` y `useCaja` calculan cantidades cobrables completas cuando la sucursal trabaja `Caja - Despacho`.
+  - `submit_order_draft_items(...)` deja toda orden enviada primero en Caja.
+  - `sync_order_payment_state_internal(...)` y `useCaja` calculan cantidades cobrables completas antes de despacho.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
@@ -261,7 +260,7 @@
 6. La pestana `Pendiente de anulacion` depende de marcas reales en DB:
    - `orders.cancel_requested_at`
    - y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`
-7. Cualquier cambio en envio de ordenes o cobro debe respetar `branches.workflow_mode`; no codificar decisiones solo por `order_type`.
+7. Cualquier cambio en envio de ordenes o cobro debe respetar el flujo global Caja - Despacho; no codificar decisiones por sucursal.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
