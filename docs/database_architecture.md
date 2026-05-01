@@ -11,7 +11,7 @@
 
 ### 0. Sucursales
 - `branches`
-- `branches.workflow_mode`
+- `branches.workflow_mode`: valor interno usado por el check `Mesero-Cajero` del CRUD de sucursales.
 
 ### 1. Identidad y acceso
 - `profiles`
@@ -92,8 +92,8 @@
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`.
 - `submit_order_draft_items(...)` lee `branches.workflow_mode` para decidir el primer destino de una orden enviada:
-  - `DISPATCH_THEN_CASH`: mesas/especiales pasan a `SENT_TO_KITCHEN`; `TAKEOUT` pasa a `KITCHEN_DISPATCHED` para cobro primero.
-  - `CASH_THEN_DISPATCH`: cualquier orden enviada queda en `KITCHEN_DISPATCHED` para cobro primero y despacho despues.
+  - check `Mesero-Cajero` apagado (`DISPATCH_THEN_CASH`): mesas/especiales pasan a `SENT_TO_KITCHEN`; `TAKEOUT` pasa a `KITCHEN_DISPATCHED` para cobro primero.
+  - check `Mesero-Cajero` encendido (`CASH_THEN_DISPATCH`): cualquier orden enviada queda en `KITCHEN_DISPATCHED` para cobro primero y despacho despues.
 - `sync_order_payment_state_internal(...)` debe considerar `CASH_THEN_DISPATCH` como flujo cobrable por cantidad ordenada activa, igual que `TAKEOUT`.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
   - `orders.cancel_requested_at` / `orders.cancel_requested_by`

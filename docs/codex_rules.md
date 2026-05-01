@@ -15,10 +15,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Las reglas de flujo por sucursal deben vivir en BD/RPC y no solo en texto/botones del frontend.
 - Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
 
-### 2.1 Flujo de trabajo por sucursal
-- `branches.workflow_mode` es la fuente oficial del flujo:
-  - `DISPATCH_THEN_CASH`: `Despacho - Caja`.
-  - `CASH_THEN_DISPATCH`: `Caja - Despacho`.
+### 2.1 Mesero-Cajero por sucursal
+- En el CRUD de sucursales la configuracion visible se llama `Mesero-Cajero` y se maneja con un check.
+- El check `Mesero-Cajero` apagado guarda `branches.workflow_mode = DISPATCH_THEN_CASH`.
+- El check `Mesero-Cajero` encendido guarda `branches.workflow_mode = CASH_THEN_DISPATCH`.
 - `DISPATCH_THEN_CASH` mantiene el comportamiento tradicional: mesa/especial primero pasan a cocina/despacho y luego a Caja; `TAKEOUT` sigue cobrando primero.
 - `CASH_THEN_DISPATCH` obliga a que mesa, para llevar y especial pasen primero por Caja y luego a despacho.
 - Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.

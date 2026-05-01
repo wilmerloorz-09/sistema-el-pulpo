@@ -50,9 +50,9 @@
 - La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
-- Cada sucursal define su flujo de trabajo en `branches.workflow_mode`:
-  - `DISPATCH_THEN_CASH` (`Despacho - Caja`) conserva el flujo tradicional: mesas/especiales van primero a cocina/despacho y luego se cierran para cobro; `Para llevar` sigue yendo primero a Caja.
-  - `CASH_THEN_DISPATCH` (`Caja - Despacho`) envia cualquier orden enviada desde mesa, para llevar u orden especial primero a Caja; luego de pagar pasa a despacho, con el mismo comportamiento operativo que `Para llevar`.
+- Cada sucursal define si opera con `Mesero-Cajero` desde el CRUD de sucursales:
+  - check apagado: guarda `DISPATCH_THEN_CASH` y conserva el flujo tradicional; mesas/especiales van primero a cocina/despacho y luego se cierran para cobro; `Para llevar` sigue yendo primero a Caja.
+  - check encendido: guarda `CASH_THEN_DISPATCH` y envia cualquier orden desde mesa, para llevar u orden especial primero a Caja; luego de pagar pasa a despacho, con el mismo comportamiento operativo que `Para llevar`.
 - `get_my_access_context(...)` debe devolver `workflow_mode` en cada sucursal disponible para que UI, Caja y Ordenes compartan la misma decision.
 - Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
 - Una orden `DRAFT` solo debe bloquear cierre si tiene pagos o items no `DRAFT`.
@@ -245,9 +245,9 @@
 
 ### 2026-05-01
 - Sucursales:
-  - `branches.workflow_mode` es parte base del CRUD y del contexto de acceso.
-  - `DISPATCH_THEN_CASH` mantiene el flujo actual `Despacho - Caja`.
-  - `CASH_THEN_DISPATCH` cambia mesas, para llevar y especiales a cobro primero y despacho despues.
+  - `branches.workflow_mode` es parte base del CRUD y del contexto de acceso, pero el CRUD lo muestra como check `Mesero-Cajero`.
+  - check apagado (`DISPATCH_THEN_CASH`) mantiene el flujo actual.
+  - check encendido (`CASH_THEN_DISPATCH`) cambia mesas, para llevar y especiales a cobro primero y despacho despues.
 - Ordenes / Caja:
   - `submit_order_draft_items(...)` decide el estado inicial operativo segun el flujo de la sucursal.
   - `sync_order_payment_state_internal(...)` y `useCaja` calculan cantidades cobrables completas cuando la sucursal trabaja `Caja - Despacho`.

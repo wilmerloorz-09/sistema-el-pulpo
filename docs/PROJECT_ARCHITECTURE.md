@@ -12,7 +12,7 @@
 - Auth: Supabase Auth.
 - Perfil operativo: `profiles`.
 - Sucursal activa: `profiles.active_branch_id`.
-- Configuracion operativa por sucursal: `branches.workflow_mode`.
+- Configuracion operativa por sucursal: check `Mesero-Cajero` en el CRUD, persistido internamente en `branches.workflow_mode`.
 - El frontend no debe asumir permisos solo por layout; la validacion final vive en BD/RPCs.
 
 ### 2. Permisos y gate operativo
@@ -47,8 +47,8 @@
 - El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.full_name`, `username`, `email` o `Usuario`.
 - El envio de borradores usa `submit_order_draft_items(...)`, que decide si la orden va a cocina/despacho o queda cobrable en Caja segun `branches.workflow_mode`.
 - Flujos por sucursal:
-  - `DISPATCH_THEN_CASH`: mesas/especiales van primero a despacho y luego a Caja; `TAKEOUT` conserva cobro primero.
-  - `CASH_THEN_DISPATCH`: mesa, para llevar y especial van primero a Caja y luego a despacho.
+  - check `Mesero-Cajero` apagado (`DISPATCH_THEN_CASH`): mesas/especiales van primero a despacho y luego a Caja; `TAKEOUT` conserva cobro primero.
+  - check `Mesero-Cajero` encendido (`CASH_THEN_DISPATCH`): mesa, para llevar y especial van primero a Caja y luego a despacho.
 - `Ordenes` usa lista expandible y detalle inline.
 - Las pestanas del modulo `Ordenes` son etapa-dependientes:
   - `Borradores`

@@ -29,7 +29,7 @@
 --   - incluye configuracion de productos incluidos para `A granel` y sus reglas de entrega por monto
 -- - Elimina sucursales y configuraciones asociadas:
 --   - incluye referencia de mesas por sucursal
---   - incluye `branches.workflow_mode`, por lo que se pierde la seleccion `Despacho - Caja` / `Caja - Despacho`
+--   - incluye `branches.workflow_mode`, por lo que se pierde la configuracion `Mesero-Cajero`
 --   - incluye catalogo de denominaciones globales
 -- - Elimina politicas/configuraciones por sucursal:
 --   - cancelacion/anulacion directa por categoria
@@ -86,8 +86,8 @@
 --   - ordenes especiales `PAID` deben aparecer en Pagadas aunque no tengan cantidades pagadas por item
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
---   - el flujo por sucursal sigue definido estructuralmente por `branches.workflow_mode`; como este reset borra sucursales, las nuevas sucursales vuelven al default `DISPATCH_THEN_CASH`
---   - `CASH_THEN_DISPATCH` sigue significando cobro primero para mesa, para llevar y orden especial, y despacho despues
+--   - el check `Mesero-Cajero` sigue definido estructuralmente por `branches.workflow_mode`; como este reset borra sucursales, las nuevas sucursales vuelven al default apagado (`DISPATCH_THEN_CASH`)
+--   - `CASH_THEN_DISPATCH` sigue significando `Mesero-Cajero` encendido: cobro primero para mesa, para llevar y orden especial, y despacho despues
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- ============================================================

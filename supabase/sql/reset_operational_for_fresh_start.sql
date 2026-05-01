@@ -17,9 +17,9 @@
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
--- - Conserva `branches.workflow_mode`:
---   - `DISPATCH_THEN_CASH` mantiene despacho primero y caja despues para mesa/especial
---   - `CASH_THEN_DISPATCH` mantiene caja primero y despacho despues para mesa, para llevar y especial
+-- - Conserva el check `Mesero-Cajero`, persistido en `branches.workflow_mode`:
+--   - apagado (`DISPATCH_THEN_CASH`) mantiene despacho primero y caja despues para mesa/especial
+--   - encendido (`CASH_THEN_DISPATCH`) mantiene caja primero y despacho despues para mesa, para llevar y especial
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra `opened_at`, que la UI muestra como fecha/hora de apertura del turno abierto
 --   - al limpiar cash_shifts tambien se borra el usuario capturador y el equipo configurado para apertura de caja
