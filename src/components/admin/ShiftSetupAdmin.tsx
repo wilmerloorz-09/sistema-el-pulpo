@@ -511,6 +511,7 @@ const ShiftSetupAdmin = () => {
 
   const referenceCount = branchSettingsQuery.data?.referenceTableCount ?? 0;
   const isOpen = Boolean(shiftQuery.data);
+  const isCashThenDispatch = activeBranch?.workflow_mode === "CASH_THEN_DISPATCH";
   const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
   const persistedEnabledUsersRawData = useMemo(
@@ -870,6 +871,23 @@ const ShiftSetupAdmin = () => {
 
   const updateUserRole = (userId: string, role: ShiftUserRoleKey, value: boolean) => {
     setShiftUsersState((prev) => prev.map((u) => {
+      if (isCashThenDispatch && (role === "can_serve_tables" || role === "can_use_caja")) {
+        if (u.user_id === userId) {
+          return normalizeShiftUser({
+            ...u,
+            can_serve_tables: value,
+            can_use_caja: value,
+            can_double_session: value ? u.can_double_session : false,
+          }, false);
+        }
+
+        if (value) {
+          return normalizeShiftUser({ ...u, can_use_caja: false, can_double_session: false }, false);
+        }
+
+        return u;
+      }
+
       if (role === "can_use_caja" && value === true) {
         if (u.user_id === userId) {
           return normalizeShiftUser({ ...u, [role]: true }, false);
