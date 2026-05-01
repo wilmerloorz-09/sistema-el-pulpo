@@ -1806,7 +1806,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
             quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[itemSelection.itemId] ?? 0,
           });
-          const payableQty = getPayableQuantityForOrderType(orderData.order_type as "DINE_IN" | "TAKEOUT", quantities);
+          const payableQty = getPayableQuantityForOrderType(
+            orderData.order_type as "DINE_IN" | "TAKEOUT",
+            quantities,
+            activeWorkflowMode,
+          );
           const alreadyPaidQty = resolvePaidQuantity({
             payableQuantity: payableQty,
             orderedQuantity: Number(dbItem.quantity ?? 0),
