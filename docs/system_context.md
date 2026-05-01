@@ -141,16 +141,19 @@
   - solo permite mover cantidad no pagada remanente
 - Si una orden origen queda sin items despues del movimiento, vuelve a `DRAFT`.
 
-### 6. Editar Orden
-- `Editar Orden` ya es un flujo base del sistema.
+### 6. Editar Orden (In-Situ)
+- `Editar Orden` ya es un flujo base del sistema y ahora opera de manera **In-Situ**.
+- Al editar desde el módulo de "Mesas" o "Ordenes", el usuario ya no es redirigido a la pantalla principal al aceptar o cancelar cambios, manteniendo el contexto visual del detalle de la orden.
+- El Sidebar preserva su estado resaltado (ej. "Mesas") mediante el parámetro de URL `origin`.
 - Usa buffer temporal en UI (`stagedItems`).
 - Bloquea la orden en DB con `orders.locked_for_editing`.
+- El bloqueo se propaga a Caja, donde el botón "Cobrar" se deshabilita automáticamente mientras la edición esté activa para evitar conflictos transaccionales.
 - Los items originales despachados o cerrados no exponen controles directos de cantidad en este modulo.
 - Los items nuevos agregados durante la sesion si pueden exponer `+/-`, eliminar e input de cantidad.
 - Al aceptar cambios:
   - se registran y aplican automaticamente las anulaciones derivadas del buffer
   - los items nuevos no vuelven a mesa
-  - los items nuevos pasan directo a `Despachado` o al flujo de orden cerrada, segun el estado actual
+  - los items nuevos pasan directo a `Despachado` o al flujo de orden cerrada ("En caja"), segun el estado actual de la orden
 - La accion principal del modulo es `Aceptar cambios`, no `Enviar`.
 
 ### 7. Orden especial
@@ -250,6 +253,9 @@
 - Ordenes / Caja:
   - `submit_order_draft_items(...)` deja toda orden enviada primero en Caja.
   - `sync_order_payment_state_internal(...)` y `useCaja` calculan cantidades cobrables completas antes de despacho.
+  - **Edición In-Situ:** Los cambios en `Editar Orden` no rompen el contexto de navegación; el Sidebar mantiene el estado `origin`.
+  - **Bloqueo de Caja:** La orden bloqueada (`locked_for_editing`) desactiva el botón de cobro en el módulo de Caja para prevenir conflictos transaccionales.
+  - **Categorización "En Caja":** Los nuevos ítems aceptados en una edición de orden enviada a caja se marcan correctamente como "En caja" para el proceso de cobro.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.

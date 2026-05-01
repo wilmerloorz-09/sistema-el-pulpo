@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X, UserRound } from "lucide-react";
+import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, Scale, Ban, SquarePlus, X, UserRound, Pencil } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -346,7 +346,7 @@ const Ordenes = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { activeBranchId, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
+  const { activeBranchId, activeBranch, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -479,7 +479,8 @@ const Ordenes = () => {
 
   useEffect(() => {
     if (fromEditar && order && (order.status === "PAID" || order.status === "CANCELLED")) {
-      navigate("/editar-orden", { replace: true });
+      const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
+      navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
     }
   }, [fromEditar, order?.status, navigate]);
 
@@ -556,7 +557,8 @@ const Ordenes = () => {
   }, [orderId]);
 
   const isTakeout = order?.order_type === "TAKEOUT";
-  const sendsDraftItemsToCaja = true;
+  const shouldRedirectToCaja = isTakeout || Boolean(order?.is_special) || activeBranch?.workflow_mode === 'CASH_THEN_DISPATCH';
+
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
       ? pendingMenuScopeSelection
@@ -593,7 +595,8 @@ const Ordenes = () => {
     }
     
     if (fromEditar) {
-      navigate("/editar-orden", { replace: true });
+      const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
+      navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
       return;
     }
 
@@ -913,7 +916,7 @@ const Ordenes = () => {
         : "PARA LLEVAR";
   const statusLabel: Record<string, string> = {
     DRAFT: "Borrador",
-    SENT_TO_KITCHEN: "En cocina",
+    SENT_TO_KITCHEN: "En caja",
     READY: "Lista para despachar",
     KITCHEN_DISPATCHED: "Despachada",
     PAID: "Pagada",
@@ -1207,15 +1210,8 @@ const Ordenes = () => {
         });
       }
 
-      if (newAddedIds.length > 0 && user) {
-        await supabase.rpc("dispatch_order_quantities", {
-          p_order_id: orderId,
-          p_dispatched_by: user.id,
-          p_items: newAddedIds,
-          p_operation_type: "partial",
-          p_source_module: "dispatch",
-          p_notes: isClosedForPayment ? "Añado editando orden cerrada" : "Añado editando orden despachada",
-        });
+      if (newAddedIds.length > 0) {
+        await sendToKitchen.mutateAsync();
       }
 
       await unlockOrder.mutateAsync();
@@ -1225,7 +1221,8 @@ const Ordenes = () => {
           ? "Cambios aceptados. Los nuevos items quedaron cerrados para cobro."
           : "Cambios aceptados. Los nuevos items quedaron despachados.",
       );
-      navigate("/editar-orden", { replace: true });
+      const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
+      navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
     } catch (error: any) {
       toast.error(error.message);
     }
@@ -1441,6 +1438,7 @@ const Ordenes = () => {
         forceLoading={(currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK") && scopeCompositeMenuQuery.isLoading}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
+        disabled={!fromEditar && (order.status === "PAID" || order.status === "KITCHEN_DISPATCHED")}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
@@ -1473,7 +1471,7 @@ const Ordenes = () => {
         </p>
         <p className="text-sm text-muted-foreground">
           {isLockedFromEditar
-            ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados desde cocina."
+            ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados."
             : hasPendingCancellationItems
             ? "Esta orden tiene al menos un item con anulacion pendiente: no puedes agregar ni editar items hasta resolver la solicitud."
             : order.status === "PAID" || order.status === "CANCELLED"
@@ -1577,7 +1575,7 @@ const Ordenes = () => {
 
         <OrderItemsList
           items={fromEditar ? stagedItems : order.items}
-          alwaysShowControls={false}
+          alwaysShowControls={fromEditar}
           hideItemControls={false}
           editableItemIds={[]}
           onRemove={(id) => {
@@ -1617,7 +1615,7 @@ const Ordenes = () => {
           onClick={() => {
             sendToKitchen.mutate(undefined, {
               onSuccess: async () => {
-                navigate(`/caja?order=${encodeURIComponent(orderId)}`);
+                // Stay here to keep viewing the order
               },
             });
           }}
@@ -1629,20 +1627,16 @@ const Ordenes = () => {
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : hasSentItems ? (
             <>
-              <ChefHat className="h-5 w-5" />
-              Enviar nuevos items - ${draftItemsTotal.toFixed(2)}
-            </>
-          ) : sendsDraftItemsToCaja ? (
-            <>
               <CircleDollarSign className="h-5 w-5" />
               Enviar a caja - ${draftItemsTotal.toFixed(2)}
             </>
           ) : (
             <>
-              <ChefHat className="h-5 w-5" />
-              Enviar a cocina - ${draftItemsTotal.toFixed(2)}
+              <CircleDollarSign className="h-5 w-5" />
+              Enviar a caja - ${draftItemsTotal.toFixed(2)}
             </>
           )}
+
         </Button>
       )}
 
@@ -1666,7 +1660,10 @@ const Ordenes = () => {
               <Button
                 variant="outline"
                 className="h-12 w-full gap-2 rounded-xl border-slate-200 font-display text-base font-semibold text-slate-600 hover:bg-slate-50"
-                onClick={() => navigate("/editar-orden")}
+                onClick={() => {
+                  const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
+                  navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
+                }}
               >
                 <X className="h-5 w-5" />
                 Cancelar edición
@@ -1680,29 +1677,6 @@ const Ordenes = () => {
                 >
                   <Sparkles className="h-5 w-5" />
                   Aceptar cambios
-                </Button>
-              )}
-              {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
-                <Button
-                  variant="destructive"
-                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold sm:col-span-2"
-                  disabled={hasDraftItems || hasPendingCancellationItems}
-                  title={
-                    hasPendingCancellationItems
-                      ? "No puedes anular la orden mientras exista al menos un item con anulacion pendiente"
-                      : hasDraftItems
-                        ? "No puedes anular la orden mientras existan items nuevos en borrador"
-                        : "Anular orden"
-                  }
-                  onClick={() => {
-                    setInlineCancelVisibleItems(itemsToUse);
-                    setInlineCancelQtyByItem({});
-                    setInlineCancellationType("total");
-                    setInlineCancelOpen(true);
-                  }}
-                >
-                  <Ban className="h-5 w-5" />
-                  Anular orden
                 </Button>
               )}
             </>
@@ -1727,29 +1701,17 @@ const Ordenes = () => {
                 </Button>
               )}
 
-              {canCancelOrders && hasSentItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+              {!fromEditar && hasSentItems && canEditItems && (
                 <Button
-                  variant="destructive"
-                  className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-                  disabled={hasDraftItems || hasPendingCancellationItems}
-                  title={
-                    hasPendingCancellationItems
-                      ? "No puedes anular la orden mientras exista al menos un item con anulacion pendiente"
-                      : hasDraftItems
-                        ? "No puedes anular la orden mientras existan items nuevos en borrador"
-                        : "Anular orden"
-                  }
-                  onClick={() => {
-                    setInlineCancelVisibleItems(itemsToUse);
-                    setInlineCancelQtyByItem({});
-                    setInlineCancellationType("total");
-                    setInlineCancelOpen(true);
-                  }}
+                  variant="outline"
+                  className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100"
+                  onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${fromMesas ? "&origin=mesas" : ""}`)}
                 >
-                  <Ban className="h-5 w-5" />
-                  Anular orden
+                  <Pencil className="h-5 w-5" />
+                  Editar orden
                 </Button>
               )}
+
             </>
           )}
         </div>
@@ -2231,7 +2193,7 @@ const Ordenes = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar orden</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminara la orden seleccionada dentro de la mesa. Esta accion solo debe hacerse si la orden aun no ha sido enviada a cocina.
+              Se eliminara la orden seleccionada dentro de la mesa. Esta accion solo debe hacerse si la orden aun no ha sido enviada.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2248,7 +2210,7 @@ const Ordenes = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Cerrar orden</AlertDialogTitle>
             <AlertDialogDescription>
-              La orden se desvinculara de la mesa y quedara lista para pagar en Caja. Si la mesa tiene otras ordenes activas, esas ordenes seguiran ocupandola.
+              La orden se desvinculara de la mesa. Si la mesa tiene otras ordenes activas, esas ordenes seguiran ocupandola.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

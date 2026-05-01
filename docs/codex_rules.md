@@ -16,7 +16,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
 
 ### 2.1 Flujo global Caja - Despacho
-- Todas las sucursales trabajan sin excepcion con cobro primero y despacho despues.
+- Todas las sucursales trabajan con el mismo flujo: cobro primero y despacho despues.
 - El CRUD de sucursales no debe mostrar un campo de flujo ni un check `Mesero-Cajero`.
 - `branches.workflow_mode` queda como compatibilidad interna y debe estar forzado a `CASH_THEN_DISPATCH`.
 - Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
@@ -93,15 +93,17 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - el item afectado debe mostrarse como `Pendiente anulacion`
 
 ### 9. Editar Orden
-- `Editar Orden` es buffered, no inline.
+- `Editar Orden` es buffered, no inline y opera de manera **In-Situ**.
 - Debe seguir aplicando `orders.locked_for_editing` en DB.
+- **Contexto de Navegación:** El flujo de edición no debe romper el contexto de navegación del usuario. Usar el parámetro `origin` para que el Sidebar mantenga su estado resaltado. Al aceptar/cancelar cambios, el usuario debe permanecer en la vista de la orden.
+- **Bloqueo en Caja:** Mientras una orden esté en edición (`locked_for_editing`), el botón "Cobrar" en el módulo de Caja debe estar deshabilitado automáticamente.
 - No exponer controles directos de cantidad para items originales despachados/cerrados en ese modulo.
 - Los controles `+/-`, eliminar e input de cantidad solo deben existir para items nuevos agregados durante la sesion de edicion.
-- La accion principal del modulo es `Aceptar cambios`.
 - Al aceptar cambios:
   - se registran anulaciones derivadas del buffer
   - los items nuevos no vuelven a mesa
-  - los items nuevos pasan directo a estado operativo
+  - los items nuevos pasan directo a estado operativo (Despachado o "En caja")
+- La accion principal del modulo es `Aceptar cambios`.
 
 ### 10. Snapshot operativo compartido
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
@@ -128,6 +130,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - bloqueo `locked_for_editing`
   - visibilidad de controles
   - compromiso final con `Aceptar cambios`
+  - persistencia del parámetro `origin` en Sidebar
+  - bloqueo automático del botón "Cobrar" en Caja
 - Si tocas reportes de caja, validar:
   - consolidado por turno
   - reporte por apertura
@@ -149,9 +153,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 5. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
 6. Si se toco `Editar Orden`, validar:
    - `Aceptar cambios`
-   - estado final de items nuevos
+   - estado final de items nuevos (deben ser cobrables si la orden está en caja)
    - anulaciones derivadas del buffer
    - bloqueo/desbloqueo correcto
+   - bloqueo del botón "Cobrar" en Caja
 7. Actualizar estos docs cuando cambie la regla base:
    - `docs/system_context.md`
    - `docs/PROJECT_ARCHITECTURE.md`

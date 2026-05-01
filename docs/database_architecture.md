@@ -90,9 +90,10 @@
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
-- `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`.
+- `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`. Impide el cobro en Caja mientras la orden está siendo modificada.
 - `submit_order_draft_items(...)` debe dejar cualquier orden enviada en estado cobrable por Caja antes de Despacho.
 - `sync_order_payment_state_internal(...)` debe considerar toda orden como cobrable por cantidad ordenada activa antes de despacho.
+- Los nuevos ítems añadidos durante una edición de una orden "En caja" se marcan para seguir el flujo de cobro correcto.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
   - `orders.cancel_requested_at` / `orders.cancel_requested_by`
   - cabecera en `order_cancellations` con `status = 'VOIDED'` y `notes` tipo `[PENDING_REQUEST] ...`
@@ -236,7 +237,8 @@
 2. No confundir cierre de caja con cierre de turno.
 3. Si se toca anulacion de pagos, revisar consistencia entre `payments`, `payment_items`, `payment_void_requests`, `cash_shift_denoms`, `cash_movements` y estado de `orders`.
 4. Si se toca `Unir/Dividir`, no romper cantidades pagadas, historial `READY` / `DISPATCHED` ni numeracion operativa.
-5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes y despacho directo de items nuevos.
+5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes, despacho directo de items nuevos y el bloqueo del botón "Cobrar" en Caja.
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
 7. Los resets operativos deben limpiar session locks en `profiles`, incluidas columnas de sesion secundaria, para evitar bloqueos heredados.
 8. Si se cambia envio, cobro o despacho de ordenes, respetar el flujo global Caja - Despacho; no basar la regla en sucursal ni solo en `orders.order_type`.
+9. Los cambios en `Editar Orden` deben preservar el contexto original del Sidebar mediante el parámetro `origin`.

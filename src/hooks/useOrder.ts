@@ -345,7 +345,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
         original_quantity: originalQuantity,
         cancelled_quantity: cancelledQuantity,
         total: computeLineTotalWithContainer(
-          unpaidActiveQuantity,
+          activeQuantity,
           Number(item.unit_price ?? 0),
           Number(item.tray_container_cost ?? 0),
         ),
@@ -373,7 +373,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
           })),
       };
     })
-    .filter((item) => item.quantity > 0 || item.status === "DRAFT");
+    .filter((item) => item.quantity > 0 || item.status === "DRAFT" || item.status === "PAID" || (item.original_quantity > 0 && item.status !== "CANCELLED"));
 
   return {
     ...order,
@@ -789,13 +789,18 @@ export function useOrder(orderId: string | null) {
       if (error) throw error;
     },
     onSuccess: () => {
+      const tableId = query.data?.table_id;
       qc.invalidateQueries({ queryKey: ["order"] });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      
+      if (tableId) {
+        qc.invalidateQueries({ queryKey: ["table-orders", tableId] });
+        qc.removeQueries({ queryKey: ["table-orders", tableId] });
+      }
+      
       toast.success("Orden cerrada y enviada a cobro");
     },
     onError: (err: any) => toast.error(err.message),

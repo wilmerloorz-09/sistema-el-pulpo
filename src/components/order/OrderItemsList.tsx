@@ -43,7 +43,7 @@ interface Props {
   editableItemIds?: string[];
 }
 
-type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation";
+type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
 
 function formatLineTotal(unitPrice: number, quantity: number) {
   return (Number(unitPrice ?? 0) * Number(quantity ?? 0)).toFixed(2);
@@ -68,6 +68,10 @@ function getOrderItemStage(item: OrderItem): OrderItemStage {
 
   if (dispatchedQty > 0 && remainingQty > 0) {
     return "partial";
+  }
+
+  if (item.status === "PAID" || (Number(item.quantity_ordered ?? 0) > 0 && Number(item.quantity ?? 0) === 0 && !String(item.status ?? "").includes("CANCEL"))) {
+    return "paid";
   }
 
   return "sent";
@@ -95,6 +99,11 @@ function getOrderItemStageStyles(stage: OrderItemStage) {
         card: "border-fuchsia-200 bg-fuchsia-50/40",
         badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
       };
+    case "paid":
+      return {
+        card: "border-emerald-200 bg-emerald-50/20",
+        badge: "border-emerald-200 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white",
+      };
     default:
       return {
         card: "border-orange-200 bg-white",
@@ -108,13 +117,15 @@ function getOrderItemStageLabel(stage: OrderItemStage) {
     case "draft":
       return "No enviado";
     case "sent":
-      return "En cocina";
+      return "En caja";
     case "partial":
       return "Despacho parcial";
     case "dispatched":
       return "Despachado";
     case "pendingCancellation":
       return "Pendiente anulacion";
+    case "paid":
+      return "Pagado";
   }
 }
 
@@ -130,6 +141,8 @@ function getOrderItemStageLegendClass(stage: OrderItemStage) {
       return "border-emerald-200 bg-emerald-100 text-emerald-900";
     case "pendingCancellation":
       return "border-fuchsia-200 bg-fuchsia-100 text-fuchsia-900";
+    case "paid":
+      return "border-emerald-200 bg-emerald-100 text-emerald-900";
   }
 }
 
@@ -209,7 +222,7 @@ const OrderItemsList = ({
                 ? "shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
                 : operationalDisabled
                   ? "opacity-60"
-                  : displayQuantity === 0 ? "opacity-50 border-red-200 bg-red-50/50" : "",
+                  : (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") ? "opacity-50 border-red-200 bg-red-50/50" : "",
               displayQuantity > 0 ? itemStageStyles.card : "",
             )}
           >
@@ -227,10 +240,10 @@ const OrderItemsList = ({
                     className={cn(
                       "col-start-1 row-start-1 min-w-[2.2rem] self-center justify-center rounded-lg px-1.5 py-1 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)] sm:min-w-[2.7rem] sm:px-2 sm:text-xs",
                       itemStageStyles.badge,
-                      displayQuantity === 0 && "opacity-50 bg-red-500 text-white"
+                      (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50 bg-red-500 text-white"
                     )}
                   >
-                    {displayQuantity}
+                    {displayQuantity || item.quantity_ordered}
                   </Badge>
                 ) : null}
 
@@ -240,8 +253,7 @@ const OrderItemsList = ({
                       type="button"
                       className={cn(
                         "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:pr-0 sm:text-sm",
-                        isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1",
-                        displayQuantity === 0 && "line-through text-red-600/70"
+                        isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1"
                       )}
                     >
                       {item.description_snapshot}
@@ -262,7 +274,7 @@ const OrderItemsList = ({
                             "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
                             isBulkItem && "col-start-2",
                             getOrderItemStageLegendClass(itemStage),
-                            displayQuantity === 0 && "opacity-50"
+                            (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
                           )}
                         >
                           <span
@@ -284,7 +296,7 @@ const OrderItemsList = ({
                         "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
                         isBulkItem && "col-start-2",
                         getOrderItemStageLegendClass(itemStage),
-                        displayQuantity === 0 && "opacity-50"
+                        (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
                       )}
                     >
                       <span
@@ -334,11 +346,11 @@ const OrderItemsList = ({
 
                 <p className={cn("-mt-1.5 text-[11px] text-muted-foreground sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
                   {isBulkItem ? (
-                    <span className={cn("font-semibold text-foreground", displayQuantity === 0 && "line-through text-red-600/70")}>${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
+                    <span className="font-semibold text-foreground">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                   ) : (
                     <>
-                      ${item.unit_price.toFixed(2)} x {displayQuantity} ={" "}
-                      <span className={cn("font-semibold text-foreground", displayQuantity === 0 && "line-through text-red-600/70")}>${formatLineTotal(item.unit_price, displayQuantity)}</span>
+                      ${item.unit_price.toFixed(2)} x {displayQuantity || item.quantity_ordered} ={" "}
+                      <span className="font-semibold text-foreground">${formatLineTotal(item.unit_price, displayQuantity || item.quantity_ordered)}</span>
                     </>
                   )}
                 </p>
@@ -356,7 +368,7 @@ const OrderItemsList = ({
                 )}
 
               </div>
-
+              
               {showControls && (
                 <div className="flex shrink-0 flex-col items-end gap-1.5 self-start sm:gap-2">
                   <div className="flex items-center justify-end gap-0.5 sm:gap-1">

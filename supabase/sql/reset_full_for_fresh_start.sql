@@ -9,7 +9,9 @@
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
---   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden`
+--   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
+--   - incluye la persistencia del estado del Sidebar mediante el parámetro `origin`
+--   - incluye el bloqueo transaccional del botón "Cobrar" en Caja mientras una orden está en edición
 --   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo
@@ -90,6 +92,10 @@
 --   - `branches.workflow_mode` queda como compatibilidad interna con default `CASH_THEN_DISPATCH`
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
+-- - TAMBIEN QUEDA INTACTA LA LOGICA DE EDICION:
+--   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual (In-Situ)
+--   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
+--   - los ítems nuevos aceptados en órdenes "En caja" mantienen su flujo de cobro correcto
 -- ============================================================
 
 BEGIN;
@@ -342,7 +348,7 @@ COMMIT;
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, `Unir/Dividir` y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, `Unir/Dividir` y alertas de listo)
 -- - 0 base transaccional para reimprimir reportes de caja por apertura ni consolidado por turno
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 borradores vacios residuales capaces de aparecer como ocupacion real de mesa
@@ -351,7 +357,3 @@ COMMIT;
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - modulos, roles y permisos base intactos
 -- ============================================================
-
-
-
-

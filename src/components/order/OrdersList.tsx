@@ -31,7 +31,7 @@ const tabs: TabInfo[] = [
     label: "Borradores",
     status: "DRAFT",
     showCancel: true,
-    helperText: "Aqui ves las ordenes que aun no han sido enviadas a cocina.",
+    helperText: "Aqui ves las ordenes que aun no han sido enviadas.",
     icon: <ClipboardList className="h-4 w-4" />,
   },
   {

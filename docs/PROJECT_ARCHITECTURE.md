@@ -20,7 +20,7 @@
 - Capa 2: capacidades por turno en `cash_shift_users`.
 - `get_my_branch_shift_gate(...)` sigue siendo el gate principal para habilitar vistas operativas.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa y toma de control para Caja.
-- `cash_shift_users.can_double_session` permite una segunda sesion solo para usuarios habilitados en turno abierto con acceso a Caja; esa segunda sesion se registra en `profiles.current_app_secondary_session_id` y campos auxiliares.
+- `cash_shift_users.can_double_session` permite una segunda sesion solo para usuarios habilitados en turno abierto con acceso a Caja; esa segunda sesion se registra en `profiles.current_app_secondary_session_id` con campos auxiliares.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -70,15 +70,15 @@
   - si existe al menos un item pendiente, la orden entra en modo bloqueado para agregar/editar items, `Cerrar orden` y `Anular orden`
 
 ### 6. Editar Orden
-- `Editar Orden` es una arquitectura buffered, no una mutacion inline sobre la orden activa.
-- El modulo trabaja con `stagedItems` en memoria.
-- La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina y Despacho.
+- `Editar Orden` es una arquitectura buffered y **In-Situ**.
+- El módulo trabaja con `stagedItems` en memoria y mantiene el contexto de navegación original (`origin`).
+- La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina, Despacho y Caja.
 - Los items originales despachados o cerrados permanecen sin controles directos de cantidad.
 - Los items nuevos agregados dentro de la sesion si pueden usar `+/-`, eliminar e input de cantidad.
 - Al pulsar `Aceptar cambios`:
   - se comprometen los diffs en batch
   - se registran las anulaciones derivadas del buffer
-  - los items nuevos pasan directo a estado operativo, no vuelven a mesa
+  - los items nuevos pasan directo a estado operativo (Despachado o "En Caja"), no vuelven a mesa
 - El modulo usa `Aceptar cambios` como accion principal; `Enviar` no debe mostrarse ahi.
 
 ### 7. Mesas y divisiones
@@ -102,6 +102,7 @@
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
 - La lista de ordenes por cobrar usa la cantidad ordenada activa completa antes del despacho para mesa y para llevar; orden especial cobra su valor activo configurado.
+- El botón "Cobrar" se deshabilita si la orden tiene `locked_for_editing = true`.
 - Cierre de turno desde `Admin > Turno`:
   - si el turno esta abierto, el encabezado visible muestra la apertura del turno usando `cash_shifts.opened_at`
   - antes de bloquear por borradores, se cancelan automaticamente borradores vacios/no enviados mediante `cancel_empty_draft_orders_for_branch(...)`
@@ -153,6 +154,11 @@
   - OCR basico opcional con `tesseract`
 - `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo.
 
+### 12. Usuarios
+- Crear/editar usuario incluye datos de contacto extendidos: nombre completo, cedula, direccion, telefono.
+- La sucursal es opcional para operativos (Sin sucursal es valido) y obligatoria para supervisores.
+- El acceso se deriva del turno habilitado para operativos sin sucursal fija.
+
 ## Componentes y hooks clave
 - Catalogo:
   - `src/hooks/useMenuTree.ts`
@@ -190,7 +196,7 @@
 4. Si una regla cruza `Ordenes`, `Despacho`, `Caja` y `Mesas`, debe apoyarse en snapshot operativo comun.
 5. Si se toca anulacion de pagos, revisar tambien reapertura de ordenes, stock de denominaciones y estado visible de mesa.
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
-7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final.
+7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final (Aceptar cambios).
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
 9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` usando la resolucion central de perfil.
 10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.

@@ -15,6 +15,7 @@ interface MenuNavigatorProps {
   trayNodes?: MenuNode[];
   nodesOverride?: MenuNode[] | null;
   forceLoading?: boolean;
+  disabled?: boolean;
 }
 
 const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
@@ -155,6 +156,7 @@ const MenuNavigator = ({
   trayNodes,
   nodesOverride,
   forceLoading = false,
+  disabled = false,
 }: MenuNavigatorProps) => {
   const {
     visibleNodes,
@@ -370,7 +372,7 @@ const MenuNavigator = ({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className={cn("flex h-full min-h-0 flex-col gap-3 transition-opacity", disabled && "pointer-events-none opacity-50")}>
       {trayMode && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Modo bandeja por monto: solo se muestran categorias bandeja y el precio se define manualmente.
@@ -506,6 +508,7 @@ const MenuNavigator = ({
               node={node}
               trayMode={trayMode}
               onClick={() => {
+                if (disabled) return;
                 if (!node.is_active && !renderNodeAction?.(node)) return;
                 if (searchQuery.trim()) {
                   registerRecentSearch(searchQuery);

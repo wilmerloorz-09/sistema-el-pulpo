@@ -9,7 +9,8 @@
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
---   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden`
+--   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
+--   - incluye el bloqueo automático del botón "Cobrar" en Caja mientras una orden está en edición
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
@@ -54,7 +55,7 @@
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 --   - por eso se mantiene que un mesero pueda anular directo solo en las categorias habilitadas por turno/sucursal
---   - si la seleccion toca una cantidad ya despachada, el flujo seguira requiriendo autorizacion
+--   - si la selección toca una cantidad ya despachada, el flujo seguira requiriendo autorizacion
 --   - administrador, supervisor y usuario con can_authorize_order_cancel conservan su capacidad de resolver directo
 -- - Conserva configuracion estructural de despacho por sucursal:
 --   - dispatch_config
@@ -80,6 +81,10 @@
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
 --   - metodo recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 --   - wrapper opcional: `.\scripts\reset-payment-proofs-storage.ps1`
+-- - Conserva la lógica de edición In-Situ:
+--   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual
+--   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
+--   - los ítems nuevos aceptados en órdenes "En caja" mantienen su flujo de cobro correcto
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -242,14 +247,8 @@ COMMIT;
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales, bloqueos de edicion, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
-
-
-
-
-
-

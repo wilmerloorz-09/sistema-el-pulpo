@@ -237,7 +237,7 @@ export default function PayableOrdersList({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            disabled={readOnly}
+                            disabled={readOnly || order.locked_for_editing}
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedOrder(order);

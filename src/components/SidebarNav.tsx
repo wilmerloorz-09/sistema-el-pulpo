@@ -118,11 +118,11 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
         {visibleItems.map((item) => {
           let isItemActive = location.pathname === item.to;
           
-          if (fromMesas) {
+          if (fromMesas || (fromEditar && searchParams.get("origin") === "mesas")) {
             if (item.to === "/mesas") isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
           }
-          if (fromEditar) {
+          if (fromEditar && searchParams.get("origin") !== "mesas") {
             if (item.to === "/editar-orden") isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
           }

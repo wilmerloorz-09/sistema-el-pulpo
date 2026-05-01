@@ -196,6 +196,7 @@ export interface PayableOrder {
   order_type: "DINE_IN" | "TAKEOUT";
   is_special: boolean;
   is_tray_order?: boolean;
+  locked_for_editing?: boolean;
   created_by: string | null;
   created_by_name: string | null;
   special_total_manual: number | null;
@@ -664,7 +665,7 @@ function getPayableQuantityForOrderType(
 
 export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
   const { user } = useAuth();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, activeBranch } = useBranch();
   const qc = useQueryClient();
   const activeWorkflowMode = "CASH_THEN_DISPATCH";
 
@@ -1106,7 +1107,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (!activeBranchId) return [];
 
       const orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot",
+        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot, locked_for_editing",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }],
         orderBy: { column: "updated_at" }
@@ -1269,6 +1270,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
             order_type: o.order_type,
             is_special: isSpecial,
             is_tray_order: isTrayOrder,
+            locked_for_editing: Boolean(o.locked_for_editing),
             created_by: o.created_by ?? null,
             created_by_name: o.created_by ? (creatorNameMap[o.created_by] ?? "Usuario") : null,
             special_total_manual: specialManualTotal,
@@ -1305,6 +1307,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         filters: [{ column: "is_active", op: "eq", value: true }],
         orderBy: { column: "name" },
       });
+
 
       if (!methods.some((method) => isCashPaymentMethodName(method.name))) {
         const cashMethodId = generateUUID();
