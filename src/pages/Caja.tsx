@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
@@ -500,6 +500,7 @@ const Caja = () => {
   const [captureError, setCaptureError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeTabParam = searchParams.get("tab");
+  const autoOpenOrderId = searchParams.get("order");
   const activeTab =
     activeTabParam === "completed"
       ? "completed"
@@ -515,6 +516,13 @@ const Caja = () => {
     setSearchParams(nextParams, { replace: true });
 
   };
+
+  const clearAutoOpenOrder = useCallback(() => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("order");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const canOperateCaja =
     canOperate(permissions, "caja")
     || isGlobalAdmin
@@ -1484,6 +1492,8 @@ const Caja = () => {
                 getTransferProofReadiness={getTransferProofReadiness}
                 paying={payOrder.isPending}
                 readOnly={!canOperateCaja}
+                autoOpenOrderId={autoOpenOrderId}
+                onAutoOpenOrderConsumed={clearAutoOpenOrder}
               />
             </div>
           ) : activeTab === "completed" ? (

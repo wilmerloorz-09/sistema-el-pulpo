@@ -1620,7 +1620,7 @@ const Ordenes = () => {
             sendToKitchen.mutate(undefined, {
               onSuccess: async () => {
                 if (isCashThenDispatch) {
-                  navigate("/caja");
+                  navigate(`/caja?order=${encodeURIComponent(orderId)}`);
                   return;
                 }
 

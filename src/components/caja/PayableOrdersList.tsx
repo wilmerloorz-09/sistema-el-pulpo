@@ -29,6 +29,8 @@ interface Props {
   getTransferProofReadiness: (paymentIds: string[]) => Promise<{ ready: boolean; uploadedCount: number; totalCount: number }>;
   paying: boolean;
   readOnly?: boolean;
+  autoOpenOrderId?: string | null;
+  onAutoOpenOrderConsumed?: () => void;
   onTakeControl?: () => void;
 }
 
@@ -50,6 +52,8 @@ export default function PayableOrdersList({
   getTransferProofReadiness,
   paying,
   readOnly = false,
+  autoOpenOrderId,
+  onAutoOpenOrderConsumed,
   onTakeControl,
 }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
@@ -63,6 +67,17 @@ export default function PayableOrdersList({
       setSelectedOrder(refreshedOrder);
     }
   }, [orders, selectedOrder?.id]);
+
+  useEffect(() => {
+    if (!autoOpenOrderId) return;
+
+    const orderToOpen = orders.find((order) => order.id === autoOpenOrderId);
+    if (!orderToOpen) return;
+
+    setSelectedOrder(orderToOpen);
+    setExpandedOrderId(orderToOpen.id);
+    onAutoOpenOrderConsumed?.();
+  }, [autoOpenOrderId, orders, onAutoOpenOrderConsumed]);
 
   const pendingUnits = (order: PayableOrder) =>
     order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
