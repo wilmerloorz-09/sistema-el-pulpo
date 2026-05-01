@@ -2094,6 +2094,15 @@ const Ordenes = () => {
           isBulkScopeSelection ? buildBulkIncludedItemNote(unitPrice, quantity) : null
         )}
         onConfirm={(data) => {
+          const selectedModifierIds = isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids;
+          const modifierDescriptionById = new Map(
+            selectedProductModifiers.map((modifier) => [modifier.id, modifier.description]),
+          );
+          const selectedModifierSnapshots = selectedModifierIds.map((id) => ({
+            modifier_id: id,
+            description: modifierDescriptionById.get(id) ?? "",
+          }));
+
           if (fromEditar) {
             setStagedDirty(true);
             setStagedItems((prev) => [
@@ -2119,7 +2128,11 @@ const Ordenes = () => {
                 quantity_remaining: data.quantity,
                 quantity_cancelled: 0,
                 quantity_cancellable: 0,
-                modifiers: (isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids).map(id => ({ id: `temp-mod-${id}`, modifier_id: id, description: "" })),
+                modifiers: selectedModifierSnapshots.map((modifier) => ({
+                  id: `temp-mod-${modifier.modifier_id}`,
+                  modifier_id: modifier.modifier_id,
+                  description: modifier.description,
+                })),
               } as any,
             ]);
             setSelectedProduct(null);
@@ -2129,7 +2142,8 @@ const Ordenes = () => {
           addItem.mutate({
             ...data,
             menu_node_id: selectedProduct?.menu_node_id ?? null,
-            modifier_ids: isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids,
+            modifier_ids: selectedModifierIds,
+            modifier_snapshots: selectedModifierSnapshots,
             tray_item_type: isTrayOrder ? effectiveTrayType : isBulkScopeSelection ? "C" : undefined,
             tray_container_cost: 0,
           }, {

@@ -95,6 +95,19 @@ interface Order {
   siblings: SiblingOrder[];
 }
 
+interface AddOrderItemParams {
+  product_id: string;
+  menu_node_id?: string | null;
+  description_snapshot: string;
+  item_note?: string | null;
+  unit_price: number;
+  quantity: number;
+  modifier_ids: string[];
+  modifier_snapshots?: { modifier_id: string; description: string }[];
+  tray_item_type?: "A" | "B" | "C";
+  tray_container_cost?: number;
+}
+
 export function getOrderQueryKey(orderId: string | null) {
   return ["order", orderId] as const;
 }
@@ -389,17 +402,7 @@ export function useOrder(orderId: string | null) {
   });
 
   const addItem = useMutation({
-    mutationFn: async (params: {
-      product_id: string;
-      menu_node_id?: string | null;
-      description_snapshot: string;
-      item_note?: string | null;
-      unit_price: number;
-      quantity: number;
-      modifier_ids: string[];
-      tray_item_type?: "A" | "B" | "C";
-      tray_container_cost?: number;
-    }) => {
+    mutationFn: async (params: AddOrderItemParams) => {
       const isTrayOrder = query.data?.is_tray_order === true;
 
       if (isTrayOrder) {
@@ -438,6 +441,9 @@ export function useOrder(orderId: string | null) {
       const tempId = `temp-${Date.now()}`;
       
       if (previousOrder) {
+        const modifierDescriptionById = new Map(
+          (params.modifier_snapshots ?? []).map((modifier) => [modifier.modifier_id, modifier.description]),
+        );
         const optimisticItem: OrderItem = {
           id: tempId,
           product_id: params.product_id,
@@ -458,7 +464,11 @@ export function useOrder(orderId: string | null) {
           quantity_remaining: params.quantity,
           quantity_cancelled: 0,
           quantity_cancellable: 0,
-          modifiers: params.modifier_ids.map(id => ({ id: `temp-mod-${id}`, modifier_id: id, description: "" })),
+          modifiers: params.modifier_ids.map((id) => ({
+            id: `temp-mod-${id}`,
+            modifier_id: id,
+            description: modifierDescriptionById.get(id) ?? "",
+          })),
         };
         
         qc.setQueryData(getOrderQueryKey(orderId), {
@@ -491,6 +501,7 @@ export function useOrder(orderId: string | null) {
       toast.error(err.message);
     },
     onSettled: () => {
+      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
