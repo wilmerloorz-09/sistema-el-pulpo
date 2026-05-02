@@ -93,6 +93,11 @@ function normalizeShiftUser(user: ShiftUserRow, useFallbackServeRole: boolean): 
     normalized.can_access_orders = true;
   }
 
+  if (normalized.is_enabled) {
+    normalized.can_serve_tables = true;
+    normalized.can_access_orders = true;
+  }
+
   if (normalized.can_dispatch_orders) {
     normalized.can_manage_products = true;
   }
@@ -116,22 +121,27 @@ function sanitizeShiftUserCapability<T extends {
   canDoubleSession: boolean;
   isSupervisor: boolean;
 }>(user: T): T {
+  const normalizedUser = {
+    ...user,
+    canServeTables: user.isEnabled ? true : user.canServeTables,
+    canAccessOrders: user.isEnabled ? true : user.canAccessOrders,
+  };
   const hasOperationalRole =
-    user.canServeTables
-    || user.canAccessOrders
-    || user.canEditOrders
-    || user.canDispatchOrders
-    || user.canManageProducts
-    || user.canUseCaja
-    || user.canAuthorizeOrderCancel
-    || user.isSupervisor;
+    normalizedUser.canServeTables
+    || normalizedUser.canAccessOrders
+    || normalizedUser.canEditOrders
+    || normalizedUser.canDispatchOrders
+    || normalizedUser.canManageProducts
+    || normalizedUser.canUseCaja
+    || normalizedUser.canAuthorizeOrderCancel
+    || normalizedUser.isSupervisor;
 
-  if (!user.isEnabled || hasOperationalRole) {
-    return user;
+  if (!normalizedUser.isEnabled || hasOperationalRole) {
+    return normalizedUser;
   }
 
   return {
-    ...user,
+    ...normalizedUser,
     isEnabled: false,
     canServeTables: false,
     canAccessOrders: false,
@@ -826,8 +836,8 @@ const ShiftSetupAdmin = () => {
         const defaultShiftUser = normalizeShiftUser({
           ...userRow,
           is_enabled: true,
-          can_serve_tables: isCashThenDispatch ? isFirstShiftUser : true,
-          can_access_orders: isCashThenDispatch ? isFirstShiftUser : true,
+          can_serve_tables: true,
+          can_access_orders: true,
           can_use_caja: isCashThenDispatch ? isFirstShiftUser : false,
           can_double_session: false,
         }, !isCashThenDispatch);
@@ -881,13 +891,15 @@ const ShiftSetupAdmin = () => {
   };
 
   const updateUserRole = (userId: string, role: ShiftUserRoleKey, value: boolean) => {
+    if (role === "can_serve_tables" || role === "can_access_orders") {
+      return;
+    }
+
     setShiftUsersState((prev) => prev.map((u) => {
-      if (isCashThenDispatch && (role === "can_serve_tables" || role === "can_use_caja")) {
+      if (isCashThenDispatch && role === "can_use_caja") {
         if (u.user_id === userId) {
           return normalizeShiftUser({
             ...u,
-            can_serve_tables: value,
-            can_access_orders: value ? true : u.can_access_orders,
             can_use_caja: value,
             can_double_session: value ? u.can_double_session : false,
           }, false);
@@ -896,7 +908,6 @@ const ShiftSetupAdmin = () => {
         if (value) {
           return normalizeShiftUser({
             ...u,
-            can_serve_tables: false,
             can_use_caja: false,
             can_double_session: false,
           }, false);
@@ -1765,19 +1776,24 @@ const ShiftSetupAdmin = () => {
                     </div>
 
                     <div className="mt-1.5 grid grid-cols-3 gap-1.5 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm">
-                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
+                      <label
+                        className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
+                        title="Todo usuario agregado al turno debe tener Mesas habilitado"
+                      >
                         <Checkbox
                           checked={userState?.can_serve_tables ?? false}
+                          disabled
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_serve_tables", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Mesero (Mesas)</span>
                       </label>
                       <label
                         className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
-                        title={userState?.can_serve_tables ? "Mesas habilita Ordenes automaticamente" : "Habilita acceso al modulo Ordenes sin acceso a Mesas"}
+                        title="Todo usuario agregado al turno debe tener Ordenes habilitado"
                       >
                         <Checkbox
                           checked={userState?.can_access_orders ?? false}
+                          disabled
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_access_orders", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Ordenes</span>

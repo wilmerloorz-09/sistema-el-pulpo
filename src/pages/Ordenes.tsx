@@ -35,6 +35,7 @@ import { useCancellation } from "@/hooks/useCancellation";
 import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface SelectedProduct {
   id: string;
@@ -348,6 +349,7 @@ const Ordenes = () => {
   const { user } = useAuth();
   const { activeBranchId, activeBranch, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
+  const { isDesktop } = useBreakpoint();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
   const fromMesas = searchParams.get("from") === "mesas";
@@ -558,7 +560,10 @@ const Ordenes = () => {
 
   const isTakeout = order?.order_type === "TAKEOUT";
   const shouldRedirectToCaja = isTakeout || Boolean(order?.is_special) || activeBranch?.workflow_mode === 'CASH_THEN_DISPATCH';
-  const shouldAutoOpenOrderInCaja = activeBranch?.workflow_mode === "CASH_THEN_DISPATCH";
+  const shouldAutoOpenOrderInCaja =
+    activeBranch?.workflow_mode === "CASH_THEN_DISPATCH" &&
+    Boolean(shiftGateQuery.data?.canUseCaja) &&
+    isDesktop;
 
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
@@ -1795,13 +1800,13 @@ const Ordenes = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-9 w-9 shrink-0 rounded-lg p-0 2xl:hidden"
+                      className="h-9 w-9 shrink-0 rounded-lg p-0 md:hidden"
                       aria-label="Abrir menu de acciones"
                     >
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 2xl:hidden">
+                  <DropdownMenuContent align="end" className="w-56 md:hidden">
                     {canShowConvertToSpecial && (
                       <DropdownMenuItem
                         onClick={() => {
@@ -1848,7 +1853,7 @@ const Ordenes = () => {
                     variant={canDeleteSplit ? "destructive" : "ghost"}
                     size="sm"
                     className={cn(
-                      "hidden h-9 w-9 shrink-0 rounded-lg p-0 2xl:inline-flex 2xl:h-7 2xl:w-7",
+                      "hidden h-9 w-9 shrink-0 rounded-lg p-0 md:inline-flex md:h-7 md:w-7",
                       !canDeleteSplit && "text-muted-foreground",
                     )}
                     onClick={() => setShowDeleteSplitConfirm(true)}
@@ -1939,7 +1944,7 @@ const Ordenes = () => {
                 variant="outline"
                 size="sm"
                 className={cn(
-                  "relative h-10 min-w-[46px] shrink-0 overflow-visible rounded-xl px-2 2xl:hidden",
+                  "relative h-10 min-w-[46px] shrink-0 overflow-visible rounded-xl px-2 md:hidden",
                   showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
                 )}
                 onClick={() => setShowCart((current) => !current)}
@@ -1960,7 +1965,7 @@ const Ordenes = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:inline-flex 2xl:h-7"
+                className="hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:inline-flex md:h-7"
                 onClick={() => {
                   setConvertSpecialTotalInput(total.toFixed(2));
                   setConvertSpecialDialogOpen(true);
@@ -1978,7 +1983,7 @@ const Ordenes = () => {
                   variant={canChangeTable ? "outline" : "ghost"}
                   size="sm"
                   className={cn(
-                    "hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs 2xl:inline-flex 2xl:h-7",
+                    "hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:inline-flex md:h-7",
                     !canChangeTable && "text-muted-foreground",
                   )}
                   onClick={() => setShowChangeTableDialog(true)}
@@ -2000,7 +2005,7 @@ const Ordenes = () => {
         </div>
       </div>
 
-      <div className="relative z-10 flex flex-1 overflow-hidden 2xl:hidden">
+      <div className="relative z-10 flex flex-1 overflow-hidden md:hidden">
         <div
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-24",
@@ -2015,7 +2020,7 @@ const Ordenes = () => {
         </div>
       </div>
 
-      <div className="relative z-10 hidden flex-1 overflow-hidden p-4 2xl:grid 2xl:grid-cols-[minmax(0,1fr)_520px] 2xl:gap-4">
+      <div className="relative z-10 hidden flex-1 overflow-hidden p-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(320px,40vw)] md:gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="min-w-0 overflow-x-hidden overflow-y-auto">
           {menuPanel}
         </div>
@@ -2029,7 +2034,7 @@ const Ordenes = () => {
       </div>
 
       {!showCart && itemCount > 0 && (
-        <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 2xl:hidden">
+        <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
           <span className="font-display text-sm font-bold">{itemCount} items - ${total.toFixed(2)}</span>
         </button>

@@ -177,7 +177,7 @@ export default function PayableOrdersList({
                     <div key={order.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
                       <div
                         onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center sm:px-8"
+                        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(220px,1.7fr)_minmax(150px,0.9fr)_minmax(100px,0.6fr)_minmax(140px,0.8fr)_auto] sm:items-center sm:px-8"
                       >
                         <div
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
@@ -199,7 +199,7 @@ export default function PayableOrdersList({
                                 <UtensilsCrossed className="h-4 w-4" />
                               )}
                             </span>
-                            <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
+                            <p className="min-w-0 break-words text-lg font-semibold tracking-[-0.02em] text-slate-950">
                               {label}
                             </p>
                             {order.created_by_name && (

@@ -959,7 +959,7 @@ export default function PaymentDialog({
 
   const renderModernStandardContent = (currentOrder: PayableOrder) => (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[#fffdf8] px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
+      <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto bg-[#fffdf8] px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
         <div className="space-y-4">
           {readOnly && (
             <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-slate-500">
@@ -1002,7 +1002,7 @@ export default function PaymentDialog({
                     No quedan items pendientes para mover en esta operacion.
                   </div>
                 ) : (
-                        <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1 md:max-h-[320px]">
+                        <div className="scrollbar-none max-h-[240px] space-y-1.5 overflow-y-auto md:max-h-[320px]">
                           {pendingItemsForNow.map((item) => {
                             const isBulkItem = item.tray_item_type === "C";
                             return (
@@ -1079,7 +1079,7 @@ export default function PaymentDialog({
                     Mueve items desde la izquierda para incluirlos en este cobro.
                   </div>
                 ) : (
-                  <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1 md:max-h-[320px]">
+                  <div className="scrollbar-none max-h-[240px] space-y-1.5 overflow-y-auto md:max-h-[320px]">
                     {selectedItemsForNow.map((item) => {
                       const isBulkItem = item.tray_item_type === "C";
                       return (

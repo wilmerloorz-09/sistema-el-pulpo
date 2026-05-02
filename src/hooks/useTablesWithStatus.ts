@@ -178,9 +178,13 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
     
-    // If the active order on this table has a voided payment, we 'liberate' the table visual status
-    // so it can be used for new orders, but we still track that it has a voided order for this branch.
-    const effectiveStatus = hasVoidedPayment || isEmptyDraft ? "free" : (row.status ?? "free");
+    // The RPC still emits the legacy dispatch-then-cash "to_pay" state for dispatched
+    // table orders. In the current flow, dispatched tables remain occupied in Mesas.
+    const effectiveStatus = hasVoidedPayment || isEmptyDraft
+      ? "free"
+      : row.status === "to_pay"
+        ? "occupied"
+        : (row.status ?? "free");
     const effectiveOrderId = hasVoidedPayment ? undefined : (row.active_order_id ?? undefined);
     const effectiveOrderStatus = hasVoidedPayment ? undefined : (row.active_order_status ?? undefined);
     const effectiveSplitTotals = hasVoidedPayment || isEmptyDraft ? [] : parseSplitTotals(row.split_totals);

@@ -359,15 +359,17 @@ const UsersCrud = () => {
       />
 
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_15px_45px_-30px_rgba(15,23,42,0.25)]">
+        <div className="overflow-x-auto">
+          <div className="min-w-[940px]">
         {/* Encabezado de columnas */}
         <div className="hidden items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 sm:flex sm:px-6">
           <div className="w-10 shrink-0" />{/* Avatar */}
-          <div className="w-96 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">Usuario</div>
-          <div className="w-36 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">Tipo de usuario</div>
-          <div className="w-52 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">Sucursal</div>
-          <div className="flex-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Último acceso</div>
+          <div className="w-72 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-96">Usuario</div>
+          <div className="w-32 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-36">Tipo de usuario</div>
+          <div className="w-44 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-52">Sucursal</div>
+          <div className="w-24 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:flex-1">Último acceso</div>
           <div className="w-28 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">Estado</div>
-          <div className="w-20 shrink-0 text-right text-[10px] font-bold uppercase tracking-widest text-slate-400">Acción</div>
+          <div className="w-28 shrink-0 text-right text-[10px] font-bold uppercase tracking-widest text-slate-400">Acción</div>
         </div>
         <div className="divide-y divide-slate-100">
           {filteredUsers.length === 0 && (
@@ -423,7 +425,12 @@ const UsersCrud = () => {
                   </div>
 
                   {/* Nombre + Email */}
-                  <div className="flex w-96 shrink-0 min-w-0 flex-col justify-center">
+                  <button
+                    type="button"
+                    className="flex w-72 shrink-0 min-w-0 flex-col justify-center rounded-lg text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30 lg:w-96"
+                    onClick={() => setEditingUserId(user.id)}
+                    title="Editar usuario"
+                  >
                     <p className={cn("truncate text-sm font-semibold", user.is_active ? "text-slate-900" : "text-slate-400 line-through")}>
                       {user.full_name}
                     </p>
@@ -433,17 +440,17 @@ const UsersCrud = () => {
                         {[user.identity_number ? `CI: ${user.identity_number}` : null, user.phone].filter(Boolean).join(" · ")}
                       </p>
                     )}
-                  </div>
+                  </button>
 
                   {/* Tipo de usuario */}
-                  <div className="hidden w-36 shrink-0 sm:block">
+                  <div className="hidden w-32 shrink-0 sm:block lg:w-36">
                     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold", userTypeColor)}>
                       {userTypeName}
                     </span>
                   </div>
 
                   {/* Sucursal — muestra todas las sucursales asignadas */}
-                  <div className="hidden w-52 shrink-0 sm:flex sm:flex-col sm:gap-1">
+                  <div className="hidden w-44 shrink-0 sm:flex sm:flex-col sm:gap-1 lg:w-52">
                     {isAdmin ? (
                       <span className="text-xs text-slate-400">Todas</span>
                     ) : uniqueBranchAssignments.length === 0 ? (
@@ -473,7 +480,7 @@ const UsersCrud = () => {
                   </div>
 
                   {/* Último acceso */}
-                  <div className="hidden flex-1 sm:block">
+                  <div className="hidden w-24 shrink-0 sm:block lg:flex-1">
                     <p className="text-xs text-slate-400">—</p>
                   </div>
 
@@ -490,7 +497,7 @@ const UsersCrud = () => {
                   </div>
 
                   {/* Acciones */}
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex w-28 shrink-0 items-center justify-end gap-1">
                     <ChangePasswordDialog
                       targetUserId={user.id}
                       targetUserName={user.full_name}
@@ -529,6 +536,8 @@ const UsersCrud = () => {
         })}
       </div>
     </div>
+  </div>
+  </div>
   </div>
   );
 };

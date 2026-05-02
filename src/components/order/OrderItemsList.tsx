@@ -81,28 +81,28 @@ function getOrderItemStageStyles(stage: OrderItemStage) {
   switch (stage) {
     case "sent":
       return {
-        card: "border-orange-200 bg-orange-50/30",
-        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        card: "border-slate-200 bg-slate-50/40",
+        badge: "border-slate-300 bg-gradient-to-r from-slate-600 to-slate-500 text-white",
       };
     case "partial":
       return {
         card: "border-amber-200 bg-amber-50/30",
-        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        badge: "border-amber-300 bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950",
       };
     case "dispatched":
       return {
-        card: "border-emerald-200 bg-emerald-50/30",
-        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        card: "border-orange-200 bg-orange-50/35",
+        badge: "border-orange-300 bg-gradient-to-r from-orange-500 via-amber-400 to-yellow-300 text-white",
       };
     case "pendingCancellation":
       return {
         card: "border-fuchsia-200 bg-fuchsia-50/40",
-        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        badge: "border-fuchsia-300 bg-gradient-to-r from-fuchsia-500 to-pink-400 text-white",
       };
     case "paid":
       return {
-        card: "border-emerald-200 bg-emerald-50/20",
-        badge: "border-emerald-200 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white",
+        card: "border-lime-200 bg-lime-50/35",
+        badge: "border-lime-300 bg-gradient-to-r from-emerald-500 via-lime-400 to-yellow-300 text-white",
       };
     default:
       return {
@@ -134,15 +134,32 @@ function getOrderItemStageLegendClass(stage: OrderItemStage) {
     case "draft":
       return "border-slate-200 bg-white text-slate-700";
     case "sent":
-      return "border-orange-200 bg-orange-100 text-orange-800";
+      return "border-slate-200 bg-slate-100 text-slate-700";
     case "partial":
       return "border-amber-200 bg-amber-100 text-amber-900";
     case "dispatched":
-      return "border-emerald-200 bg-emerald-100 text-emerald-900";
+      return "border-orange-200 bg-orange-100 text-orange-900";
     case "pendingCancellation":
       return "border-fuchsia-200 bg-fuchsia-100 text-fuchsia-900";
     case "paid":
-      return "border-emerald-200 bg-emerald-100 text-emerald-900";
+      return "border-lime-200 bg-lime-100 text-lime-900";
+  }
+}
+
+function getOrderItemStageDotClass(stage: OrderItemStage) {
+  switch (stage) {
+    case "sent":
+      return "bg-slate-500";
+    case "partial":
+      return "bg-amber-500";
+    case "dispatched":
+      return "bg-orange-500";
+    case "pendingCancellation":
+      return "bg-fuchsia-500";
+    case "paid":
+      return "bg-lime-500";
+    case "draft":
+      return "bg-slate-400";
   }
 }
 
@@ -302,9 +319,7 @@ const OrderItemsList = ({
                       <span
                         className={cn(
                           "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
-                          itemStage === "sent"
-                            ? "bg-orange-500"
-                            : "bg-emerald-500",
+                          getOrderItemStageDotClass(itemStage),
                         )}
                       />
                       {getOrderItemStageLabel(itemStage)}
