@@ -221,7 +221,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
         ? await dbSelect<any>("profiles", {
-            select: "id, full_name, username, email",
+            select: "id, first_name, full_name, username, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
         : [];

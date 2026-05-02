@@ -79,35 +79,40 @@ function getOrderItemStage(item: OrderItem): OrderItemStage {
 
 function getOrderItemStageStyles(stage: OrderItemStage) {
   switch (stage) {
+    case "draft":
+      return {
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-300 bg-slate-100 text-slate-950",
+      };
     case "sent":
       return {
-        card: "border-slate-200 bg-slate-50/40",
-        badge: "border-slate-300 bg-gradient-to-r from-slate-600 to-slate-500 text-white",
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-300 bg-slate-100 text-slate-950",
       };
     case "partial":
       return {
-        card: "border-amber-200 bg-amber-50/30",
-        badge: "border-amber-300 bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950",
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-300 bg-slate-100 text-slate-950",
       };
     case "dispatched":
       return {
-        card: "border-orange-200 bg-orange-50/35",
-        badge: "border-orange-300 bg-gradient-to-r from-orange-500 via-amber-400 to-yellow-300 text-white",
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-300 bg-slate-100 text-slate-950",
       };
     case "pendingCancellation":
       return {
-        card: "border-fuchsia-200 bg-fuchsia-50/40",
-        badge: "border-fuchsia-300 bg-gradient-to-r from-fuchsia-500 to-pink-400 text-white",
+        card: "border-rose-200 bg-rose-50/40",
+        badge: "border-rose-700 bg-rose-700 text-white",
       };
     case "paid":
       return {
-        card: "border-lime-200 bg-lime-50/35",
-        badge: "border-lime-300 bg-gradient-to-r from-emerald-500 via-lime-400 to-yellow-300 text-white",
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-300 bg-slate-100 text-slate-950",
       };
     default:
       return {
-        card: "border-orange-200 bg-white",
-        badge: "border-orange-200 bg-gradient-to-r from-orange-500 to-orange-400 text-white",
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-300 bg-slate-100 text-slate-950",
       };
   }
 }
@@ -136,13 +141,13 @@ function getOrderItemStageLegendClass(stage: OrderItemStage) {
     case "sent":
       return "border-slate-200 bg-slate-100 text-slate-700";
     case "partial":
-      return "border-amber-200 bg-amber-100 text-amber-900";
+      return "border-slate-200 bg-slate-100 text-slate-700";
     case "dispatched":
-      return "border-orange-200 bg-orange-100 text-orange-900";
+      return "border-slate-200 bg-slate-100 text-slate-700";
     case "pendingCancellation":
-      return "border-fuchsia-200 bg-fuchsia-100 text-fuchsia-900";
+      return "border-rose-200 bg-rose-100 text-rose-900";
     case "paid":
-      return "border-lime-200 bg-lime-100 text-lime-900";
+      return "border-slate-200 bg-slate-100 text-slate-700";
   }
 }
 
@@ -151,13 +156,13 @@ function getOrderItemStageDotClass(stage: OrderItemStage) {
     case "sent":
       return "bg-slate-500";
     case "partial":
-      return "bg-amber-500";
+      return "bg-slate-500";
     case "dispatched":
-      return "bg-orange-500";
+      return "bg-slate-500";
     case "pendingCancellation":
-      return "bg-fuchsia-500";
+      return "bg-rose-500";
     case "paid":
-      return "bg-lime-500";
+      return "bg-slate-500";
     case "draft":
       return "bg-slate-400";
   }
@@ -211,7 +216,7 @@ const OrderItemsList = ({
         const operationalDisabled = (!isPending && disableOperationalCancel) || isRequestedCancel;
         const controlDisabled = isPending ? draftDisabled : operationalDisabled;
         const operationalControlClass = !isPending && !operationalDisabled
-          ? "border-orange-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(249,115,22,0.35)] hover:border-orange-300 hover:bg-orange-50"
+          ? "border-slate-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)] hover:border-slate-300 hover:bg-slate-50"
           : "border-border bg-background";
         const displayQuantity = item.quantity;
         const requestedOperationalQty = (operationalQtyByItem[item.id] ?? buildDefaultOperationalQty(item)) || 1;
@@ -236,7 +241,7 @@ const OrderItemsList = ({
             className={cn(
               "rounded-2xl border py-3 pl-1.5 pr-2.5 transition-all sm:px-3",
               isPending
-                ? "shadow-[0_10px_24px_-22px_rgba(249,115,22,0.45)]"
+                ? "shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)]"
                 : operationalDisabled
                   ? "opacity-60"
                   : (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") ? "opacity-50 border-red-200 bg-red-50/50" : "",
@@ -254,13 +259,14 @@ const OrderItemsList = ({
               >
                 {!isBulkItem ? (
                   <Badge
+                    variant="secondary"
                     className={cn(
-                      "col-start-1 row-start-1 min-w-[2.2rem] self-center justify-center rounded-lg px-1.5 py-1 text-[11px] font-black leading-none shadow-[0_10px_18px_-16px_rgba(249,115,22,0.95)] sm:min-w-[2.7rem] sm:px-2 sm:text-xs",
+                      "col-start-1 row-start-1 flex h-7 w-11 self-center justify-center rounded-lg bg-none px-0 py-0 text-sm font-black leading-none shadow-none hover:brightness-100",
                       itemStageStyles.badge,
-                      (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50 bg-red-500 text-white"
+                      (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50 !border-red-300 !bg-red-100 !text-red-900"
                     )}
                   >
-                    {displayQuantity || item.quantity_ordered}
+                    {(displayQuantity || item.quantity_ordered) ?? 0}
                   </Badge>
                 ) : null}
 
@@ -288,15 +294,13 @@ const OrderItemsList = ({
                         <button
                           type="button"
                           className={cn(
-                            "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
+                            "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:text-[11px]",
                             isBulkItem && "col-start-2",
                             getOrderItemStageLegendClass(itemStage),
                             (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
                           )}
                         >
-                          <span
-                            className="h-1.5 w-1.5 rounded-full bg-amber-500 sm:h-2 sm:w-2"
-                          />
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-500 sm:h-2 sm:w-2" />
                           {getOrderItemStageLabel(itemStage)}
                         </button>
                       </PopoverTrigger>
@@ -310,7 +314,7 @@ const OrderItemsList = ({
                   ) : (
                     <span
                       className={cn(
-                        "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:px-2 sm:text-[11px]",
+                        "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:text-[11px]",
                         isBulkItem && "col-start-2",
                         getOrderItemStageLegendClass(itemStage),
                         (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
@@ -351,7 +355,7 @@ const OrderItemsList = ({
                       "mt-0.5 break-words whitespace-normal",
                       isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
                       isDeliveryInstruction
-                        ? "text-sm font-semibold text-orange-700"
+                        ? "w-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800 sm:text-[13px]"
                         : "text-xs italic text-muted-foreground",
                     )}
                   >
@@ -359,13 +363,16 @@ const OrderItemsList = ({
                   </p>
                 )}
 
-                <p className={cn("-mt-1.5 text-[11px] text-muted-foreground sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
+                <p className={cn("-mt-1 text-[11px] font-medium text-slate-500 sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
                   {isBulkItem ? (
-                    <span className="font-semibold text-foreground">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
+                    <span className="font-bold text-slate-900">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                   ) : (
                     <>
-                      ${item.unit_price.toFixed(2)} x {displayQuantity || item.quantity_ordered} ={" "}
-                      <span className="font-semibold text-foreground">${formatLineTotal(item.unit_price, displayQuantity || item.quantity_ordered)}</span>
+                      <span>${item.unit_price.toFixed(2)}</span>
+                      <span className="px-1 text-slate-400">x</span>
+                      <span>{displayQuantity || item.quantity_ordered}</span>
+                      <span className="px-1 text-slate-400">=</span>
+                      <span className="font-bold text-slate-900">${formatLineTotal(item.unit_price, displayQuantity || item.quantity_ordered)}</span>
                     </>
                   )}
                 </p>

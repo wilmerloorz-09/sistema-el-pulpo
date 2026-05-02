@@ -2,6 +2,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { motion } from "framer-motion";
 import type { Database } from "@/integrations/supabase/types";
 import { Shield, UtensilsCrossed, CircleDollarSign, ChefHat, Truck } from "lucide-react";
+import { getUserDisplayName } from "@/lib/userDisplay";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 
@@ -18,6 +19,7 @@ const ROLE_META: Record<AppRole, { label: string; icon: React.ReactNode; color: 
 
 const RoleSelector = () => {
   const { roles, setActiveRole, profile } = useAuth();
+  const accountName = getUserDisplayName(profile);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -28,7 +30,7 @@ const RoleSelector = () => {
       >
         <div className="text-center space-y-1">
           <h1 className="font-display text-xl font-bold text-foreground">
-            Hola, {profile?.full_name ?? "Usuario"}
+            Hola, {accountName}
           </h1>
           <p className="text-sm text-muted-foreground">Selecciona tu rol para esta sesion</p>
         </div>

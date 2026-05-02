@@ -117,7 +117,7 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   const activeCreatorProfiles = activeCreatorIds.length > 0
     ? ((await supabase
       .from("profiles" as any)
-      .select("id, full_name, username, email")
+      .select("id, first_name, full_name, username, email")
       .in("id", activeCreatorIds) as any).data ?? [])
     : [];
   const activeOrdersMap = Object.fromEntries((activeOrders ?? []).map((order: any) => [order.id, order]));
@@ -147,7 +147,7 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
     const voidedCreatorProfiles = voidedCreatorIds.length > 0
       ? ((await supabase
         .from("profiles" as any)
-        .select("id, full_name, username, email")
+        .select("id, first_name, full_name, username, email")
         .in("id", voidedCreatorIds) as any).data ?? [])
       : [];
     const voidedCreatorNameMap = buildUserDisplayMap(voidedCreatorProfiles);

@@ -13,6 +13,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { useAppVersion } from "@/hooks/useAppVersion";
+import { getUserDisplayName } from "@/lib/userDisplay";
 
 interface SidebarNavProps {
   isDark: boolean;
@@ -45,8 +46,8 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
-  const initials = getInitials(profile?.full_name);
-  const accountLabel = profile?.full_name || profile?.username || "Mi cuenta";
+  const accountLabel = getUserDisplayName(profile);
+  const initials = getInitials(accountLabel);
   const location = useLocation();
   const [openHoverCard, setOpenHoverCard] = useState<string | null>(null);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
@@ -278,7 +279,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                   {profile?.avatar_url ? (
                     <img
                       src={profile.avatar_url}
-                      alt={profile.full_name}
+                      alt={accountLabel}
                       className="h-full w-full object-cover"
                     />
                   ) : initials ? (

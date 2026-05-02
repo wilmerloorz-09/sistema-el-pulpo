@@ -46,7 +46,9 @@ Deno.serve(async (req) => {
     const payload = await req.json();
     const email = String(payload?.email ?? "").trim().toLowerCase();
     const password = String(payload?.password ?? "");
-    const full_name = String(payload?.full_name ?? "").trim();
+    const first_name = String(payload?.first_name ?? "").trim();
+    const last_name = String(payload?.last_name ?? "").trim();
+    const full_name = String(payload?.full_name ?? `${first_name} ${last_name}`).trim();
     const username = String(payload?.username ?? "").trim();
     const identity_number = String(payload?.identity_number ?? "").trim() || null;
     const home_address = String(payload?.home_address ?? "").trim() || null;
@@ -54,7 +56,7 @@ Deno.serve(async (req) => {
     const branch_roles = payload?.branch_roles;
     const global_roles = payload?.global_roles;
 
-    if (!email || !password || !full_name || !username) {
+    if (!email || !password || !first_name || !last_name || !username) {
       return toJson({ error: "Faltan campos requeridos" }, 400);
     }
 
@@ -62,8 +64,12 @@ Deno.serve(async (req) => {
       return toJson({ error: "El nombre de usuario solo puede tener letras y numeros" }, 400);
     }
 
-    if (!/^[\p{L}\s]+$/u.test(full_name)) {
-      return toJson({ error: "El nombre completo solo puede tener letras" }, 400);
+    if (!/^[\p{L}\s]+$/u.test(first_name)) {
+      return toJson({ error: "Los nombres solo pueden tener letras" }, 400);
+    }
+
+    if (!/^[\p{L}\s]+$/u.test(last_name)) {
+      return toJson({ error: "Los apellidos solo pueden tener letras" }, 400);
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -154,7 +160,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { full_name, username },
+      user_metadata: { first_name, last_name, full_name, username },
     });
 
     if (authError || !authData?.user?.id) {
@@ -171,6 +177,9 @@ Deno.serve(async (req) => {
       const { error: profileDetailsError } = await adminClient
         .from("profiles")
         .update({
+          first_name,
+          last_name,
+          full_name,
           identity_number,
           home_address,
           phone,

@@ -248,7 +248,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     order.table_id ? fetchSiblingOrders(order.table_id) : Promise.resolve([] as SiblingOrder[]),
     order.created_by
       ? dbSelect<any>("profiles", {
-          select: "id, full_name, username, email",
+          select: "id, first_name, full_name, username, email",
           filters: [{ column: "id", op: "eq", value: order.created_by }],
         })
       : Promise.resolve([]),

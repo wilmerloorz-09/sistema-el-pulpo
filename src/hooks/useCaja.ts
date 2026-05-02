@@ -786,7 +786,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (userIds.length === 0) return [];
 
       const profiles = await dbSelect<any>("profiles", {
-        select: "id, full_name, username, is_active",
+        select: "id, first_name, full_name, username, is_active",
         filters: [{ column: "id", op: "in", value: userIds }]
       });
 
@@ -794,7 +794,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         .filter((profile: any) => profile.is_active !== false)
         .map((profile: any) => ({
           id: profile.id,
-          full_name: profile.full_name ?? "Usuario",
+          full_name: profile.first_name ?? profile.full_name ?? "Usuario",
           username: profile.username ?? "",
         }))
         .sort((a, b) =>
@@ -1141,7 +1141,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
         ? await dbSelect<any>("profiles", {
-            select: "id, full_name, username, email",
+            select: "id, first_name, full_name, username, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
         : [];
@@ -1444,7 +1444,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
           ]
         }),
         dbSelect<any>("payment_methods", { select: "id, name", filters: [{ column: "id", op: "in", value: methodIds }] }),
-        dbSelect<any>("profiles", { select: "id, full_name, username", filters: [{ column: "id", op: "in", value: createdByIds }] }),
+        dbSelect<any>("profiles", { select: "id, first_name, full_name, username", filters: [{ column: "id", op: "in", value: createdByIds }] }),
         dbSelect<any>("payments", { select: "order_id, amount, notes", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
         dbSelect<any>("order_items", { select: "id, order_id, total, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
       ]);
@@ -1465,11 +1465,11 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const ordersMap = Object.fromEntries(orders.map((o) => [o.id, o]));
       const methodsMap = Object.fromEntries(methods.map((m) => [m.id, m.name]));
-      const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, p.full_name || p.username || "Usuario"]));
+      const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, p.first_name || p.full_name || p.username || "Usuario"]));
       const orderCreatorIds = Array.from(new Set((orders ?? []).map((order: any) => order.created_by).filter(Boolean))) as string[];
       const orderCreatorProfiles = orderCreatorIds.length > 0
         ? await dbSelect<any>("profiles", {
-            select: "id, full_name, username, email",
+            select: "id, first_name, full_name, username, email",
             filters: [{ column: "id", op: "in", value: orderCreatorIds }],
           })
         : [];

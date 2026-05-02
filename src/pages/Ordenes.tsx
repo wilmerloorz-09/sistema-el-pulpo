@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchOrderDetail, fetchSiblingOrders, fetchTakeoutSiblingOrders, getOrderQueryKey, isTemporaryOrderItemId, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
@@ -140,6 +140,39 @@ function buildCompositeMenuNodes(scopeNodes: MenuNode[], tableNodes: MenuNode[])
   }));
 
   return [...scopeNodes, ...normalizedTableNodes];
+}
+
+function normalizeMenuLabel(value?: string | null) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function resolveRootCategoryName(node: MenuNode, nodes: MenuNode[] | null | undefined) {
+  const nodesById = new Map((nodes ?? []).map((candidate) => [candidate.id, candidate]));
+  const ancestorIds = node.ancestor_ids ?? [];
+  const rootFromAncestors = [...ancestorIds].reverse()
+    .map((ancestorId) => nodesById.get(ancestorId))
+    .find((ancestor) => ancestor?.node_type === "category");
+
+  if (rootFromAncestors?.name) return rootFromAncestors.name;
+
+  let currentParentId = node.parent_id;
+  let lastCategoryName: string | null = null;
+  while (currentParentId) {
+    const parent = nodesById.get(currentParentId);
+    if (!parent) break;
+    if (parent.node_type === "category") lastCategoryName = parent.name;
+    currentParentId = parent.parent_id;
+  }
+
+  return lastCategoryName;
+}
+
+function isPlatosRootCategory(value?: string | null) {
+  return normalizeMenuLabel(value).includes("PLATOS");
 }
 
 /**
@@ -392,6 +425,7 @@ const Ordenes = () => {
   });
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
+  const [selectedProductRootName, setSelectedProductRootName] = useState<string | null>(null);
   const [selectedProductModifiers, setSelectedProductModifiers] = useState<ProductModifierOption[]>([]);
   const [selectingProductId, setSelectingProductId] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
@@ -419,6 +453,43 @@ const Ordenes = () => {
     right: false,
   });
   const isBulkScopeSelection = currentMenuScope === "BULK";
+  const shouldCalculateBulkIncludedByAmount = isBulkScopeSelection && isPlatosRootCategory(selectedProductRootName);
+  const showMenuScopeTabs = order?.order_type === "DINE_IN" || isTakeoutOrder;
+  const menuScopeOptions: Array<{ value: MenuScope; label: string; icon: ReactNode; className: string }> = isTakeoutOrder
+    ? [
+        {
+          value: "TAKEOUT",
+          label: "Con envase",
+          icon: <ShoppingBag className="h-4 w-4 shrink-0" />,
+          className: "min-h-11 min-w-[6.4rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.5rem] sm:gap-2 sm:px-3 sm:text-sm",
+        },
+        {
+          value: "BULK",
+          label: "A granel",
+          icon: <Scale className="h-4 w-4 shrink-0" />,
+          className: "min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm",
+        },
+      ]
+    : [
+        {
+          value: "TABLE",
+          label: "Menu Mesas",
+          icon: <ChefHat className="h-4 w-4 shrink-0" />,
+          className: "min-h-11 min-w-[6.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.75rem] sm:gap-2 sm:px-3 sm:text-sm",
+        },
+        {
+          value: "TAKEOUT",
+          label: "Con envase",
+          icon: <ShoppingBag className="h-4 w-4 shrink-0" />,
+          className: "min-h-11 min-w-[6.4rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.5rem] sm:gap-2 sm:px-3 sm:text-sm",
+        },
+        {
+          value: "BULK",
+          label: "A granel",
+          icon: <Scale className="h-4 w-4 shrink-0" />,
+          className: "min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm",
+        },
+      ];
 
   const currentTableOrder: SiblingOrder | null = order
     ? {
@@ -599,6 +670,7 @@ const Ordenes = () => {
     setPendingMenuScopeSelection(null);
     setPendingTrayType(null);
     setSelectedProduct(null);
+    setSelectedProductRootName(null);
     setSelectedProductModifiers([]);
     setSelectingProductId(null);
     setShowCart(false);
@@ -688,9 +760,9 @@ const Ordenes = () => {
   }, [fromEditar, fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
 
   const bulkIncludedPreviewQuery = useQuery({
-    queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id],
+    queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id, shouldCalculateBulkIncludedByAmount],
     queryFn: async () => {
-      if (!activeBranchId || !selectedProduct?.menu_node_id || !isBulkScopeSelection) return [] as BulkIncludedPreviewAssignment[];
+      if (!activeBranchId || !selectedProduct?.menu_node_id || !shouldCalculateBulkIncludedByAmount) return [] as BulkIncludedPreviewAssignment[];
 
       const { data: assignments, error: assignmentsError } = await supabase
         .from("bulk_included_products" as any)
@@ -747,7 +819,7 @@ const Ordenes = () => {
           .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0)),
       }));
     },
-    enabled: !!activeBranchId && !!selectedProduct?.menu_node_id && isBulkScopeSelection,
+    enabled: !!activeBranchId && !!selectedProduct?.menu_node_id && shouldCalculateBulkIncludedByAmount,
   });
 
   const resolveBulkIncludedPreview = useCallback((unitPrice: number, quantity: number) => {
@@ -981,6 +1053,7 @@ const Ordenes = () => {
     }
 
     setSelectedProduct(null);
+    setSelectedProductRootName(null);
     setSelectedProductModifiers([]);
     setSelectingProductId(node.id);
     try {
@@ -998,6 +1071,7 @@ const Ordenes = () => {
       });
 
       setSelectedProduct(lookup.product);
+      setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
       setSelectedProductModifiers(lookup.modifiers);
     } catch (error: any) {
       toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
@@ -1508,6 +1582,7 @@ const Ordenes = () => {
                   onClick={() => {
                     setPendingTrayType(option.value);
                     setSelectedProduct(null);
+                    setSelectedProductRootName(null);
                   }}
                   aria-pressed={checked}
                   className={cn(
@@ -1542,7 +1617,7 @@ const Ordenes = () => {
         </div>
       ) : null}
 
-      {order.order_type === "DINE_IN" ? (
+      {showMenuScopeTabs ? (
         <div className="scrollbar-none -mx-1 overflow-x-auto px-1 pb-0.5">
           <Tabs
             value={interactiveMenuScope}
@@ -1555,6 +1630,11 @@ const Ordenes = () => {
                 return;
               }
 
+              if (isTakeoutOrder) {
+                setPendingMenuScopeSelection("TAKEOUT");
+                return;
+              }
+
               setPendingMenuScopeSelection(nextScope);
               updateMenuScope.mutate(nextScope, {
                 onError: () => setPendingMenuScopeSelection(null),
@@ -1562,30 +1642,17 @@ const Ordenes = () => {
             }}
           >
             <TabsList className="h-auto min-w-max justify-start gap-1 rounded-[24px] border-amber-200 bg-gradient-to-r from-amber-50 via-white to-yellow-50 p-1.5">
-              <TabsTrigger
-                value="TABLE"
-                disabled={updateMenuScope.isPending}
-                className="min-h-11 min-w-[6.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.75rem] sm:gap-2 sm:px-3 sm:text-sm"
-              >
-                <ChefHat className="h-4 w-4 shrink-0" />
-                <span>Menu Mesas</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="TAKEOUT"
-                disabled={updateMenuScope.isPending}
-                className="min-h-11 min-w-[6.4rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.5rem] sm:gap-2 sm:px-3 sm:text-sm"
-              >
-                <ShoppingBag className="h-4 w-4 shrink-0" />
-                <span>Con envase</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="BULK"
-                disabled={updateMenuScope.isPending}
-                className="min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm"
-              >
-                <Scale className="h-4 w-4 shrink-0" />
-                <span>A granel</span>
-              </TabsTrigger>
+              {menuScopeOptions.map((option) => (
+                <TabsTrigger
+                  key={option.value}
+                  value={option.value}
+                  disabled={updateMenuScope.isPending}
+                  className={option.className}
+                >
+                  {option.icon}
+                  <span>{option.label}</span>
+                </TabsTrigger>
+              ))}
             </TabsList>
           </Tabs>
         </div>
@@ -2225,22 +2292,19 @@ const Ordenes = () => {
         open={canEditItems && !!selectedProduct}
         onClose={() => {
           setSelectedProduct(null);
+          setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
         }}
         priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
         manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
         confirmLabel="Agregar"
-        hideQuantity={isBulkScopeSelection}
+        hideQuantity={shouldCalculateBulkIncludedByAmount}
         extraContent={({ unitPrice, quantity }) => {
-          if (!isBulkScopeSelection) return null;
+          if (!shouldCalculateBulkIncludedByAmount) return null;
 
           const previewRows = resolveBulkIncludedPreview(unitPrice, quantity);
           if (previewRows.length === 0) {
-            return (
-              <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                No hay productos adicionales a entregar para este monto.
-              </div>
-            );
+            return null;
           }
 
           return (
@@ -2262,7 +2326,7 @@ const Ordenes = () => {
           );
         }}
         buildItemNote={({ unitPrice, quantity }) => (
-          isBulkScopeSelection ? buildBulkIncludedItemNote(unitPrice, quantity) : null
+          shouldCalculateBulkIncludedByAmount ? buildBulkIncludedItemNote(unitPrice, quantity) : null
         )}
         onConfirm={(data) => {
           const selectedModifierIds = isTrayOrder && effectiveTrayType === "A" ? [] : data.modifier_ids;
@@ -2291,7 +2355,7 @@ const Ordenes = () => {
                 unit_price: data.unit_price,
                 total: data.quantity * data.unit_price + (data.quantity > 0 ? (data.tray_container_cost ?? 0) : 0),
                 status: "DRAFT",
-                tray_item_type: isTrayOrder ? effectiveTrayType : isBulkScopeSelection ? "C" : null,
+                tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : null,
                 tray_container_cost: 0,
                 quantity_sent: 0,
                 quantity_ready_available: 0,
@@ -2307,6 +2371,7 @@ const Ordenes = () => {
               } as any,
             ]);
             setSelectedProduct(null);
+            setSelectedProductRootName(null);
             return;
           }
 
@@ -2315,11 +2380,12 @@ const Ordenes = () => {
             menu_node_id: selectedProduct?.menu_node_id ?? null,
             modifier_ids: selectedModifierIds,
             modifier_snapshots: selectedModifierSnapshots,
-            tray_item_type: isTrayOrder ? effectiveTrayType : isBulkScopeSelection ? "C" : undefined,
+            tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : undefined,
             tray_container_cost: 0,
           }, {
             onSuccess: () => {
               setSelectedProduct(null);
+              setSelectedProductRootName(null);
             },
           });
         }}

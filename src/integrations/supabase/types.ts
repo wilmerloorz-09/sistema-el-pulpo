@@ -2320,6 +2320,7 @@ export type Database = {
           current_app_session_id: string | null
           current_app_session_started_at: string | null
           email: string | null
+            first_name: string
             full_name: string
             home_address: string | null
             id: string
@@ -2327,6 +2328,7 @@ export type Database = {
             is_active: boolean
             is_payment_proof_capture_operator: boolean
             is_protected_superadmin: boolean
+            last_name: string
             phone: string | null
             role: string | null
           updated_at: string
@@ -2342,6 +2344,7 @@ export type Database = {
           current_app_session_id?: string | null
           current_app_session_started_at?: string | null
           email?: string | null
+            first_name: string
             full_name: string
             home_address?: string | null
             id: string
@@ -2349,6 +2352,7 @@ export type Database = {
             is_active?: boolean
             is_payment_proof_capture_operator?: boolean
             is_protected_superadmin?: boolean
+            last_name: string
             phone?: string | null
             role?: string | null
           updated_at?: string
@@ -2364,6 +2368,7 @@ export type Database = {
           current_app_session_id?: string | null
           current_app_session_started_at?: string | null
           email?: string | null
+            first_name?: string
             full_name?: string
             home_address?: string | null
             id?: string
@@ -2371,6 +2376,7 @@ export type Database = {
             is_active?: boolean
             is_payment_proof_capture_operator?: boolean
             is_protected_superadmin?: boolean
+            last_name?: string
             phone?: string | null
             role?: string | null
           updated_at?: string

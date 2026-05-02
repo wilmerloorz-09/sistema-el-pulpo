@@ -54,7 +54,8 @@ const isAlreadyExistsAssignmentError = (error: any) => {
 };
 
 const defaultForm = {
-  full_name: "",
+  first_name: "",
+  last_name: "",
   username: "",
   identity_number: "",
   home_address: "",
@@ -66,7 +67,7 @@ const defaultForm = {
 };
 
 const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
-const FULL_NAME_PATTERN = /^[\p{L}\s]+$/u;
+const NAME_PATTERN = /^[\p{L}\s]+$/u;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TEN_DIGIT_PATTERN = /^\d{10}$/;
 const NO_BRANCH_VALUE = "__sin_sucursal__";
@@ -81,7 +82,8 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const isAdmin = form.user_type === "administrador";
   const isSupervisor = form.user_type === "supervisor";
   const usernameValid = USERNAME_PATTERN.test(form.username);
-  const fullNameValid = FULL_NAME_PATTERN.test(form.full_name.trim());
+  const firstNameValid = NAME_PATTERN.test(form.first_name.trim());
+  const lastNameValid = NAME_PATTERN.test(form.last_name.trim());
   const identityNumberValid = TEN_DIGIT_PATTERN.test(form.identity_number);
   const homeAddressValid = form.home_address.trim().length > 0;
   const emailValid = EMAIL_PATTERN.test(form.email.trim());
@@ -111,6 +113,8 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
     mutationFn: async () => {
       const normalizedEmail = form.email.trim().toLowerCase();
       const normalizedUsername = form.username.trim().toLowerCase();
+      const firstName = form.first_name.trim();
+      const lastName = form.last_name.trim();
 
       const existingUsername = existingUsers.find(
         (u) => u.username.trim().toLowerCase() === normalizedUsername,
@@ -130,7 +134,9 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
       const payload = {
         email: normalizedEmail,
         password: form.password,
-        full_name: form.full_name,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: `${firstName} ${lastName}`.trim(),
         username: form.username.trim(),
         identity_number: form.identity_number.trim() || null,
         home_address: form.home_address.trim() || null,
@@ -223,7 +229,8 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const passwordsMatch = form.password === form.confirmPassword;
   const canSubmit =
     usernameValid &&
-    fullNameValid &&
+    firstNameValid &&
+    lastNameValid &&
     identityNumberValid &&
     homeAddressValid &&
     emailValid &&
@@ -303,18 +310,32 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre completo</label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombres</label>
                 <Input
-                  placeholder="Ej: Juan Perez"
-                  value={form.full_name}
-                  onChange={(e) => setForm({ ...form, full_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
+                  placeholder="Ej: Juan Carlos"
+                  value={form.first_name}
+                  onChange={(e) => setForm({ ...form, first_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
                   className="h-10 rounded-xl border-slate-200"
                 />
-                {form.full_name && !fullNameValid && (
+                {form.first_name && !firstNameValid && (
                   <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
                 )}
               </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Apellidos</label>
+                <Input
+                  placeholder="Ej: Perez Zambrano"
+                  value={form.last_name}
+                  onChange={(e) => setForm({ ...form, last_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
+                  className="h-10 rounded-xl border-slate-200"
+                />
+                {form.last_name && !lastNameValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
+                )}
+              </div>
+            </div>
 
             <div className="space-y-1.5">
               <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Direccion domiciliaria</label>

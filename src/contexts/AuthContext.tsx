@@ -7,6 +7,8 @@ import { dbSelect } from "@/services/DatabaseService";
 interface Profile {
   id: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
   username: string;
   email?: string | null;
   is_active: boolean;

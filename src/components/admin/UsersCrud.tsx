@@ -30,6 +30,8 @@ interface BranchAssignment {
 interface UserRow {
   id: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
   username: string;
   email?: string | null;
   identity_number?: string | null;
@@ -228,8 +230,10 @@ const UsersCrud = () => {
   const filteredUsers = useMemo(() => users.filter(u => {
     const activeBranch = u.branch_assignments.find(a => a.branch_id === u.active_branch_id);
     const activeRole = u.global_roles[0]?.name ?? activeBranch?.role_name ?? '';
+    const visibleName = u.first_name || u.full_name;
     const matchSearch = !search ||
-      u.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      visibleName.toLowerCase().includes(search.toLowerCase()) ||
+      (u.last_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (u.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (u.identity_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (u.phone ?? '').toLowerCase().includes(search.toLowerCase()) ||
@@ -309,7 +313,7 @@ const UsersCrud = () => {
           <div className="relative min-w-[180px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Buscar nombre, email, cedula..."
+              placeholder="Buscar nombres, email, cedula..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="h-9 rounded-xl border-slate-200 pl-9 text-sm"
@@ -398,6 +402,7 @@ const UsersCrud = () => {
             : isSupervisor
             ? "border-blue-200 bg-blue-50 text-blue-700"
             : "border-slate-200 bg-slate-50 text-slate-600";
+          const displayName = user.first_name || user.full_name || user.username;
 
             return (
               <div key={user.id} className={cn("transition-colors", idx % 2 === 0 ? "bg-white" : "bg-slate-50/40")}>
@@ -408,7 +413,7 @@ const UsersCrud = () => {
                     {user.avatar_url ? (
                       <img
                         src={user.avatar_url}
-                        alt={user.full_name}
+                        alt={displayName}
                         className={cn(
                           "h-9 w-9 rounded-full object-cover ring-2",
                           user.is_active ? "ring-primary/20" : "ring-slate-200 opacity-50 grayscale"
@@ -419,12 +424,12 @@ const UsersCrud = () => {
                         "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold",
                         user.is_active ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-400"
                       )}>
-                        {user.full_name.charAt(0).toUpperCase()}
+                        {displayName.charAt(0).toUpperCase()}
                       </div>
                     )}
                   </div>
 
-                  {/* Nombre + Email */}
+                  {/* Nombres + usuario */}
                   <button
                     type="button"
                     className="flex w-72 shrink-0 min-w-0 flex-col justify-center rounded-lg text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30 lg:w-96"
@@ -432,14 +437,9 @@ const UsersCrud = () => {
                     title="Editar usuario"
                   >
                     <p className={cn("truncate text-sm font-semibold", user.is_active ? "text-slate-900" : "text-slate-400 line-through")}>
-                      {user.full_name}
+                      {displayName}
                     </p>
-                    <p className="truncate text-[11px] text-muted-foreground">{user.email ?? `@${user.username}`}</p>
-                    {(user.identity_number || user.phone) && (
-                      <p className="truncate text-[10px] text-slate-400">
-                        {[user.identity_number ? `CI: ${user.identity_number}` : null, user.phone].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
+                    <p className="truncate text-[11px] text-muted-foreground">@{user.username}</p>
                   </button>
 
                   {/* Tipo de usuario */}
@@ -500,7 +500,7 @@ const UsersCrud = () => {
                   <div className="flex w-28 shrink-0 items-center justify-end gap-1">
                     <ChangePasswordDialog
                       targetUserId={user.id}
-                      targetUserName={user.full_name}
+                      targetUserName={displayName}
                       targetUserEmail={user.email ?? null}
                       targetUsername={user.username}
                       trigger={

@@ -8,9 +8,11 @@
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
+--   - incluye la numeracion visible unificada: `orders.order_number` se deriva del sufijo de `orders.order_code`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
 --   - incluye el bloqueo automático del botón "Cobrar" en Caja mientras una orden está en edición
+--   - incluye la regla de Caja: una orden/item `DRAFT` nunca debe aparecer ni poder cobrarse en Caja
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
@@ -40,6 +42,7 @@
 --   - cerrar caja sigue siendo distinto de cerrar turno
 --   - el flujo de cobro/despacho es global: Caja primero y Despacho despues
 --   - Caja cobra cantidades ordenadas activas antes del despacho
+--   - Caja excluye siempre items borrador; solo cobra items ya enviados al flujo operativo
 --   - el cierre de turno cancela borradores no enviados sin pagos ni items operativos antes de evaluar bloqueos
 --   - cerrar turno puede resolver ordenes especiales pendientes de `$0` solo con confirmacion explicita antes de invocar el cierre normal
 --   - el conteo de esa confirmacion solo debe incluir SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
@@ -84,7 +87,8 @@
 -- - Conserva la lógica de edición In-Situ:
 --   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual
 --   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
---   - los ítems nuevos aceptados en órdenes "En caja" mantienen su flujo de cobro correcto
+--   - al aumentar cantidad de un item ya enviado/en caja, se actualiza la misma linea si no tiene pagos registrados
+--   - los items nuevos aceptados en ordenes "En caja" mantienen su flujo de cobro correcto
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -242,6 +246,7 @@ COMMIT;
 -- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
 -- - 0 borradores vacios residuales capaces de seguir ocupando una mesa en overview
 -- - 0 borradores no enviados residuales capaces de bloquear cierre de turno
+-- - 0 ordenes/items borrador visibles o cobrables en Caja
 -- - 0 ordenes especiales `$0` pendientes capaces de bloquear cierre de turno
 -- - 0 ordenes especiales `PAID` historicas ocultas por falta de detalle cobrado en `payment_items`
 -- - archivos en Supabase Storage no se borran con este SQL
@@ -250,5 +255,6 @@ COMMIT;
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
+-- - 0 codigos/numeros visibles de orden previos; la siguiente orden vuelve a generar `order_code` y sincronizar `order_number`
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================

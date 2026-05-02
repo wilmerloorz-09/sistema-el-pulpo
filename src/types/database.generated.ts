@@ -1042,11 +1042,13 @@ export type Database = {
         Row: {
             branch_id: string | null
             created_at: string
+            first_name: string
             full_name: string
             home_address: string | null
             id: string
             identity_number: string | null
             is_active: boolean
+            last_name: string
             phone: string | null
             role: string | null
           updated_at: string
@@ -1055,11 +1057,13 @@ export type Database = {
         Insert: {
             branch_id?: string | null
             created_at?: string
+            first_name: string
             full_name: string
             home_address?: string | null
             id: string
             identity_number?: string | null
             is_active?: boolean
+            last_name: string
             phone?: string | null
             role?: string | null
           updated_at?: string
@@ -1068,11 +1072,13 @@ export type Database = {
         Update: {
             branch_id?: string | null
             created_at?: string
+            first_name?: string
             full_name?: string
             home_address?: string | null
             id?: string
             identity_number?: string | null
             is_active?: boolean
+            last_name?: string
             phone?: string | null
             role?: string | null
           updated_at?: string

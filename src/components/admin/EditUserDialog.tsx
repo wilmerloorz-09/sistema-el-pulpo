@@ -21,6 +21,8 @@ interface BranchAssignment {
 interface UserRow {
   id: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
   username: string;
   email?: string | null;
   identity_number?: string | null;
@@ -48,7 +50,7 @@ interface EditUserDialogProps {
 }
 
 const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
-const FULL_NAME_PATTERN = /^[\p{L}\s]+$/u;
+const NAME_PATTERN = /^[\p{L}\s]+$/u;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TEN_DIGIT_PATTERN = /^\d{10}$/;
 const NO_BRANCH_VALUE = "__sin_sucursal__";
@@ -60,8 +62,10 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user.avatar_url ?? null);
+  const fallbackNameParts = user.full_name.trim().split(/\s+/).filter(Boolean);
   const [editValues, setEditValues] = useState({
-    full_name: user.full_name,
+    first_name: user.first_name ?? (fallbackNameParts.length > 1 ? fallbackNameParts.slice(0, -1).join(" ") : user.full_name),
+    last_name: user.last_name ?? (fallbackNameParts.length > 1 ? fallbackNameParts.slice(-1).join(" ") : ""),
     username: user.username,
     identity_number: user.identity_number ?? "",
     home_address: user.home_address ?? "",
@@ -81,23 +85,26 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
 
   const [selectedUserType, setSelectedUserType] = useState(currentUserType);
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId);
+  const displayName = user.first_name || user.full_name || user.username;
 
   const isNewAdmin = selectedUserType === "administrador";
   const isNewSupervisor = selectedUserType === "supervisor";
   const usernameValid = USERNAME_PATTERN.test(editValues.username);
-  const fullNameValid = FULL_NAME_PATTERN.test(editValues.full_name.trim());
+  const firstNameValid = NAME_PATTERN.test(editValues.first_name.trim());
+  const lastNameValid = NAME_PATTERN.test(editValues.last_name.trim());
   const identityNumberValid = TEN_DIGIT_PATTERN.test(editValues.identity_number);
   const homeAddressValid = editValues.home_address.trim().length > 0;
   const emailValid = EMAIL_PATTERN.test(user.email ?? "");
   const phoneValid = TEN_DIGIT_PATTERN.test(editValues.phone);
-  const canSaveProfile = usernameValid && fullNameValid && identityNumberValid && homeAddressValid && emailValid && phoneValid;
+  const canSaveProfile = usernameValid && firstNameValid && lastNameValid && identityNumberValid && homeAddressValid && emailValid && phoneValid;
 
   const saveUser = useMutation({
     mutationFn: async () => {
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
-          full_name: editValues.full_name,
+          first_name: editValues.first_name.trim(),
+          last_name: editValues.last_name.trim(),
           username: editValues.username,
           identity_number: editValues.identity_number.trim() || null,
           home_address: editValues.home_address.trim() || null,
@@ -240,12 +247,12 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
             {avatarPreview ? (
               <img
                 src={avatarPreview}
-                alt={user.full_name}
+                alt={displayName}
                 className="h-16 w-16 rounded-full object-cover ring-4 ring-primary/20 transition-opacity group-hover:opacity-70"
               />
             ) : (
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-2xl font-black text-primary ring-4 ring-primary/10 transition-opacity group-hover:opacity-70">
-                {user.full_name.charAt(0).toUpperCase()}
+                {displayName.charAt(0).toUpperCase()}
               </div>
             )}
             <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
@@ -265,14 +272,14 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           </div>
 
           <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-lg font-black text-slate-900">{user.full_name}</DialogTitle>
+            <DialogTitle className="truncate text-lg font-black text-slate-900">{displayName}</DialogTitle>
             <p className="text-sm text-muted-foreground">@{user.username}</p>
             <p className="text-xs text-muted-foreground">{user.email}</p>
           </div>
 
           <ChangePasswordDialog
             targetUserId={user.id}
-            targetUserName={user.full_name}
+            targetUserName={displayName}
             targetUserEmail={user.email ?? null}
             targetUsername={user.username}
             trigger={
@@ -314,17 +321,31 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombre completo</label>
-              <Input
-                value={editValues.full_name}
-                onChange={(e) => setEditValues({ ...editValues, full_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
-                className="h-10 rounded-xl border-slate-200"
-                disabled={isProtected}
-              />
-              {editValues.full_name && !fullNameValid && (
-                <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
-              )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Nombres</label>
+                <Input
+                  value={editValues.first_name}
+                  onChange={(e) => setEditValues({ ...editValues, first_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
+                  className="h-10 rounded-xl border-slate-200"
+                  disabled={isProtected}
+                />
+                {editValues.first_name && !firstNameValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Apellidos</label>
+                <Input
+                  value={editValues.last_name}
+                  onChange={(e) => setEditValues({ ...editValues, last_name: e.target.value.replace(/[^\p{L}\s]/gu, "") })}
+                  className="h-10 rounded-xl border-slate-200"
+                  disabled={isProtected}
+                />
+                {editValues.last_name && !lastNameValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras</p>
+                )}
+              </div>
             </div>
 
             <div className="space-y-1.5">

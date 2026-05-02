@@ -1,11 +1,16 @@
 export interface UserDisplayProfile {
   id: string;
+  first_name?: string | null;
+  last_name?: string | null;
   full_name?: string | null;
   username?: string | null;
   email?: string | null;
 }
 
 export function getUserDisplayName(profile?: UserDisplayProfile | null) {
+  const firstName = String(profile?.first_name ?? "").trim();
+  if (firstName) return firstName;
+
   const fullName = String(profile?.full_name ?? "").trim();
   if (fullName) return fullName;
 

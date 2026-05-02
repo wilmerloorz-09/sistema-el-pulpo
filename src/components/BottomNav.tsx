@@ -3,6 +3,7 @@ import { useLocation, Link } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import {
@@ -29,8 +30,8 @@ function getInitials(name?: string | null) {
 const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => {
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
-  const initials = getInitials(profile?.full_name);
-  const accountLabel = profile?.full_name || profile?.username || "Cuenta";
+  const accountLabel = getUserDisplayName(profile);
+  const initials = getInitials(accountLabel);
   const location = useLocation();
 
 
