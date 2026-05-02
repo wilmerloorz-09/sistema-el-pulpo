@@ -12,7 +12,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { cn } from "@/lib/utils";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
-import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
+import { fetchOrderDetail, fetchTakeoutSiblingOrders, getOrderQueryKey } from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
 import {
   Dialog,
@@ -200,6 +200,20 @@ const Mesas = () => {
     if (!canCreateTakeoutOrder || !user || !activeBranchId) return;
     setCreatingTakeout(true);
     try {
+      const activeTakeoutOrders = await fetchTakeoutSiblingOrders(activeBranchId);
+      const existingOrderId = activeTakeoutOrders[0]?.id ?? null;
+      if (existingOrderId) {
+        toast.success("Entrando a Para Llevar...");
+        navigate(`/ordenes?order=${existingOrderId}&from=mesas`);
+        void qc.prefetchQuery({
+          queryKey: getOrderQueryKey(existingOrderId),
+          queryFn: () => fetchOrderDetail(existingOrderId),
+          staleTime: 15_000,
+          gcTime: 10 * 60_000,
+        });
+        return;
+      }
+
       const now = new Date().toISOString();
       const { data, error } = await supabase.rpc("create_takeout_order" as any, {
         p_branch_id: activeBranchId,

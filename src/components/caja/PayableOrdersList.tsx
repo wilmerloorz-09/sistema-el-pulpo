@@ -171,6 +171,7 @@ export default function PayableOrdersList({
                     : order.items.reduce((sum, item) => sum + item.pending_total, 0);
                   const pendingUnitsText = `${pending} ${pending === 1 ? "unidad pendiente" : "unidades pendientes"}`;
                   const rowCode = getOrderRef(order.order_code, order.order_number);
+                  const displayRowCode = rowCode === "Borrador" ? "Sin codigo" : rowCode;
                   const isExpanded = expandedOrderId === order.id;
 
                   return (
@@ -213,7 +214,7 @@ export default function PayableOrdersList({
 
                         <div className="min-w-0">
                           <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
-                            {rowCode}
+                            {displayRowCode}
                           </p>
                         </div>
 

@@ -1147,7 +1147,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         : [];
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
       const items = await dbSelect<any>("order_items", {
-        select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, paid_at, tray_item_type, tray_container_cost",
+        select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
         filters: [{ column: "order_id", op: "in", value: orderIds }]
       });
 
@@ -1198,7 +1198,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       return orders
         .map((o) => {
-          const orderItems = (items ?? []).filter((i) => i.order_id === o.id);
+          const orderItems = (items ?? []).filter((i) => i.order_id === o.id && i.status !== "DRAFT");
           const mappedItems = orderItems
             .map((i) => {
               const quantities = computeOperationalQuantities({
@@ -1780,12 +1780,12 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         activePaymentsByOrder
       ] = await Promise.all([
         dbSelect<any>("orders", {
-          select: "id, order_type, is_special, special_total_manual, table_id",
+          select: "id, order_type, status, is_special, special_total_manual, table_id",
           filters: [{ column: "id", op: "eq", value: orderId }]
         }).then(res => res[0]),
         fetchOperationalMapsForOrders([orderId]),
         dbSelect<any>("order_items", {
-          select: "id, quantity, unit_price, total, paid_at",
+          select: "id, quantity, unit_price, total, status, paid_at",
           filters: [{ column: "order_id", op: "eq", value: orderId }]
         }),
         !isSpecial ? fetchActivePaymentItemsForOrderItems(itemIds) : Promise.resolve([]),
@@ -1793,6 +1793,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       ]);
 
       if (!orderData) throw new Error("Orden no encontrada");
+      if (orderData.status === "DRAFT") {
+        throw new Error("Una orden borrador no puede cobrarse en caja.");
+      }
 
       if (!isSpecial) {
         const dbItems = allDbItems.filter(item => itemIds.includes(item.id));
@@ -1801,6 +1804,9 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
         for (const itemSelection of itemSelections) {
           const dbItem = dbItemMap[itemSelection.itemId];
+          if (!dbItem || dbItem.status === "DRAFT") {
+            throw new Error("Un item borrador no puede cobrarse en caja.");
+          }
           const quantities = computeOperationalQuantities({
             quantityOrdered: Number(dbItem.quantity ?? 0),
             quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,

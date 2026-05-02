@@ -166,6 +166,54 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
     });
 }
 
+export async function fetchTakeoutSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
+  const takeoutOrders = await dbSelect<any>("orders", {
+    select: "id, order_number, order_code, table_order_position, status, created_at, order_items(id)",
+    filters: [
+      { column: "branch_id", op: "eq", value: branchId },
+      { column: "order_type", op: "eq", value: "TAKEOUT" },
+      { column: "is_tray_order", op: "eq", value: false },
+      { column: "is_special", op: "eq", value: false },
+      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }
+    ]
+  });
+
+  if (!takeoutOrders || takeoutOrders.length === 0) return [];
+
+  const takeoutOrderIds = takeoutOrders.map((order: any) => order.id).filter(Boolean);
+  const dispatchEvents = takeoutOrderIds.length > 0
+    ? await dbSelect<any>("order_dispatch_events", {
+        select: "order_id",
+        filters: [
+          { column: "order_id", op: "in", value: takeoutOrderIds },
+          { column: "status", op: "eq", value: "APPLIED" },
+        ],
+      })
+    : [];
+  const actuallyDispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+
+  return takeoutOrders
+    .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
+    .map((sibling, index) => ({
+      id: sibling.id,
+      order_number: sibling.order_number,
+      order_code: sibling.order_code ?? null,
+      split_code: null,
+      table_order_position: Number(sibling.table_order_position ?? 0) || index + 1,
+      item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
+    }))
+    .sort((left, right) => {
+      const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
+      const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
+
+      if (leftPos !== rightPos) {
+        return leftPos - rightPos;
+      }
+
+      return Number(left.order_number ?? 0) - Number(right.order_number ?? 0);
+    });
+}
+
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",

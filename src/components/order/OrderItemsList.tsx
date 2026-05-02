@@ -269,7 +269,7 @@ const OrderItemsList = ({
                     <button
                       type="button"
                       className={cn(
-                        "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:break-words sm:whitespace-normal sm:pr-0 sm:text-sm",
+                        "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:pr-0 sm:text-sm",
                         isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1"
                       )}
                     >
@@ -281,7 +281,7 @@ const OrderItemsList = ({
                   </PopoverContent>
                 </Popover>
 
-                {itemStage !== "draft" ? (
+                {itemStage !== "draft" && !showControls ? (
                   itemStage === "partial" ? (
                     <Popover>
                       <PopoverTrigger asChild>
