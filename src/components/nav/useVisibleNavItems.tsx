@@ -56,7 +56,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-amber-200 hover:bg-amber-50/90 hover:text-amber-700",
       iconIdle: "bg-amber-50 text-amber-600",
     },
-    visible: (permissions) => canView(permissions, "ordenes") || canView(permissions, "mesas"),
+    visible: () => false,
   },
   {
     to: "/despacho",
@@ -167,7 +167,7 @@ export function useVisibleNavItems() {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
         }
         if (item.to === "/editar-orden") {
-          return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canEditOrders);
+          return false;
         }
         return hasSupervisorBypass
           || Boolean(shiftGateQuery.data?.canServeTables)

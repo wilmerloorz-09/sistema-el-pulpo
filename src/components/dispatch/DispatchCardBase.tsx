@@ -248,7 +248,7 @@ export function DispatchCardBase({
     <div className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
       <div
         onClick={onToggleExpand}
-        className="group cursor-pointer px-4 py-3 transition-colors hover:bg-slate-100/50 sm:grid sm:gap-3 sm:px-8 sm:py-3.5 sm:grid-cols-[auto_minmax(140px,1.1fr)_minmax(180px,1fr)_minmax(110px,0.7fr)_minmax(180px,1fr)_auto] sm:items-center"
+        className="group cursor-pointer px-3 py-2.5 transition-colors hover:bg-slate-100/50 sm:grid sm:gap-2 sm:px-6 sm:py-3 sm:grid-cols-[32px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(90px,0.7fr)_minmax(120px,1fr)_minmax(140px,1.1fr)] sm:items-center"
       >
         <div className="sm:contents">
           <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 sm:contents">
@@ -273,7 +273,7 @@ export function DispatchCardBase({
                   )}
                 </span>
                 <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                  <p className="truncate text-base font-semibold tracking-[-0.02em] text-slate-950 sm:text-lg">
+                  <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-950 sm:text-base">
                     {label}
                   </p>
                   {order.created_by_name && (
@@ -306,10 +306,10 @@ export function DispatchCardBase({
 
             <div className="col-start-2 flex min-w-0 items-center justify-between gap-3 sm:contents">
               <div className="min-w-0 sm:text-right">
-                <p className="truncate text-sm font-semibold text-slate-950">
+                <p className="truncate text-xs font-semibold text-slate-950 sm:text-[13px]">
                   {summaryText}
                 </p>
-                <p className="mt-1 text-sm font-black text-emerald-700 sm:text-base">
+                <p className="mt-0.5 text-xs font-black text-emerald-700 sm:text-sm">
                   Total {formatMoney(orderTotal)}
                 </p>
               </div>
@@ -320,7 +320,7 @@ export function DispatchCardBase({
                     "inline-flex items-center gap-1.5 font-mono text-sm font-semibold",
                     isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500"
                   )}>
-                    <Clock className="h-4 w-4 shrink-0" />
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
                     {timeDisplay}
                   </div>
                 </div>
@@ -336,7 +336,7 @@ export function DispatchCardBase({
                         e.stopPropagation();
                         onMarkOrderReady(order);
                       }}
-                      className="h-9 min-w-[6.5rem] gap-1.5 rounded-full px-4 text-sm font-semibold"
+                      className="h-8 min-w-[5.5rem] gap-1 rounded-full px-3 text-xs font-bold sm:h-9 sm:min-w-[6rem] sm:text-sm"
                     >
                       {order.locked_for_editing ? <Lock className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
                       {order.locked_for_editing ? "Editando" : "Listo"}
@@ -350,7 +350,7 @@ export function DispatchCardBase({
           </div>
         </div>
         <div className="hidden min-w-0 sm:block">
-          <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
+          <p className="truncate font-mono text-[11px] font-bold tracking-[0.05em] text-slate-500 sm:text-xs">
             {getOrderRef(order.order_code, order.order_number)}
           </p>
         </div>

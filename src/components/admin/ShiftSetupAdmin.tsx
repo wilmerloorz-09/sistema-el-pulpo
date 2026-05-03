@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -58,7 +58,7 @@ interface ZeroValueSpecialOrder {
 const OPERATIVE_ROLE_KEYS: Array<keyof Pick<
   ShiftUserRow,
   "can_serve_tables" | "can_access_orders" | "can_edit_orders" | "can_dispatch_orders" | "can_manage_products" | "can_use_caja" | "can_authorize_order_cancel" | "is_supervisor"
->> = ["can_serve_tables", "can_access_orders", "can_edit_orders", "can_dispatch_orders", "can_manage_products", "can_use_caja", "can_authorize_order_cancel", "is_supervisor"];
+>> = ["can_serve_tables", "can_access_orders", "can_dispatch_orders", "can_manage_products", "can_use_caja", "can_authorize_order_cancel", "is_supervisor"];
 
 type ShiftUserRoleKey = keyof Pick<
   ShiftUserRow,
@@ -1797,13 +1797,6 @@ const ShiftSetupAdmin = () => {
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_access_orders", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Ordenes</span>
-                      </label>
-                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
-                        <Checkbox
-                          checked={userState?.can_edit_orders ?? false}
-                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_edit_orders", c === true)}
-                        />
-                        <span className="min-w-0 text-muted-foreground">Editar Ordenes</span>
                       </label>
                       <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
