@@ -14,6 +14,9 @@ function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[
   });
 }
 
+import { toast } from "sonner";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
+
 interface Props {
   orders: PayableOrder[];
   paymentMethods: { id: string; name: string }[];
@@ -56,6 +59,7 @@ export default function PayableOrdersList({
   onAutoOpenOrderConsumed,
   onTakeControl,
 }: Props) {
+  const { isTablet10 } = useBreakpoint();
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -238,6 +242,10 @@ export default function PayableOrdersList({
                             disabled={readOnly || order.locked_for_editing}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (!isTablet10) {
+                                toast.error("El dispositivo es demasiado pequeño para operar caja.");
+                                return;
+                              }
                               setSelectedOrder(order);
                             }}
                             className="h-9 rounded-full border border-[#15803d] bg-[#15803d] px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"

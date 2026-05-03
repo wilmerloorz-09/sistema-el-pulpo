@@ -80,6 +80,8 @@ export default function ShiftSummary({
     .filter((method) => isCashPaymentMethodName(method.methodName))
     .reduce((sum, method) => sum + method.amount, 0);
   const totalNonCashCollected = totalCollected - totalCashCollected;
+  const cashPhysicalDelta = totalCurrent - totalInitial;
+  const cashBalance = cashPhysicalDelta - totalCashCollected;
   const opened = new Date(shift.opened_at);
   const elapsed = Math.floor((Date.now() - opened.getTime()) / 60000);
   const hours = Math.floor(elapsed / 60);
@@ -217,7 +219,7 @@ export default function ShiftSummary({
                       <div className="mb-1.5 flex items-start justify-between gap-2">
                         <div>
                           <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-700">Diferencia</p>
-                          <p className=" mt-1 text-[26px] font-bold leading-none text-emerald-900">${(totalCurrent - totalInitial).toFixed(2)}</p>
+                          <p className=" mt-1 text-[26px] font-bold leading-none text-emerald-900">${cashPhysicalDelta.toFixed(2)}</p>
                         </div>
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
                           <Coins className="h-4 w-4" />
@@ -225,6 +227,41 @@ export default function ShiftSummary({
                       </div>
                       <p className="text-xs text-slate-600">Actual menos apertura</p>
                     </div>
+                  </div>
+
+                  <div className={`mt-1 rounded-xl border px-3 py-2.5 ${
+                    Math.abs(cashBalance) < 0.01
+                      ? "border-emerald-300 bg-gradient-to-r from-emerald-50 to-white"
+                      : "border-red-300 bg-gradient-to-r from-red-50 to-white"
+                  }`}>
+                    <div className="mb-1.5 flex items-start justify-between gap-2">
+                      <div>
+                        <p className={`text-[10px] uppercase tracking-[0.22em] ${
+                          Math.abs(cashBalance) < 0.01 ? "text-emerald-700" : "text-red-700"
+                        }`}>Cuadre de caja</p>
+                        <p className={`mt-1 text-[26px] font-bold leading-none ${
+                          Math.abs(cashBalance) < 0.01 ? "text-emerald-900" : "text-red-900"
+                        }`}>${cashBalance >= 0 ? "+" : "-"}${Math.abs(cashBalance).toFixed(2)}</p>
+                      </div>
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-sm ${
+                        Math.abs(cashBalance) < 0.01
+                          ? "border-emerald-200 bg-white text-emerald-700"
+                          : "border-red-200 bg-white text-red-600"
+                      }`}>
+                        {Math.abs(cashBalance) < 0.01
+                          ? <Coins className="h-4 w-4" />
+                          : <AlertTriangle className="h-4 w-4" />
+                        }
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      {Math.abs(cashBalance) < 0.01
+                        ? "Diferencia fisica coincide con ventas en efectivo"
+                        : cashBalance > 0
+                          ? `Sobran $${Math.abs(cashBalance).toFixed(2)} vs ventas en efectivo`
+                          : `Faltan $${Math.abs(cashBalance).toFixed(2)} vs ventas en efectivo`
+                      }
+                    </p>
                   </div>
                 </div>
 

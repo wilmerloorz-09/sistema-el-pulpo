@@ -425,7 +425,7 @@ const OrdenesContent = () => {
   const { user } = useAuth();
   const { activeBranchId, activeBranch, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
-  const { isDesktop } = useBreakpoint();
+  const { isDesktop, isTablet10 } = useBreakpoint();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
   const [pendingTrayType, setPendingTrayType] = useState<TrayItemType | null>(null);
@@ -1275,11 +1275,9 @@ const OrdenesContent = () => {
     order.status === "KITCHEN_DISPATCHED";
 
   const canEditItems =
-    (canOperateOrders || fromEditar) &&
+    (canUseEditarOrden || fromEditar) &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
-    !hasPaidItems &&
-    !hasDispatchedItems &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
@@ -2079,8 +2077,12 @@ const OrdenesContent = () => {
             try {
               await sendToKitchen.mutateAsync();
               if (canUseCaja && (order?.id || orderId)) {
-                // Solo se abre por clic fisico aqui
-                setPaymentDialogOpenForOrderId(orderId);
+                if (isTablet10) {
+                  // Solo se abre por clic fisico aqui
+                  setPaymentDialogOpenForOrderId(orderId);
+                } else {
+                  toast.error("El dispositivo es demasiado pequeño para operar caja.");
+                }
               }
             } catch (e) {
               // error handled by hook
@@ -2162,18 +2164,12 @@ const OrdenesContent = () => {
                 </Button>
               )}
 
-              {!fromEditar && hasSentItems && (canEditItems || hasPaidItems || hasDispatchedItems) && (
+              {!fromEditar && hasSentItems && canUseEditarOrden && (
                 <Button
                   variant="outline"
                   className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100"
                   disabled={!canEditItems}
-                  title={
-                    hasPaidItems
-                      ? "No puedes editar una orden con items pagados"
-                      : hasDispatchedItems
-                        ? "No puedes editar una orden con items despachados"
-                      : "Editar orden"
-                  }
+                  title="Editar orden"
                   onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${originParam}`)}
                 >
                   <Pencil className="h-5 w-5" />

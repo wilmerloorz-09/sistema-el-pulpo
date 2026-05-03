@@ -1452,7 +1452,7 @@ export function useCaja(params?: {
         dbSelect<any>("payment_methods", { select: "id, name", filters: [{ column: "id", op: "in", value: methodIds }] }),
         dbSelect<any>("profiles", { select: "id, first_name, full_name, username", filters: [{ column: "id", op: "in", value: createdByIds }] }),
         dbSelect<any>("payments", { select: "order_id, amount, notes", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
-        dbSelect<any>("order_items", { select: "id, order_id, total, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
+        dbSelect<any>("order_items", { select: "id, order_id, total, status, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
       ]);
 
       const tableIdSet = new Set<string>(orders.map((o) => o.table_id).filter(Boolean));
@@ -1504,10 +1504,11 @@ export function useCaja(params?: {
           orderHasVoidedPaymentsMap[payment.order_id] = true;
         }
         if (meta.reversed || meta.voided || meta.transferProofPending) continue;
-        orderPaidMap[payment.order_id] = (orderPaidMap[payment.order_id] || 0) + Number(payment.amount);
+        orderPaidMap[payment.order_id] = roundMoney((orderPaidMap[payment.order_id] || 0) + Number(payment.amount));
       }
       for (const item of allOrderItems) {
-        orderRealTotalMap[item.order_id] = (orderRealTotalMap[item.order_id] || 0) + Number(item.total);
+        if (item.status === "CANCELLED" || item.status === "DRAFT") continue;
+        orderRealTotalMap[item.order_id] = roundMoney((orderRealTotalMap[item.order_id] || 0) + Number(item.total));
       }
 
       const paymentItemsByPayment: Record<string, PaymentItemRow[]> = {};
@@ -1556,7 +1557,9 @@ export function useCaja(params?: {
           status = "REVERSED";
         } else if (meta.voided) {
           status = "VOIDED";
-        } else if (pendingAmount > 0) {
+        } else if (order.status === "PAID") {
+          status = "APPLIED";
+        } else if (pendingAmount > 0.005) {
           status = "PARTIAL";
         }
 
@@ -1763,7 +1766,7 @@ export function useCaja(params?: {
       if (cashMethods.length > 1) throw new Error("Solo puede existir un pago en efectivo por cobro");
       const cashMethodId = cashMethods[0]?.id ?? null;
       const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
-      const effectiveCashChangeDenoms = cashChangeDenoms;
+      const effectiveCashChangeDenoms = cashMethodId ? cashChangeDenoms : [];
 
       const appliedTotal = roundMoney(paymentSplits.reduce((sum, split) => sum + Number(split.amount), 0));
       if (Math.abs(appliedTotal - totalAmount) > 0.01) {
@@ -1954,6 +1957,7 @@ export function useCaja(params?: {
           cashMovementsPromises.push(
             insertCashMovementCompat({
               shift_id: shift.id,
+              payment_id: cashPaymentId,
               denomination_id: cd.denomination_id,
               movement_type: "CHANGE_OUT",
               qty_delta: cd.qty,
@@ -1978,35 +1982,10 @@ export function useCaja(params?: {
 
       await Promise.all(cashMovementsPromises);
 
-      const cashDenomDeltaById = new Map<string, number>();
-      for (const rd of effectiveCashReceivedDenoms) {
-        cashDenomDeltaById.set(rd.denomination_id, (cashDenomDeltaById.get(rd.denomination_id) ?? 0) + rd.qty);
-      }
-      for (const cd of effectiveCashChangeDenoms) {
-        cashDenomDeltaById.set(cd.denomination_id, (cashDenomDeltaById.get(cd.denomination_id) ?? 0) - cd.qty);
-      }
-
-      if (cashDenomDeltaById.size > 0) {
-        const currentQtyByDenomId = new Map(
-          shift.denoms.map((denomination) => [
-            denomination.denomination_id,
-            Number(denomination.qty_current ?? 0),
-          ]),
-        );
-
-        await Promise.all(
-          Array.from(cashDenomDeltaById.entries()).map(async ([denominationId, qtyDelta]) => {
-            const nextQty = (currentQtyByDenomId.get(denominationId) ?? 0) + qtyDelta;
-            const { error: updateDenomError } = await supabase
-              .from("cash_shift_denoms")
-              .update({ qty_current: nextQty })
-              .eq("shift_id", shift.id)
-              .eq("denomination_id", denominationId);
-
-            if (updateDenomError) throw updateDenomError;
-          }),
-        );
-      }
+      // NOTE: cash_shift_denoms.qty_current is updated atomically by the
+      // registrar_movimiento_caja_operativo RPC for each PAYMENT_IN / CHANGE_OUT.
+      // Do NOT manually update qty_current here — doing so causes race conditions
+      // (double-updates from stale cached values) that corrupt denomination counts.
 
       const refreshedShiftDenoms = await dbSelect<any>("cash_shift_denoms", {
         select: "denomination_id, qty_current",
