@@ -22,6 +22,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
 - Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
+- Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
 
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
@@ -70,8 +71,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - reapertura correcta de orden/mesa/division cuando aplique
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
 
-### 7. Mesas / Unir / Dividir
+### 7. Mesas y órdenes independientes
 - No asumir que `table_splits` siga siendo la fuente principal de tabs/cuentas activas.
+- El concepto de "divisiones" se reemplaza por "múltiples órdenes dentro de una mesa".
 - La numeracion/orden visible vigente vive en `orders.table_order_position`.
 - `MergeSplitOrdersDialog` debe seguir apoyandose en `move_dine_in_order_items_between_orders(...)`.
 - Esa operacion debe mantener:
@@ -91,11 +93,17 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Regla UX obligatoria:
   - si existe al menos un item con anulacion pendiente, la orden no debe permitir agregar items, editar items, `Cerrar orden` ni `Anular orden`
   - el item afectado debe mostrarse como `Pendiente anulacion`
+- `Eliminar orden` completa desde mesa/orden activa es un flujo distinto al selector de anulacion por cantidades.
+- Debe mostrar confirmacion simple antes de ejecutar.
+- **Unificación de UI:** No mostrar opciones duplicadas de "Eliminar orden" en el menú de acciones; unificar la lógica para que el botón resuelva si borra borrador o anula orden enviada.
+- Solo se permite si todos los items estan en `DRAFT` o `En caja`; si hay items despachados, pagados o pendientes de anulacion, no debe mostrarse ni ejecutarse.
+- La validacion debe repetirse justo antes de ejecutar, no confiar solo en el estado visual.
 
-### 9. Editar Orden
+### 9. Editar Orden e In-Situ
 - `Editar Orden` es buffered, no inline y opera de manera **In-Situ**.
 - Debe seguir aplicando `orders.locked_for_editing` en DB.
-- **Contexto de Navegación:** El flujo de edición no debe romper el contexto de navegación del usuario. Usar el parámetro `origin` para que el Sidebar mantenga su estado resaltado. Al aceptar/cancelar cambios, el usuario debe permanecer en la vista de la orden.
+- **Contexto de Navegación:** El flujo de edición y la navegación desde Mesas deben preservar el contexto original. Usar el parámetro `origin=mesas` para que el Sidebar y el BottomNav mantengan su estado resaltado.
+- **Resaltado Manual:** Usar `forceActive` y `suppressActive` en `NavLink` y `BottomNav` para anular la lógica automática basada solo en la URL técnica.
 - **Bloqueo en Caja:** Mientras una orden esté en edición (`locked_for_editing`), el botón "Cobrar" en el módulo de Caja debe estar deshabilitado automáticamente.
 - No exponer controles directos de cantidad para items originales despachados/cerrados en ese modulo.
 - Los controles `+/-`, eliminar e input de cantidad solo deben existir para items nuevos agregados durante la sesion de edicion.
@@ -109,9 +117,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
 - Toda pantalla que visualiza ordenes debe mostrar el usuario creador desde `orders.created_by`.
-- Resolver nombres de usuario con el helper central (`full_name`, `username`, `email`, `Usuario`) y no duplicar fallbacks distintos por pantalla.
+- Resolver nombres de usuario con el helper central (`first_name`, `full_name`, `username`, `email`, `Usuario`) y no duplicar fallbacks distintos por pantalla.
 - Una linea `DRAFT` no debe aparecer en pestanas operativas posteriores.
 - En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
+- El cálculo de cambio (`changeAmount`) debe realizarse de manera unificada, agregando los excedentes de todos los métodos de pago en una sola cifra coherente.
 - No asumir que `orders.total` de una orden especial coincide con `special_total_manual` o con `sum(order_items.total)`.
 
 ### 11. Comprobantes de transferencia
@@ -122,6 +131,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ## Convenciones de implementacion
 
 ### Frontend
+- En usuarios, no reintroducir `Nombre completo` como campo principal; usar `Nombres` (`profiles.first_name`) y `Apellidos` (`profiles.last_name`).
+- En listados compactos de usuarios, mostrar `Nombres` y nombre de usuario; no agregar cedula/telefono fuera de administracion o detalle.
 - Si tocas catalogo, validar `Ordenes`, `Despacho`, `Caja`, ticket y vistas derivadas.
 - Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas` y estado visible de la orden reabierta.
 - Si tocas `Unir/Dividir`, validar `MergeSplitOrdersDialog`, `Ordenes`, `Mesas` y cantidades movibles vs cantidades pagadas.
@@ -144,6 +155,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
 - Si agregas columnas de sesion/perfil operativo, actualiza los resets para limpiar valores efimeros.
+- Si cambias columnas de perfil, preservar `profiles.first_name`, `profiles.last_name` y la compatibilidad legacy de `profiles.full_name`.
 
 ## Checklist minimo antes de cerrar una tarea
 1. Si hubo cambio de codigo, correr verificacion tecnica adecuada.

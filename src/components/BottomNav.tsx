@@ -36,7 +36,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
 
 
   const searchParams = new URLSearchParams(location.search);
-  const fromMesas = location.pathname === "/ordenes" && searchParams.get("from") === "mesas";
+  const fromMesas = location.pathname === "/ordenes" && (searchParams.get("from") === "mesas" || searchParams.get("origin") === "mesas");
   const fromEditar = location.pathname === "/ordenes" && searchParams.get("from") === "editar";
 
   if (visibleItems.length === 0) {

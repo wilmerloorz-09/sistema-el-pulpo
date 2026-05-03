@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, BarChart3, Clock, Coins, DollarSign, History, Loader2, Lock, ShieldAlert, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, BarChart3, Clock, Coins, DollarSign, History, Loader2, Lock, ShieldAlert, WalletCards } from "lucide-react";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { isCashPaymentMethodName } from "@/lib/paymentMethods";
@@ -153,8 +153,8 @@ export default function ShiftSummary({
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
           onClick={() => setShowMovements(true)}
         >
-          <History className="h-4 w-4" />
-          Movimientos
+          <ArrowRightLeft className="h-4 w-4" />
+          Cambio
         </button>
         {!readOnly && (
           <Button
@@ -170,10 +170,10 @@ export default function ShiftSummary({
       </div>
 
       <Dialog open={showTotals} onOpenChange={setShowTotals}>
-        <DialogContent className="flex max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.45)] sm:max-w-[1180px] xl:max-w-[1320px]">
+        <DialogContent className="font-sans flex max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.45)] sm:max-w-[1180px] xl:max-w-[1320px]">
           <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" /> Resumen de Caja
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <DollarSign className="h-5 w-5 text-primary" /> Resumen de caja
             </DialogTitle>
           </DialogHeader>
 
@@ -191,7 +191,7 @@ export default function ShiftSummary({
                       <div className="mb-1.5 flex items-start justify-between gap-2">
                         <div>
                           <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">Apertura</p>
-                          <p className="font-display mt-1 text-[26px] font-black leading-none text-slate-900">${totalInitial.toFixed(2)}</p>
+                          <p className=" mt-1 text-[26px] font-bold leading-none text-slate-900">${totalInitial.toFixed(2)}</p>
                         </div>
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700 shadow-sm">
                           <Lock className="h-4 w-4" />
@@ -203,8 +203,8 @@ export default function ShiftSummary({
                     <div className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-white px-3 py-2.5">
                       <div className="mb-1.5 flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-[10px] uppercase tracking-[0.22em] text-violet-700">Actual</p>
-                          <p className="font-display mt-1 text-[26px] font-black leading-none text-violet-900">${totalCurrent.toFixed(2)}</p>
+                          <p className="text-[10px] uppercase text-violet-700">Actual</p>
+                          <p className=" mt-1 text-[26px] font-bold leading-none text-violet-900">${totalCurrent.toFixed(2)}</p>
                         </div>
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm">
                           <DollarSign className="h-4 w-4" />
@@ -217,7 +217,7 @@ export default function ShiftSummary({
                       <div className="mb-1.5 flex items-start justify-between gap-2">
                         <div>
                           <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-700">Diferencia</p>
-                          <p className="font-display mt-1 text-[26px] font-black leading-none text-emerald-900">${(totalCurrent - totalInitial).toFixed(2)}</p>
+                          <p className=" mt-1 text-[26px] font-bold leading-none text-emerald-900">${(totalCurrent - totalInitial).toFixed(2)}</p>
                         </div>
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
                           <Coins className="h-4 w-4" />
@@ -237,17 +237,17 @@ export default function ShiftSummary({
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white px-3 py-2.5">
                       <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">Cobrado total</p>
-                      <p className="font-display mt-1.5 text-[23px] font-black leading-none text-slate-900">${totalCollected.toFixed(2)}</p>
+                      <p className=" mt-1.5 text-[23px] font-bold leading-none text-slate-900">${totalCollected.toFixed(2)}</p>
                       <p className="mt-1.5 text-xs text-slate-600">Todos los metodos sumados</p>
                     </div>
                     <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5">
                       <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-700">En efectivo</p>
-                      <p className="font-display mt-1.5 text-[23px] font-black leading-none text-emerald-900">${totalCashCollected.toFixed(2)}</p>
+                      <p className=" mt-1.5 text-[23px] font-bold leading-none text-emerald-900">${totalCashCollected.toFixed(2)}</p>
                       <p className="mt-1.5 text-xs text-slate-600">Ingreso fisico registrado</p>
                     </div>
                     <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-white px-3 py-2.5">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-amber-700">No efectivo</p>
-                      <p className="font-display mt-1.5 text-[23px] font-black leading-none text-amber-900">${totalNonCashCollected.toFixed(2)}</p>
+                      <p className="text-[10px] uppercase text-amber-700">No efectivo</p>
+                      <p className=" mt-1.5 text-[23px] font-bold leading-none text-amber-900">${totalNonCashCollected.toFixed(2)}</p>
                       <p className="mt-1.5 text-xs text-slate-600">Transferencias y otros medios</p>
                     </div>
                   </div>
@@ -266,7 +266,7 @@ export default function ShiftSummary({
                           <p className="truncate text-sm font-semibold text-foreground">{method.methodName}</p>
                           <div className="mt-1.5 flex items-end justify-between gap-2">
                             <p className="text-xs text-muted-foreground">{method.paymentCount} cobro(s)</p>
-                            <span className="font-display text-lg font-black text-foreground">${method.amount.toFixed(2)}</span>
+                            <span className=" text-lg font-bold text-foreground">${method.amount.toFixed(2)}</span>
                           </div>
                         </div>
                       ))}
@@ -290,7 +290,7 @@ export default function ShiftSummary({
                 <div className="min-h-0 rounded-xl border border-border bg-card p-2.5">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold text-foreground">Movimientos de caja</p>
+                      <p className="text-sm font-semibold text-foreground">Cambios de caja</p>
                       <p className="text-xs text-muted-foreground">
                         No alteran el total esperado del turno.
                       </p>
@@ -329,10 +329,10 @@ export default function ShiftSummary({
       </Dialog>
 
       <Dialog open={showDenoms} onOpenChange={setShowDenoms}>
-        <DialogContent className="scrollbar-none max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] xl:max-w-6xl">
+        <DialogContent className="font-sans scrollbar-none max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] xl:max-w-6xl">
           <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <Coins className="h-5 w-5 text-primary" /> Desglose de Caja
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Coins className="h-5 w-5 text-primary" /> Desglose de caja
             </DialogTitle>
           </DialogHeader>
 
@@ -340,24 +340,24 @@ export default function ShiftSummary({
             <div className="space-y-2 rounded-2xl border border-sky-200 bg-sky-50/50 p-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold text-foreground">Apertura</span>
-                <span className="font-display text-lg font-black text-sky-700">${totalInitial.toFixed(2)}</span>
+                <span className=" text-lg font-bold text-sky-700">${totalInitial.toFixed(2)}</span>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
                 {sortedDenoms.map((denomination) => (
                   <div key={`initial-${denomination.id}`} className="grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border border-sky-100 bg-white p-1.5">
                     <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-1.5 py-1">
                       <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
-                      <span className="truncate text-sm font-black tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
+                      <span className="truncate text-sm font-bold tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
                     </div>
                     <div className="rounded-lg border-t border-sky-100 bg-white px-1.5 py-1.5">
                     <div className="grid grid-cols-2 items-end gap-1.5">
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700">Cant.</p>
-                        <p className="mt-0.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-center text-sm font-black tabular-nums text-slate-950">{denomination.qty_initial}</p>
+                        <p className="mt-0.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-center text-sm font-bold tabular-nums text-slate-950">{denomination.qty_initial}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700">Total</p>
-                        <p className="mt-0.5 text-sm font-black tabular-nums text-slate-800">
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-800">
                           ${(denomination.qty_initial * denomination.value).toFixed(2)}
                         </p>
                       </div>
@@ -371,24 +371,24 @@ export default function ShiftSummary({
             <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold text-foreground">Actual</span>
-                <span className="font-display text-lg font-black text-primary">${totalCurrent.toFixed(2)}</span>
+                <span className=" text-lg font-bold text-primary">${totalCurrent.toFixed(2)}</span>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
                 {sortedDenoms.map((denomination) => (
                   <div key={`current-${denomination.id}`} className="grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border border-emerald-100 bg-white p-1.5">
                     <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-emerald-50/80 px-1.5 py-1">
                       <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
-                      <span className="truncate text-sm font-black tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
+                      <span className="truncate text-sm font-bold tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
                     </div>
                     <div className="rounded-lg border-t border-emerald-100 bg-white px-1.5 py-1.5">
                     <div className="grid grid-cols-2 items-end gap-1.5">
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-700">Cant.</p>
-                        <p className="mt-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-center text-sm font-black tabular-nums text-slate-950">{denomination.qty_current}</p>
+                        <p className="mt-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-center text-sm font-bold tabular-nums text-slate-950">{denomination.qty_current}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-700">Total</p>
-                        <p className="mt-0.5 text-sm font-black tabular-nums text-slate-800">
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-800">
                           ${(denomination.qty_current * denomination.value).toFixed(2)}
                         </p>
                       </div>
@@ -406,23 +406,23 @@ export default function ShiftSummary({
         <Dialog open={showClose} onOpenChange={setShowClose}>
           <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="font-display">Cerrar Caja</DialogTitle>
+              <DialogTitle className="">Cerrar Caja</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-muted/50 p-3 text-center">
                   <p className="text-xs text-muted-foreground">Apertura</p>
-                  <p className="font-display text-lg font-bold text-foreground">${totalInitial.toFixed(2)}</p>
+                  <p className=" text-lg font-bold text-foreground">${totalInitial.toFixed(2)}</p>
                 </div>
                 <div className="rounded-xl bg-accent/10 p-3 text-center">
                   <p className="text-xs text-muted-foreground">En caja</p>
-                  <p className="font-display text-lg font-bold text-accent">${totalCurrent.toFixed(2)}</p>
+                  <p className=" text-lg font-bold text-accent">${totalCurrent.toFixed(2)}</p>
                 </div>
               </div>
 
               <div className="rounded-xl bg-primary/10 p-3 text-center">
                 <p className="text-xs text-muted-foreground">Diferencia</p>
-                <p className="font-display text-xl font-bold text-primary">
+                <p className=" text-xl font-bold text-primary">
                   ${(totalCurrent - totalInitial).toFixed(2)}
                 </p>
               </div>
@@ -458,7 +458,7 @@ export default function ShiftSummary({
       <Dialog open={showAnnul} onOpenChange={setShowAnnul}>
         <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2 text-rose-700">
+            <DialogTitle className=" flex items-center gap-2 text-rose-700">
               <ShieldAlert className="h-5 w-5" />
               Anular apertura de caja
             </DialogTitle>
@@ -511,7 +511,7 @@ export default function ShiftSummary({
       <AlertDialog open={showAnnulWarning} onOpenChange={setShowAnnulWarning}>
         <AlertDialogContent className="max-w-md rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-display text-lg font-black text-amber-950">
+            <AlertDialogTitle className=" text-lg font-bold text-amber-950">
               {annulWarning.title}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm leading-6 text-amber-900/80">
@@ -535,7 +535,7 @@ export default function ShiftSummary({
       <AlertDialog open={showCloseWarning} onOpenChange={setShowCloseWarning}>
         <AlertDialogContent className="max-w-md rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-display text-lg font-black text-amber-950">
+            <AlertDialogTitle className=" text-lg font-bold text-amber-950">
               {closeWarning.title}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm leading-6 text-amber-900/80">

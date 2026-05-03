@@ -663,7 +663,13 @@ function getPayableQuantityForOrderType(
   return quantities.quantityDispatchedAvailable;
 }
 
-export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
+export function useCaja(params?: { 
+  completedPaymentsFilters?: CompletedPaymentsFilters;
+  autoOpenOrderId?: string | null;
+}) {
+  const completedPaymentsFilters = params?.completedPaymentsFilters;
+  const autoOpenOrderId = params?.autoOpenOrderId;
+
   const { user } = useAuth();
   const { activeBranchId, activeBranch } = useBranch();
   const qc = useQueryClient();
@@ -1110,7 +1116,7 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
         select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot, locked_for_editing",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }],
-        orderBy: { column: "updated_at" }
+        orderBy: { column: "updated_at", ascending: false }
       });
       
       if (!orders || orders.length === 0) return [];
@@ -1157,8 +1163,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
       if (legacyProductIds.length > 0) {
         const menuNodes = await dbSelect<any>("menu_nodes", {
           select: "id, legacy_product_id, image_url, icon",
+          branchId: activeBranchId,
           filters: [
-            { column: "branch_id", op: "eq", value: activeBranchId },
             { column: "is_active", op: "eq", value: true },
             { column: "legacy_product_id", op: "in", value: legacyProductIds }
           ]
@@ -1667,8 +1673,8 @@ export function useCaja(completedPaymentsFilters?: CompletedPaymentsFilters) {
 
       const data = await dbSelect<any>("cash_register_templates", {
         select: "id, name, is_active, cash_register_template_denoms(denomination_id, qty)",
+        branchId: activeBranchId,
         filters: [
-          { column: "branch_id", op: "eq", value: activeBranchId },
           { column: "is_active", op: "eq", value: true }
         ],
         orderBy: { column: "name", ascending: true }

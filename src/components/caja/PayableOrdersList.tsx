@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
-import { ChevronDown, ChevronUp, CreditCard, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
+import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
 
@@ -59,6 +59,7 @@ export default function PayableOrdersList({
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
+  // Eliminamos el auto-open para que sea manual y no interfiera con otros modulos
   useEffect(() => {
     if (!selectedOrder) return;
 
@@ -67,17 +68,6 @@ export default function PayableOrdersList({
       setSelectedOrder(refreshedOrder);
     }
   }, [orders, selectedOrder?.id]);
-
-  useEffect(() => {
-    if (!autoOpenOrderId) return;
-
-    const orderToOpen = orders.find((order) => order.id === autoOpenOrderId);
-    if (!orderToOpen) return;
-
-    setSelectedOrder(orderToOpen);
-    setExpandedOrderId(orderToOpen.id);
-    onAutoOpenOrderConsumed?.();
-  }, [autoOpenOrderId, orders, onAutoOpenOrderConsumed]);
 
   const pendingUnits = (order: PayableOrder) =>
     order.items.reduce((sum, item) => sum + item.quantity_pending, 0);
@@ -147,8 +137,18 @@ export default function PayableOrdersList({
           <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
             {orders.length === 0 ? (
               <div className="px-6 py-16 text-center">
-                <p className="text-base font-medium text-slate-900">Sin ordenes por cobrar</p>
-                <p className="mt-2 text-sm text-slate-500">Cuando haya cuentas pendientes, apareceran aqui para cobrarlas rapido.</p>
+                {autoOpenOrderId ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-base font-medium text-slate-900">Preparando cuenta para cobrar...</p>
+                    <p className="text-sm text-slate-500">Espera un momento mientras cargamos los items.</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-base font-medium text-slate-900">Sin ordenes por cobrar</p>
+                    <p className="mt-2 text-sm text-slate-500">Cuando haya cuentas pendientes, apareceran aqui para cobrarlas rapido.</p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="divide-y divide-slate-200">
@@ -178,7 +178,7 @@ export default function PayableOrdersList({
                     <div key={order.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
                       <div
                         onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(220px,1.7fr)_minmax(150px,0.9fr)_minmax(100px,0.6fr)_minmax(140px,0.8fr)_auto] sm:items-center sm:px-8"
+                        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(220px,1.7fr)_minmax(150px,0.9fr)_minmax(100px,0.6fr)_auto] sm:items-center sm:px-8"
                       >
                         <div
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
@@ -229,9 +229,6 @@ export default function PayableOrdersList({
                           )}
                         </div>
 
-                        <div className="sm:text-right">
-                          <p className="text-sm text-slate-500">{pendingUnitsText}</p>
-                        </div>
 
                         <div className="sm:justify-self-end">
                           <Button
@@ -321,6 +318,7 @@ export default function PayableOrdersList({
         onDiscardPreparedTransferProof={onDiscardPreparedTransferProof}
         getTransferProofReadiness={getTransferProofReadiness}
         paying={paying}
+        open={!!selectedOrder}
         onClose={() => setSelectedOrder(null)}
         readOnly={readOnly}
       />

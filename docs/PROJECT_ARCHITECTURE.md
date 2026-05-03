@@ -44,7 +44,7 @@
 ### 5. Ordenes
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
 - Las lecturas de orden deben incluir `orders.created_by` cuando la pantalla visualiza ordenes.
-- El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.full_name`, `username`, `email` o `Usuario`.
+- El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.first_name`, `full_name`, `username`, `email` o `Usuario`.
 - El envio de borradores usa `submit_order_draft_items(...)`; mesa, para llevar y orden especial quedan primero cobrables en Caja.
 - Despacho recibe la orden despues del pago.
 - `Ordenes` usa lista expandible y detalle inline.
@@ -68,6 +68,10 @@
 - Regla de interfaz consolidada:
   - los items con solicitud pendiente deben mostrar `Pendiente anulacion`
   - si existe al menos un item pendiente, la orden entra en modo bloqueado para agregar/editar items, `Cerrar orden` y `Anular orden`
+- `Eliminar orden` en una orden activa es una accion directa con confirmacion simple; no usa el selector de anulacion por cantidades.
+- La accion solo esta disponible si todos los items estan en `DRAFT` o `En caja`.
+- La UI unifica esta acción para evitar duplicados en el menú de acciones, independientemente del origen de los items (borrador o enviados).
+- La eliminacion completa valida nuevamente esa regla antes de ejecutar para evitar borrar ordenes con items despachados, pagados o con anulacion pendiente.
 
 ### 6. Editar Orden
 - `Editar Orden` es una arquitectura buffered y **In-Situ**.
@@ -80,16 +84,18 @@
   - se registran las anulaciones derivadas del buffer
   - los items nuevos pasan directo a estado operativo (Despachado o "En Caja"), no vuelven a mesa
 - El modulo usa `Aceptar cambios` como accion principal; `Enviar` no debe mostrarse ahi.
+- El Sidebar preserva su estado resaltado (ej. "Mesas") mediante el parámetro de URL `origin`.
 
-### 7. Mesas y divisiones
+### 7. Mesas y órdenes
 - `restaurant_tables` sigue siendo la entidad fisica real.
-- `table_splits` queda como soporte legacy, pero ya no es la base principal para visualizacion de cuentas activas.
-- El orden visible actual de cuentas de mesa vive en `orders.table_order_position`.
+- El concepto de "divisiones" (`table_splits`) queda como soporte legacy.
+- La arquitectura actual trata cada cuenta como una orden independiente vinculada a la mesa.
+- El orden visible actual de órdenes de mesa vive en `orders.table_order_position`.
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
 - Esa lectura ya ignora borradores vacios al resolver ocupacion operativa de mesa.
 - `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
-- `Cerrar orden` para cuentas de mesa suelta `table_id` / `split_id` y mantiene la orden cobrable en `Caja`.
-- El flujo `Unir/Dividir` vive sobre `move_dine_in_order_items_between_orders(...)`.
+- `Cerrar orden` para cuentas de mesa suelta `table_id` y mantiene la orden cobrable en `Caja`.
+- El movimiento de items entre órdenes vive sobre `move_dine_in_order_items_between_orders(...)`.
 
 ### 8. Caja
 - `Caja` se divide en:
@@ -103,6 +109,7 @@
   - `close_cash_register(...)` no equivale a cierre de turno
 - La lista de ordenes por cobrar usa la cantidad ordenada activa completa antes del despacho para mesa y para llevar; orden especial cobra su valor activo configurado.
 - El botón "Cobrar" se deshabilita si la orden tiene `locked_for_editing = true`.
+- El cálculo de cambio (`changeAmount`) en el diálogo de pago se unifica para agregar excedentes de todos los métodos de pago (efectivo, transferencia, etc.).
 - Cierre de turno desde `Admin > Turno`:
   - si el turno esta abierto, el encabezado visible muestra la apertura del turno usando `cash_shifts.opened_at`
   - antes de bloquear por borradores, se cancelan automaticamente borradores vacios/no enviados mediante `cancel_empty_draft_orders_for_branch(...)`
@@ -155,7 +162,10 @@
 - `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo.
 
 ### 12. Usuarios
-- Crear/editar usuario incluye datos de contacto extendidos: nombre completo, cedula, direccion, telefono.
+- Crear/editar usuario incluye datos de contacto extendidos: nombres, apellidos, cedula, direccion, telefono.
+- `profiles.first_name` y `profiles.last_name` son los campos administrables para usuario.
+- `profiles.full_name` queda como compatibilidad legacy y debe reflejar `first_name` mediante `sync_profile_full_name()`.
+- En vistas compactas se muestra `Nombres` y nombre de usuario; cedula/telefono quedan para administracion o detalle.
 - La sucursal es opcional para operativos (Sin sucursal es valido) y obligatoria para supervisores.
 - El acceso se deriva del turno habilitado para operativos sin sucursal fija.
 
@@ -201,3 +211,4 @@
 9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` usando la resolucion central de perfil.
 10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
+12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.

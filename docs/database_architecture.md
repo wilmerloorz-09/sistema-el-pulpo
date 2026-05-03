@@ -15,6 +15,9 @@
 
 ### 1. Identidad y acceso
 - `profiles`
+  - `first_name`: nombres, campo visible principal del sistema.
+  - `last_name`: apellidos, usado en administracion/busqueda.
+  - `full_name`: compatibilidad legacy; debe reflejar `first_name` por `sync_profile_full_name()`.
 - `user_branches`
 - `user_branch_roles`
 - `user_branch_modules`
@@ -47,10 +50,10 @@
 - `order_item_dispatch_events`
 - `order_ready_notifications`
 
-### 4. Mesas
+### 4. Mesas y órdenes
 - `restaurant_tables`
-- `table_splits`
-- `orders.table_order_position`
+- `table_splits` (legacy)
+- `orders.table_order_position` (fuente actual para orden visual de cuentas)
 - `orders.table_name_snapshot`
 - `branches.reference_table_count`
 - `cash_shifts.active_tables_count`
@@ -82,7 +85,7 @@
 
 ### Ordenes
 - `orders.created_by` es la fuente del usuario que genero la orden y debe acompañar las lecturas operativas visibles.
-- Para mostrar el nombre, resolver contra `profiles.full_name`, luego `profiles.username`, luego `profiles.email`, con fallback `Usuario`.
+- Para mostrar el nombre, resolver contra `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`, con fallback `Usuario`.
 - `orders.menu_scope` conserva el arbol visual usado por la orden.
 - `orders.is_special` y `orders.special_total_manual` modelan `Orden Especial`.
 - En `Orden Especial`, `special_total_manual` es el valor manual visible/cobrable. No asumir que coincide con `orders.total` ni con `sum(order_items.total)`.
@@ -97,13 +100,17 @@
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
   - `orders.cancel_requested_at` / `orders.cancel_requested_by`
   - cabecera en `order_cancellations` con `status = 'VOIDED'` y `notes` tipo `[PENDING_REQUEST] ...`
+- La eliminacion completa de orden desde mesa/orden activa solo puede aplicarse si todos los items estan en `DRAFT` o en estado operativo `En caja`.
+- Si la orden mezcla items `DRAFT` y `En caja`, los `DRAFT` se eliminan como borrador y los enviados se anulan por cantidades operativas.
+- Esta acción se unifica en la UI para evitar duplicados, resolviendo internamente si se borra el borrador o se anula la orden enviada.
+- No se permite esa eliminacion si hay items despachados, pagados o con solicitud de anulacion pendiente.
 
-### Mesas / Unir / Dividir
+### Mesas / Múltiples órdenes
 - `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas.
-- `table_splits` sigue existiendo, pero ya no es la fuente principal de numeracion visible.
+- El concepto de "divisiones" (`table_splits`) queda como soporte legacy; cada cuenta es una orden independiente vinculada a la mesa.
 - `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
 - `get_branch_tables_overview(...)` ignora borradores vacios al calcular ocupacion operativa.
-- `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre ordenes `DINE_IN`.
+- `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre órdenes de mesa.
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
@@ -231,6 +238,9 @@
 - `20260428100000_support_double_app_session_for_cash_users.sql`
 - `20260428104000_centralize_shift_close_unsubmitted_draft_cleanup.sql`
 - `20260501100000_apply_branch_workflow_to_order_submission.sql`
+- `20260502100000_split_profile_names.sql`
+- `20260502103000_profile_full_name_reflects_first_name.sql`
+- `20260502104500_reload_postgrest_schema.sql`
 
 ## Reglas de integridad
 1. No asumir que `menu_nodes` ya reemplazo la FK de `order_items.product_id`.
@@ -241,4 +251,7 @@
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.
 7. Los resets operativos deben limpiar session locks en `profiles`, incluidas columnas de sesion secundaria, para evitar bloqueos heredados.
 8. Si se cambia envio, cobro o despacho de ordenes, respetar el flujo global Caja - Despacho; no basar la regla en sucursal ni solo en `orders.order_type`.
-9. Los cambios en `Editar Orden` deben preservar el contexto original del Sidebar mediante el parámetro `origin`.
+10. La eliminacion completa de orden no puede saltarse la regla de estados: todos los items deben estar en borrador o en caja, con validacion inmediata antes de ejecutar.
+11. Los cambios de perfil deben preservar `first_name`, `last_name` y la compatibilidad legacy de `full_name`.
+9. Los cambios en `Editar Orden` o navegación desde Mesas deben preservar el contexto original del Sidebar y BottomNav mediante el parámetro `origin`.
+12. El sistema de resaltado usa `forceActive` y `suppressActive` para garantizar que la sección de origen (Mesas u Ordenes) permanezca marcada correctamente.

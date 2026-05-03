@@ -65,7 +65,10 @@ const AppLayout = () => {
             </header>
           )}
 
-          <main className="mb-safe min-h-0 flex-1 pb-[calc(60px+env(safe-area-inset-bottom,0px)+0.75rem)] md:pb-0">
+          <main 
+            key={location.pathname + location.search}
+            className="mb-safe min-h-0 flex-1 pb-[calc(60px+env(safe-area-inset-bottom,0px)+0.75rem)] md:pb-0"
+          >
             <Outlet />
           </main>
         </div>

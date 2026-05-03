@@ -56,6 +56,7 @@ interface Props {
   onDiscardPreparedTransferProof: (session: PreparedTransferProofSession) => Promise<any> | void;
   getTransferProofReadiness: (paymentIds: string[]) => Promise<{ ready: boolean; uploadedCount: number; totalCount: number }>;
   paying: boolean;
+  open: boolean;
   onClose: () => void;
   readOnly?: boolean;
 }
@@ -142,6 +143,7 @@ export default function PaymentDialog({
   getTransferProofReadiness,
   paying,
   onClose,
+  open,
   readOnly = false,
 }: Props) {
   const unpaidItems = useMemo(() => order?.items.filter((item) => item.quantity_pending > 0) ?? [], [order]);
@@ -398,7 +400,7 @@ export default function PaymentDialog({
   const appliedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.appliedAmount, 0));
   const receivedSplitTotal = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.receivedAmount, 0));
   const shortageAmount = roundMoney(Math.max(0, currentChargeTotal - appliedSplitTotal));
-  const changeAmount = roundMoney(cashPreview?.overpayAmount ?? 0);
+  const changeAmount = roundMoney(paymentAllocationPreview.reduce((sum, split) => sum + split.overpayAmount, 0));
 
   const changeDenomBreakdown = useMemo(() => {
     if (changeAmount <= 0) return [];
@@ -638,10 +640,6 @@ export default function PaymentDialog({
         toast.error("El monto recibido en efectivo es menor al valor aplicado en efectivo");
         return;
       }
-      if (cannotMakeChange) {
-        toast.error("No hay suficientes denominaciones en caja para dar el cambio exacto");
-        return;
-      }
     }
 
     const cashReceivedDenoms = cashSplit
@@ -727,8 +725,7 @@ export default function PaymentDialog({
     paymentSplits.some((split) => split.amount > 0) &&
     !paying &&
       shortageAmount <= 0.005 &&
-      (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.005 >= cashAppliedAmount))) &&
-      !(changeAmount > 0 && cannotMakeChange);
+      (!cashSplit || (cashAppliedAmount <= 0 || (hasReceivedDenoms && totalReceived + 0.005 >= cashAppliedAmount)));
   const canConfirmPayment = canPay;
 
   useEffect(() => {
@@ -1267,7 +1264,7 @@ export default function PaymentDialog({
 
   return (
     <>
-      <Dialog open={!!order} onOpenChange={(open) => !open && handleDialogClose()}>
+      <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleDialogClose()}>
       {lastTransactionData && (
         <PaymentReceipt
           ref={receiptRef}

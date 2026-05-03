@@ -112,7 +112,7 @@ export default function CashRegisterOpeningHistory({
 
               <div className={`${compact ? "rounded-lg border border-white/70 bg-white/90 px-2.5 py-1.5 text-right shadow-sm" : "rounded-xl border border-white/60 bg-white/80 px-3 py-2 text-right shadow-sm"}`}>
                 <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Monto inicial</p>
-                <p className="font-display text-base font-black text-foreground">${entry.initial_total.toFixed(2)}</p>
+                <p className=" text-base font-bold text-foreground">${entry.initial_total.toFixed(2)}</p>
               </div>
             </div>
 

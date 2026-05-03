@@ -204,7 +204,7 @@ const Mesas = () => {
       const existingOrderId = activeTakeoutOrders[0]?.id ?? null;
       if (existingOrderId) {
         toast.success("Entrando a Para Llevar...");
-        navigate(`/ordenes?order=${existingOrderId}&from=mesas`);
+        navigate(`/ordenes?order=${existingOrderId}&origin=mesas`, { replace: true });
         void qc.prefetchQuery({
           queryKey: getOrderQueryKey(existingOrderId),
           queryFn: () => fetchOrderDetail(existingOrderId),
@@ -230,7 +230,7 @@ const Mesas = () => {
       });
 
       toast.success("Abriendo nueva orden para llevar...");
-      navigate(`/ordenes?order=${orderId}&from=mesas`);
+      navigate(`/ordenes?order=${orderId}&origin=mesas`, { replace: true });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       void qc.prefetchQuery({
@@ -270,7 +270,7 @@ const Mesas = () => {
       });
 
       toast.success("Abriendo orden especial...");
-      navigate(`/ordenes?order=${orderId}&from=mesas`);
+      navigate(`/ordenes?order=${orderId}&origin=mesas`, { replace: true });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       void qc.prefetchQuery({
@@ -291,7 +291,7 @@ const Mesas = () => {
       if (!canOperateMesas) return;
       if (table.activeOrderId) {
         warmTableFlow(table);
-        navigate(`/ordenes?order=${table.activeOrderId}&from=mesas`);
+        navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
         return;
       }
       if (!user) return;
@@ -318,7 +318,7 @@ const Mesas = () => {
         });
 
         toast.success(`Entrando a ${table.name}...`);
-        navigate(`/ordenes?order=${orderId}&from=mesas`);
+        navigate(`/ordenes?order=${orderId}&origin=mesas`, { replace: true });
         qc.invalidateQueries({ queryKey: ["orders"] });
         qc.invalidateQueries({ queryKey: ["tables-with-status"] });
         void qc.prefetchQuery({
@@ -334,7 +334,7 @@ const Mesas = () => {
       }
     } else if (table.activeOrderId) {
       warmTableFlow(table);
-      navigate(`/ordenes?order=${table.activeOrderId}&from=mesas`);
+      navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
     }
   };
 
@@ -619,7 +619,7 @@ const Mesas = () => {
                   key={id}
                   onClick={() => {
                     setIsVoidedOrdersOpen(false);
-                    navigate(`/ordenes?order=${id}&from=mesas`);
+                    navigate(`/ordenes?order=${id}&origin=mesas`, { replace: true });
                   }}
                   className="flex items-center gap-4 p-4 rounded-[22px] border-2 border-red-100 bg-white hover:border-red-300 hover:bg-red-50/50 transition-all text-left group dark:bg-card dark:border-red-900/30 dark:hover:border-red-700/50 dark:hover:bg-red-950/10"
                 >

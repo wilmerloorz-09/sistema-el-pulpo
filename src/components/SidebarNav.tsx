@@ -54,8 +54,6 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const appVersion = useAppVersion();
 
   const searchParams = new URLSearchParams(location.search);
-  const fromMesas = location.pathname === "/ordenes" && searchParams.get("from") === "mesas";
-  const fromEditar = location.pathname === "/ordenes" && searchParams.get("from") === "editar";
 
   if (visibleItems.length === 0) {
     return null;
@@ -117,25 +115,20 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
 
       <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4">
         {visibleItems.map((item) => {
-          let isItemActive = location.pathname === item.to;
-          
-          if (fromMesas || (fromEditar && searchParams.get("origin") === "mesas")) {
-            if (item.to === "/mesas") isItemActive = true;
-            if (item.to === "/ordenes") isItemActive = false;
-          }
-          if (fromEditar && searchParams.get("origin") !== "mesas") {
-            if (item.to === "/editar-orden") isItemActive = true;
-            if (item.to === "/ordenes") isItemActive = false;
-          }
-          
+          const isOriginMesas = searchParams.get("origin") === "mesas";
+          const isItemActive = item.to === "/mesas" 
+            ? (location.pathname === "/mesas" || (location.pathname === "/ordenes" && isOriginMesas))
+            : item.to === "/ordenes"
+              ? (location.pathname === "/ordenes" && !isOriginMesas)
+              : location.pathname === item.to;
           const hasSubItems = (item.subItems?.length ?? 0) > 0;
 
           const navLink = !hasSubItems ? (
             <NavLink
               to={item.to}
+              onClick={onClose}
               forceActive={isItemActive}
               suppressActive={!isItemActive}
-              onClick={onClose}
               className={cn(
                 "group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
                 "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
@@ -155,8 +148,8 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
               className={cn(
                 "group flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
                 "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
-                location.pathname === item.to && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
-                location.pathname === item.to && item.tone.active
+                isItemActive && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
+                isItemActive && item.tone.active
               )}
               onClick={(e) => {
                 e.preventDefault();

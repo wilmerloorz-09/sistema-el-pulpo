@@ -180,12 +180,6 @@ const OrderItemsList = ({
   editableItemIds = [],
 }: Props) => {
   const total = items.reduce((sum, i) => sum + i.total, 0);
-  const [operationalQtyByItem, setOperationalQtyByItem] = useState<Record<string, number>>({});
-
-  const buildDefaultOperationalQty = (item: OrderItem) => {
-    const maxQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? item.quantity);
-    return maxQty > 0 ? maxQty : 0;
-  };
 
   if (items.length === 0) {
     return (
@@ -205,28 +199,9 @@ const OrderItemsList = ({
         const isTemporaryItem = isTemporaryOrderItemId(item.id);
         const canShowControlsForItem = !hideItemControls || editableItemIds.includes(item.id);
         const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || alwaysShowControls);
-        const isRequestedCancel =
-          item.status === "ITEM_PENDING_CANCELLATION" ||
-          item.status === "PENDING_CANCELLATION" ||
-          Math.max(0, Number(item.quantity_requested ?? 0)) > 0;
-        const canCancelOperational = !isPending && !isRequestedCancel && !!onRequestCancel && !disableOperationalCancel;
-        const maxOperationalQty = Math.max(0, item.quantity_cancellable ?? item.quantity_remaining ?? 0);
         const draftDisabled = isPending && disableDraftEditing;
         const controlsDisabled = alwaysShowControls ? false : draftDisabled;
-        const operationalDisabled = (!isPending && disableOperationalCancel) || isRequestedCancel;
-        const controlDisabled = isPending ? draftDisabled : operationalDisabled;
-        const operationalControlClass = !isPending && !operationalDisabled
-          ? "border-slate-200 bg-white text-foreground shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)] hover:border-slate-300 hover:bg-slate-50"
-          : "border-border bg-background";
         const displayQuantity = item.quantity;
-        const requestedOperationalQty = (operationalQtyByItem[item.id] ?? buildDefaultOperationalQty(item)) || 1;
-        const selectedOperationalQty = Math.max(
-          1,
-          Math.min(
-            maxOperationalQty || displayQuantity || 1,
-            requestedOperationalQty,
-          ),
-        );
         const trimmedItemNote = String(item.item_note ?? "").trim();
         const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
         const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
@@ -242,9 +217,7 @@ const OrderItemsList = ({
               "rounded-2xl border py-3 pl-1.5 pr-2.5 transition-all sm:px-3",
               isPending
                 ? "shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)]"
-                : operationalDisabled
-                  ? "opacity-60"
-                  : (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") ? "opacity-50 border-red-200 bg-red-50/50" : "",
+                : (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") ? "opacity-50 border-red-200 bg-red-50/50" : "",
               displayQuantity > 0 ? itemStageStyles.card : "",
             )}
           >
@@ -405,7 +378,7 @@ const OrderItemsList = ({
                       <Trash2 />
                     </Button>
 
-                    {!isBulkItem ? (
+                    {showControls && !isBulkItem ? (
                       <>
                         <Button
                           variant="ghost"

@@ -107,11 +107,12 @@
   - bloqueo si la apertura de caja del pago ya fue cerrada/anulada o si el pago ya fue anulado
 - Una anulacion de pago puede reabrir el estado operativo de la orden o liberar la mesa visualmente segun el saldo restante.
 
-### 5. Ordenes, mesas y unir/dividir
+### 5. Ordenes y mesas
 - `Ordenes` mantiene la vista de lista expandible.
-- El orden visible de cuentas dentro de una mesa ya no depende operativamente de `table_splits`:
-  - la UI usa `orders.table_order_position`
-  - cuando ya existe numeracion operativa, debe prevalecer `order_code` / `order_number`
+- El orden visible de cuentas dentro de una mesa ya no depende de "divisiones" (table_splits):
+  - la UI usa exclusivamente `orders.table_order_position`.
+  - una mesa puede contener múltiples órdenes independientes; cada una se trata como una "Orden" completa.
+  - cuando ya existe numeracion operativa, debe prevalecer `order_code` / `order_number`.
 - Las pestanas del modulo `Ordenes` deben respetar etapas operativas reales:
   - `Borradores`
   - `Enviadas`
@@ -121,7 +122,7 @@
   - `Pagadas`
 - La pestana `Pagadas` debe mostrar ordenes especiales `PAID` aunque no tengan cantidades cobradas visibles por `payment_items`; en ese caso usa los items reales como detalle visual y `special_total_manual` como valor presentado de la orden.
 - En toda superficie donde se visualicen ordenes, debe mostrarse el usuario que genero la orden a partir de `orders.created_by`.
-- El nombre visible del generador se resuelve desde `profiles.full_name`, luego `profiles.username`, luego `profiles.email`; si no hay datos disponibles, usar `Usuario`.
+- El nombre visible del generador se resuelve desde `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`; si no hay datos disponibles, usar `Usuario`.
 - Esta visibilidad aplica a Ordenes, detalle de orden, Cocina, Despacho, Caja, pagos completados, Mesas/Editar Orden y Reportes.
 - `CancelOrderDialog` sigue el modelo de doble lista.
 - La solicitud de anulacion pendiente ya es parte base del flujo operativo:
@@ -133,13 +134,19 @@
   - si un item tiene solicitud pendiente, debe mostrarse como `Pendiente anulacion`
   - mientras exista al menos un item con anulacion pendiente, la orden no debe permitir agregar items, editar items, cerrar orden ni anular orden completa
 - `MergeSplitOrdersDialog` ya opera con `move_dine_in_order_items_between_orders(...)`.
-- El flujo `Unir/Dividir` vigente:
+- El flujo de movimiento de items vigente:
   - solo aplica entre ordenes `DINE_IN`
   - no aplica a ordenes especiales
-  - puede mover cantidades operativamente activas entre ordenes/mesas/divisiones
+  - puede mover cantidades operativamente activas entre órdenes de la misma mesa o diferentes mesas.
   - preserva historial `READY` y `DISPATCHED`
   - solo permite mover cantidad no pagada remanente
 - Si una orden origen queda sin items despues del movimiento, vuelve a `DRAFT`.
+- La accion `Eliminar orden` en mesa/orden activa muestra confirmacion simple y no abre `CancelOrderDialog`.
+- Para eliminar una orden completa, todos sus items deben estar en `DRAFT` o en estado operativo `En caja`.
+- Si algun item esta despachado, pagado o con anulacion pendiente, la accion no debe mostrarse ni ejecutarse.
+- Se unifica la opción visual para evitar duplicados en el menú de acciones.
+- La regla se valida al mostrar la accion y justo antes de ejecutar la eliminacion.
+- **Navegación Contextual:** Al navegar entre Mesas y Ordenes, el sistema usa el parámetro `origin=mesas` para que el Sidebar y el Bottom Nav mantengan el resaltado en la sección de origen, evitando confusiones visuales.
 
 ### 6. Editar Orden (In-Situ)
 - `Editar Orden` ya es un flujo base del sistema y ahora opera de manera **In-Situ**.
@@ -174,7 +181,8 @@
 - Crear/editar usuario incluye datos de contacto extendidos:
   - nombre de usuario
   - cedula
-  - nombre completo
+  - nombres
+  - apellidos
   - direccion domiciliaria
   - correo
   - telefono
@@ -184,12 +192,17 @@
 - Validaciones vigentes:
   - nombre de usuario: solo letras y numeros
   - cedula: solo numeros, exactamente 10 digitos
-  - nombre completo: solo letras y espacios
+  - nombres: solo letras y espacios
+  - apellidos: solo letras y espacios
   - correo: formato valido
   - telefono: solo numeros, exactamente 10 digitos
   - contrasena: minimo 6 caracteres
 - El combo de sucursal permite `Sin sucursal` para usuarios operativos.
 - La sucursal solo es obligatoria para usuarios con rol supervisor.
+- `profiles.first_name` es el nombre visible principal del sistema.
+- `profiles.last_name` conserva apellidos para administracion, busqueda y edicion.
+- `profiles.full_name` se mantiene como compatibilidad legacy, pero `sync_profile_full_name()` lo sincroniza para reflejar `first_name`.
+- En listados compactos de usuario se muestra `Nombres` y nombre de usuario; no se debe agregar cedula/telefono salvo que la pantalla sea de administracion o detalle.
 
 ## Cambios recientes que ya deben considerarse base
 
@@ -257,6 +270,18 @@
   - **Bloqueo de Caja:** La orden bloqueada (`locked_for_editing`) desactiva el botón de cobro en el módulo de Caja para prevenir conflictos transaccionales.
   - **Categorización "En Caja":** Los nuevos ítems aceptados en una edición de orden enviada a caja se marcan correctamente como "En caja" para el proceso de cobro.
 
+### 2026-05-03
+- Navegación:
+  - Implementación de `origin=mesas` para persistencia de resaltado en Sidebar y BottomNav.
+  - Uso de `forceActive` y `suppressActive` en `NavLink` para anular resaltado automático por URL técnica.
+- Caja:
+  - Corrección de RLS para `cash_register_templates`: cajeros en turno activo pueden leer plantillas de apertura.
+  - Estabilización de `PaymentDialog`: el cálculo de `changeAmount` ahora contempla excedentes en transferencias y pagos mixtos.
+  - Eliminación de errores de duplicidad de keys en el desglose de monedas (`denomination_id`).
+- Ordenes / Mesas:
+  - Desmantelamiento conceptual de "divisiones" a favor de "órdenes independientes dentro de una mesa".
+  - Unificación de la opción "Eliminar orden" en el menú de acciones para evitar duplicados visuales.
+
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
 2. No mezclar cerrar caja con cerrar turno.
@@ -267,6 +292,7 @@
    - `orders.cancel_requested_at`
    - y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`
 7. Cualquier cambio en envio de ordenes o cobro debe respetar el flujo global Caja - Despacho; no codificar decisiones por sucursal.
+8. Cualquier cambio en eliminacion completa de orden debe preservar la restriccion: todos los items en borrador o en caja, confirmacion previa, y validacion inmediata antes de ejecutar.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.

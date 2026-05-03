@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchOrderDetail, fetchSiblingOrders, fetchTakeoutSiblingOrders, getOrderQueryKey, isTemporaryOrderItemId, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +15,8 @@ import OrdersList from "@/components/order/OrdersList";
 import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
+import PaymentDialog from "@/components/caja/PaymentDialog";
+import { useCaja, type PayableOrder } from "@/hooks/useCaja";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +30,7 @@ import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVert
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { OrderSummary, type OrderItemSummary } from "@/hooks/useOrdersByStatus";
+import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
@@ -88,6 +90,47 @@ interface TakeoutCajaPreview {
 interface MenuProductLookupResult {
   product: SelectedProduct;
   modifiers: ProductModifierOption[];
+}
+
+interface OrdenesErrorBoundaryState {
+  error: Error | null;
+}
+
+class OrdenesErrorBoundary extends React.Component<{ children: React.ReactNode; orderId: string | null }, OrdenesErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode; orderId: string | null }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): OrdenesErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("Error al abrir la orden", error);
+  }
+
+  componentDidUpdate(prevProps: { orderId: string | null }) {
+    if (prevProps.orderId !== this.props.orderId && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-red-200 bg-red-50 p-5 text-center shadow-sm">
+          <p className="font-display text-lg font-black text-red-800">No se pudo abrir la orden</p>
+          <p className="mt-2 break-words text-sm font-medium text-red-700">{this.state.error.message}</p>
+          <Button type="button" className="mt-4 rounded-xl" onClick={() => this.setState({ error: null })}>
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
 }
 
 const sortMenuNodes = (nodes: MenuNode[]) =>
@@ -376,7 +419,7 @@ const seedDraftTableOrderCache = (
   });
 };
 
-const Ordenes = () => {
+const OrdenesContent = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -385,13 +428,42 @@ const Ordenes = () => {
   const { isDesktop } = useBreakpoint();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
-  const fromMesas = searchParams.get("from") === "mesas";
   const [pendingTrayType, setPendingTrayType] = useState<TrayItemType | null>(null);
   const effectiveTrayType: TrayItemType = pendingTrayType ?? "B";
   const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder, lockOrder, unlockOrder } = useOrder(orderId);
   const { cancelOrderMutation } = useCancellation();
+
+  // Permisos y estados base moved up to avoid TDZ
+  const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
+  const canOperateOrders =
+    isGlobalAdmin
+    || canManageOrders
+    || canOperate(permissions, "ordenes")
+    || canOperate(permissions, "mesas")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canCancelOrders = canOperateOrders || canManageOrders;
+  const hasDirectCancelRole =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global")
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canAuthorizeCancel =
+    hasDirectCancelRole
+    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel);
+  const isTrayOrder = Boolean(order?.is_tray_order);
+  const canUseEditarOrden =
+    isGlobalAdmin
+    || canManageOrders
+    || Boolean(shiftGateQuery.data?.canEditOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
+  const origin = searchParams.get("origin");
+  const originParam = origin ? `&origin=${origin}` : "";
+  const sourceParams = (fromEditar ? "&from=editar" : "") + originParam;
   const isTakeoutOrder = order?.order_type === "TAKEOUT" && !order?.is_tray_order && !order?.is_special;
   const trayMenuScope: MenuScope =
     effectiveTrayType === "A"
@@ -452,6 +524,59 @@ const Ordenes = () => {
     left: false,
     right: false,
   });
+  const [paymentDialogOpenForOrderId, setPaymentDialogOpenForOrderId] = useState<string | null>(null);
+  const showPaymentDialog = Boolean(orderId && paymentDialogOpenForOrderId === orderId);
+
+
+  const { 
+    shift,
+    paymentMethods, 
+    denominations, 
+    payOrder, 
+    prepareTransferProof, 
+    discardPreparedTransferProof, 
+    getTransferProofReadiness 
+  } = useCaja();
+
+  const payableOrder: PayableOrder | null = useMemo(() => {
+    if (!order) return null;
+    return {
+      id: order.id,
+      order_number: order.order_number,
+      order_code: order.order_code,
+      order_type: order.order_type,
+      is_special: order.is_special,
+      is_tray_order: order.is_tray_order,
+      created_by: order.created_by,
+      created_by_name: order.created_by_name,
+      special_total_manual: order.special_total_manual,
+      special_real_total: order.special_total_manual ?? 0,
+      special_paid_amount: 0,
+      special_pending_amount: order.special_total_manual ?? 0,
+      table_name: order.table_name,
+      table_name_snapshot: order.table_name,
+      split_code: order.split_code,
+      total: order.items.reduce((sum, item) => sum + item.total, 0),
+      items: order.items.map(item => ({
+        id: item.id,
+        product_id: item.product_id,
+        menu_node_id: null,
+        image_url: null,
+        icon: null,
+        description_snapshot: item.description_snapshot,
+        quantity: item.original_quantity ?? item.quantity,
+        unit_price: item.unit_price,
+        total: item.total,
+        tray_item_type: item.tray_item_type,
+        tray_container_cost: item.tray_container_cost,
+        paid_at: item.paid_at ?? null,
+        quantity_paid: item.quantity_paid ?? 0,
+        quantity_pending: item.quantity,
+        pending_total: item.total,
+      }))
+    };
+  }, [order]);
+
   const isBulkScopeSelection = currentMenuScope === "BULK";
   const shouldCalculateBulkIncludedByAmount = isBulkScopeSelection && isPlatosRootCategory(selectedProductRootName);
   const showMenuScopeTabs = order?.order_type === "DINE_IN" || isTakeoutOrder;
@@ -506,6 +631,22 @@ const Ordenes = () => {
   const [stagedItems, setStagedItems] = useState(order?.items ?? []);
   const [stagedDirty, setStagedDirty] = useState(false);
   const [stagedCancellationData, setStagedCancellationData] = useState<{ reason: string; notes: string } | null>(null);
+  const [deletingCajaOrder, setDeletingCajaOrder] = useState(false);
+  const [confirmDeleteCajaOrderOpen, setConfirmDeleteCajaOrderOpen] = useState(false);
+
+  const itemsToUse = fromEditar ? stagedItems : (order?.items ?? []);
+  const isPaidItem = (item: any) => {
+    const status = String(item.status ?? "");
+    const orderedQuantity = Math.max(0, Number(item.quantity_ordered ?? item.original_quantity ?? item.quantity ?? 0));
+    const pendingQuantity = Math.max(0, Number(item.quantity ?? 0));
+
+    return (
+      status === "PAID" ||
+      Boolean(item.paid_at) ||
+      Math.max(0, Number((item as any).quantity_paid ?? 0)) > 0 ||
+      (orderedQuantity > 0 && pendingQuantity <= 0 && !status.includes("CANCEL"))
+    );
+  };
 
   useEffect(() => {
     if (order && !stagedDirty) {
@@ -545,6 +686,122 @@ const Ordenes = () => {
     });
   }, []);
 
+  const handleDeleteCajaOrder = useCallback(async () => {
+    if (!user || !order || deletingCajaOrder) return;
+
+    setDeletingCajaOrder(true);
+    try {
+      const isCurrentCajaItem = (item: typeof order.items[number]) =>
+        item.status !== "DRAFT" &&
+        Number(item.quantity_dispatched ?? 0) <= 0 &&
+        item.status !== "DISPATCHED" &&
+        !(
+          item.status === "PENDING_CANCELLATION" ||
+          item.status === "ITEM_PENDING_CANCELLATION" ||
+          Math.max(0, Number((item as any).quantity_requested ?? 0)) > 0
+        ) &&
+        !isPaidItem(item);
+      const canDeleteCurrentOrder =
+        order.items.length > 0 &&
+        order.items.every((item) => item.status === "DRAFT" || isCurrentCajaItem(item)) &&
+        !order.items.some((item) => item.status === "DRAFT" && isTemporaryOrderItemId(item.id));
+
+      if (!canDeleteCurrentOrder) {
+        throw new Error("Solo puedes eliminar la orden si todos los items estan en borrador o en caja.");
+      }
+
+      const draftItems = order.items.filter((item) => item.status === "DRAFT");
+
+      if (draftItems.length === order.items.length) {
+        if (!order.table_id) {
+          for (const item of draftItems) {
+            await removeItem.mutateAsync(item.id);
+          }
+        } else {
+          await deleteTableOrder.mutateAsync();
+        }
+        qc.invalidateQueries({ queryKey: getOrderQueryKey(order.id) });
+        qc.invalidateQueries({ queryKey: ["orders"] });
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+        qc.invalidateQueries({ queryKey: ["table-orders"] });
+        setConfirmDeleteCajaOrderOpen(false);
+        navigate(order.table_id ? "/mesas" : "/ordenes", { replace: true });
+        return;
+      }
+
+      const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", { p_order_id: order.id });
+      if (error) throw error;
+
+      const snapshotRows = Array.isArray(data) ? data : [];
+      const cancellationItems = snapshotRows
+        .map((row: any) => {
+          const orderItem = order.items.find((item) => item.id === row.order_item_id);
+          const pending = Math.max(0, Number(row.quantity_pending_prepare ?? 0));
+          const ready = Math.max(0, Number(row.quantity_ready_available ?? 0));
+          const dispatched = Math.max(
+            0,
+            Number(row.quantity_dispatched_total ?? row.quantity_dispatched ?? 0) - Number(row.quantity_cancelled_dispatched ?? 0),
+          );
+          const quantity = pending + ready + dispatched;
+
+          if (quantity <= 0) return null;
+
+          return {
+            order_item_id: row.order_item_id,
+            quantity_cancelled: quantity,
+            status: String(row.item_status ?? orderItem?.status ?? "SENT"),
+            description_snapshot: String(row.description_snapshot ?? orderItem?.description_snapshot ?? "Item"),
+            unit_price: Number(row.unit_price ?? orderItem?.unit_price ?? 0),
+            quantity_cancelled_pending: pending,
+            quantity_cancelled_ready: ready,
+            quantity_cancelled_dispatched: dispatched,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (cancellationItems.length === 0) {
+        throw new Error("No hay items disponibles para eliminar en esta orden.");
+      }
+
+      await cancelOrderMutation.mutateAsync({
+        orderId: order.id,
+        items: cancellationItems,
+        userId: user.id,
+        cancellationType: "total",
+        requiresAuthorization: false,
+        cancellationData: {
+          reason: "otro",
+          notes: "Orden eliminada directamente desde mesa con todos los items en caja.",
+          cancelledBy: user.id,
+        },
+      });
+
+      for (const item of draftItems) {
+        await removeItem.mutateAsync(item.id);
+      }
+
+      qc.invalidateQueries({ queryKey: getOrderQueryKey(order.id) });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      setConfirmDeleteCajaOrderOpen(false);
+
+      if (order.table_id) {
+        qc.invalidateQueries({ queryKey: ["table-orders", order.table_id] });
+        navigate("/mesas", { replace: true });
+      } else {
+        qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
+        navigate("/ordenes", { replace: true });
+      }
+    } catch (error: any) {
+      console.error("Error eliminando orden en caja:", error);
+      toast.error("No se pudo eliminar la orden: " + (error?.message || "Error desconocido"));
+    } finally {
+      setDeletingCajaOrder(false);
+    }
+  }, [cancelOrderMutation, deleteTableOrder, deletingCajaOrder, isPaidItem, navigate, order, qc, removeItem, user]);
+
   useEffect(() => {
     updateTableOrdersTabsOverflow();
 
@@ -562,43 +819,15 @@ const Ordenes = () => {
     };
   }, [order?.id, tableOrdersQuery.data?.length, updateTableOrdersTabsOverflow]);
 
-  const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
-  // Operar en Ã³rdenes: permiso explÃ­cito del mÃ³dulo, flags del turno, o administraciÃ³n global/sucursal.
-  // Sin esto, un superadmin con `permissions` vacÃ­o en el RPC veÃ­a solo modo consulta aunque tuviera acceso total.
-  const canOperateOrders =
-    isGlobalAdmin
-    || canManageOrders
-    || canOperate(permissions, "ordenes")
-    || canOperate(permissions, "mesas")
-    || Boolean(shiftGateQuery.data?.canServeTables)
-    || Boolean(shiftGateQuery.data?.canAccessOrders)
-    || Boolean(shiftGateQuery.data?.isSupervisor);
-  const canCancelOrders = canOperateOrders || canManageOrders;
-  const hasDirectCancelRole =
-    isGlobalAdmin
-    || canManage(permissions, "admin_sucursal")
-    || canManage(permissions, "admin_global")
-    || Boolean(shiftGateQuery.data?.isSupervisor);
-  const canAuthorizeCancel =
-    hasDirectCancelRole
-    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel);
-  const isTrayOrder = Boolean(order?.is_tray_order);
-  const canUseEditarOrden =
-    isGlobalAdmin
-    || canManageOrders
-    || Boolean(shiftGateQuery.data?.canEditOrders)
-    || Boolean(shiftGateQuery.data?.isSupervisor);
 
   useEffect(() => {
     setRedirectingAfterDelete(false);
   }, [orderId]);
 
-  const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
-  const sourceParams = fromMesas ? "&from=mesas" : fromEditar ? "&from=editar" : "";
 
   useEffect(() => {
     if (fromEditar && order && (order.status === "PAID" || order.status === "CANCELLED")) {
-      const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
+      const origin = searchParams.get("origin") || "editar";
       navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
     }
   }, [fromEditar, order?.status, navigate]);
@@ -674,14 +903,24 @@ const Ordenes = () => {
     setSelectedProductModifiers([]);
     setSelectingProductId(null);
     setShowCart(false);
+    // Siempre forzamos el cierre del dialogo al cambiar de mesa o refrescar
+    setPaymentDialogOpenForOrderId(null);
   }, [orderId]);
 
+  // Limpieza total al salir del modulo para evitar "fantasmas"
+  useEffect(() => {
+    return () => {
+      setPaymentDialogOpenForOrderId(null);
+      setTakeoutCajaPreview(null);
+    };
+  }, []);
+
   const isTakeout = order?.order_type === "TAKEOUT";
-  const shouldRedirectToCaja = isTakeout || Boolean(order?.is_special) || activeBranch?.workflow_mode === 'CASH_THEN_DISPATCH';
-  const shouldAutoOpenOrderInCaja =
-    shouldRedirectToCaja &&
-    Boolean(shiftGateQuery.data?.canUseCaja) &&
-    isDesktop;
+  const canUseCaja = 
+    isGlobalAdmin || 
+    canManageOrders || 
+    Boolean(shiftGateQuery.data?.canUseCaja);
+  
 
   useEffect(() => {
     if (!order || !isTakeoutOrder) return;
@@ -735,13 +974,8 @@ const Ordenes = () => {
   }, [order]);
 
   const handleMobileBackToMesas = useCallback(() => {
-    if (fromMesas) {
-      navigate("/mesas", { replace: true });
-      return;
-    }
-    
     if (fromEditar) {
-      const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
+      const origin = searchParams.get("origin") || "editar";
       navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
       return;
     }
@@ -757,7 +991,7 @@ const Ordenes = () => {
     }
 
     navigate("/ordenes", { replace: true });
-  }, [fromEditar, fromMesas, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
+  }, [fromEditar, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
 
   const bulkIncludedPreviewQuery = useQuery({
     queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id, shouldCalculateBulkIncludedByAmount],
@@ -885,7 +1119,6 @@ const Ordenes = () => {
     return <OrdenesSkeleton />;
   }
 
-  const itemsToUse = fromEditar ? stagedItems : order.items;
   const itemCount = itemsToUse.reduce((s, i) => s + i.quantity, 0);
   const getTableOrderButtonLabel = (tableOrder: { order_code?: string | null; order_number: number | null; table_order_position: number | null }) => {
     const codeSuffix = String(tableOrder.order_code ?? "").trim().split("-").pop();
@@ -1014,19 +1247,23 @@ const Ordenes = () => {
     !isLockedFromEditar &&
     hasSentItems;
   const sentItems = itemsToUse.filter((item) => item.status !== "DRAFT");
-  const isPaidItem = (item: typeof itemsToUse[number]) => {
-    const status = String(item.status ?? "");
-    const orderedQuantity = Math.max(0, Number(item.quantity_ordered ?? item.original_quantity ?? item.quantity ?? 0));
-    const pendingQuantity = Math.max(0, Number(item.quantity ?? 0));
-
-    return (
-      status === "PAID" ||
-      Boolean(item.paid_at) ||
-      Math.max(0, Number((item as any).quantity_paid ?? 0)) > 0 ||
-      (orderedQuantity > 0 && pendingQuantity <= 0 && !status.includes("CANCEL"))
-    );
-  };
   const hasPaidItems = sentItems.some(isPaidItem);
+  const isCajaItem = (item: typeof itemsToUse[number]) =>
+    item.status !== "DRAFT" &&
+    Number(item.quantity_dispatched ?? 0) <= 0 &&
+    item.status !== "DISPATCHED" &&
+    !hasPendingCancellationItems &&
+    !isPaidItem(item);
+  const canDeleteByItemState = hasOrderItems && itemsToUse.every((item) => item.status === "DRAFT" || isCajaItem(item));
+  const canCancelOrderFromCaja =
+    canCancelOrders &&
+    canDeleteByItemState &&
+    !hasPendingCancellationItems &&
+    !hasTemporaryDraftItems &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED" &&
+    !fromEditar;
+
   const allSentItemsDispatched = itemsToUse
     .filter((item) => item.status !== "DRAFT")
     .every((item) => Number(item.quantity_remaining ?? 0) <= 0);
@@ -1453,8 +1690,9 @@ const Ordenes = () => {
           ? "Cambios aceptados. Los nuevos items quedaron cerrados para cobro."
           : "Cambios aceptados. Los nuevos items quedaron despachados.",
       );
-      const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
-      navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
+      const origin = searchParams.get("origin") || "editar";
+      const originValue = searchParams.get("origin") || "editar";
+      navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
     } catch (error: any) {
       toast.error(error.message);
     }
@@ -1837,23 +2075,16 @@ const Ordenes = () => {
 
       {!fromEditar && canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
         <Button
-          onClick={() => {
-            sendToKitchen.mutate(undefined, {
-              onSuccess: async () => {
-                if (isTakeoutOrder) {
-                  qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
-                  qc.invalidateQueries({ queryKey: ["orders"] });
-                  if (shouldAutoOpenOrderInCaja && orderId) {
-                    navigate(`/caja?order=${encodeURIComponent(orderId)}`);
-                  }
-                  return;
-                }
-
-                if (shouldAutoOpenOrderInCaja && orderId) {
-                  navigate(`/caja?order=${encodeURIComponent(orderId)}`);
-                }
-              },
-            });
+          onClick={async () => {
+            try {
+              await sendToKitchen.mutateAsync();
+              if (canUseCaja && (order?.id || orderId)) {
+                // Solo se abre por clic fisico aqui
+                setPaymentDialogOpenForOrderId(orderId);
+              }
+            } catch (e) {
+              // error handled by hook
+            }
           }}
           disabled={sendToKitchen.isPending || addItem.isPending || hasTemporaryDraftItems}
           title={addItem.isPending || hasTemporaryDraftItems ? "Espera a que el item termine de guardarse" : undefined}
@@ -1861,18 +2092,12 @@ const Ordenes = () => {
         >
           {sendToKitchen.isPending || addItem.isPending || hasTemporaryDraftItems ? (
             <Loader2 className="h-5 w-5 animate-spin" />
-          ) : hasSentItems ? (
-            <>
-              <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja - ${draftItemsTotal.toFixed(2)}
-            </>
           ) : (
             <>
               <CircleDollarSign className="h-5 w-5" />
               Enviar a caja - ${draftItemsTotal.toFixed(2)}
             </>
           )}
-
         </Button>
       )}
 
@@ -1897,8 +2122,8 @@ const Ordenes = () => {
                 variant="outline"
                 className="h-12 w-full gap-2 rounded-xl border-slate-200 font-display text-base font-semibold text-slate-600 hover:bg-slate-50"
                 onClick={() => {
-                  const origin = searchParams.get("origin") || (fromMesas ? "mesas" : "editar");
-                  navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
+                  const originValue = searchParams.get("origin") || "editar";
+                  navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
                 }}
               >
                 <X className="h-5 w-5" />
@@ -1949,10 +2174,22 @@ const Ordenes = () => {
                         ? "No puedes editar una orden con items despachados"
                       : "Editar orden"
                   }
-                  onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${fromMesas ? "&origin=mesas" : ""}`)}
+                  onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${originParam}`)}
                 >
                   <Pencil className="h-5 w-5" />
                   Editar orden
+                </Button>
+              )}
+
+              {canCancelOrderFromCaja && (
+                <Button
+                  variant="outline"
+                  className="col-span-2 h-12 w-full gap-2 rounded-xl border-red-300 bg-red-50 font-display text-base font-semibold text-red-700 hover:bg-red-100 hover:text-red-800"
+                  onClick={() => setConfirmDeleteCajaOrderOpen(true)}
+                  disabled={deletingCajaOrder}
+                >
+                  {deletingCajaOrder ? <Loader2 className="h-5 w-5 animate-spin" /> : <Ban className="h-5 w-5" />}
+                  Eliminar orden
                 </Button>
               )}
 
@@ -2047,13 +2284,23 @@ const Ordenes = () => {
                         Cambiar mesa
                       </DropdownMenuItem>
                     )}
-                    {hasSiblings && (
+                    {(canCancelOrderFromCaja || hasSiblings) && (
                       <DropdownMenuItem
-                        onClick={() => setShowDeleteSplitConfirm(true)}
-                        disabled={!canDeleteSplit || removingSplit}
+                        onClick={() => {
+                          if (canCancelOrderFromCaja) {
+                            setConfirmDeleteCajaOrderOpen(true);
+                          } else {
+                            setShowDeleteSplitConfirm(true);
+                          }
+                        }}
+                        disabled={deletingCajaOrder || removingSplit || (!canCancelOrderFromCaja && !canDeleteSplit)}
                         className="text-destructive focus:text-destructive"
                       >
-                        {removingSplit ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
+                        {deletingCajaOrder || removingSplit ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Ban className="mr-2 h-4 w-4" />
+                        )}
                         Eliminar orden
                       </DropdownMenuItem>
                     )}
@@ -2482,6 +2729,36 @@ const Ordenes = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={confirmDeleteCajaOrderOpen}
+        onOpenChange={(open) => {
+          if (!deletingCajaOrder) setConfirmDeleteCajaOrderOpen(open);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar orden</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminara esta orden completa con todos sus items. Esta accion no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingCajaOrder}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                handleDeleteCajaOrder();
+              }}
+              disabled={deletingCajaOrder}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deletingCajaOrder ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={showCloseOrderConfirm} onOpenChange={setShowCloseOrderConfirm}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
@@ -2627,6 +2904,21 @@ const Ordenes = () => {
         }}
       />
 
+      <PaymentDialog
+        order={payableOrder}
+        paymentMethods={paymentMethods}
+        shiftDenoms={shift?.denoms ?? []}
+        paying={payOrder.isPending}
+        onPay={(params) => payOrder.mutateAsync(params)}
+        onPrepareTransferProof={prepareTransferProof}
+        onDiscardPreparedTransferProof={discardPreparedTransferProof}
+        getTransferProofReadiness={getTransferProofReadiness}
+        onClose={() => setPaymentDialogOpenForOrderId(null)}
+
+        // CANDADO DE SEGURIDAD: Solo se muestra si NO estamos cargando y si se activo manualmente
+        open={!isLoading && showPaymentDialog}
+      />
+
       <style>{`
         @media (max-width: 768px) {
           .ordenes-mobile-touch button,
@@ -2648,6 +2940,17 @@ const Ordenes = () => {
         }
       `}</style>
     </div>
+  );
+};
+
+const Ordenes = () => {
+  const [searchParams] = useSearchParams();
+  const orderId = searchParams.get("order");
+
+  return (
+    <OrdenesErrorBoundary orderId={orderId}>
+      <OrdenesContent />
+    </OrdenesErrorBoundary>
   );
 };
 

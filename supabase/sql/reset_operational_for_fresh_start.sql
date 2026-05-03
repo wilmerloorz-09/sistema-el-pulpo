@@ -7,19 +7,24 @@
 --   - incluye ordenes especiales y sus pagos parciales/manuales
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
---   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position`
+--   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye la numeracion visible unificada: `orders.order_number` se deriva del sufijo de `orders.order_code`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
+--   - incluye la persistencia del estado de navegación mediante el parámetro `origin` y resaltado manual (forceActive/suppressActive)
 --   - incluye el bloqueo automático del botón "Cobrar" en Caja mientras una orden está en edición
 --   - incluye la regla de Caja: una orden/item `DRAFT` nunca debe aparecer ni poder cobrarse en Caja
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
---   - incluye movimientos entre ordenes DINE_IN por Unir/Dividir, junto con su redistribucion de historial READY/DISPATCHED
+--   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones), junto con su redistribucion de historial READY/DISPATCHED
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
+-- - Conserva el modelo vigente de usuarios:
+--   - `profiles.first_name` como Nombres visibles
+--   - `profiles.last_name` como Apellidos
+--   - `profiles.full_name` como compatibilidad legacy sincronizada desde `first_name`
 -- - Conserva el flujo global Caja primero y Despacho despues para mesa, para llevar y especial
 -- - `branches.workflow_mode` queda solo como compatibilidad interna forzada a `CASH_THEN_DISPATCH`
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
@@ -55,6 +60,10 @@
 -- - Conserva la regla visual de Ordenes:
 --   - ordenes especiales `PAID` deben aparecer en Pagadas aunque no tengan cantidades pagadas por item
 --   - `special_total_manual` es el valor manual visible/cobrable de la orden especial
+-- - Conserva la regla de eliminacion completa de orden:
+--   - requiere confirmacion visual antes de ejecutar
+--   - todos los items deben estar en borrador o en caja
+--   - no aplica si hay items despachados, pagados o con anulacion pendiente
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 --   - por eso se mantiene que un mesero pueda anular directo solo en las categorias habilitadas por turno/sucursal
@@ -85,8 +94,9 @@
 --   - metodo recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 --   - wrapper opcional: `.\scripts\reset-payment-proofs-storage.ps1`
 -- - Conserva la lógica de edición In-Situ:
---   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual
+--   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual y de navegación (`origin`)
 --   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
+--   - el cálculo de cambio se unifica para contemplar excedentes de todos los métodos de pago (incluyendo transferencias)
 --   - al aumentar cantidad de un item ya enviado/en caja, se actualiza la misma linea si no tiene pagos registrados
 --   - los items nuevos aceptados en ordenes "En caja" mantienen su flujo de cobro correcto
 --
@@ -105,6 +115,8 @@ DECLARE
   v_table text;
   v_session_column text;
   v_had_profile_full_name_constraint boolean := false;
+  v_had_profile_first_name_constraint boolean := false;
+  v_had_profile_last_name_constraint boolean := false;
   v_tables text[] := ARRAY[
     -- Seguridad efimera / sesiones
     'public.webauthn_challenges',
@@ -166,9 +178,35 @@ BEGIN
     )
     INTO v_had_profile_full_name_constraint;
 
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'public.profiles'::regclass
+        AND conname = 'profiles_first_name_letters_only'
+    )
+    INTO v_had_profile_first_name_constraint;
+
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'public.profiles'::regclass
+        AND conname = 'profiles_last_name_letters_only'
+    )
+    INTO v_had_profile_last_name_constraint;
+
     IF v_had_profile_full_name_constraint THEN
       ALTER TABLE public.profiles
         DROP CONSTRAINT profiles_full_name_letters_only;
+    END IF;
+
+    IF v_had_profile_first_name_constraint THEN
+      ALTER TABLE public.profiles
+        DROP CONSTRAINT profiles_first_name_letters_only;
+    END IF;
+
+    IF v_had_profile_last_name_constraint THEN
+      ALTER TABLE public.profiles
+        DROP CONSTRAINT profiles_last_name_letters_only;
     END IF;
 
     FOREACH v_session_column IN ARRAY ARRAY[
@@ -195,6 +233,18 @@ BEGIN
       ALTER TABLE public.profiles
         ADD CONSTRAINT profiles_full_name_letters_only
         CHECK (full_name ~ U&'^[A-Za-z\00C1\00C9\00CD\00D3\00DA\00DC\00D1\00E1\00E9\00ED\00F3\00FA\00FC\00F1[:space:]]+$') NOT VALID;
+    END IF;
+
+    IF v_had_profile_first_name_constraint THEN
+      ALTER TABLE public.profiles
+        ADD CONSTRAINT profiles_first_name_letters_only
+        CHECK (first_name ~ U&'^[A-Za-z\00C1\00C9\00CD\00D3\00DA\00DC\00D1\00E1\00E9\00ED\00F3\00FA\00FC\00F1[:space:]]+$') NOT VALID;
+    END IF;
+
+    IF v_had_profile_last_name_constraint THEN
+      ALTER TABLE public.profiles
+        ADD CONSTRAINT profiles_last_name_letters_only
+        CHECK (last_name ~ U&'^[A-Za-z\00C1\00C9\00CD\00D3\00DA\00DC\00D1\00E1\00E9\00ED\00F3\00FA\00FC\00F1[:space:]]+$') NOT VALID;
     END IF;
 
     RAISE NOTICE 'Session locks de app limpiados en profiles';
@@ -227,6 +277,7 @@ COMMIT;
 -- ============================================================
 -- POST RESET ESPERADO
 -- - Usuarios intactos
+-- - Perfiles intactos con first_name/last_name/full_name legacy conservados
 -- - Sucursales intactas
 -- - Flujo global Caja - Despacho intacto
 -- - Referencia de mesas intacta
@@ -252,7 +303,7 @@ COMMIT;
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, `Unir/Dividir`, divisiones reabiertas por anulacion y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 codigos/numeros visibles de orden previos; la siguiente orden vuelve a generar `order_code` y sincronizar `order_number`

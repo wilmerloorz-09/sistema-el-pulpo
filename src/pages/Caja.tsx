@@ -566,7 +566,7 @@ const Caja = () => {
     annulCashOpening,
     registerCashMovement,
     takeCajaControl,
-  } = useCaja(completedFilters);
+  } = useCaja({ completedPaymentsFilters: completedFilters, autoOpenOrderId });
 
   const activeCaptureRequest = useMemo(
     () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
