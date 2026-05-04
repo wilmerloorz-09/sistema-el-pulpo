@@ -266,42 +266,55 @@ export default function PayableOrdersList({
                               <span className="text-right">Subtotal</span>
                             </div>
                             <div className="divide-y divide-slate-100">
-                              {order.items.map((item) => {
+                              {(() => {
+                                const groupedMap: Record<string, (typeof order.items)[0]> = {};
+                                for (const item of order.items) {
+                                  const key = `${item.description_snapshot}_${item.unit_price}`;
+                                  if (!groupedMap[key]) {
+                                    groupedMap[key] = { ...item };
+                                  } else {
+                                    groupedMap[key].quantity += item.quantity;
+                                    groupedMap[key].quantity_pending += item.quantity_pending;
+                                    groupedMap[key].pending_total += item.pending_total;
+                                  }
+                                }
+                                return Object.values(groupedMap);
+                              })().map((item) => {
                                 const isBulkItem = item.tray_item_type === "C";
                                 return (
-                                <div
-                                  key={item.id}
-                                  className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] sm:gap-3"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="truncate font-medium text-slate-900">{item.description_snapshot}</p>
-                                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                                      {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
-                                      {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
-                                        <span className="text-[11px] font-semibold text-orange-600">
-                                          + {formatCurrency(Number(item.tray_container_cost ?? 0))} tarrina
-                                        </span>
-                                      ) : null}
+                                  <div
+                                    key={`${item.description_snapshot}_${item.unit_price}`}
+                                    className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] sm:gap-3"
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate font-medium text-slate-900">{item.description_snapshot}</p>
+                                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                                        {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
+                                        {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                                          <span className="text-[11px] font-semibold text-orange-600">
+                                            + {formatCurrency(Number(item.tray_container_cost ?? 0))} tarrina
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <p className="mt-0.5 text-xs text-slate-500">
+                                        {isBulkItem ? formatCurrency(item.unit_price) : `${formatCurrency(item.unit_price)} c/u`}
+                                      </p>
                                     </div>
-                                    <p className="mt-0.5 text-xs text-slate-500">
-                                      {isBulkItem ? formatCurrency(item.unit_price) : `${formatCurrency(item.unit_price)} c/u`}
-                                    </p>
+                                    <div className="grid grid-cols-3 gap-2 text-xs sm:contents sm:text-sm">
+                                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                        {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span> : null}
+                                        {isBulkItem ? "A granel" : item.quantity}
+                                      </span>
+                                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                        {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Pend.</span> : null}
+                                        {isBulkItem ? "-" : item.quantity_pending}
+                                      </span>
+                                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                        <span className="mr-1 font-medium text-slate-500 sm:hidden">Subtotal</span>
+                                        {formatCurrency(item.pending_total)}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div className="grid grid-cols-3 gap-2 text-xs sm:contents sm:text-sm">
-                                    <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                                      {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span> : null}
-                                      {isBulkItem ? "A granel" : item.quantity}
-                                    </span>
-                                    <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                                      {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Pend.</span> : null}
-                                      {isBulkItem ? "-" : item.quantity_pending}
-                                    </span>
-                                    <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                                      <span className="mr-1 font-medium text-slate-500 sm:hidden">Subtotal</span>
-                                      {formatCurrency(item.pending_total)}
-                                    </span>
-                                  </div>
-                                </div>
                                 );
                               })}
                             </div>

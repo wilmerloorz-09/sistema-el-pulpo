@@ -281,6 +281,8 @@
 - Ordenes / Mesas:
   - Desmantelamiento conceptual de "divisiones" a favor de "órdenes independientes dentro de una mesa".
   - Unificación de la opción "Eliminar orden" en el menú de acciones para evitar duplicados visuales.
+  - **Agrupamiento Consolidado:** Implementación de agrupamiento visual por descripción y precio en `OrderItemsList` y `PayableOrdersList`.
+  - **Flexibilidad Operativa:** El botón "Editar orden" y la búsqueda de órdenes ahora son accesibles para meseros/cajeros con capacidad `canOperateOrders`.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.

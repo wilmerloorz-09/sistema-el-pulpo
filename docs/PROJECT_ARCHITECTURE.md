@@ -68,6 +68,10 @@
 - Regla de interfaz consolidada:
   - los items con solicitud pendiente deben mostrar `Pendiente anulacion`
   - si existe al menos un item pendiente, la orden entra en modo bloqueado para agregar/editar items, `Cerrar orden` y `Anular orden`
+- **Agrupamiento Visual de Ítems:**
+  - La UI de `OrderItemsList` agrupa automáticamente los ítems por `description_snapshot` y `unit_price`.
+  - Esta consolidación es solo visual para mejorar la legibilidad; la base de datos conserva los registros individuales para auditoría y trazabilidad.
+  - Al agrupar, se suman las cantidades y totales, y se combinan los modificadores únicos.
 - `Eliminar orden` en una orden activa es una accion directa con confirmacion simple; no usa el selector de anulacion por cantidades.
 - La accion solo esta disponible si todos los items estan en `DRAFT` o `En caja`.
 - La UI unifica esta acción para evitar duplicados en el menú de acciones, independientemente del origen de los items (borrador o enviados).
@@ -107,9 +111,10 @@
 - Diferencia de arquitectura vigente:
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
-- La lista de ordenes por cobrar usa la cantidad ordenada activa completa antes del despacho para mesa y para llevar; orden especial cobra su valor activo configurado.
-- El botón "Cobrar" se deshabilita si la orden tiene `locked_for_editing = true`.
 - El cálculo de cambio (`changeAmount`) en el diálogo de pago se unifica para agregar excedentes de todos los métodos de pago (efectivo, transferencia, etc.).
+- **Consolidación en Caja:**
+  - `PayableOrdersList` y `PaymentDialog` presentan los ítems agrupados por descripción y precio.
+  - Esto facilita el cobro rápido al mostrar totales consolidados por producto idéntico.
 - Cierre de turno desde `Admin > Turno`:
   - si el turno esta abierto, el encabezado visible muestra la apertura del turno usando `cash_shifts.opened_at`
   - antes de bloquear por borradores, se cancelan automaticamente borradores vacios/no enviados mediante `cancel_empty_draft_orders_for_branch(...)`
@@ -212,3 +217,5 @@
 10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
+13. **Agrupamiento Visual:** Toda modificación en la lógica de listado de ítems debe preservar la consolidación por descripción y precio para mantener la limpieza visual de la orden.
+14. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.

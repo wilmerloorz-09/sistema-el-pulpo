@@ -122,6 +122,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
 - El cálculo de cambio (`changeAmount`) debe realizarse de manera unificada, agregando los excedentes de todos los métodos de pago en una sola cifra coherente.
 - No asumir que `orders.total` de una orden especial coincide con `special_total_manual` o con `sum(order_items.total)`.
+- **Agrupamiento UI Obligatorio:** Toda lista de ítems de orden (Caja y Resumen) debe implementar agrupamiento por descripción y precio unitario para evitar redundancia visual y facilitar la lectura operativa.
+- **Flexibilidad en Edición:** El acceso a la edición de órdenes debe estar permitido para usuarios operativos (`canOperateOrders`) siempre que el turno esté abierto, asegurando que la gestión de mesas no dependa exclusivamente de supervisores.
 
 ### 11. Comprobantes de transferencia
 - No romper separacion entre captura, almacenamiento, OCR/analisis y aprobacion/rechazo posterior.

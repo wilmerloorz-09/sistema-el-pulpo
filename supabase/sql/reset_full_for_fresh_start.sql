@@ -12,6 +12,8 @@
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
 --   - incluye la persistencia del estado de navegación mediante el parámetro `origin` y resaltado manual (forceActive/suppressActive)
 --   - incluye el bloqueo transaccional del botón "Cobrar" en Caja mientras una orden está en edición
+--   - incluye el agrupamiento visual de ítems en toda la UI operativa (Caja, Ordenes)
+--   - incluye la apertura de permisos operativos para edición de orden y búsqueda
 --   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo

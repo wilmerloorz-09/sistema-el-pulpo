@@ -13,6 +13,8 @@
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
 --   - incluye la persistencia del estado de navegación mediante el parámetro `origin` y resaltado manual (forceActive/suppressActive)
 --   - incluye el bloqueo automático del botón "Cobrar" en Caja mientras una orden está en edición
+--   - incluye el agrupamiento visual de ítems en Caja y Resumen de Orden para mejorar la legibilidad
+--   - incluye la flexibilidad de permisos: usuarios operativos ahora pueden acceder a "Editar orden" y búsqueda
 --   - incluye la regla de Caja: una orden/item `DRAFT` nunca debe aparecer ni poder cobrarse en Caja
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor

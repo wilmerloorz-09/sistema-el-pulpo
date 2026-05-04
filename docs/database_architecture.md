@@ -104,6 +104,9 @@
 - Si la orden mezcla items `DRAFT` y `En caja`, los `DRAFT` se eliminan como borrador y los enviados se anulan por cantidades operativas.
 - Esta acción se unifica en la UI para evitar duplicados, resolviendo internamente si se borra el borrador o se anula la orden enviada.
 - No se permite esa eliminacion si hay items despachados, pagados o con solicitud de anulacion pendiente.
+- **Regla de Agrupamiento:** Las consultas que alimentan `OrderItemsList` y `PayableOrdersList` deben permitir la consolidación lógica en el cliente por `description_snapshot` y `unit_price`.
+- **Acceso Operativo:** La visibilidad del botón "Editar orden" y la búsqueda en el módulo de Órdenes se extiende a perfiles con `can_operate_orders` activo en el turno.
+- El cálculo de cambio en el cobro debe centralizarse para evitar discrepancias entre distintos métodos de pago.
 
 ### Mesas / Múltiples órdenes
 - `orders.table_order_position` es la base vigente para ordenar visualmente las cuentas activas.

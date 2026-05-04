@@ -458,6 +458,7 @@ const OrdenesContent = () => {
   const canUseEditarOrden =
     isGlobalAdmin
     || canManageOrders
+    || canOperateOrders
     || Boolean(shiftGateQuery.data?.canEditOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
   const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
@@ -1275,7 +1276,7 @@ const OrdenesContent = () => {
     order.status === "KITCHEN_DISPATCHED";
 
   const canEditItems =
-    (canUseEditarOrden || fromEditar) &&
+    (canOperateOrders || canUseEditarOrden || fromEditar) &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
     !hasPendingCancellationItems &&

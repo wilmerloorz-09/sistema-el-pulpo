@@ -433,6 +433,7 @@ export default function PaymentDialog({
   const changeGiven = roundMoney(changeDenomBreakdown.reduce((sum, denomination) => sum + denomination.qty * denomination.value, 0));
   const cannotMakeChange = changeAmount > 0 && Math.abs(changeGiven - changeAmount) > 0.001;
   const availableMethodIds = useMemo(() => new Set(paymentMethods.map((method) => method.id)), [paymentMethods]);
+
   const setItemQty = (itemId: string, qty: number, maxQty: number) => {
     const normalized = Number.isFinite(qty) ? Math.floor(qty) : 0;
     const nextQty = clampQty(normalized, 0, maxQty);
@@ -505,6 +506,76 @@ export default function PaymentDialog({
     });
   };
 
+  const setGroupQty = (group: typeof unpaidItems, totalQty: number) => {
+    let remaining = totalQty;
+    setPayQuantities((prev) => {
+      const next = { ...prev };
+      for (const item of group) {
+        const take = Math.min(remaining, item.quantity_pending);
+        next[item.id] = take;
+        remaining -= take;
+      }
+      return next;
+    });
+    setSelectedRows((prev) => {
+      const next = { ...prev };
+      for (const item of group) {
+        next[item.id] = (payQuantities[item.id] ?? 0) > 0 || (totalQty > 0 && group.some(i => i.id === item.id));
+      }
+      // Re-evaluate selected status for the whole group
+      let groupRemaining = totalQty;
+      for (const item of group) {
+        const take = Math.min(groupRemaining, item.quantity_pending);
+        next[item.id] = take > 0;
+        groupRemaining -= take;
+      }
+      return next;
+    });
+  };
+
+  const moveOneGroupToCharge = (group: typeof unpaidItems) => {
+    const target = group.find(item => (item.quantity_pending - (payQuantities[item.id] ?? 0)) > 0);
+    if (target) {
+      moveOneToCharge(target.id, target.quantity_pending);
+    }
+  };
+
+  const moveAllGroupToCharge = (group: typeof unpaidItems) => {
+    for (const item of group) {
+      moveAllToCharge(item.id, item.quantity_pending);
+    }
+  };
+
+  const moveOneGroupBackToPending = (group: typeof unpaidItems) => {
+    const target = [...group].reverse().find(item => (payQuantities[item.id] ?? 0) > 0);
+    if (target) {
+      moveOneBackToPending(target.id, target.quantity_pending);
+    }
+  };
+
+  const moveAllGroupBackToPending = (group: typeof unpaidItems) => {
+    for (const item of group) {
+      moveAllBackToPending(item.id, item.quantity_pending);
+    }
+  };
+
+  const toggleGroupSelection = (group: typeof unpaidItems, checked: boolean) => {
+    setPayQuantities((prev) => {
+      const next = { ...prev };
+      for (const item of group) {
+        next[item.id] = checked ? item.quantity_pending : 0;
+      }
+      return next;
+    });
+    setSelectedRows((prev) => {
+      const next = { ...prev };
+      for (const item of group) {
+        next[item.id] = checked;
+      }
+      return next;
+    });
+  };
+
   const pendingUnitsTotal = useMemo(
     () => unpaidItems.reduce((sum, item) => sum + Math.max(0, item.quantity_pending - (payQuantities[item.id] ?? 0)), 0),
     [unpaidItems, payQuantities],
@@ -515,25 +586,73 @@ export default function PaymentDialog({
     [unpaidItems, payQuantities],
   );
 
+  const groupedUnpaidItems = useMemo(() => {
+    const groups: Record<string, typeof unpaidItems> = {};
+    for (const item of unpaidItems) {
+      const key = `${item.description_snapshot}_${item.unit_price}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    }
+    return Object.values(groups);
+  }, [unpaidItems]);
+
   const pendingItemsForNow = useMemo(
-    () => unpaidItems
-      .map((item) => ({
-        ...item,
-        quantity_available_now: Math.max(0, item.quantity_pending - (payQuantities[item.id] ?? 0)),
-      }))
-      .filter((item) => item.quantity_available_now > 0),
-    [unpaidItems, payQuantities],
+    () => groupedUnpaidItems
+      .map((group) => {
+        const qty = group.reduce((sum, item) => sum + Math.max(0, item.quantity_pending - (payQuantities[item.id] ?? 0)), 0);
+        if (qty <= 0) return null;
+        return {
+          ...group[0],
+          quantity_available_now: qty,
+          groupItems: group,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null),
+    [groupedUnpaidItems, payQuantities],
   );
 
   const selectedItemsForNow = useMemo(
-    () => unpaidItems
-      .map((item) => ({
-        ...item,
-        quantity_to_charge_now: payQuantities[item.id] ?? 0,
-      }))
-      .filter((item) => item.quantity_to_charge_now > 0),
-    [unpaidItems, payQuantities],
+    () => groupedUnpaidItems
+      .map((group) => {
+        const qty = group.reduce((sum, item) => sum + (payQuantities[item.id] ?? 0), 0);
+        if (qty <= 0) return null;
+        return {
+          ...group[0],
+          quantity_to_charge_now: qty,
+          groupItems: group,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null),
+    [groupedUnpaidItems, payQuantities],
   );
+
+  const groupedPaidItems = useMemo(() => {
+    const groups: Record<string, typeof paidItems> = {};
+    for (const item of paidItems) {
+      const key = `${item.description_snapshot}_${item.unit_price}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    }
+    return Object.values(groups).map(group => ({
+      ...group[0],
+      quantity: group.reduce((sum, item) => sum + item.quantity, 0),
+      quantity_paid: group.reduce((sum, item) => sum + item.quantity_paid, 0),
+      quantity_pending: group.reduce((sum, item) => sum + item.quantity_pending, 0),
+      total: group.reduce((sum, item) => sum + item.total, 0),
+      groupItems: group
+    }));
+  }, [paidItems]);
+
+  const groupedSpecialUnpaidItems = useMemo(() => {
+    return groupedUnpaidItems.map(group => {
+      return {
+        ...group[0],
+        quantity_pending: group.reduce((sum, item) => sum + item.quantity_pending, 0),
+        quantity_to_charge_now: group.reduce((sum, item) => sum + (payQuantities[item.id] ?? 0), 0),
+        groupItems: group
+      };
+    });
+  }, [groupedUnpaidItems, payQuantities]);
 
   const pendingAmountForNow = useMemo(
     () => roundMoney(pendingItemsForNow.reduce((sum, item) => sum + computeLineAmount(item.quantity_available_now, item.unit_price), 0)),
@@ -657,17 +776,28 @@ export default function PaymentDialog({
     
     try {
       // Capturar datos para el recibo antes de realizar el pago
-      const transactionItems = isSpecialOrder
-        ? []
-        : itemSelections.map((sel) => {
-            const originalItem = order.items.find((i) => i.id === sel.itemId);
-            return {
+      const receiptItemsMap = new Map<string, { description: string; quantity: number; unitPrice: number; amount: number }>();
+      
+      if (!isSpecialOrder) {
+        for (const sel of itemSelections) {
+          const originalItem = order.items.find((i) => i.id === sel.itemId);
+          const key = `${originalItem?.description_snapshot ?? "Producto"}_${sel.unitPrice}`;
+          const existing = receiptItemsMap.get(key);
+          if (existing) {
+            existing.quantity += sel.quantity;
+            existing.amount += sel.amount;
+          } else {
+            receiptItemsMap.set(key, {
               description: originalItem?.description_snapshot ?? "Producto",
               quantity: sel.quantity,
               unitPrice: sel.unitPrice,
               amount: sel.amount,
-            };
-          });
+            });
+          }
+        }
+      }
+
+      const transactionItems = Array.from(receiptItemsMap.values());
 
       const transactionPayments = paymentAllocationPreview
         .filter((sp) => sp.appliedAmount > 0)
@@ -1002,8 +1132,9 @@ export default function PaymentDialog({
                         <div className="scrollbar-none max-h-[240px] space-y-1.5 overflow-y-auto md:max-h-[320px]">
                           {pendingItemsForNow.map((item) => {
                             const isBulkItem = item.tray_item_type === "C";
+                            const groupKey = `${item.description_snapshot}_${item.unit_price}`;
                             return (
-                      <div key={item.id} className="grid grid-cols-[44px_minmax(0,1fr)_64px_78px_78px] items-center gap-2 rounded-2xl border border-stone-200 bg-stone-50/50 px-2 py-2 sm:grid-cols-[52px_minmax(0,1fr)_72px_92px_86px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
+                      <div key={groupKey} className="grid grid-cols-[44px_minmax(0,1fr)_64px_78px_78px] items-center gap-2 rounded-2xl border border-stone-200 bg-stone-50/50 px-2 py-2 sm:grid-cols-[52px_minmax(0,1fr)_72px_92px_86px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
                         <span className="text-center text-sm font-semibold text-slate-900">{isBulkItem ? "AG" : item.quantity_available_now}</span>
                         <div className="flex min-w-0 items-center gap-2.5">
                           <ProductAvatar description={item.description_snapshot} imageUrl={item.image_url} />
@@ -1020,7 +1151,7 @@ export default function PaymentDialog({
                           <button
                             type="button"
                             disabled={readOnly}
-                            onClick={() => moveOneToCharge(item.id, item.quantity_pending)}
+                            onClick={() => moveOneGroupToCharge(item.groupItems)}
                             className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <ArrowRight className="h-4 w-4" />
@@ -1028,7 +1159,7 @@ export default function PaymentDialog({
                           <button
                             type="button"
                             disabled={readOnly}
-                            onClick={() => moveAllToCharge(item.id, item.quantity_pending)}
+                            onClick={() => moveAllGroupToCharge(item.groupItems)}
                             className="flex h-8 min-w-[38px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             &gt;&gt;
@@ -1079,13 +1210,14 @@ export default function PaymentDialog({
                   <div className="scrollbar-none max-h-[240px] space-y-1.5 overflow-y-auto md:max-h-[320px]">
                     {selectedItemsForNow.map((item) => {
                       const isBulkItem = item.tray_item_type === "C";
+                      const groupKey = `${item.description_snapshot}_${item.unit_price}`;
                       return (
-                      <div key={item.id} className="grid grid-cols-[78px_44px_minmax(0,1fr)_64px_78px] items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/40 px-2 py-2 sm:grid-cols-[86px_52px_minmax(0,1fr)_72px_82px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
+                      <div key={groupKey} className="grid grid-cols-[78px_44px_minmax(0,1fr)_64px_78px] items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/40 px-2 py-2 sm:grid-cols-[86px_52px_minmax(0,1fr)_72px_82px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
                         <div className="flex justify-start gap-2">
                           <button
                             type="button"
                             disabled={readOnly}
-                            onClick={() => moveAllBackToPending(item.id, item.quantity_pending)}
+                            onClick={() => moveAllGroupBackToPending(item.groupItems)}
                             className="flex h-8 min-w-[38px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             &lt;&lt;
@@ -1093,7 +1225,7 @@ export default function PaymentDialog({
                           <button
                             type="button"
                             disabled={readOnly}
-                            onClick={() => moveOneBackToPending(item.id, item.quantity_pending)}
+                            onClick={() => moveOneGroupBackToPending(item.groupItems)}
                             className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <ArrowLeft className="h-4 w-4" />
@@ -1469,20 +1601,27 @@ export default function PaymentDialog({
                               </Badge>
                             </div>
                             <div className="space-y-2">
-                              {order.items.map((item) => {
+                              {groupedUnpaidItems.map((group) => {
+                                const item = group[0];
+                                const quantity = group.reduce((sum, i) => sum + i.quantity, 0);
+                                const quantity_paid = group.reduce((sum, i) => sum + i.quantity_paid, 0);
+                                const quantity_pending = group.reduce((sum, i) => sum + i.quantity_pending, 0);
+                                const total = group.reduce((sum, i) => sum + i.total, 0);
                                 const isBulkItem = item.tray_item_type === "C";
+                                const groupKey = `${item.description_snapshot}_${item.unit_price}`;
+
                                 return (
-                                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
+                                <div key={groupKey} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
                                     <p className="text-xs text-muted-foreground">
                                       {isBulkItem
-                                        ? `A granel - pagadas ${item.quantity_paid} - pendientes ${item.quantity_pending}`
-                                        : `${item.quantity} unidad(es) - pagadas ${item.quantity_paid} - pendientes ${item.quantity_pending}`}
+                                        ? `A granel - pagadas ${quantity_paid} - pendientes ${quantity_pending}`
+                                        : `${quantity} unidad(es) - pagadas ${quantity_paid} - pendientes ${quantity_pending}`}
                                     </p>
                                   </div>
                                   <span className="shrink-0 text-sm font-semibold text-foreground">
-                                    ${item.total.toFixed(2)}
+                                    ${total.toFixed(2)}
                                   </span>
                                 </div>
                                 );
@@ -1509,15 +1648,16 @@ export default function PaymentDialog({
                             </div>
 
                             <div className="space-y-1.5">
-                              {unpaidItems.map((item) => {
-                                const qtyToPay = payQuantities[item.id] ?? 0;
-                                const isSelected = selectedRows[item.id] ?? false;
+                              {groupedSpecialUnpaidItems.map((item) => {
+                                const qtyToPay = item.quantity_to_charge_now;
+                                const isSelected = item.groupItems.some(gi => selectedRows[gi.id]);
                                 const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
                                 const isBulkItem = item.tray_item_type === "C";
+                                const groupKey = `${item.description_snapshot}_${item.unit_price}`;
 
                                 return (
                                   <div
-                                    key={item.id}
+                                    key={groupKey}
                                     className={cn(
                                       "grid grid-cols-[28px_minmax(0,2.05fr)_80px_64px_82px_80px] items-center gap-2 rounded-lg px-3 py-2 transition-colors",
                                       isSelected && qtyToPay > 0 ? "bg-primary/5" : "bg-transparent",
@@ -1526,7 +1666,7 @@ export default function PaymentDialog({
                                     <div className="flex items-center justify-center">
                                       <Checkbox
                                         checked={isSelected}
-                                        onCheckedChange={(checked) => toggleItemSelection(item.id, checked === true, item.quantity_pending)}
+                                        onCheckedChange={(checked) => toggleGroupSelection(item.groupItems, checked === true)}
                                         disabled={readOnly}
                                         className="h-4 w-4 rounded-md"
                                       />
@@ -1543,7 +1683,7 @@ export default function PaymentDialog({
                                         min={0}
                                         max={item.quantity_pending}
                                         value={qtyToPay}
-                                        onValueChange={(value) => setItemQty(item.id, value, item.quantity_pending)}
+                                        onValueChange={(value) => setGroupQty(item.groupItems, value)}
                                         className="h-8 w-[72px] text-xs"
                                         disabled={readOnly}
                                       />
@@ -1555,17 +1695,19 @@ export default function PaymentDialog({
                             </div>
                           </div>
 
-                          {paidItems.length > 0 && (
+                          {groupedPaidItems.length > 0 && (
                             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-3">
                               <div className="mb-2 flex items-center justify-between gap-2">
                                 <p className="text-sm font-medium text-muted-foreground">Items ya pagados</p>
                                 <Badge variant="outline" className="text-[10px]">
-                                  {paidItems.length}
+                                  {groupedPaidItems.length}
                                 </Badge>
                               </div>
                               <div className="space-y-2">
-                                {paidItems.map((item) => (
-                                  <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
+                                {groupedPaidItems.map((item) => {
+                                  const groupKey = `${item.description_snapshot}_${item.unit_price}`;
+                                  return (
+                                  <div key={groupKey} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
                                     <span className="min-w-0 flex-1 truncate text-sm text-foreground line-through">
                                       {item.tray_item_type === "C" ? item.description_snapshot : `${item.description_snapshot} - ${item.quantity} unidad(es)`}
                                     </span>
@@ -1573,7 +1715,8 @@ export default function PaymentDialog({
                                       Pagado completo
                                     </Badge>
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}

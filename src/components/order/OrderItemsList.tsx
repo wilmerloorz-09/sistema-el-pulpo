@@ -194,10 +194,32 @@ const OrderItemsList = ({
     <div className="flex flex-col gap-3">
 
 
-      {items.map((item) => {
+      {(() => {
+        const groups: Record<string, OrderItem & { groupItemIds: string[] }> = {};
+        for (const item of items) {
+          const key = `${item.description_snapshot}_${item.unit_price}`;
+          if (!groups[key]) {
+            groups[key] = { 
+              ...item, 
+              groupItemIds: [item.id],
+              modifiers: [...item.modifiers] 
+            };
+          } else {
+            groups[key].quantity += item.quantity;
+            groups[key].total += item.total;
+            groups[key].groupItemIds.push(item.id);
+            for (const mod of item.modifiers) {
+              if (!groups[key].modifiers.some(m => m.id === mod.id)) {
+                groups[key].modifiers.push(mod);
+              }
+            }
+          }
+        }
+        return Object.values(groups);
+      })().map((item) => {
         const isPending = item.status === "DRAFT";
         const isTemporaryItem = isTemporaryOrderItemId(item.id);
-        const canShowControlsForItem = !hideItemControls || editableItemIds.includes(item.id);
+        const canShowControlsForItem = !hideItemControls || editableItemIds.some(id => item.groupItemIds.includes(id));
         const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || alwaysShowControls);
         const draftDisabled = isPending && disableDraftEditing;
         const controlsDisabled = alwaysShowControls ? false : draftDisabled;
