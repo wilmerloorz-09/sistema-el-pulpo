@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil } from "lucide-react";
+import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -363,7 +363,7 @@ function OrdenesSkeleton() {
         </div>
       </div>
 
-      <div className="grid flex-1 gap-4 px-3 py-4 2xl:grid-cols-[1.1fr_0.9fr] 2xl:px-4">
+      <div className="grid flex-1 gap-4 px-3 py-4 md:grid-cols-2">
         <div className="space-y-3">
           <Skeleton className="h-16 rounded-[24px]" />
           <Skeleton className="h-16 rounded-[24px]" />
@@ -526,6 +526,7 @@ const OrdenesContent = () => {
     right: false,
   });
   const [paymentDialogOpenForOrderId, setPaymentDialogOpenForOrderId] = useState<string | null>(null);
+  const [showCajaUnopenedAlert, setShowCajaUnopenedAlert] = useState(false);
   const showPaymentDialog = Boolean(orderId && paymentDialogOpenForOrderId === orderId);
 
 
@@ -2078,6 +2079,11 @@ const OrdenesContent = () => {
             try {
               await sendToKitchen.mutateAsync();
               if (canUseCaja && (order?.id || orderId)) {
+                if (!shift || shift.caja_status !== "OPEN" || !shift.denoms || shift.denoms.length === 0) {
+                  setShowCajaUnopenedAlert(true);
+                  return;
+                }
+
                 if (isTablet10) {
                   // Solo se abre por clic fisico aqui
                   setPaymentDialogOpenForOrderId(orderId);
@@ -2510,7 +2516,7 @@ const OrdenesContent = () => {
         </div>
       </div>
 
-      <div className="relative z-10 hidden flex-1 overflow-hidden p-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(320px,40vw)] md:gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="relative z-10 hidden flex-1 overflow-hidden p-4 md:grid md:grid-cols-2 md:gap-4">
         <div className="min-w-0 overflow-x-hidden overflow-y-auto">
           {menuPanel}
         </div>
@@ -2915,6 +2921,34 @@ const OrdenesContent = () => {
         // CANDADO DE SEGURIDAD: Solo se muestra si NO estamos cargando y si se activo manualmente
         open={!isLoading && showPaymentDialog}
       />
+
+      <AlertDialog open={showCajaUnopenedAlert} onOpenChange={setShowCajaUnopenedAlert}>
+        <AlertDialogContent className="max-w-md rounded-[24px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+              <AlertTriangle className="h-6 w-6 text-amber-500" />
+              Caja no disponible
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base text-slate-600">
+              La caja no ha sido abierta. Por favor, abre la caja en el módulo de Caja primero.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction 
+              onClick={() => navigate("/caja")}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl"
+            >
+              Ir a Caja
+            </AlertDialogAction>
+            <AlertDialogAction 
+              onClick={() => setShowCajaUnopenedAlert(false)}
+              className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl border-none"
+            >
+              Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style>{`
         @media (max-width: 768px) {

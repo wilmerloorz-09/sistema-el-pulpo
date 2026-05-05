@@ -727,13 +727,16 @@ export function useCaja(params?: {
       const allDenoms = denomsQuery.data ?? [];
       const enriched: ShiftDenom[] = (denoms ?? []).map((d: any) => {
         const denom = allDenoms.find((ad) => ad.id === d.denomination_id);
+        if (!denom) {
+          console.warn(`Denomination ${d.denomination_id} not found in global list for shift ${shiftData.id}`);
+        }
         return {
           ...d,
-          label: denom?.label ?? "",
-          denomination_type: denom?.denomination_type,
-          display_order: denom?.display_order ?? 0,
-          value: denom?.value ?? 0,
-          image_url: denom?.image_url ?? null,
+          label: denom?.label ?? d.label ?? `Valor $${(d.value ?? 0).toFixed(2)}`,
+          denomination_type: denom?.denomination_type ?? d.denomination_type ?? 'coin',
+          display_order: denom?.display_order ?? d.display_order ?? 999,
+          value: denom?.value ?? d.value ?? 0,
+          image_url: denom?.image_url ?? d.image_url ?? null,
         };
       });
 

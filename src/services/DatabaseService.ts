@@ -150,10 +150,11 @@ async function cacheLocally(table: TableName, records: any[], branchId?: string 
   }));
 
   // For catalog tables, replace all cached records for this branch
-  if (CATALOG_TABLES.includes(table) && branchId) {
+  if (CATALOG_TABLES.includes(table)) {
     await localDb.transaction("rw", dexieTable, async () => {
       // Delete old cached records for this branch
-      await dexieTable.where("branch_id").equals(branchId).delete();
+      if (branchId) { await dexieTable.where("branch_id").equals(branchId).delete(); }
+      else { await dexieTable.clear(); }
       // Bulk insert new data
       if (enriched.length > 0) {
         await dexieTable.bulkPut(enriched);

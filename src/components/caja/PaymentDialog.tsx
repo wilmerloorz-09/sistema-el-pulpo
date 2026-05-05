@@ -29,7 +29,7 @@ import {
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, UserRound, Wallet, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, UserRound, Wallet, WalletCards } from "lucide-react";
 import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "./PaymentReceipt";
@@ -1911,8 +1911,8 @@ export default function PaymentDialog({
             <DialogTitle className="font-display text-lg">Monedas y billetes</DialogTitle>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-hidden px-3 py-2.5 sm:px-4">
-            <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="min-h-0 flex-1 overflow-hidden px-3 py-2.5 sm:px-4 flex flex-col">
+            <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3 shrink-0">
               <MetricCard
                 title="Aplicado"
                 value={`$${draftCashAppliedAmount.toFixed(2)}`}
@@ -1936,177 +1936,191 @@ export default function PaymentDialog({
               />
             </div>
 
-            <div className="grid h-[calc(100dvh-15rem)] min-h-0 gap-3 lg:h-[calc(94vh-152px)] lg:grid-cols-[minmax(0,1.55fr)_380px]">
-              <div className="min-h-0 overflow-y-auto rounded-2xl border border-border bg-card p-3">
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="space-y-3 rounded-2xl border border-amber-200/70 bg-gradient-to-b from-amber-50/80 to-background p-3 shadow-sm">
-                    <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
-                          <Coins className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">Monedas</p>
-                          <p className="text-[11px] text-muted-foreground">Cambio menudo y efectivo fraccionado</p>
-                        </div>
-                      </div>
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{coinDenoms.length}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {coinDenoms.map(renderDenominationButton)}
-                    </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {!shiftDenoms || shiftDenoms.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center p-8 text-center min-h-[300px]">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                    <AlertTriangle className="h-8 w-8" />
                   </div>
-
-                  <div className="space-y-3 rounded-2xl border border-emerald-200/70 bg-gradient-to-b from-emerald-50/80 to-background p-3 shadow-sm">
-                    <div className="flex items-center justify-between border-b border-emerald-200/80 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
-                          <WalletCards className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">Billetes</p>
-                          <p className="text-[11px] text-muted-foreground">Montos altos y pagos de valor completo</p>
-                        </div>
-                      </div>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{billDenoms.length}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {billDenoms.map(renderDenominationButton)}
-                    </div>
-                  </div>
+                  <h3 className="mb-2 text-lg font-bold text-slate-900">Caja no inicializada</h3>
+                  <p className="max-w-xs text-sm text-slate-500">
+                    No se han configurado las denominaciones para este turno. Por favor, asegúrate de que la caja esté abierta correctamente en el módulo de Caja.
+                  </p>
                 </div>
-              </div>
-
-              <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-card p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Detalle seleccionado</p>
-                    <p className="text-xs text-muted-foreground">Lo recibido en efectivo</p>
-                  </div>
-                  {!readOnly && draftHasReceivedDenoms && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1 px-2 text-destructive"
-                      onClick={() => setCashDraftReceived({})}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Limpiar
-                    </Button>
-                  )}
-                </div>
-
-                {draftHasReceivedDenoms && (
-                  <div className="mb-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <span className="text-sm font-semibold text-emerald-800">Total de items</span>
-                    <span className="font-display text-lg font-bold text-emerald-700">${draftTotalReceived.toFixed(2)}</span>
-                  </div>
-                )}
-
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  {draftHasReceivedDenoms ? (
-                    <div className="space-y-1">
-                      {sortedDenoms
-                        .filter((denomination) => (cashDraftReceived[denomination.denomination_id] || 0) > 0)
-                        .map((denomination) => (
-                          <div key={denomination.denomination_id} className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm sm:flex sm:items-center sm:px-3 sm:py-1.5">
-                            {!readOnly && (
-                              <button
-                                onClick={() =>
-                                  setCashDraftReceived((prev) => {
-                                    const next = { ...prev };
-                                    delete next[denomination.denomination_id];
-                                    return next;
-                                  })
-                                }
-                                className="flex h-8 shrink-0 items-center justify-center px-1 text-destructive transition-colors hover:text-red-700"
-                                title="Quitar denominacion"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <DenominationVisual
-                              label={denomination.label}
-                              imageUrl={denomination.image_url}
-                              className="h-8 w-8 shrink-0 rounded-lg"
-                              iconClassName="h-4 w-4"
-                            />
-                            <span className="min-w-[58px] font-medium text-foreground">${denomination.value.toFixed(2)}</span>
-                            {!readOnly && (
-                              <button
-                                onClick={() =>
-                                  setCashDraftReceived((prev) => {
-                                    const value = (prev[denomination.denomination_id] || 0) - 1;
-                                    if (value <= 0) {
-                                      const next = { ...prev };
-                                      delete next[denomination.denomination_id];
-                                      return next;
-                                    }
-                                    return { ...prev, [denomination.denomination_id]: value };
-                                  })
-                                }
-                                className="flex h-8 w-8 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 shadow-sm transition-all hover:scale-105 hover:bg-red-100 hover:text-red-700"
-                                title="Restar una unidad"
-                              >
-                                <Minus className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <div className="flex min-w-[58px] items-center gap-1">
-                              <NumericInput
-                                min={0}
-                                value={cashDraftReceived[denomination.denomination_id] || 0}
-                                onValueChange={(value) => setDraftDenominationQty(denomination.denomination_id, value)}
-                                className="h-8 w-14 rounded-lg px-2 text-center text-sm font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                disabled={readOnly}
-                              />
+              ) : (
+                <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1.55fr)_380px]">
+                  <div className="min-h-0 overflow-y-auto rounded-2xl border border-border bg-card p-3">
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="space-y-3 rounded-2xl border border-amber-200/70 bg-gradient-to-b from-amber-50/80 to-background p-3 shadow-sm">
+                        <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
+                              <Coins className="h-4 w-4" />
                             </div>
-                            {!readOnly && (
-                              <button
-                                onClick={() => addDraftDenomination(denomination.denomination_id)}
-                                className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 shadow-sm transition-all hover:scale-105 hover:bg-emerald-100 hover:text-emerald-700"
-                                title="Sumar una unidad"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <span className="col-span-full text-right font-semibold text-foreground sm:col-auto sm:text-left">
-                              ${((cashDraftReceived[denomination.denomination_id] || 0) * denomination.value).toFixed(2)}
-                            </span>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Monedas</p>
+                              <p className="text-[11px] text-muted-foreground">Cambio menudo y efectivo fraccionado</p>
+                            </div>
                           </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-                      Selecciona monedas o billetes para ver el detalle aqui.
-                    </div>
-                  )}
-                </div>
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{coinDenoms.length}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {coinDenoms.map(renderDenominationButton)}
+                        </div>
+                      </div>
 
-                <div className="mt-3 space-y-2 border-t border-border pt-3">
-                  <div className="flex justify-between text-sm font-bold">
-                    <span className="flex items-center gap-1 text-foreground">
-                      <ArrowDown className="h-3.5 w-3.5 text-green-500" /> Recibido
-                    </span>
-                    <span className="text-foreground">${draftTotalReceived.toFixed(2)}</span>
+                      <div className="space-y-3 rounded-2xl border border-emerald-200/70 bg-gradient-to-b from-emerald-50/80 to-background p-3 shadow-sm">
+                        <div className="flex items-center justify-between border-b border-emerald-200/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                              <WalletCards className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Billetes</p>
+                              <p className="text-[11px] text-muted-foreground">Montos altos y pagos de valor completo</p>
+                            </div>
+                          </div>
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{billDenoms.length}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {billDenoms.map(renderDenominationButton)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {draftHasReceivedDenoms && draftTotalReceived < cashAppliedAmount && (
-                    <p className="text-xs font-medium text-destructive">
-                      Recibido insuficiente. Faltan ${(cashAppliedAmount - draftTotalReceived).toFixed(2)}.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+                  <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-card p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Detalle seleccionado</p>
+                        <p className="text-xs text-muted-foreground">Lo recibido en efectivo</p>
+                      </div>
+                      {!readOnly && draftHasReceivedDenoms && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1 px-2 text-destructive"
+                          onClick={() => setCashDraftReceived({})}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Limpiar
+                        </Button>
+                      )}
+                    </div>
 
-          <div className="sticky bottom-0 flex shrink-0 flex-col gap-2 border-t border-border bg-background px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end sm:px-4">
-            <Button type="button" variant="outline" onClick={cancelCashDetail} className="w-full sm:w-auto">
-              Cancelar
-            </Button>
-            <Button type="button" onClick={acceptCashDetail} className="w-full sm:w-auto">
-              Aceptar
-            </Button>
+                    {draftHasReceivedDenoms && (
+                      <div className="mb-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                        <span className="text-sm font-semibold text-emerald-800">Total de items</span>
+                        <span className="font-display text-lg font-bold text-emerald-700">${draftTotalReceived.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                      {draftHasReceivedDenoms ? (
+                        <div className="space-y-1">
+                          {sortedDenoms
+                            .filter((denomination) => (cashDraftReceived[denomination.denomination_id] || 0) > 0)
+                            .map((denomination) => (
+                              <div key={denomination.denomination_id} className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm sm:flex sm:items-center sm:px-3 sm:py-1.5">
+                                {!readOnly && (
+                                  <button
+                                    onClick={() =>
+                                      setCashDraftReceived((prev) => {
+                                        const next = { ...prev };
+                                        delete next[denomination.denomination_id];
+                                        return next;
+                                      })
+                                    }
+                                    className="flex h-8 shrink-0 items-center justify-center px-1 text-destructive transition-colors hover:text-red-700"
+                                    title="Quitar denominacion"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <DenominationVisual
+                                  label={denomination.label}
+                                  imageUrl={denomination.image_url}
+                                  className="h-8 w-8 shrink-0 rounded-lg"
+                                  iconClassName="h-4 w-4"
+                                />
+                                <span className="min-w-[58px] font-medium text-foreground">${denomination.value.toFixed(2)}</span>
+                                {!readOnly && (
+                                  <button
+                                    onClick={() =>
+                                      setCashDraftReceived((prev) => {
+                                        const value = (prev[denomination.denomination_id] || 0) - 1;
+                                        if (value <= 0) {
+                                          const next = { ...prev };
+                                          delete next[denomination.denomination_id];
+                                          return next;
+                                        }
+                                        return { ...prev, [denomination.denomination_id]: value };
+                                      })
+                                    }
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 shadow-sm transition-all hover:scale-105 hover:bg-red-100 hover:text-red-700"
+                                    title="Restar una unidad"
+                                  >
+                                    <Minus className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <div className="flex min-w-[58px] items-center gap-1">
+                                  <NumericInput
+                                    min={0}
+                                    value={cashDraftReceived[denomination.denomination_id] || 0}
+                                    onValueChange={(value) => setDraftDenominationQty(denomination.denomination_id, value)}
+                                    className="h-8 w-14 rounded-lg px-2 text-center text-sm font-semibold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    disabled={readOnly}
+                                  />
+                                </div>
+                                {!readOnly && (
+                                  <button
+                                    onClick={() => addDraftDenomination(denomination.denomination_id)}
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 shadow-sm transition-all hover:scale-105 hover:bg-emerald-100 hover:text-emerald-700"
+                                    title="Sumar una unidad"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <span className="col-span-full text-right font-semibold text-foreground sm:col-auto sm:text-left">
+                                  ${((cashDraftReceived[denomination.denomination_id] || 0) * denomination.value).toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground">
+                          Selecciona monedas o billetes para ver el detalle aqui.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 space-y-2 border-t border-border pt-3">
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="flex items-center gap-1 text-foreground">
+                          <ArrowDown className="h-3.5 w-3.5 text-green-500" /> Recibido
+                        </span>
+                        <span className="text-foreground">${draftTotalReceived.toFixed(2)}</span>
+                      </div>
+
+                      {draftHasReceivedDenoms && draftTotalReceived < cashAppliedAmount && (
+                        <p className="text-xs font-medium text-destructive">
+                          Recibido insuficiente. Faltan ${(cashAppliedAmount - draftTotalReceived).toFixed(2)}.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 flex shrink-0 flex-col gap-2 border-t border-border bg-background px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end sm:px-4 mt-auto">
+              <Button type="button" variant="outline" onClick={cancelCashDetail} className="w-full sm:w-auto">
+                Cancelar
+              </Button>
+              <Button type="button" onClick={acceptCashDetail} className="w-full sm:w-auto">
+                Aceptar
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

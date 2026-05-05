@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { Fingerprint, Loader2, LogIn } from "lucide-react";
+import { AlertCircle, Fingerprint, Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser";
 
@@ -16,6 +17,7 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const supportsPasskey = browserSupportsWebAuthn();
 
   if (authLoading) {
@@ -30,10 +32,13 @@ const Login = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       await signIn(identifier, password);
     } catch (err: any) {
-      toast.error(err.message || "Error al iniciar sesion");
+      const msg = err.message || "Error al iniciar sesion";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -41,6 +46,7 @@ const Login = () => {
 
   const handlePasskeyLogin = async () => {
     setPasskeyLoading(true);
+    setError(null);
     try {
       const { data: options, error: optErr } = await supabase.functions.invoke("webauthn-authenticate", { body: { action: "options" } });
       if (optErr) throw new Error(optErr.message);
@@ -59,15 +65,15 @@ const Login = () => {
           type: "magiclink",
         });
         if (otpError) throw otpError;
-        toast.success("Sesion iniciada con huella");
+
       } else {
-        toast.error("Verificacion fallida");
+        setError("Verificacion fallida");
       }
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
-        toast.error("Operacion cancelada");
+        setError("Operacion cancelada");
       } else {
-        toast.error(err.message || "Error al autenticar con huella");
+        setError(err.message || "Error al autenticar con huella");
       }
     } finally {
       setPasskeyLoading(false);
@@ -96,6 +102,8 @@ const Login = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+
+
           <div className="space-y-2">
             <Label htmlFor="identifier" className="text-sm font-medium">
               Correo o usuario

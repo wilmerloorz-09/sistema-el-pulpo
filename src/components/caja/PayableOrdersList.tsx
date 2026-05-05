@@ -267,20 +267,44 @@ export default function PayableOrdersList({
                             </div>
                             <div className="divide-y divide-slate-100">
                               {(() => {
-                                const groupedMap: Record<string, (typeof order.items)[0]> = {};
+                                const groupedMap: Record<string, (typeof order.items)[0] & { modifierQuantities: Array<{ mod: any, qty: number }> }> = {};
                                 for (const item of order.items) {
-                                  const key = `${item.description_snapshot}_${item.unit_price}`;
+                                  const modKey = ((item as any).modifiers || [])
+                                    .map((m: any) => (m.description || "").trim().toLowerCase())
+                                    .sort()
+                                    .join("|");
+                                  const key = `${item.description_snapshot}_${item.unit_price}_${modKey}`;
+                                  const itemQty = item.quantity || 0;
                                   if (!groupedMap[key]) {
-                                    groupedMap[key] = { ...item };
+                                    groupedMap[key] = { 
+                                      ...item, 
+                                      modifierQuantities: ((item as any).modifiers || []).map((m: any) => ({ mod: m, qty: itemQty }))
+                                    };
                                   } else {
                                     groupedMap[key].quantity += item.quantity;
                                     groupedMap[key].quantity_pending += item.quantity_pending;
                                     groupedMap[key].pending_total += item.pending_total;
+                                    groupedMap[key].modifierQuantities.push(...((item as any).modifiers || []).map((m: any) => ({ mod: m, qty: itemQty })));
                                   }
                                 }
                                 return Object.values(groupedMap);
                               })().map((item) => {
                                 const isBulkItem = item.tray_item_type === "C";
+                                const consolidatedModifiers = (() => {
+                                  const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
+                                  for (const mq of item.modifierQuantities) {
+                                    const desc = (mq.mod.description || "").trim();
+                                    if (!desc) continue;
+                                    const key = desc.toLowerCase();
+                                    if (!modCounts[key]) {
+                                      modCounts[key] = { description: desc, count: mq.qty, firstId: mq.mod.id || "mod" };
+                                    } else {
+                                      modCounts[key].count += mq.qty;
+                                    }
+                                  }
+                                  return Object.values(modCounts);
+                                })();
+
                                 return (
                                   <div
                                     key={`${item.description_snapshot}_${item.unit_price}`}
@@ -288,6 +312,17 @@ export default function PayableOrdersList({
                                   >
                                     <div className="min-w-0">
                                       <p className="truncate font-medium text-slate-900">{item.description_snapshot}</p>
+                                      
+                                      {consolidatedModifiers.length > 0 && (
+                                        <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
+                                          {consolidatedModifiers.map((mc) => (
+                                            <p key={mc.firstId} className="break-words whitespace-normal">
+                                              - {mc.description} {mc.count > 1 ? `(${mc.count})` : ""}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
+
                                       <div className="mt-1 flex flex-wrap items-center gap-2">
                                         {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
                                         {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (

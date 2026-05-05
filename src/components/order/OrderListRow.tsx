@@ -462,16 +462,27 @@ export default function OrderListRow({
 
                       {item.modifiers.length > 0 && (
                         <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
-                          {item.modifiers
-                            .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
-                            .map((modifier, modifierIndex) => (
-                              <p
-                                key={`${item.id}-modifier-${modifierIndex}-${modifier.description}`}
-                                className="break-words whitespace-normal"
-                              >
-                                - {modifier.description}
-                              </p>
-                            ))}
+                          {(() => {
+                            const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
+                            for (const mod of item.modifiers) {
+                              const desc = (mod.description || "").trim();
+                              if (!desc) continue;
+                              const key = desc.toLowerCase();
+                              if (!modCounts[key]) {
+                                modCounts[key] = { description: desc, count: visibleQty, firstId: (mod as any).id || "mod" };
+                              } else {
+                                modCounts[key].count += visibleQty;
+                              }
+                            }
+                            return Object.values(modCounts);
+                          })().map((mc) => (
+                            <p
+                              key={`${item.id}-modifier-${mc.firstId}`}
+                              className="break-words whitespace-normal"
+                            >
+                              - {mc.description} {mc.count > 1 ? `(${mc.count})` : ""}
+                            </p>
+                          ))}
                         </div>
                       )}
 

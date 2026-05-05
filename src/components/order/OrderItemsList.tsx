@@ -195,27 +195,50 @@ const OrderItemsList = ({
 
 
       {(() => {
-        const groups: Record<string, OrderItem & { groupItemIds: string[] }> = {};
+        const groups: Record<string, OrderItem & { groupItemIds: string[], modifierQuantities: Array<{ mod: any, qty: number }> }> = {};
         for (const item of items) {
-          const key = `${item.description_snapshot}_${item.unit_price}`;
+          const modKey = (item.modifiers || [])
+            .map(m => m.description.trim().toLowerCase())
+            .sort()
+            .join("|");
+          const key = `${item.description_snapshot}_${item.unit_price}_${modKey}`;
+          const itemQty = item.quantity || item.quantity_ordered || 0;
           if (!groups[key]) {
             groups[key] = { 
               ...item, 
               groupItemIds: [item.id],
-              modifiers: [...item.modifiers] 
+              modifierQuantities: item.modifiers.map(m => ({ mod: m, qty: itemQty }))
             };
           } else {
             groups[key].quantity += item.quantity;
             groups[key].total += item.total;
             groups[key].groupItemIds.push(item.id);
-            for (const mod of item.modifiers) {
-              if (!groups[key].modifiers.some(m => m.id === mod.id)) {
-                groups[key].modifiers.push(mod);
-              }
-            }
+            groups[key].modifierQuantities.push(...item.modifiers.map(m => ({ mod: m, qty: itemQty })));
           }
         }
-        return Object.values(groups);
+
+        const consolidatedGroups = Object.values(groups).map(group => {
+          const modCounts: Record<string, { description: string, count: number, firstId: string }> = {};
+          for (const mq of group.modifierQuantities) {
+            const desc = mq.mod.description.trim();
+            if (!desc) continue;
+            const key = desc.toLowerCase();
+            if (!modCounts[key]) {
+              modCounts[key] = { description: desc, count: mq.qty, firstId: mq.mod.id };
+            } else {
+              modCounts[key].count += mq.qty;
+            }
+          }
+
+          const consolidatedModifiers = Object.values(modCounts).map(mc => ({
+            id: mc.firstId,
+            description: mc.count > 1 ? `${mc.description} (${mc.count})` : mc.description
+          }));
+
+          return { ...group, modifiers: consolidatedModifiers };
+        });
+
+        return consolidatedGroups;
       })().map((item) => {
         const isPending = item.status === "DRAFT";
         const isTemporaryItem = isTemporaryOrderItemId(item.id);
