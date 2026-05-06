@@ -1,22 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CashRefundDenomInput, CompletedPaymentStatus, PaymentVoidSelectionInput, ShiftDenom } from "@/hooks/useCaja";
 import { cn } from "@/lib/utils";
 import { roundMoney } from "@/lib/paymentQuantity";
-import { ArrowLeft, ArrowRight, Coins, Loader2, ReceiptText, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, ReceiptText, RotateCcw } from "lucide-react";
 
 export interface ReversalPaymentData {
   paymentId: string;
@@ -96,6 +86,8 @@ export default function PaymentReversalModal({
   const [selectedQuantities, setSelectedQuantities] = useState<Record<string, number>>({});
   const [reason, setReason] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const itemHash = useMemo(
     () => payment?.items.map((item) => `${item.paymentEntryId}:${item.quantity}:${item.amount}`).join("|") ?? "",
@@ -107,6 +99,8 @@ export default function PaymentReversalModal({
       setSelectedQuantities({});
       setReason("");
       setConfirmOpen(false);
+      setConfirmSubmitting(false);
+      setSubmitError(null);
       return;
     }
 
@@ -125,6 +119,8 @@ export default function PaymentReversalModal({
     setSelectedQuantities(initialQuantities);
     setReason(initialDraft?.reason ?? "");
     setConfirmOpen(false);
+    setConfirmSubmitting(false);
+    setSubmitError(null);
   }, [allowPartial, initialDraft, itemHash, open, payment]);
 
   useEffect(() => {
@@ -229,7 +225,7 @@ export default function PaymentReversalModal({
   const canOpenConfirm = Boolean(payment) && selectedUnits > 0 && reason.trim().length > 0 && (requiresSupervisor ? refundMatches : true) && !loading;
 
   const handleSubmit = async () => {
-    if (!payment || !canOpenConfirm) return;
+    if (!payment || !canOpenConfirm || confirmSubmitting) return;
 
     const paymentSelections = selectedItems.map((item) => ({
       paymentEntryId: item.paymentEntryId,
@@ -240,12 +236,20 @@ export default function PaymentReversalModal({
       qty: denomination.qty,
     }));
 
-    await onSubmit({
-      paymentId: payment.paymentId,
-      reason: reason.trim(),
-      paymentSelections,
-      cashRefundDenoms,
-    });
+    setConfirmSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSubmit({
+        paymentId: payment.paymentId,
+        reason: reason.trim(),
+        paymentSelections,
+        cashRefundDenoms,
+      });
+    } catch (error: any) {
+      setSubmitError(error?.message || "No se pudo completar la anulacion.");
+    } finally {
+      setConfirmSubmitting(false);
+    }
   };
 
   const renderPendingCard = (item: (typeof itemsWithState)[number]) => (
@@ -314,6 +318,104 @@ export default function PaymentReversalModal({
     </div>
   );
 
+  const renderConfirmView = () => (
+    <div className="flex max-h-[94vh] flex-col bg-white">
+      <DialogHeader className="border-b border-slate-200 px-5 py-4 text-left sm:px-6">
+        <DialogTitle className="text-xl font-semibold text-slate-950">Confirmar anulacion</DialogTitle>
+        <p className="text-sm text-slate-500">Revisa como quedara aplicada la anulacion antes de registrarla.</p>
+      </DialogHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total anulado</p>
+              <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${selectedTotal.toFixed(2)}</p>
+            </div>
+            <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a devolver</p>
+              <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${refundTotal.toFixed(2)}</p>
+            </div>
+            <div className="rounded-2xl bg-red-500/10 p-2.5 sm:p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Saldo activo</p>
+              <p className="mt-1 font-display text-base font-bold text-red-600 sm:text-xl">${pendingTotal.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border p-3">
+            <p className="mb-2 text-sm font-semibold text-foreground">Pago original</p>
+            <div className="grid grid-cols-1 gap-1 rounded-xl bg-muted/40 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_110px_110px] sm:gap-2">
+              <span className="truncate text-foreground">{payment?.methodsSummary || "Metodo registrado"}</span>
+              <span className="text-right text-foreground">Pagado ${payment?.amount.toFixed(2) ?? "0.00"}</span>
+              <span className="text-right font-medium text-foreground">Anula ${selectedTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Devolucion a entregar desde caja</p>
+              <p className="font-display text-xl font-bold text-red-600">${refundTotal.toFixed(2)}</p>
+            </div>
+            {refundBreakdown.length > 0 ? (
+              <div className="space-y-1">
+                {refundBreakdown.map((denomination) => (
+                  <div key={denomination.denomination_id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <DenominationVisual
+                        label={denomination.label}
+                        imageUrl={denomination.image_url}
+                        className="h-9 w-9 rounded-xl"
+                        iconClassName="h-4 w-4"
+                      />
+                      <span className="truncate text-foreground">{denomination.qty}x {denomination.label}</span>
+                    </div>
+                    <span className="font-medium text-foreground">${denomination.total.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No hay detalle de devolucion disponible todavia.</p>
+            )}
+          </div>
+
+          {Math.abs(refundDifference) >= 0.001 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+              Falta cuadrar ${Math.abs(refundDifference).toFixed(2)} en denominaciones para completar la devolucion exacta.
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-sm text-slate-600">
+            {requiresSupervisor
+              ? "Se enviara una solicitud de autorizacion al supervisor para procesar esta anulacion."
+              : "Esta anulacion se procesara directamente ya que no hay items despachados."}
+          </div>
+
+          {submitError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {submitError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-stone-200 bg-white px-3 py-3 sm:px-4 lg:px-6">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)} disabled={loading || confirmSubmitting}>
+            Volver
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={!canOpenConfirm || loading || confirmSubmitting}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {loading || confirmSubmitting ? "Procesando..." : requiresSupervisor ? "Solicitar autorizacion" : "Confirmar anulacion"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <Dialog
@@ -325,6 +427,7 @@ export default function PaymentReversalModal({
       >
         <DialogContent className="max-h-[94vh] max-w-[calc(100vw-1rem)] overflow-hidden rounded-[28px] border border-orange-200 p-0 sm:max-w-6xl">
           {!payment ? null : (
+            confirmOpen ? renderConfirmView() : (
             <div className="flex max-h-[94vh] flex-col bg-white">
               <DialogHeader className="border-b border-slate-200 px-5 py-4 text-left sm:px-6">
                 <DialogTitle className="text-xl font-semibold text-slate-950">
@@ -475,40 +578,10 @@ export default function PaymentReversalModal({
                 </div>
               </div>
             </div>
+            )
           )}
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent className="max-w-[400px] rounded-[32px] border-none p-8 shadow-2xl">
-          <AlertDialogHeader className="space-y-4">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
-              <RotateCcw className="h-8 w-8 text-red-600" />
-            </div>
-            <div className="space-y-2 text-center">
-              <AlertDialogTitle className="text-2xl font-bold text-slate-900">
-                ¿Confirmar anulacion?
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-base text-slate-600">
-                {requiresSupervisor
-                  ? "Se enviará una solicitud de autorización al supervisor para procesar esta anulación."
-                  : "Esta anulación se procesará directamente ya que no hay ítems despachados."}
-              </AlertDialogDescription>
-            </div>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="mt-8 flex-col gap-3 sm:flex-col">
-            <AlertDialogAction
-              onClick={() => void handleSubmit()}
-              className="h-12 w-full rounded-2xl bg-red-600 text-sm font-bold shadow-lg shadow-red-100 hover:bg-red-700"
-            >
-              Confirmar
-            </AlertDialogAction>
-            <AlertDialogCancel className="h-12 w-full rounded-2xl border-none bg-slate-100 text-sm font-bold text-slate-600 hover:bg-slate-200">
-              Cancelar
-            </AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

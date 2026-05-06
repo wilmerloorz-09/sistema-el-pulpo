@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
 import SupervisorAuthorizationDialog from "@/components/caja/SupervisorAuthorizationDialog";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
+import { toast } from "sonner";
 import type {
   CashRefundDenomInput,
   CompletedPayment,
@@ -35,6 +38,9 @@ interface PaymentGroup {
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
   payment_opening_status: CompletedPayment["payment_opening_status"];
+  cash_received_detail: CompletedPayment["cash_received_detail"];
+  cash_change_detail: CompletedPayment["cash_change_detail"];
+  cash_refund_detail: CompletedPayment["cash_refund_detail"];
   order: {
     id: string;
     number: number;
@@ -54,6 +60,9 @@ interface PaymentGroup {
     amount: number;
     method_name: string;
     status: CompletedPayment["status"];
+    cash_received_detail: CompletedPayment["cash_received_detail"];
+    cash_change_detail: CompletedPayment["cash_change_detail"];
+    cash_refund_detail: CompletedPayment["cash_refund_detail"];
   }[];
 }
 
@@ -133,6 +142,10 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+function sumDetailLines(lines: CompletedPayment["cash_change_detail"]) {
+  return lines.reduce((sum, line) => sum + line.total, 0);
+}
+
 export default function CompletedPaymentsList({
   payments,
   total,
@@ -185,6 +198,15 @@ export default function CompletedPaymentsList({
     supervisorIdentifier: "",
     supervisorPassword: "",
   });
+  const [changeDetailState, setChangeDetailState] = useState<{
+    open: boolean;
+    title: string;
+    lines: CompletedPayment["cash_change_detail"];
+  }>({
+    open: false,
+    title: "Detalle de cambio",
+    lines: [],
+  });
 
   const permissionFlags = getPermissionFlags(permissions);
 
@@ -206,6 +228,9 @@ export default function CompletedPaymentsList({
           order_has_dispatched_items: row.order_has_dispatched_items,
           order_has_voided_payments: row.order_has_voided_payments,
           payment_opening_status: row.payment_opening_status,
+          cash_received_detail: row.cash_received_detail,
+          cash_change_detail: row.cash_change_detail,
+          cash_refund_detail: row.cash_refund_detail,
           order: {
             id: row.order_id,
             number: row.order_number ?? 0,
@@ -229,6 +254,9 @@ export default function CompletedPaymentsList({
         amount: row.item_amount,
         method_name: row.method_name,
         status: row.status,
+        cash_received_detail: row.cash_received_detail,
+        cash_change_detail: row.cash_change_detail,
+        cash_refund_detail: row.cash_refund_detail,
       });
     }
 
@@ -370,12 +398,22 @@ export default function CompletedPaymentsList({
               const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
               const blockedByState = isVoidedOrReversed || payment.reversal_requested || payment.order_has_voided_payments || blockedByClosedOpening;
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
+              const rowChangeDetail = isVoidedOrReversed
+                ? payment.cash_refund_detail
+                : payment.cash_change_detail.length > 0
+                  ? payment.cash_change_detail
+                  : payment.cash_received_detail;
+              const rowChangeTitle = isVoidedOrReversed
+                ? "Detalle de devolucion"
+                : payment.cash_change_detail.length > 0
+                  ? "Detalle de cambio"
+                  : "Detalle de efectivo recibido";
 
               return (
                 <div key={payment.paymentId} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/70"}>
                   <div
                     onClick={() => setExpandedPaymentId((current) => (current === payment.paymentId ? null : payment.paymentId))}
-                    className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(150px,1fr)_100px_minmax(160px,0.9fr)_minmax(110px,0.7fr)_minmax(240px,1.2fr)_112px] sm:items-center sm:px-8"
+                    className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(150px,1fr)_100px_minmax(160px,0.9fr)_minmax(190px,0.8fr)_minmax(240px,1.2fr)_112px] sm:items-center sm:px-8"
                   >
                     <div
                       className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
@@ -419,8 +457,24 @@ export default function CompletedPaymentsList({
                       </p>
                     </div>
 
-                    <div className="sm:text-right">
-                      <p className="text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
+                    <div className="grid grid-cols-[96px_minmax(0,96px)] items-center gap-2">
+                      <p className="text-right text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
+                      {rowChangeDetail.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setChangeDetailState({
+                              open: true,
+                              title: rowChangeTitle,
+                              lines: rowChangeDetail,
+                            });
+                          }}
+                          className="h-8 rounded-full border border-orange-200 bg-orange-50 px-3 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                        >
+                          Ver Cambio
+                        </button>
+                      )}
                     </div>
 
                     <div className="min-w-0 sm:text-right">
@@ -479,34 +533,21 @@ export default function CompletedPaymentsList({
                           </div>
                           <div className="divide-y divide-slate-100">
                             {payment.items.map((item) => (
-                              <div
-                                key={item.id + item.paymentEntryId}
-                                className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_120px_110px_110px] sm:gap-3"
-                              >
-                                <div className="min-w-0">
-                                  <p className="truncate font-medium text-slate-900">
-                                    {item.tray_item_type === "C" ? item.product_name : `${item.quantity}x ${item.product_name}`}
-                                  </p>
+                                <div
+                                  key={item.id + item.paymentEntryId}
+                                  className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_120px_110px_110px] sm:gap-3"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium text-slate-900">
+                                      {item.tray_item_type === "C" ? item.product_name : `${item.quantity}x ${item.product_name}`}
+                                    </p>
+                                  </div>
+                                  <div className="text-sm text-slate-600">{item.method_name}</div>
+                                  <div className="sm:text-right"><PaymentStatusBadge status={item.status} /></div>
+                                  <div className="font-semibold text-slate-900 sm:text-right">${item.amount.toFixed(2)}</div>
                                 </div>
-                                <div className="text-sm text-slate-600">{item.method_name}</div>
-                                <div className="sm:text-right"><PaymentStatusBadge status={item.status} /></div>
-                                <div className="font-semibold text-slate-900 sm:text-right">${item.amount.toFixed(2)}</div>
-                              </div>
                             ))}
                           </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {!blockedByState && permissionFlags.canStartVoid && (
-                            <button
-                              type="button"
-                              className="flex h-10 items-center gap-2 rounded-2xl border border-red-300 bg-red-50 px-4 text-sm font-semibold text-red-700"
-                              onClick={() => openModalForPayment(payment)}
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                              Anular pago
-                            </button>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -517,6 +558,41 @@ export default function CompletedPaymentsList({
           </div>
         </div>
       )}
+
+      <Dialog
+        open={changeDetailState.open}
+        onOpenChange={(open) => setChangeDetailState((current) => ({ ...current, open }))}
+      >
+        <DialogContent className="max-w-[calc(100vw-1rem)] rounded-[24px] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{changeDetailState.title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-950">Monedas y billetes entregados</span>
+                <span className="text-lg font-bold text-orange-700">{formatCurrency(sumDetailLines(changeDetailState.lines))}</span>
+              </div>
+              <div className="space-y-1.5">
+                {changeDetailState.lines.map((line) => (
+                  <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <DenominationVisual
+                        label={line.label}
+                        imageUrl={line.image_url}
+                        className="h-9 w-9 rounded-xl"
+                        iconClassName="h-4 w-4"
+                      />
+                      <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                    </div>
+                    <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {modalState.payment ? (
         <PaymentReversalModal
@@ -608,6 +684,7 @@ export default function CompletedPaymentsList({
             });
           } catch (error: any) {
             toast.error(error?.message || "Error al procesar la anulacion");
+            throw error;
           }
         }}
         />

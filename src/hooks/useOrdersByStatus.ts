@@ -110,7 +110,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         if (!status || cancelledView || pendingCancellationView) return [];
         if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
         if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
-        if (sentView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
+        if (sentView) return [{ column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
         if (paidView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID"] }];
         return [{ column: "status", op: "eq", value: status }];
       })();
@@ -318,10 +318,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             .filter((item) => item.order_id === order.id)
             .map((item) => {
               const baseItemStatus = String(item.status ?? "").toUpperCase();
-              if (requiresOperationalItems && baseItemStatus === "DRAFT") {
-                return null;
-              }
-
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(item.quantity ?? 0),
                 quantityReadyTotal: readyMap[item.id] ?? 0,
@@ -339,6 +335,13 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               );
               const readyQuantity = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
               const pendingQuantity = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
+              const hasOperationalProgress =
+                dispatchedQuantity > 0 ||
+                readyQuantity > 0 ||
+                (activeQuantity > 0 && pendingQuantity < activeQuantity);
+              if (requiresOperationalItems && baseItemStatus === "DRAFT" && !hasOperationalProgress) {
+                return null;
+              }
               const effectivePaidQuantity = Math.max(
                 0,
                 paidQuantityByItem[item.id] ??
@@ -379,7 +382,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
                 : dispatchedView
                     ? Math.max(0, unpaidDispatchedQuantity - pendingRequestedQuantity)
                   : sentView
-                      ? Math.max(0, unpaidPendingQuantity - pendingRequestedQuantity)
+                      ? Math.max(0, unpaidActiveQuantity - pendingRequestedQuantity)
                       : Math.max(0, unpaidActiveQuantity - pendingRequestedQuantity);
 
               const effectiveStatus = cancelledView
@@ -415,10 +418,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             .filter((item) => item.order_id === order.id)
             .map((item) => {
               const baseItemStatus = String(item.status ?? "").toUpperCase();
-              if (requiresOperationalItems && baseItemStatus === "DRAFT") {
-                return null;
-              }
-
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(item.quantity ?? 0),
                 quantityReadyTotal: readyMap[item.id] ?? 0,
@@ -435,6 +434,13 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               );
               const readyQuantity = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
               const pendingQuantity = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
+              const hasOperationalProgress =
+                dispatchedQuantity > 0 ||
+                readyQuantity > 0 ||
+                (activeQuantity > 0 && pendingQuantity < activeQuantity);
+              if (requiresOperationalItems && baseItemStatus === "DRAFT" && !hasOperationalProgress) {
+                return null;
+              }
               const effectivePaidQuantity = Math.max(0, paidMap[item.id] ?? 0);
               const unpaidDispatchedQuantity = Math.max(0, dispatchedQuantity - effectivePaidQuantity);
               const paidAfterDispatched = Math.max(0, effectivePaidQuantity - dispatchedQuantity);
@@ -447,7 +453,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
                 : readyView
                   ? unpaidReadyQuantity
                   : sentView
-                    ? unpaidPendingQuantity
+                    ? unpaidActiveQuantity
                     : unpaidActiveQuantity;
 
               if (fallbackQuantity <= 0) return null;

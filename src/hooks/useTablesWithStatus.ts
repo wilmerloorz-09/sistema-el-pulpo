@@ -28,6 +28,7 @@ export interface TableWithStatus {
   elapsedMinutes: number;
   hasVoidedPayment: boolean;
   created_by_name?: string | null;
+  reusableDraftOrderId?: string;
 }
 
 export interface TablesWithStatusData {
@@ -149,6 +150,7 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       itemCount: isEmptyDraft ? 0 : Number(row.item_count ?? 0),
       elapsedMinutes: isEmptyDraft ? 0 : Number(row.elapsed_minutes ?? 0),
       hasVoidedPayment,
+      reusableDraftOrderId: isEmptyDraft ? (row.active_order_id ?? undefined) : undefined,
       created_by_name: effectiveStatus !== "free" && effectiveOrderId
         ? (activeOrdersMap[effectiveOrderId]?.created_by
           ? (activeCreatorNameMap[activeOrdersMap[effectiveOrderId].created_by] ?? "Usuario")

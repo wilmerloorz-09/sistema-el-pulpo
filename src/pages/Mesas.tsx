@@ -185,10 +185,11 @@ const Mesas = () => {
   const warmTableFlow = (table: NonNullable<typeof tables>[number]) => {
     if (!activeBranchId) return;
 
-    if (table.activeOrderId) {
+    const orderIdToWarm = table.activeOrderId ?? table.reusableDraftOrderId;
+    if (orderIdToWarm) {
       void qc.prefetchQuery({
-        queryKey: getOrderQueryKey(table.activeOrderId),
-        queryFn: () => fetchOrderDetail(table.activeOrderId!),
+        queryKey: getOrderQueryKey(orderIdToWarm),
+        queryFn: () => fetchOrderDetail(orderIdToWarm),
         staleTime: 15_000,
         gcTime: 10 * 60_000,
       });
@@ -291,6 +292,12 @@ const Mesas = () => {
       if (table.activeOrderId) {
         warmTableFlow(table);
         navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
+        return;
+      }
+      if (table.reusableDraftOrderId) {
+        warmTableFlow(table);
+        toast.success(`Entrando a ${table.name}...`);
+        navigate(`/ordenes?order=${table.reusableDraftOrderId}&origin=mesas`, { replace: true });
         return;
       }
       if (!user) return;

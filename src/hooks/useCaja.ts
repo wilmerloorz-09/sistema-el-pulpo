@@ -310,6 +310,18 @@ export interface CompletedPayment {
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
   payment_opening_status: "abierta" | "cerrada" | "anulada" | null;
+  cash_received_detail: CashMovementDetailLine[];
+  cash_change_detail: CashMovementDetailLine[];
+  cash_refund_detail: CashMovementDetailLine[];
+}
+
+export interface CashMovementDetailLine {
+  denomination_id: string;
+  label: string;
+  value: number;
+  qty: number;
+  total: number;
+  image_url?: string | null;
 }
 
 export type CompletedPaymentsScope = "ALL" | "TABLE" | "TAKEOUT" | "SPECIAL";
@@ -362,7 +374,31 @@ type PaymentNoteMeta = {
   transferProofPending: boolean;
   quantity: number | null;
   tenderedAmount: number | null;
+  cashReceivedDenoms: CashRefundDenomInput[];
+  cashChangeDenoms: CashRefundDenomInput[];
 };
+
+function encodeDenomDetailForNote(denoms: Array<{ denomination_id: string; qty: number }>) {
+  return encodeURIComponent(JSON.stringify(denoms.map((entry) => ({
+    denomination_id: entry.denomination_id,
+    qty: Math.max(0, Math.floor(Number(entry.qty ?? 0))),
+  })).filter((entry) => entry.denomination_id && entry.qty > 0)));
+}
+
+function parseDenomDetailFromNote(value: string): CashRefundDenomInput[] {
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry) => ({
+        denomination_id: String(entry?.denomination_id ?? ""),
+        qty: Math.max(0, Math.floor(Number(entry?.qty ?? 0))),
+      }))
+      .filter((entry) => entry.denomination_id && entry.qty > 0);
+  } catch {
+    return [];
+  }
+}
 
 function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   if (!notes) {
@@ -376,6 +412,8 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
         transferProofPending: false,
         quantity: null,
         tenderedAmount: null,
+        cashReceivedDenoms: [],
+        cashChangeDenoms: [],
       };
   }
 
@@ -390,6 +428,8 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
   let transferProofPending = false;
   let quantity: number | null = null;
   let tenderedAmount: number | null = null;
+  let cashReceivedDenoms: CashRefundDenomInput[] = [];
+  let cashChangeDenoms: CashRefundDenomInput[] = [];
 
   for (const segment of segments) {
     if (segment.startsWith("ITEM:")) {
@@ -421,9 +461,15 @@ function parsePaymentNotes(notes: string | null): PaymentNoteMeta {
       const parsedTendered = Number(segment.replace("TENDERED:", "").trim());
       tenderedAmount = Number.isFinite(parsedTendered) && parsedTendered >= 0 ? roundMoney(parsedTendered) : null;
     }
+    if (segment.startsWith("CASH_RECEIVED_DENOMS:")) {
+      cashReceivedDenoms = parseDenomDetailFromNote(segment.replace("CASH_RECEIVED_DENOMS:", "").trim());
+    }
+    if (segment.startsWith("CASH_CHANGE_DENOMS:")) {
+      cashChangeDenoms = parseDenomDetailFromNote(segment.replace("CASH_CHANGE_DENOMS:", "").trim());
+    }
   }
 
-  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, transferProofPending, quantity, tenderedAmount };
+  return { itemId, paymentGroupId, itemsAnchor, reversalRequested, reversed, voided, transferProofPending, quantity, tenderedAmount, cashReceivedDenoms, cashChangeDenoms };
 }
 
 function isSpecialOrderNote(notes: string | null) {
@@ -519,12 +565,16 @@ function buildPaymentNote(params: {
   appliedAmount: number;
   isSpecial: boolean;
   transferProofPending?: boolean;
+  cashReceivedDenoms?: Array<{ denomination_id: string; qty: number }>;
+  cashChangeDenoms?: Array<{ denomination_id: string; qty: number }>;
 }) {
   return [
     `GROUP:${params.paymentGroupId}`,
     `ITEMS_ANCHOR:${params.index === 0 ? 1 : 0}`,
     `TENDERED:${params.tenderedAmount.toFixed(2)}`,
     `APPLIED:${params.appliedAmount.toFixed(2)}`,
+    ...(params.cashReceivedDenoms?.length ? [`CASH_RECEIVED_DENOMS:${encodeDenomDetailForNote(params.cashReceivedDenoms)}`] : []),
+    ...(params.cashChangeDenoms?.length ? [`CASH_CHANGE_DENOMS:${encodeDenomDetailForNote(params.cashChangeDenoms)}`] : []),
     ...(params.isSpecial ? ["SPECIAL_ORDER:1"] : []),
     ...(params.transferProofPending ? ["TRANSFER_PROOF_PENDING:1"] : []),
   ].join("|");
@@ -1487,6 +1537,125 @@ export function useCaja(params?: {
       const tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, { name: t.name, visual_order: t.visual_order }]));
       const splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
       const itemsMap = Object.fromEntries(allOrderItems.map((i) => [i.id, i]));
+      const orderHasDispatchedMap: Record<string, boolean> = {};
+
+      for (const item of allOrderItems) {
+        if (item.status === "KITCHEN_DISPATCHED") {
+          orderHasDispatchedMap[item.order_id] = true;
+        }
+      }
+
+      const allOrderItemIds = allOrderItems.map((item) => item.id).filter(Boolean);
+      if (allOrderItemIds.length > 0) {
+        const dispatchEvents = await dbSelect<any>("order_item_dispatch_events", {
+          select: "order_item_id",
+          filters: [
+            { column: "order_item_id", op: "in", value: allOrderItemIds },
+            { column: "status", op: "eq", value: "APPLIED" },
+          ],
+        });
+
+        for (const event of dispatchEvents ?? []) {
+          const item = itemsMap[event.order_item_id];
+          if (item?.order_id) {
+            orderHasDispatchedMap[item.order_id] = true;
+          }
+        }
+      }
+
+      const cashMovementRows = await dbSelect<any>("cash_movements", {
+        select: "payment_id, denomination_id, movement_type, qty_delta",
+        filters: [{ column: "payment_id", op: "in", value: allPaymentsInRange.map((payment) => payment.id) }],
+      });
+      const voidRequestRows = await dbSelect<any>("payment_void_requests", {
+        select: "payment_id, cash_refund_detail, status",
+        filters: [
+          { column: "payment_id", op: "in", value: allPaymentsInRange.map((payment) => payment.id) },
+          { column: "status", op: "eq", value: "executed" },
+        ],
+      });
+      const denominationIds = Array.from(new Set([
+        ...(cashMovementRows ?? []).map((row: any) => row.denomination_id).filter(Boolean),
+        ...(voidRequestRows ?? []).flatMap((row: any) =>
+          Array.isArray(row.cash_refund_detail)
+            ? row.cash_refund_detail.map((entry: any) => entry?.denomination_id).filter(Boolean)
+            : [],
+        ),
+      ]));
+      const movementDenoms = denominationIds.length > 0
+        ? await dbSelect<any>("denominations", {
+            select: "id, label, value, image_url",
+            filters: [{ column: "id", op: "in", value: denominationIds }],
+          })
+        : [];
+      const movementDenomMap = Object.fromEntries([
+        ...((shiftQuery.data?.denoms ?? []).map((denom: any) => [
+          denom.denomination_id,
+          { id: denom.denomination_id, label: denom.label, value: denom.value, image_url: denom.image_url },
+        ])),
+        ...((movementDenoms ?? []).map((denom: any) => [denom.id, denom])),
+      ]);
+      const buildDetailLine = (denominationId: string, qty: number): CashMovementDetailLine | null => {
+        const denom = movementDenomMap[denominationId];
+        const normalizedQty = Math.max(0, Math.floor(Number(qty ?? 0)));
+        const value = Number(denom?.value ?? 0);
+        if (!denominationId || normalizedQty <= 0 || value <= 0) return null;
+        return {
+          denomination_id: denominationId,
+          label: denom?.label ?? `$${value.toFixed(2)}`,
+          value,
+          qty: normalizedQty,
+          total: roundMoney(normalizedQty * value),
+          image_url: denom?.image_url ?? null,
+        };
+      };
+      const compactDetailLines = (lines: Array<CashMovementDetailLine | null>): CashMovementDetailLine[] => {
+        const map = new Map<string, CashMovementDetailLine>();
+        for (const line of lines) {
+          if (!line) continue;
+          const current = map.get(line.denomination_id);
+          if (!current) {
+            map.set(line.denomination_id, line);
+            continue;
+          }
+          current.qty += line.qty;
+          current.total = roundMoney(current.qty * current.value);
+        }
+        return Array.from(map.values()).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
+      };
+      const cashChangeDetailByPayment: Record<string, CashMovementDetailLine[]> = {};
+      const cashReceivedDetailByPayment: Record<string, CashMovementDetailLine[]> = {};
+      for (const row of cashMovementRows ?? []) {
+        if (!row.payment_id) continue;
+        const line = buildDetailLine(row.denomination_id, row.qty_delta);
+        if (!line) continue;
+        if (row.movement_type === "CHANGE_OUT") {
+          cashChangeDetailByPayment[row.payment_id] = compactDetailLines([...(cashChangeDetailByPayment[row.payment_id] ?? []), line]);
+        }
+        if (row.movement_type === "PAYMENT_IN") {
+          cashReceivedDetailByPayment[row.payment_id] = compactDetailLines([...(cashReceivedDetailByPayment[row.payment_id] ?? []), line]);
+        }
+      }
+      const cashRefundDetailByPayment: Record<string, CashMovementDetailLine[]> = {};
+      for (const row of voidRequestRows ?? []) {
+        if (!row.payment_id || !Array.isArray(row.cash_refund_detail)) continue;
+        cashRefundDetailByPayment[row.payment_id] = compactDetailLines(
+          row.cash_refund_detail.map((entry: any) => buildDetailLine(String(entry?.denomination_id ?? ""), Number(entry?.qty ?? 0))),
+        );
+      }
+      for (const payment of allPaymentsInRange) {
+        const meta = parsePaymentNotes(payment.notes);
+        if ((cashReceivedDetailByPayment[payment.id] ?? []).length === 0 && meta.cashReceivedDenoms.length > 0) {
+          cashReceivedDetailByPayment[payment.id] = compactDetailLines(
+            meta.cashReceivedDenoms.map((entry) => buildDetailLine(entry.denomination_id, entry.qty)),
+          );
+        }
+        if ((cashChangeDetailByPayment[payment.id] ?? []).length === 0 && meta.cashChangeDenoms.length > 0) {
+          cashChangeDetailByPayment[payment.id] = compactDetailLines(
+            meta.cashChangeDenoms.map((entry) => buildDetailLine(entry.denomination_id, entry.qty)),
+          );
+        }
+      }
 
       const resolveTableName = (tableId: string | null, snapshotName?: string | null): string | null => {
         if (tableId && (tablesMap as any)[tableId]) {
@@ -1497,10 +1666,6 @@ export function useCaja(params?: {
         }
         return snapshotName || "Mesa";
       };
-
-      const orderHasDispatchedMap: Record<string, boolean> = {};
-      // Dispatch check is handled server-side by the Edge Function
-
       const orderPaidMap: Record<string, number> = {};
       const orderRealTotalMap: Record<string, number> = {};
       const orderHasVoidedPaymentsMap: Record<string, boolean> = {};
@@ -1564,11 +1729,6 @@ export function useCaja(params?: {
           status = "REVERSED";
         } else if (meta.voided) {
           status = "VOIDED";
-        } else if (order.status === "PAID") {
-          // Trust the database: if order is marked PAID, payment is fully applied
-          status = "APPLIED";
-        } else if (roundMoney(pendingAmount) > 0.01) {
-          status = "PARTIAL";
         }
 
         const itemRows = paymentItemsByPayment[payment.id] ?? [];
@@ -1609,6 +1769,9 @@ export function useCaja(params?: {
               order_has_dispatched_items: Boolean(orderHasDispatchedMap[order.id]),
               order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
               payment_opening_status: paymentOpeningStatus,
+              cash_received_detail: cashReceivedDetailByPayment[payment.id] ?? [],
+              cash_change_detail: cashChangeDetailByPayment[payment.id] ?? [],
+              cash_refund_detail: cashRefundDetailByPayment[payment.id] ?? [],
             });
           }
         } else {
@@ -1647,6 +1810,9 @@ export function useCaja(params?: {
             order_has_dispatched_items: Boolean(orderHasDispatchedMap[payment.order_id]),
             order_has_voided_payments: orderHasVoidedPaymentsMap[payment.order_id] || false,
             payment_opening_status: paymentOpeningStatus,
+            cash_received_detail: cashReceivedDetailByPayment[payment.id] ?? [],
+            cash_change_detail: cashChangeDetailByPayment[payment.id] ?? [],
+            cash_refund_detail: cashRefundDetailByPayment[payment.id] ?? [],
           });
         }
       }
@@ -1930,6 +2096,8 @@ export function useCaja(params?: {
             appliedAmount: Number(paymentSplit.amount),
             isSpecial: Boolean(isSpecial),
             transferProofPending: false,
+            cashReceivedDenoms: cashMethodId && paymentSplit.methodId === cashMethodId ? effectiveCashReceivedDenoms : [],
+            cashChangeDenoms: cashMethodId && paymentSplit.methodId === cashMethodId ? effectiveCashChangeDenoms : [],
           }),
           created_by: user.id,
           created_at: now,
@@ -2253,6 +2421,29 @@ export function useCaja(params?: {
       const payments = await dbSelect<any>("payments", { select: "order_id", filters: [{ column: "id", op: "eq", value: paymentId }] });
       if (payments[0]?.order_id) await ensureTableSnapshot(payments[0].order_id);
 
+      const paymentItemSelections = normalizedSelections.map((s) => ({
+        payment_item_id: s.paymentEntryId,
+        quantity: s.quantity,
+      }));
+
+      const supervisorIdentifierValue = supervisorIdentifier.trim();
+      if (!supervisorIdentifierValue && !supervisorPassword) {
+        const { data, error } = await supabase.rpc("approve_and_void_payment" as any, {
+          p_payment_id: paymentId,
+          p_request_id: requestId,
+          p_reason: reason.trim(),
+          p_current_shift_id: shift.id,
+          p_requested_by_user_id: user.id,
+          p_supervisor_id: user.id,
+          p_terminal_id: buildPosTerminalLabel(),
+          p_payment_item_selections: paymentItemSelections,
+          p_cash_refund_detail: normalizedRefundDenoms,
+        });
+
+        if (error) throw error;
+        return data;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token?.trim();
       if (!accessToken) throw new Error("Sesion invalida");
@@ -2272,12 +2463,9 @@ export function useCaja(params?: {
           current_shift_id: shift.id,
           reason: reason.trim(),
           terminal_id: buildPosTerminalLabel(),
-          supervisor_identifier: supervisorIdentifier.trim(),
+          supervisor_identifier: supervisorIdentifierValue,
           supervisor_password: supervisorPassword,
-          payment_item_selections: normalizedSelections.map((s) => ({
-            payment_item_id: s.paymentEntryId,
-            quantity: s.quantity,
-          })),
+          payment_item_selections: paymentItemSelections,
           cash_refund_detail: normalizedRefundDenoms,
         }),
       });

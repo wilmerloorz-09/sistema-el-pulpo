@@ -167,20 +167,21 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
     return EMPTY_OPERATIONAL_MAPS;
   }
 
-  try {
-    const uniqueOrderIds = Array.from(new Set(orderIds));
-    const snapshots = await Promise.all(
-      uniqueOrderIds.map(async (orderId) => {
+  const uniqueOrderIds = Array.from(new Set(orderIds));
+  const snapshots = await Promise.all(
+    uniqueOrderIds.map(async (orderId) => {
+      try {
         const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", {
           p_order_id: orderId,
         });
         if (error) throw error;
         return (data ?? []) as OrderOperationalSnapshotRow[];
-      }),
-    );
+      } catch (error) {
+        console.warn("No se pudo cargar el snapshot operativo de la orden", orderId, error);
+        return [] as OrderOperationalSnapshotRow[];
+      }
+    }),
+  );
 
-    return buildOperationalMapsFromSnapshotRows(snapshots.flat());
-  } catch {
-    return EMPTY_OPERATIONAL_MAPS;
-  }
+  return buildOperationalMapsFromSnapshotRows(snapshots.flat());
 }

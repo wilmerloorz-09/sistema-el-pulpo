@@ -230,6 +230,18 @@ export default function PaymentDialog({
     setSpecialAmountInput(suggestedAmount > 0 ? suggestedAmount.toFixed(2) : "");
   }, [order?.id, order?.is_special, order?.special_pending_amount, order?.special_total_manual]);
 
+  useEffect(() => {
+    if (!open || !order || readOnly || paying || successView) return;
+
+    const hasPendingBalance = order.is_special
+      ? roundMoney(Math.max(0, Number(order.special_pending_amount ?? 0))) > 0.005
+      : order.items.some((item) => Number(item.quantity_pending ?? 0) > 0);
+
+    if (!hasPendingBalance) {
+      onClose();
+    }
+  }, [open, order, readOnly, paying, successView, onClose]);
+
   const selectedItems = useMemo(
     () => unpaidItems.filter((item) => (selectedRows[item.id] ?? false) && (payQuantities[item.id] ?? 0) > 0),
     [unpaidItems, payQuantities, selectedRows],
@@ -771,6 +783,11 @@ export default function PaymentDialog({
       denomination_id: denomination.denomination_id,
       qty: denomination.qty,
     }));
+    const willSettleOrder = isSpecialOrder
+      ? roundMoney(Math.max(0, Number(order.special_pending_amount ?? 0) - currentChargeTotal)) <= 0.005
+      : unpaidItems.every((item) =>
+          Number(payQuantities[item.id] ?? 0) + 0.0001 >= Number(item.quantity_pending ?? 0),
+        );
 
     setConfirmOpen(false);
     
@@ -841,6 +858,12 @@ export default function PaymentDialog({
         setPreparedTransferProofSession(null);
         setTransferProofReady(false);
         setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
+        if (willSettleOrder) {
+          setLastTransactionData(receiptData);
+          setSuccessView(false);
+          onClose();
+          return;
+        }
         setLastTransactionData(receiptData);
         setSuccessView(true);
     } catch (err) {

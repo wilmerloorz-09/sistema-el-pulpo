@@ -36,10 +36,10 @@ const tabs: TabInfo[] = [
   },
   {
     key: "sent",
-    label: "Enviadas",
+    label: "En Caja",
     status: "SENT_TO_KITCHEN",
     showCancel: true,
-    helperText: "Aqui ves solo las cantidades que siguen pendientes por preparar.",
+    helperText: "Aqui ves las ordenes que ya fueron enviadas y estan pendientes de cobro en Caja.",
     icon: <Clock className="h-4 w-4" />,
   },
   {
