@@ -50,7 +50,7 @@
 - La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
-- Todas las sucursales trabajan con el mismo flujo: mesa, para llevar y orden especial pasan primero a Caja; luego de pagar pasan a Despacho.
+- **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las órdenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulación de pagos es condicional: requiere supervisor solo si hay ítems despachados.
 - El CRUD de sucursales no expone campo de flujo ni check `Mesero-Cajero`.
 - `branches.workflow_mode` se conserva solo como compatibilidad interna y queda forzado a `CASH_THEN_DISPATCH`.
 - Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
@@ -95,6 +95,7 @@
 
 ### 4. Anulacion de pagos
 - El sistema soporta anulacion segura de pagos con supervisor.
+- **Anulación de Pagos Condicional (2026-05-06):** La autorización de supervisor para anular pagos es obligatoria solo si la orden tiene ítems despachados. Si no hay despacho, el cajero puede anular directamente.
 - Flujo vigente:
   - cajero solicita anulacion con `request_void_payment(...)`
   - supervisor autoriza y ejecuta via Edge Function `void-payment`
@@ -106,6 +107,7 @@
   - `replacement_payment_id` cuando queda saldo activo remanente
   - bloqueo si la apertura de caja del pago ya fue cerrada/anulada o si el pago ya fue anulado
 - Una anulacion de pago puede reabrir el estado operativo de la orden o liberar la mesa visualmente segun el saldo restante.
+- **Historial de Anulaciones (2026-05-06):** Toda anulación de pago genera un registro de auditoría en la tabla `order_cancellations` y adjunta una nota histórica detallada al pedido (`orders.notes`), garantizando la trazabilidad del supervisor responsable y el motivo.
 
 ### 5. Ordenes y mesas
 - `Ordenes` mantiene la vista de lista expandible.
@@ -147,6 +149,7 @@
 - Se unifica la opción visual para evitar duplicados en el menú de acciones.
 - La regla se valida al mostrar la accion y justo antes de ejecutar la eliminacion.
 - **Navegación Contextual:** Al navegar entre Mesas y Ordenes, el sistema usa el parámetro `origin=mesas` para que el Sidebar y el Bottom Nav mantengan el resaltado en la sección de origen, evitando confusiones visuales.
+- **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados permanecen marcadas como ocupadas. La navegación es directa: el usuario hace clic en la mesa para ver el detalle y proceder al re-cobro (re-billing). Se eliminó el banner central de "Pagos Anulados" para simplificar la interfaz.
 
 ### 6. Editar Orden (In-Situ)
 - `Editar Orden` ya es un flujo base del sistema y ahora opera de manera **In-Situ**.
@@ -284,10 +287,18 @@
   - **Agrupamiento Consolidado:** Implementación de agrupamiento visual por descripción y precio en `OrderItemsList` y `PayableOrdersList`.
   - **Flexibilidad Operativa:** El botón "Editar orden" y la búsqueda de órdenes ahora son accesibles para meseros/cajeros con capacidad `canOperateOrders`.
 
+### 2026-05-05
+- Caja y Pagos:
+  - **Inicialización Forzada:** El `PaymentDialog` ahora exige una "Caja abierta" (denominaciones de apertura registradas) para poder operar, eliminando el riesgo de pagos sin base de caja.
+  - **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem de la orden está despachado (`KITCHEN_DISPATCHED`).
+  - **Redondeo Centralizado:** Implementación de redondeo financiero en el resumen de caja para evitar errores de precisión en la sumatoria de movimientos.
+- UI / UX:
+  - **Optimización Tablet:** Ajuste del módulo de Despacho para resolución de 1280px, optimizando el espacio en rejillas y reduciendo redundancia visual (eliminación de etiquetas "unidades pendientes" innecesarias).
+
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
 2. No mezclar cerrar caja con cerrar turno.
-3. Cualquier cambio en anulacion de pagos debe revisar `payments`, `payment_items`, `payment_void_requests`, `cash_shift_denoms`, `cash_movements` y estado visible de `Mesas` / `Ordenes`.
+3. Cualquier cambio en anulacion de pagos debe revisar `payments`, `payment_items`, `payment_void_requests`, `order_cancellations`, `cash_shift_denoms`, `cash_movements` y estado visible de `Mesas` / `Ordenes`.
 4. Cualquier cambio en `Unir/Dividir` debe preservar cantidades pagadas y redistribucion de historial `READY` / `DISPATCHED`.
 5. Los resets SQL limpian datos transaccionales y metadata de comprobantes, pero los archivos del bucket `payment-proofs` se borran aparte.
 6. La pestana `Pendiente de anulacion` depende de marcas reales en DB:

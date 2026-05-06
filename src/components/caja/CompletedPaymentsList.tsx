@@ -31,6 +31,7 @@ interface PaymentGroup {
   status: CompletedPayment["status"];
   notes: string | null;
   method_name: string;
+  order_has_dispatched_items: boolean;
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
   payment_opening_status: CompletedPayment["payment_opening_status"];
@@ -202,6 +203,7 @@ export default function CompletedPaymentsList({
           notes: row.notes,
           method_name: row.method_name,
           reversal_requested: row.reversal_requested,
+          order_has_dispatched_items: row.order_has_dispatched_items,
           order_has_voided_payments: row.order_has_voided_payments,
           payment_opening_status: row.payment_opening_status,
           order: {
@@ -274,6 +276,7 @@ export default function CompletedPaymentsList({
         status: payment.status,
         notes: payment.notes,
         methodsSummary: methods || payment.method_name,
+        orderHasDispatchedItems: payment.order_has_dispatched_items,
         items: payment.items.map((item) => ({
           id: item.id,
           paymentEntryId: item.paymentEntryId,
@@ -531,15 +534,11 @@ export default function CompletedPaymentsList({
           loading={actionLoading}
           allowPartial={true}
           titleOverride="Anular pago"
-          submitLabelOverride={
-            modalState.mode === "request"
-              ? "Solicitar autorizacion de supervisor"
-              : "Confirmar anulacion"
-          }
           initialDraft={modalState.draft}
           autoOpenConfirm={modalState.autoOpenConfirm}
           onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms }) => {
-            if (modalState.mode === "request") {
+            try {
+              if (modalState.mode === "request") {
               const itemList = modalState.payment?.items ?? [];
               const selectedAmount = paymentSelections.reduce((sum, selection) => {
                 const item = itemList.find((entry) => entry.paymentEntryId === selection.paymentEntryId);
@@ -548,6 +547,22 @@ export default function CompletedPaymentsList({
               }, 0);
 
             const requestId = await onRequestVoid(paymentId, reason, paymentSelections, cashRefundDenoms);
+
+            if (!modalState.payment?.orderHasDispatchedItems) {
+              // Direct reversal - no dispatched items, no supervisor needed
+              await onVoidWithSupervisor(
+                paymentId,
+                requestId,
+                reason,
+                "",
+                "",
+                paymentSelections,
+                cashRefundDenoms,
+              );
+              setModalState({ open: false, mode: "request", payment: null, draft: null, autoOpenConfirm: false });
+              return;
+            }
+
             setModalState({
               open: true,
               mode: "request",
@@ -591,7 +606,10 @@ export default function CompletedPaymentsList({
               supervisorIdentifier: "",
               supervisorPassword: "",
             });
-          }}
+          } catch (error: any) {
+            toast.error(error?.message || "Error al procesar la anulacion");
+          }
+        }}
         />
       ) : null}
 

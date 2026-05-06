@@ -98,6 +98,7 @@
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
 - Esa lectura ya ignora borradores vacios al resolver ocupacion operativa de mesa.
 - `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
+- **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados mantienen su estado de ocupación y permiten el re-cobro directo desde el detalle de la orden.
 - `Cerrar orden` para cuentas de mesa suelta `table_id` y mantiene la orden cobrable en `Caja`.
 - El movimiento de items entre órdenes vive sobre `move_dine_in_order_items_between_orders(...)`.
 
@@ -127,6 +128,8 @@
   - `cash_register_templates`
   - `cash_register_template_denoms`
 - El resumen ya usa efectivo neto aplicado, no `tendered` bruto.
+- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem de la orden está despachado (`KITCHEN_DISPATCHED`). Los cálculos de totales excluyen automáticamente ítems cancelados.
+  - Se aplica redondeo financiero centralizado para evitar errores de punto flotante en el "Cuadre de caja".
 
 ### 9. Reportes de caja
 - La generacion del reporte vive en `src/pages/Caja.tsx`.
@@ -154,6 +157,7 @@
   - anulacion parcial por `payment_items`
   - devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda parte activa del pago
+  - **Historial de Anulaciones (2026-05-06):** La anulación de pago registra obligatoriamente un evento en `order_cancellations` y una nota de rastro en `orders.notes`.
   - reapertura de orden / mesa si el saldo vuelve a estar pendiente
 
 ### 11. Comprobantes de transferencia
@@ -218,4 +222,5 @@
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
 13. **Agrupamiento Visual:** Toda modificación en la lógica de listado de ítems debe preservar la consolidación por descripción y precio para mantener la limpieza visual de la orden.
-14. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.
+14. **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las órdenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulación de pagos es condicional: requiere supervisor solo si hay ítems despachados.
+15. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.

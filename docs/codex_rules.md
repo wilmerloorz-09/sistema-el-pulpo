@@ -68,6 +68,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - anulacion total y parcial
   - devolucion por denominacion
   - `replacement_payment_id`
+  - **Auditoría de Anulación (2026-05-06):** No anular pagos sin dejar rastro en `order_cancellations` y `orders.notes`. La anulación debe registrar el supervisor responsable y el motivo.
   - reapertura correcta de orden/mesa/division cuando aplique
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
 
@@ -130,13 +131,19 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si no hay OCR disponible, el flujo debe degradar a revision manual.
 - La limpieza de metadata SQL y la limpieza del bucket `payment-proofs` son procesos separados.
 
+### 12. Integridad Financiera y Caja
+- **Inicialización Obligatoria:** El diálogo de pago (`PaymentDialog`) requiere estrictamente una "Caja abierta" (denominaciones inicializadas) para renderizarse; de lo contrario, debe mostrar un aviso instructivo para prevenir descuadres.
+- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`; sin esta inicialización, el flujo de pago se bloquea preventivamente. Los cálculos de saldo y totales de turno aplican redondeo financiero para asegurar la consistencia del "Cuadre de caja". La anulación de pagos es condicional al estado de despacho de los ítems de la orden.
+- **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
+
 ## Convenciones de implementacion
 
 ### Frontend
+- **Manejo de Feedback:** Usar `sonner` toasts para todas las notificaciones operativas y errores de validación, garantizando una experiencia de usuario consistente y no intrusiva.
 - En usuarios, no reintroducir `Nombre completo` como campo principal; usar `Nombres` (`profiles.first_name`) y `Apellidos` (`profiles.last_name`).
 - En listados compactos de usuarios, mostrar `Nombres` y nombre de usuario; no agregar cedula/telefono fuera de administracion o detalle.
 - Si tocas catalogo, validar `Ordenes`, `Despacho`, `Caja`, ticket y vistas derivadas.
-- Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas` y estado visible de la orden reabierta.
+- Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas`, `order_cancellations` y estado visible de la orden reabierta.
 - Si tocas `Unir/Dividir`, validar `MergeSplitOrdersDialog`, `Ordenes`, `Mesas` y cantidades movibles vs cantidades pagadas.
 - Si tocas `Editar Orden`, validar:
   - buffer temporal
@@ -176,5 +183,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - `docs/PROJECT_ARCHITECTURE.md`
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
-8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes.
+8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes y asegurar que:
+   - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las órdenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem ha sido despachado; de lo contrario, se permite anulación directa.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
+10. Si se toca el diálogo de pago, validar que exija la inicialización de caja y maneje correctamente el redondeo financiero.
+11. Si se toca Despacho, validar la visualización en 1280px para asegurar la experiencia en tablet.

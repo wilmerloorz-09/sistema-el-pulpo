@@ -85,11 +85,6 @@ function matchesScope(orderType: string, scope: DispatchView) {
   return orderType === "TAKEOUT";
 }
 
-/**
- * Fuzzy Grouping Logic:
- * Items in the same order that were sent to kitchen within 2 seconds of each other
- * are considered part of the same "batch" (card).
- */
 function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<string, any[]>, operationalMaps: any): DispatchOrder[] {
   const {
     readyMap,
@@ -101,7 +96,6 @@ function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<st
     cancelledDispatchedMap,
   } = operationalMaps;
 
-  // Filter and map items
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => item.order_id === order.id && !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at))
     .map((item) => {
@@ -142,7 +136,6 @@ function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<st
 
   if (mappedItems.length === 0) return [];
 
-  // Fuzzy Batching: Sort by sent_to_kitchen_at and group within a window
   const sortedByTime = [...mappedItems].sort((a, b) => {
     const tA = new Date(a.sent_to_kitchen_at!).getTime();
     const tB = new Date(b.sent_to_kitchen_at!).getTime();
@@ -166,7 +159,6 @@ function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<st
   if (currentBatch.length > 0) batches.push(currentBatch);
 
   return batches.map((batchItems) => {
-    // Principal timestamp for the card
     const sentAt = batchItems[0].sent_to_kitchen_at!;
     
     const sortedBatchItems = [...batchItems].sort((left, right) => {
@@ -222,13 +214,34 @@ export function useDispatchOrders(scope: DispatchView) {
       const orders = await dbSelect<any>("orders", {
         select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing",
         branchId: activeBranchId,
-        filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }],
+        filters: [
+          { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] },
+          { column: "paid_at", op: "neq", value: null }
+        ],
         orderBy: { column: "updated_at", ascending: true }
       });
 
       if (!orders || orders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      // Exclude orders where ALL payments are voided - they should not appear in dispatch
+      const allOrderIds = orders.map((o) => o.id);
+      const paymentsForOrders = await dbSelect<any>("payments", {
+        select: "order_id, notes, status",
+        filters: [{ column: "order_id", op: "in", value: allOrderIds }],
+      });
+      const ordersWithActivePayment = new Set<string>();
+      const ordersWithAnyPayment = new Set<string>();
+      for (const p of paymentsForOrders ?? []) {
+        ordersWithAnyPayment.add(p.order_id);
+        const isVoided = String(p.notes ?? "").includes("VOIDED:") || p.status === "voided";
+        if (!isVoided) ordersWithActivePayment.add(p.order_id);
+      }
+      const activeOrders = orders.filter((o) =>
+        !ordersWithAnyPayment.has(o.id) || ordersWithActivePayment.has(o.id)
+      );
+      if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+
+      const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
         ? await dbSelect<any>("profiles", {
             select: "id, first_name, full_name, username, email",
@@ -241,8 +254,8 @@ export function useDispatchOrders(scope: DispatchView) {
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
       const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
 
-      const getPermittedForView = (v: DispatchView) => {
-        let baseFiltered = orders.filter((order) => {
+      const getPermittedForView = (v: DispatchView, source: any[]) => {
+        let baseFiltered = source.filter((order) => {
           if (v === "SPECIAL") return Boolean(order.is_special);
           if (v === "TABLE") return matchesScope(order.order_type, v) && !Boolean(order.is_special);
           return matchesScope(order.order_type, v);
@@ -259,26 +272,19 @@ export function useDispatchOrders(scope: DispatchView) {
         return baseFiltered;
       };
 
-      const counts = {
-        ALL: getPermittedForView("ALL").length,
-        TABLE: getPermittedForView("TABLE").length,
-        TAKEOUT: getPermittedForView("TAKEOUT").length,
-        SPECIAL: getPermittedForView("SPECIAL").length,
-      };
+      const allPermittedOrders = getPermittedForView("ALL", activeOrders);
+      if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const permittedOrders = getPermittedForView(scope);
-      if (permittedOrders.length === 0) return { orders: [], counts };
-
-      const orderIds = permittedOrders.map((order) => order.id);
-      const tableIdSet = new Set<string>(permittedOrders.map((order: any) => order.table_id).filter(Boolean));
+      const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
+      const tableIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.table_id).filter(Boolean));
       const tableIds = Array.from(tableIdSet);
-      const splitIdSet = new Set<string>(permittedOrders.map((order: any) => order.split_id).filter(Boolean));
+      const splitIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
 
       const [tables, splits, items] = await Promise.all([
         tableIds.length > 0 ? dbSelect("restaurant_tables", { filters: [{ column: "id", op: "in", value: tableIds }] }) : Promise.resolve([]),
         splitIds.length > 0 ? dbSelect("table_splits", { filters: [{ column: "id", op: "in", value: splitIds }] }) : Promise.resolve([]),
-        dbSelect("order_items", { filters: [{ column: "order_id", op: "in", value: orderIds }] })
+        dbSelect("order_items", { filters: [{ column: "order_id", op: "in", value: orderIdsToFetch }] })
       ]);
 
       const tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
@@ -303,9 +309,9 @@ export function useDispatchOrders(scope: DispatchView) {
         }
       }
 
-      const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
+      const operationalMaps = await fetchOperationalMapsForOrders(orderIdsToFetch);
 
-      const cards = permittedOrders.flatMap((order) => {
+      const allCards = allPermittedOrders.flatMap((order) => {
         const orderWithContext = {
           ...order,
           created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
@@ -313,11 +319,19 @@ export function useDispatchOrders(scope: DispatchView) {
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
         };
         return groupItemsIntoBatches(orderWithContext, items, modifiersMap, operationalMaps);
-      });
+      }).filter((card) => card.items.length > 0 && (card.pending_prepare_count > 0 || card.ready_available_count > 0));
+
+      const counts = {
+        ALL: allCards.length,
+        TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE")).length,
+        TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT").length,
+        SPECIAL: allCards.filter(c => c.is_special).length,
+      };
+
+      const filteredCards = sortByBatchArrival(getPermittedForView(scope, allCards)) as DispatchOrder[];
 
       return {
-        orders: sortByBatchArrival(cards)
-          .filter((order) => order.items.length > 0 && (order.pending_prepare_count > 0 || order.ready_available_count > 0)) as DispatchOrder[],
+        orders: filteredCards,
         counts
       };
     },

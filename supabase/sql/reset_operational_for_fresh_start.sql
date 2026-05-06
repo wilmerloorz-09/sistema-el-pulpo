@@ -17,7 +17,8 @@
 --   - incluye la flexibilidad de permisos: usuarios operativos ahora pueden acceder a "Editar orden" y búsqueda
 --   - incluye la regla de Caja: una orden/item `DRAFT` nunca debe aparecer ni poder cobrarse en Caja
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
---   - incluye anulaciones seguras de pago con autorizacion de supervisor
+--   - incluye anulaciones seguras de pago con autorizacion de supervisor, registro histórico en `order_cancellations` y notas en pedidos
+--   - incluye la gestión simplificada de mesas con pagos anulados (sin banner central de Pagos Anulados)
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
 --   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones), junto con su redistribucion de historial READY/DISPATCHED
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
@@ -27,7 +28,10 @@
 --   - `profiles.first_name` como Nombres visibles
 --   - `profiles.last_name` como Apellidos
 --   - `profiles.full_name` como compatibilidad legacy sincronizada desde `first_name`
--- - Conserva el flujo global Caja primero y Despacho despues para mesa, para llevar y especial
+-- - Conserva el flujo global
+--    Caja antes de Despacho (Mesa, Para Llevar, Especial deben pagarse para ser elegibles para despacho).
+--    Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
+--    Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
 -- - `branches.workflow_mode` queda solo como compatibilidad interna forzada a `CASH_THEN_DISPATCH`
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra `opened_at`, que la UI muestra como fecha/hora de apertura del turno abierto
@@ -101,6 +105,9 @@
 --   - el cálculo de cambio se unifica para contemplar excedentes de todos los métodos de pago (incluyendo transferencias)
 --   - al aumentar cantidad de un item ya enviado/en caja, se actualiza la misma linea si no tiene pagos registrados
 --   - los items nuevos aceptados en ordenes "En caja" mantienen su flujo de cobro correcto
+  - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
+  - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
+  - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero

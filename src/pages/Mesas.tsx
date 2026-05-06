@@ -131,7 +131,6 @@ const seedTakeoutOrderCache = (
 const Mesas = () => {
   const tablesQuery = useTablesWithStatus();
   const tables = tablesQuery.data?.tables;
-  const voidedOrders = tablesQuery.data?.voidedOrders ?? [];
   const isLoading = tablesQuery.isLoading;
   const { user } = useAuth();
   const { activeBranchId, permissions } = useBranch();
@@ -141,7 +140,7 @@ const Mesas = () => {
   const [creating, setCreating] = useState<string | null>(null);
   const [creatingSpecial, setCreatingSpecial] = useState(false);
   const [creatingTakeout, setCreatingTakeout] = useState(false);
-  const [isVoidedOrdersOpen, setIsVoidedOrdersOpen] = useState(false);
+
   const canOperateMesas =
     canOperate(permissions, "mesas")
     || Boolean(shiftGateQuery.data?.canServeTables)
@@ -365,8 +364,6 @@ const Mesas = () => {
   const occupiedCount = (tables?.filter((table) => table.status === "occupied" && !table.hasVoidedPayment) ?? []).length;
   const toPayCount = (tables?.filter((table) => table.status === "to_pay" && !table.hasVoidedPayment) ?? []).length;
 
-  const allVoidedOrdersCount = voidedOrders?.length ?? 0;
-
   return (
     <div className="pb-8">
       <section className="px-2.5 pb-2 pt-2 sm:px-4 sm:pt-2">
@@ -424,28 +421,6 @@ const Mesas = () => {
                 <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary/70" />
               )}
             </motion.button>
-
-            {allVoidedOrdersCount > 0 && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                onClick={() => setIsVoidedOrdersOpen(true)}
-                className={cn(
-                  "col-span-2 relative flex min-h-[58px] items-center justify-center gap-3 overflow-hidden rounded-[18px] border-2 px-4 py-2 text-left shadow-lg transition-all active:scale-[0.98] sm:min-h-[64px] sm:rounded-[20px]",
-                  "border-red-300 bg-gradient-to-r from-red-50 via-white to-rose-50 dark:border-red-900/50 dark:from-red-950/30 dark:via-card dark:to-rose-950/30",
-                  "hover:border-red-400 hover:shadow-red-200/50 dark:hover:shadow-red-900/20"
-                )}
-              >
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 font-black text-red-600 dark:text-red-400 shadow-inner">
-                  {allVoidedOrdersCount}
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-display text-sm font-black text-red-700 dark:text-red-400 sm:text-base">Pagos Anulados</span>
-                  <span className="text-[10px] text-red-500/80 dark:text-red-500/60 font-medium">Revisar órdenes pendientes</span>
-                </div>
-                <History className="ml-auto h-5 w-5 text-red-400/70" />
-              </motion.button>
-            )}
         </div>
       </section>
 
@@ -587,72 +562,6 @@ const Mesas = () => {
           )}
         </div>
       </div>
-
-      <Dialog open={isVoidedOrdersOpen} onOpenChange={setIsVoidedOrdersOpen}>
-        <DialogContent className="max-w-md p-0 overflow-hidden rounded-[24px] border-none sm:rounded-[32px]">
-          <DialogHeader className="p-6 bg-gradient-to-br from-red-50 to-white dark:from-red-950/20 dark:to-card border-b border-red-100 dark:border-red-900/30">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-500 text-white shadow-lg shadow-red-200 dark:shadow-red-950/40">
-                <RotateCcw className="h-5 w-5" />
-              </div>
-              <div>
-                <DialogTitle className="font-display text-xl font-black text-red-900 dark:text-red-400">Pagos Anulados</DialogTitle>
-                <p className="text-xs text-red-600/70 dark:text-red-500/50 font-medium">Órdenes que requieren atención</p>
-              </div>
-            </div>
-          </DialogHeader>
-          
-          <div className="max-h-[60vh] overflow-y-auto p-4 flex flex-col gap-3">
-            {voidedOrders.map((order) => {
-              const tablesMap = Object.fromEntries((tables ?? []).map(t => [t.id, t.name]));
-              const currentTableName = order.table_id ? tablesMap[order.table_id] : null;
-              const snapshotName = order.table_name_snapshot;
-              
-              const title = currentTableName || snapshotName || (order.is_special ? "Orden Especial" : (order.order_type === "DINE_IN" ? "Mesa (Anulada)" : "Para Llevar"));
-              const id = order.id;
-              const badge = (currentTableName || snapshotName) 
-                ? formatTableBadge(currentTableName || snapshotName!) 
-                : order.order_number || order.order_code?.slice(-4) || "?";
-              
-              return (
-                <button
-                  key={id}
-                  onClick={() => {
-                    setIsVoidedOrdersOpen(false);
-                    navigate(`/ordenes?order=${id}&origin=mesas`, { replace: true });
-                  }}
-                  className="flex items-center gap-4 p-4 rounded-[22px] border-2 border-red-100 bg-white hover:border-red-300 hover:bg-red-50/50 transition-all text-left group dark:bg-card dark:border-red-900/30 dark:hover:border-red-700/50 dark:hover:bg-red-950/10"
-                >
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600 font-black text-lg group-hover:scale-110 transition-transform dark:bg-red-900/30 dark:text-red-400">
-                    {badge}
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-display font-black text-red-900 dark:text-red-300 truncate">{title}</span>
-                    {order.created_by_name && (
-                      <span className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-red-600/80">
-                        <UserRound className="h-3 w-3" />
-                        {order.created_by_name}
-                      </span>
-                    )}
-                    <span className="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full w-fit dark:bg-red-950/50">Pendiente de cobro</span>
-                  </div>
-                  <div className="ml-auto text-right">
-                    <div className="text-xs font-black text-red-900 dark:text-red-400">
-                      {formatCurrency(order.total || order.special_total_manual || 0)}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground font-medium">Revisar →</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <div className="p-4 bg-muted/30 border-t border-border">
-            <p className="text-[10px] text-center text-muted-foreground font-medium">
-              Estas órdenes han sido removidas de su mesa para permitir nuevos pedidos, pero aún deben ser procesadas en Caja.
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

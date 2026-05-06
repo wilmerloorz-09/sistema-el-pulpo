@@ -306,6 +306,7 @@ export interface CompletedPayment {
   item_paid_quantity: number | null;
   tray_item_type?: "A" | "B" | "C" | null;
   item_amount: number;
+  order_has_dispatched_items: boolean;
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
   payment_opening_status: "abierta" | "cerrada" | "anulada" | null;
@@ -1497,6 +1498,9 @@ export function useCaja(params?: {
         return snapshotName || "Mesa";
       };
 
+      const orderHasDispatchedMap: Record<string, boolean> = {};
+      // Dispatch check is handled server-side by the Edge Function
+
       const orderPaidMap: Record<string, number> = {};
       const orderRealTotalMap: Record<string, number> = {};
       const orderHasVoidedPaymentsMap: Record<string, boolean> = {};
@@ -1561,8 +1565,9 @@ export function useCaja(params?: {
         } else if (meta.voided) {
           status = "VOIDED";
         } else if (order.status === "PAID") {
+          // Trust the database: if order is marked PAID, payment is fully applied
           status = "APPLIED";
-        } else if (pendingAmount > 0.005) {
+        } else if (roundMoney(pendingAmount) > 0.01) {
           status = "PARTIAL";
         }
 
@@ -1601,6 +1606,7 @@ export function useCaja(params?: {
               tray_item_type: item?.tray_item_type ?? null,
               item_amount: paymentItem.total_amount,
               reversal_requested: meta.reversalRequested,
+              order_has_dispatched_items: Boolean(orderHasDispatchedMap[order.id]),
               order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
               payment_opening_status: paymentOpeningStatus,
             });
@@ -1638,12 +1644,12 @@ export function useCaja(params?: {
             tray_item_type: isSpecialOrderNote(payment.notes) ? null : legacyItem?.tray_item_type ?? null,
             item_amount: Number(payment.amount),
             reversal_requested: meta.reversalRequested,
-            order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
+            order_has_dispatched_items: Boolean(orderHasDispatchedMap[payment.order_id]),
+            order_has_voided_payments: orderHasVoidedPaymentsMap[payment.order_id] || false,
             payment_opening_status: paymentOpeningStatus,
           });
         }
       }
-
       const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
       for (const payment of allPaymentsInRange) {
         const meta = parsePaymentNotes(payment.notes);
@@ -1669,6 +1675,7 @@ export function useCaja(params?: {
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
     refetchInterval: 10000,
+    placeholderData: (prev: any) => prev,
   });
 
   const cashRegisterTemplatesQuery = useQuery({
@@ -2181,7 +2188,6 @@ export function useCaja(params?: {
       const normalizedRefundDenoms = (cashRefundDenoms ?? [])
         .map((e) => ({ denomination_id: e.denomination_id, qty: Math.max(0, Math.floor(Number(e.qty ?? 0))) }))
         .filter((e) => e.denomination_id && e.qty > 0);
-      if (normalizedRefundDenoms.length === 0) throw new Error("Indica detalle de devolucion");
 
       const payments = await dbSelect<any>("payments", {
         select: "order_id",
@@ -2234,7 +2240,6 @@ export function useCaja(params?: {
       if (!shift?.id) throw new Error("No hay turno abierto");
       if (!requestId) throw new Error("La solicitud no existe");
       if (!reason.trim()) throw new Error("Indica un motivo");
-      if (!supervisorIdentifier.trim() || !supervisorPassword.trim()) throw new Error("Falta supervisor");
 
       const normalizedSelections = (paymentSelections ?? [])
         .map((s) => ({ paymentEntryId: s.paymentEntryId, quantity: Number(s.quantity ?? 0) }))
@@ -2244,7 +2249,6 @@ export function useCaja(params?: {
       const normalizedRefundDenoms = (cashRefundDenoms ?? [])
         .map((e) => ({ denomination_id: e.denomination_id, qty: Math.max(0, Math.floor(Number(e.qty ?? 0))) }))
         .filter((e) => e.denomination_id && e.qty > 0);
-      if (normalizedRefundDenoms.length === 0) throw new Error("Indica detalle devolucion");
 
       const payments = await dbSelect<any>("payments", { select: "order_id", filters: [{ column: "id", op: "eq", value: paymentId }] });
       if (payments[0]?.order_id) await ensureTableSnapshot(payments[0].order_id);
@@ -2253,9 +2257,16 @@ export function useCaja(params?: {
       const accessToken = session?.access_token?.trim();
       if (!accessToken) throw new Error("Sesion invalida");
 
-      const { data, error } = await supabase.functions.invoke("void-payment", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const fnUrl = `${supabaseUrl}/functions/v1/void-payment`;
+
+      const response = await fetch(fnUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           payment_id: paymentId,
           request_id: requestId,
           current_shift_id: shift.id,
@@ -2268,20 +2279,23 @@ export function useCaja(params?: {
             quantity: s.quantity,
           })),
           cash_refund_detail: normalizedRefundDenoms,
-        },
+        }),
       });
 
-      if (error) {
-        throw new Error(error.message || "Error al anular");
+      const responseData = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(responseData?.error || `Error ${response.status} al anular el pago`);
       }
 
-      return data;
+      return responseData;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       toast.success("Pago anulado");
     },
     onError: (err: any) => toast.error(err.message),

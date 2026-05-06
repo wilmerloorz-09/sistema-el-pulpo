@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
-import { fetchOrderDetail } from "@/hooks/useOrder";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 
@@ -31,25 +30,8 @@ export interface TableWithStatus {
   created_by_name?: string | null;
 }
 
-export interface VoidedOrder {
-  id: string;
-  order_number: number | null;
-  order_code: string | null;
-  table_id: string | null;
-  status: OrderStatus;
-  is_special: boolean;
-  order_type: "DINE_IN" | "TAKEOUT";
-  created_at: string;
-  created_by?: string | null;
-  created_by_name?: string | null;
-  special_total_manual: number | null;
-  table_name_snapshot?: string | null;
-  total?: number;
-}
-
 export interface TablesWithStatusData {
   tables: TableWithStatus[];
-  voidedOrders: VoidedOrder[];
 }
 
 interface TablesOverviewRow {
@@ -105,71 +87,36 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   const activeOrderIds = Array.from(
     new Set(rows.map((row) => row.active_order_id).filter((id): id is string => Boolean(id))),
   );
+  
   const activeOrders = activeOrderIds.length > 0
     ? ((await supabase
       .from("orders" as any)
       .select("id, created_by")
       .in("id", activeOrderIds) as any).data ?? [])
     : [];
+
   const activeCreatorIds = Array.from(
     new Set((activeOrders ?? []).map((order: any) => order.created_by).filter(Boolean)),
   ) as string[];
+
   const activeCreatorProfiles = activeCreatorIds.length > 0
     ? ((await supabase
       .from("profiles" as any)
       .select("id, first_name, full_name, username, email")
       .in("id", activeCreatorIds) as any).data ?? [])
     : [];
+
   const activeOrdersMap = Object.fromEntries((activeOrders ?? []).map((order: any) => [order.id, order]));
   const activeCreatorNameMap = buildUserDisplayMap(activeCreatorProfiles);
   
-  // 1. Fetch ALL voided payments for this branch
+  // We check for voided payments to set the visual flag on tables, but we don't return them as a separate list anymore
   const { data: voidedPayments } = await (supabase
     .from("payments" as any)
     .select("order_id, orders!inner(branch_id)")
     .eq("orders.branch_id", branchId)
     .ilike("notes", "%VOIDED%") as any);
   
-  const paymentOrderIdSet = new Set<string>((voidedPayments ?? []).map((p: any) => String(p.order_id)));
-  const voidedOrderIds = Array.from(paymentOrderIdSet).filter((id) => id && id !== "undefined" && id !== "null");
-  
-  // 2. Fetch the orders for those voided payments (those that are still active)
-  let voidedOrders: VoidedOrder[] = [];
-  if (voidedOrderIds.length > 0) {
-    const { data: ordersData } = await (supabase
-      .from("orders" as any)
-      .select("id, order_number, order_code, table_id, status, is_special, order_type, created_by, created_at, special_total_manual, table_name_snapshot")
-      .in("id", voidedOrderIds)
-      .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]) as any);
-
-    const orderSummaries = (ordersData ?? []) as Array<Omit<VoidedOrder, "total">>;
-    const voidedCreatorIds = Array.from(new Set(orderSummaries.map((order) => order.created_by).filter(Boolean))) as string[];
-    const voidedCreatorProfiles = voidedCreatorIds.length > 0
-      ? ((await supabase
-        .from("profiles" as any)
-        .select("id, first_name, full_name, username, email")
-        .in("id", voidedCreatorIds) as any).data ?? [])
-      : [];
-    const voidedCreatorNameMap = buildUserDisplayMap(voidedCreatorProfiles);
-    const detailedOrders = await Promise.all(
-      orderSummaries.map(async (order) => {
-        const detail = await fetchOrderDetail(order.id);
-        const total = detail
-          ? detail.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0)
-          : Number(order.special_total_manual ?? 0);
-
-        return {
-          ...order,
-          created_by_name: order.created_by ? (voidedCreatorNameMap[order.created_by] ?? "Usuario") : null,
-          total,
-        };
-      }),
-    );
-
-    voidedOrders = detailedOrders;
-  }
-
-  const voidedOrderIdSet = new Set(voidedOrders.map(o => o.id));
+  const voidedOrderIdSet = new Set<string>((voidedPayments ?? []).map((p: any) => String(p.order_id)));
 
   const tables = rows.map((row) => {
     const hasVoidedPayment = row.active_order_id ? voidedOrderIdSet.has(row.active_order_id) : false;
@@ -178,16 +125,15 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
     
-    // The RPC still emits the legacy dispatch-then-cash "to_pay" state for dispatched
-    // table orders. In the current flow, dispatched tables remain occupied in Mesas.
-    const effectiveStatus = hasVoidedPayment || isEmptyDraft
+    const effectiveStatus = isEmptyDraft
       ? "free"
       : row.status === "to_pay"
         ? "occupied"
         : (row.status ?? "free");
-    const effectiveOrderId = hasVoidedPayment ? undefined : (row.active_order_id ?? undefined);
-    const effectiveOrderStatus = hasVoidedPayment ? undefined : (row.active_order_status ?? undefined);
-    const effectiveSplitTotals = hasVoidedPayment || isEmptyDraft ? [] : parseSplitTotals(row.split_totals);
+
+    const effectiveOrderId = isEmptyDraft ? undefined : (row.active_order_id ?? undefined);
+    const effectiveOrderStatus = isEmptyDraft ? undefined : (row.active_order_status ?? undefined);
+    const effectiveSplitTotals = isEmptyDraft ? [] : parseSplitTotals(row.split_totals);
 
     return {
       id: row.table_id,
@@ -197,11 +143,11 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       status: effectiveStatus,
       activeOrderId: effectiveOrderId,
       orderStatus: effectiveOrderStatus,
-      splitCount: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.split_count ?? 0),
-      totalDue: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.total_due ?? 0),
+      splitCount: isEmptyDraft ? 0 : Number(row.split_count ?? 0),
+      totalDue: isEmptyDraft ? 0 : Number(row.total_due ?? 0),
       splitTotals: effectiveSplitTotals,
-      itemCount: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.item_count ?? 0),
-      elapsedMinutes: hasVoidedPayment || isEmptyDraft ? 0 : Number(row.elapsed_minutes ?? 0),
+      itemCount: isEmptyDraft ? 0 : Number(row.item_count ?? 0),
+      elapsedMinutes: isEmptyDraft ? 0 : Number(row.elapsed_minutes ?? 0),
       hasVoidedPayment,
       created_by_name: effectiveStatus !== "free" && effectiveOrderId
         ? (activeOrdersMap[effectiveOrderId]?.created_by
@@ -211,7 +157,7 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
     };
   });
 
-  return { tables, voidedOrders };
+  return { tables };
 }
 
 export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {

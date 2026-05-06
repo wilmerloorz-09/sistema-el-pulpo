@@ -16,7 +16,8 @@
 --   - incluye la apertura de permisos operativos para edición de orden y búsqueda
 --   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
---   - incluye solicitudes de anulacion de pago, anulaciones parciales y pagos de reemplazo
+--   - incluye solicitudes de anulacion de pago, anulaciones parciales, pagos de reemplazo y registro histórico en `order_cancellations` y `orders.notes`
+--   - incluye la gestión simplificada de mesas con pagos anulados (eliminación del banner central de Pagos Anulados)
 --   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones)
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
@@ -95,7 +96,9 @@
 --   - si existe algun item despachado, pagado o con anulacion pendiente, no debe mostrarse ni ejecutarse
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
---   - el flujo global sigue siendo Caja primero y Despacho despues para mesa, para llevar y orden especial
+--   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial deben pagarse para ser elegibles para despacho).
+--   - Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
+--   - Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
 --   - `branches.workflow_mode` queda como compatibilidad interna con default `CASH_THEN_DISPATCH`
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
@@ -104,6 +107,9 @@
 --   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
 --   - el cálculo de cambio se unifica para contemplar excedentes de todos los métodos de pago (incluyendo transferencias)
 --   - los ítems nuevos aceptados en órdenes "En caja" mantienen su flujo de cobro correcto
+--   - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
+--   - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
+--   - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
 -- ============================================================
 
 BEGIN;

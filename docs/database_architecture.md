@@ -114,6 +114,7 @@
 - `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
 - `get_branch_tables_overview(...)` ignora borradores vacios al calcular ocupacion operativa.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre órdenes de mesa.
+- **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados mantienen su estado de ocupación y permiten el re-cobro directo desde el detalle de la orden.
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
@@ -138,6 +139,7 @@
   - pagos dentro de ese rango
   - movimientos dentro de ese rango
   - `cash_shift_denoms.qty_current` para el detalle de cierre
+- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem de la orden está despachado (`KITCHEN_DISPATCHED`).
 
 ### Anulacion de pagos
 - `payment_void_requests` concentra la solicitud y el ciclo de autorizacion/ejecucion.
@@ -147,6 +149,7 @@
   - `cash_refund_detail`
   - `replacement_payment_id`
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
+- **Trazabilidad de Anulación (2026-05-06):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` (tipo `partial`) y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`.
 - Las devoluciones en efectivo disminuyen `cash_shift_denoms.qty_current` y registran `cash_movements`.
 
 ### Comprobantes

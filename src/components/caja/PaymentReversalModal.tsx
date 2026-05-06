@@ -30,6 +30,7 @@ export interface ReversalPaymentData {
   status: CompletedPaymentStatus;
   notes: string | null;
   methodsSummary: string;
+  orderHasDispatchedItems: boolean;
   items: {
     id: string;
     paymentEntryId: string;
@@ -159,6 +160,7 @@ export default function PaymentReversalModal({
   const selectedUnits = useMemo(() => selectedItems.reduce((sum, item) => sum + item.selectedQty, 0), [selectedItems]);
   const pendingTotal = useMemo(() => roundMoney(pendingItems.reduce((sum, item) => sum + item.pendingAmount, 0)), [pendingItems]);
   const selectedTotal = useMemo(() => roundMoney(selectedItems.reduce((sum, item) => sum + item.selectedAmount, 0)), [selectedItems]);
+  const requiresSupervisor = payment?.orderHasDispatchedItems ?? true;
 
   const refundBreakdown = useMemo(() => {
     if (selectedTotal <= 0) return [];
@@ -224,7 +226,7 @@ export default function PaymentReversalModal({
     setSelectedQuantities(Object.fromEntries((payment?.items ?? []).map((item) => [item.paymentEntryId, item.quantity])));
   };
 
-  const canOpenConfirm = Boolean(payment) && selectedUnits > 0 && reason.trim().length > 0 && refundMatches && !loading;
+  const canOpenConfirm = Boolean(payment) && selectedUnits > 0 && reason.trim().length > 0 && (requiresSupervisor ? refundMatches : true) && !loading;
 
   const handleSubmit = async () => {
     if (!payment || !canOpenConfirm) return;
@@ -445,8 +447,8 @@ export default function PaymentReversalModal({
               </div>
 
               <div className="shrink-0 border-t border-stone-200 bg-white px-3 py-3 sm:px-4 lg:px-6">
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
-                  <div className="rounded-[22px] border border-stone-200 bg-stone-50/70 px-3 py-3">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
+                  <div className="rounded-[22px] border border-stone-200 bg-stone-50/70 px-4 py-3">
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                       <span className="text-slate-600">
                         Total seleccionado: <span className="font-semibold text-slate-950">${selectedTotal.toFixed(2)}</span>
@@ -454,52 +456,22 @@ export default function PaymentReversalModal({
                       <span className="text-slate-600">
                         Total a devolver: <span className="font-semibold text-slate-950">${refundTotal.toFixed(2)}</span>
                       </span>
-                      <span className="text-slate-600">
-                        Faltante:{" "}
-                        <span className={cn("font-semibold", refundDifference > 0 ? "text-amber-700" : "text-slate-950")}>
-                          ${Math.abs(refundDifference).toFixed(2)}
-                        </span>
-                      </span>
                     </div>
                   </div>
 
                   <Button
-                    type="button"
-                    onClick={() => {
-                      if (mode === "request") {
-                        void handleSubmit();
-                        return;
-                      }
-                      setConfirmOpen(true);
-                    }}
-                    disabled={!canOpenConfirm}
-                    className="h-12 w-full rounded-full border-0 bg-gradient-to-r from-orange-500 to-amber-400 px-6 text-base font-semibold text-white shadow-[0_18px_36px_-24px_rgba(249,115,22,0.55)] hover:translate-y-0 hover:brightness-105 lg:w-[250px]"
+                    variant="destructive"
+                    className="h-12 w-full rounded-2xl bg-red-600 text-sm font-bold shadow-lg shadow-red-200 hover:bg-red-700"
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={loading || selectedTotal <= 0 || !canOpenConfirm}
                   >
-                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Coins className="h-5 w-5" />}
-                    {submitLabelOverride ?? `Anular $${selectedTotal.toFixed(2)}`}
+                    {loading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                    )}
+                    {submitLabelOverride || (requiresSupervisor ? "Solicitar autorización" : "Confirmar anulación")}
                   </Button>
-                </div>
-
-                <div
-                  className={cn(
-                    "mt-3 rounded-2xl px-4 py-3 text-sm font-medium",
-                    refundMatches
-                      ? "border border-green-500/20 bg-green-500/10 text-green-700"
-                      : "border border-amber-500/20 bg-amber-500/10 text-amber-700",
-                  )}
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      {selectedTotal <= 0
-                        ? "Selecciona al menos una cantidad para anular."
-                        : refundMatches
-                          ? "La devolucion en efectivo esta lista para confirmar."
-                          : "No hay suficiente efectivo para cubrir la devolucion exacta."}
-                    </div>
-                    <div className="text-sm sm:text-right">
-                      {reason.trim().length > 0 ? "Motivo listo" : "Escribe el motivo para continuar"}
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -507,80 +479,36 @@ export default function PaymentReversalModal({
         </DialogContent>
       </Dialog>
 
-      {mode === "execute" ? (
-        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-2xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="font-display">Confirmar anulacion</AlertDialogTitle>
-              <AlertDialogDescription>
-                Revisa como quedara aplicada la anulacion antes de registrarla.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total a anular</p>
-                  <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">${selectedTotal.toFixed(2)}</p>
-                </div>
-                <div className="rounded-2xl bg-muted/50 p-2.5 sm:p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Metodo</p>
-                  <p className="mt-1 text-base font-semibold text-foreground sm:text-lg">Efectivo</p>
-                </div>
-                <div className="rounded-2xl bg-primary/10 p-2.5 sm:p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Devolucion</p>
-                  <p className="mt-1 font-display text-base font-bold text-primary sm:text-xl">${refundTotal.toFixed(2)}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-border p-3">
-                <p className="mb-2 text-sm font-semibold text-foreground">Metodos utilizados</p>
-                <div className="grid grid-cols-1 gap-1 rounded-xl bg-muted/40 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:gap-2">
-                  <span className="truncate text-foreground">Efectivo</span>
-                  <span className="text-right text-foreground">Devuelve {formatCurrency(refundTotal)}</span>
-                  <span className="text-right font-medium text-foreground">Aplica {formatCurrency(selectedTotal)}</span>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Cambio a entregar desde caja</p>
-                  <p className="font-display text-xl font-bold text-emerald-700">${refundTotal.toFixed(2)}</p>
-                </div>
-                {refundBreakdown.length > 0 ? (
-                  <div className="space-y-1">
-                    {refundBreakdown.map((denomination) => (
-                      <div key={denomination.denomination_id} className="flex items-center justify-between gap-3 text-sm">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <DenominationVisual
-                            label={denomination.label}
-                            imageUrl={denomination.image_url}
-                            className="h-9 w-9 rounded-xl"
-                            iconClassName="h-4 w-4"
-                          />
-                          <span className="truncate text-foreground">
-                            {denomination.qty}x {denomination.label}
-                          </span>
-                        </div>
-                        <span className="font-medium text-foreground">{formatCurrency(denomination.total)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No hay detalle de devolucion disponible todavia.</p>
-                )}
-              </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent className="max-w-[400px] rounded-[32px] border-none p-8 shadow-2xl">
+          <AlertDialogHeader className="space-y-4">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+              <RotateCcw className="h-8 w-8 text-red-600" />
             </div>
-
-            <AlertDialogFooter>
-              <AlertDialogCancel>Volver</AlertDialogCancel>
-              <AlertDialogAction onClick={() => void handleSubmit()} disabled={!canOpenConfirm || loading}>
-                {loading ? "Procesando..." : "Confirmar anulacion"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      ) : null}
+            <div className="space-y-2 text-center">
+              <AlertDialogTitle className="text-2xl font-bold text-slate-900">
+                ¿Confirmar anulacion?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-base text-slate-600">
+                {requiresSupervisor
+                  ? "Se enviará una solicitud de autorización al supervisor para procesar esta anulación."
+                  : "Esta anulación se procesará directamente ya que no hay ítems despachados."}
+              </AlertDialogDescription>
+            </div>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-8 flex-col gap-3 sm:flex-col">
+            <AlertDialogAction
+              onClick={() => void handleSubmit()}
+              className="h-12 w-full rounded-2xl bg-red-600 text-sm font-bold shadow-lg shadow-red-100 hover:bg-red-700"
+            >
+              Confirmar
+            </AlertDialogAction>
+            <AlertDialogCancel className="h-12 w-full rounded-2xl border-none bg-slate-100 text-sm font-bold text-slate-600 hover:bg-slate-200">
+              Cancelar
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
