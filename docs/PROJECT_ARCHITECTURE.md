@@ -124,6 +124,7 @@
   - si el usuario continua, esas ordenes se marcan `PAID` y despues se invoca `close_cash_shift_with_tables(...)`
   - el conteo debe limitarse a ordenes que realmente bloquean cierre (`SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED` sin `paid_at`)
 - La caja fisica se compone desde `cash_shift_denoms.qty_current`.
+- `Pagos del turno` se calcula con el rango real del turno (`cash_shifts.opened_at` hasta `closed_at` o ahora). No debe cortarse por medianoche, porque un turno abierto puede cruzar de dia.
 - Las plantillas de apertura viven en:
   - `cash_register_templates`
   - `cash_register_template_denoms`
@@ -158,7 +159,9 @@
   - devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda parte activa del pago
   - **Historial de Anulaciones (2026-05-06):** La anulación de pago registra obligatoriamente un evento en `order_cancellations` y una nota de rastro en `orders.notes`.
-  - reapertura de orden / mesa si el saldo vuelve a estar pendiente
+  - separacion de orden despues de anular pago: la orden original queda como historica `CANCELLED` con su numero original y marcador `VOID_SUCCESSOR_ORDER:<new_order_id>`, y la operacion activa pasa a una sucesora con nuevo numero y marcador `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`.
+  - la orden historica por anulacion no debe aparecer en Caja, Mesas ni Despacho como flujo activo; la sucesora es la unica cobrable.
+  - `recalculate_check_balance(...)` debe preservar primero las historicas `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
 
 ### 11. Comprobantes de transferencia
 - `PaymentDialog` puede preparar una sesion provisional de pago con comprobante.

@@ -58,6 +58,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - mostrar el detalle de la apertura en el encabezado
   - incluir una hoja aparte con detalle de monedas y billetes al cierre
 - El resumen de caja debe usar efectivo neto aplicado, no monto bruto recibido antes del cambio.
+- Las vistas de pagos del turno deben usar el rango real del turno (`cash_shifts.opened_at` a cierre/ahora), no el inicio del dia calendario.
 
 ### 6. Anulacion de pagos
 - El flujo oficial es:
@@ -69,7 +70,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - devolucion por denominacion
   - `replacement_payment_id`
   - **Auditoría de Anulación (2026-05-06):** No anular pagos sin dejar rastro en `order_cancellations` y `orders.notes`. La anulación debe registrar el supervisor responsable y el motivo.
-  - reapertura correcta de orden/mesa/division cuando aplique
+  - separacion historica cuando un pago anulado deja una cuenta activa: orden original `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y orden sucesora activa con nuevo numero y `SUCCESSOR_OF_VOIDED_ORDER`.
+  - la orden historica por pago anulado nunca debe quedar `PAID`, aparecer en `Por cobrar`, ocupar mesa ni reactivarse por `recalculate_check_balance(...)`.
+- En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
 
 ### 7. Mesas y órdenes independientes
@@ -143,7 +146,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - En usuarios, no reintroducir `Nombre completo` como campo principal; usar `Nombres` (`profiles.first_name`) y `Apellidos` (`profiles.last_name`).
 - En listados compactos de usuarios, mostrar `Nombres` y nombre de usuario; no agregar cedula/telefono fuera de administracion o detalle.
 - Si tocas catalogo, validar `Ordenes`, `Despacho`, `Caja`, ticket y vistas derivadas.
-- Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas`, `order_cancellations` y estado visible de la orden reabierta.
+- Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas`, `order_cancellations`, orden historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` y orden sucesora activa con `SUCCESSOR_OF_VOIDED_ORDER`.
 - Si tocas `Unir/Dividir`, validar `MergeSplitOrdersDialog`, `Ordenes`, `Mesas` y cantidades movibles vs cantidades pagadas.
 - Si tocas `Editar Orden`, validar:
   - buffer temporal

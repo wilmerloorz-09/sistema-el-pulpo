@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-05-01)
+## Estado operativo vigente (2026-05-07)
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -92,6 +92,9 @@
 - `Caja` ya permite reimpresion:
   - boton global para reporte consolidado del turno
   - boton por apertura cerrada para reimprimir solo esa apertura
+- `Pagos del turno` debe consultar desde `cash_shifts.opened_at` hasta `closed_at` o el momento actual, no desde la medianoche del dia calendario. Un turno puede cruzar de dia y sus pagos/anulaciones deben seguir visibles.
+- El detalle de pago debe mostrar, cuando aplique, monto entregado por el cliente, monedas/billetes recibidos, cambio entregado y devolucion.
+- Si el pago esta anulado o reversado, no debe mostrarse lo recibido por el cliente; solo corresponde mostrar la devolucion/anulacion.
 
 ### 4. Anulacion de pagos
 - El sistema soporta anulacion segura de pagos con supervisor.
@@ -108,6 +111,12 @@
   - bloqueo si la apertura de caja del pago ya fue cerrada/anulada o si el pago ya fue anulado
 - Una anulacion de pago puede reabrir el estado operativo de la orden o liberar la mesa visualmente segun el saldo restante.
 - **Historial de Anulaciones (2026-05-06):** Toda anulación de pago genera un registro de auditoría en la tabla `order_cancellations` y adjunta una nota histórica detallada al pedido (`orders.notes`), garantizando la trazabilidad del supervisor responsable y el motivo.
+- **Separacion historica por anulacion de pago (2026-05-07):**
+  - al anular un pago, el pedido original conserva su `order_code` / `order_number` para auditoria y queda marcado con `VOID_SUCCESSOR_ORDER:<new_order_id>`.
+  - ese pedido original debe quedar `CANCELLED`, sin `table_id`, sin `paid_at`, con `cancelled_at`, y fuera de Caja/Mesas/Despacho como flujo activo.
+  - el saldo/operacion activa se mueve a una orden sucesora con nuevo `order_code` / `order_number`, marcada con `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`.
+  - la orden sucesora es la unica que debe aparecer en `Por cobrar`.
+  - `recalculate_check_balance(...)` debe detectar primero `VOID_SUCCESSOR_ORDER` y mantener la orden historica en `CANCELLED`; no debe revivirla a `SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED` ni `PAID`.
 
 ### 5. Ordenes y mesas
 - `Ordenes` mantiene la vista de lista expandible.
@@ -295,10 +304,17 @@
 - UI / UX:
   - **Optimización Tablet:** Ajuste del módulo de Despacho para resolución de 1280px, optimizando el espacio en rejillas y reduciendo redundancia visual (eliminación de etiquetas "unidades pendientes" innecesarias).
 
+### 2026-05-07
+- Caja / anulacion de pagos:
+  - una anulacion de pago genera separacion de orden: historica `CANCELLED` con numero original y sucesora activa con numero nuevo.
+  - las historicas con `VOID_SUCCESSOR_ORDER` nunca deben salir como cobrables ni ocupar mesa.
+  - `CompletedPaymentsList` muestra cantidad entregada/desglose solo en pagos activos; en anulados oculta lo recibido y muestra devolucion.
+  - `Pagos del turno` filtra desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
+
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
 2. No mezclar cerrar caja con cerrar turno.
-3. Cualquier cambio en anulacion de pagos debe revisar `payments`, `payment_items`, `payment_void_requests`, `order_cancellations`, `cash_shift_denoms`, `cash_movements` y estado visible de `Mesas` / `Ordenes`.
+3. Cualquier cambio en anulacion de pagos debe revisar `payments`, `payment_items`, `payment_void_requests`, `order_cancellations`, `cash_shift_denoms`, `cash_movements` y estado visible de `Mesas` / `Ordenes`; si hay separacion por pago anulado, validar historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` y sucesora activa con `SUCCESSOR_OF_VOIDED_ORDER`.
 4. Cualquier cambio en `Unir/Dividir` debe preservar cantidades pagadas y redistribucion de historial `READY` / `DISPATCHED`.
 5. Los resets SQL limpian datos transaccionales y metadata de comprobantes, pero los archivos del bucket `payment-proofs` se borran aparte.
 6. La pestana `Pendiente de anulacion` depende de marcas reales en DB:

@@ -33,6 +33,7 @@ interface PaymentGroup {
   amount: number;
   status: CompletedPayment["status"];
   notes: string | null;
+  tendered_amount: number | null;
   method_name: string;
   order_has_dispatched_items: boolean;
   reversal_requested: boolean;
@@ -60,6 +61,7 @@ interface PaymentGroup {
     amount: number;
     method_name: string;
     status: CompletedPayment["status"];
+    tendered_amount: number | null;
     cash_received_detail: CompletedPayment["cash_received_detail"];
     cash_change_detail: CompletedPayment["cash_change_detail"];
     cash_refund_detail: CompletedPayment["cash_refund_detail"];
@@ -146,6 +148,11 @@ function sumDetailLines(lines: CompletedPayment["cash_change_detail"]) {
   return lines.reduce((sum, line) => sum + line.total, 0);
 }
 
+function getReceivedAmount(payment: Pick<PaymentGroup, "tendered_amount" | "amount" | "cash_received_detail">) {
+  const detailTotal = sumDetailLines(payment.cash_received_detail);
+  return payment.tendered_amount ?? (detailTotal > 0 ? detailTotal : payment.amount);
+}
+
 export default function CompletedPaymentsList({
   payments,
   total,
@@ -201,11 +208,19 @@ export default function CompletedPaymentsList({
   const [changeDetailState, setChangeDetailState] = useState<{
     open: boolean;
     title: string;
-    lines: CompletedPayment["cash_change_detail"];
+    showReceived: boolean;
+    receivedAmount: number;
+    receivedLines: CompletedPayment["cash_received_detail"];
+    changeLines: CompletedPayment["cash_change_detail"];
+    refundLines: CompletedPayment["cash_refund_detail"];
   }>({
     open: false,
     title: "Detalle de cambio",
-    lines: [],
+    showReceived: true,
+    receivedAmount: 0,
+    receivedLines: [],
+    changeLines: [],
+    refundLines: [],
   });
 
   const permissionFlags = getPermissionFlags(permissions);
@@ -223,6 +238,7 @@ export default function CompletedPaymentsList({
           amount: row.amount,
           status: row.status,
           notes: row.notes,
+          tendered_amount: row.tendered_amount,
           method_name: row.method_name,
           reversal_requested: row.reversal_requested,
           order_has_dispatched_items: row.order_has_dispatched_items,
@@ -254,6 +270,7 @@ export default function CompletedPaymentsList({
         amount: row.item_amount,
         method_name: row.method_name,
         status: row.status,
+        tendered_amount: row.tendered_amount,
         cash_received_detail: row.cash_received_detail,
         cash_change_detail: row.cash_change_detail,
         cash_refund_detail: row.cash_refund_detail,
@@ -396,13 +413,14 @@ export default function CompletedPaymentsList({
               const normalizedStatus = (payment.status?.toString() || "").toUpperCase();
               const isVoidedOrReversed = normalizedStatus === "REVERSED" || normalizedStatus === "VOIDED";
               const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
-              const blockedByState = isVoidedOrReversed || payment.reversal_requested || payment.order_has_voided_payments || blockedByClosedOpening;
+              const blockedByState = isVoidedOrReversed || payment.reversal_requested || blockedByClosedOpening;
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
-              const rowChangeDetail = isVoidedOrReversed
-                ? payment.cash_refund_detail
-                : payment.cash_change_detail.length > 0
-                  ? payment.cash_change_detail
-                  : payment.cash_received_detail;
+              const receivedAmount = getReceivedAmount(payment);
+              const hasCashTrace =
+                receivedAmount > 0
+                || payment.cash_received_detail.length > 0
+                || payment.cash_change_detail.length > 0
+                || payment.cash_refund_detail.length > 0;
               const rowChangeTitle = isVoidedOrReversed
                 ? "Detalle de devolucion"
                 : payment.cash_change_detail.length > 0
@@ -459,7 +477,7 @@ export default function CompletedPaymentsList({
 
                     <div className="grid grid-cols-[96px_minmax(0,96px)] items-center gap-2">
                       <p className="text-right text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
-                      {rowChangeDetail.length > 0 && (
+                      {hasCashTrace && (
                         <button
                           type="button"
                           onClick={(event) => {
@@ -467,12 +485,16 @@ export default function CompletedPaymentsList({
                             setChangeDetailState({
                               open: true,
                               title: rowChangeTitle,
-                              lines: rowChangeDetail,
+                              showReceived: !isVoidedOrReversed,
+                              receivedAmount,
+                              receivedLines: payment.cash_received_detail,
+                              changeLines: payment.cash_change_detail,
+                              refundLines: payment.cash_refund_detail,
                             });
                           }}
                           className="h-8 rounded-full border border-orange-200 bg-orange-50 px-3 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
                         >
-                          Ver Cambio
+                          Ver Detalle
                         </button>
                       )}
                     </div>
@@ -568,28 +590,94 @@ export default function CompletedPaymentsList({
             <DialogTitle>{changeDetailState.title}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-950">Monedas y billetes entregados</span>
-                <span className="text-lg font-bold text-orange-700">{formatCurrency(sumDetailLines(changeDetailState.lines))}</span>
+            {changeDetailState.showReceived && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-950">Cliente entrego</span>
+                  <span className="text-lg font-bold text-emerald-700">{formatCurrency(changeDetailState.receivedAmount)}</span>
+                </div>
+                {changeDetailState.receivedLines.length === 0 && (
+                  <p className="mt-1 text-xs font-medium text-emerald-800/70">
+                    No se registro desglose de monedas o billetes recibidos.
+                  </p>
+                )}
               </div>
-              <div className="space-y-1.5">
-                {changeDetailState.lines.map((line) => (
-                  <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <DenominationVisual
-                        label={line.label}
-                        imageUrl={line.image_url}
-                        className="h-9 w-9 rounded-xl"
-                        iconClassName="h-4 w-4"
-                      />
-                      <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+            )}
+
+            {changeDetailState.showReceived && changeDetailState.receivedLines.length > 0 && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-950">Monedas y billetes recibidos</span>
+                  <span className="text-lg font-bold text-emerald-700">{formatCurrency(sumDetailLines(changeDetailState.receivedLines))}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {changeDetailState.receivedLines.map((line) => (
+                    <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <DenominationVisual
+                          label={line.label}
+                          imageUrl={line.image_url}
+                          className="h-9 w-9 rounded-xl"
+                          iconClassName="h-4 w-4"
+                        />
+                        <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
                     </div>
-                    <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {changeDetailState.changeLines.length > 0 && (
+              <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-950">Cambio entregado al cliente</span>
+                  <span className="text-lg font-bold text-orange-700">{formatCurrency(sumDetailLines(changeDetailState.changeLines))}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {changeDetailState.changeLines.map((line) => (
+                    <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <DenominationVisual
+                          label={line.label}
+                          imageUrl={line.image_url}
+                          className="h-9 w-9 rounded-xl"
+                          iconClassName="h-4 w-4"
+                        />
+                        <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {changeDetailState.refundLines.length > 0 && (
+              <div className="rounded-2xl border border-red-200 bg-red-50/60 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-950">Devuelto al cliente</span>
+                  <span className="text-lg font-bold text-red-700">{formatCurrency(sumDetailLines(changeDetailState.refundLines))}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {changeDetailState.refundLines.map((line) => (
+                    <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <DenominationVisual
+                          label={line.label}
+                          imageUrl={line.image_url}
+                          className="h-9 w-9 rounded-xl"
+                          iconClassName="h-4 w-4"
+                        />
+                        <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -121,6 +121,7 @@
 - `cash_shifts.opened_at` es la fecha/hora de apertura del turno y se presenta en `Admin > Turno` mientras el turno esta `OPEN`.
 - `cash_register_openings` representa historial real de aperturas, cierres y anulaciones de caja.
 - `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
+- `Pagos del turno` debe filtrar por el rango real de `cash_shifts.opened_at` a `cash_shifts.closed_at`/`now()`, no por inicio del dia calendario.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
 - `cash_shift_users.can_double_session` habilita una segunda sesion de app solo para usuarios de caja en turno abierto.
 - Las sesiones de app se registran en `profiles.current_app_session_id` y, cuando aplica doble sesion, en `profiles.current_app_secondary_session_id` con timestamp/dispositivo auxiliar.
@@ -151,6 +152,17 @@
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
 - **Trazabilidad de Anulación (2026-05-06):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` (tipo `partial`) y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`.
 - Las devoluciones en efectivo disminuyen `cash_shift_denoms.qty_current` y registran `cash_movements`.
+- Al anular un pago, la orden original conserva `order_code` / `order_number` y queda como historica:
+  - `orders.status = 'CANCELLED'`
+  - `orders.table_id`, `split_id`, `table_order_position` en `NULL`
+  - `orders.paid_at = NULL`
+  - `orders.cancelled_at` definido
+  - `orders.notes` incluye `VOID_SUCCESSOR_ORDER:<new_order_id>` y `VOIDED_PAYMENT_HISTORICAL:<payment_id>`
+- La orden activa se recrea como sucesora:
+  - nuevo `order_code` / `order_number`
+  - `orders.notes` incluye `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`
+  - recibe items/modificadores y pagos activos no anulados.
+- `recalculate_check_balance(...)` debe revisar `VOID_SUCCESSOR_ORDER` antes de invocar sincronizaciones que puedan recalcular estado, para no revivir historicas anuladas.
 
 ### Comprobantes
 - `payment_capture_requests` usa `secure_token` y estados de ciclo de captura.
@@ -192,6 +204,7 @@
 - `can_void_payment(...)`
 - `request_void_payment(...)`
 - `approve_and_void_payment(...)`
+- `create_successor_order_after_payment_void(...)`
 - `recalculate_check_balance(...)`
 - `sync_order_payment_state(...)`
 - Edge Function relacionada:
@@ -229,6 +242,7 @@
 - `20260411173000_allow_approved_void_after_pending_request.sql`
 - `20260411190000_fix_shift_id_ambiguity_in_approve_and_void_payment.sql`
 - `20260411200000_allow_self_authorized_void_for_admins_and_supervisors.sql`
+- `20260507033000_split_order_after_payment_void.sql`
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
@@ -251,7 +265,7 @@
 ## Reglas de integridad
 1. No asumir que `menu_nodes` ya reemplazo la FK de `order_items.product_id`.
 2. No confundir cierre de caja con cierre de turno.
-3. Si se toca anulacion de pagos, revisar consistencia entre `payments`, `payment_items`, `payment_void_requests`, `cash_shift_denoms`, `cash_movements` y estado de `orders`.
+3. Si se toca anulacion de pagos, revisar consistencia entre `payments`, `payment_items`, `payment_void_requests`, `cash_shift_denoms`, `cash_movements` y estado de `orders`; las ordenes historicas por pago anulado deben quedar `CANCELLED` con `VOID_SUCCESSOR_ORDER`, no `PAID`.
 4. Si se toca `Unir/Dividir`, no romper cantidades pagadas, historial `READY` / `DISPATCHED` ni numeracion operativa.
 5. Si se toca `Editar Orden`, revisar consistencia entre `orders.locked_for_editing`, anulaciones resultantes, despacho directo de items nuevos y el bloqueo del botón "Cobrar" en Caja.
 6. Los resets SQL limpian metadata de comprobantes, pero no Storage; el bucket `payment-proofs` se limpia aparte.

@@ -18,6 +18,8 @@
 --   - incluye la regla de Caja: una orden/item `DRAFT` nunca debe aparecer ni poder cobrarse en Caja
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
 --   - incluye anulaciones seguras de pago con autorizacion de supervisor, registro histórico en `order_cancellations` y notas en pedidos
+--   - incluye ordenes historicas por pago anulado marcadas con `VOID_SUCCESSOR_ORDER`, que deben quedar `CANCELLED` y no `PAID`
+--   - incluye ordenes sucesoras creadas por anulacion de pago con `SUCCESSOR_OF_VOIDED_ORDER` y nuevo `order_code` / `order_number`
 --   - incluye la gestión simplificada de mesas con pagos anulados (sin banner central de Pagos Anulados)
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
 --   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones), junto con su redistribucion de historial READY/DISPATCHED
@@ -32,6 +34,8 @@
 --    Caja antes de Despacho (Mesa, Para Llevar, Especial deben pagarse para ser elegibles para despacho).
 --    Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
 --    Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
+--    Si la anulacion conserva una cuenta activa, la orden original queda historica `CANCELLED` con su numero original y la sucesora recibe un numero nuevo.
+--    `Pagos del turno` debe reconstruirse desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
 -- - `branches.workflow_mode` queda solo como compatibilidad interna forzada a `CASH_THEN_DISPATCH`
 -- - Conserva la estructura de permisos por turno, pero limpia sus asignaciones activas y la auditoria/historial del turno cerrado
 --   - al limpiar cash_shifts tambien se borra `opened_at`, que la UI muestra como fecha/hora de apertura del turno abierto
@@ -302,6 +306,7 @@ COMMIT;
 -- - 0 session locks/toma de control vigente en Caja, incluida la segunda sesion de app
 -- - 0 solicitudes de captura y 0 metadatos de comprobantes de transferencia (incluye OCR/analisis)
 -- - 0 solicitudes/anulaciones pendientes por item/orden, 0 payloads `[PENDING_REQUEST]`, 0 solicitudes/anulaciones seguras de pago, 0 reversas de caja por anulacion y 0 reaperturas de mesa/division derivadas de esos pagos
+-- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`
 -- - 0 anulaciones parciales pendientes/ejecutadas y 0 pagos de reemplazo derivados de anulacion parcial
 -- - 0 movimientos Unir/Dividir persistidos ni historial READY/DISPATCHED redistribuido entre ordenes
 -- - 0 borradores vacios residuales capaces de seguir ocupando una mesa en overview

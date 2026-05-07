@@ -17,6 +17,8 @@
 --   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales, pagos de reemplazo y registro histórico en `order_cancellations` y `orders.notes`
+--   - incluye ordenes historicas por pago anulado marcadas con `VOID_SUCCESSOR_ORDER`, que deben quedar `CANCELLED` y no `PAID`
+--   - incluye ordenes sucesoras creadas por anulacion de pago con `SUCCESSOR_OF_VOIDED_ORDER` y nuevo `order_code` / `order_number`
 --   - incluye la gestión simplificada de mesas con pagos anulados (eliminación del banner central de Pagos Anulados)
 --   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones)
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
@@ -99,6 +101,8 @@
 --   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial deben pagarse para ser elegibles para despacho).
 --   - Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
 --   - Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
+--   - Si la anulacion conserva una cuenta activa, la orden original queda historica `CANCELLED` con su numero original y la sucesora recibe un numero nuevo.
+--   - `Pagos del turno` debe reconstruirse desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
 --   - `branches.workflow_mode` queda como compatibilidad interna con default `CASH_THEN_DISPATCH`
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
@@ -404,6 +408,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`
 -- - 0 base transaccional para reimprimir reportes de caja por apertura ni consolidado por turno
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 borradores vacios residuales capaces de aparecer como ocupacion real de mesa

@@ -299,6 +299,7 @@ export interface CompletedPayment {
   order_status: Database["public"]["Enums"]["order_status"];
   status: CompletedPaymentStatus;
   notes: string | null;
+  tendered_amount: number | null;
   payment_item_id: string | null;
   item_id: string | null;
   item_description: string | null;
@@ -1167,7 +1168,7 @@ export function useCaja(params?: {
       if (!activeBranchId) return [];
 
       const orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot, locked_for_editing",
+        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot, locked_for_editing, notes",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }],
         orderBy: { column: "updated_at", ascending: false }
@@ -1175,7 +1176,10 @@ export function useCaja(params?: {
       
       if (!orders || orders.length === 0) return [];
 
-      const tableIdSet = new Set<string>(orders.map((o) => o.table_id).filter(Boolean));
+      const activeOrders = orders.filter((order) => !String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:"));
+      if (activeOrders.length === 0) return [];
+
+      const tableIdSet = new Set<string>(activeOrders.map((o) => o.table_id).filter(Boolean));
       const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, { name: string; visual_order: number }> = {};
       if (tableIds.length > 0) {
@@ -1186,7 +1190,7 @@ export function useCaja(params?: {
         tablesMap = Object.fromEntries((tables ?? []).map((t) => [t.id, { name: t.name, visual_order: t.visual_order }]));
       }
 
-      const splitIdSet = new Set<string>(orders.map((o) => o.split_id).filter(Boolean));
+      const splitIdSet = new Set<string>(activeOrders.map((o) => o.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
       let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
@@ -1197,8 +1201,8 @@ export function useCaja(params?: {
         splitsMap = Object.fromEntries((splits ?? []).map((s) => [s.id, s.split_code]));
       }
 
-      const orderIds = orders.map((o) => o.id);
-      const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
+      const orderIds = activeOrders.map((o) => o.id);
+      const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
         ? await dbSelect<any>("profiles", {
             select: "id, first_name, full_name, username, email",
@@ -1256,7 +1260,7 @@ export function useCaja(params?: {
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
       const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
-      return orders
+      return activeOrders
         .map((o) => {
           const orderItems = (items ?? []).filter((i) => i.order_id === o.id && i.status !== "DRAFT");
           const mappedItems = orderItems
@@ -1432,10 +1436,7 @@ export function useCaja(params?: {
       const shiftOpenedAt = shiftQuery.data?.opened_at ?? null;
       const scope = completedPaymentsFilters?.scope ?? "ALL";
 
-      const effectiveStartIso =
-        shiftOpenedAt && new Date(shiftOpenedAt).getTime() > new Date(todayStartIso).getTime()
-          ? shiftOpenedAt
-          : todayStartIso;
+      const effectiveStartIso = shiftOpenedAt ?? todayStartIso;
       const effectiveEndIso = shiftQuery.data?.closed_at
         ? new Date(shiftQuery.data.closed_at).getTime() < Date.now()
           ? shiftQuery.data.closed_at
@@ -1758,6 +1759,7 @@ export function useCaja(params?: {
               order_status: order.status,
               status,
               notes: payment.notes,
+              tendered_amount: meta.tenderedAmount,
               payment_item_id: paymentItem.id,
               item_id: paymentItem.order_item_id,
               item_description: item?.description_snapshot ?? null,
@@ -1799,6 +1801,7 @@ export function useCaja(params?: {
             order_status: order.status,
             status,
             notes: payment.notes,
+            tendered_amount: meta.tenderedAmount,
             payment_item_id: null,
             item_id: meta.itemId,
             item_description: isSpecialOrderNote(payment.notes) ? "Cobro especial" : legacyItem?.description_snapshot ?? null,
