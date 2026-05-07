@@ -122,6 +122,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
 - Toda pantalla que visualiza ordenes debe mostrar el usuario creador desde `orders.created_by`.
 - Resolver nombres de usuario con el helper central (`first_name`, `full_name`, `username`, `email`, `Usuario`) y no duplicar fallbacks distintos por pantalla.
+- El modulo `Ordenes` debe mantener las pestanas visibles en este orden exacto: `Borrador`, `En Caja`, `Pagada`, `Despachada`, `Anulada`.
+- `Pendiente de anulacion` no debe reintroducirse como pestana principal; es un estado/marca operativa que bloquea acciones y se muestra en el detalle.
+- `Borrador` debe listar ordenes con al menos un item activo agregado y no enviado a Caja; si una orden aun no tiene `order_code` / `order_number`, debe permanecer en `Borrador` mientras sus items no esten pagados ni anulados.
+- `En Caja` debe listar solo ordenes numeradas/codificadas, enviadas a Caja, con items no `DRAFT` y saldo/cantidad pendiente de cobro; no debe incluir ordenes pagadas completas.
+- `Despachada` debe aceptar cabecera `KITCHEN_DISPATCHED`, item `DISPATCHED` o cantidades/eventos reales de despacho.
 - Una linea `DRAFT` no debe aparecer en pestanas operativas posteriores.
 - En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
 - El cálculo de cambio (`changeAmount`) debe realizarse de manera unificada, agregando los excedentes de todos los métodos de pago en una sola cifra coherente.

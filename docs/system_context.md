@@ -124,13 +124,19 @@
   - la UI usa exclusivamente `orders.table_order_position`.
   - una mesa puede contener múltiples órdenes independientes; cada una se trata como una "Orden" completa.
   - cuando ya existe numeracion operativa, debe prevalecer `order_code` / `order_number`.
-- Las pestanas del modulo `Ordenes` deben respetar etapas operativas reales:
-  - `Borradores`
-  - `Enviadas`
-  - `Despachadas`
-  - `Pendiente de anulacion`
-  - `Anuladas`
-  - `Pagadas`
+- Las pestanas visibles del modulo `Ordenes` deben mostrarse en este orden exacto:
+  - `Borrador`
+  - `En Caja`
+  - `Pagada`
+  - `Despachada`
+  - `Anulada`
+- La clasificacion de `Ordenes` debe respetar reglas operativas reales:
+  - `Borrador`: ordenes sin envio a Caja, con al menos un item activo agregado. Tambien incluye ordenes sin `order_code` / `order_number` que aun conservan items activos no pagados ni anulados.
+  - `En Caja`: solo ordenes con `order_code` / `order_number`, enviadas a Caja (`SENT_TO_KITCHEN`, `READY` o `KITCHEN_DISPATCHED`), con al menos un item no `DRAFT` y saldo/cantidad pendiente de cobro. Nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
+  - `Pagada`: ordenes con pago aplicado/estado `PAID`.
+  - `Despachada`: ordenes o items con estado/cantidades de despacho (`KITCHEN_DISPATCHED`, item `DISPATCHED` o eventos de despacho).
+  - `Anulada`: ordenes historicas/anuladas, incluyendo las de separacion por pago anulado.
+- `Pendiente de anulacion` sigue siendo un estado operativo interno y una marca visible en items/orden, pero no es una pestana principal del modulo `Ordenes`.
 - La pestana `Pagadas` debe mostrar ordenes especiales `PAID` aunque no tengan cantidades cobradas visibles por `payment_items`; en ese caso usa los items reales como detalle visual y `special_total_manual` como valor presentado de la orden.
 - En toda superficie donde se visualicen ordenes, debe mostrarse el usuario que genero la orden a partir de `orders.created_by`.
 - El nombre visible del generador se resuelve desde `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`; si no hay datos disponibles, usar `Usuario`.
@@ -269,6 +275,9 @@
 - Ordenes:
   - todas las vistas de orden deben exponer el nombre del usuario creador sin depender del usuario conectado.
   - `src/lib/userDisplay.ts` centraliza la resolucion de nombre visible de perfil.
+  - el modulo `Ordenes` usa las pestanas `Borrador`, `En Caja`, `Pagada`, `Despachada`, `Anulada` en ese orden; `Pendiente de anulacion` no es pestana principal.
+  - `Borrador` exige items activos agregados y no enviados a Caja.
+  - `En Caja` exige orden numerada/codificada, items no `DRAFT` y saldo pendiente; no debe incluir ordenes pagadas.
 
 ### 2026-05-01
 - Sucursales:

@@ -97,6 +97,13 @@
 - `submit_order_draft_items(...)` debe dejar cualquier orden enviada en estado cobrable por Caja antes de Despacho.
 - `sync_order_payment_state_internal(...)` debe considerar toda orden como cobrable por cantidad ordenada activa antes de despacho.
 - Los nuevos ítems añadidos durante una edición de una orden "En caja" se marcan para seguir el flujo de cobro correcto.
+- La clasificacion visible del modulo `Ordenes` debe derivarse de `orders`, `order_items`, pagos activos y snapshot/eventos operativos:
+  - `Borrador`: items activos agregados y no enviados a Caja. Las ordenes sin `order_code` / `order_number` deben permanecer en esta clasificacion mientras tengan items activos no pagados ni anulados.
+  - `En Caja`: `orders.status IN ('SENT_TO_KITCHEN', 'READY', 'KITCHEN_DISPATCHED')`, con `order_code` / `order_number`, items no `DRAFT` y saldo/cantidad pendiente de cobro. Excluir ordenes pagadas completas.
+  - `Pagada`: `PAID` o pago aplicado que cubre la orden.
+  - `Despachada`: cabecera `KITCHEN_DISPATCHED`, item `DISPATCHED` o cantidades/eventos de despacho.
+  - `Anulada`: `CANCELLED` e historicas con marcadores de anulacion.
+- `Pendiente de anulacion` no es pestana principal de `Ordenes`; se determina por `orders.cancel_requested_at` y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
   - `orders.cancel_requested_at` / `orders.cancel_requested_by`
   - cabecera en `order_cancellations` con `status = 'VOIDED'` y `notes` tipo `[PENDING_REQUEST] ...`

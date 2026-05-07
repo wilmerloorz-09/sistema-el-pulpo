@@ -5,6 +5,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { syncOrderPaymentState } from "@/hooks/useCaja";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "PENDING_CANCELLATION";
 
@@ -108,9 +109,10 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       const filters: any[] = (() => {
         if (!status || cancelledView || pendingCancellationView) return [];
+        if (status === "DRAFT") return [{ column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
         if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
         if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
-        if (sentView) return [{ column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
+        if (sentView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
         if (paidView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID"] }];
         return [{ column: "status", op: "eq", value: status }];
       })();
@@ -215,8 +217,31 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         );
       }
 
-      const orderIds = orders.map((order) => order.id);
+      let orderIds = orders.map((order) => order.id);
       if (orderIds.length === 0) return [];
+
+      if (sentView) {
+        const syncedStatuses = await Promise.all(
+          orderIds.map(async (orderId) => {
+            try {
+              return await syncOrderPaymentState(orderId);
+            } catch {
+              return { orderId, status: null };
+            }
+          }),
+        );
+        const paidOrderIds = new Set(
+          syncedStatuses
+            .filter((row) => row.status === "PAID")
+            .map((row) => row.orderId),
+        );
+
+        if (paidOrderIds.size > 0) {
+          orders = orders.filter((order) => !paidOrderIds.has(order.id));
+          orderIds = orders.map((order) => order.id);
+          if (orderIds.length === 0) return [];
+        }
+      }
 
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
@@ -245,12 +270,18 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       } = await fetchOperationalMapsForOrders(orderIds);
       const itemIds = items.map((item) => item.id);
       const paidQuantityByItem: Record<string, number> = {};
+      const itemIdsWithPaymentRows = new Set<string>();
+      const activePaidAmountByOrder: Record<string, number> = {};
 
       if (itemIds.length > 0) {
         const paymentItems = await dbSelect<any>("payment_items", {
           select: "payment_id, order_item_id, quantity_paid",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
+
+        for (const row of paymentItems ?? []) {
+          if (row.order_item_id) itemIdsWithPaymentRows.add(row.order_item_id);
+        }
 
         const paymentIdSet = new Set<string>((paymentItems ?? []).map((row: any) => row.payment_id).filter(Boolean));
         const paymentIds = Array.from(paymentIdSet);
@@ -278,6 +309,41 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         }
       }
 
+      const paymentsForOrders = await dbSelect<any>("payments", {
+        select: "order_id, amount, notes",
+        filters: [{ column: "order_id", op: "in", value: orderIds }],
+      });
+
+      for (const payment of paymentsForOrders ?? []) {
+        const meta = parsePaymentNotes(payment.notes);
+        if (meta.reversed || meta.voided || meta.transferProofPending) continue;
+        const paymentOrderId = String(payment.order_id ?? "");
+        if (!paymentOrderId) continue;
+        activePaidAmountByOrder[paymentOrderId] = (activePaidAmountByOrder[paymentOrderId] ?? 0) + Number(payment.amount ?? 0);
+      }
+
+      const resolveActivePaidQuantity = (
+        itemId: string,
+        paidAt: string | null | undefined,
+        activeQuantity: number,
+        options?: { ignoreSnapshotPaid?: boolean },
+      ) => {
+        if (itemIdsWithPaymentRows.has(itemId)) {
+          return Math.max(0, paidQuantityByItem[itemId] ?? 0);
+        }
+
+        if (options?.ignoreSnapshotPaid) {
+          return 0;
+        }
+
+        return Math.max(
+          0,
+          paidQuantityByItem[itemId] ??
+            paidMap[itemId] ??
+            (paidAt ? activeQuantity : 0),
+        );
+      };
+
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
         const mods = await dbSelect<any>("order_item_modifiers", {
@@ -296,6 +362,25 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         }
       }
 
+      const rawItemsByOrder = items.reduce<Record<string, any[]>>((acc, item) => {
+        if (!acc[item.order_id]) acc[item.order_id] = [];
+        acc[item.order_id].push(item);
+        return acc;
+      }, {});
+
+      const orderById = Object.fromEntries(orders.map((order) => [order.id, order]));
+      const hasPendingAmountForSentView = (orderId: string) => {
+        const order = orderById[orderId];
+        const rawOrderItems = rawItemsByOrder[orderId] ?? [];
+        const rawItemsTotal = rawOrderItems.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+        const rawOrderTotal = Boolean(order?.is_special) && order?.special_total_manual != null
+          ? Number(order.special_total_manual ?? 0)
+          : rawItemsTotal;
+        const activePaidAmount = activePaidAmountByOrder[orderId] ?? 0;
+
+        return rawOrderTotal <= 0 || activePaidAmount + 0.005 < rawOrderTotal;
+      };
+
       const tableIdSet = new Set<string>(orders.map((order: any) => order.table_id).filter(Boolean));
       const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, string> = {};
@@ -311,6 +396,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       return orders
         .map((order) => {
+          const isDraftView = status === "DRAFT";
           const requiresOperationalItems =
             sentView || readyView || dispatchedView || paidView || pendingCancellationView;
 
@@ -344,12 +430,12 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               }
               const effectivePaidQuantity = Math.max(
                 0,
-                paidQuantityByItem[item.id] ??
-                  paidMap[item.id] ??
-                  (item.paid_at ? activeQuantity : 0),
+                resolveActivePaidQuantity(item.id, item.paid_at, activeQuantity, {
+                  ignoreSnapshotPaid: sentView || readyView || dispatchedView,
+                }),
               );
               const payableBaseQuantity =
-                order.order_type === "TAKEOUT"
+                order.order_type === "TAKEOUT" || sentView
                   ? activeQuantity
                   : Math.max(0, readyQuantity + dispatchedQuantity + pendingQuantity);
               const paidDisplayQuantity = Math.max(0, Math.min(payableBaseQuantity, effectivePaidQuantity));
@@ -441,7 +527,9 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               if (requiresOperationalItems && baseItemStatus === "DRAFT" && !hasOperationalProgress) {
                 return null;
               }
-              const effectivePaidQuantity = Math.max(0, paidMap[item.id] ?? 0);
+              const effectivePaidQuantity = Math.max(0, resolveActivePaidQuantity(item.id, item.paid_at, activeQuantity, {
+                ignoreSnapshotPaid: sentView || readyView || dispatchedView,
+              }));
               const unpaidDispatchedQuantity = Math.max(0, dispatchedQuantity - effectivePaidQuantity);
               const paidAfterDispatched = Math.max(0, effectivePaidQuantity - dispatchedQuantity);
               const unpaidReadyQuantity = Math.max(0, readyQuantity - paidAfterDispatched);
@@ -488,7 +576,130 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
               (dispatchedView && order.status === "KITCHEN_DISPATCHED" && !!order.dispatched_at)
             );
 
-          const effectiveItems = shouldUseOrderStageFallback ? fallbackStageItems : related;
+          const sentViewHasPendingAmount = !sentView || hasPendingAmountForSentView(order.id);
+          const sentViewHasOrderCode = !sentView || Boolean(order.order_code || order.order_number);
+          const sentViewHasOperationalItems = !sentView || (rawItemsByOrder[order.id] ?? []).some(
+            (item) => String(item.status ?? "").toUpperCase() !== "DRAFT",
+          );
+          const sentViewHeaderActive =
+            sentView &&
+            sentViewHasPendingAmount &&
+            sentViewHasOrderCode &&
+            sentViewHasOperationalItems &&
+            ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"].includes(String(order.status ?? ""));
+          const sentViewRawOperationalItems = sentView
+            ? (rawItemsByOrder[order.id] ?? [])
+                .filter((item) => String(item.status ?? "").toUpperCase() !== "DRAFT")
+                .map((item) => {
+                  const quantity = Math.max(
+                    0,
+                    Number(item.quantity ?? 0) - Number(paidQuantityByItem[item.id] ?? 0),
+                  );
+                  const unitPrice = Number(item.unit_price ?? 0);
+
+                  if (quantity <= 0) return null;
+
+                  return {
+                    ...item,
+                    base_status: String(item.status ?? "").toUpperCase(),
+                    activeQuantity: quantity,
+                    quantity,
+                    total: computeLineAmount(quantity, unitPrice),
+                    status: "SENT",
+                  };
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+            : [];
+
+          const sentViewHeaderFallbackItems = sentViewHeaderActive
+            ? (rawItemsByOrder[order.id] ?? [])
+                .map((item) => {
+                  const quantity = Math.max(
+                    0,
+                    Number(item.quantity ?? 0) - Number(paidQuantityByItem[item.id] ?? 0),
+                  );
+                  const unitPrice = Number(item.unit_price ?? 0);
+
+                  if (quantity <= 0) return null;
+
+                  return {
+                    ...item,
+                    base_status: String(item.status ?? "").toUpperCase(),
+                    activeQuantity: quantity,
+                    quantity,
+                    total: computeLineAmount(quantity, unitPrice),
+                    status: "SENT",
+                  };
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+            : [];
+
+          const draftViewItems = isDraftView
+            ? (rawItemsByOrder[order.id] ?? [])
+                .filter((item) => {
+                  const itemStatus = String(item.status ?? "").toUpperCase();
+                  const orderHasCode = Boolean(order.order_code || order.order_number);
+
+                  if (itemStatus === "PAID" || itemStatus === "CANCELLED") return false;
+                  if (!orderHasCode) return true;
+                  return itemStatus === "DRAFT";
+                })
+                .map((item) => {
+                  const quantity = Math.max(0, Number(item.quantity ?? 0));
+                  const unitPrice = Number(item.unit_price ?? 0);
+
+                  if (quantity <= 0) return null;
+
+                  return {
+                    ...item,
+                    base_status: "DRAFT",
+                    activeQuantity: quantity,
+                    quantity,
+                    total: Number(item.total ?? computeLineAmount(quantity, unitPrice)),
+                    status: "DRAFT",
+                  };
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+            : [];
+
+          const dispatchedViewItems = dispatchedView
+            ? (rawItemsByOrder[order.id] ?? [])
+                .filter((item) => {
+                  const itemStatus = String(item.status ?? "").toUpperCase();
+                  const dispatchedQty = Math.max(0, Number(dispatchedTotalMap[item.id] ?? 0) - Number(cancelledDispatchedMap[item.id] ?? 0));
+                  return itemStatus === "DISPATCHED" || dispatchedQty > 0 || String(order.status ?? "") === "KITCHEN_DISPATCHED";
+                })
+                .map((item) => {
+                  const dispatchedQty = Math.max(0, Number(dispatchedTotalMap[item.id] ?? 0) - Number(cancelledDispatchedMap[item.id] ?? 0));
+                  const quantity = dispatchedQty > 0 ? dispatchedQty : Math.max(0, Number(item.quantity ?? 0));
+                  const unitPrice = Number(item.unit_price ?? 0);
+
+                  if (quantity <= 0) return null;
+
+                  return {
+                    ...item,
+                    base_status: String(item.status ?? "").toUpperCase(),
+                    activeQuantity: quantity,
+                    quantity,
+                    total: computeLineAmount(quantity, unitPrice),
+                    status: "DISPATCHED",
+                  };
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+            : [];
+
+          const effectiveItems =
+            isDraftView
+              ? draftViewItems
+              : dispatchedView
+                ? dispatchedViewItems
+              : shouldUseOrderStageFallback
+                  ? fallbackStageItems
+                  : related.length > 0
+                    ? related
+                    : sentViewRawOperationalItems.length > 0
+                      ? sentViewRawOperationalItems
+                      : sentViewHeaderFallbackItems;
 
           let formattedItems: OrderItemSummary[] = effectiveItems.map((item) => ({
             id: item.id,
@@ -556,6 +767,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             ? isTakeoutDispatchedOnCancelledTab
               ? "KITCHEN_DISPATCHED"
               : "CANCELLED"
+            : isDraftView
+              ? "DRAFT"
             : pendingCancellationView
               ? "PENDING_CANCELLATION"
             : readyView
@@ -590,6 +803,15 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           };
         })
         .filter((order) => {
+          if (sentView && !hasPendingAmountForSentView(order.id)) {
+            return false;
+          }
+          if (sentView && (!order.order_code && !order.order_number)) {
+            return false;
+          }
+          if (sentView && !(rawItemsByOrder[order.id] ?? []).some((item) => String(item.status ?? "").toUpperCase() !== "DRAFT")) {
+            return false;
+          }
           if (order.items.length === 0) {
             if (pendingCancellationView && order.cancel_requested_at) {
               return true;

@@ -6,10 +6,39 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
 import { AlertCircle, Fingerprint, Loader2, LogIn } from "lucide-react";
-import { toast } from "sonner";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser";
+
+const getLoginErrorMessage = (rawMessage?: string) => {
+  const message = rawMessage?.trim() || "No se pudo iniciar sesion.";
+  const normalized = message
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (
+    normalized.includes("credenciales invalidas") ||
+    normalized.includes("invalid login") ||
+    normalized.includes("invalid credentials")
+  ) {
+    return "No se puede ingresar porque el correo/usuario o la contrasena son incorrectos. Revisa los datos e intenta nuevamente.";
+  }
+
+  if (normalized.includes("identificador") && normalized.includes("contrasena")) {
+    return "No se puede ingresar porque falta el correo/usuario o la contrasena.";
+  }
+
+  return message;
+};
 
 const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
@@ -36,9 +65,8 @@ const Login = () => {
     try {
       await signIn(identifier, password);
     } catch (err: any) {
-      const msg = err.message || "Error al iniciar sesion";
+      const msg = getLoginErrorMessage(err.message || "Error al iniciar sesion");
       setError(msg);
-      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -67,13 +95,13 @@ const Login = () => {
         if (otpError) throw otpError;
 
       } else {
-        setError("Verificacion fallida");
+        setError("No se puede ingresar porque la verificacion de huella fallo.");
       }
     } catch (err: any) {
       if (err.name === "NotAllowedError") {
-        setError("Operacion cancelada");
+        setError("No se puede ingresar porque la operacion de huella fue cancelada.");
       } else {
-        setError(err.message || "Error al autenticar con huella");
+        setError(getLoginErrorMessage(err.message || "Error al autenticar con huella"));
       }
     } finally {
       setPasskeyLoading(false);
@@ -168,7 +196,24 @@ const Login = () => {
             </Button>
           </div>
         )}
-</motion.div>
+      </motion.div>
+
+      <AlertDialog open={Boolean(error)} onOpenChange={(open) => !open && setError(null)}>
+        <AlertDialogContent className="max-w-sm rounded-[24px] border-orange-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-lg font-bold text-foreground">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              No se puede ingresar
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm font-medium text-foreground/80">
+              {error}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setError(null)}>Aceptar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

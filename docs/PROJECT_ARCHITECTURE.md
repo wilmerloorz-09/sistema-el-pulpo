@@ -48,15 +48,20 @@
 - El envio de borradores usa `submit_order_draft_items(...)`; mesa, para llevar y orden especial quedan primero cobrables en Caja.
 - Despacho recibe la orden despues del pago.
 - `Ordenes` usa lista expandible y detalle inline.
-- Las pestanas del modulo `Ordenes` son etapa-dependientes:
-  - `Borradores`
-  - `Enviadas`
-  - `Despachadas`
-  - `Pendiente de anulacion`
-  - `Anuladas`
-  - `Pagadas`
-- Regla vigente:
-  - una linea `DRAFT` no debe aparecer en etapas posteriores
+- Las pestanas visibles del modulo `Ordenes` son etapa-dependientes y deben mostrarse en este orden:
+  - `Borrador`
+  - `En Caja`
+  - `Pagada`
+  - `Despachada`
+  - `Anulada`
+- Reglas vigentes de clasificacion:
+  - `Borrador` muestra ordenes con al menos un item activo agregado que aun no fue enviado a Caja. Si una orden no tiene `order_code` / `order_number`, debe tratarse como borrador mientras tenga items activos no pagados ni anulados.
+  - `En Caja` muestra solo ordenes numeradas/codificadas, enviadas a Caja (`SENT_TO_KITCHEN`, `READY` o `KITCHEN_DISPATCHED`), con items no `DRAFT` y saldo/cantidad pendiente de cobro.
+  - `En Caja` nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
+  - `Pagada` muestra ordenes con pago aplicado/estado `PAID`.
+  - `Despachada` muestra ordenes con cabecera `KITCHEN_DISPATCHED`, items `DISPATCHED` o cantidades/eventos de despacho.
+  - `Anulada` muestra ordenes canceladas o historicas de anulacion.
+  - `Pendiente de anulacion` se conserva como estado/marca operacional, pero no como pestana principal.
 - `Orden Especial` es metadata de `orders` (`is_special`, `special_total_manual`), no un `order_type` nuevo.
 - En ordenes especiales, `special_total_manual` es el valor manual visible/cobrable; puede diferir de `orders.total` y de la suma real de `order_items.total`.
 - La pestana `Pagadas` debe incluir ordenes especiales con `status = 'PAID'` aun si no existen cantidades cobradas por item en `payment_items`; la UI debe usar los items reales para poder mostrarlas.

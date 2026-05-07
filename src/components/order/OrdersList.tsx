@@ -28,7 +28,7 @@ interface TabInfo {
 const tabs: TabInfo[] = [
   {
     key: "draft",
-    label: "Borradores",
+    label: "Borrador",
     status: "DRAFT",
     showCancel: true,
     helperText: "Aqui ves las ordenes que aun no han sido enviadas.",
@@ -43,36 +43,28 @@ const tabs: TabInfo[] = [
     icon: <Clock className="h-4 w-4" />,
   },
   {
+    key: "paid",
+    label: "Pagada",
+    status: "PAID",
+    showCancel: false,
+    helperText: "Aqui ves las ordenes ya cerradas para cobro.",
+    icon: <CircleDollarSign className="h-4 w-4" />,
+  },
+  {
     key: "dispatched",
-    label: "Despachadas",
+    label: "Despachada",
     status: "KITCHEN_DISPATCHED",
     showCancel: true,
     helperText: "Aqui ves solo las cantidades de mesa que ya fueron despachadas, aunque la linea original haya sido mayor.",
     icon: <Truck className="h-4 w-4" />,
   },
   {
-    key: "pendingCancellation",
-    label: "Pendiente de anulacion",
-    status: "PENDING_CANCELLATION",
-    showCancel: true,
-    helperText: "Aqui ves las ordenes cuya anulacion fue solicitada y aun esperan autorizacion.",
-    icon: <Ban className="h-4 w-4" />,
-  },
-  {
     key: "cancelled",
-    label: "Anuladas",
+    label: "Anulada",
     status: "CANCELLED",
     showCancel: false,
     helperText: "Aqui ves las cantidades anuladas y tambien las ordenes para llevar ya despachadas.",
     icon: <Ban className="h-4 w-4" />,
-  },
-  {
-    key: "paid",
-    label: "Pagadas",
-    status: "PAID",
-    showCancel: false,
-    helperText: "Aqui ves las ordenes ya cerradas para cobro.",
-    icon: <CircleDollarSign className="h-4 w-4" />,
   },
 ];
 
