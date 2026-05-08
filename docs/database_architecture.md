@@ -14,7 +14,9 @@
 - `KITCHEN_DISPATCHED`: Despachada; `dispatch_order_quantities(...)` solo puede ejecutarse sobre ordenes `PAID`.
 - `CANCELLED`: anulada o historica. Las historicas por anulacion de pago con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
 - `PAID` y `KITCHEN_DISPATCHED` son estados finales visibles mutuamente excluyentes para clasificacion; una orden no debe aparecer en ambas pestanas.
+- Para clasificacion visual, `Despachada` incluye cabecera `KITCHEN_DISPATCHED` y tambien cabecera `PAID` con despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la sincronizacion final de cabecera no haya corrido.
 - Las lecturas de `Despacho` deben agrupar por `orders.id` / `order_code`; `order_items.sent_to_kitchen_at` no debe crear tarjetas operativas separadas para la misma orden.
+- En Despacho, `TAKEOUT` y `orders.is_special = true` se procesan como despacho total de la orden; no deben dividirse por botones de item en la UI.
 - Cuando se anula un pago, la sucesora activa queda con nuevo numero en `SENT_TO_KITCHEN`/En Caja.
 
 ## Dominios principales
@@ -110,8 +112,8 @@
 - La clasificacion visible del modulo `Ordenes` debe derivarse de `orders`, `order_items`, pagos activos y snapshot/eventos operativos:
   - `Borrador`: items activos agregados y no enviados a Caja. Las ordenes sin `order_code` / `order_number` deben permanecer en esta clasificacion mientras tengan items activos no pagados ni anulados.
   - `En Caja`: `orders.status IN ('SENT_TO_KITCHEN', 'READY')`, con `order_code` / `order_number`, items no `DRAFT` y saldo/cantidad pendiente de cobro. Excluir ordenes pagadas completas.
-  - `Pagada`: cabecera `PAID`; es el unico estado elegible para `Despacho`.
-  - `Despachada`: cabecera `KITCHEN_DISPATCHED`.
+  - `Pagada`: cabecera `PAID` sin despacho aplicado visible; es el unico estado elegible para `Despacho`.
+  - `Despachada`: cabecera `KITCHEN_DISPATCHED` o cabecera `PAID` con evento aplicado de despacho.
   - `Anulada`: `CANCELLED` e historicas con marcadores de anulacion.
 - `Pendiente de anulacion` no es pestana principal de `Ordenes`; se determina por `orders.cancel_requested_at` y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
@@ -184,15 +186,21 @@
 - `recalculate_check_balance(...)` debe revisar `VOID_SUCCESSOR_ORDER` antes de invocar sincronizaciones que puedan recalcular estado, para no revivir historicas anuladas.
 - La anulacion operativa de pago solo debe proceder para ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
 
-### Para llevar (TAKEOUT) como “grupo” de órdenes
-- El listado de órdenes “Para llevar” (siblings/tabs) se filtra por:
+### Para llevar (TAKEOUT) y Orden especial como tarjetas dinamicas
+- El listado principal de tarjetas `Para llevar` se filtra por:
   - `orders.order_type = 'TAKEOUT'`
   - `is_tray_order = false`
   - `is_special = false`
+- El listado principal de tarjetas `Orden especial` se filtra por:
+  - `orders.is_special = true`
 - Reglas operativas de visibilidad:
-  - Una orden `TAKEOUT` puede permanecer en el grupo incluso si está `PAID`; pagar no debe sacarla de “Para llevar”.
-  - Debe excluirse del grupo cuando exista un despacho aplicado (por ejemplo, vía `order_dispatch_events` con `status = 'APPLIED'`), manteniendo consistencia con la regla “en mesa, PAID sigue visible hasta despacho”.
-- La navegación de UI usa `origin=para-llevar` para preservar el resaltado del menú lateral aun cuando la vista final sea `Ordenes`.
+  - La tarjeta `+` es UI-only y siempre existe aunque no haya ordenes.
+  - Una orden `DRAFT` solo se muestra si tiene al menos un item activo agregado.
+  - Una orden `TAKEOUT` o especial puede permanecer visible aunque este `PAID`; pagar no debe sacarla del modulo.
+  - Debe excluirse cuando exista un despacho aplicado (por ejemplo, via `order_dispatch_events` con `status = 'APPLIED'`) o cancelacion.
+- La numeracion superior de tarjeta es visual y consecutiva; no debe depender de huecos en `orders.order_number`.
+- El codigo/numero real (`order_code` / `order_number`) debe mostrarse completo una sola vez y acompanado por el usuario creador (`orders.created_by` resuelto contra `profiles`).
+- La navegacion de UI usa `origin=para-llevar` y `origin=orden-especial` para preservar el resaltado del menu lateral aun cuando la vista final sea detalle de `Ordenes`.
 
 ### Comprobantes
 - `payment_capture_requests` usa `secure_token` y estados de ciclo de captura.
@@ -308,3 +316,4 @@
 9. Los cambios en `Editar Orden` o navegación desde Mesas deben preservar el contexto original del Sidebar y BottomNav mediante el parámetro `origin`.
 12. El sistema de resaltado usa `forceActive` y `suppressActive` para garantizar que la sección de origen (Mesas u Ordenes) permanezca marcada correctamente.
 13. Si se toca `Despacho`, preservar una sola tarjeta/fila por orden pagada; no partir la misma orden por tiempos de envio de items.
+14. Si se toca Para llevar u Orden especial, preservar tarjetas dinamicas con `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez y salida por despacho aplicado/cancelacion.

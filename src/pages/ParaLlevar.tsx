@@ -1,11 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { Loader2, Plus, RefreshCw, ShoppingBag, UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
-import { fetchOrderDetail, fetchTakeoutSiblingOrders, getOrderQueryKey } from "@/hooks/useOrder";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { canOperate } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  fetchOrderDetail,
+  fetchTakeoutSiblingOrders,
+  getOrderQueryKey,
+  type SiblingOrder,
+} from "@/hooks/useOrder";
 
 const seedTakeoutOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -38,63 +49,233 @@ const seedTakeoutOrderCache = (
   });
 };
 
+const getTakeoutDisplayNumber = (order: SiblingOrder, fallbackIndex: number) =>
+  Number(order.table_order_position ?? 0) || Number(order.order_number ?? 0) || fallbackIndex + 1;
+
+const getTakeoutReference = (order: SiblingOrder, fallbackIndex: number) =>
+  order.order_code ?? (order.order_number ? `#${order.order_number}` : `Orden ${getTakeoutDisplayNumber(order, fallbackIndex)}`);
+
 const ParaLlevar = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, permissions } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
+  const [creating, setCreating] = useState(false);
+
+  const canOperateTakeout =
+    canOperate(permissions, "mesas")
+    || canOperate(permissions, "ordenes")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+
+  const takeoutOrdersQuery = useQuery({
+    queryKey: ["takeout-orders", activeBranchId ?? null],
+    queryFn: () => fetchTakeoutSiblingOrders(activeBranchId!),
+    enabled: !!activeBranchId,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
+    gcTime: 2 * 60_000,
+  });
+
+  const orders = (takeoutOrdersQuery.data ?? []).filter((order) =>
+    order.status !== "DRAFT" || Number(order.item_count ?? 0) > 0
+  );
 
   useEffect(() => {
-    const run = async () => {
-      if (!user || !activeBranchId) return;
+    for (const order of orders) {
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(order.id),
+        queryFn: () => fetchOrderDetail(order.id),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
+    }
+  }, [orders, qc]);
 
-      try {
-        const activeTakeoutOrders = await fetchTakeoutSiblingOrders(activeBranchId);
-        const existingOrderId = activeTakeoutOrders[0]?.id ?? null;
-        if (existingOrderId) {
-          toast.success("Entrando a Para llevar...");
-          navigate(`/ordenes?order=${existingOrderId}&origin=para-llevar`, { replace: true });
-          void qc.prefetchQuery({
-            queryKey: getOrderQueryKey(existingOrderId),
-            queryFn: () => fetchOrderDetail(existingOrderId),
-            staleTime: 15_000,
-            gcTime: 10 * 60_000,
-          });
-          return;
-        }
+  const warmTakeoutOrder = (orderId: string) => {
+    void qc.prefetchQuery({
+      queryKey: getOrderQueryKey(orderId),
+      queryFn: () => fetchOrderDetail(orderId),
+      staleTime: 15_000,
+      gcTime: 10 * 60_000,
+    });
+  };
 
-        const now = new Date().toISOString();
-        const { data, error } = await supabase.rpc("create_takeout_order" as any, {
-          p_branch_id: activeBranchId,
-          p_created_by: user.id,
-        } as any);
+  const handleOpenOrder = (orderId: string) => {
+    warmTakeoutOrder(orderId);
+    navigate(`/ordenes?order=${orderId}&origin=para-llevar`, { replace: true });
+  };
 
-        if (error) throw error;
+  const handleCreateOrder = async () => {
+    if (!user || !activeBranchId || creating || !canOperateTakeout) return;
 
-        const orderId = String(data);
-        seedTakeoutOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
+    setCreating(true);
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase.rpc("create_takeout_order" as any, {
+        p_branch_id: activeBranchId,
+        p_created_by: user.id,
+      } as any);
 
-        toast.success("Abriendo nueva orden para llevar...");
-        navigate(`/ordenes?order=${orderId}&origin=para-llevar`, { replace: true });
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        void qc.prefetchQuery({
-          queryKey: getOrderQueryKey(orderId),
-          queryFn: () => fetchOrderDetail(orderId),
-          staleTime: 15_000,
-          gcTime: 10 * 60_000,
-        });
-      } catch (err: any) {
-        toast.error(err?.message || "Error al abrir orden para llevar");
-        navigate("/mesas", { replace: true });
-      }
-    };
+      if (error) throw error;
 
-    void run();
-  }, [activeBranchId, navigate, qc, user]);
+      const orderId = String(data);
+      seedTakeoutOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
-  return null;
+      qc.setQueryData(["takeout-orders", activeBranchId], [
+        ...orders,
+        {
+          id: orderId,
+          order_number: null,
+          order_code: null,
+          split_code: null,
+          table_order_position: orders.length + 1,
+          item_count: 0,
+        },
+      ] satisfies SiblingOrder[]);
+
+      toast.success("Abriendo nueva orden para llevar...");
+      navigate(`/ordenes?order=${orderId}&origin=para-llevar`, { replace: true });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["takeout-orders", activeBranchId] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      warmTakeoutOrder(orderId);
+    } catch (err: any) {
+      toast.error(err?.message || "Error al abrir orden para llevar");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (takeoutOrdersQuery.isError) {
+    return (
+      <div className="p-4">
+        <div className="rounded-[24px] border border-emerald-200 bg-white/80 p-5 text-center text-sm text-muted-foreground shadow-sm">
+          <p className="font-semibold text-foreground">No se pudieron cargar las ordenes para llevar</p>
+          <p className="mt-2">{takeoutOrdersQuery.error instanceof Error ? takeoutOrdersQuery.error.message : "Intenta nuevamente."}</p>
+          <Button type="button" variant="outline" className="mt-4 rounded-2xl" onClick={() => takeoutOrdersQuery.refetch()}>
+            <RefreshCw className="h-4 w-4" />
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (takeoutOrdersQuery.isLoading && !takeoutOrdersQuery.data) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-8">
+      <section className="px-2.5 pb-2 pt-2 sm:px-4 sm:pt-2">
+        {!canOperateTakeout && (
+          <div className="mb-2 flex justify-end">
+            <span className="rounded-full border border-border bg-white/85 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
+              Solo consulta
+            </span>
+          </div>
+        )}
+      </section>
+
+      <div className="sticky top-14 z-30 bg-background px-2.5 pb-3 pt-2 md:top-0 sm:px-4 sm:pt-3">
+        <div className="surface-glow px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="relative flex items-center justify-between gap-2">
+            <div className="min-w-0 flex items-center gap-2">
+              <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Para Llevar</h1>
+            </div>
+            <div className="scrollbar-none -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap">
+              <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-emerald-800 shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                {orders.length} activas
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-2.5 sm:px-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]">
+          {orders.map((order, index) => {
+            const displayNumber = index + 1;
+            const orderRef = getTakeoutReference(order, index);
+            const totalLabel = `$${Number(order.total ?? 0).toFixed(2)}`;
+
+            return (
+              <motion.button
+                key={order.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: (index + 1) * 0.03 }}
+                onClick={() => handleOpenOrder(order.id)}
+                onMouseEnter={() => warmTakeoutOrder(order.id)}
+                onTouchStart={() => warmTakeoutOrder(order.id)}
+                className="relative flex min-h-[142px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 border-primary/40 bg-gradient-to-br from-orange-50 via-white to-amber-100 p-2.5 pb-11 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5 sm:pb-12 dark:border-primary/30 dark:from-orange-950/20 dark:via-card dark:to-amber-950/20"
+              >
+                <span className="absolute right-2 top-2 inline-flex min-h-[2.45rem] min-w-[2.45rem] items-center justify-center rounded-full border border-orange-300 bg-amber-100 px-2 text-[1.15rem] font-black leading-none text-primary shadow-sm sm:right-3 sm:top-3 sm:min-h-[2.9rem] sm:min-w-[2.9rem] sm:text-[1.45rem] dark:border-primary/40 dark:bg-orange-950/80 dark:text-orange-300">
+                  {displayNumber}
+                </span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-[16px] border-2 border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)] sm:h-16 sm:w-16 sm:rounded-[22px] dark:border-orange-800 dark:from-orange-600 dark:via-amber-500 dark:to-yellow-500">
+                  <ShoppingBag className="h-8 w-8" />
+                </div>
+                <div className="flex w-full max-w-[calc(100%-1rem)] items-center justify-center gap-1 px-1 text-[10px] font-bold leading-tight text-primary sm:text-xs dark:text-orange-400">
+                  <ShoppingBag className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 break-all text-center">{orderRef}</span>
+                </div>
+                {order.created_by_name && (
+                  <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
+                    <span className="flex min-w-0 items-center gap-1">
+                      <UserRound className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{order.created_by_name}</span>
+                    </span>
+                  </div>
+                )}
+                <div className="absolute bottom-2 left-1.5 max-w-[calc(50%-0.4rem)] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:left-3 sm:max-w-none sm:px-3.5 sm:py-2 sm:text-sm">
+                  {order.item_count} item{order.item_count !== 1 ? "s" : ""}
+                </div>
+                <div className="absolute bottom-2 right-1.5 max-w-[calc(50%-0.4rem)] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:right-3 sm:max-w-none sm:px-3.5 sm:py-2 sm:text-sm">
+                  {totalLabel}
+                </div>
+              </motion.button>
+            );
+          })}
+
+          <motion.button
+            key="new-takeout-order"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: (orders.length + 1) * 0.03 }}
+            onClick={handleCreateOrder}
+            disabled={creating || !canOperateTakeout}
+            className={cn(
+              "relative flex min-h-[142px] flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-primary/35 bg-gradient-to-br from-orange-50 via-white to-amber-100 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5",
+              canOperateTakeout && "hover:border-primary/55 hover:bg-primary/5",
+              (!canOperateTakeout || creating) && "cursor-not-allowed opacity-70",
+            )}
+          >
+            {creating ? (
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            ) : (
+              <>
+                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border-2 border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)] sm:h-16 sm:w-16 sm:rounded-[22px]">
+                  <Plus className="h-8 w-8" />
+                </div>
+                <div className="text-[10px] font-semibold text-primary sm:text-xs">Nueva orden</div>
+              </>
+            )}
+          </motion.button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default ParaLlevar;
-

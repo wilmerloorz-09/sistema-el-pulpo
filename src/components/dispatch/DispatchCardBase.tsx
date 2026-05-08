@@ -191,6 +191,7 @@ export function DispatchCardBase({
   const isTakeout = orderKind === "takeout";
   const isSpecial = orderKind === "special";
   const isTray = orderKind === "tray";
+  const usesOrderLevelDispatch = isTakeout || isSpecial;
   const [qtyByItem, setQtyByItem] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -248,7 +249,10 @@ export function DispatchCardBase({
     <div className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
       <div
         onClick={onToggleExpand}
-        className="group cursor-pointer px-3 py-2.5 transition-colors hover:bg-slate-100/50 sm:grid sm:gap-2 sm:px-6 sm:py-3 sm:grid-cols-[32px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(90px,0.7fr)_minmax(120px,1fr)_minmax(140px,1.1fr)] sm:items-center"
+        className={cn(
+          "group px-3 py-2.5 transition-colors sm:grid sm:gap-2 sm:px-6 sm:py-3 sm:grid-cols-[32px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(90px,0.7fr)_minmax(120px,1fr)_minmax(140px,1.1fr)] sm:items-center",
+          "cursor-pointer hover:bg-slate-100/50",
+        )}
       >
         <div className="sm:contents">
           <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 sm:contents">
@@ -331,15 +335,15 @@ export function DispatchCardBase({
                       type="button"
                       variant="info"
                       size="sm"
-                      disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching}
+                      disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching || (usesOrderLevelDispatch && !canDispatchAny)}
                       onClick={(e) => {
                         e.stopPropagation();
                         onMarkOrderReady(order);
                       }}
                       className="h-8 min-w-[5.5rem] gap-1 rounded-full px-3 text-xs font-bold sm:h-9 sm:min-w-[6rem] sm:text-sm"
                     >
-                      {order.locked_for_editing ? <Lock className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
-                      {order.locked_for_editing ? "Editando" : "Listo"}
+                      {order.locked_for_editing ? <Lock className="h-4 w-4 shrink-0" /> : usesOrderLevelDispatch ? <Truck className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
+                      {order.locked_for_editing ? "Editando" : usesOrderLevelDispatch ? "Despachar" : "Listo"}
                     </Button>
                   ) : (
                     <span className="px-4 text-xs text-muted-foreground">Solo consulta</span>
@@ -437,7 +441,7 @@ export function DispatchCardBase({
                   </div>
                 </div>
 
-                {!readOnly && canDispatch ? (
+                {!readOnly && canDispatch && !usesOrderLevelDispatch ? (
                   <div className="flex shrink-0 items-center gap-2 md:justify-end">
                     {isBulkItem ? (
                       <div

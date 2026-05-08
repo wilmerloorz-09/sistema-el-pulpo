@@ -111,7 +111,7 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         if (!status || cancelledView || pendingCancellationView) return [];
         if (status === "DRAFT") return [{ column: "status", op: "eq", value: "DRAFT" }];
         if (readyView) return [{ column: "status", op: "eq", value: "READY" }];
-        if (dispatchedView) return [{ column: "status", op: "eq", value: "KITCHEN_DISPATCHED" }];
+        if (dispatchedView) return [{ column: "status", op: "in", value: ["KITCHEN_DISPATCHED", "PAID"] }];
         if (sentView) return [{ column: "status", op: "eq", value: "SENT_TO_KITCHEN" }];
         if (paidView) return [{ column: "status", op: "eq", value: "PAID" }];
         return [{ column: "status", op: "eq", value: status }];
@@ -123,6 +123,24 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         filters,
         orderBy: { column: "created_at", ascending: false },
       });
+
+      if (dispatchedView && orders.length > 0) {
+        const candidateDispatchedOrderIds = orders.map((order) => order.id).filter(Boolean);
+        const dispatchEvents = candidateDispatchedOrderIds.length > 0
+          ? await dbSelect<any>("order_dispatch_events", {
+              select: "order_id, status",
+              filters: [
+                { column: "order_id", op: "in", value: candidateDispatchedOrderIds },
+                { column: "status", op: "eq", value: "APPLIED" },
+              ],
+            })
+          : [];
+        const dispatchedOrderIdSet = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+
+        orders = orders.filter(
+          (order) => order.status === "KITCHEN_DISPATCHED" || dispatchedOrderIdSet.has(order.id),
+        );
+      }
 
       let cancelledOrdersMeta: Record<string, { cancelled_at: string | null }> = {};
       let pendingCancellationItemsByOrder: Record<string, Record<string, number>> = {};
@@ -816,9 +834,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
             if (pendingCancellationView && order.cancel_requested_at) {
               return true;
             }
-            return false;
-          }
-          if (dispatchedView && order.order_type === "TAKEOUT" && order.status === "KITCHEN_DISPATCHED") {
             return false;
           }
           return true;

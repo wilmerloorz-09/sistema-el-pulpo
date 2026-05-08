@@ -9,7 +9,7 @@ import {
   normalizeSnapshotRows,
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
-import { getUserDisplayName } from "@/lib/userDisplay";
+import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -48,9 +48,12 @@ export interface SiblingOrder {
   id: string;
   order_number: number | null;
   order_code: string | null;
+  status?: string | null;
+  created_by_name?: string | null;
   split_code: string | null;
   table_order_position: number | null;
   item_count: number;
+  total?: number;
 }
 
 function isBlockedPaymentNotes(notes: string | null) {
@@ -169,7 +172,7 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
 
 export async function fetchTakeoutSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
   const takeoutOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, table_order_position, status, created_at, order_items(id)",
+    select: "id, order_number, order_code, table_order_position, status, created_at, created_by, order_items(id, total)",
     filters: [
       { column: "branch_id", op: "eq", value: branchId },
       { column: "order_type", op: "eq", value: "TAKEOUT" },
@@ -194,6 +197,14 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
       })
     : [];
   const actuallyDispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+  const creatorIds = Array.from(new Set(takeoutOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
+  const creatorProfiles = creatorIds.length > 0
+    ? await dbSelect<any>("profiles", {
+        select: "id, first_name, full_name, username, email",
+        filters: [{ column: "id", op: "in", value: creatorIds }],
+      })
+    : [];
+  const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
   return takeoutOrders
     .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
@@ -201,9 +212,14 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
       id: sibling.id,
       order_number: sibling.order_number,
       order_code: sibling.order_code ?? null,
+      status: sibling.status ?? null,
+      created_by_name: sibling.created_by ? (creatorNameMap[sibling.created_by] ?? "Usuario") : null,
       split_code: null,
       table_order_position: Number(sibling.table_order_position ?? 0) || index + 1,
       item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
+      total: Array.isArray(sibling.order_items)
+        ? sibling.order_items.reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0)
+        : 0,
     }))
     .sort((left, right) => {
       const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
@@ -437,7 +453,12 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
           })),
       };
     })
-    .filter((item) => item.quantity > 0 || item.status === "DRAFT" || item.status === "PAID" || (item.original_quantity > 0 && item.status !== "CANCELLED"));
+    .filter((item) =>
+      item.quantity > 0 ||
+      item.status === "PAID" ||
+      (item.status === "DRAFT" && Number(item.original_quantity ?? 0) > 0) ||
+      (item.original_quantity > 0 && item.status !== "CANCELLED")
+    );
 
   return {
     ...order,
@@ -603,8 +624,13 @@ export function useOrder(orderId: string | null) {
       toast.error(err.message);
     },
     onSettled: () => {
+      const branchId = query.data?.branch_id;
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
+      if (branchId) {
+        qc.invalidateQueries({ queryKey: ["takeout-orders", branchId] });
+        qc.invalidateQueries({ queryKey: ["special-orders", branchId] });
+      }
     },
   });
 
@@ -628,20 +654,22 @@ export function useOrder(orderId: string | null) {
       if (previousOrder) {
         qc.setQueryData(getOrderQueryKey(orderId), {
           ...previousOrder,
-          items: previousOrder.items.map(item => {
+          items: previousOrder.items.flatMap(item => {
             if (item.id === itemId) {
+              if (quantity <= 0) return [];
+
               const prevTotalCancelled = item.cancelled_quantity ?? 0;
               const newQuantityOrdered = quantity + prevTotalCancelled;
-              return {
+              return [{
                 ...item,
                 quantity: quantity,
                 quantity_ordered: newQuantityOrdered,
                 original_quantity: newQuantityOrdered,
                 total: quantity * unit_price + (quantity > 0 ? (item.tray_container_cost ?? 0) : 0),
                 quantity_remaining: item.status === "DRAFT" ? quantity : item.quantity_remaining,
-              };
+              }];
             }
-            return item;
+            return [item];
           })
         });
       }
@@ -654,8 +682,13 @@ export function useOrder(orderId: string | null) {
       toast.error(err.message);
     },
     onSettled: () => {
+      const branchId = query.data?.branch_id;
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
+      if (branchId) {
+        qc.invalidateQueries({ queryKey: ["takeout-orders", branchId] });
+        qc.invalidateQueries({ queryKey: ["special-orders", branchId] });
+      }
     },
   });
 

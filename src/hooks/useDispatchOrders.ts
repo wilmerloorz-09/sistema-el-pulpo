@@ -421,6 +421,43 @@ export function useDispatchOrders(scope: DispatchView) {
     },
   });
 
+  const dispatchOrder = useMutation({
+    mutationFn: async ({ orderId }: { orderId: string }) => {
+      if (!user?.id) throw new Error("Usuario no autenticado");
+
+      const currentOrder = query.data?.orders.find((order) => order.id === orderId);
+      if (!currentOrder) throw new Error("No se encontro la orden para despachar");
+
+      const dispatchableItems = currentOrder.items
+        .filter((item) => Number(item.quantity_dispatchable ?? 0) > 0)
+        .map((item) => ({
+          order_item_id: item.id,
+          quantity_dispatched: Number(item.quantity_dispatchable ?? 0),
+        }));
+
+      if (dispatchableItems.length === 0) {
+        throw new Error("La orden no tiene cantidades pendientes de despacho");
+      }
+
+      const { error } = await supabase.rpc("dispatch_order_quantities" as any, {
+        p_order_id: orderId,
+        p_dispatched_by: user.id,
+        p_items: dispatchableItems as any,
+        p_operation_type: "total",
+        p_source_module: "dispatch",
+        p_notes: null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      invalidateOperationalQueries(qc);
+      toast.success("Orden despachada");
+    },
+    onError: (error: any) => {
+      toast.error(`Error al despachar orden: ${error?.message || "Error desconocido"}`);
+    },
+  });
+
   return {
     orders: query.data?.orders || [],
     counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 },
@@ -431,5 +468,6 @@ export function useDispatchOrders(scope: DispatchView) {
     markItemReady,
     sendOrderReadyAlert,
     dispatchItem,
+    dispatchOrder,
   };
 }

@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-05-07)
+## Estado operativo vigente (2026-05-08)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -34,11 +34,13 @@
 - `TAKEOUT` y `Orden Bandeja` comparten base operativa; visualmente deben presentarse como `Para llevar`.
 - **Navegación (Para llevar / Orden especial):**
   - `Para llevar` y `Orden especial` se exponen como opciones propias en el menú lateral (después de `Mesas`).
-  - Internamente abren el mismo módulo `Ordenes` con `origin` para preservar el resaltado del Sidebar/BottomNav:
+  - Sus pantallas principales muestran grillas de tarjetas dinamicas, no pestañas internas de orden ni redireccion automatica inmediata a detalle.
+  - Cada modulo conserva siempre una tarjeta `+` para crear nueva orden.
+  - Los borradores vacios no se muestran como tarjetas; los borradores con items y las ordenes activas posteriores permanecen visibles hasta que exista despacho aplicado o cancelacion.
+  - Al entrar al detalle se conserva `origin` para preservar el resaltado del Sidebar/BottomNav:
     - `origin=para-llevar`
     - `origin=orden-especial`
-  - En `Para llevar`, una orden puede permanecer visible como pestaña incluso si ya está `PAID`; solo debe desaparecer cuando el despacho haya sido aplicado.
-  - En `Para llevar`, el botón `+` (Nueva orden) debe permitir crear órdenes adicionales aun cuando la orden actual esté `PAID`, siempre que el flujo siga activo (no despachado).
+  - Las tarjetas de `Mesas`, `Para llevar` y `Orden especial` comparten formato visual; solo cambia el icono/logo. El numero superior es el orden visual consecutivo, el codigo/numero de orden se muestra completo una sola vez y siempre debe aparecer el usuario creador.
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
@@ -153,7 +155,7 @@
   - `Borrador`: ordenes sin envio a Caja, con al menos un item activo agregado. Tambien incluye ordenes sin `order_code` / `order_number` que aun conservan items activos no pagados ni anulados.
   - `En Caja`: solo ordenes con `order_code` / `order_number`, enviadas a Caja (`SENT_TO_KITCHEN` o `READY`), con al menos un item no `DRAFT` y saldo/cantidad pendiente de cobro. Nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
   - `Pagada`: solo ordenes con estado `PAID`; son las unicas candidatas para `Despacho`.
-  - `Despachada`: solo ordenes cuya etapa final visible sea `KITCHEN_DISPATCHED`.
+  - `Despachada`: ordenes cuya etapa final visible sea `KITCHEN_DISPATCHED`, y ordenes `PAID` con despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la cabecera aun no se haya sincronizado.
   - `Anulada`: ordenes historicas/anuladas, incluyendo las de separacion por pago anulado.
 - `Pendiente de anulacion` sigue siendo un estado operativo interno y una marca visible en items/orden, pero no es una pestana principal del modulo `Ordenes`.
 - Una misma orden no debe aparecer simultaneamente en `Pagada` y `Despachada`; si la cabecera esta `KITCHEN_DISPATCHED`, pertenece a `Despachada`.
@@ -188,7 +190,8 @@
 
 ### 6. Editar Orden (In-Situ)
 - `Editar Orden` ya es un flujo base del sistema y ahora opera de manera **In-Situ**.
-- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja. No debe estar activo para `DRAFT`, `PAID`, `KITCHEN_DISPATCHED` ni `CANCELLED`.
+- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja.
+- En pantallas operativas de Mesa, Para llevar y Orden especial, una orden `DRAFT` editable debe mantener activo el menu de productos aunque se elimine un item; si ya esta `PAID`, `KITCHEN_DISPATCHED` o `CANCELLED`, el menu puede verse pero debe quedar desactivado.
 - Si una orden no es editable, la pantalla debe seguir mostrando el menu de productos desactivado; no debe reemplazarlo por un panel de bloqueo que oculte el menu.
 - Al editar desde el módulo de "Mesas" o "Ordenes", el usuario ya no es redirigido a la pantalla principal al aceptar o cancelar cambios, manteniendo el contexto visual del detalle de la orden.
 - El Sidebar preserva su estado resaltado (ej. "Mesas") mediante el parámetro de URL `origin`.
@@ -208,6 +211,8 @@
 - Usa `orders.is_special` y `orders.special_total_manual`.
 - Para ordenes especiales, `special_total_manual` es el valor manual visible/cobrable aunque `orders.total` o la suma de `order_items.total` difieran.
 - Una orden especial `$0` puede quedar como flujo operativo valido hasta despacho; si bloquea cierre de turno, se resuelve por confirmacion explicita en `Admin > Turno`.
+- En la UI principal se comporta igual que `Para llevar`: grilla de tarjetas, `+` permanente, borradores vacios ocultos, borradores con items visibles y salida automatica al despacho/cancelacion.
+- En `Despacho`, Orden especial se despacha como orden completa; el detalle puede expandirse para consulta, pero no muestra botones por item.
 
 ### 8. Comprobantes de transferencia
 - El backend dedicado `proof_capture_backend` sigue vigente.
@@ -347,6 +352,18 @@
   - `Despacho` agrupa por orden, no por lote temporal de items: un mismo `order_code` debe aparecer una sola vez con sus cantidades pendientes agregadas.
   - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
   - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
+
+### 2026-05-08
+- Para llevar / Orden especial:
+  - las pantallas principales usan tarjetas dinamicas con tarjeta `+` permanente.
+  - los borradores vacios no se muestran; los borradores con items si, y las ordenes activas posteriores siguen visibles hasta despacho aplicado.
+  - las tarjetas mantienen el mismo formato que Mesa: numero visual consecutivo, codigo de orden completo una sola vez, usuario creador, cantidad y total con formato monetario uniforme.
+  - el boton superior `<` en detalle vuelve a la pantalla principal del modulo de origen, no al ultimo item/menu seleccionado.
+- Despacho / Ordenes:
+  - Para llevar y Orden especial se despachan como orden completa; el detalle se puede expandir solo para consulta sin botones por item.
+  - `Ordenes > Despachada` incluye ordenes `KITCHEN_DISPATCHED` y ordenes `PAID` que ya tengan despacho aplicado mientras se sincroniza la cabecera.
+- Edicion en borrador:
+  - Mesa, Para llevar y Orden especial conservan el menu de productos activo en `DRAFT` aunque se eliminen items, siempre que no haya bloqueo/anulacion pendiente ni estado final.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.

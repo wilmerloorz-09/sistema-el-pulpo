@@ -5,6 +5,9 @@
 -- QUE HACE:
 -- - Elimina datos operativos: ordenes, items, pagos, caja, cocina, despacho, mesas
 --   - incluye ordenes normales y ordenes especiales (`is_special`, `special_total_manual`)
+--   - incluye tarjetas dinamicas de Para Llevar y Orden Especial, que se reconstruyen desde `orders` y no se persisten como entidad aparte
+--   - la tarjeta `+` de Para Llevar / Orden Especial es UI-only y siempre reaparece despues del reset
+--   - incluye borradores vacios ocultos, borradores con items visibles y orden visual consecutivo calculado por UI
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
@@ -92,6 +95,8 @@
 --   - el conteo debe limitarse a estados realmente bloqueantes: SENT_TO_KITCHEN, READY y KITCHEN_DISPATCHED sin paid_at
 -- - TAMBIEN PERMANECE INTACTA LA REGLA DE VISIBILIDAD:
 --   - ordenes especiales `PAID` deben aparecer en Pagadas aunque no tengan cantidades pagadas por item
+--   - Para Llevar y Orden Especial muestran solo borradores con items; las ordenes no borrador permanecen visibles hasta despacho aplicado/cancelacion
+--   - `Ordenes > Despachada` debe incluir cabecera KITCHEN_DISPATCHED y tambien PAID con despacho aplicado mientras la cabecera se sincroniza
 -- - TAMBIEN PERMANECE INTACTA LA REGLA DE ELIMINAR ORDEN COMPLETA:
 --   - requiere confirmacion visual antes de ejecutar
 --   - solo aplica si todos los items estan en borrador o en caja
@@ -114,6 +119,7 @@
 --   - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
 --   - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
 --   - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
+--   - Para Llevar y Orden Especial se despachan como orden completa; el detalle puede expandirse, pero no debe mostrar botones por item
 -- ============================================================
 
 BEGIN;
@@ -408,6 +414,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`
 -- - 0 base transaccional para reimprimir reportes de caja por apertura ni consolidado por turno
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa

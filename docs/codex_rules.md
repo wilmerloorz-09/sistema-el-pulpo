@@ -32,6 +32,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
 - Una orden `PAID` de mesa permanece visible en la mesa hasta ser despachada; pagarla no libera la mesa ni debe ocultarla del detalle.
 - **Para llevar (UI):** una orden `TAKEOUT` puede permanecer visible dentro de `Para llevar` aunque ya esté `PAID`; solo debe salir del grupo cuando el despacho haya sido aplicado.
+- **Para llevar / Orden especial (UI):** sus modulos principales son grillas de tarjetas dinamicas, no redirecciones automaticas ni pestanas internas de orden. La tarjeta `+` siempre existe. Los borradores vacios no se muestran; los borradores con items y las ordenes activas posteriores se muestran hasta que exista despacho aplicado.
+- Las tarjetas de `Mesas`, `Para llevar` y `Orden especial` deben conservar el mismo formato visual; solo cambia el icono/logo de la tarjeta. El numero superior es el orden visual consecutivo y el codigo/numero de orden debe mostrarse completo una sola vez junto al usuario creador.
+- En `Despacho`, `Para llevar` y `Orden especial` se despachan siempre como orden completa. El detalle puede expandirse para consulta, pero no debe mostrar botones de despacho por item.
 - Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 - Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
@@ -119,7 +122,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 9. Editar Orden e In-Situ
 - `Editar Orden` es buffered, no inline y opera de manera **In-Situ**.
 - El boton `Editar orden` solo debe estar activo cuando la orden esta en `SENT_TO_KITCHEN`/En Caja.
-- En `DRAFT`, `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, no activar edicion. Si la pantalla muestra el menu de productos, debe estar visible pero desactivado.
+- En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos debe seguir activo mientras la orden sea una superficie editable y no tenga bloqueo/anulacion pendiente. Eliminar el ultimo item visible no debe desactivar el catalogo si la orden sigue siendo borrador editable.
+- En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, no activar edicion. Si la pantalla muestra el menu de productos, debe estar visible pero desactivado.
 - Debe seguir aplicando `orders.locked_for_editing` en DB.
 - **Contexto de Navegación:** El flujo de edición y la navegación desde Mesas deben preservar el contexto original. Usar el parámetro `origin=mesas` para que el Sidebar y el BottomNav mantengan su estado resaltado.
 - **Contexto de Navegación (Para llevar / Orden especial):** cuando el usuario entra por estas opciones del menú lateral, preservar el resaltado usando:
@@ -145,7 +149,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - `Borrador` debe listar ordenes con al menos un item activo agregado y no enviado a Caja; si una orden aun no tiene `order_code` / `order_number`, debe permanecer en `Borrador` mientras sus items no esten pagados ni anulados.
 - `En Caja` debe listar solo ordenes numeradas/codificadas, enviadas a Caja, con items no `DRAFT` y saldo/cantidad pendiente de cobro; no debe incluir ordenes pagadas completas.
 - `Pagada` debe listar solo ordenes `PAID`.
-- `Despachada` debe listar ordenes cuya cabecera este en `KITCHEN_DISPATCHED`.
+- `Despachada` debe listar ordenes cuya cabecera este en `KITCHEN_DISPATCHED` y tambien ordenes `PAID` que ya tengan despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la cabecera aun no se haya sincronizado.
 - Para evitar dobles clasificaciones, si la cabecera de la orden es `KITCHEN_DISPATCHED`, la orden pertenece a `Despachada`, no a `Pagada`.
 - Una linea `DRAFT` no debe aparecer en pestanas operativas posteriores.
 - En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
@@ -153,7 +157,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No asumir que `orders.total` de una orden especial coincide con `special_total_manual` o con `sum(order_items.total)`.
 - **Agrupamiento UI Obligatorio:** Toda lista de ítems de orden (Caja y Resumen) debe implementar agrupamiento por descripción y precio unitario para evitar redundancia visual y facilitar la lectura operativa.
 - **Flexibilidad en Edición:** El acceso a la edición de órdenes puede estar permitido para usuarios operativos (`canOperateOrders`) siempre que el turno esté abierto, pero el boton solo debe activarse cuando la orden este en `SENT_TO_KITCHEN`/En Caja.
-- **Crear múltiples órdenes en Para llevar:** el botón `+` (Nueva orden) debe permitir crear una nueva orden de `Para llevar` aun si la orden actual está `PAID`, siempre que el flujo siga activo (no despachado ni cancelado).
+- **Crear múltiples órdenes en Para llevar / Orden especial:** el botón `+` (Nueva orden) debe existir siempre y permitir crear una nueva orden aunque existan ordenes activas `DRAFT`, `SENT_TO_KITCHEN` o `PAID`; las tarjetas se agregan dinamicamente y se retiran al despacho/cancelacion segun corresponda.
 
 ### 11. Comprobantes de transferencia
 - No romper separacion entre captura, almacenamiento, OCR/analisis y aprobacion/rechazo posterior.

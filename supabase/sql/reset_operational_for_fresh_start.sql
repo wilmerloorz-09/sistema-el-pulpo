@@ -5,6 +5,9 @@
 -- QUE HACE:
 -- - Elimina solo datos transaccionales y operativos
 --   - incluye ordenes especiales y sus pagos parciales/manuales
+--   - incluye tarjetas dinamicas de Para Llevar y Orden Especial, que se reconstruyen desde `orders` y no se persisten como entidad aparte
+--   - la tarjeta `+` de Para Llevar / Orden Especial es UI-only y siempre reaparece despues del reset
+--   - incluye borradores vacios ocultos, borradores con items visibles y orden visual consecutivo calculado por UI
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
@@ -70,6 +73,8 @@
 -- - Conserva la regla visual de Ordenes:
 --   - ordenes especiales `PAID` deben aparecer en Pagadas aunque no tengan cantidades pagadas por item
 --   - `special_total_manual` es el valor manual visible/cobrable de la orden especial
+--   - Para Llevar y Orden Especial muestran solo borradores con items; las ordenes no borrador permanecen visibles hasta despacho aplicado/cancelacion
+--   - `Ordenes > Despachada` debe incluir cabecera KITCHEN_DISPATCHED y tambien PAID con despacho aplicado mientras la cabecera se sincroniza
 -- - Conserva la regla de eliminacion completa de orden:
 --   - requiere confirmacion visual antes de ejecutar
 --   - todos los items deben estar en borrador o en caja
@@ -112,6 +117,7 @@
 --   - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
 --   - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
 --   - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
+--   - Para Llevar y Orden Especial se despachan como orden completa; el detalle puede expandirse, pero no debe mostrar botones por item
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero
@@ -318,6 +324,7 @@ COMMIT;
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
+-- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa
 -- - 0 codigos/numeros visibles de orden previos; la siguiente orden vuelve a generar `order_code` y sincronizar `order_number`

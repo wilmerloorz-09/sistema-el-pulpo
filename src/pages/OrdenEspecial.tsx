@@ -1,11 +1,30 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { Loader2, Plus, RefreshCw, Sparkles, UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbSelect } from "@/services/DatabaseService";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { canOperate } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
+import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { Button } from "@/components/ui/button";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
+
+type SpecialOrderCard = {
+  id: string;
+  order_number: number | null;
+  order_code: string | null;
+  status: string;
+  created_at: string;
+  created_by_name: string | null;
+  special_total_manual: number | null;
+  item_count: number;
+};
 
 const seedSpecialDraftOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -38,51 +57,284 @@ const seedSpecialDraftOrderCache = (
   });
 };
 
+const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderCard[]> => {
+  const specialOrders = await dbSelect<any>("orders", {
+    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, order_items(id)",
+    filters: [
+      { column: "branch_id", op: "eq", value: branchId },
+      { column: "is_special", op: "eq", value: true },
+      { column: "is_tray_order", op: "eq", value: false },
+      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] },
+    ],
+    orderBy: { column: "created_at", ascending: true },
+  });
+
+  if (!specialOrders || specialOrders.length === 0) return [];
+
+  const orderIds = specialOrders.map((order: any) => order.id).filter(Boolean);
+  const dispatchEvents = orderIds.length > 0
+    ? await dbSelect<any>("order_dispatch_events", {
+        select: "order_id",
+        filters: [
+          { column: "order_id", op: "in", value: orderIds },
+          { column: "status", op: "eq", value: "APPLIED" },
+        ],
+      })
+    : [];
+  const dispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+  const creatorIds = Array.from(new Set(specialOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
+  const creatorProfiles = creatorIds.length > 0
+    ? await dbSelect<any>("profiles", {
+        select: "id, first_name, full_name, username, email",
+        filters: [{ column: "id", op: "in", value: creatorIds }],
+      })
+    : [];
+  const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+
+  return specialOrders
+    .filter((order: any) => !dispatchedOrderIds.has(order.id))
+    .filter((order: any) => {
+      const itemCount = Array.isArray(order.order_items) ? order.order_items.length : 0;
+      return String(order.status ?? "") !== "DRAFT" || itemCount > 0;
+    })
+    .map((order: any) => ({
+      id: order.id,
+      order_number: order.order_number,
+      order_code: order.order_code ?? null,
+      status: String(order.status ?? "DRAFT"),
+      created_at: order.created_at,
+      created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
+      special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
+      item_count: Array.isArray(order.order_items) ? order.order_items.length : 0,
+    }));
+};
+
+const getSpecialReference = (order: SpecialOrderCard, fallbackIndex: number) =>
+  order.order_code ?? (order.order_number ? `#${order.order_number}` : `Orden ${fallbackIndex + 1}`);
+
 const OrdenEspecial = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, permissions } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
+  const [creating, setCreating] = useState(false);
+
+  const canOperateSpecial =
+    canOperate(permissions, "mesas")
+    || canOperate(permissions, "ordenes")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+
+  const specialOrdersQuery = useQuery({
+    queryKey: ["special-orders", activeBranchId ?? null],
+    queryFn: () => fetchActiveSpecialOrders(activeBranchId!),
+    enabled: !!activeBranchId,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
+    gcTime: 2 * 60_000,
+  });
+
+  const orders = specialOrdersQuery.data ?? [];
 
   useEffect(() => {
-    const run = async () => {
-      if (!user || !activeBranchId) return;
+    for (const order of orders) {
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(order.id),
+        queryFn: () => fetchOrderDetail(order.id),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
+    }
+  }, [orders, qc]);
 
-      try {
-        const now = new Date().toISOString();
-        const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
-          p_branch_id: activeBranchId,
-          p_created_by: user.id,
-          p_table_id: null,
-          p_is_special: true,
-        } as any);
+  const warmSpecialOrder = (orderId: string) => {
+    void qc.prefetchQuery({
+      queryKey: getOrderQueryKey(orderId),
+      queryFn: () => fetchOrderDetail(orderId),
+      staleTime: 15_000,
+      gcTime: 10 * 60_000,
+    });
+  };
 
-        if (error) throw error;
+  const handleOpenOrder = (orderId: string) => {
+    warmSpecialOrder(orderId);
+    navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
+  };
 
-        const orderId = String(data);
-        seedSpecialDraftOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
+  const handleCreateOrder = async () => {
+    if (!user || !activeBranchId || creating || !canOperateSpecial) return;
 
-        toast.success("Abriendo orden especial...");
-        navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        void qc.prefetchQuery({
-          queryKey: getOrderQueryKey(orderId),
-          queryFn: () => fetchOrderDetail(orderId),
-          staleTime: 15_000,
-          gcTime: 10 * 60_000,
-        });
-      } catch (err: any) {
-        toast.error(err?.message || "Error al abrir orden especial");
-        navigate("/mesas", { replace: true });
-      }
-    };
+    setCreating(true);
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
+        p_branch_id: activeBranchId,
+        p_created_by: user.id,
+        p_table_id: null,
+        p_is_special: true,
+      } as any);
 
-    void run();
-  }, [activeBranchId, navigate, qc, user]);
+      if (error) throw error;
 
-  return null;
+      const orderId = String(data);
+      seedSpecialDraftOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
+
+      qc.setQueryData(["special-orders", activeBranchId], [
+        ...orders,
+        {
+          id: orderId,
+          order_number: null,
+          order_code: null,
+          status: "DRAFT",
+          created_at: now,
+          special_total_manual: null,
+          created_by_name: null,
+          item_count: 0,
+        },
+      ] satisfies SpecialOrderCard[]);
+
+      toast.success("Abriendo orden especial...");
+      navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["special-orders", activeBranchId] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      warmSpecialOrder(orderId);
+    } catch (err: any) {
+      toast.error(err?.message || "Error al abrir orden especial");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (specialOrdersQuery.isError) {
+    return (
+      <div className="p-4">
+        <div className="rounded-[24px] border border-orange-200 bg-white/80 p-5 text-center text-sm text-muted-foreground shadow-sm">
+          <p className="font-semibold text-foreground">No se pudieron cargar las ordenes especiales</p>
+          <p className="mt-2">{specialOrdersQuery.error instanceof Error ? specialOrdersQuery.error.message : "Intenta nuevamente."}</p>
+          <Button type="button" variant="outline" className="mt-4 rounded-2xl" onClick={() => specialOrdersQuery.refetch()}>
+            <RefreshCw className="h-4 w-4" />
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (specialOrdersQuery.isLoading && !specialOrdersQuery.data) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-8">
+      <section className="px-2.5 pb-2 pt-2 sm:px-4 sm:pt-2">
+        {!canOperateSpecial && (
+          <div className="mb-2 flex justify-end">
+            <span className="rounded-full border border-border bg-white/85 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm">
+              Solo consulta
+            </span>
+          </div>
+        )}
+      </section>
+
+      <div className="sticky top-14 z-30 bg-background px-2.5 pb-3 pt-2 md:top-0 sm:px-4 sm:pt-3">
+        <div className="surface-glow px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="relative flex items-center justify-between gap-2">
+            <div className="min-w-0 flex items-center gap-2">
+              <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Orden Especial</h1>
+            </div>
+            <div className="scrollbar-none -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap">
+              <span className="flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-orange-800 shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-orange-500" />
+                {orders.length} activas
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-2.5 sm:px-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]">
+          {orders.map((order, index) => {
+            const orderRef = getSpecialReference(order, index);
+            const displayNumber = index + 1;
+            const totalLabel = order.special_total_manual == null ? "--" : `$${order.special_total_manual.toFixed(2)}`;
+
+            return (
+              <motion.button
+                key={order.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: (index + 1) * 0.03 }}
+                onClick={() => handleOpenOrder(order.id)}
+                onMouseEnter={() => warmSpecialOrder(order.id)}
+                onTouchStart={() => warmSpecialOrder(order.id)}
+                className="relative flex min-h-[142px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 border-primary/40 bg-gradient-to-br from-orange-50 via-white to-amber-100 p-2.5 pb-12 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5 sm:pb-12 dark:border-primary/30 dark:from-orange-950/20 dark:via-card dark:to-amber-950/20"
+              >
+                <span className="absolute right-2 top-2 inline-flex min-h-[2.45rem] min-w-[2.45rem] items-center justify-center rounded-full border border-orange-300 bg-amber-100 px-2 text-[1.15rem] font-black leading-none text-primary shadow-sm sm:right-3 sm:top-3 sm:min-h-[2.9rem] sm:min-w-[2.9rem] sm:text-[1.45rem] dark:border-primary/40 dark:bg-orange-950/80 dark:text-orange-300">
+                  {displayNumber}
+                </span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-[16px] border-2 border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)] sm:h-16 sm:w-16 sm:rounded-[22px] dark:border-orange-800 dark:from-orange-600 dark:via-amber-500 dark:to-yellow-500">
+                  <Sparkles className="h-8 w-8" />
+                </div>
+                <div className="flex w-full max-w-[calc(100%-1rem)] items-center justify-center gap-1 px-1 text-[10px] font-bold leading-tight text-primary sm:text-xs dark:text-orange-400">
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 break-all text-center">{orderRef}</span>
+                </div>
+                {order.created_by_name && (
+                  <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
+                    <span className="flex min-w-0 items-center gap-1">
+                      <UserRound className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{order.created_by_name}</span>
+                    </span>
+                  </div>
+                )}
+                <div className="absolute bottom-2 left-1.5 max-w-[calc(50%-0.4rem)] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:left-3 sm:max-w-none sm:px-3.5 sm:py-2 sm:text-sm">
+                  {order.item_count} item{order.item_count !== 1 ? "s" : ""}
+                </div>
+                <div className="absolute bottom-2 right-1.5 max-w-[calc(50%-0.4rem)] rounded-full border border-amber-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-black text-amber-800 shadow-sm sm:bottom-3 sm:right-3 sm:max-w-none sm:px-3.5 sm:py-2 sm:text-sm">
+                  {totalLabel}
+                </div>
+              </motion.button>
+            );
+          })}
+
+          <motion.button
+            key="new-special-order"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: (orders.length + 1) * 0.03 }}
+            onClick={handleCreateOrder}
+            disabled={creating || !canOperateSpecial}
+            className={cn(
+              "relative flex min-h-[142px] flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-primary/35 bg-gradient-to-br from-orange-50 via-white to-amber-100 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5",
+              canOperateSpecial && "hover:border-primary/55 hover:bg-primary/5",
+              (!canOperateSpecial || creating) && "cursor-not-allowed opacity-70",
+            )}
+          >
+            {creating ? (
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            ) : (
+              <>
+                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border-2 border-orange-200 bg-gradient-to-br from-orange-500 via-amber-400 to-yellow-300 text-white shadow-[0_18px_38px_-24px_rgba(249,115,22,0.82)] sm:h-16 sm:w-16 sm:rounded-[22px]">
+                  <Plus className="h-8 w-8" />
+                </div>
+                <div className="text-[10px] font-semibold text-primary sm:text-xs">Nueva orden</div>
+              </>
+            )}
+          </motion.button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default OrdenEspecial;
-

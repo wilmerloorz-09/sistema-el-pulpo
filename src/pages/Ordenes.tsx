@@ -1000,23 +1000,28 @@ const OrdenesContent = () => {
 
   const handleMobileBackToMesas = useCallback(() => {
     if (fromEditar) {
-      const origin = searchParams.get("origin") || "editar";
-      navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
+      const editOrigin = origin || "editar";
+      navigate(`/ordenes?order=${orderId}&from=${editOrigin}`, { replace: true });
       return;
     }
 
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      navigate(-1);
+    if (origin === "para-llevar" || isTakeoutOrder) {
+      navigate("/para-llevar", { replace: true });
       return;
     }
 
-    if (order?.table_id || order?.is_tray_order || order?.order_type === "TAKEOUT") {
+    if (origin === "mesas" || order?.table_id) {
       navigate("/mesas", { replace: true });
       return;
     }
 
+    if (origin === "orden-especial" || order?.is_special) {
+      navigate("/orden-especial", { replace: true });
+      return;
+    }
+
     navigate("/ordenes", { replace: true });
-  }, [fromEditar, navigate, order?.is_tray_order, order?.order_type, order?.table_id]);
+  }, [fromEditar, isTakeoutOrder, navigate, order?.is_special, order?.table_id, orderId, origin]);
 
   const bulkIncludedPreviewQuery = useQuery({
     queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id, shouldCalculateBulkIncludedByAmount],
@@ -1299,7 +1304,20 @@ const OrdenesContent = () => {
     !!order.table_id &&
     order.status === "KITCHEN_DISPATCHED";
 
-  const canEditDraftOrder = !fromEditar && order.status === "DRAFT";
+  const hasEditableOrderSurface =
+    isTakeoutOrder ||
+    Boolean(order.is_special) ||
+    (order.order_type === "DINE_IN" && Boolean(order.table_id));
+  const canEditDraftOrder =
+    !fromEditar &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED" &&
+    hasEditableOrderSurface &&
+    (
+      order.status === "DRAFT" ||
+      hasDraftItems ||
+      !hasSentItems
+    );
   const canEnterEditMode =
     !fromEditar &&
     canUseEditarOrden &&
@@ -2328,7 +2346,7 @@ const OrdenesContent = () => {
             )}
           </div>
 
-          {(order.table_id || isTakeoutOrder) && (
+          {order.table_id && (
             <div className="flex items-center gap-2 pb-1">
               <div className="relative min-w-0 flex-1">
                 {tableOrdersTabsOverflow.left && (

@@ -57,14 +57,16 @@
 - El envio de borradores usa `submit_order_draft_items(...)`; mesa, para llevar y orden especial quedan primero cobrables en Caja.
 - Despacho recibe la orden despues del pago.
 - Despacho no debe dividir una misma orden por marcas de tiempo de `order_items.sent_to_kitchen_at`; la unidad visible es la orden completa con cantidades pendientes agregadas.
+- En `Despacho`, las ordenes `TAKEOUT` y las ordenes especiales se despachan como orden completa; el detalle puede expandirse para consulta, pero no debe exponer botones de despacho por item.
 - `Ordenes` usa lista expandible y detalle inline.
-- **Entradas dedicadas en navegación lateral (2026-05-07):**
-  - Existen rutas dedicadas que actúan como “entradas” al módulo `Ordenes`:
-    - `Para llevar`: `"/para-llevar"` → abre/crea orden TAKEOUT y redirige a `"/ordenes?order=...&origin=para-llevar"`.
-    - `Orden especial`: `"/orden-especial"` → crea orden especial y redirige a `"/ordenes?order=...&origin=orden-especial"`.
+- **Entradas dedicadas en navegación lateral (2026-05-08):**
+  - Existen rutas dedicadas con pantalla principal propia:
+    - `Para llevar`: `"/para-llevar"` muestra tarjetas dinamicas de ordenes TAKEOUT.
+    - `Orden especial`: `"/orden-especial"` muestra tarjetas dinamicas de ordenes especiales.
+  - La tarjeta `+` siempre existe y crea una nueva orden del modulo.
+  - Solo se muestran borradores con al menos un item activo; los borradores vacios quedan ocultos. Las ordenes no borrador siguen visibles hasta despacho aplicado/cancelacion.
+  - Las tarjetas de Mesa, Para llevar y Orden especial comparten formato; solo cambia el icono/logo. El numero superior es visual y consecutivo, y el codigo/numero real de orden se muestra completo una sola vez junto al usuario creador.
   - El `origin` debe preservarse en redirecciones internas (fallbacks, cambio de pestaña, etc.) para que el Sidebar/BottomNav mantenga el resaltado correcto.
-  - En `Para llevar`, las pestañas de órdenes (siblings) deben incluir órdenes `PAID` mientras no se haya aplicado despacho; pagar no debe “expulsar” la orden del grupo.
-  - En `Para llevar`, el botón `+` (Nueva orden) debe permitir crear una nueva orden aun si la orden actual está `PAID`.
 - Las pestanas visibles del modulo `Ordenes` son etapa-dependientes y deben mostrarse en este orden:
   - `Borrador`
   - `En Caja`
@@ -76,7 +78,7 @@
   - `En Caja` muestra solo ordenes numeradas/codificadas, enviadas a Caja (`SENT_TO_KITCHEN` o `READY`), con items no `DRAFT` y saldo/cantidad pendiente de cobro.
   - `En Caja` nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
   - `Pagada` muestra solo ordenes con estado `PAID`; estas ordenes son las unicas candidatas para `Despacho`.
-  - `Despachada` muestra ordenes cuya etapa final visible sea `KITCHEN_DISPATCHED`.
+  - `Despachada` muestra ordenes cuya etapa final visible sea `KITCHEN_DISPATCHED` y tambien ordenes `PAID` con despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la cabecera aun no se haya sincronizado.
   - `Anulada` muestra ordenes canceladas o historicas de anulacion.
   - `Pendiente de anulacion` se conserva como estado/marca operacional, pero no como pestana principal.
 - Una misma orden no debe aparecer simultaneamente en `Pagada` y `Despachada`.
@@ -103,7 +105,7 @@
 ### 6. Editar Orden
 - `Editar Orden` es una arquitectura buffered y **In-Situ**.
 - El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja.
-- En estados no editables (`DRAFT`, `PAID`, `KITCHEN_DISPATCHED`, `CANCELLED`), el menu de productos puede permanecer visible pero desactivado; no debe ocultarse detras de un panel de bloqueo.
+- En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos se mantiene activo mientras la orden siga siendo editable; eliminar un item no debe bloquear el catalogo. En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, el menu puede permanecer visible pero desactivado.
 - El módulo trabaja con `stagedItems` en memoria y mantiene el contexto de navegación original (`origin`).
 - La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina, Despacho y Caja.
 - Los items originales despachados o cerrados permanecen sin controles directos de cantidad.
@@ -255,3 +257,4 @@
 14. **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
 15. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.
 16. **Despacho sin duplicados:** Toda modificacion de `useDispatchOrders` debe conservar una sola tarjeta/fila por orden pagada; no separar la misma orden por tiempos de envio de items.
+17. **Tarjetas Para llevar / Especial:** Toda modificacion de `ParaLlevar`, `OrdenEspecial` o `useOrder` debe preservar `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez, usuario creador y formato compatible con Mesa.
