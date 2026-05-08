@@ -5,6 +5,13 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ## Reglas obligatorias vigentes
 
+### 0. Estado canonico de orden
+- No reinterpretar `READY` ni `KITCHEN_DISPATCHED` como "pagado".
+- El flujo correcto es `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
+- `Despacho` solo debe listar y operar ordenes `PAID` con cantidades activas pendientes de despacho.
+- `dispatch_order_quantities(...)` debe rechazar cualquier orden que no este `PAID`.
+- Al anular un pago, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER`; la sucesora activa queda con numero nuevo en `SENT_TO_KITCHEN`/En Caja.
+
 ### 1. Refactor incremental
 - No abrir un modelo nuevo si el flujo actual ya existe y puede extenderse.
 - Si convive legacy con modelo nuevo, documentar claramente que parte ya migro y que parte no.

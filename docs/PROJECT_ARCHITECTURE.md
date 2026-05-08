@@ -6,6 +6,13 @@
 - Backend auxiliar: `proof_capture_backend` (Python/FastAPI) para captura y OCR basico de comprobantes.
 - Estrategia arquitectonica: migracion incremental desde modelo legacy hacia `menu_nodes`, sin romper la operacion diaria.
 
+## Regla canonica de flujo de orden
+- `DRAFT`/Borrador: la orden tiene al menos un item agregado y todavia no se envio a Caja.
+- `SENT_TO_KITCHEN`/En Caja: la orden fue enviada a Caja y ya tiene `order_code` / `order_number`.
+- `PAID`/Pagada: Caja cubrio la orden; este es el unico estado elegible para aparecer en el modulo `Despacho`.
+- `KITCHEN_DISPATCHED`/Despachada: la orden ya fue despachada y deja de ser pendiente de Despacho.
+- La anulacion de pago solo aplica sobre una orden pagada no despachada; al anular, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` y la sucesora queda con numero nuevo en `SENT_TO_KITCHEN`/En Caja.
+
 ## Capas funcionales
 
 ### 1. Identidad y contexto
@@ -56,9 +63,9 @@
   - `Anulada`
 - Reglas vigentes de clasificacion:
   - `Borrador` muestra ordenes con al menos un item activo agregado que aun no fue enviado a Caja. Si una orden no tiene `order_code` / `order_number`, debe tratarse como borrador mientras tenga items activos no pagados ni anulados.
-  - `En Caja` muestra solo ordenes numeradas/codificadas, enviadas a Caja (`SENT_TO_KITCHEN`, `READY` o `KITCHEN_DISPATCHED`), con items no `DRAFT` y saldo/cantidad pendiente de cobro.
+  - `En Caja` muestra solo ordenes numeradas/codificadas, enviadas a Caja (`SENT_TO_KITCHEN` o `READY`), con items no `DRAFT` y saldo/cantidad pendiente de cobro.
   - `En Caja` nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
-  - `Pagada` muestra ordenes con pago aplicado/estado `PAID`.
+  - `Pagada` muestra ordenes con pago aplicado/estado `PAID`; estas ordenes son las unicas candidatas para `Despacho`.
   - `Despachada` muestra ordenes con cabecera `KITCHEN_DISPATCHED`, items `DISPATCHED` o cantidades/eventos de despacho.
   - `Anulada` muestra ordenes canceladas o historicas de anulacion.
   - `Pendiente de anulacion` se conserva como estado/marca operacional, pero no como pestana principal.

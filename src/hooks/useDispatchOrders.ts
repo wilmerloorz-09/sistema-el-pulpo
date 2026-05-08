@@ -215,8 +215,7 @@ export function useDispatchOrders(scope: DispatchView) {
         select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing",
         branchId: activeBranchId,
         filters: [
-          { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] },
-          { column: "paid_at", op: "neq", value: null }
+          { column: "status", op: "eq", value: "PAID" }
         ],
         orderBy: { column: "updated_at", ascending: true }
       });

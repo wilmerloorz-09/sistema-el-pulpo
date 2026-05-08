@@ -109,9 +109,9 @@
 --   - el cálculo de cambio se unifica para contemplar excedentes de todos los métodos de pago (incluyendo transferencias)
 --   - al aumentar cantidad de un item ya enviado/en caja, se actualiza la misma linea si no tiene pagos registrados
 --   - los items nuevos aceptados en ordenes "En caja" mantienen su flujo de cobro correcto
-  - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
-  - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
-  - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
+--   - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
+--   - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
+--   - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
 --
 -- IDEAL PARA:
 -- - volver a probar el flujo del POS desde cero

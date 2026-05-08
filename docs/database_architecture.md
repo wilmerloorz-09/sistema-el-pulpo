@@ -7,6 +7,14 @@
   - `orders.order_number`
   - `orders.order_code`
 
+## Regla canonica de estados operativos
+- `DRAFT`: borrador con al menos un item agregado y no enviado a Caja.
+- `SENT_TO_KITCHEN`: En Caja; `submit_order_draft_items(...)` genera `order_code` / `order_number` y deja la orden cobrable.
+- `PAID`: Pagada; `sync_order_payment_state_internal(...)` debe usar este estado cuando Caja cubre la orden completa.
+- `KITCHEN_DISPATCHED`: Despachada; `dispatch_order_quantities(...)` solo puede ejecutarse sobre ordenes `PAID`.
+- `CANCELLED`: anulada o historica. Las historicas por anulacion de pago con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
+- Cuando se anula un pago, la sucesora activa queda con nuevo numero en `SENT_TO_KITCHEN`/En Caja.
+
 ## Dominios principales
 
 ### 0. Sucursales
@@ -99,8 +107,8 @@
 - Los nuevos ítems añadidos durante una edición de una orden "En caja" se marcan para seguir el flujo de cobro correcto.
 - La clasificacion visible del modulo `Ordenes` debe derivarse de `orders`, `order_items`, pagos activos y snapshot/eventos operativos:
   - `Borrador`: items activos agregados y no enviados a Caja. Las ordenes sin `order_code` / `order_number` deben permanecer en esta clasificacion mientras tengan items activos no pagados ni anulados.
-  - `En Caja`: `orders.status IN ('SENT_TO_KITCHEN', 'READY', 'KITCHEN_DISPATCHED')`, con `order_code` / `order_number`, items no `DRAFT` y saldo/cantidad pendiente de cobro. Excluir ordenes pagadas completas.
-  - `Pagada`: `PAID` o pago aplicado que cubre la orden.
+  - `En Caja`: `orders.status IN ('SENT_TO_KITCHEN', 'READY')`, con `order_code` / `order_number`, items no `DRAFT` y saldo/cantidad pendiente de cobro. Excluir ordenes pagadas completas.
+  - `Pagada`: `PAID` o pago aplicado que cubre la orden; es el unico estado elegible para `Despacho`.
   - `Despachada`: cabecera `KITCHEN_DISPATCHED`, item `DISPATCHED` o cantidades/eventos de despacho.
   - `Anulada`: `CANCELLED` e historicas con marcadores de anulacion.
 - `Pendiente de anulacion` no es pestana principal de `Ordenes`; se determina por `orders.cancel_requested_at` y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`.

@@ -11,6 +11,15 @@
 
 ## Estado operativo vigente (2026-05-07)
 
+### Regla canonica de estado de orden
+- El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
+- Una orden pasa a Borrador cuando tiene al menos un item agregado y todavia no se envio a Caja.
+- Al enviar a Caja se genera `order_code` / `order_number` y la orden queda en `SENT_TO_KITCHEN`; ese estado significa `En Caja`, no despacho.
+- Al cobrar en Caja, si la orden queda cubierta, `sync_order_payment_state_internal(...)` debe dejarla en `PAID`.
+- El modulo `Despacho` solo debe listar y permitir despachar ordenes `PAID` con cantidades activas pendientes de despacho.
+- Al despachar, la orden pasa a `KITCHEN_DISPATCHED` cuando ya no quedan cantidades activas pendientes de despacho.
+- Al anular un pago, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y la orden sucesora conserva nuevo numero en estado `SENT_TO_KITCHEN`/En Caja.
+
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
 - `products` sigue siendo obligatorio mientras `order_items.product_id` mantenga la FK legacy.
@@ -132,8 +141,8 @@
   - `Anulada`
 - La clasificacion de `Ordenes` debe respetar reglas operativas reales:
   - `Borrador`: ordenes sin envio a Caja, con al menos un item activo agregado. Tambien incluye ordenes sin `order_code` / `order_number` que aun conservan items activos no pagados ni anulados.
-  - `En Caja`: solo ordenes con `order_code` / `order_number`, enviadas a Caja (`SENT_TO_KITCHEN`, `READY` o `KITCHEN_DISPATCHED`), con al menos un item no `DRAFT` y saldo/cantidad pendiente de cobro. Nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
-  - `Pagada`: ordenes con pago aplicado/estado `PAID`.
+  - `En Caja`: solo ordenes con `order_code` / `order_number`, enviadas a Caja (`SENT_TO_KITCHEN` o `READY`), con al menos un item no `DRAFT` y saldo/cantidad pendiente de cobro. Nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
+  - `Pagada`: ordenes con pago aplicado/estado `PAID`; son las unicas candidatas para `Despacho`.
   - `Despachada`: ordenes o items con estado/cantidades de despacho (`KITCHEN_DISPATCHED`, item `DISPATCHED` o eventos de despacho).
   - `Anulada`: ordenes historicas/anuladas, incluyendo las de separacion por pago anulado.
 - `Pendiente de anulacion` sigue siendo un estado operativo interno y una marca visible en items/orden, pero no es una pestana principal del modulo `Ordenes`.
