@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
+﻿import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchOrderDetail, fetchSiblingOrders, fetchTakeoutSiblingOrders, getOrderQueryKey, isTemporaryOrderItemId, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
@@ -727,7 +727,15 @@ const OrdenesContent = () => {
         qc.invalidateQueries({ queryKey: ["tables-with-status"] });
         qc.invalidateQueries({ queryKey: ["table-orders"] });
         setConfirmDeleteCajaOrderOpen(false);
-        navigate(order.table_id ? "/mesas" : "/ordenes", { replace: true });
+        if (order.table_id) {
+          navigate("/mesas", { replace: true });
+        } else if (sourceParams.includes("origin=para-llevar")) {
+          navigate("/para-llevar", { replace: true });
+        } else if (sourceParams.includes("origin=orden-especial")) {
+          navigate("/orden-especial", { replace: true });
+        } else {
+          navigate("/ordenes", { replace: true });
+        }
         return;
       }
 
@@ -794,7 +802,13 @@ const OrdenesContent = () => {
         navigate("/mesas", { replace: true });
       } else {
         qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
-        navigate("/ordenes", { replace: true });
+        if (sourceParams.includes("origin=para-llevar")) {
+          navigate("/para-llevar", { replace: true });
+        } else if (sourceParams.includes("origin=orden-especial")) {
+          navigate("/orden-especial", { replace: true });
+        } else {
+          navigate("/ordenes", { replace: true });
+        }
       }
     } catch (error: any) {
       console.error("Error eliminando orden en caja:", error);
@@ -828,7 +842,7 @@ const OrdenesContent = () => {
 
 
   useEffect(() => {
-    if (fromEditar && order && (order.status === "PAID" || order.status === "CANCELLED")) {
+    if (fromEditar && order && order.status !== "SENT_TO_KITCHEN") {
       const origin = searchParams.get("origin") || "editar";
       navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
     }
@@ -845,7 +859,16 @@ const OrdenesContent = () => {
     if (!orderId || isLoading || shiftGateQuery.isLoading) return;
     if (order || redirectingAfterDelete || removingSplit) return;
 
-    navigate(fromEditar ? "/editar-orden" : "/mesas", { replace: true });
+    const originValue = searchParams.get("origin");
+    const fallbackPath = fromEditar
+      ? "/editar-orden"
+      : originValue === "para-llevar"
+        ? "/para-llevar"
+        : originValue === "orden-especial"
+          ? "/orden-especial"
+          : "/mesas";
+
+    navigate(fallbackPath, { replace: true });
   }, [fromEditar, isLoading, navigate, order, orderId, redirectingAfterDelete, removingSplit, shiftGateQuery.isLoading]);
 
   useEffect(() => {
@@ -935,10 +958,10 @@ const OrdenesContent = () => {
         if (currentOrderIsStillActive) return;
 
         const nextOrderId = orders.find((takeoutOrder) => takeoutOrder.id !== order.id)?.id ?? null;
-        navigate(nextOrderId ? `/ordenes?order=${nextOrderId}${sourceParams}` : "/mesas", { replace: true });
+        navigate(nextOrderId ? `/ordenes?order=${nextOrderId}${sourceParams}` : "/para-llevar", { replace: true });
       })
       .catch(() => {
-        if (!cancelled) navigate("/mesas", { replace: true });
+        if (!cancelled) navigate("/para-llevar", { replace: true });
       });
 
     return () => {
@@ -1164,7 +1187,7 @@ const OrdenesContent = () => {
       : [];
   const visibleTableOrders = isTakeoutOrder
     ? tableOrders.filter((tableOrder) => tableOrder.id === currentTableOrder?.id || tableOrder.item_count > 0)
-    : tableOrders;
+    : tableOrders.filter((tableOrder) => tableOrder.id === currentTableOrder?.id || tableOrder.item_count > 0);
   const mergedTableOrders = isTakeoutOrder
     ? [...visibleTableOrders].sort((left, right) => {
         const leftNumber = getVisibleOrderCodeNumber(left);
@@ -1195,10 +1218,8 @@ const OrdenesContent = () => {
   const allExistingTableOrdersHaveItems = mergedTableOrders.every((sibling) => sibling.item_count > 0);
   const orderGroupLabel = isTakeoutOrder ? "Para Llevar" : "mesa";
 
-  // Lock para Editar Orden: solo permite entrar si ya existe AL MENOS un item despachado (desde cocina)
-  // o si el estado general de la orden ya es KITCHEN_DISPATCHED.
-  const hasDispatchedItemsInOriginal = order.items.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
-  const isLockedFromEditar = fromEditar && !hasDispatchedItemsInOriginal && order.status !== "KITCHEN_DISPATCHED" && order.status !== "PAID" && order.status !== "CANCELLED";
+  const isEditableInCaja = order.status === "SENT_TO_KITCHEN";
+  const isLockedFromEditar = fromEditar && !isEditableInCaja;
 
   const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
   const hasVoidableItemsInEditar = itemsToUse.some((item) => {
@@ -1215,8 +1236,10 @@ const OrdenesContent = () => {
   const canSplit =
     canOperateOrders &&
     ((order.order_type === "DINE_IN" && !!order.table_id) || isTakeoutOrder) &&
-    order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
+    // En Para llevar mantenemos la orden visible incluso si ya fue pagada,
+    // y debe permitir abrir una nueva orden desde el "+".
+    (isTakeoutOrder || order.status !== "PAID") &&
     !isLockedFromEditar &&
     order.items.length > 0 &&
     allExistingTableOrdersHaveItems;
@@ -1276,10 +1299,15 @@ const OrdenesContent = () => {
     !!order.table_id &&
     order.status === "KITCHEN_DISPATCHED";
 
+  const canEditDraftOrder = !fromEditar && order.status === "DRAFT";
+  const canEnterEditMode =
+    !fromEditar &&
+    canUseEditarOrden &&
+    isEditableInCaja &&
+    !hasPendingCancellationItems;
   const canEditItems =
     (canOperateOrders || canUseEditarOrden || fromEditar) &&
-    order.status !== "PAID" &&
-    order.status !== "CANCELLED" &&
+    (canEditDraftOrder || (fromEditar && isEditableInCaja)) &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
@@ -1361,7 +1389,8 @@ const OrdenesContent = () => {
   const handleSplit = async () => {
     if (!user || !canOperateOrders) return;
     if (!((order.order_type === "DINE_IN" && order.table_id) || isTakeoutOrder)) return;
-    if (order.status === "PAID" || order.status === "CANCELLED") return;
+    if (order.status === "CANCELLED") return;
+    if (!isTakeoutOrder && order.status === "PAID") return;
     if (order.items.length <= 0) {
       toast.error("La orden actual debe tener al menos un item");
       return;
@@ -1801,7 +1830,7 @@ const OrdenesContent = () => {
     setInlineCancelOpen(true);
   };
 
-  const menuPanel = canEditItems ? (
+  const menuPanel = (
     <div className="space-y-3">
       {isTrayOrder ? (
         <div className="rounded-[24px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 p-4 shadow-[0_18px_42px_-30px_rgba(245,158,11,0.3)]">
@@ -1818,13 +1847,16 @@ const OrdenesContent = () => {
                   key={option.value}
                   type="button"
                   onClick={() => {
+                    if (!canEditItems) return;
                     setPendingTrayType(option.value);
                     setSelectedProduct(null);
                     setSelectedProductRootName(null);
                   }}
+                  disabled={!canEditItems}
                   aria-pressed={checked}
                   className={cn(
                     "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold transition sm:gap-2 sm:text-sm",
+                    !canEditItems && "cursor-not-allowed opacity-60",
                     checked
                       ? "text-amber-900"
                       : "text-amber-800/90",
@@ -1860,6 +1892,7 @@ const OrdenesContent = () => {
           <Tabs
             value={interactiveMenuScope}
             onValueChange={(value) => {
+              if (!canEditItems) return;
               const nextScope = value as MenuScope;
               if (interactiveMenuScope === nextScope) return;
 
@@ -1884,7 +1917,7 @@ const OrdenesContent = () => {
                 <TabsTrigger
                   key={option.value}
                   value={option.value}
-                  disabled={updateMenuScope.isPending}
+                  disabled={!canEditItems || updateMenuScope.isPending}
                   className={option.className}
                 >
                   {option.icon}
@@ -1901,7 +1934,7 @@ const OrdenesContent = () => {
         forceLoading={(currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK") && scopeCompositeMenuQuery.isLoading}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
-        disabled={!fromEditar && (order.status === "PAID" || order.status === "KITCHEN_DISPATCHED")}
+        disabled={!canEditItems}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
@@ -1914,44 +1947,6 @@ const OrdenesContent = () => {
           ) : null
         }
       />
-    </div>
-  ) : (
-    <div className="flex flex-col items-center justify-center space-y-4 rounded-3xl border border-dashed border-border bg-card/50 p-8 text-center">
-      <div className="rounded-full bg-muted p-4">
-        <Ban className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <div className="max-w-md space-y-2">
-        <p className="text-base font-bold text-foreground">
-          {isLockedFromEditar
-            ? "Mesa no editable"
-            : hasPendingCancellationItems
-            ? "Anulación pendiente"
-            : order.status === "PAID" || order.status === "CANCELLED"
-            ? "Orden finalizada"
-            : !canOperateOrders
-            ? "Acceso restringido"
-            : "Consulta restringida"}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {isLockedFromEditar
-            ? "En el modo 'Editar Orden', esta orden no puede ser editada porque aún no tiene ítems despachados."
-            : hasPendingCancellationItems
-            ? "Esta orden tiene al menos un item con anulacion pendiente: no puedes agregar ni editar items hasta resolver la solicitud."
-            : order.status === "PAID" || order.status === "CANCELLED"
-            ? "Esta orden ya ha sido pagada o cancelada y se encuentra en modo solo lectura."
-            : !canOperateOrders
-            ? "No tienes permiso de operación en Órdenes para esta sucursal o tu turno no tiene acceso operativo."
-            : "No puedes agregar más items en este estado de la orden o modo de acceso."}
-        </p>
-      </div>
-      <Button
-        variant="outline"
-        className="h-11 rounded-xl px-8"
-        onClick={handleMobileBackToMesas}
-      >
-        <ChevronLeft className="mr-2 h-4 w-4" />
-        Volver a la lista
-      </Button>
     </div>
   );
 
@@ -2088,7 +2083,7 @@ const OrdenesContent = () => {
                   // Solo se abre por clic fisico aqui
                   setPaymentDialogOpenForOrderId(orderId);
                 } else {
-                  toast.error("El dispositivo es demasiado pequeño para operar caja.");
+                  toast.error("El dispositivo es demasiado pequeÃ±o para operar caja.");
                 }
               }
             } catch (e) {
@@ -2136,7 +2131,7 @@ const OrdenesContent = () => {
                 }}
               >
                 <X className="h-5 w-5" />
-                Cancelar edición
+                Cancelar ediciÃ³n
               </Button>
               {canEditItems && (
                 <Button
@@ -2171,11 +2166,11 @@ const OrdenesContent = () => {
                 </Button>
               )}
 
-              {!fromEditar && hasSentItems && canUseEditarOrden && (
+              {!fromEditar && hasSentItems && canUseEditarOrden && isEditableInCaja && (
                 <Button
                   variant="outline"
                   className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100"
-                  disabled={!canEditItems}
+                  disabled={!canEnterEditMode}
                   title="Editar orden"
                   onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${originParam}`)}
                 >
@@ -2930,7 +2925,7 @@ const OrdenesContent = () => {
               Caja no disponible
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base text-slate-600">
-              La caja no ha sido abierta. Por favor, abre la caja en el módulo de Caja primero.
+              La caja no ha sido abierta. Por favor, abre la caja en el mÃ³dulo de Caja primero.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

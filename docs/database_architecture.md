@@ -13,6 +13,8 @@
 - `PAID`: Pagada; `sync_order_payment_state_internal(...)` debe usar este estado cuando Caja cubre la orden completa.
 - `KITCHEN_DISPATCHED`: Despachada; `dispatch_order_quantities(...)` solo puede ejecutarse sobre ordenes `PAID`.
 - `CANCELLED`: anulada o historica. Las historicas por anulacion de pago con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
+- `PAID` y `KITCHEN_DISPATCHED` son estados finales visibles mutuamente excluyentes para clasificacion; una orden no debe aparecer en ambas pestanas.
+- Las lecturas de `Despacho` deben agrupar por `orders.id` / `order_code`; `order_items.sent_to_kitchen_at` no debe crear tarjetas operativas separadas para la misma orden.
 - Cuando se anula un pago, la sucesora activa queda con nuevo numero en `SENT_TO_KITCHEN`/En Caja.
 
 ## Dominios principales
@@ -108,8 +110,8 @@
 - La clasificacion visible del modulo `Ordenes` debe derivarse de `orders`, `order_items`, pagos activos y snapshot/eventos operativos:
   - `Borrador`: items activos agregados y no enviados a Caja. Las ordenes sin `order_code` / `order_number` deben permanecer en esta clasificacion mientras tengan items activos no pagados ni anulados.
   - `En Caja`: `orders.status IN ('SENT_TO_KITCHEN', 'READY')`, con `order_code` / `order_number`, items no `DRAFT` y saldo/cantidad pendiente de cobro. Excluir ordenes pagadas completas.
-  - `Pagada`: `PAID` o pago aplicado que cubre la orden; es el unico estado elegible para `Despacho`.
-  - `Despachada`: cabecera `KITCHEN_DISPATCHED`, item `DISPATCHED` o cantidades/eventos de despacho.
+  - `Pagada`: cabecera `PAID`; es el unico estado elegible para `Despacho`.
+  - `Despachada`: cabecera `KITCHEN_DISPATCHED`.
   - `Anulada`: `CANCELLED` e historicas con marcadores de anulacion.
 - `Pendiente de anulacion` no es pestana principal de `Ordenes`; se determina por `orders.cancel_requested_at` y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`.
 - La anulacion pendiente por item/orden usa dos marcas complementarias:
@@ -128,6 +130,8 @@
 - El concepto de "divisiones" (`table_splits`) queda como soporte legacy; cada cuenta es una orden independiente vinculada a la mesa.
 - `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
 - `get_branch_tables_overview(...)` ignora borradores vacios al calcular ocupacion operativa.
+- `get_branch_tables_overview(...)` debe mantener ordenes `PAID` como ocupacion visible de mesa hasta que pasen a `KITCHEN_DISPATCHED`; pagar no libera la mesa.
+- En vistas activas, el nombre de mesa debe resolverse desde `restaurant_tables.name` cuando `orders.table_id` existe; `orders.table_name_snapshot` es fallback historico.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre órdenes de mesa.
 - **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados mantienen su estado de ocupación y permiten el re-cobro directo desde el detalle de la orden.
 
@@ -155,7 +159,7 @@
   - pagos dentro de ese rango
   - movimientos dentro de ese rango
   - `cash_shift_denoms.qty_current` para el detalle de cierre
-- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem de la orden está despachado (`KITCHEN_DISPATCHED`).
+- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulacion operativa de pagos solo aplica sobre ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
 
 ### Anulacion de pagos
 - `payment_void_requests` concentra la solicitud y el ciclo de autorizacion/ejecucion.
@@ -178,6 +182,17 @@
   - `orders.notes` incluye `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`
   - recibe items/modificadores y pagos activos no anulados.
 - `recalculate_check_balance(...)` debe revisar `VOID_SUCCESSOR_ORDER` antes de invocar sincronizaciones que puedan recalcular estado, para no revivir historicas anuladas.
+- La anulacion operativa de pago solo debe proceder para ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
+
+### Para llevar (TAKEOUT) como “grupo” de órdenes
+- El listado de órdenes “Para llevar” (siblings/tabs) se filtra por:
+  - `orders.order_type = 'TAKEOUT'`
+  - `is_tray_order = false`
+  - `is_special = false`
+- Reglas operativas de visibilidad:
+  - Una orden `TAKEOUT` puede permanecer en el grupo incluso si está `PAID`; pagar no debe sacarla de “Para llevar”.
+  - Debe excluirse del grupo cuando exista un despacho aplicado (por ejemplo, vía `order_dispatch_events` con `status = 'APPLIED'`), manteniendo consistencia con la regla “en mesa, PAID sigue visible hasta despacho”.
+- La navegación de UI usa `origin=para-llevar` para preservar el resaltado del menú lateral aun cuando la vista final sea `Ordenes`.
 
 ### Comprobantes
 - `payment_capture_requests` usa `secure_token` y estados de ciclo de captura.
@@ -258,6 +273,8 @@
 - `20260411190000_fix_shift_id_ambiguity_in_approve_and_void_payment.sql`
 - `20260411200000_allow_self_authorized_void_for_admins_and_supervisors.sql`
 - `20260507033000_split_order_after_payment_void.sql`
+- `20260507120000_define_paid_before_dispatch_flow.sql`
+- `20260507123000_keep_paid_orders_on_tables_until_dispatch.sql`
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
@@ -290,3 +307,4 @@
 11. Los cambios de perfil deben preservar `first_name`, `last_name` y la compatibilidad legacy de `full_name`.
 9. Los cambios en `Editar Orden` o navegación desde Mesas deben preservar el contexto original del Sidebar y BottomNav mediante el parámetro `origin`.
 12. El sistema de resaltado usa `forceActive` y `suppressActive` para garantizar que la sección de origen (Mesas u Ordenes) permanezca marcada correctamente.
+13. Si se toca `Despacho`, preservar una sola tarjeta/fila por orden pagada; no partir la misma orden por tiempos de envio de items.

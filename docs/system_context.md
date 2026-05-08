@@ -17,7 +17,9 @@
 - Al enviar a Caja se genera `order_code` / `order_number` y la orden queda en `SENT_TO_KITCHEN`; ese estado significa `En Caja`, no despacho.
 - Al cobrar en Caja, si la orden queda cubierta, `sync_order_payment_state_internal(...)` debe dejarla en `PAID`.
 - El modulo `Despacho` solo debe listar y permitir despachar ordenes `PAID` con cantidades activas pendientes de despacho.
+- En `Despacho`, una orden pagada debe representarse como una sola tarjeta/fila por `orders.id` / `order_code`; si sus items fueron enviados en momentos distintos, se agregan dentro de esa misma orden y no se generan tarjetas duplicadas con el mismo numero.
 - Al despachar, la orden pasa a `KITCHEN_DISPATCHED` cuando ya no quedan cantidades activas pendientes de despacho.
+- Los estados principales son exclusivos en las pestanas operativas: una orden `PAID` no debe aparecer como `KITCHEN_DISPATCHED`, y una orden `KITCHEN_DISPATCHED` no debe seguir apareciendo como `PAID`.
 - Al anular un pago, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y la orden sucesora conserva nuevo numero en estado `SENT_TO_KITCHEN`/En Caja.
 
 ### 1. Catalogo y venta
@@ -30,6 +32,13 @@
   - persiste instrucciones en `order_items.item_note`
   - usa `tray_item_type = 'C'` para que UI compartida no lo trate como unidades
 - `TAKEOUT` y `Orden Bandeja` comparten base operativa; visualmente deben presentarse como `Para llevar`.
+- **Navegación (Para llevar / Orden especial):**
+  - `Para llevar` y `Orden especial` se exponen como opciones propias en el menú lateral (después de `Mesas`).
+  - Internamente abren el mismo módulo `Ordenes` con `origin` para preservar el resaltado del Sidebar/BottomNav:
+    - `origin=para-llevar`
+    - `origin=orden-especial`
+  - En `Para llevar`, una orden puede permanecer visible como pestaña incluso si ya está `PAID`; solo debe desaparecer cuando el despacho haya sido aplicado.
+  - En `Para llevar`, el botón `+` (Nueva orden) debe permitir crear órdenes adicionales aun cuando la orden actual esté `PAID`, siempre que el flujo siga activo (no despachado).
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
@@ -59,7 +68,7 @@
 - La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
-- **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las órdenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulación de pagos es condicional: requiere supervisor solo si hay ítems despachados.
+- **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`; al anular, se conserva historial y se crea una sucesora `SENT_TO_KITCHEN` con numero nuevo.
 - El CRUD de sucursales no expone campo de flujo ni check `Mesero-Cajero`.
 - `branches.workflow_mode` se conserva solo como compatibilidad interna y queda forzado a `CASH_THEN_DISPATCH`.
 - Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
@@ -106,8 +115,9 @@
 - Si el pago esta anulado o reversado, no debe mostrarse lo recibido por el cliente; solo corresponde mostrar la devolucion/anulacion.
 
 ### 4. Anulacion de pagos
-- El sistema soporta anulacion segura de pagos con supervisor.
-- **Anulación de Pagos Condicional (2026-05-06):** La autorización de supervisor para anular pagos es obligatoria solo si la orden tiene ítems despachados. Si no hay despacho, el cajero puede anular directamente.
+- El sistema soporta anulacion segura de pagos.
+- Regla base: para anular un pago, la orden debe estar `PAID` y no debe estar `KITCHEN_DISPATCHED`.
+- Si una orden ya fue despachada, el pago no debe anularse desde el flujo operativo normal.
 - Flujo vigente:
   - cajero solicita anulacion con `request_void_payment(...)`
   - supervisor autoriza y ejecuta via Edge Function `void-payment`
@@ -142,10 +152,11 @@
 - La clasificacion de `Ordenes` debe respetar reglas operativas reales:
   - `Borrador`: ordenes sin envio a Caja, con al menos un item activo agregado. Tambien incluye ordenes sin `order_code` / `order_number` que aun conservan items activos no pagados ni anulados.
   - `En Caja`: solo ordenes con `order_code` / `order_number`, enviadas a Caja (`SENT_TO_KITCHEN` o `READY`), con al menos un item no `DRAFT` y saldo/cantidad pendiente de cobro. Nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
-  - `Pagada`: ordenes con pago aplicado/estado `PAID`; son las unicas candidatas para `Despacho`.
-  - `Despachada`: ordenes o items con estado/cantidades de despacho (`KITCHEN_DISPATCHED`, item `DISPATCHED` o eventos de despacho).
+  - `Pagada`: solo ordenes con estado `PAID`; son las unicas candidatas para `Despacho`.
+  - `Despachada`: solo ordenes cuya etapa final visible sea `KITCHEN_DISPATCHED`.
   - `Anulada`: ordenes historicas/anuladas, incluyendo las de separacion por pago anulado.
 - `Pendiente de anulacion` sigue siendo un estado operativo interno y una marca visible en items/orden, pero no es una pestana principal del modulo `Ordenes`.
+- Una misma orden no debe aparecer simultaneamente en `Pagada` y `Despachada`; si la cabecera esta `KITCHEN_DISPATCHED`, pertenece a `Despachada`.
 - La pestana `Pagadas` debe mostrar ordenes especiales `PAID` aunque no tengan cantidades cobradas visibles por `payment_items`; en ese caso usa los items reales como detalle visual y `special_total_manual` como valor presentado de la orden.
 - En toda superficie donde se visualicen ordenes, debe mostrarse el usuario que genero la orden a partir de `orders.created_by`.
 - El nombre visible del generador se resuelve desde `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`; si no hay datos disponibles, usar `Usuario`.
@@ -177,6 +188,8 @@
 
 ### 6. Editar Orden (In-Situ)
 - `Editar Orden` ya es un flujo base del sistema y ahora opera de manera **In-Situ**.
+- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja. No debe estar activo para `DRAFT`, `PAID`, `KITCHEN_DISPATCHED` ni `CANCELLED`.
+- Si una orden no es editable, la pantalla debe seguir mostrando el menu de productos desactivado; no debe reemplazarlo por un panel de bloqueo que oculte el menu.
 - Al editar desde el módulo de "Mesas" o "Ordenes", el usuario ya no es redirigido a la pantalla principal al aceptar o cancelar cambios, manteniendo el contexto visual del detalle de la orden.
 - El Sidebar preserva su estado resaltado (ej. "Mesas") mediante el parámetro de URL `origin`.
 - Usa buffer temporal en UI (`stagedItems`).
@@ -317,7 +330,7 @@
 ### 2026-05-05
 - Caja y Pagos:
   - **Inicialización Forzada:** El `PaymentDialog` ahora exige una "Caja abierta" (denominaciones de apertura registradas) para poder operar, eliminando el riesgo de pagos sin base de caja.
-  - **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem de la orden está despachado (`KITCHEN_DISPATCHED`).
+  - **Integridad Financiera:** Las operaciones de cobro estan vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
   - **Redondeo Centralizado:** Implementación de redondeo financiero en el resumen de caja para evitar errores de precisión en la sumatoria de movimientos.
 - UI / UX:
   - **Optimización Tablet:** Ajuste del módulo de Despacho para resolución de 1280px, optimizando el espacio en rejillas y reduciendo redundancia visual (eliminación de etiquetas "unidades pendientes" innecesarias).
@@ -328,6 +341,12 @@
   - las historicas con `VOID_SUCCESSOR_ORDER` nunca deben salir como cobrables ni ocupar mesa.
   - `CompletedPaymentsList` muestra cantidad entregada/desglose solo en pagos activos; en anulados oculta lo recibido y muestra devolucion.
   - `Pagos del turno` filtra desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
+- Ordenes / Mesas / Despacho:
+  - una orden `PAID` permanece visible en su mesa hasta que sea despachada; pagarla no libera la mesa ni oculta la orden.
+  - `Ordenes` clasifica `PAID` y `KITCHEN_DISPATCHED` como pestanas mutuamente excluyentes.
+  - `Despacho` agrupa por orden, no por lote temporal de items: un mismo `order_code` debe aparecer una sola vez con sus cantidades pendientes agregadas.
+  - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
+  - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.
@@ -340,6 +359,7 @@
    - y/o cabecera `[PENDING_REQUEST]` en `order_cancellations`
 7. Cualquier cambio en envio de ordenes o cobro debe respetar el flujo global Caja - Despacho; no codificar decisiones por sucursal.
 8. Cualquier cambio en eliminacion completa de orden debe preservar la restriccion: todos los items en borrador o en caja, confirmacion previa, y validacion inmediata antes de ejecutar.
+9. Cualquier cambio en `Despacho` debe preservar una sola tarjeta por orden pagada; no volver a separar la misma orden por `sent_to_kitchen_at` de los items.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.

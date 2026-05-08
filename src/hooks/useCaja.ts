@@ -2225,40 +2225,6 @@ export function useCaja(params?: {
       };
     },
     onSuccess: async (result) => {
-      if (
-        activeBranchId
-        && result?.orderType === "DINE_IN"
-        && result?.syncStatus === "PAID"
-        && result?.tableId
-      ) {
-        let patched = false;
-
-        qc.setQueryData(["tables-with-status", activeBranchId], (current: any) => {
-          if (!Array.isArray(current)) return current;
-
-          const next = current.map((table: any) => {
-            if (table?.id !== result.tableId) return table;
-            patched = true;
-            return {
-              ...table,
-              status: "free",
-              activeOrderId: undefined,
-              orderStatus: undefined,
-              splitCount: 0,
-              totalDue: 0,
-              itemCount: 0,
-              elapsedMinutes: 0,
-            };
-          });
-
-          return next;
-        });
-
-        if (!patched) {
-          qc.removeQueries({ queryKey: ["tables-with-status", activeBranchId], exact: true });
-        }
-      }
-
       if (activeBranchId && result?.refreshedShiftDenoms) {
         const refreshedQtyMap = Object.fromEntries(
           result.refreshedShiftDenoms.map((row: any) => [row.denomination_id, row.qty_current]),

@@ -1,0 +1,471 @@
+-- Paid dine-in orders must remain attached to their table until they are
+-- dispatched. Mesas uses this overview to decide which order opens from a
+-- table, so PAID must be part of the active table flow.
+
+CREATE OR REPLACE FUNCTION public.get_branch_tables_overview(
+  p_branch_id uuid
+)
+RETURNS TABLE (
+  table_id uuid,
+  table_name text,
+  visual_order integer,
+  table_is_active boolean,
+  status text,
+  active_order_id uuid,
+  active_order_status text,
+  split_count integer,
+  total_due numeric,
+  split_totals jsonb,
+  item_count integer,
+  elapsed_minutes integer
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH open_shift AS (
+    SELECT GREATEST(COALESCE(cs.active_tables_count, 0), 0)::int AS active_tables_count
+    FROM public.cash_shifts cs
+    WHERE cs.branch_id = p_branch_id
+      AND cs.status = 'OPEN'
+    ORDER BY cs.opened_at DESC
+    LIMIT 1
+  ),
+  visible_tables AS (
+    SELECT
+      rt.id,
+      rt.name,
+      rt.visual_order,
+      rt.is_active
+    FROM public.restaurant_tables rt
+    WHERE rt.branch_id = p_branch_id
+    ORDER BY rt.visual_order ASC, rt.name ASC
+    LIMIT GREATEST(0, COALESCE((SELECT active_tables_count FROM open_shift), 0))
+  ),
+  table_orders AS (
+    SELECT
+      o.id,
+      o.table_id,
+      o.table_order_position,
+      o.status::text AS status,
+      o.created_at,
+      o.updated_at,
+      COUNT(oi.id)::int AS total_items
+    FROM public.orders o
+    JOIN visible_tables vt
+      ON vt.id = o.table_id
+    LEFT JOIN public.order_items oi
+      ON oi.order_id = o.id
+    WHERE o.branch_id = p_branch_id
+      AND o.table_id IS NOT NULL
+      AND o.order_type = 'DINE_IN'
+      AND o.status IN ('DRAFT', 'SENT_TO_KITCHEN', 'READY', 'PAID', 'KITCHEN_DISPATCHED')
+      AND COALESCE(o.notes, '') NOT ILIKE '%VOID_SUCCESSOR_ORDER:%'
+    GROUP BY o.id, o.table_id, o.table_order_position, o.status, o.created_at, o.updated_at
+  ),
+  visible_orders AS (
+    SELECT *
+    FROM table_orders
+    WHERE status <> 'DRAFT' OR total_items > 0
+  ),
+  empty_drafts AS (
+    SELECT DISTINCT ON (to1.table_id)
+      to1.table_id,
+      to1.id AS draft_order_id,
+      to1.created_at AS draft_created_at
+    FROM table_orders to1
+    WHERE to1.status = 'DRAFT'
+      AND to1.total_items = 0
+    ORDER BY
+      to1.table_id,
+      COALESCE(to1.table_order_position, 2147483647),
+      COALESCE(to1.updated_at, to1.created_at) DESC,
+      to1.created_at DESC
+  ),
+  order_snapshots AS (
+    SELECT
+      vo.id AS order_id,
+      snapshot.order_item_id,
+      snapshot.quantity_ordered,
+      snapshot.quantity_paid,
+      snapshot.quantity_cancelled_total,
+      snapshot.unit_price
+    FROM visible_orders vo
+    LEFT JOIN LATERAL public.get_order_operational_snapshot(vo.id) snapshot
+      ON TRUE
+  ),
+  order_totals AS (
+    SELECT
+      vo.id AS order_id,
+      vo.table_id,
+      vo.table_order_position,
+      vo.status,
+      vo.created_at,
+      vo.updated_at,
+      vo.total_items,
+      ROUND(
+        COALESCE(
+          SUM(
+            GREATEST(
+              0,
+              GREATEST(COALESCE(os.quantity_ordered, 0) - COALESCE(os.quantity_cancelled_total, 0), 0)
+              - LEAST(
+                  GREATEST(COALESCE(os.quantity_ordered, 0) - COALESCE(os.quantity_cancelled_total, 0), 0),
+                  COALESCE(os.quantity_paid, 0)
+                )
+            )::numeric * COALESCE(os.unit_price, 0)
+          ),
+          0
+        ),
+        2
+      ) AS total_due
+    FROM visible_orders vo
+    LEFT JOIN order_snapshots os
+      ON os.order_id = vo.id
+    GROUP BY vo.id, vo.table_id, vo.table_order_position, vo.status, vo.created_at, vo.updated_at, vo.total_items
+  ),
+  representative_orders AS (
+    SELECT DISTINCT ON (ot.table_id)
+      ot.table_id,
+      ot.order_id,
+      ot.status AS order_status,
+      ot.created_at,
+      ot.updated_at
+    FROM order_totals ot
+    ORDER BY
+      ot.table_id,
+      CASE ot.status
+        WHEN 'PAID' THEN 0
+        WHEN 'SENT_TO_KITCHEN' THEN 1
+        WHEN 'READY' THEN 2
+        WHEN 'KITCHEN_DISPATCHED' THEN 3
+        WHEN 'DRAFT' THEN 4
+        ELSE 5
+      END,
+      COALESCE(ot.table_order_position, 2147483647),
+      COALESCE(ot.updated_at, ot.created_at) DESC,
+      ot.created_at DESC,
+      ot.order_id
+  ),
+  order_rollups AS (
+    SELECT
+      ot.table_id,
+      JSONB_AGG(
+        JSONB_BUILD_OBJECT(
+          'split_id', ot.order_id,
+          'split_code', 'Orden ' || COALESCE(ot.table_order_position::text, '?'),
+          'total_due', ot.total_due
+        )
+        ORDER BY COALESCE(ot.table_order_position, 2147483647), ot.created_at, ot.order_id
+      ) FILTER (WHERE ot.total_due > 0) AS split_totals
+    FROM order_totals ot
+    GROUP BY ot.table_id
+  )
+  SELECT
+    vt.id AS table_id,
+    vt.name AS table_name,
+    vt.visual_order,
+    vt.is_active AS table_is_active,
+    CASE
+      WHEN EXISTS (
+        SELECT 1
+        FROM visible_orders vo
+        WHERE vo.table_id = vt.id
+      ) THEN 'occupied'
+      ELSE 'free'
+    END AS status,
+    COALESCE(ro.order_id, ed.draft_order_id) AS active_order_id,
+    COALESCE(ro.order_status, CASE WHEN ed.draft_order_id IS NOT NULL THEN 'DRAFT' ELSE NULL END) AS active_order_status,
+    COALESCE((
+      SELECT COUNT(*)
+      FROM visible_orders vo
+      WHERE vo.table_id = vt.id
+    ), 0)::int AS split_count,
+    ROUND(COALESCE((
+      SELECT SUM(ot.total_due)
+      FROM order_totals ot
+      WHERE ot.table_id = vt.id
+    ), 0), 2) AS total_due,
+    COALESCE(orw.split_totals, '[]'::jsonb) AS split_totals,
+    COALESCE((
+      SELECT SUM(vo.total_items)
+      FROM visible_orders vo
+      WHERE vo.table_id = vt.id
+    ), 0)::int AS item_count,
+    CASE
+      WHEN COALESCE(ro.created_at, ed.draft_created_at) IS NULL THEN 0
+      ELSE GREATEST(
+        0,
+        FLOOR(EXTRACT(EPOCH FROM (NOW() - COALESCE(ro.created_at, ed.draft_created_at))) / 60)
+      )::int
+    END AS elapsed_minutes
+  FROM visible_tables vt
+  LEFT JOIN representative_orders ro
+    ON ro.table_id = vt.id
+  LEFT JOIN empty_drafts ed
+    ON ed.table_id = vt.id
+  LEFT JOIN order_rollups orw
+    ON orw.table_id = vt.id
+  ORDER BY vt.visual_order ASC, vt.name ASC;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_successor_order_after_payment_void()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_old_order public.orders%ROWTYPE;
+  v_new_order_id uuid := gen_random_uuid();
+  v_new_order_number integer;
+  v_new_order_code text;
+  v_branch_token text;
+  v_date_part text;
+  v_seq bigint;
+  v_try int := 0;
+  v_old_item public.order_items%ROWTYPE;
+  v_new_item_id uuid;
+  v_table_name text;
+BEGIN
+  IF NEW.status <> 'voided' THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status IS NOT DISTINCT FROM NEW.status THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT *
+  INTO v_old_order
+  FROM public.orders
+  WHERE id = NEW.order_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  IF COALESCE(v_old_order.notes, '') ILIKE '%VOID_SUCCESSOR_ORDER:%' THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_old_order.status = 'CANCELLED' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COALESCE(rt.name, v_old_order.table_name_snapshot)
+  INTO v_table_name
+  FROM public.restaurant_tables rt
+  WHERE rt.id = v_old_order.table_id;
+
+  v_new_order_number := nextval('orders_order_number_seq');
+
+  SELECT COALESCE(replace(display_code, '-', ''), branch_code, 'SUC000')
+  INTO v_branch_token
+  FROM public.branches
+  WHERE id = v_old_order.branch_id;
+
+  v_date_part := to_char(now() AT TIME ZONE 'America/Guayaquil', 'YYMMDD');
+
+  LOOP
+    v_try := v_try + 1;
+    v_seq := public.next_human_sequence('orders_daily', v_old_order.branch_id, v_date_part);
+    v_new_order_code := COALESCE(v_branch_token, 'SUC000') || v_date_part || '-' || LPAD(v_seq::text, 4, '0');
+
+    EXIT WHEN NOT EXISTS (
+      SELECT 1
+      FROM public.orders o
+      WHERE o.order_code = v_new_order_code
+    );
+
+    IF v_try >= 50 THEN
+      RAISE EXCEPTION 'No se pudo generar order_code unico para la orden sucesora';
+    END IF;
+  END LOOP;
+
+  INSERT INTO public.orders (
+    id,
+    branch_id,
+    order_type,
+    menu_scope,
+    table_id,
+    split_id,
+    table_order_position,
+    status,
+    order_number,
+    order_code,
+    created_by,
+    created_at,
+    updated_at,
+    sent_to_kitchen_at,
+    ready_at,
+    dispatched_at,
+    paid_at,
+    is_special,
+    special_total_manual,
+    special_marked_at,
+    special_marked_by,
+    special_origin_table_id,
+    special_origin_split_id,
+    is_tray_order,
+    table_name_snapshot,
+    notes
+  )
+  VALUES (
+    v_new_order_id,
+    v_old_order.branch_id,
+    v_old_order.order_type,
+    v_old_order.menu_scope,
+    v_old_order.table_id,
+    v_old_order.split_id,
+    v_old_order.table_order_position,
+    'SENT_TO_KITCHEN'::public.order_status,
+    v_new_order_number,
+    v_new_order_code,
+    v_old_order.created_by,
+    now(),
+    now(),
+    COALESCE(v_old_order.sent_to_kitchen_at, now()),
+    NULL,
+    NULL,
+    NULL,
+    v_old_order.is_special,
+    v_old_order.special_total_manual,
+    v_old_order.special_marked_at,
+    v_old_order.special_marked_by,
+    v_old_order.special_origin_table_id,
+    v_old_order.special_origin_split_id,
+    v_old_order.is_tray_order,
+    COALESCE(v_table_name, v_old_order.table_name_snapshot),
+    public.append_payment_note_marker(v_old_order.notes, 'SUCCESSOR_OF_VOIDED_ORDER:' || v_old_order.id::text)
+  );
+
+  FOR v_old_item IN
+    SELECT *
+    FROM public.order_items oi
+    WHERE oi.order_id = v_old_order.id
+      AND COALESCE(oi.status::text, '') <> 'CANCELLED'
+    ORDER BY oi.created_at, oi.id
+  LOOP
+    v_new_item_id := gen_random_uuid();
+
+    INSERT INTO public.order_items (
+      id,
+      order_id,
+      product_id,
+      description_snapshot,
+      item_note,
+      quantity,
+      unit_price,
+      total,
+      status,
+      created_at,
+      dispatched_at,
+      paid_at,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      cancelled_from_status,
+      sent_to_kitchen_at,
+      ready_at,
+      tray_item_type,
+      tray_container_cost
+    )
+    VALUES (
+      v_new_item_id,
+      v_new_order_id,
+      v_old_item.product_id,
+      v_old_item.description_snapshot,
+      v_old_item.item_note,
+      v_old_item.quantity,
+      v_old_item.unit_price,
+      v_old_item.total,
+      CASE
+        WHEN NULLIF(btrim(v_old_item.status::text), '') IS NULL THEN 'SENT'
+        WHEN v_old_item.status::text = 'DRAFT' THEN 'SENT'
+        WHEN v_old_item.status::text IN ('SENT', 'DISPATCHED', 'PAID', 'CANCELLED') THEN v_old_item.status::text
+        ELSE 'SENT'
+      END::public.order_item_status,
+      now(),
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      COALESCE(v_old_item.sent_to_kitchen_at, now()),
+      NULL,
+      v_old_item.tray_item_type,
+      v_old_item.tray_container_cost
+    );
+
+    INSERT INTO public.order_item_modifiers (
+      id,
+      order_item_id,
+      modifier_id
+    )
+    SELECT
+      gen_random_uuid(),
+      v_new_item_id,
+      oim.modifier_id
+    FROM public.order_item_modifiers oim
+    WHERE oim.order_item_id = v_old_item.id
+    ON CONFLICT DO NOTHING;
+
+    UPDATE public.payment_items pi
+    SET order_item_id = v_new_item_id
+    WHERE pi.order_item_id = v_old_item.id
+      AND EXISTS (
+        SELECT 1
+        FROM public.payments p
+        WHERE p.id = pi.payment_id
+          AND p.order_id = v_old_order.id
+          AND p.id <> NEW.id
+          AND COALESCE(lower(p.status), 'active') <> 'voided'
+          AND p.voided_at IS NULL
+          AND COALESCE(p.notes, '') NOT ILIKE '%VOIDED:%'
+          AND COALESCE(p.notes, '') NOT ILIKE '%REVERSED:%'
+      );
+  END LOOP;
+
+  UPDATE public.payments p
+  SET order_id = v_new_order_id
+  WHERE p.order_id = v_old_order.id
+    AND p.id <> NEW.id
+    AND COALESCE(lower(p.status), 'active') <> 'voided'
+    AND p.voided_at IS NULL
+    AND COALESCE(p.notes, '') NOT ILIKE '%VOIDED:%'
+    AND COALESCE(p.notes, '') NOT ILIKE '%REVERSED:%';
+
+  UPDATE public.orders o
+  SET
+    table_name_snapshot = COALESCE(v_table_name, o.table_name_snapshot),
+    table_id = NULL,
+    split_id = NULL,
+    table_order_position = NULL,
+    status = 'CANCELLED',
+    paid_at = NULL,
+    cancelled_at = COALESCE(o.cancelled_at, now()),
+    cancelled_by = COALESCE(o.cancelled_by, NEW.voided_by),
+    cancelled_from_status = COALESCE(o.cancelled_from_status, v_old_order.status::text),
+    cancellation_reason = COALESCE(o.cancellation_reason, 'Pago anulado; orden conservada como historial'),
+    notes = public.append_payment_note_marker(
+      public.append_payment_note_marker(o.notes, 'VOID_SUCCESSOR_ORDER:' || v_new_order_id::text),
+      'VOIDED_PAYMENT_HISTORICAL:' || NEW.id::text
+    ),
+    updated_at = now()
+  WHERE o.id = v_old_order.id;
+
+  PERFORM public.compact_table_order_positions(v_old_order.table_id);
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_branch_tables_overview(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_branch_tables_overview(uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.create_successor_order_after_payment_void() FROM PUBLIC;
+
+NOTIFY pgrst, 'reload schema';

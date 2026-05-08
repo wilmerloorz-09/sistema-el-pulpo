@@ -9,8 +9,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No reinterpretar `READY` ni `KITCHEN_DISPATCHED` como "pagado".
 - El flujo correcto es `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
 - `Despacho` solo debe listar y operar ordenes `PAID` con cantidades activas pendientes de despacho.
+- `Despacho` debe mostrar una sola tarjeta/fila por orden pagada (`orders.id` / `order_code`). Nunca separar la misma orden en varias tarjetas por `sent_to_kitchen_at` de sus items.
 - `dispatch_order_quantities(...)` debe rechazar cualquier orden que no este `PAID`.
+- `PAID` y `KITCHEN_DISPATCHED` son clasificaciones visibles excluyentes. Una orden no puede aparecer simultaneamente en `Pagada` y `Despachada`.
 - Al anular un pago, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER`; la sucesora activa queda con numero nuevo en `SENT_TO_KITCHEN`/En Caja.
+- La anulacion operativa de pago solo aplica sobre ordenes `PAID` que no esten `KITCHEN_DISPATCHED`.
 
 ### 1. Refactor incremental
 - No abrir un modelo nuevo si el flujo actual ya existe y puede extenderse.
@@ -27,6 +30,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - El CRUD de sucursales no debe mostrar un campo de flujo ni un check `Mesero-Cajero`.
 - `branches.workflow_mode` queda como compatibilidad interna y debe estar forzado a `CASH_THEN_DISPATCH`.
 - Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
+- Una orden `PAID` de mesa permanece visible en la mesa hasta ser despachada; pagarla no libera la mesa ni debe ocultarla del detalle.
+- **Para llevar (UI):** una orden `TAKEOUT` puede permanecer visible dentro de `Para llevar` aunque ya esté `PAID`; solo debe salir del grupo cuando el despacho haya sido aplicado.
 - Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 - Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
@@ -79,6 +84,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - **Auditoría de Anulación (2026-05-06):** No anular pagos sin dejar rastro en `order_cancellations` y `orders.notes`. La anulación debe registrar el supervisor responsable y el motivo.
   - separacion historica cuando un pago anulado deja una cuenta activa: orden original `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y orden sucesora activa con nuevo numero y `SUCCESSOR_OF_VOIDED_ORDER`.
   - la orden historica por pago anulado nunca debe quedar `PAID`, aparecer en `Por cobrar`, ocupar mesa ni reactivarse por `recalculate_check_balance(...)`.
+- No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
 - En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
 
@@ -112,8 +118,13 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 9. Editar Orden e In-Situ
 - `Editar Orden` es buffered, no inline y opera de manera **In-Situ**.
+- El boton `Editar orden` solo debe estar activo cuando la orden esta en `SENT_TO_KITCHEN`/En Caja.
+- En `DRAFT`, `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, no activar edicion. Si la pantalla muestra el menu de productos, debe estar visible pero desactivado.
 - Debe seguir aplicando `orders.locked_for_editing` en DB.
 - **Contexto de Navegación:** El flujo de edición y la navegación desde Mesas deben preservar el contexto original. Usar el parámetro `origin=mesas` para que el Sidebar y el BottomNav mantengan su estado resaltado.
+- **Contexto de Navegación (Para llevar / Orden especial):** cuando el usuario entra por estas opciones del menú lateral, preservar el resaltado usando:
+  - `origin=para-llevar`
+  - `origin=orden-especial`
 - **Resaltado Manual:** Usar `forceActive` y `suppressActive` en `NavLink` y `BottomNav` para anular la lógica automática basada solo en la URL técnica.
 - **Bloqueo en Caja:** Mientras una orden esté en edición (`locked_for_editing`), el botón "Cobrar" en el módulo de Caja debe estar deshabilitado automáticamente.
 - No exponer controles directos de cantidad para items originales despachados/cerrados en ese modulo.
@@ -133,13 +144,16 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - `Pendiente de anulacion` no debe reintroducirse como pestana principal; es un estado/marca operativa que bloquea acciones y se muestra en el detalle.
 - `Borrador` debe listar ordenes con al menos un item activo agregado y no enviado a Caja; si una orden aun no tiene `order_code` / `order_number`, debe permanecer en `Borrador` mientras sus items no esten pagados ni anulados.
 - `En Caja` debe listar solo ordenes numeradas/codificadas, enviadas a Caja, con items no `DRAFT` y saldo/cantidad pendiente de cobro; no debe incluir ordenes pagadas completas.
-- `Despachada` debe aceptar cabecera `KITCHEN_DISPATCHED`, item `DISPATCHED` o cantidades/eventos reales de despacho.
+- `Pagada` debe listar solo ordenes `PAID`.
+- `Despachada` debe listar ordenes cuya cabecera este en `KITCHEN_DISPATCHED`.
+- Para evitar dobles clasificaciones, si la cabecera de la orden es `KITCHEN_DISPATCHED`, la orden pertenece a `Despachada`, no a `Pagada`.
 - Una linea `DRAFT` no debe aparecer en pestanas operativas posteriores.
 - En `Pagadas`, las ordenes especiales `PAID` deben seguir visibles aunque no tengan cantidades cobradas por item; usar `special_total_manual` como valor visible de la orden y los items reales como detalle.
 - El cálculo de cambio (`changeAmount`) debe realizarse de manera unificada, agregando los excedentes de todos los métodos de pago en una sola cifra coherente.
 - No asumir que `orders.total` de una orden especial coincide con `special_total_manual` o con `sum(order_items.total)`.
 - **Agrupamiento UI Obligatorio:** Toda lista de ítems de orden (Caja y Resumen) debe implementar agrupamiento por descripción y precio unitario para evitar redundancia visual y facilitar la lectura operativa.
-- **Flexibilidad en Edición:** El acceso a la edición de órdenes debe estar permitido para usuarios operativos (`canOperateOrders`) siempre que el turno esté abierto, asegurando que la gestión de mesas no dependa exclusivamente de supervisores.
+- **Flexibilidad en Edición:** El acceso a la edición de órdenes puede estar permitido para usuarios operativos (`canOperateOrders`) siempre que el turno esté abierto, pero el boton solo debe activarse cuando la orden este en `SENT_TO_KITCHEN`/En Caja.
+- **Crear múltiples órdenes en Para llevar:** el botón `+` (Nueva orden) debe permitir crear una nueva orden de `Para llevar` aun si la orden actual está `PAID`, siempre que el flujo siga activo (no despachado ni cancelado).
 
 ### 11. Comprobantes de transferencia
 - No romper separacion entre captura, almacenamiento, OCR/analisis y aprobacion/rechazo posterior.
@@ -148,7 +162,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 12. Integridad Financiera y Caja
 - **Inicialización Obligatoria:** El diálogo de pago (`PaymentDialog`) requiere estrictamente una "Caja abierta" (denominaciones inicializadas) para renderizarse; de lo contrario, debe mostrar un aviso instructivo para prevenir descuadres.
-- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`; sin esta inicialización, el flujo de pago se bloquea preventivamente. Los cálculos de saldo y totales de turno aplican redondeo financiero para asegurar la consistencia del "Cuadre de caja". La anulación de pagos es condicional al estado de despacho de los ítems de la orden.
+- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`; sin esta inicialización, el flujo de pago se bloquea preventivamente. Los cálculos de saldo y totales de turno aplican redondeo financiero para asegurar la consistencia del "Cuadre de caja". La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
 
 ## Convenciones de implementacion
@@ -199,7 +213,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes y asegurar que:
-   - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las órdenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem ha sido despachado; de lo contrario, se permite anulación directa.
+   - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
 10. Si se toca el diálogo de pago, validar que exija la inicialización de caja y maneje correctamente el redondeo financiero.
-11. Si se toca Despacho, validar la visualización en 1280px para asegurar la experiencia en tablet.
+11. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez, aunque tenga items enviados en distintos momentos.

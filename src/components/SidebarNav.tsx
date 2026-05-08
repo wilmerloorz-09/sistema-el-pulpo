@@ -116,10 +116,16 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
       <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4">
         {visibleItems.map((item) => {
           const isOriginMesas = searchParams.get("origin") === "mesas";
+          const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
+          const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
           const isItemActive = item.to === "/mesas" 
             ? (location.pathname === "/mesas" || (location.pathname === "/ordenes" && isOriginMesas))
+            : item.to === "/para-llevar"
+              ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
+              : item.to === "/orden-especial"
+                ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
             : item.to === "/ordenes"
-              ? (location.pathname === "/ordenes" && !isOriginMesas)
+              ? (location.pathname === "/ordenes" && !isOriginMesas && !isOriginParaLlevar && !isOriginOrdenEspecial)
               : location.pathname === item.to;
           const hasSubItems = (item.subItems?.length ?? 0) > 0;
 

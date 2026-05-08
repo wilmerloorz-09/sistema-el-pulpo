@@ -17,6 +17,8 @@ import Login from "./pages/Login";
 import Mesas from "./pages/Mesas";
 import Ordenes from "./pages/Ordenes";
 import EditarOrden from "./pages/EditarOrden";
+import ParaLlevar from "./pages/ParaLlevar";
+import OrdenEspecial from "./pages/OrdenEspecial";
 import Despacho from "./pages/Despacho";
 import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
@@ -296,6 +298,22 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
                       <Mesas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/para-llevar"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                      <ParaLlevar />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/orden-especial"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                      <OrdenEspecial />
                     </ProtectedRoute>
                   }
                 />

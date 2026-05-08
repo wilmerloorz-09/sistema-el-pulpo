@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RefreshCw, RotateCcw, ShoppingBag, Sparkles, UserRound, Users } from "lucide-react";
+import { CircleDollarSign, History, LayoutGrid, Loader2, Plus, RefreshCw, RotateCcw, Sparkles, UserRound, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -12,7 +12,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { cn } from "@/lib/utils";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
-import { fetchOrderDetail, fetchTakeoutSiblingOrders, getOrderQueryKey } from "@/hooks/useOrder";
+import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
 import {
   Dialog,
@@ -138,14 +138,11 @@ const Mesas = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
-  const [creatingSpecial, setCreatingSpecial] = useState(false);
-  const [creatingTakeout, setCreatingTakeout] = useState(false);
 
   const canOperateMesas =
     canOperate(permissions, "mesas")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.isSupervisor);
-  const canCreateTakeoutOrder = canOperateMesas;
 
   useEffect(() => {
     if (!activeBranchId) return;
@@ -193,96 +190,6 @@ const Mesas = () => {
         staleTime: 15_000,
         gcTime: 10 * 60_000,
       });
-    }
-  };
-
-  const handleTakeoutOrder = async () => {
-    if (!canCreateTakeoutOrder || !user || !activeBranchId) return;
-    setCreatingTakeout(true);
-    try {
-      const activeTakeoutOrders = await fetchTakeoutSiblingOrders(activeBranchId);
-      const existingOrderId = activeTakeoutOrders[0]?.id ?? null;
-      if (existingOrderId) {
-        toast.success("Entrando a Para Llevar...");
-        navigate(`/ordenes?order=${existingOrderId}&origin=mesas`, { replace: true });
-        void qc.prefetchQuery({
-          queryKey: getOrderQueryKey(existingOrderId),
-          queryFn: () => fetchOrderDetail(existingOrderId),
-          staleTime: 15_000,
-          gcTime: 10 * 60_000,
-        });
-        return;
-      }
-
-      const now = new Date().toISOString();
-      const { data, error } = await supabase.rpc("create_takeout_order" as any, {
-        p_branch_id: activeBranchId,
-        p_created_by: user.id,
-      } as any);
-
-      if (error) throw error;
-
-      const orderId = String(data);
-
-      seedTakeoutOrderCache(qc, orderId, {
-        branchId: activeBranchId,
-        createdAt: now,
-      });
-
-      toast.success("Abriendo nueva orden para llevar...");
-      navigate(`/ordenes?order=${orderId}&origin=mesas`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      void qc.prefetchQuery({
-        queryKey: getOrderQueryKey(orderId),
-        queryFn: () => fetchOrderDetail(orderId),
-        staleTime: 15_000,
-        gcTime: 10 * 60_000,
-      });
-    } catch (err: any) {
-      toast.error(err.message || "Error al abrir orden para llevar");
-    } finally {
-      setCreatingTakeout(false);
-    }
-  };
-
-  const handleSpecialOrder = async () => {
-    if (!user || !activeBranchId || !canOperateMesas) return;
-    setCreatingSpecial(true);
-    try {
-      const now = new Date().toISOString();
-      const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
-        p_branch_id: activeBranchId,
-        p_created_by: user.id,
-        p_table_id: null,
-        p_is_special: true,
-      } as any);
-
-      if (error) throw error;
-
-      const orderId = String(data);
-
-      seedDraftOrderCache(qc, orderId, {
-        branchId: activeBranchId,
-        tableId: null,
-        isSpecial: true,
-        createdAt: now,
-      });
-
-      toast.success("Abriendo orden especial...");
-      navigate(`/ordenes?order=${orderId}&origin=mesas`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      void qc.prefetchQuery({
-        queryKey: getOrderQueryKey(orderId),
-        queryFn: () => fetchOrderDetail(orderId),
-        staleTime: 15_000,
-        gcTime: 10 * 60_000,
-      });
-    } catch (err: any) {
-      toast.error(err.message || "Error al abrir orden especial");
-    } finally {
-      setCreatingSpecial(false);
     }
   };
 
@@ -382,53 +289,6 @@ const Mesas = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2 sm:gap-3">
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0 }}
-              onClick={handleTakeoutOrder}
-              disabled={creatingTakeout || !canCreateTakeoutOrder}
-              className={cn(
-                "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(245,158,11,0.42)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
-                "border-amber-300 bg-gradient-to-br from-amber-50 via-white to-yellow-100 dark:border-amber-800 dark:from-amber-950/20 dark:via-card dark:to-yellow-950/25",
-                canCreateTakeoutOrder ? "hover:border-amber-400 hover:bg-amber-50" : "cursor-not-allowed opacity-60",
-              )}
-            >
-              {creatingTakeout ? (
-                <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-amber-700" />
-              ) : (
-                <ShoppingBag className="h-4.5 w-4.5 shrink-0 text-amber-700" />
-              )}
-              <span className="block min-w-0 pr-7 font-display text-sm font-black text-amber-700 sm:text-base">Para Llevar</span>
-              {canCreateTakeoutOrder && !creatingTakeout && (
-                <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-700/70" />
-              )}
-            </motion.button>
-
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.04 }}
-              onClick={handleSpecialOrder}
-              disabled={creatingSpecial || !canOperateMesas}
-              className={cn(
-                "relative flex min-h-[64px] items-center gap-2 overflow-hidden rounded-[18px] border-2 px-3 py-2 text-left shadow-[0_18px_36px_-28px_rgba(249,115,22,0.32)] transition-all active:scale-[0.99] sm:min-h-[68px] sm:rounded-[20px]",
-                "border-orange-300 bg-gradient-to-br from-orange-50 via-white to-amber-100 dark:border-orange-800 dark:from-orange-950/20 dark:via-card dark:to-amber-950/25",
-                canOperateMesas ? "hover:border-primary/45 hover:bg-primary/5" : "cursor-not-allowed opacity-60",
-              )}
-            >
-              {creatingSpecial ? (
-                <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin text-primary" />
-              ) : (
-                <Sparkles className="h-4.5 w-4.5 shrink-0 text-primary" />
-              )}
-              <span className="block min-w-0 pr-7 font-display text-sm font-black text-primary sm:text-base">Orden Especial</span>
-              {canOperateMesas && !creatingSpecial && (
-                <Plus className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary/70" />
-              )}
-            </motion.button>
-        </div>
       </section>
 
       <div className="sticky top-14 z-30 bg-background px-2.5 pb-3 pt-2 md:top-0 sm:px-4 sm:pt-3">

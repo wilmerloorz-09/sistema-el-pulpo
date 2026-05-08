@@ -11,6 +11,8 @@
 - `SENT_TO_KITCHEN`/En Caja: la orden fue enviada a Caja y ya tiene `order_code` / `order_number`.
 - `PAID`/Pagada: Caja cubrio la orden; este es el unico estado elegible para aparecer en el modulo `Despacho`.
 - `KITCHEN_DISPATCHED`/Despachada: la orden ya fue despachada y deja de ser pendiente de Despacho.
+- `PAID` y `KITCHEN_DISPATCHED` son etapas visibles excluyentes: una orden despachada no debe seguir listada como pagada.
+- En `Despacho`, una orden pagada se muestra una sola vez por `orders.id` / `order_code`; los items enviados en momentos distintos se agregan dentro de la misma tarjeta/fila.
 - La anulacion de pago solo aplica sobre una orden pagada no despachada; al anular, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` y la sucesora queda con numero nuevo en `SENT_TO_KITCHEN`/En Caja.
 
 ## Capas funcionales
@@ -54,7 +56,15 @@
 - El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.first_name`, `full_name`, `username`, `email` o `Usuario`.
 - El envio de borradores usa `submit_order_draft_items(...)`; mesa, para llevar y orden especial quedan primero cobrables en Caja.
 - Despacho recibe la orden despues del pago.
+- Despacho no debe dividir una misma orden por marcas de tiempo de `order_items.sent_to_kitchen_at`; la unidad visible es la orden completa con cantidades pendientes agregadas.
 - `Ordenes` usa lista expandible y detalle inline.
+- **Entradas dedicadas en navegación lateral (2026-05-07):**
+  - Existen rutas dedicadas que actúan como “entradas” al módulo `Ordenes`:
+    - `Para llevar`: `"/para-llevar"` → abre/crea orden TAKEOUT y redirige a `"/ordenes?order=...&origin=para-llevar"`.
+    - `Orden especial`: `"/orden-especial"` → crea orden especial y redirige a `"/ordenes?order=...&origin=orden-especial"`.
+  - El `origin` debe preservarse en redirecciones internas (fallbacks, cambio de pestaña, etc.) para que el Sidebar/BottomNav mantenga el resaltado correcto.
+  - En `Para llevar`, las pestañas de órdenes (siblings) deben incluir órdenes `PAID` mientras no se haya aplicado despacho; pagar no debe “expulsar” la orden del grupo.
+  - En `Para llevar`, el botón `+` (Nueva orden) debe permitir crear una nueva orden aun si la orden actual está `PAID`.
 - Las pestanas visibles del modulo `Ordenes` son etapa-dependientes y deben mostrarse en este orden:
   - `Borrador`
   - `En Caja`
@@ -65,10 +75,11 @@
   - `Borrador` muestra ordenes con al menos un item activo agregado que aun no fue enviado a Caja. Si una orden no tiene `order_code` / `order_number`, debe tratarse como borrador mientras tenga items activos no pagados ni anulados.
   - `En Caja` muestra solo ordenes numeradas/codificadas, enviadas a Caja (`SENT_TO_KITCHEN` o `READY`), con items no `DRAFT` y saldo/cantidad pendiente de cobro.
   - `En Caja` nunca debe mostrar lineas `DRAFT` ni ordenes pagadas completas.
-  - `Pagada` muestra ordenes con pago aplicado/estado `PAID`; estas ordenes son las unicas candidatas para `Despacho`.
-  - `Despachada` muestra ordenes con cabecera `KITCHEN_DISPATCHED`, items `DISPATCHED` o cantidades/eventos de despacho.
+  - `Pagada` muestra solo ordenes con estado `PAID`; estas ordenes son las unicas candidatas para `Despacho`.
+  - `Despachada` muestra ordenes cuya etapa final visible sea `KITCHEN_DISPATCHED`.
   - `Anulada` muestra ordenes canceladas o historicas de anulacion.
   - `Pendiente de anulacion` se conserva como estado/marca operacional, pero no como pestana principal.
+- Una misma orden no debe aparecer simultaneamente en `Pagada` y `Despachada`.
 - `Orden Especial` es metadata de `orders` (`is_special`, `special_total_manual`), no un `order_type` nuevo.
 - En ordenes especiales, `special_total_manual` es el valor manual visible/cobrable; puede diferir de `orders.total` y de la suma real de `order_items.total`.
 - La pestana `Pagadas` debe incluir ordenes especiales con `status = 'PAID'` aun si no existen cantidades cobradas por item en `payment_items`; la UI debe usar los items reales para poder mostrarlas.
@@ -91,6 +102,8 @@
 
 ### 6. Editar Orden
 - `Editar Orden` es una arquitectura buffered y **In-Situ**.
+- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja.
+- En estados no editables (`DRAFT`, `PAID`, `KITCHEN_DISPATCHED`, `CANCELLED`), el menu de productos puede permanecer visible pero desactivado; no debe ocultarse detras de un panel de bloqueo.
 - El módulo trabaja con `stagedItems` en memoria y mantiene el contexto de navegación original (`origin`).
 - La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina, Despacho y Caja.
 - Los items originales despachados o cerrados permanecen sin controles directos de cantidad.
@@ -110,6 +123,7 @@
 - `Mesas` usa `get_branch_tables_overview(...)` como lectura consolidada.
 - Esa lectura ya ignora borradores vacios al resolver ocupacion operativa de mesa.
 - `orders.table_name_snapshot` es el respaldo visual para listados historicos o desacoplados de mesa.
+- Al mover una orden entre mesas, las vistas activas deben resolver primero `restaurant_tables.name` desde `orders.table_id`; `orders.table_name_snapshot` es solo fallback historico.
 - **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados mantienen su estado de ocupación y permiten el re-cobro directo desde el detalle de la orden.
 - `Cerrar orden` para cuentas de mesa suelta `table_id` y mantiene la orden cobrable en `Caja`.
 - El movimiento de items entre órdenes vive sobre `move_dine_in_order_items_between_orders(...)`.
@@ -141,7 +155,7 @@
   - `cash_register_templates`
   - `cash_register_template_denoms`
 - El resumen ya usa efectivo neto aplicado, no `tendered` bruto.
-- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulación de pagos requiere autorización de supervisor solo si al menos un ítem de la orden está despachado (`KITCHEN_DISPATCHED`). Los cálculos de totales excluyen automáticamente ítems cancelados.
+- **Integridad Financiera:** Las operaciones de cobro estan vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas. Los calculos de totales excluyen automaticamente items cancelados.
   - Se aplica redondeo financiero centralizado para evitar errores de punto flotante en el "Cuadre de caja".
 
 ### 9. Reportes de caja
@@ -174,6 +188,7 @@
   - separacion de orden despues de anular pago: la orden original queda como historica `CANCELLED` con su numero original y marcador `VOID_SUCCESSOR_ORDER:<new_order_id>`, y la operacion activa pasa a una sucesora con nuevo numero y marcador `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`.
   - la orden historica por anulacion no debe aparecer en Caja, Mesas ni Despacho como flujo activo; la sucesora es la unica cobrable.
   - `recalculate_check_balance(...)` debe preservar primero las historicas `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
+- No se debe permitir anulacion operativa de pago sobre una orden `KITCHEN_DISPATCHED`.
 
 ### 11. Comprobantes de transferencia
 - `PaymentDialog` puede preparar una sesion provisional de pago con comprobante.
@@ -237,5 +252,6 @@
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
 13. **Agrupamiento Visual:** Toda modificación en la lógica de listado de ítems debe preservar la consolidación por descripción y precio para mantener la limpieza visual de la orden.
-14. **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las órdenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulación de pagos es condicional: requiere supervisor solo si hay ítems despachados.
+14. **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
 15. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.
+16. **Despacho sin duplicados:** Toda modificacion de `useDispatchOrders` debe conservar una sola tarjeta/fila por orden pagada; no separar la misma orden por tiempos de envio de items.

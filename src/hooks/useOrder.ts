@@ -126,14 +126,14 @@ const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Pr
   });
 
 export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
-  const siblingOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, split_id, table_order_position, status, created_at, order_items(id)",
-    filters: [
-      { column: "table_id", op: "eq", value: tableId },
-      { column: "order_type", op: "eq", value: "DINE_IN" },
-      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }
-    ]
-  });
+  const { data: siblingOrders, error } = await supabase
+    .from("orders")
+    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, notes, order_items(id)")
+    .eq("table_id", tableId)
+    .eq("order_type", "DINE_IN")
+    .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]);
+
+  if (error) throw error;
 
   if (!siblingOrders || siblingOrders.length === 0) return [];
 
@@ -146,6 +146,7 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
     : [];
 
   return siblingOrders
+    .filter((sibling) => !String((sibling as any).notes ?? "").includes("VOID_SUCCESSOR_ORDER:"))
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
@@ -174,7 +175,9 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
       { column: "order_type", op: "eq", value: "TAKEOUT" },
       { column: "is_tray_order", op: "eq", value: false },
       { column: "is_special", op: "eq", value: false },
-      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }
+      // Mantener "Para llevar" visible como pestaña incluso si ya fue pagada.
+      // Se excluye cuando ya existe despacho aplicado (order_dispatch_events).
+      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] }
     ]
   });
 
@@ -214,6 +217,19 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
     });
 }
 
+async function fetchOrderTableName(tableId: string | null): Promise<string | null> {
+  if (!tableId) return null;
+
+  const { data, error } = await supabase
+    .from("restaurant_tables")
+    .select("name")
+    .eq("id", tableId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return String(data?.name ?? "").trim() || null;
+}
+
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
@@ -231,9 +247,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     siblings,
     creatorProfiles,
   ] = await Promise.all([
-    order.table_id
-      ? dbSelect("restaurant_tables", { select: "name", filters: [{ column: "id", op: "eq", value: order.table_id }] })
-      : Promise.resolve([]),
+    fetchOrderTableName(order.table_id),
     order.split_id
       ? dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] })
       : Promise.resolve([]),
@@ -254,7 +268,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       : Promise.resolve([]),
   ]);
 
-  const tableName = tableResult[0]?.name ?? order.table_name_snapshot;
+  const tableName = tableResult ?? order.table_name_snapshot;
   const splitCode = (splitResult as any[])[0]?.split_code ?? null;
 
   const normalizedSnapshotRows = normalizeSnapshotRows((snapshotResult.data ?? []) as OrderOperationalSnapshotRow[]);

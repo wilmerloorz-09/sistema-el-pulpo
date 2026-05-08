@@ -85,7 +85,7 @@ function matchesScope(orderType: string, scope: DispatchView) {
   return orderType === "TAKEOUT";
 }
 
-function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<string, any[]>, operationalMaps: any): DispatchOrder[] {
+function groupItemsIntoDispatchCards(order: any, items: any[], modifiersMap: Record<string, any[]>, operationalMaps: any): DispatchOrder[] {
   const {
     readyMap,
     readyAvailableMap,
@@ -136,68 +136,47 @@ function groupItemsIntoBatches(order: any, items: any[], modifiersMap: Record<st
 
   if (mappedItems.length === 0) return [];
 
-  const sortedByTime = [...mappedItems].sort((a, b) => {
-    const tA = new Date(a.sent_to_kitchen_at!).getTime();
-    const tB = new Date(b.sent_to_kitchen_at!).getTime();
-    return tA - tB;
+  const sentAt = mappedItems
+    .map((item) => item.sent_to_kitchen_at)
+    .filter(Boolean)
+    .sort((left, right) => new Date(left!).getTime() - new Date(right!).getTime())[0]!;
+
+  const sortedItems = [...mappedItems].sort((left, right) => {
+    const leftTime = new Date(left.created_at ?? left.sent_to_kitchen_at ?? sentAt).getTime();
+    const rightTime = new Date(right.created_at ?? right.sent_to_kitchen_at ?? sentAt).getTime();
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return left.id.localeCompare(right.id, "es");
   });
 
-  const batches: DispatchOrderItem[][] = [];
-  let currentBatch: DispatchOrderItem[] = [];
-  let lastTime: number | null = null;
+  const pendingPrepareCount = sortedItems.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
+  const readyAvailableCount = sortedItems.reduce((sum, item) => sum + item.quantity_ready_available, 0);
+  const dispatchableCount = sortedItems.reduce((sum, item) => sum + item.quantity_dispatchable, 0);
 
-  for (const item of sortedByTime) {
-    const currentTime = new Date(item.sent_to_kitchen_at!).getTime();
-    if (lastTime === null || currentTime - lastTime <= 2000) {
-      currentBatch.push(item);
-    } else {
-      batches.push(currentBatch);
-      currentBatch = [item];
-    }
-    lastTime = currentTime;
-  }
-  if (currentBatch.length > 0) batches.push(currentBatch);
-
-  return batches.map((batchItems) => {
-    const sentAt = batchItems[0].sent_to_kitchen_at!;
-    
-    const sortedBatchItems = [...batchItems].sort((left, right) => {
-      const leftTime = new Date(left.created_at ?? sentAt).getTime();
-      const rightTime = new Date(right.created_at ?? sentAt).getTime();
-      if (leftTime !== rightTime) return leftTime - rightTime;
-      return left.id.localeCompare(right.id, "es");
-    });
-
-    const pendingPrepareCount = batchItems.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
-    const readyAvailableCount = batchItems.reduce((sum, item) => sum + item.quantity_ready_available, 0);
-    const dispatchableCount = batchItems.reduce((sum, item) => sum + item.quantity_dispatchable, 0);
-
-    return {
-      card_id: `${order.id}:${sentAt}`,
-      id: order.id,
-      order_number: order.order_number,
-      order_code: order.order_code,
-      order_type: order.order_type as "DINE_IN" | "TAKEOUT",
-      is_special: Boolean(order.is_special),
-      is_tray_order: Boolean(order.is_tray_order),
-      created_by: order.created_by ?? null,
-      created_by_name: order.created_by_name ?? null,
-      table_name: order.table_name ?? null,
-      split_code: order.split_code ?? null,
-      status: order.status,
-      updated_at: order.updated_at,
-      sent_to_kitchen_at: sentAt,
-      ready_at: order.ready_at ?? null,
-      dispatched_at: order.dispatched_at ?? null,
-      paid_at: order.paid_at ?? null,
-      cancelled_at: order.cancelled_at ?? null,
-      pending_prepare_count: pendingPrepareCount,
-      ready_available_count: readyAvailableCount,
-      dispatchable_count: dispatchableCount,
-      items: sortedBatchItems,
-      locked_for_editing: Boolean(order.locked_for_editing),
-    };
-  });
+  return [{
+    card_id: order.id,
+    id: order.id,
+    order_number: order.order_number,
+    order_code: order.order_code,
+    order_type: order.order_type as "DINE_IN" | "TAKEOUT",
+    is_special: Boolean(order.is_special),
+    is_tray_order: Boolean(order.is_tray_order),
+    created_by: order.created_by ?? null,
+    created_by_name: order.created_by_name ?? null,
+    table_name: order.table_name ?? null,
+    split_code: order.split_code ?? null,
+    status: order.status,
+    updated_at: order.updated_at,
+    sent_to_kitchen_at: sentAt,
+    ready_at: order.ready_at ?? null,
+    dispatched_at: order.dispatched_at ?? null,
+    paid_at: order.paid_at ?? null,
+    cancelled_at: order.cancelled_at ?? null,
+    pending_prepare_count: pendingPrepareCount,
+    ready_available_count: readyAvailableCount,
+    dispatchable_count: dispatchableCount,
+    items: sortedItems,
+    locked_for_editing: Boolean(order.locked_for_editing),
+  }];
 }
 
 export function useDispatchOrders(scope: DispatchView) {
@@ -317,7 +296,7 @@ export function useDispatchOrders(scope: DispatchView) {
           table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
         };
-        return groupItemsIntoBatches(orderWithContext, items, modifiersMap, operationalMaps);
+        return groupItemsIntoDispatchCards(orderWithContext, items, modifiersMap, operationalMaps);
       }).filter((card) => card.items.length > 0 && (card.pending_prepare_count > 0 || card.ready_available_count > 0));
 
       const counts = {

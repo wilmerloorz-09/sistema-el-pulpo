@@ -109,11 +109,11 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
 
       const filters: any[] = (() => {
         if (!status || cancelledView || pendingCancellationView) return [];
-        if (status === "DRAFT") return [{ column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
-        if (readyView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }];
-        if (dispatchedView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
-        if (sentView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }];
-        if (paidView) return [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED", "PAID"] }];
+        if (status === "DRAFT") return [{ column: "status", op: "eq", value: "DRAFT" }];
+        if (readyView) return [{ column: "status", op: "eq", value: "READY" }];
+        if (dispatchedView) return [{ column: "status", op: "eq", value: "KITCHEN_DISPATCHED" }];
+        if (sentView) return [{ column: "status", op: "eq", value: "SENT_TO_KITCHEN" }];
+        if (paidView) return [{ column: "status", op: "eq", value: "PAID" }];
         return [{ column: "status", op: "eq", value: status }];
       })();
 

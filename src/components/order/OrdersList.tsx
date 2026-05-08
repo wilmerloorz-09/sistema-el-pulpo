@@ -307,7 +307,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
                   onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
                   onApproveCancellation={activeTab === "pendingCancellation" ? (selectedOrder) => setApprovalTarget(selectedOrder) : undefined}
                   onRejectCancel={activeTab === "pendingCancellation" ? (selectedOrder) => rejectCancellationRequestMutation.mutate({ orderId: selectedOrder.id }) : undefined}
-                  showCancelButton={currentTab.showCancel && activeTab !== "draft" && !readOnly}
+                  showCancelButton={false}
                   showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
                   readOnly={readOnly}
                   canAuthorizeCancel={canAuthorizeCancel}
