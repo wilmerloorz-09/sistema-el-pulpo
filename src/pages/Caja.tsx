@@ -10,16 +10,38 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
 import { toast } from "sonner";
 import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, RotateCcw, Upload } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatElapsedSince } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
 import { prepareProofImage } from "@/lib/prepareProofImage";
 import { getOrderRef } from "@/lib/orderPresentation";
+import { 
+  buildCashClosureReportHtml, 
+  openCashClosureReportWindow, 
+  scopeReportToOpening,
+  formatMoney,
+  formatDateTime,
+  translateCashStatus,
+  translatePaymentStatus,
+  type CashShiftSnapshot,
+  type CashOpeningSnapshot,
+  type CompletedPayment,
+  type CashMovement
+} from "@/lib/cashReportUtils";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   scope: "ALL",
@@ -28,459 +50,11 @@ const initialCompletedFilters: CompletedPaymentsFilters = {
 
 const PAYMENT_PROOF_API_URL = (import.meta.env.VITE_PAYMENT_PROOF_API_URL ?? "").trim().replace(/\/$/, "");
 
-const formatElapsed = (openedAt: string) => {
-  const opened = new Date(openedAt);
-  const elapsed = Math.max(0, Math.floor((Date.now() - opened.getTime()) / 60000));
-  const hours = Math.floor(elapsed / 60);
-  const minutes = elapsed % 60;
-  return `${hours}h ${minutes}m`;
-};
+// Helper functions moved to @/lib/cashReportUtils
 
-const formatMoney = (value: number) => `$${Number(value ?? 0).toFixed(2)}`;
+// Types moved to @/lib/cashReportUtils
 
-const formatDateTime = (value: string | null | undefined) => {
-  if (!value) return "N/D";
-  return new Date(value).toLocaleString("es-EC", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
-const escapeHtml = (value: unknown) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-const translateCashStatus = (value: string | null | undefined) => {
-  switch (String(value ?? "").toUpperCase()) {
-    case "OPEN":
-      return "Abierto";
-    case "CLOSED":
-      return "Cerrado";
-    default:
-      return value || "N/D";
-  }
-};
-
-const translatePaymentStatus = (value: string | null | undefined) => {
-  switch (String(value ?? "").toUpperCase()) {
-    case "APPLIED":
-      return "Aplicado";
-    case "PARTIAL":
-      return "Parcial";
-    case "REVERSED":
-      return "Revertido";
-    case "VOIDED":
-      return "Anulado";
-    default:
-      return value || "N/D";
-  }
-};
-
-type CashShiftSnapshot = NonNullable<ReturnType<typeof useCaja>["shift"]>;
-type CashOpeningSnapshot = CashShiftSnapshot["openingHistory"][number];
-
-const scopeReportToOpening = (params: {
-  branchName: string;
-  shift: CashShiftSnapshot;
-  opening: CashOpeningSnapshot;
-  completedPayments: ReturnType<typeof useCaja>["completedPayments"];
-  movements: ReturnType<typeof useCaja>["cashRegisterMovements"];
-  closureNotes?: string;
-  denominationSnapshot?: CashShiftSnapshot["denoms"];
-}) => {
-  const openedAtMs = new Date(params.opening.opened_at).getTime();
-  const closedAtMs = new Date(params.opening.closed_at ?? params.opening.opened_at).getTime();
-
-  const filteredPayments = params.completedPayments.filter((payment) => {
-    const paymentTime = new Date(payment.created_at).getTime();
-    return paymentTime >= openedAtMs && paymentTime <= closedAtMs;
-  });
-
-  const uniquePayments = Array.from(
-    new Map(filteredPayments.map((payment) => [payment.id, payment])).values(),
-  );
-
-  const methodSummaryMap = new Map<string, { methodName: string; amount: number; paymentCount: number }>();
-  for (const payment of uniquePayments) {
-    const current = methodSummaryMap.get(payment.method_name) ?? {
-      methodName: payment.method_name,
-      amount: 0,
-      paymentCount: 0,
-    };
-    current.amount += Number(payment.amount ?? 0);
-    current.paymentCount += 1;
-    methodSummaryMap.set(payment.method_name, current);
-  }
-
-  const filteredMovements = params.movements.filter((movement) => {
-    const movementTime = new Date(movement.createdAt).getTime();
-    return movementTime >= openedAtMs && movementTime <= closedAtMs;
-  });
-
-  const scopedDenoms = params.denominationSnapshot ?? [];
-  const manualMovementTotal = filteredMovements.reduce((sum, movement) => {
-    if (movement.movementType === "entrada") return sum + Number(movement.amount ?? 0);
-    if (movement.movementType === "salida") return sum - Number(movement.amount ?? 0);
-    return sum;
-  }, 0);
-  const cashMethodTotal = Array.from(methodSummaryMap.values())
-    .filter((entry) => /efectivo/i.test(entry.methodName))
-    .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
-  const estimatedCurrentTotal = Number(params.opening.initial_total ?? 0) + cashMethodTotal + manualMovementTotal;
-
-  return {
-    branchName: params.branchName,
-    shift: {
-      ...params.shift,
-      denoms: scopedDenoms,
-      openingHistory: [params.opening],
-    },
-    completedPayments: filteredPayments,
-    methodSummary: Array.from(methodSummaryMap.values())
-      .map((entry, index) => ({
-        methodId: `opening-method-${index}-${entry.methodName}`,
-        methodName: entry.methodName,
-        amount: entry.amount,
-        paymentCount: entry.paymentCount,
-      }))
-      .sort((left, right) => right.amount - left.amount || left.methodName.localeCompare(right.methodName)),
-    movements: filteredMovements,
-    closureNotes: params.closureNotes,
-    openingCashTotals: {
-      initial: Number(params.opening.initial_total ?? 0),
-      current: scopedDenoms.length > 0
-        ? scopedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0)
-        : estimatedCurrentTotal,
-    },
-  };
-};
-
-const buildCashClosureReportHtml = (params: {
-  branchName: string;
-  shift: CashShiftSnapshot;
-  completedPayments: ReturnType<typeof useCaja>["completedPayments"];
-  methodSummary: ReturnType<typeof useCaja>["completedPaymentsMethodSummary"];
-  movements: ReturnType<typeof useCaja>["cashRegisterMovements"];
-  closureNotes?: string;
-  reportMode?: "shift" | "opening";
-  openingCashTotals?: {
-    initial: number;
-    current: number;
-  };
-}) => {
-  const sortedDenoms = [...params.shift.denoms]
-    .filter((denomination) => denomination.value > 0)
-    .sort((a, b) => {
-      if (a.display_order !== b.display_order) return a.display_order - b.display_order;
-      return a.value - b.value;
-    });
-
-  const totalInitial = params.openingCashTotals?.initial
-    ?? sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_initial, 0);
-  const totalCurrent = params.openingCashTotals?.current
-    ?? sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0);
-  const closingDenominationCount = sortedDenoms.reduce(
-    (sum, denomination) => sum + Number(denomination.qty_current ?? 0),
-    0,
-  );
-  const openings = [...params.shift.openingHistory].sort(
-    (left, right) => new Date(left.opened_at).getTime() - new Date(right.opened_at).getTime(),
-  );
-  const uniquePayments = Array.from(
-    new Map(
-      params.completedPayments.map((payment) => [
-        payment.id,
-        {
-          id: payment.id,
-          created_at: payment.created_at,
-          cashier_name: payment.cashier_name,
-          amount: payment.amount,
-          method_name: payment.method_name,
-          order_ref: payment.order_code ?? String(payment.order_number ?? "").padStart(4, "0"),
-          table_name: payment.table_name,
-          status: translatePaymentStatus(payment.status),
-          opening_status: payment.payment_opening_status,
-          notes: payment.notes,
-        },
-      ]),
-    ).values(),
-  ).sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
-
-  const statusSummary = uniquePayments.reduce<Record<string, { count: number; amount: number }>>((acc, payment) => {
-    const key = translatePaymentStatus(payment.status);
-    const bucket = acc[key] ?? { count: 0, amount: 0 };
-    bucket.count += 1;
-    bucket.amount += Number(payment.amount ?? 0);
-    acc[key] = bucket;
-    return acc;
-  }, {});
-
-  const paymentRows = uniquePayments.map((payment) => `
-    <tr>
-      <td>${escapeHtml(formatDateTime(payment.created_at))}</td>
-      <td>${escapeHtml(payment.order_ref || "N/D")}</td>
-      <td>${escapeHtml(payment.table_name || "-")}</td>
-      <td>${escapeHtml(payment.method_name)}</td>
-      <td>${escapeHtml(payment.status)}</td>
-      <td>${escapeHtml(payment.cashier_name)}</td>
-      <td class="num">${escapeHtml(formatMoney(payment.amount))}</td>
-    </tr>
-  `).join("");
-
-  const methodRows = params.methodSummary.map((method) => `
-    <tr>
-      <td>${escapeHtml(method.methodName)}</td>
-      <td>${escapeHtml(String(method.paymentCount))}</td>
-      <td class="num">${escapeHtml(formatMoney(method.amount))}</td>
-    </tr>
-  `).join("");
-
-  const movementRows = params.movements.length > 0
-    ? params.movements.map((movement) => `
-        <tr>
-          <td>${escapeHtml(formatDateTime(movement.createdAt))}</td>
-          <td>${escapeHtml(movement.movementType)}</td>
-          <td>${escapeHtml(movement.recordedByName || movement.recordedByUsername || movement.recordedBy)}</td>
-          <td>${escapeHtml(movement.reason)}</td>
-          <td class="num">${escapeHtml(formatMoney(movement.amount))}</td>
-        </tr>
-      `).join("")
-    : '<tr><td colspan="5" class="muted">Sin movimientos registrados.</td></tr>';
-
-  const closingDenominationRows = sortedDenoms
-    .filter((denomination) => Number(denomination.qty_current ?? 0) > 0)
-    .map((denomination) => `
-      <tr>
-        <td>${escapeHtml(denomination.label || formatMoney(denomination.value))}</td>
-        <td>${escapeHtml(denomination.denomination_type === "coin" ? "Moneda" : "Billete")}</td>
-        <td class="num">${escapeHtml(formatMoney(denomination.value))}</td>
-        <td class="num">${escapeHtml(String(denomination.qty_current ?? 0))}</td>
-        <td class="num">${escapeHtml(formatMoney(denomination.value * Number(denomination.qty_current ?? 0)))}</td>
-      </tr>
-    `)
-    .join("");
-
-  const openingRows = openings.map((opening) => `
-    <tr>
-      <td>${escapeHtml(formatDateTime(opening.opened_at))}</td>
-      <td>${escapeHtml(opening.status)}</td>
-      <td>${escapeHtml(opening.cashier_name)}</td>
-      <td>${escapeHtml(formatMoney(opening.initial_total))}</td>
-      <td>${escapeHtml(opening.closed_at ? formatDateTime(opening.closed_at) : "-")}</td>
-    </tr>
-  `).join("");
-
-  const statusCards = [
-    { label: "Aplicados", key: "Aplicado" },
-    { label: "Parciales", key: "Parcial" },
-    { label: "Revertidos", key: "Revertido" },
-    { label: "Anulados", key: "Anulado" },
-  ].map((entry) => {
-    const bucket = statusSummary[entry.key] ?? { count: 0, amount: 0 };
-    return `
-      <div class="card">
-        <div class="label">${escapeHtml(entry.label)}</div>
-        <div class="value">${escapeHtml(String(bucket.count))}</div>
-        <div class="sub">${escapeHtml(formatMoney(bucket.amount))}</div>
-      </div>
-    `;
-  }).join("");
-
-  const isOpeningReport = params.reportMode === "opening";
-  const currentOpening = params.shift.openingHistory[0] ?? null;
-  const hasDenominationSnapshot = sortedDenoms.length > 0;
-  const paymentsSectionTitle = isOpeningReport ? "Pagos de la apertura" : "Pagos del turno";
-  const movementsSectionTitle = isOpeningReport ? "Movimientos de la apertura" : "Movimientos del turno";
-  const reportTitle = isOpeningReport ? "Reporte por apertura de caja" : "Reporte consolidado del turno";
-
-  return `<!doctype html>
-<html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <title>Reporte de cierre de caja</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
-      h1, h2, h3, p { margin: 0; }
-      .header { display:flex; justify-content:space-between; gap:16px; margin-bottom:20px; }
-      .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px; margin:16px 0; }
-      .card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fafafa; }
-      .label { font-size:12px; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
-      .value { font-size:24px; font-weight:700; }
-      .sub { font-size:13px; color:#4b5563; margin-top:4px; }
-      .section { margin-top:24px; }
-      table { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
-      th, td { border:1px solid #e5e7eb; padding:8px; text-align:left; vertical-align:top; }
-      th { background:#f3f4f6; }
-      tbody tr:nth-child(odd) { background:#ffffff; }
-      tbody tr:nth-child(even) { background:#f8fafc; }
-      .num { text-align:right; white-space:nowrap; }
-      .muted { color:#6b7280; text-align:center; }
-      .notes { white-space:pre-wrap; margin-top:8px; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fafafa; }
-      .page-break { page-break-before: always; break-before: page; }
-      @media print {
-        body { margin: 12px; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="header">
-      <div>
-        <h1>${escapeHtml(reportTitle)}</h1>
-        <p>${escapeHtml(params.branchName)}</p>
-        ${isOpeningReport && currentOpening ? `
-          <p>Apertura: ${escapeHtml(formatDateTime(currentOpening.opened_at))}</p>
-          <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
-          <p>Estado: ${escapeHtml(currentOpening.status)}</p>
-          <p>Cajero: ${escapeHtml(currentOpening.cashier_name || currentOpening.cashier_username || "Sin nombre")}</p>
-          <p>Monto inicial: ${escapeHtml(formatMoney(currentOpening.initial_total))}</p>
-        ` : `
-          <p>Turno abierto: ${escapeHtml(formatDateTime(params.shift.opened_at))}</p>
-        `}
-      </div>
-      <div>
-        <p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p>
-        <p>Estado caja: ${escapeHtml(translateCashStatus(params.shift.caja_status))}</p>
-        <p>Mesas activas al cierre: ${escapeHtml(String(params.shift.active_tables_count ?? 0))}</p>
-      </div>
-    </div>
-
-    <div class="grid">
-      <div class="card"><div class="label">Apertura</div><div class="value">${escapeHtml(formatMoney(totalInitial))}</div></div>
-      <div class="card"><div class="label">Caja actual</div><div class="value">${escapeHtml(formatMoney(totalCurrent))}</div></div>
-      <div class="card"><div class="label">Diferencia</div><div class="value">${escapeHtml(formatMoney(totalCurrent - totalInitial))}</div></div>
-      <div class="card"><div class="label">Cobrado neto</div><div class="value">${escapeHtml(formatMoney(params.methodSummary.reduce((sum, row) => sum + row.amount, 0)))}</div></div>
-    </div>
-
-    <div class="section">
-      <h2>Resumen por estado de pago</h2>
-      <div class="grid">${statusCards}</div>
-    </div>
-
-    <div class="section">
-      <h2>Cobro por método</h2>
-      <table>
-        <thead>
-          <tr><th>Método</th><th>Cobros</th><th class="num">Monto</th></tr>
-        </thead>
-        <tbody>${methodRows || '<tr><td colspan="3" class="muted">Sin cobros registrados.</td></tr>'}</tbody>
-      </table>
-    </div>
-
-    <div class="section">
-      <h2>${escapeHtml(paymentsSectionTitle)}</h2>
-      <table>
-        <thead>
-          <tr><th>Fecha</th><th>Orden</th><th>Mesa</th><th>Método</th><th>Estado</th><th>Cajero</th><th class="num">Monto</th></tr>
-        </thead>
-        <tbody>${paymentRows || '<tr><td colspan="7" class="muted">Sin pagos registrados.</td></tr>'}</tbody>
-      </table>
-    </div>
-
-    <div class="section">
-      <h2>${escapeHtml(movementsSectionTitle)}</h2>
-      <table>
-        <thead>
-          <tr><th>Fecha</th><th>Tipo</th><th>Registrado por</th><th>Motivo</th><th class="num">Monto</th></tr>
-        </thead>
-        <tbody>${movementRows}</tbody>
-      </table>
-    </div>
-
-    ${!isOpeningReport ? `
-      <div class="section">
-        <h2>Historial de aperturas</h2>
-        <table>
-          <thead>
-            <tr><th>Apertura</th><th>Estado</th><th>Cajero</th><th>Monto inicial</th><th>Cierre</th></tr>
-          </thead>
-          <tbody>${openingRows || '<tr><td colspan="5" class="muted">Sin aperturas registradas.</td></tr>'}</tbody>
-        </table>
-      </div>
-    ` : ""}
-
-    ${params.closureNotes?.trim()
-      ? `<div class="section"><h2>Notas de cierre</h2><div class="notes">${escapeHtml(params.closureNotes.trim())}</div></div>`
-      : ""}
-
-    ${isOpeningReport ? `
-      <div class="page-break"></div>
-      <div class="header">
-        <div>
-          <h1>Detalle de monedas y billetes al cierre</h1>
-          <p>${escapeHtml(params.branchName)}</p>
-          ${currentOpening ? `
-            <p>Apertura: ${escapeHtml(formatDateTime(currentOpening.opened_at))}</p>
-            <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
-            <p>Cajero: ${escapeHtml(currentOpening.cashier_name || currentOpening.cashier_username || "Sin nombre")}</p>
-          ` : ""}
-        </div>
-        <div>
-          <p>Total en caja al cierre: ${escapeHtml(formatMoney(totalCurrent))}</p>
-          <p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p>
-        </div>
-      </div>
-
-      ${hasDenominationSnapshot ? `
-      <div class="section">
-        <h2>Detalle de denominaciones</h2>
-        <table>
-          <thead>
-            <tr><th>Denominación</th><th>Tipo</th><th class="num">Valor</th><th class="num">Cantidad</th><th class="num">Subtotal</th></tr>
-          </thead>
-          <tbody>${closingDenominationRows ? `${closingDenominationRows}
-            <tr>
-              <td colspan="3"><strong>Total</strong></td>
-              <td class="num"></td>
-              <td class="num"><strong>${escapeHtml(formatMoney(totalCurrent))}</strong></td>
-            </tr>` : '<tr><td colspan="5" class="muted">Sin denominaciones registradas al cierre.</td></tr>'}</tbody>
-        </table>
-      </div>
-    ` : `
-      <div class="section">
-        <h2>Detalle de denominaciones</h2>
-        <div class="notes">Esta apertura historica no tiene un desglose de billetes y monedas guardado. Se muestran los totales y cobros de su rango para evitar reutilizar el conteo de otra apertura.</div>
-      </div>
-    `}
-    ` : ""}
-  </body>
-</html>`;
-};
-
-const openCashClosureReportWindow = (params: {
-  branchName: string;
-  shift: CashShiftSnapshot;
-  completedPayments: ReturnType<typeof useCaja>["completedPayments"];
-  methodSummary: ReturnType<typeof useCaja>["completedPaymentsMethodSummary"];
-  movements: ReturnType<typeof useCaja>["cashRegisterMovements"];
-  closureNotes?: string;
-  reportMode?: "shift" | "opening";
-  openingCashTotals?: {
-    initial: number;
-    current: number;
-  };
-}) => {
-  const reportWindow = window.open("", "_blank", "width=1024,height=900");
-  if (!reportWindow) {
-    return null;
-  }
-
-  reportWindow.document.open();
-  reportWindow.document.write(buildCashClosureReportHtml(params));
-  reportWindow.document.close();
-  reportWindow.focus();
-  window.setTimeout(() => {
-    reportWindow.print();
-  }, 350);
-
-  return reportWindow;
-};
+// Report generation logic moved to @/lib/cashReportUtils
 
 const Caja = () => {
   const { user } = useAuth();
@@ -567,6 +141,8 @@ const Caja = () => {
     registerCashMovement,
     takeCajaControl,
   } = useCaja({ completedPaymentsFilters: completedFilters, autoOpenOrderId });
+
+
 
   const activeCaptureRequest = useMemo(
     () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
@@ -1335,7 +911,7 @@ const Caja = () => {
     );
   }
 
-  const shiftElapsed = formatElapsed(shift.opened_at);
+  const shiftElapsed = formatElapsedSince(shift.opened_at);
 
   const handleCloseCashRegister = async (notes?: string) => {
     const reportWindow = window.open("", "_blank", "width=1024,height=900");

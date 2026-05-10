@@ -12,6 +12,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { canOperate } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 
@@ -58,12 +59,16 @@ const seedSpecialDraftOrderCache = (
 };
 
 const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderCard[]> => {
+  const openShiftId = await getOpenCashShiftIdForBranch(branchId);
+  if (!openShiftId) return [];
+
   const specialOrders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, order_items(id)",
     filters: [
       { column: "branch_id", op: "eq", value: branchId },
       { column: "is_special", op: "eq", value: true },
       { column: "is_tray_order", op: "eq", value: false },
+      { column: "cash_shift_id", op: "eq", value: openShiftId },
       { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] },
     ],
     orderBy: { column: "created_at", ascending: true },
@@ -128,7 +133,7 @@ const OrdenEspecial = () => {
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   const specialOrdersQuery = useQuery({
-    queryKey: ["special-orders", activeBranchId ?? null],
+    queryKey: ["special-orders", activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"],
     queryFn: () => fetchActiveSpecialOrders(activeBranchId!),
     enabled: !!activeBranchId,
     staleTime: 0,

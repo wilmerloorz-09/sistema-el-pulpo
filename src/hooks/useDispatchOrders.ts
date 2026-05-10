@@ -9,6 +9,8 @@ import type { OrderStatus } from "@/types/cancellation";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 
 export interface DispatchOrderItem {
   id: string;
@@ -184,17 +186,22 @@ export function useDispatchOrders(scope: DispatchView) {
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
   const { config, assignments, isLoading: configLoading } = useDispatchConfig();
+  const { data: shiftGate } = useBranchShiftGate();
 
   const query = useQuery({
-    queryKey: ["dispatch-orders", activeBranchId, config?.dispatch_mode, user?.id, scope],
+    queryKey: ["dispatch-orders", activeBranchId, config?.dispatch_mode, user?.id, scope, shiftGate?.shiftId ?? "_"],
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+
+      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId);
+      if (!openShiftId) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orders = await dbSelect<any>("orders", {
         select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing",
         branchId: activeBranchId,
         filters: [
-          { column: "status", op: "eq", value: "PAID" }
+          { column: "status", op: "eq", value: "PAID" },
+          { column: "cash_shift_id", op: "eq", value: openShiftId },
         ],
         orderBy: { column: "updated_at", ascending: true }
       });

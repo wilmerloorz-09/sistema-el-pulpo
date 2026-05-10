@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
+import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchOrderDetail } from "@/hooks/useOrder";
@@ -218,6 +219,9 @@ export default function MergeSplitOrdersDialog({
     queryKey: ["merge-split-order-options", activeBranchId],
     enabled: open && !!activeBranchId,
     queryFn: async (): Promise<TransferableOrderOption[]> => {
+      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId!);
+      if (!openShiftId) return [];
+
       const { data: activeTables, error: activeTablesError } = await supabase
         .from("restaurant_tables")
         .select("id, name, visual_order")
@@ -230,6 +234,7 @@ export default function MergeSplitOrdersDialog({
         .from("orders")
         .select("id, order_number, order_code, table_id, table_name_snapshot, split_id, status, menu_scope")
         .eq("branch_id", activeBranchId!)
+        .eq("cash_shift_id", openShiftId)
         .eq("order_type", "DINE_IN")
         .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"])
         .not("table_id", "is", null)

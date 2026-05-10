@@ -41,6 +41,10 @@ interface Props {
   alwaysShowControls?: boolean;
   hideItemControls?: boolean;
   editableItemIds?: string[];
+  /** Total manual de orden especial (lo que debe mandar en caja). */
+  specialOrderChargeTotal?: number | null;
+  /** Suma de líneas a precio catálogo; solo referencia junto al total especial. */
+  specialOrderCatalogTotal?: number | null;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
@@ -178,6 +182,8 @@ const OrderItemsList = ({
   alwaysShowControls = false,
   hideItemControls = false,
   editableItemIds = [],
+  specialOrderChargeTotal = null,
+  specialOrderCatalogTotal = null,
 }: Props) => {
   const total = items.reduce((sum, i) => sum + i.total, 0);
 
@@ -474,9 +480,27 @@ const OrderItemsList = ({
         );
       })}
 
-      <div className="flex items-center justify-between pt-2 border-t border-border mt-1">
-        <span className="text-sm font-medium text-muted-foreground">Total</span>
-        <span className="font-display text-xl font-bold text-foreground">${total.toFixed(2)}</span>
+      <div className="mt-1 space-y-1 border-t border-border pt-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-muted-foreground">
+            {specialOrderChargeTotal != null ? "Total a cobrar" : "Total"}
+          </span>
+          <span
+            className={cn(
+              "font-display text-xl font-bold",
+              specialOrderChargeTotal != null ? "text-orange-700" : "text-foreground",
+            )}
+          >
+            $
+            {(specialOrderChargeTotal != null ? specialOrderChargeTotal : total).toFixed(2)}
+          </span>
+        </div>
+        {specialOrderChargeTotal != null && specialOrderCatalogTotal != null ? (
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Total real de ítems (referencia)</span>
+            <span>${specialOrderCatalogTotal.toFixed(2)}</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );

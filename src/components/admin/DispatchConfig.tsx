@@ -15,6 +15,7 @@ interface DispatchConfigProps {
   assignmentsOverride?: DispatchAssignment[];
   onConfigChange?: (nextConfig: DispatchConfigModel) => void;
   onAssignmentsChange?: (nextAssignments: DispatchAssignment[]) => void;
+  disabled?: boolean;
 }
 
 function dedupeAssignmentsByUser(items: DispatchAssignment[]) {
@@ -32,6 +33,7 @@ export default function DispatchConfig({
   assignmentsOverride,
   onConfigChange,
   onAssignmentsChange,
+  disabled = false,
 }: DispatchConfigProps) {
   const { activeBranchId } = useBranch();
   const { config, assignments, isLoading, updateConfig, updateAssignment, removeAssignment } = useDispatchConfig();
@@ -185,7 +187,8 @@ export default function DispatchConfig({
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <button
             onClick={() => handleModeChange("SINGLE")}
-            className={`rounded-xl border-2 p-3 text-left transition-colors sm:p-4 ${
+            disabled={disabled}
+            className={`rounded-xl border-2 p-3 text-left transition-colors sm:p-4 disabled:opacity-50 ${
               currentConfig.dispatch_mode === "SINGLE" ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-muted/50"
             }`}
           >
@@ -195,7 +198,8 @@ export default function DispatchConfig({
 
           <button
             onClick={() => handleModeChange("SPLIT")}
-            className={`rounded-xl border-2 p-3 text-left transition-colors sm:p-4 ${
+            disabled={disabled}
+            className={`rounded-xl border-2 p-3 text-left transition-colors sm:p-4 disabled:opacity-50 ${
               currentConfig.dispatch_mode === "SPLIT" ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-muted/50"
             }`}
           >
@@ -215,7 +219,8 @@ export default function DispatchConfig({
               <select
                 value={selectedUser}
                 onChange={(e) => setSelectedUser(e.target.value)}
-                className="min-w-0 rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+                disabled={disabled}
+                className="min-w-0 rounded-lg border border-border bg-background px-3 py-2.5 text-sm disabled:opacity-50"
               >
                 <option value="">Selecciona despachador...</option>
                 {availableDispatchUsers.map((user) => (
@@ -228,8 +233,8 @@ export default function DispatchConfig({
               <select
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value as DispatchType)}
-                className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
-                disabled={availableAssignmentTypes.length === 0}
+                className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm disabled:opacity-50"
+                disabled={disabled || availableAssignmentTypes.length === 0}
               >
                 {availableAssignmentTypes.length === 0 ? (
                   <option value="">Sin tipos habilitados</option>
@@ -244,7 +249,7 @@ export default function DispatchConfig({
 
               <Button
                 onClick={handleAddAssignment}
-                disabled={!selectedUser || availableAssignmentTypes.length === 0 || availableDispatchUsers.length === 0 || updateAssignment.isPending}
+                disabled={disabled || !selectedUser || availableAssignmentTypes.length === 0 || availableDispatchUsers.length === 0 || updateAssignment.isPending}
                 size="sm"
                 className="h-10 w-full gap-2 lg:w-auto"
               >
@@ -290,9 +295,10 @@ export default function DispatchConfig({
                           }
                           removeAssignment.mutate({ assignmentId: assignment.id, userId: assignment.user_id });
                         }}
+                        disabled={disabled}
                         variant="ghost"
                         size="sm"
-                        className="h-9 w-full shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-9"
+                        className="h-9 w-full shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-9 disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

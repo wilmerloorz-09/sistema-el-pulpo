@@ -1564,6 +1564,7 @@ export type Database = {
       orders: {
         Row: {
           branch_id: string
+          cash_shift_id: string | null
           cancel_requested_at: string | null
           cancel_requested_by: string | null
           cancellation_reason: string | null
@@ -1600,6 +1601,7 @@ export type Database = {
         }
         Insert: {
           branch_id: string
+          cash_shift_id?: string | null
           cancel_requested_at?: string | null
           cancel_requested_by?: string | null
           cancellation_reason?: string | null
@@ -1636,6 +1638,7 @@ export type Database = {
         }
         Update: {
           branch_id?: string
+          cash_shift_id?: string | null
           cancel_requested_at?: string | null
           cancel_requested_by?: string | null
           cancellation_reason?: string | null

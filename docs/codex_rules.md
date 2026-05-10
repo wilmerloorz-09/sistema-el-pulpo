@@ -84,7 +84,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - anulacion total y parcial
   - devolucion por denominacion
   - `replacement_payment_id`
-  - **Auditoría de Anulación (2026-05-06):** No anular pagos sin dejar rastro en `order_cancellations` y `orders.notes`. La anulación debe registrar el supervisor responsable y el motivo.
+  - **Auditoría de Anulación (2026-05-09):** Queda terminantemente prohibido anular pagos sin registrar el evento en `order_cancellations` y adjuntar una nota técnica en `orders.notes`. La nota debe incluir el supervisor responsable y el motivo.
   - separacion historica cuando un pago anulado deja una cuenta activa: orden original `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y orden sucesora activa con nuevo numero y `SUCCESSOR_OF_VOIDED_ORDER`.
   - la orden historica por pago anulado nunca debe quedar `PAID`, aparecer en `Por cobrar`, ocupar mesa ni reactivarse por `recalculate_check_balance(...)`.
 - No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
@@ -165,8 +165,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - La limpieza de metadata SQL y la limpieza del bucket `payment-proofs` son procesos separados.
 
 ### 12. Integridad Financiera y Caja
-- **Inicialización Obligatoria:** El diálogo de pago (`PaymentDialog`) requiere estrictamente una "Caja abierta" (denominaciones inicializadas) para renderizarse; de lo contrario, debe mostrar un aviso instructivo para prevenir descuadres.
-- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`; sin esta inicialización, el flujo de pago se bloquea preventivamente. Los cálculos de saldo y totales de turno aplican redondeo financiero para asegurar la consistencia del "Cuadre de caja". La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
+- **Integridad Financiera (2026-05-09):**
+  - **Redondeo:** Todos los cálculos financieros deben redondearse a 2 decimales en el origen (BD/RPC) y en la UI para evitar errores de precisión.
+  - **Caja Abierta:** El diálogo de pago (`PaymentDialog`) no debe permitir cobros si no existe un registro de apertura de caja (`cash_shift_denoms`) activo para la sesión.
+  - **Exclusión de Cancelados:** Los ítems con anulación confirmada o pendiente no deben sumarse a ninguna cifra operativa de cobro.
+  - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
 
 ## Convenciones de implementacion
@@ -220,4 +223,4 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
 10. Si se toca el diálogo de pago, validar que exija la inicialización de caja y maneje correctamente el redondeo financiero.
-11. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez, aunque tenga items enviados en distintos momentos.
+11. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez (agrupamiento por `order_code`), aunque tenga items enviados en distintos momentos.

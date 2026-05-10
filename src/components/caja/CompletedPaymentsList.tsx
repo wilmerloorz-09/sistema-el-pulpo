@@ -15,6 +15,7 @@ import type {
   ShiftDenom,
 } from "@/hooks/useCaja";
 import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { roundMoney } from "@/lib/paymentQuantity";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed } from "lucide-react";
 
@@ -28,6 +29,8 @@ function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[
 
 interface PaymentGroup {
   paymentId: string;
+  /** Cobro completo (transferencia + efectivo, etc.); mismo valor en todas las filas del mismo grupo. */
+  paymentGroupId: string;
   created_at: string;
   cashier_name: string;
   amount: number;
@@ -148,6 +151,50 @@ function sumDetailLines(lines: CompletedPayment["cash_change_detail"]) {
   return lines.reduce((sum, line) => sum + line.total, 0);
 }
 
+function mergeCashDetailLines(lines: CompletedPayment["cash_change_detail"]): CompletedPayment["cash_change_detail"] {
+  const map = new Map<string, (typeof lines)[number]>();
+  for (const line of lines) {
+    const cur = map.get(line.denomination_id);
+    if (!cur) {
+      map.set(line.denomination_id, { ...line });
+      continue;
+    }
+    cur.qty += line.qty;
+    cur.total = roundMoney(cur.qty * cur.value);
+  }
+  return Array.from(map.values()).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
+}
+
+function buildCashAggregateForGroup(headers: CompletedPayment[]) {
+  const receivedLines = mergeCashDetailLines(headers.flatMap((h) => h.cash_received_detail));
+  const changeLines = mergeCashDetailLines(headers.flatMap((h) => h.cash_change_detail));
+  const refundLines = mergeCashDetailLines(headers.flatMap((h) => h.cash_refund_detail));
+
+  let tenderedSum = 0;
+  let hasAnyTendered = false;
+  for (const h of headers) {
+    if (h.tendered_amount != null && Number.isFinite(Number(h.tendered_amount))) {
+      tenderedSum += Number(h.tendered_amount);
+      hasAnyTendered = true;
+    }
+  }
+  const detailReceivedTotal = sumDetailLines(receivedLines);
+  const receivedAmount = hasAnyTendered
+    ? roundMoney(tenderedSum)
+    : detailReceivedTotal > 0
+      ? detailReceivedTotal
+      : roundMoney(headers.reduce((s, h) => s + h.amount, 0));
+
+  /** Sobrepago (p. ej. transferencia $10 por orden $5,25) cuando no hay movimientos/notas de cambio — corrige históricos. */
+  const totalTenderedAll = roundMoney(headers.reduce((s, h) => s + (h.tendered_amount ?? 0), 0));
+  const totalAppliedAll = roundMoney(headers.reduce((s, h) => s + h.amount, 0));
+  const impliedChange = roundMoney(Math.max(0, totalTenderedAll - totalAppliedAll));
+  const changeFromDenoms = sumDetailLines(changeLines);
+  const undocumentedChange = roundMoney(Math.max(0, impliedChange - changeFromDenoms));
+
+  return { receivedAmount, receivedLines, changeLines, refundLines, undocumentedChange };
+}
+
 function getReceivedAmount(payment: Pick<PaymentGroup, "tendered_amount" | "amount" | "cash_received_detail">) {
   const detailTotal = sumDetailLines(payment.cash_received_detail);
   return payment.tendered_amount ?? (detailTotal > 0 ? detailTotal : payment.amount);
@@ -213,6 +260,7 @@ export default function CompletedPaymentsList({
     receivedLines: CompletedPayment["cash_received_detail"];
     changeLines: CompletedPayment["cash_change_detail"];
     refundLines: CompletedPayment["cash_refund_detail"];
+    undocumentedChange: number;
   }>({
     open: false,
     title: "Detalle de cambio",
@@ -221,6 +269,7 @@ export default function CompletedPaymentsList({
     receivedLines: [],
     changeLines: [],
     refundLines: [],
+    undocumentedChange: 0,
   });
 
   const permissionFlags = getPermissionFlags(permissions);
@@ -233,6 +282,7 @@ export default function CompletedPaymentsList({
       if (!existing) {
         map.set(row.id, {
           paymentId: row.id,
+          paymentGroupId: row.payment_group_id ?? row.id,
           created_at: row.created_at,
           cashier_name: row.cashier_name,
           amount: row.amount,
@@ -278,6 +328,26 @@ export default function CompletedPaymentsList({
     }
 
     return Array.from(map.values());
+  }, [payments]);
+
+  const cashAggregateByGroupId = useMemo(() => {
+    const uniqueHeaderByPaymentId = new Map<string, CompletedPayment>();
+    for (const row of payments) {
+      if (!uniqueHeaderByPaymentId.has(row.id)) {
+        uniqueHeaderByPaymentId.set(row.id, row);
+      }
+    }
+    const headersByGroup = new Map<string, CompletedPayment[]>();
+    for (const header of uniqueHeaderByPaymentId.values()) {
+      const gid = header.payment_group_id ?? header.id;
+      if (!headersByGroup.has(gid)) headersByGroup.set(gid, []);
+      headersByGroup.get(gid)!.push(header);
+    }
+    const result = new Map<string, ReturnType<typeof buildCashAggregateForGroup>>();
+    for (const [gid, headers] of headersByGroup) {
+      result.set(gid, buildCashAggregateForGroup(headers));
+    }
+    return result;
   }, [payments]);
 
   const cashierOptions = useMemo(
@@ -415,17 +485,31 @@ export default function CompletedPaymentsList({
               const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
               const blockedByState = isVoidedOrReversed || payment.reversal_requested || blockedByClosedOpening;
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
-              const receivedAmount = getReceivedAmount(payment);
+              const groupCash = cashAggregateByGroupId.get(payment.paymentGroupId) ?? {
+                receivedAmount: getReceivedAmount(payment),
+                receivedLines: payment.cash_received_detail,
+                changeLines: payment.cash_change_detail,
+                refundLines: payment.cash_refund_detail,
+                undocumentedChange: (() => {
+                  const t = payment.tendered_amount ?? 0;
+                  const impl = roundMoney(Math.max(0, t - payment.amount));
+                  const fromDen = sumDetailLines(payment.cash_change_detail);
+                  return roundMoney(Math.max(0, impl - fromDen));
+                })(),
+              };
               const hasCashTrace =
-                receivedAmount > 0
-                || payment.cash_received_detail.length > 0
-                || payment.cash_change_detail.length > 0
-                || payment.cash_refund_detail.length > 0;
+                groupCash.receivedAmount > 0.005
+                || groupCash.receivedLines.length > 0
+                || groupCash.changeLines.length > 0
+                || groupCash.refundLines.length > 0
+                || groupCash.undocumentedChange > 0.005;
               const rowChangeTitle = isVoidedOrReversed
                 ? "Detalle de devolucion"
-                : payment.cash_change_detail.length > 0
-                  ? "Detalle de cambio"
-                  : "Detalle de efectivo recibido";
+                : groupCash.changeLines.length > 0 || groupCash.undocumentedChange > 0.005
+                  ? "Detalle de pago y cambio"
+                  : groupCash.receivedLines.length > 0
+                    ? "Detalle de efectivo recibido"
+                    : "Detalle del pago";
 
               return (
                 <div key={payment.paymentId} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/70"}>
@@ -486,10 +570,11 @@ export default function CompletedPaymentsList({
                               open: true,
                               title: rowChangeTitle,
                               showReceived: !isVoidedOrReversed,
-                              receivedAmount,
-                              receivedLines: payment.cash_received_detail,
-                              changeLines: payment.cash_change_detail,
-                              refundLines: payment.cash_refund_detail,
+                              receivedAmount: groupCash.receivedAmount,
+                              receivedLines: groupCash.receivedLines,
+                              changeLines: groupCash.changeLines,
+                              refundLines: groupCash.refundLines,
+                              undocumentedChange: groupCash.undocumentedChange,
                             });
                           }}
                           className="h-8 rounded-full border border-orange-200 bg-orange-50 px-3 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
@@ -593,12 +678,14 @@ export default function CompletedPaymentsList({
             {changeDetailState.showReceived && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-950">Cliente entrego</span>
+                  <span className="text-sm font-semibold text-slate-950">Total recibido del cliente</span>
                   <span className="text-lg font-bold text-emerald-700">{formatCurrency(changeDetailState.receivedAmount)}</span>
                 </div>
                 {changeDetailState.receivedLines.length === 0 && (
                   <p className="mt-1 text-xs font-medium text-emerald-800/70">
-                    No se registro desglose de monedas o billetes recibidos.
+                    {changeDetailState.changeLines.length > 0
+                      ? "Sin efectivo recibido en caja desglosado (p. ej. transferencia). Si hubo cambio en efectivo, se muestra abajo."
+                      : "No se registro desglose de monedas o billetes recibidos."}
                   </p>
                 )}
               </div>
@@ -651,6 +738,24 @@ export default function CompletedPaymentsList({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {changeDetailState.undocumentedChange > 0.005 && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-950">
+                    {changeDetailState.changeLines.length > 0
+                      ? "Cambio adicional sin desglose"
+                      : "Cambio entregado (sin desglose)"}
+                  </span>
+                  <span className="text-lg font-bold text-amber-800">
+                    {formatCurrency(changeDetailState.undocumentedChange)}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-amber-900/75">
+                  Calculado como total recibido menos monto aplicado al cobro (registro previo sin movimientos de cambio en caja).
+                </p>
               </div>
             )}
 

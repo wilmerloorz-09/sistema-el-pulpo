@@ -10,6 +10,7 @@ import {
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
+import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -128,11 +129,16 @@ const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Pr
       .finally(() => globalThis.clearTimeout(timeoutId));
   });
 
-export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[]> {
+export async function fetchSiblingOrders(tableId: string, branchId: string): Promise<SiblingOrder[]> {
+  const openShiftId = await getOpenCashShiftIdForBranch(branchId);
+  if (!openShiftId) return [];
+
   const { data: siblingOrders, error } = await supabase
     .from("orders")
     .select("id, order_number, order_code, split_id, table_order_position, status, created_at, notes, order_items(id)")
     .eq("table_id", tableId)
+    .eq("branch_id", branchId)
+    .eq("cash_shift_id", openShiftId)
     .eq("order_type", "DINE_IN")
     .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]);
 
@@ -171,6 +177,9 @@ export async function fetchSiblingOrders(tableId: string): Promise<SiblingOrder[
 }
 
 export async function fetchTakeoutSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
+  const openShiftId = await getOpenCashShiftIdForBranch(branchId);
+  if (!openShiftId) return [];
+
   const takeoutOrders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, table_order_position, status, created_at, created_by, order_items(id, total)",
     filters: [
@@ -178,6 +187,7 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
       { column: "order_type", op: "eq", value: "TAKEOUT" },
       { column: "is_tray_order", op: "eq", value: false },
       { column: "is_special", op: "eq", value: false },
+      { column: "cash_shift_id", op: "eq", value: openShiftId },
       // Mantener "Para llevar" visible como pestaña incluso si ya fue pagada.
       // Se excluye cuando ya existe despacho aplicado (order_dispatch_events).
       { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] }
@@ -248,7 +258,7 @@ async function fetchOrderTableName(tableId: string | null): Promise<string | nul
 
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   
@@ -275,7 +285,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     supabase.rpc("get_order_operational_snapshot" as any, {
       p_order_id: orderId,
     }),
-    order.table_id ? fetchSiblingOrders(order.table_id) : Promise.resolve([] as SiblingOrder[]),
+    order.table_id ? fetchSiblingOrders(order.table_id, order.branch_id) : Promise.resolve([] as SiblingOrder[]),
     order.created_by
       ? dbSelect<any>("profiles", {
           select: "id, first_name, full_name, username, email",

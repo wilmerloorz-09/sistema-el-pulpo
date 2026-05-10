@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-05-08)
+## Estado operativo vigente (2026-05-09)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -353,17 +353,17 @@
   - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
   - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
 
-### 2026-05-08
-- Para llevar / Orden especial:
-  - las pantallas principales usan tarjetas dinamicas con tarjeta `+` permanente.
-  - los borradores vacios no se muestran; los borradores con items si, y las ordenes activas posteriores siguen visibles hasta despacho aplicado.
-  - las tarjetas mantienen el mismo formato que Mesa: numero visual consecutivo, codigo de orden completo una sola vez, usuario creador, cantidad y total con formato monetario uniforme.
-  - el boton superior `<` en detalle vuelve a la pantalla principal del modulo de origen, no al ultimo item/menu seleccionado.
-- Despacho / Ordenes:
-  - Para llevar y Orden especial se despachan como orden completa; el detalle se puede expandir solo para consulta sin botones por item.
-  - `Ordenes > Despachada` incluye ordenes `KITCHEN_DISPATCHED` y ordenes `PAID` que ya tengan despacho aplicado mientras se sincroniza la cabecera.
-- Edicion en borrador:
-  - Mesa, Para llevar y Orden especial conservan el menu de productos activo en `DRAFT` aunque se eliminen items, siempre que no haya bloqueo/anulacion pendiente ni estado final.
+### 2026-05-09
+- Caja e Integridad Financiera:
+  - **Redondeo Centralizado:** Todos los cálculos de subtotales, impuestos, totales y vueltos aplican redondeo a 2 decimales para evitar discrepancias de punto flotante en el cuadre de caja.
+  - **Exclusión de Cancelados:** Los ítems con estado de anulación (confirmada o pendiente) se excluyen automáticamente de los cálculos de saldo de la orden y totales del turno.
+  - **Validación de Caja Abierta:** El `PaymentDialog` y las operaciones de cobro bloquean su ejecución si no detectan una apertura de caja válida (`cash_shift_denoms`) para el usuario en el turno actual.
+- Auditoría y Trazabilidad:
+  - **Historial de Pagos Anulados:** Toda anulación (vía `PaymentReversalModal`) inserta un registro detallado en `order_cancellations` y adjunta una nota técnica en `orders.notes` con el ID del supervisor y el motivo.
+  - **Despacho Consolidado:** Se garantiza que el módulo de Despacho solo muestre una tarjeta por `order_code`. Si se agregan ítems nuevos a una orden ya enviada, estos se agrupan en la tarjeta existente.
+- UI/UX:
+  - **Resaltado de Navegación:** Estabilización del parámetro `origin` para asegurar que el Sidebar y BottomNav reflejen siempre el módulo de origen (`mesas`, `para-llevar`, `orden-especial`), incluso tras ediciones o cobros.
+  - **Optimización de Pantalla:** Ajuste final de tipografías y espaciados en `PayableOrdersList` para mejorar la lectura en dispositivos tipo tablet.
 
 ## Riesgos que siguen vigentes
 1. No asumir que `menu_nodes` ya reemplazo completamente a `products`.

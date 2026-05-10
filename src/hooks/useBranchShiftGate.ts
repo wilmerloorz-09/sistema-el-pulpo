@@ -27,6 +27,7 @@ export interface BranchShiftGate {
   isSupervisor: boolean;
   isCaptureDeviceOnly: boolean;
   legacyFallbackApplied: boolean;
+  isStaleShift: boolean;
 }
 
 export function useBranchShiftGate() {
@@ -59,6 +60,7 @@ export function useBranchShiftGate() {
           isSupervisor: false,
           isCaptureDeviceOnly: false,
           legacyFallbackApplied: false,
+          isStaleShift: false,
         };
       }
 
@@ -93,15 +95,24 @@ export function useBranchShiftGate() {
           isSupervisor: Boolean(row?.is_supervisor),
           isCaptureDeviceOnly: false,
           legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
+          isStaleShift: false,
         };
       }
 
       const { data: shiftMetaRow, error: shiftMetaError } = await (supabase
         .from("cash_shifts" as any)
-        .select("cashier_id, capture_user_id")
+        .select("cashier_id, capture_user_id, opened_at")
         .eq("id", shiftId)
         .maybeSingle() as any);
       if (shiftMetaError) throw shiftMetaError;
+
+      const openedDate = shiftMetaRow?.opened_at ? new Date(shiftMetaRow.opened_at) : null;
+      const today = new Date();
+      const isStaleShift = openedDate 
+        ? (openedDate.getFullYear() !== today.getFullYear() ||
+           openedDate.getMonth() !== today.getMonth() ||
+           openedDate.getDate() !== today.getDate())
+        : false;
 
       const { data: shiftUserRow, error: shiftUserError } = await (supabase
         .from("cash_shift_users" as any)
@@ -143,6 +154,7 @@ export function useBranchShiftGate() {
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),
         isCaptureDeviceOnly: false,
         legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
+        isStaleShift,
       };
     },
     enabled: !!activeBranchId && !!user?.id,

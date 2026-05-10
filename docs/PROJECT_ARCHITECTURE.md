@@ -157,7 +157,10 @@
   - `cash_register_templates`
   - `cash_register_template_denoms`
 - El resumen ya usa efectivo neto aplicado, no `tendered` bruto.
-- **Integridad Financiera:** Las operaciones de cobro estan vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas. Los calculos de totales excluyen automaticamente items cancelados.
+- **Integridad Financiera (2026-05-09):**
+  - **Redondeo:** Todas las operaciones monetarias aplican `round(val, 2)` de forma centralizada.
+  - **Validación de Apertura:** No se permite procesar cobros sin una apertura de caja activa verificada en `cash_shift_denoms`.
+  - **Exclusión de Cancelados:** Los ítems anulados o en proceso de anulación no suman al saldo de la orden ni al resumen de caja.
   - Se aplica redondeo financiero centralizado para evitar errores de punto flotante en el "Cuadre de caja".
 
 ### 9. Reportes de caja
@@ -186,7 +189,7 @@
   - anulacion parcial por `payment_items`
   - devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda parte activa del pago
-  - **Historial de Anulaciones (2026-05-06):** La anulación de pago registra obligatoriamente un evento en `order_cancellations` y una nota de rastro en `orders.notes`.
+  - **Trazabilidad y Auditoría (2026-05-09):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`, el ID del supervisor y el motivo.
   - separacion de orden despues de anular pago: la orden original queda como historica `CANCELLED` con su numero original y marcador `VOID_SUCCESSOR_ORDER:<new_order_id>`, y la operacion activa pasa a una sucesora con nuevo numero y marcador `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`.
   - la orden historica por anulacion no debe aparecer en Caja, Mesas ni Despacho como flujo activo; la sucesora es la unica cobrable.
   - `recalculate_check_balance(...)` debe preservar primero las historicas `VOID_SUCCESSOR_ORDER` como `CANCELLED`.

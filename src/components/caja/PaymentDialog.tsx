@@ -19,7 +19,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
-import { computeLineAmount, roundMoney } from "@/lib/paymentQuantity";
+import { computeLineAmount, distributeProportionalAmounts, roundMoney } from "@/lib/paymentQuantity";
 import {
   getCashPaymentMethod,
   getDefaultPaymentMethodId,
@@ -29,7 +29,7 @@ import {
   type PaymentMethodOption,
 } from "@/lib/paymentMethods";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Clock3, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, ReceiptText, RotateCcw, Soup, Trash2, UserRound, Wallet, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, CheckCircle2, Coins, CreditCard, GlassWater, HandCoins, Loader2, Minus, Plus, Printer, RotateCcw, Soup, Trash2, UserRound, Wallet, WalletCards } from "lucide-react";
 import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "./PaymentReceipt";
@@ -157,7 +157,6 @@ export default function PaymentDialog({
   const [paymentSplitInputs, setPaymentSplitInputs] = useState<Record<string, string>>({});
   const [received, setReceived] = useState<Record<string, number>>({});
   const [cashDraftReceived, setCashDraftReceived] = useState<Record<string, number>>({});
-  const [specialAmountInput, setSpecialAmountInput] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cashDetailOpen, setCashDetailOpen] = useState(false);
   const [cashOverpayConfirmOpen, setCashOverpayConfirmOpen] = useState(false);
@@ -169,6 +168,9 @@ export default function PaymentDialog({
   const [transferProofProgress, setTransferProofProgress] = useState<{ uploadedCount: number; totalCount: number }>({ uploadedCount: 0, totalCount: 0 });
   const activePaymentSplitInputId = useRef<string | null>(null);
   const isSpecialOrder = Boolean(order?.is_special);
+  /** Para llevar y orden especial: no reducir líneas desde “a cobrar” hacia pendientes. */
+  const restrictMovingBackToPending =
+    order?.order_type === "TAKEOUT" || Boolean(order?.is_special);
 
   const [successView, setSuccessView] = useState(false);
   const [lastTransactionData, setLastTransactionData] = useState<any>(null);
@@ -190,7 +192,7 @@ export default function PaymentDialog({
     const nextQuantities: Record<string, number> = {};
     for (const item of order.items) {
       if (item.quantity_pending > 0) {
-        nextQuantities[item.id] = 0;
+        nextQuantities[item.id] = item.quantity_pending;
       }
     }
 
@@ -199,7 +201,7 @@ export default function PaymentDialog({
       Object.fromEntries(
         order.items
           .filter((item) => item.quantity_pending > 0)
-          .map((item) => [item.id, false]),
+          .map((item) => [item.id, true]),
       ),
     );
     setPaymentSplits(buildInitialPaymentSplits(paymentMethods, cashMethod?.id ?? null, defaultMethodId ?? null, 0));
@@ -217,18 +219,6 @@ export default function PaymentDialog({
     setSuccessView(false);
     setLastTransactionData(null);
   }, [order?.id, orderItemHash, defaultMethodId, cashMethod?.id, paymentMethodsHash]);
-
-  useEffect(() => {
-    if (!order?.is_special) {
-      setSpecialAmountInput("");
-      return;
-    }
-
-    const suggestedAmount = roundMoney(
-      Math.max(0, Number(order.special_pending_amount ?? order.special_total_manual ?? 0)),
-    );
-    setSpecialAmountInput(suggestedAmount > 0 ? suggestedAmount.toFixed(2) : "");
-  }, [order?.id, order?.is_special, order?.special_pending_amount, order?.special_total_manual]);
 
   useEffect(() => {
     if (!open || !order || readOnly || paying || successView) return;
@@ -267,18 +257,24 @@ export default function PaymentDialog({
       ),
     [selectedItems, payQuantities],
   );
-  const selectedTotal = useMemo(
+  const selectedCatalogTotal = useMemo(
     () => roundMoney(selectedProductsTotal + selectedContainerTotal),
     [selectedContainerTotal, selectedProductsTotal],
   );
-  const specialChargeAmount = useMemo(
-    () => roundMoney(Math.max(0, parseMoneyInput(specialAmountInput))),
-    [specialAmountInput],
+
+  const specialPendingMoney = useMemo(
+    () => roundMoney(Math.max(0, Number(order?.special_pending_amount ?? 0))),
+    [order?.special_pending_amount],
   );
-  const currentChargeTotal = isSpecialOrder ? specialChargeAmount : selectedTotal;
-  const hasTrayContainerCosts = !isSpecialOrder && selectedContainerTotal > 0;
-  const hasChargeSelection = isSpecialOrder ? currentChargeTotal > 0 : selectedItems.length > 0;
-  const selectedCount = isSpecialOrder ? (hasChargeSelection ? 1 : 0) : selectedItems.length;
+
+  /** En especial el cobro no puede superar el saldo del precio manual; las lineas siguen mostrando precio catálogo. */
+  const currentChargeTotal = useMemo(() => {
+    if (!isSpecialOrder) return selectedCatalogTotal;
+    return roundMoney(Math.min(selectedCatalogTotal, specialPendingMoney));
+  }, [isSpecialOrder, selectedCatalogTotal, specialPendingMoney]);
+  const hasTrayContainerCosts = selectedContainerTotal > 0;
+  const hasChargeSelection = selectedItems.length > 0;
+  const selectedCount = selectedItems.length;
 
   const paymentMethodMap = useMemo(
     () => Object.fromEntries(paymentMethods.map((method) => [method.id, method])),
@@ -448,7 +444,11 @@ export default function PaymentDialog({
 
   const setItemQty = (itemId: string, qty: number, maxQty: number) => {
     const normalized = Number.isFinite(qty) ? Math.floor(qty) : 0;
-    const nextQty = clampQty(normalized, 0, maxQty);
+    let nextQty = clampQty(normalized, 0, maxQty);
+    if (restrictMovingBackToPending) {
+      const prevQty = payQuantities[itemId] ?? 0;
+      if (nextQty < prevQty) nextQty = prevQty;
+    }
     setPayQuantities((prev) => ({
       ...prev,
       [itemId]: nextQty,
@@ -487,6 +487,7 @@ export default function PaymentDialog({
   };
 
   const clearAllSelection = () => {
+    if (restrictMovingBackToPending) return;
     const next: Record<string, number> = {};
     const nextSelected: Record<string, boolean> = {};
     for (const item of unpaidItems) {
@@ -498,6 +499,7 @@ export default function PaymentDialog({
   };
 
   const toggleItemSelection = (itemId: string, checked: boolean, maxQty: number) => {
+    if (restrictMovingBackToPending && !checked) return;
     setSelectedRows((prev) => ({
       ...prev,
       [itemId]: checked,
@@ -519,6 +521,7 @@ export default function PaymentDialog({
   };
 
   const setGroupQty = (group: typeof unpaidItems, totalQty: number) => {
+    if (restrictMovingBackToPending) return;
     let remaining = totalQty;
     setPayQuantities((prev) => {
       const next = { ...prev };
@@ -572,6 +575,7 @@ export default function PaymentDialog({
   };
 
   const toggleGroupSelection = (group: typeof unpaidItems, checked: boolean) => {
+    if (restrictMovingBackToPending && !checked) return;
     setPayQuantities((prev) => {
       const next = { ...prev };
       for (const item of group) {
@@ -655,17 +659,6 @@ export default function PaymentDialog({
     }));
   }, [paidItems]);
 
-  const groupedSpecialUnpaidItems = useMemo(() => {
-    return groupedUnpaidItems.map(group => {
-      return {
-        ...group[0],
-        quantity_pending: group.reduce((sum, item) => sum + item.quantity_pending, 0),
-        quantity_to_charge_now: group.reduce((sum, item) => sum + (payQuantities[item.id] ?? 0), 0),
-        groupItems: group
-      };
-    });
-  }, [groupedUnpaidItems, payQuantities]);
-
   const pendingAmountForNow = useMemo(
     () => roundMoney(pendingItemsForNow.reduce((sum, item) => sum + computeLineAmount(item.quantity_available_now, item.unit_price), 0)),
     [pendingItemsForNow],
@@ -717,25 +710,33 @@ export default function PaymentDialog({
       return;
     }
 
-    const itemSelections = isSpecialOrder
-      ? []
-      : selectedItems.map((item) => {
-          const quantity = payQuantities[item.id] ?? 0;
-          const amount = computeLineAmount(quantity, item.unit_price);
-          return {
-            itemId: item.id,
-            quantity,
-            unitPrice: item.unit_price,
-            amount,
-          };
-        });
+    const catalogWeights = selectedItems.map((item) => {
+      const quantity = payQuantities[item.id] ?? 0;
+      return roundMoney(
+        computeLineAmount(quantity, item.unit_price) +
+          (quantity > 0 ? Number(item.tray_container_cost ?? 0) : 0),
+      );
+    });
 
-    if (!isSpecialOrder && itemSelections.some((item) => item.quantity <= 0)) {
+    const chargeTotalRounded = roundMoney(currentChargeTotal);
+    const catalogSum = roundMoney(catalogWeights.reduce((s, w) => s + w, 0));
+    const lineChargeAmounts =
+      isSpecialOrder && catalogSum > chargeTotalRounded + 0.01
+        ? distributeProportionalAmounts(catalogWeights, chargeTotalRounded)
+        : catalogWeights;
+
+    const itemSelections = selectedItems.map((item, idx) => {
+      const quantity = payQuantities[item.id] ?? 0;
+      return {
+        itemId: item.id,
+        quantity,
+        unitPrice: item.unit_price,
+        amount: lineChargeAmounts[idx] ?? 0,
+      };
+    });
+
+    if (itemSelections.some((item) => item.quantity <= 0)) {
       toast.error("Debes seleccionar al menos una cantidad valida para cobrar");
-      return;
-    }
-    if (isSpecialOrder && currentChargeTotal <= 0) {
-      toast.error("Ingresa un monto valido para cobrar la orden especial");
       return;
     }
 
@@ -795,22 +796,20 @@ export default function PaymentDialog({
       // Capturar datos para el recibo antes de realizar el pago
       const receiptItemsMap = new Map<string, { description: string; quantity: number; unitPrice: number; amount: number }>();
       
-      if (!isSpecialOrder) {
-        for (const sel of itemSelections) {
-          const originalItem = order.items.find((i) => i.id === sel.itemId);
-          const key = `${originalItem?.description_snapshot ?? "Producto"}_${sel.unitPrice}`;
-          const existing = receiptItemsMap.get(key);
-          if (existing) {
-            existing.quantity += sel.quantity;
-            existing.amount += sel.amount;
-          } else {
-            receiptItemsMap.set(key, {
-              description: originalItem?.description_snapshot ?? "Producto",
-              quantity: sel.quantity,
-              unitPrice: sel.unitPrice,
-              amount: sel.amount,
-            });
-          }
+      for (const sel of itemSelections) {
+        const originalItem = order.items.find((i) => i.id === sel.itemId);
+        const key = `${originalItem?.description_snapshot ?? "Producto"}_${sel.unitPrice}`;
+        const existing = receiptItemsMap.get(key);
+        if (existing) {
+          existing.quantity += sel.quantity;
+          existing.amount += sel.amount;
+        } else {
+          receiptItemsMap.set(key, {
+            description: originalItem?.description_snapshot ?? "Producto",
+            quantity: sel.quantity,
+            unitPrice: sel.unitPrice,
+            amount: sel.amount,
+          });
         }
       }
 
@@ -941,7 +940,7 @@ export default function PaymentDialog({
 
   const paymentStatusMessage = useMemo(() => {
     if (readOnly) return "Modo consulta activo";
-    if (!hasChargeSelection) return isSpecialOrder ? "Ingresa un monto para cobrar" : "Selecciona al menos una cantidad para cobrar";
+    if (!hasChargeSelection) return "Selecciona al menos una cantidad para cobrar";
     if (paymentMethods.length === 0) return "No hay metodos de pago activos";
     if (!paymentSplits.some((split) => split.amount > 0)) return "Ingresa al menos un monto de pago";
     if (shortageAmount > 0.005) return `Faltan $${shortageAmount.toFixed(2)} por recibir`;
@@ -956,7 +955,6 @@ export default function PaymentDialog({
   }, [
     readOnly,
     hasChargeSelection,
-    isSpecialOrder,
     paymentMethods.length,
     paymentSplits,
     shortageAmount,
@@ -1122,7 +1120,11 @@ export default function PaymentDialog({
               <div className="mb-3 flex flex-wrap items-start justify-between gap-2.5">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-base font-semibold text-slate-950">Items pendientes</h3>
-                  <p className="text-xs text-slate-500">Mueve desde aqui lo que vas a cobrar ahora.</p>
+                  <p className="text-xs text-slate-500">
+                    {restrictMovingBackToPending
+                      ? "Todo el pedido esta en la columna derecha listo para cobrar."
+                      : "Mueve desde aqui lo que vas a cobrar ahora."}
+                  </p>
                 </div>
                 <div className="w-full sm:w-auto">
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-center">
@@ -1131,7 +1133,14 @@ export default function PaymentDialog({
                   </div>
                 </div>
                 {!readOnly && (
-                  <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto" onClick={fillAllPending}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto"
+                    onClick={fillAllPending}
+                    disabled={pendingItemsForNow.length === 0}
+                  >
                     <ArrowRight className="h-4 w-4" />
                     Todo
                   </Button>
@@ -1203,12 +1212,36 @@ export default function PaymentDialog({
                   <p className="text-xs text-slate-500">Esto es lo que se registra en esta operacion.</p>
                 </div>
                 <div className="w-full sm:w-auto">
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center">
-                    <p className="text-[11px] uppercase tracking-[0.08em] text-orange-700">Total seleccionado</p>
-                    <p className="text-base font-semibold text-orange-900">${selectedAmountForNow.toFixed(2)}</p>
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-center sm:min-w-[148px]">
+                    {isSpecialOrder && selectedCatalogTotal > currentChargeTotal + 0.005 ? (
+                      <>
+                        <p className="text-[11px] uppercase tracking-[0.08em] text-orange-700">Precio especial</p>
+                        <p className="font-display text-2xl font-black tabular-nums leading-tight text-orange-950">
+                          ${currentChargeTotal.toFixed(2)}
+                        </p>
+                        <p className="mt-2 border-t border-orange-200/70 pt-2 text-[11px] leading-tight text-orange-700/85">
+                          Subtotal catálogo{" "}
+                          <span className="font-semibold text-orange-900">${selectedCatalogTotal.toFixed(2)}</span>
+                        </p>
+                      </>
+                    ) : isSpecialOrder ? (
+                      <>
+                        <p className="text-[11px] uppercase tracking-[0.08em] text-orange-700">Total a cobrar</p>
+                        <p className="font-display text-2xl font-black tabular-nums leading-tight text-orange-950">
+                          ${currentChargeTotal.toFixed(2)}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[11px] uppercase tracking-[0.08em] text-orange-700">Total seleccionado</p>
+                        <p className="text-base font-semibold tabular-nums text-orange-900">
+                          ${selectedAmountForNow.toFixed(2)}
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
-                {!readOnly && (
+                {!readOnly && !restrictMovingBackToPending && (
                   <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-3 text-slate-600 sm:ml-auto" onClick={clearAllSelection}>
                     <RotateCcw className="h-4 w-4" />
                     Vaciar
@@ -1218,7 +1251,7 @@ export default function PaymentDialog({
 
               <div className="space-y-2">
                 <div className="hidden grid-cols-[78px_44px_minmax(0,1fr)_64px_78px] gap-2 px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 sm:grid md:grid-cols-[86px_52px_minmax(0,1fr)_72px_82px] md:gap-3 md:px-3 md:text-[11px]">
-                  <span>Mover</span>
+                  <span>{restrictMovingBackToPending ? "" : "Mover"}</span>
                   <span className="text-center">Cant.</span>
                   <span>Producto</span>
                   <span className="text-right">Unit.</span>
@@ -1237,22 +1270,28 @@ export default function PaymentDialog({
                       return (
                       <div key={groupKey} className="grid grid-cols-[78px_44px_minmax(0,1fr)_64px_78px] items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/40 px-2 py-2 sm:grid-cols-[86px_52px_minmax(0,1fr)_72px_82px] sm:gap-2.5 sm:px-2.5 sm:py-2.5">
                         <div className="flex justify-start gap-2">
-                          <button
-                            type="button"
-                            disabled={readOnly}
-                            onClick={() => moveAllGroupBackToPending(item.groupItems)}
-                            className="flex h-8 min-w-[38px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            &lt;&lt;
-                          </button>
-                          <button
-                            type="button"
-                            disabled={readOnly}
-                            onClick={() => moveOneGroupBackToPending(item.groupItems)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <ArrowLeft className="h-4 w-4" />
-                          </button>
+                          {restrictMovingBackToPending ? (
+                            <div className="h-8 w-[72px] shrink-0 sm:w-[78px]" aria-hidden />
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={readOnly}
+                                onClick={() => moveAllGroupBackToPending(item.groupItems)}
+                                className="flex h-8 min-w-[38px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                &lt;&lt;
+                              </button>
+                              <button
+                                type="button"
+                                disabled={readOnly}
+                                onClick={() => moveOneGroupBackToPending(item.groupItems)}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <ArrowLeft className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                         <span className="text-center text-sm font-semibold text-slate-900">{isBulkItem ? "AG" : item.quantity_to_charge_now}</span>
                         <div className="flex min-w-0 items-center gap-2.5">
@@ -1390,7 +1429,8 @@ export default function PaymentDialog({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
               <span className="text-slate-600">
-                Total seleccionado: <span className="font-semibold text-slate-950">${currentChargeTotal.toFixed(2)}</span>
+                {isSpecialOrder ? "Total a cobrar" : "Total seleccionado"}:{" "}
+                <span className="font-semibold text-slate-950">${currentChargeTotal.toFixed(2)}</span>
               </span>
               <span className="text-slate-600">
                 Total recibido: <span className="font-semibold text-slate-950">${receivedSplitTotal.toFixed(2)}</span>
@@ -1497,418 +1537,14 @@ export default function PaymentDialog({
               </span>
             )}
             {isSpecialOrder
-              ? "Registra el cobro especial con el monto manual y mantiene visibles los items reales como referencia."
-              : "Mueve a la derecha solo lo que vas a cobrar en esta operacion."}
+              ? "Misma pantalla que mesa y para llevar: elige lineas y cantidades a cobrar. Los items muestran precio real; el total a cobrar respeta el saldo pendiente del precio especial (no puedes cobrar mas que ese saldo)."
+              : restrictMovingBackToPending
+                ? "Todo el saldo pendiente aparece listo para cobrar. En para llevar no puedes devolver lineas a pendientes."
+                : "Por defecto todo esta listo para cobrar. Usa las columnas si necesitas un cobro parcial."}
           </div>
         </DialogHeader>
 
-        {order && !isSpecialOrder ? (
-          renderModernStandardContent(order)
-        ) : order ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto bg-white px-3 py-3 sm:px-6 sm:py-4">
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)]">
-                <div className="space-y-4">
-                  {readOnly && (
-                    <div className="rounded-2xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
-                      Modo consulta: puedes revisar los montos pendientes, pero no registrar pagos.
-                    </div>
-                  )}
-
-                  <section className="rounded-2xl border border-border bg-card p-3 shadow-sm sm:p-4">
-                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">
-                          {isSpecialOrder ? "Cobro especial" : "Seleccion de cantidades a cobrar"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {isSpecialOrder
-                            ? "El monto manual gobierna este cobro. El total real de items sigue visible como referencia."
-                            : "Ajusta solo las cantidades que se van a cobrar en esta operacion."}
-                        </p>
-                      </div>
-                      {!readOnly && !isSpecialOrder && (
-                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                          <Button type="button" variant="outline" size="sm" onClick={fillAllPending}>
-                            Todo pendiente
-                          </Button>
-                          <Button type="button" variant="ghost" size="sm" onClick={clearAllSelection}>
-                            Limpiar
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-sky-700">
-                              {isSpecialOrder ? "Total real" : "Items pendientes"}
-                            </p>
-                            <p className="mt-0.5 text-lg font-black leading-none text-sky-900">
-                              {isSpecialOrder ? `$${order.special_real_total.toFixed(2)}` : unpaidItems.length}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-white p-1 text-sky-600 shadow-sm">
-                            <Clock3 className="h-3 w-3" />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-violet-700">
-                              {isSpecialOrder ? "Ya pagado" : "Seleccionados"}
-                            </p>
-                            <p className="mt-0.5 text-lg font-black leading-none text-violet-900">
-                              {isSpecialOrder ? `$${order.special_paid_amount.toFixed(2)}` : selectedCount}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-white p-1 text-violet-600 shadow-sm">
-                            <CreditCard className="h-3 w-3" />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-emerald-700">
-                              {isSpecialOrder ? "Pendiente especial" : "Total actual"}
-                            </p>
-                            <p className="mt-0.5 text-lg font-black leading-none text-emerald-900">
-                              {isSpecialOrder ? `$${order.special_pending_amount.toFixed(2)}` : `$${currentChargeTotal.toFixed(2)}`}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-white p-1 text-emerald-600 shadow-sm">
-                            <BadgeDollarSign className="h-3 w-3" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 max-h-[46dvh] overflow-y-auto pr-1 sm:max-h-[48vh]">
-                      {isSpecialOrder ? (
-                        <div className="space-y-3">
-                          <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-2">
-                                <label className="text-sm font-semibold text-foreground">Cobrar ahora</label>
-                                <Input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={specialAmountInput}
-                                  onChange={(event) => setSpecialAmountInput(sanitizeDecimalInput(event.target.value))}
-                                  placeholder="Ingresa el monto a cobrar"
-                                  className="h-11 rounded-xl"
-                                  disabled={readOnly}
-                                />
-                              </div>
-                              <div className="rounded-2xl border border-orange-300 bg-white/85 px-4 py-3">
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">Total especial configurado</p>
-                                <p className="mt-1 font-display text-2xl font-black text-orange-900">
-                                  {order.special_total_manual != null ? `$${order.special_total_manual.toFixed(2)}` : "Sin definir"}
-                                </p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  El cobro se descuenta de este monto, no del total real de los ítems.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-3">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium text-muted-foreground">Items de referencia</p>
-                              <Badge variant="outline" className="text-[10px]">
-                                {order.items.length}
-                              </Badge>
-                            </div>
-                            <div className="space-y-2">
-                              {groupedUnpaidItems.map((group) => {
-                                const item = group[0];
-                                const quantity = group.reduce((sum, i) => sum + i.quantity, 0);
-                                const quantity_paid = group.reduce((sum, i) => sum + i.quantity_paid, 0);
-                                const quantity_pending = group.reduce((sum, i) => sum + i.quantity_pending, 0);
-                                const total = group.reduce((sum, i) => sum + i.total, 0);
-                                const isBulkItem = item.tray_item_type === "C";
-                                const groupKey = `${item.description_snapshot}_${item.unit_price}`;
-
-                                return (
-                                <div key={groupKey} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-medium text-foreground">{item.description_snapshot}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {isBulkItem
-                                        ? `A granel - pagadas ${quantity_paid} - pendientes ${quantity_pending}`
-                                        : `${quantity} unidad(es) - pagadas ${quantity_paid} - pendientes ${quantity_pending}`}
-                                    </p>
-                                  </div>
-                                  <span className="shrink-0 text-sm font-semibold text-foreground">
-                                    ${total.toFixed(2)}
-                                  </span>
-                                </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="min-w-[600px]">
-                            <div className="sticky top-0 z-10 mb-1 grid grid-cols-[28px_minmax(0,2.05fr)_80px_64px_82px_80px] gap-2 rounded-xl border border-border bg-white/95 px-3 py-2 backdrop-blur">
-                              <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Sel.</p>
-                              <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Producto</p>
-                              <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">
-                                <span className="block">Precio</span>
-                                <span className="block">unitario</span>
-                              </p>
-                              <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Pendiente</p>
-                              <p className="text-center text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">
-                                <span className="block">Cobrar</span>
-                                <span className="block">ahora</span>
-                              </p>
-                              <p className="text-center text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Subtotal</p>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              {groupedSpecialUnpaidItems.map((item) => {
-                                const qtyToPay = item.quantity_to_charge_now;
-                                const isSelected = item.groupItems.some(gi => selectedRows[gi.id]);
-                                const lineSubtotal = computeLineAmount(qtyToPay, item.unit_price);
-                                const isBulkItem = item.tray_item_type === "C";
-                                const groupKey = `${item.description_snapshot}_${item.unit_price}`;
-
-                                return (
-                                  <div
-                                    key={groupKey}
-                                    className={cn(
-                                      "grid grid-cols-[28px_minmax(0,2.05fr)_80px_64px_82px_80px] items-center gap-2 rounded-lg px-3 py-2 transition-colors",
-                                      isSelected && qtyToPay > 0 ? "bg-primary/5" : "bg-transparent",
-                                    )}
-                                  >
-                                    <div className="flex items-center justify-center">
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onCheckedChange={(checked) => toggleGroupSelection(item.groupItems, checked === true)}
-                                        disabled={readOnly}
-                                        className="h-4 w-4 rounded-md"
-                                      />
-                                    </div>
-                                    <p className="truncate text-xs font-semibold leading-tight text-foreground">{item.description_snapshot}</p>
-                                    <p className="text-xs font-semibold leading-none text-foreground">${item.unit_price.toFixed(2)}</p>
-                                    <p className="text-center text-xs font-semibold leading-none text-foreground">{isBulkItem ? "AG" : item.quantity_pending}</p>
-                                    {isBulkItem ? (
-                                      <div className="flex h-8 items-center justify-center text-[11px] font-semibold text-slate-500">
-                                        A granel
-                                      </div>
-                                    ) : (
-                                      <NumericInput
-                                        min={0}
-                                        max={item.quantity_pending}
-                                        value={qtyToPay}
-                                        onValueChange={(value) => setGroupQty(item.groupItems, value)}
-                                        className="h-8 w-[72px] text-xs"
-                                        disabled={readOnly}
-                                      />
-                                    )}
-                                    <p className="text-right text-xs font-semibold leading-none text-foreground">${lineSubtotal.toFixed(2)}</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {groupedPaidItems.length > 0 && (
-                            <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-3">
-                              <div className="mb-2 flex items-center justify-between gap-2">
-                                <p className="text-sm font-medium text-muted-foreground">Items ya pagados</p>
-                                <Badge variant="outline" className="text-[10px]">
-                                  {groupedPaidItems.length}
-                                </Badge>
-                              </div>
-                              <div className="space-y-2">
-                                {groupedPaidItems.map((item) => {
-                                  const groupKey = `${item.description_snapshot}_${item.unit_price}`;
-                                  return (
-                                  <div key={groupKey} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 opacity-60">
-                                    <span className="min-w-0 flex-1 truncate text-sm text-foreground line-through">
-                                      {item.tray_item_type === "C" ? item.description_snapshot : `${item.description_snapshot} - ${item.quantity} unidad(es)`}
-                                    </span>
-                                    <Badge variant="outline" className="text-[10px]">
-                                      Pagado completo
-                                    </Badge>
-                                  </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </section>
-                </div>
-
-                <div className="space-y-4">
-                  {paymentMethods.length === 0 && (
-                    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">
-                      No hay metodos de pago activos para esta sucursal.
-                    </div>
-                  )}
-
-                  <section className="rounded-2xl border border-border bg-card p-3 shadow-sm xl:sticky xl:top-0 sm:p-4">
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">Metodos de pago</p>
-                        <p className="text-xs text-muted-foreground">Selecciona los metodos y define el monto de cada uno.</p>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        {orderedPaymentMethods.map((method) => {
-                          const split = paymentSplits.find((row) => row.methodId === method.id) ?? null;
-                          const isSelected = !!split;
-                          const isCash = isCashPaymentMethodName(method.name);
-
-                          return (
-                            <div
-                              key={method.id}
-                              className={cn(
-                                "rounded-2xl border px-3 py-2.5",
-                                isSelected ? "border-primary/30 bg-primary/5" : "border-border bg-background",
-                              )}
-                            >
-                              <div
-                                className={cn(
-                                  "grid items-center gap-2",
-                                  isCash
-                                    ? "grid-cols-[20px_minmax(0,1fr)] sm:grid-cols-[20px_minmax(0,1fr)_auto_110px]"
-                                    : "grid-cols-[20px_minmax(0,1fr)] sm:grid-cols-[20px_minmax(0,1fr)_110px]",
-                                )}
-                              >
-                                <Checkbox
-                                  checked={isSelected}
-                                  onCheckedChange={(checked) => toggleMethodSelection(method.id, checked === true)}
-                                  disabled={readOnly}
-                                  className="h-5 w-5 rounded-md"
-                                />
-
-                                <p className="min-w-0 truncate text-sm font-semibold text-foreground">{method.name}</p>
-
-                                {isCash ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="col-span-full h-9 shrink-0 rounded-xl px-2.5 text-[11px] sm:col-auto sm:h-9 sm:px-3 sm:text-xs"
-                                    onClick={() => openCashDetail(method.id, isSelected)}
-                                  >
-                                    Monedas y billetes
-                                  </Button>
-                                ) : null}
-
-                                <NumericInput
-                                  mode="decimal"
-                                  value={(split?.amount ?? 0).toFixed(2)}
-                                  onValueChange={(value) => split && setSplitAmount(split.id, value)}
-                                  className={cn("h-9 w-full shrink-0 rounded-xl pl-3 text-left [appearance:textfield] sm:h-10", isCash && "col-span-full sm:col-auto")}
-                                  readOnly={isCash}
-                                  disabled={readOnly || !isSelected || isCash}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            </div>
-
-            <div className="shrink-0 border-t border-border bg-white px-3 py-3 sm:px-6">
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-[620px]">
-                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-sky-700">
-                        {isSpecialOrder ? "Cobro actual" : "Total seleccionado"}
-                      </p>
-                      <p className="mt-0.5 text-lg font-black leading-none text-sky-900">${currentChargeTotal.toFixed(2)}</p>
-                    </div>
-                    <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-violet-700">Total recibido</p>
-                      <p className="mt-0.5 text-lg font-black leading-none text-violet-900">${receivedSplitTotal.toFixed(2)}</p>
-                    </div>
-                    <div
-                      className={cn(
-                        "rounded-xl border px-3 py-1.5",
-                        changeAmount > 0
-                          ? "border-emerald-200 bg-emerald-50"
-                          : shortageAmount > 0
-                            ? "border-amber-200 bg-amber-50"
-                            : "border-sky-200 bg-sky-50",
-                      )}
-                    >
-                      <p className={cn(
-                        "text-[10px] uppercase tracking-wide",
-                        changeAmount > 0
-                          ? "text-emerald-700"
-                          : shortageAmount > 0
-                            ? "text-amber-700"
-                            : "text-sky-700",
-                      )}>
-                        {changeAmount > 0 ? "Cambio" : shortageAmount > 0 ? "Faltante" : "Cuadre"}
-                      </p>
-                      <p className={cn(
-                        "mt-0.5 text-lg font-black leading-none",
-                        changeAmount > 0
-                          ? "text-emerald-900"
-                          : shortageAmount > 0
-                            ? "text-amber-900"
-                            : "text-sky-900",
-                      )}>
-                        ${(changeAmount > 0 ? changeAmount : shortageAmount > 0 ? shortageAmount : 0).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {!readOnly ? (
-                      <Button
-                      onClick={() => void handleOpenConfirm()}
-                        disabled={!canPay || preparingTransferProof}
-                        className="h-14 w-full gap-2 rounded-2xl px-4 font-display text-base font-semibold lg:w-[280px]"
-                      >
-                        {paying || preparingTransferProof ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                        <>
-                          <CreditCard className="h-5 w-5" />
-                          Cobrar ${currentChargeTotal.toFixed(2)}
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <div className="rounded-2xl bg-muted px-4 py-3 text-center text-xs text-muted-foreground lg:w-[280px]">
-                      Esta cuenta no puede registrar cobros.
-                    </div>
-                  )}
-                </div>
-
-
-                <div
-                  className={cn(
-                    "rounded-2xl px-4 py-3 text-sm font-medium",
-                    canPay
-                      ? "border border-green-500/20 bg-green-500/10 text-green-700"
-                      : "border border-amber-500/20 bg-amber-500/10 text-amber-700",
-                  )}
-                >
-                  {paymentStatusMessage}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {order ? renderModernStandardContent(order) : null}
         </>
         )}
       </DialogContent>

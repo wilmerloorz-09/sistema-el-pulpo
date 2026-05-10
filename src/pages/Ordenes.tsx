@@ -658,7 +658,7 @@ const OrdenesContent = () => {
 
   const tableOrdersQuery = useQuery({
     queryKey: isTakeoutOrder ? ["takeout-orders", order?.branch_id ?? null] : ["table-orders", order?.table_id ?? null],
-    queryFn: () => isTakeoutOrder ? fetchTakeoutSiblingOrders(order!.branch_id) : fetchSiblingOrders(order!.table_id!),
+    queryFn: () => isTakeoutOrder ? fetchTakeoutSiblingOrders(order!.branch_id) : fetchSiblingOrders(order!.table_id!, order!.branch_id),
     enabled: isTakeoutOrder ? !!order?.branch_id : !!order?.table_id,
     staleTime: 0,
     refetchOnMount: "always",
@@ -1498,7 +1498,7 @@ const OrdenesContent = () => {
 
       if (rawMessage.includes("No se encontro la orden origen")) {
         try {
-          const refreshedTableOrders = await fetchSiblingOrders(order.table_id);
+          const refreshedTableOrders = await fetchSiblingOrders(order.table_id, order.branch_id);
           qc.setQueryData(["table-orders", order.table_id], refreshedTableOrders);
           qc.invalidateQueries({ queryKey: ["tables-with-status"] });
           qc.invalidateQueries({ queryKey: ["order"] });
@@ -2054,6 +2054,8 @@ const OrdenesContent = () => {
           alwaysShowControls={fromEditar}
           hideItemControls={false}
           editableItemIds={[]}
+          specialOrderChargeTotal={order.is_special && specialTotalManual != null ? specialTotalManual : null}
+          specialOrderCatalogTotal={order.is_special && specialTotalManual != null ? total : null}
           onRemove={(id) => {
             if (fromEditar) {
               setStagedDirty(true);
@@ -2101,7 +2103,7 @@ const OrdenesContent = () => {
                   // Solo se abre por clic fisico aqui
                   setPaymentDialogOpenForOrderId(orderId);
                 } else {
-                  toast.error("El dispositivo es demasiado pequeÃ±o para operar caja.");
+                  toast.error("El dispositivo es demasiado pequeño para operar caja.");
                 }
               }
             } catch (e) {
@@ -2149,7 +2151,7 @@ const OrdenesContent = () => {
                 }}
               >
                 <X className="h-5 w-5" />
-                Cancelar ediciÃ³n
+                Cancelar edición
               </Button>
               {canEditItems && (
                 <Button
@@ -2545,7 +2547,10 @@ const OrdenesContent = () => {
       {!showCart && itemCount > 0 && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">{itemCount} items - ${total.toFixed(2)}</span>
+          <span className="font-display text-sm font-bold">
+            {itemCount} items - $
+            {(order.is_special && specialTotalManual != null ? specialTotalManual : total).toFixed(2)}
+          </span>
         </button>
       )}
 
@@ -2943,7 +2948,7 @@ const OrdenesContent = () => {
               Caja no disponible
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base text-slate-600">
-              La caja no ha sido abierta. Por favor, abre la caja en el mÃ³dulo de Caja primero.
+              La caja no ha sido abierta. Por favor, abre la caja en el módulo de Caja primero.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

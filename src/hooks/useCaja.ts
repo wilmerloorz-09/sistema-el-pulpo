@@ -9,6 +9,7 @@ import { computeLineTotalWithContainer, roundMoney } from "@/lib/paymentQuantity
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -85,6 +86,7 @@ export interface CashShift {
   active_tables_count: number;
   denoms: ShiftDenom[];
   openingHistory: CashRegisterOpeningHistoryEntry[];
+  is_stale?: boolean;
 }
 
 export interface CashShiftCaptureCandidate {
@@ -187,6 +189,109 @@ export async function fetchCashRegisterMovementsForShift(shiftId: string): Promi
     recordedByUsername: row.recorded_by_username ?? null,
     createdAt: row.created_at,
   })) as CashRegisterMovement[];
+}
+
+export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<CompletedPayment[]> {
+  const { data: orderIdsData, error: orderIdsError } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("shift_id", shiftId);
+  
+  if (orderIdsError) throw orderIdsError;
+  const branchOrderIds = (orderIdsData ?? []).map((o) => o.id);
+  
+  if (branchOrderIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("payments")
+    .select(`
+      id, 
+      created_at, 
+      amount, 
+      notes, 
+      order_id, 
+      payment_method_id, 
+      created_by,
+      payment_methods ( name ),
+      orders ( order_code, order_number, table_name_snapshot ),
+      profiles:created_by ( full_name )
+    `)
+    .in("order_id", branchOrderIds)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    created_at: row.created_at,
+    amount: Number(row.amount ?? 0),
+    notes: row.notes,
+    method_name: row.payment_methods?.name || "N/D",
+    order_code: row.orders?.order_code,
+    order_number: row.orders?.order_number,
+    table_name: row.orders?.table_name_snapshot,
+    cashier_name: row.profiles?.full_name || "N/D",
+    status: row.status || "APPLIED"
+  })) as any[];
+}
+
+export async function fetchShiftSnapshot(shiftId: string): Promise<CashShiftSnapshot> {
+  const { data: shiftData, error: shiftError } = await supabase
+    .from("cash_shifts")
+    .select("*")
+    .eq("id", shiftId)
+    .single();
+  
+  if (shiftError) throw shiftError;
+
+  const { data: denomsData, error: denomsError } = await supabase
+    .from("cash_shift_denominations")
+    .select(`
+      qty_initial,
+      qty_current,
+      denominations (
+        label,
+        value,
+        display_order,
+        denomination_type
+      )
+    `)
+    .eq("shift_id", shiftId);
+  
+  if (denomsError) throw denomsError;
+
+  const denoms = (denomsData ?? []).map((row: any) => ({
+    label: row.denominations?.label || "N/D",
+    value: Number(row.denominations?.value ?? 0),
+    display_order: Number(row.denominations?.display_order ?? 0),
+    denomination_type: row.denominations?.denomination_type,
+    qty_initial: Number(row.qty_initial ?? 0),
+    qty_current: Number(row.qty_current ?? 0),
+  }));
+
+  const { data: openingHistoryData, error: openingHistoryError } = await supabase.rpc("list_cash_register_openings" as any, { 
+    p_shift_id: shiftId 
+  });
+
+  if (openingHistoryError) throw openingHistoryError;
+
+  const openingHistory = ((openingHistoryData ?? []) as any[]).map((row) => ({
+    opened_at: row.opened_at,
+    closed_at: row.closed_at,
+    status: row.status,
+    cashier_name: row.cashier_name,
+    cashier_username: row.cashier_username,
+    initial_total: Number(row.initial_total ?? 0),
+  }));
+
+  return {
+    id: shiftData.id,
+    opened_at: shiftData.opened_at,
+    caja_status: shiftData.caja_status,
+    active_tables_count: Number(shiftData.active_tables_count ?? 0),
+    denoms,
+    openingHistory,
+  };
 }
 
 export interface PayableOrder {
@@ -724,6 +829,7 @@ export function useCaja(params?: {
 
   const { user } = useAuth();
   const { activeBranchId, activeBranch } = useBranch();
+  const { data: shiftGate } = useBranchShiftGate();
   const qc = useQueryClient();
   const activeWorkflowMode = "CASH_THEN_DISPATCH";
 
@@ -816,12 +922,19 @@ export function useCaja(params?: {
         payment_count: Number(row.payment_count ?? 0),
       })) as CashRegisterOpeningHistoryEntry[];
 
+      const openedDate = new Date(shiftData.opened_at);
+      const today = new Date();
+      const isStale = openedDate.getFullYear() !== today.getFullYear() ||
+                     openedDate.getMonth() !== today.getMonth() ||
+                     openedDate.getDate() !== today.getDate();
+
       return {
         ...shiftData,
         capture_user_id: shiftData.capture_user_id ?? null,
         capture_device_label: shiftData.capture_device_label ?? null,
         denoms: enriched,
         openingHistory,
+        is_stale: isStale,
       } as CashShift;
     },
     enabled: !!activeBranchId && !!denomsQuery.data,
@@ -1163,14 +1276,26 @@ export function useCaja(params?: {
   });
 
   const ordersQuery = useQuery({
-    queryKey: ["payable-orders", activeBranchId, activeWorkflowMode],
+    queryKey: ["payable-orders", activeBranchId, activeWorkflowMode, shiftGate?.shiftId ?? "_"],
     queryFn: async () => {
       if (!activeBranchId) return [];
+
+      const shifts = await dbSelect<{ id: string }>("cash_shifts", {
+        select: "id",
+        branchId: activeBranchId,
+        filters: [{ column: "status", op: "eq", value: "OPEN" }],
+        orderBy: { column: "opened_at", ascending: false },
+      });
+      const openShiftId = shifts[0]?.id ?? null;
+      if (!openShiftId) return [];
 
       const orders = await dbSelect<any>("orders", {
         select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot, locked_for_editing, notes",
         branchId: activeBranchId,
-        filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] }],
+        filters: [
+          { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] },
+          { column: "cash_shift_id", op: "eq", value: openShiftId },
+        ],
         orderBy: { column: "updated_at", ascending: false }
       });
       
@@ -1371,7 +1496,6 @@ export function useCaja(params?: {
         filters: [{ column: "is_active", op: "eq", value: true }],
         orderBy: { column: "name" },
       });
-
 
       if (!methods.some((method) => isCashPaymentMethodName(method.name))) {
         const cashMethodId = generateUUID();
@@ -1915,15 +2039,12 @@ export function useCaja(params?: {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
-      if (!isSpecial && itemSelections.length === 0) throw new Error("Selecciona al menos un item para cobrar");
+      if (itemSelections.length === 0) throw new Error("Selecciona al menos un item para cobrar");
       if (paymentSplits.length === 0) throw new Error("Selecciona al menos un metodo de pago");
 
       const itemIds = itemSelections.map((item) => item.itemId);
       const invalidSelection = itemSelections.find((item) => item.amount <= 0 || item.quantity <= 0 || !Number.isInteger(item.quantity));
-      if (!isSpecial && invalidSelection) throw new Error("Todos los items seleccionados deben tener cantidad valida");
-      if (isSpecial && (!Number.isFinite(specialAmount) || Number(specialAmount) <= 0)) {
-        throw new Error("Ingresa un monto valido para la orden especial");
-      }
+      if (invalidSelection) throw new Error("Todos los items seleccionados deben tener cantidad valida");
 
       const methodIdSet = new Set([...paymentSplits.map((split) => split.methodId), ...tenderedSplits.map((split) => split.methodId)]);
       const methodIds = Array.from(methodIdSet);
@@ -1945,11 +2066,17 @@ export function useCaja(params?: {
       if (cashMethods.length > 1) throw new Error("Solo puede existir un pago en efectivo por cobro");
       const cashMethodId = cashMethods[0]?.id ?? null;
       const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
-      const effectiveCashChangeDenoms = cashMethodId ? cashChangeDenoms : [];
+      /** Cambio puede existir con solo transferencia (sobrepago); antes se descartaba al no haber tramo efectivo. */
+      const effectiveCashChangeDenoms = Array.isArray(cashChangeDenoms) ? cashChangeDenoms : [];
 
       const appliedTotal = roundMoney(paymentSplits.reduce((sum, split) => sum + Number(split.amount), 0));
       if (Math.abs(appliedTotal - totalAmount) > 0.01) {
         throw new Error("La suma aplicada no coincide con el total del cobro");
+      }
+
+      const selectionsAmountSum = roundMoney(itemSelections.reduce((sum, item) => sum + Number(item.amount), 0));
+      if (Math.abs(selectionsAmountSum - totalAmount) > 0.02) {
+        throw new Error("La suma de montos por linea no coincide con el total del cobro");
       }
 
       const tenderedTotal = roundMoney(tenderedSplits.reduce((sum, split) => sum + Number(split.amount), 0));
@@ -1976,8 +2103,8 @@ export function useCaja(params?: {
           select: "id, quantity, unit_price, total, status, paid_at",
           filters: [{ column: "order_id", op: "eq", value: orderId }]
         }),
-        !isSpecial ? fetchActivePaymentItemsForOrderItems(itemIds) : Promise.resolve([]),
-        isSpecial ? fetchActivePaymentsTotalByOrder([orderId]) : Promise.resolve({})
+        fetchActivePaymentItemsForOrderItems(itemIds),
+        fetchActivePaymentsTotalByOrder([orderId]),
       ]);
 
       if (!orderData) throw new Error("Orden no encontrada");
@@ -1985,47 +2112,59 @@ export function useCaja(params?: {
         throw new Error("Una orden borrador no puede cobrarse en caja.");
       }
 
-      if (!isSpecial) {
-        const dbItems = allDbItems.filter(item => itemIds.includes(item.id));
-        const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRowsData);
-        const dbItemMap = Object.fromEntries(dbItems.map((item) => [item.id, item]));
+      const orderIsSpecial = Boolean(orderData.is_special);
+      if (Boolean(isSpecial) !== orderIsSpecial) {
+        throw new Error("El tipo de cobro no coincide con la orden");
+      }
 
-        for (const itemSelection of itemSelections) {
-          const dbItem = dbItemMap[itemSelection.itemId];
-          if (!dbItem || dbItem.status === "DRAFT") {
-            throw new Error("Un item borrador no puede cobrarse en caja.");
-          }
-          const quantities = computeOperationalQuantities({
-            quantityOrdered: Number(dbItem.quantity ?? 0),
-            quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,
-            quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[itemSelection.itemId] ?? 0,
-            quantityCancelledPending: operationalMaps.cancelledPendingMap[itemSelection.itemId] ?? 0,
-            quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
-            quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[itemSelection.itemId] ?? 0,
-          });
-          const payableQty = getPayableQuantityForOrderType(
-            orderData.order_type as "DINE_IN" | "TAKEOUT",
-            quantities,
-            activeWorkflowMode,
-          );
-          const alreadyPaidQty = resolvePaidQuantity({
-            payableQuantity: payableQty,
-            orderedQuantity: Number(dbItem.quantity ?? 0),
-            paidQuantityFromPayments: paidQtyMap[itemSelection.itemId] ?? 0,
-            paidAt: dbItem.paid_at,
-            allowPaidAtFallback: false,
-          });
-          const pendingPayableQty = Math.max(0, payableQty - alreadyPaidQty);
+      if (orderIsSpecial && (!Number.isFinite(Number(specialAmount)) || Number(specialAmount) <= 0)) {
+        throw new Error("Selecciona lineas validas para cobrar la orden especial");
+      }
 
-          if (itemSelection.quantity > pendingPayableQty) {
-            throw new Error(`En el item "${dbItem.id.slice(0, 5)}" quieres cobrar ${itemSelection.quantity} pero solo hay ${pendingPayableQty} pendiente.`);
-          }
+      const dbItems = allDbItems.filter(item => itemIds.includes(item.id));
+      const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRowsData);
+      const dbItemMap = Object.fromEntries(dbItems.map((item) => [item.id, item]));
 
-          if (Math.abs(Number(dbItem.unit_price) - itemSelection.unitPrice) > 0.01) {
-            throw new Error("Inconsistencia detectada en el precio unitario del item");
-          }
+      for (const itemSelection of itemSelections) {
+        const dbItem = dbItemMap[itemSelection.itemId];
+        if (!dbItem || dbItem.status === "DRAFT") {
+          throw new Error("Un item borrador no puede cobrarse en caja.");
         }
-      } else {
+        const quantities = computeOperationalQuantities({
+          quantityOrdered: Number(dbItem.quantity ?? 0),
+          quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,
+          quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[itemSelection.itemId] ?? 0,
+          quantityCancelledPending: operationalMaps.cancelledPendingMap[itemSelection.itemId] ?? 0,
+          quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
+          quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[itemSelection.itemId] ?? 0,
+        });
+        const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+        const payableQty = orderIsSpecial
+          ? activeOrderedQty
+          : getPayableQuantityForOrderType(
+              orderData.order_type as "DINE_IN" | "TAKEOUT",
+              quantities,
+              activeWorkflowMode,
+            );
+        const alreadyPaidQty = resolvePaidQuantity({
+          payableQuantity: payableQty,
+          orderedQuantity: Number(dbItem.quantity ?? 0),
+          paidQuantityFromPayments: paidQtyMap[itemSelection.itemId] ?? 0,
+          paidAt: dbItem.paid_at,
+          allowPaidAtFallback: false,
+        });
+        const pendingPayableQty = Math.max(0, payableQty - alreadyPaidQty);
+
+        if (itemSelection.quantity > pendingPayableQty) {
+          throw new Error(`En el item "${dbItem.id.slice(0, 5)}" quieres cobrar ${itemSelection.quantity} pero solo hay ${pendingPayableQty} pendiente.`);
+        }
+
+        if (Math.abs(Number(dbItem.unit_price) - itemSelection.unitPrice) > 0.01) {
+          throw new Error("Inconsistencia detectada en el precio unitario del item");
+        }
+      }
+
+      if (orderIsSpecial) {
         const configuredSpecialTotal = orderData.special_total_manual;
         if (configuredSpecialTotal == null) {
           throw new Error("La orden especial aun no tiene un total manual configurado");
@@ -2039,7 +2178,7 @@ export function useCaja(params?: {
 
       const now = new Date().toISOString();
       const shouldMarkSpecialAsPaid =
-        isSpecial
+        orderIsSpecial
         && orderData.special_total_manual != null
         && roundMoney(Number(activePaymentsByOrder[orderId] ?? 0) + appliedTotal) >= roundMoney(Number(orderData.special_total_manual));
       const paymentGroupId = preparedTransferProofSession?.paymentGroupId ?? generateUUID();
@@ -2068,465 +2207,296 @@ export function useCaja(params?: {
         if (!isMissingRpcSignature(rpcError as any, "registrar_movimiento_caja_operativo")) throw rpcError;
 
         await dbInsert("cash_movements", {
-          id: generateUUID(),
           shift_id: payload.shift_id,
-          payment_id: payload.payment_id ?? null,
-          denomination_id: payload.denomination_id ?? null,
           movement_type: payload.movement_type,
           qty_delta: payload.qty_delta,
-          created_at: payload.created_at ?? now,
+          payment_id: payload.payment_id ?? null,
+          denomination_id: payload.denomination_id ?? null,
+          created_at: payload.created_at ?? new Date().toISOString(),
         });
       };
 
-      const preparedTransferQueue = [...(preparedTransferProofSession?.paymentIds ?? [])];
-      const allPayments = paymentSplits.map((paymentSplit, index) => {
-        const reusePreparedPayment = transferMethodIds.has(paymentSplit.methodId) && preparedTransferQueue.length > 0;
-        const paymentId = reusePreparedPayment ? preparedTransferQueue.shift()! : generateUUID();
-        if (index === 0) anchorPaymentId = paymentId;
-        if (cashMethodId && paymentSplit.methodId === cashMethodId) cashPaymentId = paymentId;
-
-        return {
-          id: paymentId,
-          order_id: orderId,
-          payment_method_id: paymentSplit.methodId,
-          shift_id: shift.id,
-          amount: paymentSplit.amount,
-          status: "active",
-          notes: buildPaymentNote({
-            paymentGroupId,
-            index,
-            tenderedAmount: tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount,
-            appliedAmount: Number(paymentSplit.amount),
-            isSpecial: Boolean(isSpecial),
-            transferProofPending: false,
-            cashReceivedDenoms: cashMethodId && paymentSplit.methodId === cashMethodId ? effectiveCashReceivedDenoms : [],
-            cashChangeDenoms: cashMethodId && paymentSplit.methodId === cashMethodId ? effectiveCashChangeDenoms : [],
-          }),
-          created_by: user.id,
-          created_at: now,
-          reusePreparedPayment,
-        };
-      });
-
-      for (const p of allPayments) {
-        if (p.reusePreparedPayment) {
-          const { reusePreparedPayment, ...rest } = p;
-          await dbUpdate("payments", p.id, rest);
-        } else {
-          const { reusePreparedPayment, ...rest } = p;
-          await dbInsert("payments", rest);
-        }
-      }
-
-      if (!anchorPaymentId) throw new Error("No se pudo registrar el pago");
-
-      const cashMovementsPromises: Promise<void>[] = [];
-      if (cashPaymentId) {
-        for (const rd of effectiveCashReceivedDenoms) {
-          cashMovementsPromises.push(
-            insertCashMovementCompat({
-              shift_id: shift.id,
-              payment_id: cashPaymentId,
-              denomination_id: rd.denomination_id,
-              movement_type: "PAYMENT_IN",
-              qty_delta: rd.qty,
-              created_at: now,
-            })
-          );
-        }
-        for (const cd of effectiveCashChangeDenoms) {
-          cashMovementsPromises.push(
-            insertCashMovementCompat({
-              shift_id: shift.id,
-              payment_id: cashPaymentId,
-              denomination_id: cd.denomination_id,
-              movement_type: "CHANGE_OUT",
-              qty_delta: cd.qty,
-              created_at: now,
-            })
-          );
-        }
-      } else {
-        for (const cd of effectiveCashChangeDenoms) {
-          cashMovementsPromises.push(
-            insertCashMovementCompat({
-              shift_id: shift.id,
-              payment_id: anchorPaymentId,
-              denomination_id: cd.denomination_id,
-              movement_type: "CHANGE_OUT",
-              qty_delta: cd.qty,
-              created_at: now,
-            })
-          );
-        }
-      }
-
-      await Promise.all(cashMovementsPromises);
-
-      // NOTE: cash_shift_denoms.qty_current is updated atomically by the
-      // registrar_movimiento_caja_operativo RPC for each PAYMENT_IN / CHANGE_OUT.
-      // Do NOT manually update qty_current here — doing so causes race conditions
-      // (double-updates from stale cached values) that corrupt denomination counts.
-
-      const refreshedShiftDenoms = await dbSelect<any>("cash_shift_denoms", {
-        select: "denomination_id, qty_current",
-        filters: [{ column: "shift_id", op: "eq", value: shift.id }]
-      });
-
-      if (!isSpecial) {
-        await Promise.all(
-          itemSelections.map((itemSelection) =>
-            dbInsert("payment_items", {
+      if (preparedTransferProofSession) {
+        const payments = await dbSelect<any>("payments", {
+          select: "id, order_id, payment_method_id, amount, notes",
+          filters: [{ column: "id", op: "in", value: preparedTransferProofSession.paymentIds }]
+        });
+        
+        for (const payment of payments) {
+          const meta = parsePaymentNotes(payment.notes);
+          if (meta.itemsAnchor) anchorPaymentId = payment.id;
+          
+          const updatedNotes = appendNoteMarker(payment.notes, "TRANSFER_PROOF_PENDING:0");
+          await dbUpdate("payments", payment.id, { notes: updatedNotes });
+          
+          for (const itemSelection of itemSelections) {
+            await dbInsert("payment_items", {
               id: generateUUID(),
-              payment_id: anchorPaymentId,
+              payment_id: payment.id,
               order_item_id: itemSelection.itemId,
               quantity_paid: itemSelection.quantity,
               unit_price: itemSelection.unitPrice,
               total_amount: itemSelection.amount,
-              created_at: now,
-            })
-          )
-        );
+            });
+          }
+        }
+        
+        for (const split of paymentSplits) {
+          if (transferMethodIds.has(split.methodId)) continue;
+          
+          const paymentId = generateUUID();
+          const isCash = isCashPaymentMethodName(selectedMethods.find(m => m.id === split.methodId)?.name);
+          if (isCash) cashPaymentId = paymentId;
+
+          await dbInsert("payments", {
+            id: paymentId,
+            order_id: orderId,
+            payment_method_id: split.methodId,
+            amount: split.amount,
+            notes: buildPaymentNote({
+              paymentGroupId,
+              index: anchorPaymentId ? 1 : 0,
+              tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
+              appliedAmount: Number(split.amount),
+              isSpecial: orderIsSpecial,
+              cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
+              cashChangeDenoms: effectiveCashChangeDenoms,
+            }),
+            created_by: user.id,
+            created_at: now,
+          });
+
+          if (!anchorPaymentId) anchorPaymentId = paymentId;
+
+          for (const itemSelection of itemSelections) {
+            await dbInsert("payment_items", {
+              id: generateUUID(),
+              payment_id: paymentId,
+              order_item_id: itemSelection.itemId,
+              quantity_paid: itemSelection.quantity,
+              unit_price: itemSelection.unitPrice,
+              total_amount: itemSelection.amount,
+            });
+          }
+        }
+      } else {
+        for (const [index, split] of paymentSplits.entries()) {
+          const paymentId = generateUUID();
+          const isCash = isCashPaymentMethodName(selectedMethods.find(m => m.id === split.methodId)?.name);
+          if (isCash) cashPaymentId = paymentId;
+
+          await dbInsert("payments", {
+            id: paymentId,
+            order_id: orderId,
+            payment_method_id: split.methodId,
+            amount: split.amount,
+            notes: buildPaymentNote({
+              paymentGroupId,
+              index,
+              tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
+              appliedAmount: Number(split.amount),
+              isSpecial: orderIsSpecial,
+              cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
+              cashChangeDenoms: effectiveCashChangeDenoms,
+            }),
+            created_by: user.id,
+            created_at: now,
+          });
+
+          if (index === 0) anchorPaymentId = paymentId;
+
+          for (const itemSelection of itemSelections) {
+            await dbInsert("payment_items", {
+              id: generateUUID(),
+              payment_id: paymentId,
+              order_item_id: itemSelection.itemId,
+              quantity_paid: itemSelection.quantity,
+              unit_price: itemSelection.unitPrice,
+              total_amount: itemSelection.amount,
+            });
+          }
+        }
       }
 
-      let syncSummary: Awaited<ReturnType<typeof syncOrderPaymentState>> | null = null;
-      let paymentStateWarning: string | null = null;
-
-      try {
-        syncSummary = await syncOrderPaymentState(orderId);
-      } catch (syncError) {
-        console.error("No se pudo sincronizar el estado de pago de la orden", syncError);
-        paymentStateWarning = syncError instanceof Error ? syncError.message : "Error de sincronización";
+      if (cashPaymentId) {
+        for (const denom of effectiveCashReceivedDenoms) {
+          await insertCashMovementCompat({
+            shift_id: shift.id,
+            movement_type: "PAYMENT_IN",
+            qty_delta: denom.qty,
+            payment_id: cashPaymentId,
+            denomination_id: denom.denomination_id,
+            created_at: now,
+          });
+        }
       }
 
-      if (shouldMarkSpecialAsPaid && syncSummary?.status !== "PAID") {
-        await dbUpdate("orders", orderId, {
-          status: "PAID",
-          paid_at: now,
-          closed_at: now,
-          updated_at: now,
-        });
-        syncSummary = {
-          orderId,
-          status: "PAID",
-          paidAt: now,
-        } as Awaited<ReturnType<typeof syncOrderPaymentState>>;
+      const paymentIdForChangeOut = cashPaymentId ?? anchorPaymentId;
+      if (paymentIdForChangeOut && effectiveCashChangeDenoms.length > 0) {
+        for (const denom of effectiveCashChangeDenoms) {
+          await insertCashMovementCompat({
+            shift_id: shift.id,
+            movement_type: "CHANGE_OUT",
+            qty_delta: denom.qty,
+            payment_id: paymentIdForChangeOut,
+            denomination_id: denom.denomination_id,
+            created_at: now,
+          });
+        }
       }
 
-      return {
-        refreshedShiftDenoms,
-        paymentStateWarning,
-        orderId,
-        orderType: orderData.order_type as "DINE_IN" | "TAKEOUT",
-        tableId: orderData.table_id ?? null,
-        syncStatus: syncSummary?.status ?? null,
-        createdCaptureRequestCount: 0, 
-        captureRequestWarning: null, 
-      };
+      if (shouldMarkSpecialAsPaid) {
+        await dbUpdate("orders", orderId, { status: "READY", paid_at: now });
+      }
+
+      await syncOrderPaymentState(orderId);
+      await ensureTableSnapshot(orderId);
     },
-    onSuccess: async (result) => {
-      if (activeBranchId && result?.refreshedShiftDenoms) {
-        const refreshedQtyMap = Object.fromEntries(
-          result.refreshedShiftDenoms.map((row: any) => [row.denomination_id, row.qty_current]),
-        );
-        qc.setQueryData(["current-shift", activeBranchId], (current: CashShift | null | undefined) => {
-          if (!current) return current;
-
-          return {
-            ...current,
-            denoms: current.denoms.map((denom) => ({
-              ...denom,
-              qty_current:
-                refreshedQtyMap[denom.denomination_id] ?? Number(denom.qty_current ?? 0),
-            })),
-          };
-        });
-      }
-
-      Promise.all([
-        qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["current-shift"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["order"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["pending-payment-capture-requests"], exact: false }),
-      ]).catch(console.error);
-
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["completed-payments"] });
+      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
       toast.success("Pago registrado");
-
-      if (result?.paymentStateWarning) {
-        toast.warning(result.paymentStateWarning);
-      }
     },
     onError: (err: any) => toast.error(err.message),
   });
 
-  const updatePaymentNotes = async (paymentId: string, marker: string) => {
-    const { data: payment, error: paymentError } = await supabase
-      .from("payments")
-      .select("notes")
-      .eq("id", paymentId)
-      .single();
-    if (paymentError) throw paymentError;
-
-    const nextNotes = appendNoteMarker(payment?.notes ?? null, marker);
-
-    const { error: updateError } = await supabase
-      .from("payments")
-      .update({ notes: nextNotes })
-      .eq("id", paymentId);
-    if (updateError) throw updateError;
-  };
-
-  const expandPaymentIdsByGroup = async (paymentIds: string[]) => {
-    const uniqueIdSet = new Set(paymentIds.filter(Boolean));
-    const uniqueIds = Array.from(uniqueIdSet);
-    if (uniqueIds.length === 0) return [];
-
-    const { data: selectedPayments, error: selectedPaymentsError } = await supabase
-      .from("payments")
-      .select("id, notes")
-      .in("id", uniqueIds);
-    if (selectedPaymentsError) throw selectedPaymentsError;
-
-    const groupIds = Array.from(new Set((selectedPayments ?? []).map((payment) => parsePaymentNotes(payment.notes).paymentGroupId).filter(Boolean))) as string[];
-    if (groupIds.length === 0) return uniqueIds;
-
-    const groupedResults = await Promise.all(
-      groupIds.map(async (groupId) => {
-        const { data, error } = await supabase
-          .from("payments")
-          .select("id, notes")
-          .ilike("notes", "%GROUP:" + groupId + "%");
-        if (error) throw error;
-      })
-    );
-
-    const flatIds = [...uniqueIds, ...groupedResults.flat()];
-    const combinedSet = new Set(flatIds);
-    return Array.from(combinedSet);
-  };
-
   const requestPaymentVoid = useMutation({
-    mutationFn: async ({ paymentId, reason, paymentSelections, cashRefundDenoms }: { paymentId: string; reason: string; paymentSelections?: PaymentVoidSelectionInput[]; cashRefundDenoms?: CashRefundDenomInput[] }) => {
-      const shift = shiftQuery.data;
+    mutationFn: async ({ paymentId, reason, paymentSelections, cashRefundDenoms }: {
+      paymentId: string;
+      reason: string;
+      paymentSelections: PaymentVoidSelectionInput[];
+      cashRefundDenoms: CashRefundDenomInput[];
+    }) => {
       if (!user) throw new Error("No user");
+      const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
-      if (!reason.trim()) throw new Error("Debes indicar un motivo");
 
-      const normalizedSelections = (paymentSelections ?? [])
-        .map((s) => ({ paymentEntryId: s.paymentEntryId, quantity: Number(s.quantity ?? 0) }))
-        .filter((s) => s.paymentEntryId && s.quantity > 0);
-      if (normalizedSelections.length === 0) throw new Error("Selecciona cantidades a anular");
-
-      const normalizedRefundDenoms = (cashRefundDenoms ?? [])
-        .map((e) => ({ denomination_id: e.denomination_id, qty: Math.max(0, Math.floor(Number(e.qty ?? 0))) }))
-        .filter((e) => e.denomination_id && e.qty > 0);
-
-      const payments = await dbSelect<any>("payments", {
-        select: "order_id",
-        filters: [{ column: "id", op: "eq", value: paymentId }]
-      });
-      if (payments[0]?.order_id) await ensureTableSnapshot(payments[0].order_id);
-
-      const { data, error } = await supabase.rpc("request_void_payment" as any, {
-        p_payment_id: paymentId,
-        p_current_shift_id: shift.id,
-        p_reason: reason.trim(),
-        p_terminal_id: buildPosTerminalLabel(),
-        p_payment_item_selections: normalizedSelections.map((s) => ({
-          payment_item_id: s.paymentEntryId,
-          quantity: s.quantity,
-        })),
-        p_cash_refund_detail: normalizedRefundDenoms,
+      const requestId = generateUUID();
+      await dbInsert("payment_void_requests", {
+        id: requestId,
+        payment_id: paymentId,
+        requested_by: user.id,
+        reason: reason,
+        status: "pending",
+        payment_selections: paymentSelections as any,
+        cash_refund_detail: cashRefundDenoms as any,
       });
 
-      if (error) throw error;
-      return data as string;
+      return { requestId };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      toast.success("Solicitud de anulacion registrada");
+      toast.success("Solicitud de anulacion enviada");
     },
     onError: (err: any) => toast.error(err.message),
   });
 
   const voidPaymentWithSupervisor = useMutation({
-    mutationFn: async ({
-      paymentId,
-      requestId,
-      reason,
-      paymentSelections,
-      cashRefundDenoms,
-      supervisorIdentifier,
-      supervisorPassword,
-    }: {
+    mutationFn: async ({ paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms }: {
       paymentId: string;
-      requestId: string;
+      requestId?: string;
       reason: string;
-      paymentSelections?: PaymentVoidSelectionInput[];
-      cashRefundDenoms?: CashRefundDenomInput[];
       supervisorIdentifier: string;
       supervisorPassword: string;
+      paymentSelections: PaymentVoidSelectionInput[];
+      cashRefundDenoms: CashRefundDenomInput[];
     }) => {
       const shift = shiftQuery.data;
+      if (!shift) throw new Error("No hay turno abierto");
       if (!user) throw new Error("No user");
-      if (!shift?.id) throw new Error("No hay turno abierto");
-      if (!requestId) throw new Error("La solicitud no existe");
-      if (!reason.trim()) throw new Error("Indica un motivo");
 
-      const normalizedSelections = (paymentSelections ?? [])
-        .map((s) => ({ paymentEntryId: s.paymentEntryId, quantity: Number(s.quantity ?? 0) }))
-        .filter((s) => s.paymentEntryId && s.quantity > 0);
-      if (normalizedSelections.length === 0) throw new Error("Selecciona cantidades");
-
-      const normalizedRefundDenoms = (cashRefundDenoms ?? [])
-        .map((e) => ({ denomination_id: e.denomination_id, qty: Math.max(0, Math.floor(Number(e.qty ?? 0))) }))
-        .filter((e) => e.denomination_id && e.qty > 0);
-
-      const payments = await dbSelect<any>("payments", { select: "order_id", filters: [{ column: "id", op: "eq", value: paymentId }] });
-      if (payments[0]?.order_id) await ensureTableSnapshot(payments[0].order_id);
-
-      const paymentItemSelections = normalizedSelections.map((s) => ({
-        payment_item_id: s.paymentEntryId,
-        quantity: s.quantity,
-      }));
-
-      const supervisorIdentifierValue = supervisorIdentifier.trim();
-      if (!supervisorIdentifierValue && !supervisorPassword) {
-        const { data, error } = await supabase.rpc("approve_and_void_payment" as any, {
-          p_payment_id: paymentId,
-          p_request_id: requestId,
-          p_reason: reason.trim(),
-          p_current_shift_id: shift.id,
-          p_requested_by_user_id: user.id,
-          p_supervisor_id: user.id,
-          p_terminal_id: buildPosTerminalLabel(),
-          p_payment_item_selections: paymentItemSelections,
-          p_cash_refund_detail: normalizedRefundDenoms,
-        });
-
-        if (error) throw error;
-        return data;
-      }
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token?.trim();
-      if (!accessToken) throw new Error("Sesion invalida");
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-      const fnUrl = `${supabaseUrl}/functions/v1/void-payment`;
-
-      const response = await fetch(fnUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          payment_id: paymentId,
-          request_id: requestId,
-          current_shift_id: shift.id,
-          reason: reason.trim(),
-          terminal_id: buildPosTerminalLabel(),
-          supervisor_identifier: supervisorIdentifierValue,
-          supervisor_password: supervisorPassword,
-          payment_item_selections: paymentItemSelections,
-          cash_refund_detail: normalizedRefundDenoms,
-        }),
+      const { error } = await supabase.rpc("void_payment_with_supervisor" as any, {
+        p_payment_id: paymentId,
+        p_void_request_id: requestId ?? null,
+        p_supervisor_identifier: supervisorIdentifier,
+        p_supervisor_password: supervisorPassword,
+        p_reason: reason,
+        p_executor_id: user.id,
+        p_selections: paymentSelections as any,
+        p_cash_refund_denoms: cashRefundDenoms as any,
       });
 
-      const responseData = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(responseData?.error || `Error ${response.status} al anular el pago`);
-      }
-
-      return responseData;
+      if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
+      qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["completed-payments"] });
       qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      toast.success("Pago anulado");
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+      toast.success("Pago anulado exitosamente");
     },
     onError: (err: any) => toast.error(err.message),
   });
 
   const closeCashRegister = useMutation({
     mutationFn: async (notes?: string) => {
+      if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
-      if (!activeBranchId) throw new Error("No branch selected");
-      if (!user) throw new Error("No user");
 
       const { error } = await supabase.rpc("close_cash_register" as any, {
         p_shift_id: shift.id,
         p_cashier_id: user.id,
-        p_branch_id: activeBranchId,
         p_notes: notes ?? null,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
       toast.success("Caja cerrada");
     },
+    onError: (err: any) => toast.error(err.message),
   });
 
   const annulCashOpening = useMutation({
-    mutationFn: async ({ reason }: { reason: string }) => {
-      const shift = shiftQuery.data;
-      if (!shift) throw new Error("No hay turno abierto");
-
-      const { error } = await supabase.rpc("anular_apertura_caja" as any, {
-        p_turno_id: shift.id,
-        p_motivo: reason,
+    mutationFn: async ({ openingId, reason }: { openingId: string; reason: string }) => {
+      if (!user) throw new Error("No user");
+      const { error } = await supabase.rpc("annul_cash_opening" as any, {
+        p_opening_id: openingId,
+        p_admin_id: user.id,
+        p_reason: reason,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      toast.success("Apertura de caja anulada");
+      toast.success("Apertura anulada");
     },
+    onError: (err: any) => toast.error(err.message),
   });
 
   const registerCashMovement = useMutation({
-    mutationFn: async ({ type, amount, reason, detail }: { type: "entrada" | "salida" | "cambio_denominacion"; amount: number; reason: string; detail?: CashRegisterMovementDetail | null }) => {
+    mutationFn: async (params: {
+      type: "entrada" | "salida" | "cambio_denominacion";
+      amount: number;
+      reason: string;
+      movement_detail?: CashRegisterMovementDetail;
+    }) => {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
+      if (!user) throw new Error("No user");
 
       const { error } = await supabase.rpc("registrar_movimiento_caja" as any, {
         p_turno_id: shift.id,
-        p_tipo: type,
-        p_monto: amount,
-        p_motivo: reason,
-        p_detail: detail ?? null,
+        p_recorded_by: user.id,
+        p_movement_type: params.type,
+        p_amount: params.amount,
+        p_reason: params.reason,
+        p_movement_detail: params.movement_detail ?? null,
       });
-      if (!error) return;
-
-      if (!isMissingRpcSignature(error as any, "registrar_movimiento_caja")) throw error;
-
-      const { error: legacyError } = await supabase.rpc("registrar_movimiento_caja" as any, {
-        p_turno_id: shift.id,
-        p_tipo: type,
-        p_monto: amount,
-        p_motivo: reason,
-      });
-      if (legacyError) throw legacyError;
+      if (error) throw error;
     },
     onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
       qc.invalidateQueries({ queryKey: ["current-shift"] });
+      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
       toast.success(variables.type === "cambio_denominacion" ? "Cambio registrado" : "Movimiento registrado");
     },
     onError: (err: any) => toast.error(err.message),
@@ -2585,16 +2555,3 @@ export function useCaja(params?: {
     takeCajaControl: takeCajaControl.mutateAsync,
   };
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

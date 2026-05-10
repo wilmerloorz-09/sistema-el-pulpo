@@ -17,6 +17,15 @@ export function formatElapsedHHMMSS(elapsedSeconds: number): string {
   return `${pad(mins)}:${pad(secs)}`;
 }
 
+/** Tiempo transcurrido desde una fecha ISO (p. ej. apertura de turno). */
+export function formatElapsedSince(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const start = new Date(iso).getTime();
+  if (Number.isNaN(start)) return "—";
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  return formatElapsedHHMMSS(elapsedSeconds);
+}
+
 export function formatEventTimeWithLabel(iso: string | null | undefined, status: string): string {
   if (!iso) return "—";
   const d = new Date(iso);

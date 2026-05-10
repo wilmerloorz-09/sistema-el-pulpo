@@ -6,6 +6,8 @@ import { computeLineAmount } from "@/lib/paymentQuantity";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "PENDING_CANCELLATION";
 
@@ -91,14 +93,18 @@ export interface OrderSummary {
 export function useOrdersByStatus(status: OrderStatus | null = null) {
   const { activeBranchId } = useBranch();
   const qc = useQueryClient(); // Add useQueryClient if needed, wait, the original didn't have it.
+  const { data: shiftGate } = useBranchShiftGate();
 
   return useQuery({
-    queryKey: ["orders", activeBranchId, status],
+    queryKey: ["orders", activeBranchId, status, shiftGate?.shiftId ?? "_"],
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
+
+      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId);
+      if (!openShiftId) return [];
 
       const cancelledView = status === "CANCELLED";
       const sentView = status === "SENT_TO_KITCHEN";
@@ -116,6 +122,8 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
         if (paidView) return [{ column: "status", op: "eq", value: "PAID" }];
         return [{ column: "status", op: "eq", value: status }];
       })();
+
+      filters.push({ column: "cash_shift_id", op: "eq", value: openShiftId });
 
       let orders = await dbSelect<any>("orders", {
         select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
@@ -164,7 +172,10 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           const pendingOrders = await dbSelect<any>("orders", {
             select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
             branchId: activeBranchId,
-            filters: [{ column: "id", op: "in", value: missingPendingOrderIds }],
+            filters: [
+              { column: "id", op: "in", value: missingPendingOrderIds },
+              { column: "cash_shift_id", op: "eq", value: openShiftId },
+            ],
             orderBy: { column: "created_at", ascending: false },
           });
 

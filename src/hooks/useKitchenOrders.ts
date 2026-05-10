@@ -5,6 +5,8 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 
 export interface KitchenOrderItem {
   id: string;
@@ -54,11 +56,15 @@ export function useKitchenOrders() {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
+  const { data: shiftGate } = useBranchShiftGate();
 
   const query = useQuery({
-    queryKey: ["kitchen-orders", activeBranchId],
+    queryKey: ["kitchen-orders", activeBranchId, shiftGate?.shiftId ?? "_"],
     queryFn: async () => {
       if (!activeBranchId) return [];
+
+      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId);
+      if (!openShiftId) return [];
 
       const orders = await dbSelect<{
         id: string;
@@ -76,7 +82,10 @@ export function useKitchenOrders() {
       }>("orders", {
         select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, updated_at, sent_to_kitchen_at, status, locked_for_editing",
         branchId: activeBranchId,
-        filters: [{ column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] }],
+        filters: [
+          { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] },
+          { column: "cash_shift_id", op: "eq", value: openShiftId },
+        ],
         orderBy: { column: "updated_at", ascending: true },
       });
 

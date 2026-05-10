@@ -87,7 +87,11 @@ const ProtectedRoute = ({
     : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
   const hasShiftAccess = requiresOpenShift && shiftOpen && userEnabled && (hasSupervisorBypass || hasRequiredShiftRole);
 
+  const isStaleShift = Boolean(shiftGateQuery.data?.isStaleShift);
+  const isAllowedModulePath = location.pathname === "/turno" || location.pathname === "/admin";
+
   const fallback = (() => {
+    if (isStaleShift && canAccessTurno) return canAccessAdmin ? "/admin" : "/turno";
     if (preferredPath) return preferredPath;
     if (firstVisiblePath) return firstVisiblePath;
     const firstVisibleItem = visibleItems[0]?.to;
@@ -99,6 +103,38 @@ const ProtectedRoute = ({
     if (canAccessTurno) return "/turno";
     return "/";
   })();
+
+  if (isStaleShift && !isAllowedModulePath) {
+    if (canAccessTurno) {
+      return <Navigate to={canAccessAdmin ? "/admin" : "/turno"} replace />;
+    }
+
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+        <div className="w-full max-w-lg rounded-[28px] border border-red-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(239,68,68,0.55)]">
+          <h2 className="font-display text-xl font-black text-red-950">
+            Turno expirado detectado
+          </h2>
+          <p className="mt-2 text-sm text-red-900/80">
+            El sistema ha detectado un turno activo de un día anterior. Por seguridad y orden financiero, el sistema permanecerá bloqueado para esta sucursal hasta que el turno sea cerrado.
+          </p>
+          <p className="mt-4 text-sm font-bold text-red-950">
+            Contacta a un administrador o supervisor para proceder con el cierre del turno anterior.
+          </p>
+          <div className="mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-2xl border-red-200 text-red-950 hover:bg-red-50"
+              onClick={() => void signOut()}
+            >
+              Cerrar sesión
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (requiresOpenShift) {
     if (!shiftOpen || !userEnabled) {

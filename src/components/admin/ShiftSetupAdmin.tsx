@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,11 +22,24 @@ import {
   Truck,
   Trash2,
   Users,
+  ReceiptText,
 } from "lucide-react";
+import { 
+  openCashClosureReportWindow, 
+  type CashShiftSnapshot, 
+  type CompletedPayment, 
+  type CashMovement,
+  type MethodSummaryEntry
+} from "@/lib/cashReportUtils";
 import { toast } from "sonner";
 import DispatchConfig from "@/components/admin/DispatchConfig";
 import BranchCancelPolicyEditor, { type BranchCancelPolicyDraftRow } from "@/components/admin/BranchCancelPolicyEditor";
 import { useDispatchConfig, type DispatchAssignment, type DispatchConfig as DispatchConfigModel } from "@/hooks/useDispatchConfig";
+import { 
+  fetchCashRegisterMovementsForShift, 
+  fetchCompletedPaymentsForShift, 
+  fetchShiftSnapshot 
+} from "@/hooks/useCaja";
 
 interface ShiftUserRow {
   user_id: string;
@@ -323,6 +336,8 @@ const ShiftSetupAdmin = () => {
   const [cashierChangePassword, setCashierChangePassword] = useState("");
   const [cashierChangePasswordError, setCashierChangePasswordError] = useState("");
   const [validatingCashierChangePassword, setValidatingCashierChangePassword] = useState(false);
+  const [showStaleCleanupConfirm, setShowStaleCleanupConfirm] = useState(false);
+  const [isPrintingStaleReport, setIsPrintingStaleReport] = useState(false);
 
   const { config: dispatchConfig, assignments, isLoading: dispatchLoading } = useDispatchConfig();
 
@@ -357,14 +372,22 @@ const ShiftSetupAdmin = () => {
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      return data
-        ? {
-            id: data.id,
-            status: data.status,
-            opened_at: data.opened_at,
-            active_tables_count: Number(data.active_tables_count ?? 0),
-          }
-        : null;
+      if (data) {
+        const openedDate = new Date(data.opened_at);
+        const today = new Date();
+        const isStale = openedDate.getFullYear() !== today.getFullYear() ||
+                       openedDate.getMonth() !== today.getMonth() ||
+                       openedDate.getDate() !== today.getDate();
+
+        return {
+          id: data.id,
+          status: data.status,
+          opened_at: data.opened_at,
+          active_tables_count: Number(data.active_tables_count ?? 0),
+          is_stale: isStale,
+        };
+      }
+      return null;
     },
     enabled: !!activeBranchId,
   });
@@ -522,6 +545,7 @@ const ShiftSetupAdmin = () => {
 
   const referenceCount = branchSettingsQuery.data?.referenceTableCount ?? 0;
   const isOpen = Boolean(shiftQuery.data);
+  const isStale = !!(shiftQuery.data as any)?.is_stale && isOpen;
   const isCashThenDispatch = branchSettingsQuery.data?.workflowMode === "CASH_THEN_DISPATCH";
   const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
@@ -630,6 +654,7 @@ const ShiftSetupAdmin = () => {
     setCancelPolicyState(persistedCancelPolicies);
     setCancelPoliciesDirty(false);
   }, [persistedCancelPolicies]);
+
 
   const workingDispatchConfig = draftDispatchConfig ?? dispatchConfig;
   const workingAssignments = draftAssignments;
@@ -932,7 +957,12 @@ const ShiftSetupAdmin = () => {
     qc.invalidateQueries({ queryKey: ["shift-admin-current-shift"] });
     qc.invalidateQueries({ queryKey: ["shift-admin-users"] });
     qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
-    qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false });
+    qc.invalidateQueries({ queryKey: ["orders"], exact: false });
+    qc.invalidateQueries({ queryKey: ["order"], exact: false });
+    qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false });
+    qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false });
+    qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
     qc.invalidateQueries({ queryKey: ["current-shift"] });
     qc.invalidateQueries({ queryKey: ["dispatch-config", activeBranchId] });
     qc.invalidateQueries({ queryKey: ["dispatch-assignments"] });
@@ -1418,9 +1448,72 @@ const ShiftSetupAdmin = () => {
     onError: (err: any) => showShiftSetupError(err, setWarningDialog),
   });
 
+  const triggerStaleShiftReport = async (shiftId: string, branchName: string) => {
+    setIsPrintingStaleReport(true);
+    const reportToastId = "printing-stale-report";
+    toast.loading("Generando reporte de cierre...", { id: reportToastId });
+    
+    try {
+      const [shift, payments, movements] = await Promise.all([
+        fetchShiftSnapshot(shiftId),
+        fetchCompletedPaymentsForShift(shiftId),
+        fetchCashRegisterMovementsForShift(shiftId)
+      ]);
+
+      const methodSummaryMap = new Map<string, { methodName: string; amount: number; paymentCount: number }>();
+      for (const payment of payments) {
+        const current = methodSummaryMap.get(payment.method_name) ?? {
+          methodName: payment.method_name,
+          amount: 0,
+          paymentCount: 0,
+        };
+        current.amount += Number(payment.amount ?? 0);
+        current.paymentCount += 1;
+        methodSummaryMap.set(payment.method_name, current);
+      }
+
+      const methodSummary: MethodSummaryEntry[] = Array.from(methodSummaryMap.values())
+        .map((entry, index) => ({
+          methodId: `stale-method-${index}-${entry.methodName}`,
+          methodName: entry.methodName,
+          amount: entry.amount,
+          paymentCount: entry.paymentCount,
+        }))
+        .sort((left, right) => right.amount - left.amount || left.methodName.localeCompare(right.methodName));
+
+      openCashClosureReportWindow({
+        branchName,
+        shift,
+        completedPayments: payments,
+        methodSummary,
+        movements: movements as any,
+        closureNotes: "Cierre automático de turno expirado (Limpieza inteligente)",
+        reportMode: "shift"
+      });
+
+      toast.success("Reporte de cierre generado correctamente", { id: reportToastId });
+    } catch (err: any) {
+      console.error("Failed to generate stale shift report", err);
+      toast.error("Error al generar el reporte de cierre: " + err.message, { id: reportToastId });
+    } finally {
+      setIsPrintingStaleReport(false);
+    }
+  };
+
   const closeShiftMutation = useMutation({
     mutationFn: async () => {
       if (!activeBranchId || !shiftQuery.data?.id) throw new Error("No hay turno abierto");
+      
+      if (isStale) {
+        const { error } = await supabase.rpc("cleanup_and_close_stale_shift" as any, {
+          p_shift_id: shiftQuery.data.id,
+          p_branch_id: activeBranchId,
+          p_notes: "Cierre automático de turno expirado (Limpieza inteligente)",
+        } as any);
+        if (error) throw error;
+        return;
+      }
+
       const { error } = await supabase.rpc("close_cash_shift_with_tables" as any, {
         p_shift_id: shiftQuery.data.id,
         p_branch_id: activeBranchId,
@@ -1431,8 +1524,20 @@ const ShiftSetupAdmin = () => {
       if (error) throw error;
     },
     onSuccess: () => {
+      const wasStale = isStale;
+      const closedShiftId = shiftQuery.data?.id;
+      const branchName = activeBranch?.name || "Sucursal";
+      
       invalidateShiftState();
-      toast.success("Turno cerrado correctamente");
+      
+      if (wasStale) {
+        toast.success("Turno expirado cerrado y depurado correctamente");
+        if (closedShiftId) {
+          triggerStaleShiftReport(closedShiftId, branchName);
+        }
+      } else {
+        toast.success("Turno cerrado correctamente");
+      }
     },
     onError: (err: any) => showShiftSetupError(err, setWarningDialog),
   });
@@ -1440,10 +1545,23 @@ const ShiftSetupAdmin = () => {
   const loadZeroValueSpecialOrders = async () => {
     if (!activeBranchId) return [];
 
+    const { data: openShiftRow, error: openShiftErr } = await supabase
+      .from("cash_shifts")
+      .select("id")
+      .eq("branch_id", activeBranchId)
+      .eq("status", "OPEN")
+      .order("opened_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (openShiftErr) throw openShiftErr;
+    const openShiftId = openShiftRow?.id as string | undefined;
+    if (!openShiftId) return [];
+
     const { data, error } = await supabase
       .from("orders")
       .select("id, order_code, order_number, status, paid_at, special_total_manual, total")
       .eq("branch_id", activeBranchId)
+      .eq("cash_shift_id", openShiftId)
       .eq("is_special", true)
       .not("status", "in", "(PAID,CANCELLED)");
 
@@ -1463,6 +1581,11 @@ const ShiftSetupAdmin = () => {
 
   const handleCloseShiftClick = async () => {
     if (closeShiftMutation.isPending || checkingZeroValueSpecialOrders) return;
+
+    if (isStale) {
+      setShowStaleCleanupConfirm(true);
+      return;
+    }
 
     setCheckingZeroValueSpecialOrders(true);
     try {
@@ -1599,6 +1722,23 @@ const ShiftSetupAdmin = () => {
           </div>
         </div>
 
+        {(shiftQuery.data as any)?.is_stale && isOpen && (
+          <div className="mt-4 rounded-[20px] border border-red-200 bg-red-50/90 px-3 py-3 sm:rounded-[22px] sm:px-4">
+            <div className="flex items-start gap-3 text-red-950">
+              <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-[1.05rem] font-black tracking-tight">
+                  Turno expirado detectado (Día anterior)
+                </p>
+                <p className="text-sm leading-relaxed text-red-900/80 font-medium">
+                  Este turno corresponde a una fecha anterior. Por seguridad, todos los módulos operativos del sistema han sido bloqueados.
+                  <span className="block mt-1.5 font-bold">Debes cerrar este turno para desbloquear la sucursal y poder abrir un turno nuevo.</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {hasSetupIssues && (
           <div className="mt-4 rounded-[20px] border border-amber-200 bg-amber-50/90 px-3 py-3 sm:rounded-[22px] sm:px-4">
             <div className="flex items-start gap-3">
@@ -1659,6 +1799,7 @@ const ShiftSetupAdmin = () => {
               value={activeTablesCount}
               onValueChange={setActiveTablesCount}
               min={0}
+              disabled={isStale}
               className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
             />
           </div>
@@ -1667,7 +1808,7 @@ const ShiftSetupAdmin = () => {
         <BranchCancelPolicyEditor
           rows={cancelPolicyState}
           isGlobalAdmin={isGlobalAdmin}
-          disabled={openShiftMutation.isPending || saveShiftMutation.isPending}
+          disabled={isStale || openShiftMutation.isPending || saveShiftMutation.isPending}
           onChange={updateCancelPolicy}
           className="h-full"
         />
@@ -1698,7 +1839,8 @@ const ShiftSetupAdmin = () => {
                 <select
                   value={selectedUserToAdd}
                   onChange={(event) => setSelectedUserToAdd(event.target.value)}
-                  className="h-12 w-full rounded-2xl border border-violet-200 bg-white px-4 text-sm font-medium text-foreground shadow-sm outline-none transition focus:border-violet-400"
+                  disabled={isStale}
+                  className="h-12 w-full rounded-2xl border border-violet-200 bg-white px-4 text-sm font-medium text-foreground shadow-sm outline-none transition focus:border-violet-400 disabled:opacity-50"
                 >
                   <option value="">Selecciona un usuario de esta sucursal...</option>
                   {availableUsersToAdd.map((branchUser) => (
@@ -1713,7 +1855,7 @@ const ShiftSetupAdmin = () => {
                 <Button
                   type="button"
                   onClick={addSelectedUser}
-                  disabled={!selectedUserToAdd || checkingUserToAdd}
+                  disabled={isStale || !selectedUserToAdd || checkingUserToAdd}
                   className="h-11 w-full gap-2 rounded-2xl xl:h-12 xl:w-auto"
                 >
                   {checkingUserToAdd ? (
@@ -1766,7 +1908,7 @@ const ShiftSetupAdmin = () => {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        disabled={isSupervisorLocked}
+                        disabled={isStale || isSupervisorLocked}
                         className="h-9 w-9 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => toggleUser(branchUser.user_id, false)}
                         title={isSupervisorLocked ? "No puedes quitar al supervisor del turno abierto" : "Quitar usuario del turno"}
@@ -1801,6 +1943,7 @@ const ShiftSetupAdmin = () => {
                       <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_dispatch_orders ?? false}
+                          disabled={isStale}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_dispatch_orders", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Despacho</span>
@@ -1811,6 +1954,7 @@ const ShiftSetupAdmin = () => {
                       >
                         <Checkbox
                           checked={userState?.can_manage_products ?? false}
+                          disabled={isStale}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_manage_products", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Productos</span>
@@ -1818,6 +1962,7 @@ const ShiftSetupAdmin = () => {
                       <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_use_caja ?? false}
+                          disabled={isStale}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_use_caja", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Caja</span>
@@ -1825,6 +1970,7 @@ const ShiftSetupAdmin = () => {
                       <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                         <Checkbox
                           checked={userState?.can_authorize_order_cancel ?? false}
+                          disabled={isStale}
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_authorize_order_cancel", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Autorizar anul.</span>
@@ -1869,6 +2015,7 @@ const ShiftSetupAdmin = () => {
             assignmentsOverride={workingAssignments}
             onConfigChange={setDraftDispatchConfig}
             onAssignmentsChange={setDraftAssignments}
+            disabled={isStale}
           />
         </div>
       </section>
@@ -1879,7 +2026,7 @@ const ShiftSetupAdmin = () => {
               <Button
                 variant="secondary"
                 onClick={handleSaveShiftClick}
-                disabled={!hasLocalChanges || hasSetupIssues || saveShiftMutation.isPending || validatingCashierChangePassword}
+                disabled={isStale || !hasLocalChanges || hasSetupIssues || saveShiftMutation.isPending || validatingCashierChangePassword}
                 className="h-12 w-full md:w-auto"
               >
               {saveShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -2044,6 +2191,52 @@ const ShiftSetupAdmin = () => {
             >
               Aceptar
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={showStaleCleanupConfirm} onOpenChange={setShowStaleCleanupConfirm}>
+        <AlertDialogContent className="max-w-md rounded-[26px] border border-amber-200 bg-gradient-to-br from-white via-amber-50/30 to-orange-50/30 p-6 shadow-[0_24px_64px_-32px_rgba(245,158,11,0.5)]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-3 text-xl font-bold text-amber-950">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              Cierre y limpieza de turno
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4 pt-2 text-sm leading-relaxed text-amber-900/80">
+              <p>
+                Este turno pertenece a un día anterior. Para proceder con el cierre, el sistema realizará una <strong>limpieza automática</strong> de los datos pendientes:
+              </p>
+              <ul className="list-disc space-y-2 pl-4 font-medium">
+                <li>Eliminación de órdenes <strong>borrador</strong> y <strong>en caja</strong>.</li>
+                <li>Despacho y cierre de órdenes <strong>pagadas</strong>.</li>
+                <li>Cierre administrativo de órdenes <strong>pendientes</strong>.</li>
+                <li>Cierre automático de la <strong>caja operativa</strong> y generación de reporte.</li>
+              </ul>
+              <p className="text-xs italic text-amber-700/70">
+                Esta acción es irreversible y necesaria para desbloquear la sucursal.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-6 flex-col gap-2 sm:flex-row">
+            <Button
+              variant="ghost"
+              onClick={() => setShowStaleCleanupConfirm(false)}
+              className="w-full rounded-xl hover:bg-amber-100/50 sm:w-auto"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setShowStaleCleanupConfirm(false);
+                closeShiftMutation.mutate();
+              }}
+              disabled={closeShiftMutation.isPending}
+              className="w-full gap-2 rounded-xl bg-amber-600 shadow-lg shadow-amber-600/20 hover:bg-amber-700 sm:w-auto"
+            >
+              {closeShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+              Confirmar limpieza y cierre
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

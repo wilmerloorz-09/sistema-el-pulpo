@@ -71,7 +71,7 @@ const ParaLlevar = () => {
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   const takeoutOrdersQuery = useQuery({
-    queryKey: ["takeout-orders", activeBranchId ?? null],
+    queryKey: ["takeout-orders", activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"],
     queryFn: () => fetchTakeoutSiblingOrders(activeBranchId!),
     enabled: !!activeBranchId,
     staleTime: 0,

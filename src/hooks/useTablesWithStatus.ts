@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
@@ -62,8 +63,12 @@ function parseSplitTotals(rawValue: unknown): TableWithStatus["splitTotals"] {
     .filter((entry) => entry.totalDue > 0);
 }
 
-export function getTablesWithStatusQueryKey(branchId: string | null | undefined) {
-  return ["tables-with-status", branchId ?? null] as const;
+/** Incluye el turno para no reusar snapshot de otro turno en React Query. */
+export function getTablesWithStatusQueryKey(
+  branchId: string | null | undefined,
+  shiftKeyPart: string | null | undefined = "shift-gate-pending",
+) {
+  return ["tables-with-status", branchId ?? null, shiftKeyPart ?? "shift-gate-pending"] as const;
 }
 
 const withTablesTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise<T> =>
@@ -168,14 +173,19 @@ export async function fetchTablesWithStatus(branchId: string): Promise<TablesWit
 
 export function useTablesWithStatus() {
   const { activeBranchId } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const reconciledGhostOrdersRef = useRef<Set<string>>(new Set());
+
+  const tablesShiftKeyPart = shiftGateQuery.isLoading
+    ? "shift-gate-pending"
+    : (shiftGateQuery.data?.shiftId ?? "no-open-shift");
 
   useEffect(() => {
     if (!activeBranchId) return;
 
     const invalidateTables = () => {
-      qc.invalidateQueries({ queryKey: getTablesWithStatusQueryKey(activeBranchId) });
+      qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId], exact: false });
     };
 
     const channel = supabase
@@ -308,7 +318,7 @@ export function useTablesWithStatus() {
   }, [activeBranchId, qc]);
 
   const query = useQuery({
-    queryKey: getTablesWithStatusQueryKey(activeBranchId),
+    queryKey: getTablesWithStatusQueryKey(activeBranchId, tablesShiftKeyPart),
     queryFn: () => fetchTablesWithStatus(activeBranchId!),
     enabled: !!activeBranchId,
     staleTime: 5_000,
@@ -331,7 +341,7 @@ export function useTablesWithStatus() {
       reconciledGhostOrdersRef.current.add(orderId);
       void syncOrderPaymentState(orderId)
         .then(() => {
-          qc.invalidateQueries({ queryKey: getTablesWithStatusQueryKey(activeBranchId) });
+          qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId], exact: false });
         })
         .catch((error) => {
           reconciledGhostOrdersRef.current.delete(orderId);

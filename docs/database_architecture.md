@@ -135,7 +135,7 @@
 - `get_branch_tables_overview(...)` debe mantener ordenes `PAID` como ocupacion visible de mesa hasta que pasen a `KITCHEN_DISPATCHED`; pagar no libera la mesa.
 - En vistas activas, el nombre de mesa debe resolverse desde `restaurant_tables.name` cuando `orders.table_id` existe; `orders.table_name_snapshot` es fallback historico.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre órdenes de mesa.
-- **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados mantienen su estado de ocupación y permiten el re-cobro directo desde el detalle de la orden.
+- **Gestión de Mesas con Pagos Anulados (2026-05-09):** Las mesas con pagos anulados mantienen su estado de ocupación. El sistema garantiza que la orden original (histórica) no bloquee el re-cobro de la nueva orden sucesora.
 
 ### Caja
 - `cash_shifts` representa el turno operativo.
@@ -161,7 +161,11 @@
   - pagos dentro de ese rango
   - movimientos dentro de ese rango
   - `cash_shift_denoms.qty_current` para el detalle de cierre
-- **Integridad Financiera:** Las operaciones de cobro están vinculadas a la existencia de un registro activo en `cash_shift_denoms`. La anulacion operativa de pagos solo aplica sobre ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
+- **Integridad Financiera (2026-05-09):**
+  - Todas las operaciones de cobro y movimiento de efectivo están vinculadas a un registro activo en `cash_shift_denoms`.
+  - La anulación operativa de pagos solo aplica sobre ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
+  - Se exige redondeo a 2 decimales en toda sumatoria de `payment_items` y `cash_movements` para garantizar el "Cuadre de caja".
+  - Los ítems cancelados (`status = 'VOIDED'`) se excluyen de los cálculos de saldo de la orden en tiempo real.
 
 ### Anulacion de pagos
 - `payment_void_requests` concentra la solicitud y el ciclo de autorizacion/ejecucion.
@@ -171,7 +175,9 @@
   - `cash_refund_detail`
   - `replacement_payment_id`
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
-- **Trazabilidad de Anulación (2026-05-06):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` (tipo `partial`) y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`.
+- **Trazabilidad de Anulación (2026-05-09):**
+  - Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` (tipo `partial` para pagos).
+  - Se actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`, el ID del supervisor y el motivo de la anulación.
 - Las devoluciones en efectivo disminuyen `cash_shift_denoms.qty_current` y registran `cash_movements`.
 - Al anular un pago, la orden original conserva `order_code` / `order_number` y queda como historica:
   - `orders.status = 'CANCELLED'`
