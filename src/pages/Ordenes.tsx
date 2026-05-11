@@ -16,6 +16,8 @@ import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
 import PaymentDialog from "@/components/caja/PaymentDialog";
+import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
+import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
 import { useCaja, type PayableOrder } from "@/hooks/useCaja";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import { Button } from "@/components/ui/button";
@@ -433,6 +435,7 @@ const OrdenesContent = () => {
   const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
   const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder, lockOrder, unlockOrder } = useOrder(orderId);
+  const orderItems = order?.items ?? [];
   const { cancelOrderMutation } = useCancellation();
 
   // Permisos y estados base moved up to avoid TDZ
@@ -558,8 +561,8 @@ const OrdenesContent = () => {
       table_name: order.table_name,
       table_name_snapshot: order.table_name,
       split_code: order.split_code,
-      total: order.items.reduce((sum, item) => sum + item.total, 0),
-      items: order.items.map(item => ({
+      total: orderItems.reduce((sum, item) => sum + item.total, 0),
+      items: orderItems.map(item => ({
         id: item.id,
         product_id: item.product_id,
         menu_node_id: null,
@@ -625,7 +628,7 @@ const OrdenesContent = () => {
         order_code: order.order_code,
         split_code: order.split_code ?? null,
         table_order_position: order.table_order_position ?? 1,
-        item_count: order.items.length,
+        item_count: orderItems.length,
       }
     : null;
 
@@ -652,7 +655,7 @@ const OrdenesContent = () => {
 
   useEffect(() => {
     if (order && !stagedDirty) {
-      setStagedItems(order.items);
+      setStagedItems(orderItems);
     }
   }, [order?.items, stagedDirty]);
 
@@ -693,7 +696,7 @@ const OrdenesContent = () => {
 
     setDeletingCajaOrder(true);
     try {
-      const isCurrentCajaItem = (item: typeof order.items[number]) =>
+      const isCurrentCajaItem = (item: typeof orderItems[number]) =>
         item.status !== "DRAFT" &&
         Number(item.quantity_dispatched ?? 0) <= 0 &&
         item.status !== "DISPATCHED" &&
@@ -704,17 +707,17 @@ const OrdenesContent = () => {
         ) &&
         !isPaidItem(item);
       const canDeleteCurrentOrder =
-        order.items.length > 0 &&
-        order.items.every((item) => item.status === "DRAFT" || isCurrentCajaItem(item)) &&
-        !order.items.some((item) => item.status === "DRAFT" && isTemporaryOrderItemId(item.id));
+        orderItems.length > 0 &&
+        orderItems.every((item) => item.status === "DRAFT" || isCurrentCajaItem(item)) &&
+        !orderItems.some((item) => item.status === "DRAFT" && isTemporaryOrderItemId(item.id));
 
       if (!canDeleteCurrentOrder) {
         throw new Error("Solo puedes eliminar la orden si todos los items estan en borrador o en caja.");
       }
 
-      const draftItems = order.items.filter((item) => item.status === "DRAFT");
+      const draftItems = orderItems.filter((item) => item.status === "DRAFT");
 
-      if (draftItems.length === order.items.length) {
+      if (draftItems.length === orderItems.length) {
         if (!order.table_id) {
           for (const item of draftItems) {
             await removeItem.mutateAsync(item.id);
@@ -745,7 +748,7 @@ const OrdenesContent = () => {
       const snapshotRows = Array.isArray(data) ? data : [];
       const cancellationItems = snapshotRows
         .map((row: any) => {
-          const orderItem = order.items.find((item) => item.id === row.order_item_id);
+          const orderItem = orderItems.find((item) => item.id === row.order_item_id);
           const pending = Math.max(0, Number(row.quantity_pending_prepare ?? 0));
           const ready = Math.max(0, Number(row.quantity_ready_available ?? 0));
           const dispatched = Math.max(
@@ -1246,7 +1249,7 @@ const OrdenesContent = () => {
     // y debe permitir abrir una nueva orden desde el "+".
     (isTakeoutOrder || order.status !== "PAID") &&
     !isLockedFromEditar &&
-    order.items.length > 0 &&
+    orderItems.length > 0 &&
     allExistingTableOrdersHaveItems;
   const canDeleteSplit =
     canOperateOrders &&
@@ -1409,7 +1412,7 @@ const OrdenesContent = () => {
     if (!((order.order_type === "DINE_IN" && order.table_id) || isTakeoutOrder)) return;
     if (order.status === "CANCELLED") return;
     if (!isTakeoutOrder && order.status === "PAID") return;
-    if (order.items.length <= 0) {
+    if (orderItems.length <= 0) {
       toast.error("La orden actual debe tener al menos un item");
       return;
     }
@@ -1611,9 +1614,9 @@ const OrdenesContent = () => {
         return preferredMatch?.id ?? rows[0]?.id ?? null;
       };
 
-      // Snapshot order.items BEFORE any mutations to prevent temp IDs injected
+      // Snapshot orderItems BEFORE any mutations to prevent temp IDs injected
       // by optimistic updates from leaking into DB calls later.
-      const originalOrderItems = [...order.items];
+      const originalOrderItems = [...orderItems];
       const originalIds = new Set(originalOrderItems.map((item) => item.id));
       const stagedIds = new Set(stagedItems.map((item) => item.id));
 
@@ -2050,7 +2053,7 @@ const OrdenesContent = () => {
         )}
 
         <OrderItemsList
-          items={fromEditar ? stagedItems : order.items}
+          items={fromEditar ? stagedItems : orderItems}
           alwaysShowControls={fromEditar}
           hideItemControls={false}
           editableItemIds={[]}
@@ -2157,7 +2160,7 @@ const OrdenesContent = () => {
                 <Button
                   className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
                   variant="info"
-                  disabled={!stagedDirty && stagedItems.length === order.items.length}
+                  disabled={!stagedDirty && stagedItems.length === orderItems.length}
                   onClick={handleAcceptEditedOrderChanges}
                 >
                   <Sparkles className="h-5 w-5" />
@@ -2438,7 +2441,7 @@ const OrdenesContent = () => {
                     title={
                       !canOperateOrders
                         ? `No tienes permiso para crear nuevas ordenes en ${orderGroupLabel}`
-                        : order.items.length <= 0
+                        : orderItems.length <= 0
                           ? "La orden actual debe tener al menos un item"
                           : !allExistingTableOrdersHaveItems
                             ? "Todas las ordenes existentes deben tener al menos un item"
@@ -2727,7 +2730,7 @@ const OrdenesContent = () => {
           isSpecial={order.is_special}
           isTrayOrder={order.is_tray_order}
           tableName={order.table_name}
-          items={order.items}
+          items={orderItems}
           total={total}
           createdAt={order.created_at}
         />
@@ -2921,24 +2924,34 @@ const OrdenesContent = () => {
           status: order.status,
           menuScope: order.menu_scope,
           sortKey: `0000-${order.table_name ?? "Mesa"}-${order.order_number ?? 0}`,
-          hasOperationalItems: order.items.some((item) => item.status !== "DRAFT"),
+          hasOperationalItems: orderItems.some((item) => item.status !== "DRAFT"),
         }}
       />
 
-      <PaymentDialog
-        order={payableOrder}
-        paymentMethods={paymentMethods}
-        shiftDenoms={shift?.denoms ?? []}
-        paying={payOrder.isPending}
-        onPay={(params) => payOrder.mutateAsync(params)}
-        onPrepareTransferProof={prepareTransferProof}
-        onDiscardPreparedTransferProof={discardPreparedTransferProof}
-        getTransferProofReadiness={getTransferProofReadiness}
-        onClose={() => setPaymentDialogOpenForOrderId(null)}
-
-        // CANDADO DE SEGURIDAD: Solo se muestra si NO estamos cargando y si se activo manualmente
-        open={!isLoading && showPaymentDialog}
-      />
+      {USE_PAYMENT_DIALOG_V2 ? (
+        <PaymentDialogV2
+          order={payableOrder}
+          shiftDenoms={shift?.denoms ?? []}
+          paymentMethods={paymentMethods}
+          paying={payOrder.isPending}
+          onPay={(params) => payOrder.mutateAsync(params)}
+          open={!isLoading && showPaymentDialog}
+          onClose={() => setPaymentDialogOpenForOrderId(null)}
+        />
+      ) : (
+        <PaymentDialog
+          order={payableOrder}
+          paymentMethods={paymentMethods}
+          shiftDenoms={shift?.denoms ?? []}
+          paying={payOrder.isPending}
+          onPay={(params) => payOrder.mutateAsync(params)}
+          onPrepareTransferProof={prepareTransferProof}
+          onDiscardPreparedTransferProof={discardPreparedTransferProof}
+          getTransferProofReadiness={getTransferProofReadiness}
+          onClose={() => setPaymentDialogOpenForOrderId(null)}
+          open={!isLoading && showPaymentDialog}
+        />
+      )}
 
       <AlertDialog open={showCajaUnopenedAlert} onOpenChange={setShowCajaUnopenedAlert}>
         <AlertDialogContent className="max-w-md rounded-[24px]">

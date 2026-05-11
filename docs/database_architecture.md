@@ -82,6 +82,12 @@
 - `cash_register_templates`
 - `cash_register_template_denoms`
 
+#### Sincronización de estado de orden tras pagos (`payment_items`)
+- `sync_order_payment_state_internal(order_id)` recalcula cabecera y pagos de la orden.
+- Los triggers `trg_sync_order_payment_state_on_payments` (por fila en `payments`) y los de `payment_items` deben invocar esa lógica cuando cambian cobros.
+- **Migración `20260509180000_payment_items_sync_once_per_statement.sql`:** los triggers sobre `payment_items` pasan a ser **AFTER INSERT/UPDATE/DELETE … FOR EACH STATEMENT** con tablas de transición (`REFERENCING NEW TABLE` / `OLD TABLE`), de modo que un **único** `INSERT` por lotes de muchas filas dispara **una** pasada de sincronización por `order_id` afectado, en lugar de N pasadas (una por fila). Esto es crítico para latencia de cobro en POS.
+- El cliente **no** debe depender de llamar `sync_order_payment_state(...)` inmediatamente después de cada cobro si los triggers ya cubren el caso; evita trabajo duplicado.
+
 ### 6. Comprobantes de transferencia
 - `payment_capture_requests`
 - `payment_proofs`
@@ -104,7 +110,8 @@
 - Las ordenes especiales con `status = 'PAID'` deben considerarse pagadas aunque el detalle de cobro por item no exista o no represente cantidades visibles en `payment_items`.
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
 - `order_items.tray_item_type` distingue `A/B/C`.
-- `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas.
+- `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas en pantallas que clasifican despachos y listos (Cocina, Despacho, listados complejos).
+- En el **cobro en caja** (`useCaja.payOrder`), con flujo global `CASH_THEN_DISPATCH`, la validación de cantidad cobrable puede basarse en `order_items` + cancelaciones aplicadas (`order_item_cancellations` / `order_cancellations`) **sin** llamar a `get_order_operational_snapshot` por orden, reduciendo latencia; no extrapolar esa simplificación a otros módulos sin revisar reglas de despacho.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`. Impide el cobro en Caja mientras la orden está siendo modificada.
 - `submit_order_draft_items(...)` debe dejar cualquier orden enviada en estado cobrable por Caja antes de Despacho.
 - `sync_order_payment_state_internal(...)` debe considerar toda orden como cobrable por cantidad ordenada activa antes de despacho.
@@ -235,6 +242,8 @@
 - `compact_table_order_positions(...)`
 
 ### Caja
+- `sync_order_payment_state(...)` (RPC con comprobación de permisos; expone `sync_order_payment_state_internal`)
+- `sync_order_payment_state_internal(...)` (invocado por triggers en `payments` / `payment_items` y por otras RPCs)
 - `open_cash_register(...)`
 - `close_cash_register(...)`
 - `cancel_empty_draft_orders_for_branch(...)`
@@ -276,6 +285,7 @@
 - `20260411103000_allow_reopen_cash_register_in_open_shift.sql`
 
 ### Pagos y anulaciones
+- `20260509180000_payment_items_sync_once_per_statement.sql` (sincronización de estado de orden una vez por sentencia en `payment_items`)
 - `20260409170000_secure_payment_void_same_shift_supervisor.sql`
 - `20260409213000_fix_voided_payment_reopens_order_state.sql`
 - `20260410180000_unassign_table_on_voided_payment.sql`
@@ -323,3 +333,4 @@
 12. El sistema de resaltado usa `forceActive` y `suppressActive` para garantizar que la sección de origen (Mesas u Ordenes) permanezca marcada correctamente.
 13. Si se toca `Despacho`, preservar una sola tarjeta/fila por orden pagada; no partir la misma orden por tiempos de envio de items.
 14. Si se toca Para llevar u Orden especial, preservar tarjetas dinamicas con `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez y salida por despacho aplicado/cancelacion.
+15. Si se modifican triggers de `payment_items` que llaman a `sync_order_payment_state_internal`, mantener sincronización **por sentencia** (como en `20260509180000`) o equivalente que evite invocar la función una vez por cada fila insertada en el mismo lote.

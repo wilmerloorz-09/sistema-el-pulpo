@@ -66,6 +66,8 @@ interface QueryOptions {
   filters?: Array<{ column: string; op: "eq" | "in" | "is" | "neq" | "gte" | "lte"; value: any }>;
   orderBy?: { column: string; ascending?: boolean };
   branchId?: string | null;
+  /** No escribir en IndexedDB tras leer (pagos y lecturas calientes = menos bloqueo del hilo principal). */
+  skipLocalCache?: boolean;
 }
 
 /**
@@ -82,8 +84,9 @@ export async function dbSelect<T = any>(
   if (isOnline) {
     try {
       const result = await fetchFromSupabase<T>(table, options);
-      // Cache locally (replace all for this branch if catalog)
-      await cacheLocally(table, result as any[], options.branchId);
+      if (!options.skipLocalCache) {
+        await cacheLocally(table, result as any[], options.branchId);
+      }
       return result;
     } catch (error) {
       console.warn(`[DatabaseService] Supabase fetch failed for ${table}, falling back to cache`, error);
@@ -228,16 +231,30 @@ function stripLocalMeta(record: any) {
 
 // ─── WRITE Operations (Phase 1: online-only, Phase 2: offline support) ──
 
+export interface DbWriteHotPathOptions {
+  /**
+   * Sin .select() ni escritura Dexie: menos latencia en cobros (id y columnas deben venir en `record`).
+   */
+  hotPath?: boolean;
+}
+
 /**
  * Insert a record. Online → Supabase + cache. Offline → IndexedDB + sync queue.
  */
 export async function dbInsert<T = any>(
   table: TableName,
-  record: Partial<T>
+  record: Partial<T>,
+  options: DbWriteHotPathOptions = {},
 ): Promise<T> {
   const isOnline = navigator.onLine;
 
   if (isOnline) {
+    if (options.hotPath) {
+      const { error } = await supabase.from(table as any).insert(record as any);
+      if (error) throw error;
+      return record as T;
+    }
+
     const { data, error } = await supabase
       .from(table as any)
       .insert(record as any)
@@ -291,6 +308,49 @@ export async function dbInsert<T = any>(
   });
 
   return { ...record, id } as T;
+}
+
+/** Insert varias filas en una sola peticion a Supabase y un bulkPut en Dexie (menos latencia que N dbInsert). */
+export async function dbInsertMany<T = any>(
+  table: TableName,
+  records: Partial<T>[],
+  options: DbWriteHotPathOptions = {},
+): Promise<T[]> {
+  if (records.length === 0) return [];
+
+  const isOnline = navigator.onLine;
+  if (!isOnline) {
+    const out: T[] = [];
+    for (const rec of records) {
+      out.push(await dbInsert(table, rec, options));
+    }
+    return out;
+  }
+
+  if (options.hotPath) {
+    const { error } = await supabase.from(table as any).insert(records as any[]);
+    if (error) throw error;
+    return records as T[];
+  }
+
+  const { data, error } = await supabase.from(table as any).insert(records as any[]).select();
+  if (error) throw error;
+
+  const rows = (data ?? []) as T[];
+  const dexieTable = getDexieTable(table);
+  if (dexieTable && rows.length > 0) {
+    const ts = nowISO();
+    await dexieTable.bulkPut(
+      rows.map((r) => ({
+        ...(r as unknown as Record<string, unknown>),
+        _sync_status: "synced",
+        _synced_at: ts,
+        _local_updated_at: ts,
+      })),
+    );
+  }
+
+  return rows;
 }
 
 /**

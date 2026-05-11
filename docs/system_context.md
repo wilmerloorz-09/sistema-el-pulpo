@@ -85,6 +85,17 @@
   - `KITCHEN_DISPATCHED` sin `paid_at`
 
 ### 3. Caja y pagos
+- **Diálogo de cobro (dos variantes):**
+  - `PaymentDialog` (`src/components/caja/PaymentDialog.tsx`): flujo clásico; sigue siendo la referencia para comprobante de transferencia preparado (`onPrepareTransferProof`, `getTransferProofReadiness`).
+  - `PaymentDialogV2` (`src/components/caja/PaymentDialogV2.tsx`): cobro por denominaciones + transferencia; botón **Cobrar** registra pago vía `useCaja.payOrder`; tras éxito muestra desglose de vuelto, **Imprimir Comprobante** (`PaymentReceipt` + `window.print`) y **Listo**; modal de éxito más estrecho que el de cobro.
+  - Conmutación: `src/lib/cajaPaymentUi.ts` (`USE_PAYMENT_DIALOG_V2`: env `VITE_PAYMENT_UI_V2` o comportamiento por defecto en dev). `PayableOrdersList` y `Ordenes.tsx` montan V1 o V2 con las mismas props de pago cuando aplica.
+  - V2 hoy **no** replica el flujo completo de preparación de comprobante de transferencia del clásico; si operación exige ese paso, usar V1 o extender V2.
+- **Rendimiento del cobro (cliente + BD):**
+  - Inserciones calientes usan `dbInsert` / `dbInsertMany` con `hotPath` (insert sin `select` y sin escribir Dexie en ese momento) para `payments`, `payment_items` y fallback de `cash_movements`.
+  - Lecturas previas al cobro en `payOrder` pueden usar `skipLocalCache` en `dbSelect` para no bloquear el hilo con `bulkPut` en IndexedDB.
+  - La validación previa al insert en `payOrder` evita el RPC `get_order_operational_snapshot` cuando el flujo efectivo es `CASH_THEN_DISPATCH`, usando cancelaciones aplicadas por ítem y cantidades de `order_items`.
+  - Tras persistir pagos, `ensureTableSnapshot` no bloquea el cierre del flujo de cobro (se dispara en segundo plano).
+  - **Migración obligatoria para rendimiento en BD:** `20260509180000_payment_items_sync_once_per_statement.sql` reemplaza el trigger `FOR EACH ROW` en `payment_items` por triggers **a nivel de sentencia**, de modo que `sync_order_payment_state_internal` corre **una vez por lote** de ítems de pago, no una vez por fila. Sin esta migración aplicada, el cobro sigue lento aunque el frontend esté optimizado.
 - `Caja` trabaja con:
   - `PayableOrdersList`
   - `CompletedPaymentsList`
@@ -140,6 +151,7 @@
   - `recalculate_check_balance(...)` debe detectar primero `VOID_SUCCESSOR_ORDER` y mantener la orden historica en `CANCELLED`; no debe revivirla a `SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED` ni `PAID`.
 
 ### 5. Ordenes y mesas
+- En `Ordenes.tsx`, el detalle usa `orderItems = order?.items ?? []` de forma consistente para evitar errores si la caché devuelve la orden sin arreglo `items` durante refetch (p. ej. tras cobrar); no asumir `order.items` siempre definido en render.
 - `Ordenes` mantiene la vista de lista expandible.
 - El orden visible de cuentas dentro de una mesa ya no depende de "divisiones" (table_splits):
   - la UI usa exclusivamente `orders.table_order_position`.
@@ -353,11 +365,15 @@
   - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
   - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
 
-### 2026-05-09
+### 2026-05-09 (ampliado — cobro V2 y rendimiento)
+- Caja / UI de cobro:
+  - `PaymentDialogV2` con cobro real (`payOrder`), pantalla posterior con vuelto por denominación, impresión de comprobante y ancho reducido en éxito.
+  - Optimización de `payOrder`: lecturas con `skipLocalCache`, validación sin `get_order_operational_snapshot` en modo `CASH_THEN_DISPATCH`, inserts `hotPath`, `dbInsertMany` para `payment_items`, `ensureTableSnapshot` no bloqueante.
+  - Migración `20260509180000_payment_items_sync_once_per_statement.sql`: sincronización de estado de orden **una vez por sentencia** en `payment_items`.
 - Caja e Integridad Financiera:
   - **Redondeo Centralizado:** Todos los cálculos de subtotales, impuestos, totales y vueltos aplican redondeo a 2 decimales para evitar discrepancias de punto flotante en el cuadre de caja.
   - **Exclusión de Cancelados:** Los ítems con estado de anulación (confirmada o pendiente) se excluyen automáticamente de los cálculos de saldo de la orden y totales del turno.
-  - **Validación de Caja Abierta:** El `PaymentDialog` y las operaciones de cobro bloquean su ejecución si no detectan una apertura de caja válida (`cash_shift_denoms`) para el usuario en el turno actual.
+  - **Validación de Caja Abierta:** `PaymentDialog`, `PaymentDialogV2` y `payOrder` bloquean cobro sin apertura de caja válida (`cash_shift_denoms`) en el turno.
 - Auditoría y Trazabilidad:
   - **Historial de Pagos Anulados:** Toda anulación (vía `PaymentReversalModal`) inserta un registro detallado en `order_cancellations` y adjunta una nota técnica en `orders.notes` con el ID del supervisor y el motivo.
   - **Despacho Consolidado:** Se garantiza que el módulo de Despacho solo muestre una tarjeta por `order_code`. Si se agregan ítems nuevos a una orden ya enviada, estos se agrupan en la tarjeta existente.
@@ -377,6 +393,7 @@
 7. Cualquier cambio en envio de ordenes o cobro debe respetar el flujo global Caja - Despacho; no codificar decisiones por sucursal.
 8. Cualquier cambio en eliminacion completa de orden debe preservar la restriccion: todos los items en borrador o en caja, confirmacion previa, y validacion inmediata antes de ejecutar.
 9. Cualquier cambio en `Despacho` debe preservar una sola tarjeta por orden pagada; no volver a separar la misma orden por `sent_to_kitchen_at` de los items.
+10. Cobros lentos con muchas líneas: verificar que la migración `20260509180000_payment_items_sync_once_per_statement.sql` esté aplicada en la BD remota; sin ella, cada fila de `payment_items` dispara sincronización completa de orden.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.

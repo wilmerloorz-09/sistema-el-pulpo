@@ -137,6 +137,16 @@
   - pagos realizados
   - movimientos de caja
   - anulacion de pagos
+- **Modal de pago dual:**
+  - `PaymentDialog`: selección de líneas/cantidades, splits por método, comprobante de transferencia preparado, confirmación y recibo.
+  - `PaymentDialogV2`: total a cobrar, efectivo por denominaciones del turno, transferencia libre, vista previa y post-cobro de vuelto; **Cobrar** → `payOrder.mutateAsync` con mismos invariantes que V1.
+  - Flag `USE_PAYMENT_DIALOG_V2` en `src/lib/cajaPaymentUi.ts`; `PayableOrdersList` y `Ordenes` eligen el componente.
+  - Recibo impreso: ambos pueden usar `PaymentReceipt` (`#print-receipt`); estilos de impresión en `src/index.css`.
+- **Capa de datos en cobro (`useCaja.payOrder`):**
+  - Lecturas: `dbSelect` opción `skipLocalCache` para no persistir cada lectura en Dexie durante el cobro.
+  - Escrituras: `dbInsert` / `dbInsertMany` opción `hotPath` (sin `.select()` ni cache local inmediato) en filas generadas con UUID en cliente (`payments`, `payment_items`, `cash_movements` en fallback).
+  - Tras inserts, no se llama al RPC `sync_order_payment_state` desde el cliente: los triggers en `payments` / `payment_items` ya invocan `sync_order_payment_state_internal`.
+  - Requiere migración `20260509180000_payment_items_sync_once_per_statement.sql` para que la sincronización por inserción en `payment_items` sea por **sentencia**, no por fila (evita N ejecuciones costosas por un solo cobro).
 - Diferencia de arquitectura vigente:
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
@@ -231,7 +241,11 @@
   - `src/pages/Mesas.tsx`
 - Caja:
   - `src/hooks/useCaja.ts`
+  - `src/lib/cajaPaymentUi.ts` (feature flag UI de pago)
   - `src/components/caja/PaymentDialog.tsx`
+  - `src/components/caja/PaymentDialogV2.tsx`
+  - `src/components/caja/PaymentReceipt.tsx`
+  - `src/services/DatabaseService.ts` (`dbSelect` `skipLocalCache`, `dbInsert`/`dbInsertMany` `hotPath`)
   - `src/components/caja/CompletedPaymentsList.tsx`
   - `src/components/caja/PaymentReversalModal.tsx`
   - `src/components/caja/ShiftSummary.tsx`
@@ -261,3 +275,5 @@
 15. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.
 16. **Despacho sin duplicados:** Toda modificacion de `useDispatchOrders` debe conservar una sola tarjeta/fila por orden pagada; no separar la misma orden por tiempos de envio de items.
 17. **Tarjetas Para llevar / Especial:** Toda modificacion de `ParaLlevar`, `OrdenEspecial` o `useOrder` debe preservar `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez, usuario creador y formato compatible con Mesa.
+18. **Cobro V2 y BD:** Cambios en `payOrder` o en triggers de `payment_items` deben mantener coherencia con `sync_order_payment_state_internal`; si se insertan muchos `payment_items` en un lote, la BD debe sincronizar la orden **una vez por sentencia** (migración `20260509180000`).
+19. **`Ordenes.tsx`:** Usar lista de ítems defensiva (`order?.items ?? []`) en el contenido del detalle para tolerar órdenes parciales en caché.

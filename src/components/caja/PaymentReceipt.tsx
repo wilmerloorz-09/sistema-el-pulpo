@@ -46,6 +46,8 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
     },
     ref,
   ) => {
+    const receiptItems = items ?? [];
+    const receiptPayments = payments ?? [];
     const date = new Date(createdAt);
     const dateStr = date.toLocaleDateString("es-MX", {
       day: "2-digit",
@@ -99,7 +101,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
         {!isSpecial ? (
           <>
             <div style={{ fontWeight: "bold", marginBottom: "4px" }}>PRODUCTOS PAGADOS:</div>
-            {items.map((item, idx) => (
+            {receiptItems.map((item, idx) => (
               <div key={idx} style={{ marginBottom: "4px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>
@@ -139,7 +141,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
             <span>{formatCurrency(totalAmount)}</span>
           </div>
 
-          {payments.map((p, idx) => (
+          {receiptPayments.map((p, idx) => (
             <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
               <span>{p.methodName}</span>
               <span>{formatCurrency(p.appliedAmount)}</span>

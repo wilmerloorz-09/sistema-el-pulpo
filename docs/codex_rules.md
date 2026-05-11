@@ -39,6 +39,14 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 - Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
 
+### 2.2 Cobro en caja: UI dual y rendimiento
+- Conviven `PaymentDialog` (clásico) y `PaymentDialogV2`; la elección va por `USE_PAYMENT_DIALOG_V2` en `src/lib/cajaPaymentUi.ts`. No romper el clásico mientras V2 no cubra comprobante de transferencia preparado end-to-end.
+- V2 debe seguir enviando a `payOrder` los mismos invariantes (`PayOrderParams`) que el clásico: `itemSelections`, `paymentSplits`, `tenderedSplits`, denominaciones recibidas/cambio, `specialAmount` si aplica.
+- **Base de datos:** cualquier entorno donde se cobre debe tener aplicada la migración `20260509180000_payment_items_sync_once_per_statement.sql`; sin ella, cada fila de `payment_items` dispara una sincronización completa de orden y el POS se siente lento.
+- **Cliente (`DatabaseService`):** reservar `hotPath` en `dbInsert`/`dbInsertMany` solo cuando el registro lleve `id` (u otros NOT NULL) generados en cliente; reservar `skipLocalCache` en `dbSelect` para lecturas calientes del flujo de cobro donde no haga falta actualizar Dexie en el mismo tick.
+- No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
+- En UI post-cobro (`PaymentDialogV2`, `PaymentReceipt`, detalle en `Ordenes.tsx`), no asumir `items` ni `payments` definidos: usar `?? []` y pasar al recibo el objeto `receipt` completo que devuelve el flujo de pago.
+
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
 - Mantener soporte para `TABLE`, `TAKEOUT` y `BULK`.
@@ -140,8 +148,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - La accion principal del modulo es `Aceptar cambios`.
 
 ### 10. Snapshot operativo compartido
-- Si una pantalla clasifica estados, usar `get_order_operational_snapshot(...)`.
-- No reconstruir cantidades criticas con formulas ad hoc si ya existe snapshot comun.
+- Si una pantalla clasifica estados operativos (despacho, listos, cancelaciones en flujo mesa con despacho previo al cobro en otros modos), usar `get_order_operational_snapshot(...)` cuando corresponda.
+- **Excepción documentada:** `payOrder` puede validar cantidad cobrable en modo `CASH_THEN_DISPATCH` sin ese RPC, usando `order_items` y cancelaciones aplicadas; no copiar ese atajo a Despacho/Cocina sin revisión.
+- No reconstruir cantidades criticas con formulas ad hoc en modulos que ya dependen del snapshot comun.
 - Toda pantalla que visualiza ordenes debe mostrar el usuario creador desde `orders.created_by`.
 - Resolver nombres de usuario con el helper central (`first_name`, `full_name`, `username`, `email`, `Usuario`) y no duplicar fallbacks distintos por pantalla.
 - El modulo `Ordenes` debe mantener las pestanas visibles en este orden exacto: `Borrador`, `En Caja`, `Pagada`, `Despachada`, `Anulada`.
@@ -167,7 +176,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 12. Integridad Financiera y Caja
 - **Integridad Financiera (2026-05-09):**
   - **Redondeo:** Todos los cálculos financieros deben redondearse a 2 decimales en el origen (BD/RPC) y en la UI para evitar errores de precisión.
-  - **Caja Abierta:** El diálogo de pago (`PaymentDialog`) no debe permitir cobros si no existe un registro de apertura de caja (`cash_shift_denoms`) activo para la sesión.
+  - **Caja Abierta:** Los diálogos de pago (`PaymentDialog` y `PaymentDialogV2`) no deben permitir cobros si no existe apertura de caja válida (`cash_shift_denoms`) para el turno.
   - **Exclusión de Cancelados:** Los ítems con anulación confirmada o pendiente no deben sumarse a ninguna cifra operativa de cobro.
   - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
@@ -222,5 +231,6 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes y asegurar que:
    - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
-10. Si se toca el diálogo de pago, validar que exija la inicialización de caja y maneje correctamente el redondeo financiero.
-11. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez (agrupamiento por `order_code`), aunque tenga items enviados en distintos momentos.
+10. Si se toca el diálogo de pago (V1 o V2), validar que exija la inicialización de caja, el redondeo financiero y, en V2, recibo/vuelto/imprimir; confirmar migración `20260509180000` en BD si se miden tiempos de cobro.
+11. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
+12. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez (agrupamiento por `order_code`), aunque tenga items enviados en distintos momentos.

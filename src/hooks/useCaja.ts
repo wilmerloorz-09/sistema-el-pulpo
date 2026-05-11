@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { dbSelect, dbInsert, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
+import { dbSelect, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -695,21 +695,26 @@ type PaymentItemRow = {
   total_amount: number;
 };
 
-async function fetchActivePaymentItemsForOrderItems(orderItemIds: string[]): Promise<PaymentItemRow[]> {
+async function fetchActivePaymentItemsForOrderItems(
+  orderItemIds: string[],
+  readOpts?: { skipLocalCache?: boolean },
+): Promise<PaymentItemRow[]> {
   if (orderItemIds.length === 0) return [];
 
   const paymentItems = await dbSelect<any>("payment_items", {
     select: "id, payment_id, order_item_id, quantity_paid, unit_price, total_amount",
-    filters: [{ column: "order_item_id", op: "in", value: orderItemIds }]
+    filters: [{ column: "order_item_id", op: "in", value: orderItemIds }],
+    skipLocalCache: readOpts?.skipLocalCache,
   });
-  
+
   const paymentIdSet = new Set<string>((paymentItems ?? []).map((row) => row.payment_id));
   const paymentIds = Array.from(paymentIdSet);
   if (paymentIds.length === 0) return [];
 
   const payments = await dbSelect<any>("payments", {
     select: "id, notes",
-    filters: [{ column: "id", op: "in", value: paymentIds }]
+    filters: [{ column: "id", op: "in", value: paymentIds }],
+    skipLocalCache: readOpts?.skipLocalCache,
   });
 
   const blockedPaymentIds = new Set(
@@ -741,12 +746,16 @@ function aggregatePaidQuantityByOrderItem(rows: PaymentItemRow[]): Record<string
   return map;
 }
 
-async function fetchActivePaymentsTotalByOrder(orderIds: string[]): Promise<Record<string, number>> {
+async function fetchActivePaymentsTotalByOrder(
+  orderIds: string[],
+  readOpts?: { skipLocalCache?: boolean },
+): Promise<Record<string, number>> {
   if (orderIds.length === 0) return {};
 
   const payments = await dbSelect<any>("payments", {
     select: "order_id, amount, notes",
-    filters: [{ column: "order_id", op: "in", value: orderIds }]
+    filters: [{ column: "order_id", op: "in", value: orderIds }],
+    skipLocalCache: readOpts?.skipLocalCache,
   });
 
   const totals: Record<string, number> = {};
@@ -759,22 +768,27 @@ async function fetchActivePaymentsTotalByOrder(orderIds: string[]): Promise<Reco
   return totals;
 }
 
-async function fetchAppliedCancelledQuantityByOrderItem(orderItemIds: string[]): Promise<Record<string, number>> {
+async function fetchAppliedCancelledQuantityByOrderItem(
+  orderItemIds: string[],
+  readOpts?: { skipLocalCache?: boolean },
+): Promise<Record<string, number>> {
   if (orderItemIds.length === 0) return {};
 
   try {
     const itemCancellations = await dbSelect<any>("order_item_cancellations" as any, {
       select: "order_item_id, quantity_cancelled, order_cancellation_id",
-      filters: [{ column: "order_item_id", op: "in", value: orderItemIds }]
+      filters: [{ column: "order_item_id", op: "in", value: orderItemIds }],
+      skipLocalCache: readOpts?.skipLocalCache,
     });
-    
+
     const cancellationIdSet = new Set<string>((itemCancellations ?? []).map((row) => row.order_cancellation_id));
     const cancellationIds = Array.from(cancellationIdSet);
     if (cancellationIds.length === 0) return {};
 
     const cancellationHeaders = await dbSelect<any>("order_cancellations", {
       select: "id, status",
-      filters: [{ column: "id", op: "in", value: cancellationIds }]
+      filters: [{ column: "id", op: "in", value: cancellationIds }],
+      skipLocalCache: readOpts?.skipLocalCache,
     });
 
     const activeCancellationIds = new Set(
@@ -2048,26 +2062,6 @@ export function useCaja(params?: {
 
       const methodIdSet = new Set([...paymentSplits.map((split) => split.methodId), ...tenderedSplits.map((split) => split.methodId)]);
       const methodIds = Array.from(methodIdSet);
-      const selectedMethods = await dbSelect<any>("payment_methods", {
-        select: "id, name",
-        filters: [{ column: "id", op: "in", value: methodIds }]
-      });
-
-      if (selectedMethods.length !== methodIds.length) {
-        throw new Error("Hay metodos de pago invalidos en la operacion");
-      }
-
-      const cashMethods = selectedMethods.filter((method) => isCashPaymentMethodName(method.name));
-      const transferMethodIds = new Set(
-        selectedMethods
-          .filter((method) => isTransferPaymentMethodName(method.name))
-          .map((method) => method.id),
-      );
-      if (cashMethods.length > 1) throw new Error("Solo puede existir un pago en efectivo por cobro");
-      const cashMethodId = cashMethods[0]?.id ?? null;
-      const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
-      /** Cambio puede existir con solo transferencia (sobrepago); antes se descartaba al no haber tramo efectivo. */
-      const effectiveCashChangeDenoms = Array.isArray(cashChangeDenoms) ? cashChangeDenoms : [];
 
       const appliedTotal = roundMoney(paymentSplits.reduce((sum, split) => sum + Number(split.amount), 0));
       if (Math.abs(appliedTotal - totalAmount) > 0.01) {
@@ -2088,24 +2082,48 @@ export function useCaja(params?: {
       }
 
       const [
+        selectedMethods,
         orderData,
-        operationalMaps,
+        appliedCancelledByItem,
         allDbItems,
         paidRowsData,
-        activePaymentsByOrder
+        activePaymentsByOrder,
       ] = await Promise.all([
+        dbSelect<any>("payment_methods", {
+          select: "id, name",
+          filters: [{ column: "id", op: "in", value: methodIds }],
+          skipLocalCache: true,
+        }),
         dbSelect<any>("orders", {
           select: "id, order_type, status, is_special, special_total_manual, table_id",
-          filters: [{ column: "id", op: "eq", value: orderId }]
-        }).then(res => res[0]),
-        fetchOperationalMapsForOrders([orderId]),
+          filters: [{ column: "id", op: "eq", value: orderId }],
+          skipLocalCache: true,
+        }).then((res) => res[0]),
+        fetchAppliedCancelledQuantityByOrderItem(itemIds, { skipLocalCache: true }),
         dbSelect<any>("order_items", {
           select: "id, quantity, unit_price, total, status, paid_at",
-          filters: [{ column: "order_id", op: "eq", value: orderId }]
+          filters: [{ column: "order_id", op: "eq", value: orderId }],
+          skipLocalCache: true,
         }),
-        fetchActivePaymentItemsForOrderItems(itemIds),
-        fetchActivePaymentsTotalByOrder([orderId]),
+        fetchActivePaymentItemsForOrderItems(itemIds, { skipLocalCache: true }),
+        fetchActivePaymentsTotalByOrder([orderId], { skipLocalCache: true }),
       ]);
+
+      if (selectedMethods.length !== methodIds.length) {
+        throw new Error("Hay metodos de pago invalidos en la operacion");
+      }
+
+      const cashMethods = selectedMethods.filter((method) => isCashPaymentMethodName(method.name));
+      const transferMethodIds = new Set(
+        selectedMethods
+          .filter((method) => isTransferPaymentMethodName(method.name))
+          .map((method) => method.id),
+      );
+      if (cashMethods.length > 1) throw new Error("Solo puede existir un pago en efectivo por cobro");
+      const cashMethodId = cashMethods[0]?.id ?? null;
+      const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
+      /** Cambio puede existir con solo transferencia (sobrepago); antes se descartaba al no haber tramo efectivo. */
+      const effectiveCashChangeDenoms = Array.isArray(cashChangeDenoms) ? cashChangeDenoms : [];
 
       if (!orderData) throw new Error("Orden no encontrada");
       if (orderData.status === "DRAFT") {
@@ -2130,13 +2148,14 @@ export function useCaja(params?: {
         if (!dbItem || dbItem.status === "DRAFT") {
           throw new Error("Un item borrador no puede cobrarse en caja.");
         }
+        /** CASH_THEN_DISPATCH: payable = pedido − cancelado aplicado; evita RPC get_order_operational_snapshot en cada cobro. */
         const quantities = computeOperationalQuantities({
           quantityOrdered: Number(dbItem.quantity ?? 0),
-          quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,
-          quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[itemSelection.itemId] ?? 0,
-          quantityCancelledPending: operationalMaps.cancelledPendingMap[itemSelection.itemId] ?? 0,
-          quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
-          quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[itemSelection.itemId] ?? 0,
+          quantityReadyTotal: 0,
+          quantityDispatchedTotal: 0,
+          quantityCancelledPending: appliedCancelledByItem[itemSelection.itemId] ?? 0,
+          quantityCancelledReady: 0,
+          quantityCancelledDispatched: 0,
         });
         const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
         const payableQty = orderIsSpecial
@@ -2206,20 +2225,26 @@ export function useCaja(params?: {
         if (!rpcError) return;
         if (!isMissingRpcSignature(rpcError as any, "registrar_movimiento_caja_operativo")) throw rpcError;
 
-        await dbInsert("cash_movements", {
-          shift_id: payload.shift_id,
-          movement_type: payload.movement_type,
-          qty_delta: payload.qty_delta,
-          payment_id: payload.payment_id ?? null,
-          denomination_id: payload.denomination_id ?? null,
-          created_at: payload.created_at ?? new Date().toISOString(),
-        });
+        await dbInsert(
+          "cash_movements",
+          {
+            id: generateUUID(),
+            shift_id: payload.shift_id,
+            movement_type: payload.movement_type,
+            qty_delta: payload.qty_delta,
+            payment_id: payload.payment_id ?? null,
+            denomination_id: payload.denomination_id ?? null,
+            created_at: payload.created_at ?? new Date().toISOString(),
+          },
+          { hotPath: true },
+        );
       };
 
       if (preparedTransferProofSession) {
         const payments = await dbSelect<any>("payments", {
           select: "id, order_id, payment_method_id, amount, notes",
-          filters: [{ column: "id", op: "in", value: preparedTransferProofSession.paymentIds }]
+          filters: [{ column: "id", op: "in", value: preparedTransferProofSession.paymentIds }],
+          skipLocalCache: true,
         });
         
         for (const payment of payments) {
@@ -2228,19 +2253,21 @@ export function useCaja(params?: {
           
           const updatedNotes = appendNoteMarker(payment.notes, "TRANSFER_PROOF_PENDING:0");
           await dbUpdate("payments", payment.id, { notes: updatedNotes });
-          
-          for (const itemSelection of itemSelections) {
-            await dbInsert("payment_items", {
+
+          await dbInsertMany(
+            "payment_items",
+            itemSelections.map((itemSelection) => ({
               id: generateUUID(),
               payment_id: payment.id,
               order_item_id: itemSelection.itemId,
               quantity_paid: itemSelection.quantity,
               unit_price: itemSelection.unitPrice,
               total_amount: itemSelection.amount,
-            });
-          }
+            })),
+            { hotPath: true },
+          );
         }
-        
+
         for (const split of paymentSplits) {
           if (transferMethodIds.has(split.methodId)) continue;
           
@@ -2248,36 +2275,42 @@ export function useCaja(params?: {
           const isCash = isCashPaymentMethodName(selectedMethods.find(m => m.id === split.methodId)?.name);
           if (isCash) cashPaymentId = paymentId;
 
-          await dbInsert("payments", {
-            id: paymentId,
-            order_id: orderId,
-            payment_method_id: split.methodId,
-            amount: split.amount,
-            notes: buildPaymentNote({
-              paymentGroupId,
-              index: anchorPaymentId ? 1 : 0,
-              tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
-              appliedAmount: Number(split.amount),
-              isSpecial: orderIsSpecial,
-              cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
-              cashChangeDenoms: effectiveCashChangeDenoms,
-            }),
-            created_by: user.id,
-            created_at: now,
-          });
+          await dbInsert(
+            "payments",
+            {
+              id: paymentId,
+              order_id: orderId,
+              payment_method_id: split.methodId,
+              amount: split.amount,
+              notes: buildPaymentNote({
+                paymentGroupId,
+                index: anchorPaymentId ? 1 : 0,
+                tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
+                appliedAmount: Number(split.amount),
+                isSpecial: orderIsSpecial,
+                cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
+                cashChangeDenoms: effectiveCashChangeDenoms,
+              }),
+              created_by: user.id,
+              created_at: now,
+            },
+            { hotPath: true },
+          );
 
           if (!anchorPaymentId) anchorPaymentId = paymentId;
 
-          for (const itemSelection of itemSelections) {
-            await dbInsert("payment_items", {
+          await dbInsertMany(
+            "payment_items",
+            itemSelections.map((itemSelection) => ({
               id: generateUUID(),
               payment_id: paymentId,
               order_item_id: itemSelection.itemId,
               quantity_paid: itemSelection.quantity,
               unit_price: itemSelection.unitPrice,
               total_amount: itemSelection.amount,
-            });
-          }
+            })),
+            { hotPath: true },
+          );
         }
       } else {
         for (const [index, split] of paymentSplits.entries()) {
@@ -2285,81 +2318,94 @@ export function useCaja(params?: {
           const isCash = isCashPaymentMethodName(selectedMethods.find(m => m.id === split.methodId)?.name);
           if (isCash) cashPaymentId = paymentId;
 
-          await dbInsert("payments", {
-            id: paymentId,
-            order_id: orderId,
-            payment_method_id: split.methodId,
-            amount: split.amount,
-            notes: buildPaymentNote({
-              paymentGroupId,
-              index,
-              tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
-              appliedAmount: Number(split.amount),
-              isSpecial: orderIsSpecial,
-              cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
-              cashChangeDenoms: effectiveCashChangeDenoms,
-            }),
-            created_by: user.id,
-            created_at: now,
-          });
+          await dbInsert(
+            "payments",
+            {
+              id: paymentId,
+              order_id: orderId,
+              payment_method_id: split.methodId,
+              amount: split.amount,
+              notes: buildPaymentNote({
+                paymentGroupId,
+                index,
+                tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
+                appliedAmount: Number(split.amount),
+                isSpecial: orderIsSpecial,
+                cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
+                cashChangeDenoms: effectiveCashChangeDenoms,
+              }),
+              created_by: user.id,
+              created_at: now,
+            },
+            { hotPath: true },
+          );
 
           if (index === 0) anchorPaymentId = paymentId;
 
-          for (const itemSelection of itemSelections) {
-            await dbInsert("payment_items", {
+          await dbInsertMany(
+            "payment_items",
+            itemSelections.map((itemSelection) => ({
               id: generateUUID(),
               payment_id: paymentId,
               order_item_id: itemSelection.itemId,
               quantity_paid: itemSelection.quantity,
               unit_price: itemSelection.unitPrice,
               total_amount: itemSelection.amount,
-            });
-          }
+            })),
+            { hotPath: true },
+          );
         }
       }
 
-      if (cashPaymentId) {
-        for (const denom of effectiveCashReceivedDenoms) {
-          await insertCashMovementCompat({
-            shift_id: shift.id,
-            movement_type: "PAYMENT_IN",
-            qty_delta: denom.qty,
-            payment_id: cashPaymentId,
-            denomination_id: denom.denomination_id,
-            created_at: now,
-          });
-        }
+      if (cashPaymentId && effectiveCashReceivedDenoms.length > 0) {
+        await Promise.all(
+          effectiveCashReceivedDenoms.map((denom) =>
+            insertCashMovementCompat({
+              shift_id: shift.id,
+              movement_type: "PAYMENT_IN",
+              qty_delta: denom.qty,
+              payment_id: cashPaymentId,
+              denomination_id: denom.denomination_id,
+              created_at: now,
+            }),
+          ),
+        );
       }
 
       const paymentIdForChangeOut = cashPaymentId ?? anchorPaymentId;
       if (paymentIdForChangeOut && effectiveCashChangeDenoms.length > 0) {
-        for (const denom of effectiveCashChangeDenoms) {
-          await insertCashMovementCompat({
-            shift_id: shift.id,
-            movement_type: "CHANGE_OUT",
-            qty_delta: denom.qty,
-            payment_id: paymentIdForChangeOut,
-            denomination_id: denom.denomination_id,
-            created_at: now,
-          });
-        }
+        await Promise.all(
+          effectiveCashChangeDenoms.map((denom) =>
+            insertCashMovementCompat({
+              shift_id: shift.id,
+              movement_type: "CHANGE_OUT",
+              qty_delta: denom.qty,
+              payment_id: paymentIdForChangeOut,
+              denomination_id: denom.denomination_id,
+              created_at: now,
+            }),
+          ),
+        );
       }
 
       if (shouldMarkSpecialAsPaid) {
         await dbUpdate("orders", orderId, { status: "READY", paid_at: now });
       }
 
-      await syncOrderPaymentState(orderId);
-      await ensureTableSnapshot(orderId);
+      /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */
+      void ensureTableSnapshot(orderId);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["current-shift"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
-      toast.success("Pago registrado");
+      /** Deferir invalidaciones para que la UI pueda cerrar "Cobrando" y pintar el resultado antes de los refetch. */
+      queueMicrotask(() => {
+        qc.invalidateQueries({ queryKey: ["current-shift"] });
+        qc.invalidateQueries({ queryKey: ["payable-orders"] });
+        qc.invalidateQueries({ queryKey: ["completed-payments"] });
+        qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+        qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+        toast.success("Pago registrado");
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });

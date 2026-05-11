@@ -5,6 +5,8 @@ import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPrese
 import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
+import PaymentDialogV2 from "./PaymentDialogV2";
+import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -365,19 +367,32 @@ export default function PayableOrdersList({
         </section>
       </section>
 
-      <PaymentDialog
-        order={selectedOrder}
-        paymentMethods={paymentMethods}
-        shiftDenoms={shiftDenoms}
-        onPay={onPay}
-        onPrepareTransferProof={onPrepareTransferProof}
-        onDiscardPreparedTransferProof={onDiscardPreparedTransferProof}
-        getTransferProofReadiness={getTransferProofReadiness}
-        paying={paying}
-        open={!!selectedOrder}
-        onClose={() => setSelectedOrder(null)}
-        readOnly={readOnly}
-      />
+      {USE_PAYMENT_DIALOG_V2 ? (
+        <PaymentDialogV2
+          order={selectedOrder}
+          shiftDenoms={shiftDenoms}
+          paymentMethods={paymentMethods}
+          onPay={onPay}
+          paying={paying}
+          open={!!selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+          readOnly={readOnly}
+        />
+      ) : (
+        <PaymentDialog
+          order={selectedOrder}
+          paymentMethods={paymentMethods}
+          shiftDenoms={shiftDenoms}
+          onPay={onPay}
+          onPrepareTransferProof={onPrepareTransferProof}
+          onDiscardPreparedTransferProof={onDiscardPreparedTransferProof}
+          getTransferProofReadiness={getTransferProofReadiness}
+          paying={paying}
+          open={!!selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+          readOnly={readOnly}
+        />
+      )}
     </>
   );
 }
