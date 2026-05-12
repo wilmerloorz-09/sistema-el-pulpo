@@ -10,6 +10,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { getOrderQueryKey } from "@/hooks/useOrder";
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -2395,7 +2396,7 @@ export function useCaja(params?: {
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */
       void ensureTableSnapshot(orderId);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       /** Deferir invalidaciones para que la UI pueda cerrar "Cobrando" y pintar el resultado antes de los refetch. */
       queueMicrotask(() => {
         qc.invalidateQueries({ queryKey: ["current-shift"] });
@@ -2404,6 +2405,7 @@ export function useCaja(params?: {
         qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
         qc.invalidateQueries({ queryKey: ["tables-with-status"] });
         qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+        qc.invalidateQueries({ queryKey: getOrderQueryKey(variables.orderId) });
         toast.success("Pago registrado");
       });
     },

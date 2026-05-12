@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,11 @@ function formatCurrency(amount: number) {
     currency: "USD",
     minimumFractionDigits: 2,
   }).format(amount);
+}
+
+function getPayFailureMessage(e: unknown): string {
+  if (e instanceof Error && e.message.trim()) return e.message;
+  return "No se pudo registrar el cobro.";
 }
 
 /** Monto que debe cubrir el cobro (pendiente especial o suma de líneas pendientes). */
@@ -58,6 +64,9 @@ export default function PaymentDialogV2({
   onClose,
   readOnly = false,
 }: Props) {
+  const pendingPayPromiseRef = useRef<Promise<unknown> | null>(null);
+  const suppressCloseOnceRef = useRef(false);
+
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
   const [transferInput, setTransferInput] = useState("");
   const [postPaySummary, setPostPaySummary] = useState<{
@@ -83,12 +92,16 @@ export default function PaymentDialogV2({
   useEffect(() => {
     if (!open) {
       setPostPaySummary(null);
+      pendingPayPromiseRef.current = null;
+      suppressCloseOnceRef.current = false;
       return;
     }
     if (!order) return;
     setReceivedByDenom({});
     setTransferInput("");
     setPostPaySummary(null);
+    pendingPayPromiseRef.current = null;
+    suppressCloseOnceRef.current = false;
   }, [open, order?.id]);
 
   const sortedDenoms = useMemo(
@@ -203,6 +216,16 @@ export default function PaymentDialogV2({
     !paying &&
     orderChargeTotal > 0 &&
     !payValidationMessage;
+
+  const settlePendingPay = useCallback(async () => {
+    const p = pendingPayPromiseRef.current;
+    if (!p) return;
+    try {
+      await p;
+    } catch {
+      // El rechazo ya se maneja en la cadena iniciada en handleCobrar.
+    }
+  }, []);
 
   const handleCobrar = useCallback(async () => {
     if (!order || readOnly || paying || !canPay) return;
@@ -336,25 +359,46 @@ export default function PaymentDialogV2({
       preparedTransferProofSession: null,
     };
 
+    const changeLinesSnapshot = changeDenomBreakdown.map((d) => ({
+      denomination_id: d.denomination_id,
+      qty: d.qty,
+      value: d.value,
+      label: d.label,
+      image_url: d.image_url ?? null,
+    }));
+
+    const summary = {
+      changeAmount,
+      lines: changeLinesSnapshot,
+      receipt,
+    };
+
+    flushSync(() => {
+      setPostPaySummary(summary);
+    });
+
     try {
-      const changeLinesSnapshot = changeDenomBreakdown.map((d) => ({
-        denomination_id: d.denomination_id,
-        qty: d.qty,
-        value: d.value,
-        label: d.label,
-        image_url: d.image_url ?? null,
-      }));
       const payResult = onPay(params);
       if (payResult != null && typeof (payResult as { then?: unknown }).then === "function") {
-        await (payResult as Promise<unknown>);
+        const p = payResult as Promise<unknown>;
+        pendingPayPromiseRef.current = p;
+        p.catch((e) => {
+          console.error("Payment failed", e);
+          suppressCloseOnceRef.current = true;
+          setPostPaySummary(null);
+          toast.error(getPayFailureMessage(e));
+        }).finally(() => {
+          if (pendingPayPromiseRef.current === p) pendingPayPromiseRef.current = null;
+        });
+      } else {
+        pendingPayPromiseRef.current = null;
       }
-      setPostPaySummary({
-        changeAmount,
-        lines: changeLinesSnapshot,
-        receipt,
-      });
     } catch (e) {
       console.error("Payment failed", e);
+      suppressCloseOnceRef.current = true;
+      pendingPayPromiseRef.current = null;
+      setPostPaySummary(null);
+      toast.error(getPayFailureMessage(e));
     }
   }, [
     order,
@@ -445,7 +489,22 @@ export default function PaymentDialogV2({
   return (
     <>
       {postPaySummary ? <PaymentReceipt {...postPaySummary.receipt} /> : null}
-      <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (isOpen) return;
+          const dismissedFromSuccessUi = postPaySummary != null;
+          void (async () => {
+            await settlePendingPay();
+            if (dismissedFromSuccessUi && suppressCloseOnceRef.current) {
+              suppressCloseOnceRef.current = false;
+              return;
+            }
+            suppressCloseOnceRef.current = false;
+            onClose();
+          })();
+        }}
+      >
         <DialogContent
           onInteractOutside={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
@@ -769,8 +828,11 @@ export default function PaymentDialogV2({
                 type="button"
                 className="h-11 w-full rounded-2xl font-semibold shadow-md sm:flex-1"
                 onClick={() => {
-                  setPostPaySummary(null);
-                  onClose();
+                  void (async () => {
+                    await settlePendingPay();
+                    setPostPaySummary(null);
+                    onClose();
+                  })();
                 }}
               >
                 Listo

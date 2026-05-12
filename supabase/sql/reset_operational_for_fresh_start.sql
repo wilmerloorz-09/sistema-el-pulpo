@@ -161,16 +161,17 @@ DECLARE
     'public.payment_capture_requests',
     'public.payments',
     'public.operational_losses',
-    'public.cash_shift_users',
-    'public.cash_shifts',
 
-    -- Ordenes
+    -- Ordenes (antes de cash_shifts: FK orders.cash_shift_id -> cash_shifts.id)
     'public.order_item_modifiers',
     'public.order_items',
     'public.orders',
 
     -- Divisiones de mesa operativas
     'public.table_splits',
+
+    'public.cash_shift_users',
+    'public.cash_shifts',
 
     -- Auditoria y settings operativos
     'public.audit_log'
