@@ -319,7 +319,8 @@ const MenuNavigator = ({
       }
       animationTimeouts.current = [];
     };
-  }, [renderedNodes.length, visibleNodes, visibleSignature]);
+    // Solo firma: `visibleNodes` suele ser nueva referencia en renders seguidos y repetía salida/entrada CSS (~3 parpadeos).
+  }, [visibleSignature]);
 
   useEffect(() => {
     if (renderedNodes.length === 0 && visibleNodes.length > 0) {

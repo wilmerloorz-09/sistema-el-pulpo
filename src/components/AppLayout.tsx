@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { purgeEmptyDineInTableDraftOnLeave } from "@/hooks/useOrder";
 import { Building2, Fingerprint, KeyRound, LogOut, UserRound, WifiOff, Menu } from "lucide-react";
 import BottomNav from "./BottomNav";
 import SidebarNav from "./SidebarNav";
@@ -21,11 +23,47 @@ const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const qc = useQueryClient();
+  const ordenesLeaveRef = useRef<{ orderId: string; skipPurge: boolean } | null>(null);
   const { signOut, profile } = useAuth();
+
+  /** En /ordenes solo importa pathname: si la key incluye ?order=…, cada cambio de URL remonta todo y el menú parpadea (mesa libre optimista → id real). */
+  const mainOutletKey =
+    location.pathname === "/ordenes" ? location.pathname : `${location.pathname}${location.search}`;
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname, location.search]);
+
+  /** Purga al salir de /ordenes o al cambiar de orden; no dependemos del remount del Outlet. */
+  useEffect(() => {
+    const isOrdenes = location.pathname === "/ordenes";
+    const params = new URLSearchParams(location.search);
+    const currentOrderId = params.get("order");
+    const skipPurge = params.get("from") === "editar";
+
+    const prev = ordenesLeaveRef.current;
+
+    if (isOrdenes) {
+      if (prev?.orderId && prev.orderId !== currentOrderId && !prev.skipPurge) {
+        void purgeEmptyDineInTableDraftOnLeave(qc, prev.orderId);
+      }
+      if (currentOrderId) {
+        ordenesLeaveRef.current = { orderId: currentOrderId, skipPurge };
+      } else {
+        if (prev?.orderId && !prev.skipPurge) {
+          void purgeEmptyDineInTableDraftOnLeave(qc, prev.orderId);
+        }
+        ordenesLeaveRef.current = null;
+      }
+      return;
+    }
+
+    if (prev?.orderId && !prev.skipPurge) {
+      void purgeEmptyDineInTableDraftOnLeave(qc, prev.orderId);
+    }
+    ordenesLeaveRef.current = null;
+  }, [location.pathname, location.search, qc]);
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
   const { isOnline } = useNetwork();
   const { isDesktop } = useBreakpoint();
@@ -65,8 +103,8 @@ const AppLayout = () => {
             </header>
           )}
 
-          <main 
-            key={location.pathname + location.search}
+          <main
+            key={mainOutletKey}
             className="mb-safe min-h-0 flex-1 pb-[calc(60px+env(safe-area-inset-bottom,0px)+0.75rem)] md:pb-0"
           >
             <Outlet />

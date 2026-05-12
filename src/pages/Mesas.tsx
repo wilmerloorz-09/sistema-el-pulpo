@@ -12,7 +12,12 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { cn } from "@/lib/utils";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
-import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
+import {
+  fetchOrderDetail,
+  getOrderQueryKey,
+  purgeEmptyDineInTableDraftsForBranch,
+  seedDineInDraftOrderCache,
+} from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
 import {
   Dialog,
@@ -21,7 +26,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
 import { MobileMenuSheet } from "@/components/MobileMenuSheet";
 
 const STATUS_CONFIG = {
@@ -59,43 +63,6 @@ const STATUS_CONFIG = {
 
 const formatCurrency = (value: number) => `$${roundMoney(value).toFixed(2)}`;
 const formatTableBadge = (name: string) => name.replace(/^mesa\s*/i, "").trim() || name;
-
-const seedDraftOrderCache = (
-  qc: ReturnType<typeof useQueryClient>,
-  orderId: string,
-  {
-    branchId,
-    tableId,
-    tableName,
-    isSpecial,
-    createdAt,
-  }: {
-    branchId: string;
-    tableId: string | null;
-    tableName?: string;
-    isSpecial: boolean;
-    createdAt: string;
-  },
-) => {
-  qc.setQueryData(getOrderQueryKey(orderId), {
-    id: orderId,
-    order_number: null,
-    order_code: null,
-    status: "DRAFT",
-    order_type: "DINE_IN",
-    menu_scope: "TABLE",
-    is_special: isSpecial,
-    is_tray_order: false,
-    special_total_manual: null,
-    branch_id: branchId,
-    table_id: tableId,
-    split_id: null,
-    table_name: tableName,
-    created_at: createdAt,
-    items: [],
-    siblings: [],
-  });
-};
 
 const seedTakeoutOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -137,12 +104,24 @@ const Mesas = () => {
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [creating, setCreating] = useState<string | null>(null);
-
   const canOperateMesas =
     canOperate(permissions, "mesas")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.isSupervisor);
+
+  /** Sin `tablesQuery` en dependencias: el objeto del hook cambia cada render y relanzaba purgas + invalidaciones masivas de órdenes. */
+  useEffect(() => {
+    if (!activeBranchId) return;
+    let cancelled = false;
+    void purgeEmptyDineInTableDraftsForBranch(qc, activeBranchId).then(() => {
+      if (!cancelled) {
+        void qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId], exact: false });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchId, qc]);
 
   useEffect(() => {
     if (!activeBranchId) return;
@@ -179,74 +158,77 @@ const Mesas = () => {
     }
   }, [activeBranchId, qc, tables]);
 
-  const warmTableFlow = (table: NonNullable<typeof tables>[number]) => {
-    if (!activeBranchId) return;
+  const warmOrderId = (orderId: string) => {
+    void qc.prefetchQuery({
+      queryKey: getOrderQueryKey(orderId),
+      queryFn: () => fetchOrderDetail(orderId),
+      staleTime: 15_000,
+      gcTime: 10 * 60_000,
+    });
+  };
 
-    const orderIdToWarm = table.activeOrderId ?? table.reusableDraftOrderId;
-    if (orderIdToWarm) {
-      void qc.prefetchQuery({
-        queryKey: getOrderQueryKey(orderIdToWarm),
-        queryFn: () => fetchOrderDetail(orderIdToWarm),
-        staleTime: 15_000,
-        gcTime: 10 * 60_000,
-      });
-    }
+  const warmTableFlow = (t: NonNullable<typeof tables>[number]) => {
+    const orderIdToWarm = t.activeOrderId ?? t.reusableDraftOrderId;
+    if (orderIdToWarm) warmOrderId(orderIdToWarm);
   };
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
     if (table.status === "free") {
       if (!canOperateMesas) return;
+      // activeOrderId / reusableDraftOrderId pueden quedar obsoletos en caché tras purgar un borrador vacío al salir de Órdenes.
       if (table.activeOrderId) {
-        warmTableFlow(table);
-        navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
-        return;
+        try {
+          const detail = await fetchOrderDetail(table.activeOrderId);
+          if (detail) {
+            warmOrderId(table.activeOrderId);
+            navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
+            return;
+          }
+        } catch {
+          /* id fantasma: abrir como mesa libre real */
+        }
       }
       if (table.reusableDraftOrderId) {
-        warmTableFlow(table);
-        toast.success(`Entrando a ${table.name}...`);
-        navigate(`/ordenes?order=${table.reusableDraftOrderId}&origin=mesas`, { replace: true });
-        return;
+        try {
+          const detail = await fetchOrderDetail(table.reusableDraftOrderId);
+          if (detail && detail.status === "DRAFT" && detail.order_type === "DINE_IN") {
+            warmOrderId(table.reusableDraftOrderId);
+            toast.success(`Entrando a ${table.name}...`);
+            navigate(`/ordenes?order=${table.reusableDraftOrderId}&origin=mesas`, { replace: true });
+            return;
+          }
+        } catch {
+          /* borrador ya no existe */
+        }
       }
-      if (!user) return;
-      setCreating(table.id);
-      try {
-        const now = new Date().toISOString();
-        const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
-          p_branch_id: activeBranchId!,
-          p_created_by: user.id,
-          p_table_id: table.id,
-          p_is_special: false,
-        } as any);
-
-        if (error) throw error;
-
-        const orderId = String(data);
-
-        seedDraftOrderCache(qc, orderId, {
-          branchId: activeBranchId!,
-          tableId: table.id,
-          tableName: table.name,
-          isSpecial: false,
-          createdAt: now,
-        });
-
-        toast.success(`Entrando a ${table.name}...`);
-        navigate(`/ordenes?order=${orderId}&origin=mesas`, { replace: true });
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        void qc.prefetchQuery({
-          queryKey: getOrderQueryKey(orderId),
-          queryFn: () => fetchOrderDetail(orderId),
-          staleTime: 15_000,
-          gcTime: 10 * 60_000,
-        });
-      } catch (err: any) {
-        toast.error(err.message || "Error al registrar la apertura de la mesa");
-      } finally {
-        setCreating(null);
-      }
+      if (!user || !activeBranchId) return;
+      const optimisticOrderId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      seedDineInDraftOrderCache(qc, optimisticOrderId, {
+        branchId: activeBranchId,
+        tableId: table.id,
+        tableName: table.name,
+        createdAt: now,
+        tableOrderPosition: 1,
+        siblings: [
+          {
+            id: optimisticOrderId,
+            order_number: null,
+            order_code: null,
+            split_code: null,
+            table_order_position: 1,
+            item_count: 0,
+            created_at: now,
+          },
+        ],
+      });
+      toast.success(`Entrando a ${table.name}...`);
+      navigate(
+        `/ordenes?order=${optimisticOrderId}&openTable=${table.id}&tableName=${encodeURIComponent(table.name)}&origin=mesas`,
+        { replace: true },
+      );
     } else if (table.activeOrderId) {
-      warmTableFlow(table);
+      warmOrderId(table.activeOrderId);
       navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
     }
   };
@@ -330,7 +312,6 @@ const Mesas = () => {
           >
             {tables?.map((table, index) => {
               const config = STATUS_CONFIG[table.status];
-              const isCreating = creating === table.id;
               const isFreeAndReadonly = table.status === "free" && !canOperateMesas;
               const tableBadge = formatTableBadge(table.name);
               const visibleSplitTotals =
@@ -346,7 +327,6 @@ const Mesas = () => {
                   onClick={() => handleTableClick(table)}
                   onMouseEnter={() => warmTableFlow(table)}
                   onTouchStart={() => warmTableFlow(table)}
-                  disabled={isCreating}
                   className={cn(
                     "relative flex min-h-[142px] flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5",
                     config.bg,
@@ -357,10 +337,7 @@ const Mesas = () => {
                     isFreeAndReadonly && "cursor-default opacity-70",
                   )}
                 >
-                  {isCreating ? (
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  ) : (
-                    <>
+                  <>
                       <span className={cn(
                         "absolute right-2 top-2 inline-flex min-h-[2.45rem] min-w-[2.45rem] items-center justify-center rounded-full border px-2 text-[1.15rem] font-black leading-none shadow-sm sm:right-3 sm:top-3 sm:min-h-[2.9rem] sm:min-w-[2.9rem] sm:text-[1.45rem]",
                         table.status === "free"
@@ -415,8 +392,7 @@ const Mesas = () => {
                           {table.splitCount} {table.splitCount === 1 ? "orden" : "ordenes"}
                         </span>
                       )}
-                    </>
-                  )}
+                  </>
                 </motion.button>
               );
             })}

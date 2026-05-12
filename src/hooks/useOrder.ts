@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { dbSelect, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
@@ -10,8 +10,6 @@ import {
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
-import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
-
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
@@ -53,6 +51,8 @@ export interface SiblingOrder {
   created_by_name?: string | null;
   split_code: string | null;
   table_order_position: number | null;
+  /** ISO; usado para ordenar pestañas (mas antigua a la izquierda, nueva al final). */
+  created_at?: string | null;
   item_count: number;
   total?: number;
 }
@@ -70,7 +70,7 @@ export interface MoveTableResult {
   destination_was_occupied: boolean;
 }
 
-interface Order {
+export interface Order {
   id: string;
   order_number: number | null;
   order_code: string | null;
@@ -117,6 +117,110 @@ export function getOrderQueryKey(orderId: string | null) {
   return ["order", orderId] as const;
 }
 
+/** Cache de borrador de mesa (optimista o recien creado) para mostrar UI sin esperar al servidor. */
+export function seedDineInDraftOrderCache(
+  qc: QueryClient,
+  orderId: string,
+  source: {
+    branchId: string;
+    tableId: string;
+    tableName?: string;
+    createdAt: string;
+    tableOrderPosition: number;
+    siblings: SiblingOrder[];
+  },
+) {
+  qc.setQueryData(getOrderQueryKey(orderId), {
+    id: orderId,
+    order_number: null,
+    order_code: null,
+    status: "DRAFT",
+    order_type: "DINE_IN",
+    menu_scope: "TABLE",
+    is_special: false,
+    is_tray_order: false,
+    special_total_manual: null,
+    special_marked_at: null,
+    branch_id: source.branchId,
+    table_id: source.tableId,
+    table_order_position: source.tableOrderPosition,
+    split_id: null,
+    split_code: null,
+    table_name: source.tableName,
+    created_at: source.createdAt,
+    sent_to_kitchen_at: null,
+    ready_at: null,
+    dispatched_at: null,
+    paid_at: null,
+    cancelled_at: null,
+    cancel_requested_at: null,
+    items: [],
+    siblings: source.siblings,
+  } as Order);
+}
+
+/** Al abandonar la vista de orden de mesa: el servidor borra el borrador si no tiene lineas en BD (no usa cache). */
+export async function purgeEmptyDineInTableDraftOnLeave(qc: QueryClient, orderId: string): Promise<void> {
+  const { data: tableId, error } = await supabase.rpc("purge_empty_dine_in_draft_order" as any, {
+    p_order_id: orderId,
+  } as any);
+
+  if (error) {
+    console.warn("[purgeEmptyDineInTableDraftOnLeave]", (error as any).code, error.message);
+    return;
+  }
+
+  if (!tableId) return;
+
+  qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
+  qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+  qc.invalidateQueries({ queryKey: ["table-orders", String(tableId)] });
+  qc.invalidateQueries({ queryKey: ["order"] });
+}
+
+/** Al abrir Mesas: elimina en servidor todos los borradores de mesa sin items de la sucursal (segun permisos por orden). */
+export async function purgeEmptyDineInTableDraftsForBranch(qc: QueryClient, branchId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("purge_empty_dine_in_draft_orders_for_branch" as any, {
+    p_branch_id: branchId,
+  } as any);
+
+  if (error) {
+    console.warn("[purgeEmptyDineInTableDraftsForBranch]", (error as any).code, error.message);
+    return 0;
+  }
+
+  const n = Number(data ?? 0);
+  if (n > 0) {
+    qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+    qc.invalidateQueries({ queryKey: ["table-orders"] });
+    qc.invalidateQueries({ queryKey: ["order"] });
+  }
+
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Purgar borradores vacios de una mesa; invalida caches si hubo borrados. */
+export async function purgeEmptyDineInTableDraftsForTable(qc: QueryClient, tableId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("purge_empty_dine_in_draft_orders_for_table" as any, {
+    p_table_id: tableId,
+    p_keep_order_id: null,
+  } as any);
+
+  if (error) {
+    console.warn("[purgeEmptyDineInTableDraftsForTable]", (error as any).code, error.message);
+    return 0;
+  }
+
+  const n = Number(data ?? 0);
+  if (n > 0) {
+    qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false });
+    qc.invalidateQueries({ queryKey: ["table-orders", tableId] });
+    qc.invalidateQueries({ queryKey: ["order"] });
+  }
+
+  return Number.isFinite(n) ? n : 0;
+}
+
 const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise<T> =>
   new Promise((resolve, reject) => {
     const timeoutId = globalThis.setTimeout(() => {
@@ -129,16 +233,33 @@ const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Pr
       .finally(() => globalThis.clearTimeout(timeoutId));
   });
 
-export async function fetchSiblingOrders(tableId: string, branchId: string): Promise<SiblingOrder[]> {
-  const openShiftId = await getOpenCashShiftIdForBranch(branchId);
-  if (!openShiftId) return [];
+/** Orden de pestañas: mas antigua primero, la orden nueva siempre al final. */
+export function compareSiblingOrderTabs(left: SiblingOrder, right: SiblingOrder): number {
+  const byTime = String(left.created_at ?? "").localeCompare(String(right.created_at ?? ""));
+  if (byTime !== 0) return byTime;
+  const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
+  const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
+  if (leftPos !== rightPos) return leftPos - rightPos;
+  return String(left.id).localeCompare(String(right.id));
+}
+
+export async function fetchSiblingOrders(
+  tableId: string,
+  branchId: string,
+  /** No purgar este borrador vacio (la orden abierta en pantalla). */
+  keepOrderId?: string | null,
+): Promise<SiblingOrder[]> {
+  /** Purga en segundo plano: no bloquea el listado (ingreso rapido a mesa). */
+  void supabase.rpc("purge_empty_dine_in_draft_orders_for_table" as any, {
+    p_table_id: tableId,
+    p_keep_order_id: keepOrderId ?? null,
+  } as any);
 
   const { data: siblingOrders, error } = await supabase
     .from("orders")
     .select("id, order_number, order_code, split_id, table_order_position, status, created_at, notes, order_items(id)")
     .eq("table_id", tableId)
     .eq("branch_id", branchId)
-    .eq("cash_shift_id", openShiftId)
     .eq("order_type", "DINE_IN")
     .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]);
 
@@ -156,30 +277,26 @@ export async function fetchSiblingOrders(tableId: string, branchId: string): Pro
 
   return siblingOrders
     .filter((sibling) => !String((sibling as any).notes ?? "").includes("VOID_SUCCESSOR_ORDER:"))
+    .filter((sibling) => {
+      const itemCount = Array.isArray(sibling.order_items) ? sibling.order_items.length : 0;
+      if (itemCount > 0) return true;
+      if (keepOrderId && sibling.id === keepOrderId) return true;
+      if (String(sibling.status ?? "") !== "DRAFT") return true;
+      return false;
+    })
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
       order_code: sibling.order_code ?? null,
       split_code: splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null,
       table_order_position: Number(sibling.table_order_position ?? 0) || null,
+      created_at: sibling.created_at ?? null,
       item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
     }))
-    .sort((left, right) => {
-      const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
-      const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
-
-      if (leftPos !== rightPos) {
-        return leftPos - rightPos;
-      }
-
-      return Number(left.order_number ?? 0) - Number(right.order_number ?? 0);
-    });
+    .sort(compareSiblingOrderTabs);
 }
 
 export async function fetchTakeoutSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
-  const openShiftId = await getOpenCashShiftIdForBranch(branchId);
-  if (!openShiftId) return [];
-
   const takeoutOrders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, table_order_position, status, created_at, created_by, order_items(id, total)",
     filters: [
@@ -187,7 +304,6 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
       { column: "order_type", op: "eq", value: "TAKEOUT" },
       { column: "is_tray_order", op: "eq", value: false },
       { column: "is_special", op: "eq", value: false },
-      { column: "cash_shift_id", op: "eq", value: openShiftId },
       // Mantener "Para llevar" visible como pestaña incluso si ya fue pagada.
       // Se excluye cuando ya existe despacho aplicado (order_dispatch_events).
       { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] }
@@ -218,29 +334,21 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
 
   return takeoutOrders
     .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
-    .map((sibling, index) => ({
+    .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
       order_code: sibling.order_code ?? null,
       status: sibling.status ?? null,
       created_by_name: sibling.created_by ? (creatorNameMap[sibling.created_by] ?? "Usuario") : null,
       split_code: null,
-      table_order_position: Number(sibling.table_order_position ?? 0) || index + 1,
+      table_order_position: Number(sibling.table_order_position ?? 0) || null,
+      created_at: sibling.created_at ?? null,
       item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
       total: Array.isArray(sibling.order_items)
         ? sibling.order_items.reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0)
         : 0,
     }))
-    .sort((left, right) => {
-      const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
-      const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
-
-      if (leftPos !== rightPos) {
-        return leftPos - rightPos;
-      }
-
-      return Number(left.order_number ?? 0) - Number(right.order_number ?? 0);
-    });
+    .sort(compareSiblingOrderTabs);
 }
 
 async function fetchOrderTableName(tableId: string | null): Promise<string | null> {
@@ -285,7 +393,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     supabase.rpc("get_order_operational_snapshot" as any, {
       p_order_id: orderId,
     }),
-    order.table_id ? fetchSiblingOrders(order.table_id, order.branch_id) : Promise.resolve([] as SiblingOrder[]),
+    order.table_id ? fetchSiblingOrders(order.table_id, order.branch_id, orderId) : Promise.resolve([] as SiblingOrder[]),
     order.created_by
       ? dbSelect<any>("profiles", {
           select: "id, first_name, full_name, username, email",
@@ -490,8 +598,24 @@ export function useOrder(orderId: string | null) {
 
   const query = useQuery({
     queryKey: getOrderQueryKey(orderId),
-    queryFn: () => (orderId ? fetchOrderDetail(orderId) : null),
+    queryFn: async () => {
+      if (!orderId) return null;
+      const fresh = await fetchOrderDetail(orderId);
+      if (fresh) return fresh;
+      const cached = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
+      if (
+        cached
+        && cached.id === orderId
+        && cached.order_type === "DINE_IN"
+        && cached.status === "DRAFT"
+      ) {
+        return cached;
+      }
+      return null;
+    },
     enabled: !!orderId,
+    placeholderData: () =>
+      orderId ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) : undefined,
     staleTime: 15_000,
     gcTime: 10 * 60_000,
   });
@@ -946,6 +1070,8 @@ export function useOrder(orderId: string | null) {
   return {
     order: query.data,
     isLoading: query.isLoading,
+    /** Evita redirección prematura mientras refetch/invalidación aún no repone datos en caché. */
+    isFetching: query.isFetching,
     addItem,
     removeItem,
     updateQuantity,

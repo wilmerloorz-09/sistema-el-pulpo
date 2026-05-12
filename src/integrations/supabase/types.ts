@@ -3439,6 +3439,18 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: string
       }
+      purge_empty_dine_in_draft_order: {
+        Args: { p_order_id: string }
+        Returns: string
+      }
+      purge_empty_dine_in_draft_orders_for_branch: {
+        Args: { p_branch_id: string }
+        Returns: number
+      }
+      purge_empty_dine_in_draft_orders_for_table: {
+        Args: { p_keep_order_id?: string | null; p_table_id: string }
+        Returns: number
+      }
       dispatch_order_quantities: {
         Args: {
           p_dispatched_by: string

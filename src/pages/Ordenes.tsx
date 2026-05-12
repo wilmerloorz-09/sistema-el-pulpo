@@ -1,7 +1,18 @@
 ﻿import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { fetchOrderDetail, fetchSiblingOrders, fetchTakeoutSiblingOrders, getOrderQueryKey, isTemporaryOrderItemId, useOrder, type SiblingOrder } from "@/hooks/useOrder";
+import {
+  compareSiblingOrderTabs,
+  fetchOrderDetail,
+  fetchSiblingOrders,
+  fetchTakeoutSiblingOrders,
+  getOrderQueryKey,
+  isTemporaryOrderItemId,
+  seedDineInDraftOrderCache,
+  useOrder,
+  type Order,
+  type SiblingOrder,
+} from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +52,9 @@ import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
+
+/** Una sola RPC create_dine_in_order por mesa+orden optimista (evita doble creación en Strict Mode). */
+const mesaOpenDineInCreateByKey = new Map<string, Promise<string>>();
 
 interface SelectedProduct {
   id: string;
@@ -493,46 +507,6 @@ function OrdenesSkeleton() {
   );
 }
 
-const seedDraftTableOrderCache = (
-  qc: ReturnType<typeof useQueryClient>,
-  orderId: string,
-  source: {
-    branchId: string;
-    tableId: string;
-    tableName?: string;
-    createdAt: string;
-    tableOrderPosition: number;
-    siblings: Array<{
-      id: string;
-      order_number: number | null;
-      order_code: string | null;
-      split_code: string | null;
-      table_order_position: number | null;
-      item_count: number;
-    }>;
-  },
-) => {
-  qc.setQueryData(getOrderQueryKey(orderId), {
-    id: orderId,
-    order_number: null,
-    order_code: null,
-    status: "DRAFT",
-    order_type: "DINE_IN",
-    menu_scope: "TABLE",
-    is_special: false,
-    special_total_manual: null,
-    branch_id: source.branchId,
-    table_id: source.tableId,
-    table_order_position: source.tableOrderPosition,
-    split_id: null,
-    split_code: null,
-    table_name: source.tableName,
-    created_at: source.createdAt,
-    items: [],
-    siblings: source.siblings,
-  });
-};
-
 const OrdenesContent = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -542,11 +516,29 @@ const OrdenesContent = () => {
   const { isDesktop, isTablet10 } = useBreakpoint();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
+  const mesaOpenAttemptRef = useRef(0);
   const [pendingTrayType, setPendingTrayType] = useState<TrayItemType | null>(null);
   const effectiveTrayType: TrayItemType = pendingTrayType ?? "B";
   const [pendingMenuScopeSelection, setPendingMenuScopeSelection] = useState<MenuScope | null>(null);
 
-  const { order, isLoading, addItem, removeItem, updateQuantity, sendToKitchen, moveToTable, createTableOrder, deleteTableOrder, updateMenuScope, updateSpecialTotal, convertToSpecial, closeOrder, lockOrder, unlockOrder } = useOrder(orderId);
+  const {
+    order,
+    isLoading,
+    isFetching,
+    addItem,
+    removeItem,
+    updateQuantity,
+    sendToKitchen,
+    moveToTable,
+    createTableOrder,
+    deleteTableOrder,
+    updateMenuScope,
+    updateSpecialTotal,
+    convertToSpecial,
+    closeOrder,
+    lockOrder,
+    unlockOrder,
+  } = useOrder(orderId);
   const orderItems = order?.items ?? [];
   const { cancelOrderMutation } = useCancellation();
 
@@ -581,6 +573,156 @@ const OrdenesContent = () => {
   const originParam = origin ? `&origin=${origin}` : "";
   const sourceParams = (fromEditar ? "&from=editar" : "") + originParam;
   const isTakeoutOrder = order?.order_type === "TAKEOUT" && !order?.is_tray_order && !order?.is_special;
+
+  const canOperateMesasForOpen =
+    canOperate(permissions, "mesas")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+
+  const openTableIdForCreate = searchParams.get("openTable");
+
+  useEffect(() => {
+    if (!openTableIdForCreate || !orderId) return;
+    if (searchParams.get("origin") !== "mesas") return;
+    if (!user || !activeBranchId) return;
+    if (shiftGateQuery.isLoading) return;
+
+    if (!canOperateMesasForOpen) {
+      toast.error("No tienes permiso para abrir mesas.");
+      qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
+      navigate("/mesas", { replace: true });
+      return;
+    }
+
+    const flightKey = `${openTableIdForCreate}:${orderId}`;
+    const tableNameFromUrl = (() => {
+      const enc = searchParams.get("tableName");
+      return enc ? decodeURIComponent(enc) : undefined;
+    })();
+
+    let rpcPromise = mesaOpenDineInCreateByKey.get(flightKey);
+    if (!rpcPromise) {
+      rpcPromise = (async () => {
+        const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
+          p_branch_id: activeBranchId,
+          p_created_by: user.id,
+          p_table_id: openTableIdForCreate,
+          p_is_special: false,
+        } as any);
+        if (error) throw error;
+        return String(data);
+      })();
+      mesaOpenDineInCreateByKey.set(flightKey, rpcPromise);
+      void rpcPromise.finally(() => {
+        mesaOpenDineInCreateByKey.delete(flightKey);
+      });
+    }
+
+    const myAttempt = ++mesaOpenAttemptRef.current;
+    let cancelled = false;
+
+    void rpcPromise
+      .then((realId) => {
+        if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
+
+        if (realId === orderId) {
+          navigate(`/ordenes?order=${realId}&origin=mesas`, { replace: true });
+          qc.invalidateQueries({ queryKey: ["orders"] });
+          qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+          qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
+          void qc.prefetchQuery({
+            queryKey: getOrderQueryKey(realId),
+            queryFn: () => fetchOrderDetail(realId),
+            staleTime: 15_000,
+            gcTime: 10 * 60_000,
+          });
+          return;
+        }
+
+        const cached = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
+        if (cached) {
+          const nextSiblings = (cached.siblings ?? []).map((s) =>
+            s.id === orderId ? { ...s, id: realId } : s,
+          );
+          const siblings: SiblingOrder[] =
+            nextSiblings.length > 0
+              ? nextSiblings
+              : [
+                  {
+                    id: realId,
+                    order_number: null,
+                    order_code: null,
+                    split_code: null,
+                    table_order_position: cached.table_order_position ?? 1,
+                    item_count: 0,
+                    created_at: cached.created_at,
+                  },
+                ];
+          qc.setQueryData(getOrderQueryKey(realId), {
+            ...cached,
+            id: realId,
+            siblings,
+          } as Order);
+        } else {
+          const nowIso = new Date().toISOString();
+          seedDineInDraftOrderCache(qc, realId, {
+            branchId: activeBranchId,
+            tableId: openTableIdForCreate,
+            tableName: tableNameFromUrl,
+            createdAt: nowIso,
+            tableOrderPosition: 1,
+            siblings: [
+              {
+                id: realId,
+                order_number: null,
+                order_code: null,
+                split_code: null,
+                table_order_position: 1,
+                item_count: 0,
+                created_at: nowIso,
+              },
+            ],
+          });
+        }
+
+        // Navegar antes de borrar caché del id optimista: si no, la URL sigue con el UUID viejo,
+        // useOrder pierde datos y el efecto de "orden inexistente" manda a /mesas.
+        navigate(`/ordenes?order=${realId}&origin=mesas`, { replace: true });
+        queueMicrotask(() => {
+          qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
+        });
+        qc.invalidateQueries({ queryKey: ["orders"] });
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+        qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
+        void qc.prefetchQuery({
+          queryKey: getOrderQueryKey(realId),
+          queryFn: () => fetchOrderDetail(realId),
+          staleTime: 15_000,
+          gcTime: 10 * 60_000,
+        });
+      })
+      .catch((err: any) => {
+        if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
+        toast.error(err?.message || "Error al abrir la mesa");
+        qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
+        navigate("/mesas", { replace: true });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    openTableIdForCreate,
+    orderId,
+    searchParams,
+    user,
+    activeBranchId,
+    shiftGateQuery.isLoading,
+    canOperateMesasForOpen,
+    navigate,
+    qc,
+  ]);
+
   const trayMenuScope: MenuScope =
     effectiveTrayType === "A"
       ? "TABLE"
@@ -742,13 +884,15 @@ const OrdenesContent = () => {
         },
       ];
 
+  /** Misma normalización que fetchSiblingOrders para que el orden de pestañas no salte al fusionar/refetch. */
   const currentTableOrder: SiblingOrder | null = order
     ? {
         id: order.id,
         order_number: order.order_number,
         order_code: order.order_code,
         split_code: order.split_code ?? null,
-        table_order_position: order.table_order_position ?? 1,
+        table_order_position: Number(order.table_order_position ?? 0) || null,
+        created_at: order.created_at ?? null,
         item_count: orderItems.length,
       }
     : null;
@@ -782,12 +926,16 @@ const OrdenesContent = () => {
 
   const tableOrdersQuery = useQuery({
     queryKey: isTakeoutOrder ? ["takeout-orders", order?.branch_id ?? null] : ["table-orders", order?.table_id ?? null],
-    queryFn: () => isTakeoutOrder ? fetchTakeoutSiblingOrders(order!.branch_id) : fetchSiblingOrders(order!.table_id!, order!.branch_id),
+    queryFn: () =>
+      isTakeoutOrder
+        ? fetchTakeoutSiblingOrders(order!.branch_id)
+        : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
     enabled: isTakeoutOrder ? !!order?.branch_id : !!order?.table_id,
     staleTime: 0,
     refetchOnMount: "always",
     gcTime: 2 * 60_000,
-    placeholderData: currentTableOrder ? [currentTableOrder] : undefined,
+    /** Sin placeholder en mesa: evita pestañas falsas antes de purgar/listar hermanos. Para llevar mantiene la orden actual. */
+    placeholderData: isTakeoutOrder && currentTableOrder ? [currentTableOrder] : undefined,
   });
 
   const updateTableOrdersTabsOverflow = useCallback(() => {
@@ -980,8 +1128,10 @@ const OrdenesContent = () => {
   }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, lockOrder]);
 
   useEffect(() => {
-    if (!orderId || isLoading || shiftGateQuery.isLoading) return;
+    if (!orderId || isLoading || isFetching || shiftGateQuery.isLoading) return;
     if (order || redirectingAfterDelete || removingSplit) return;
+    // Apertura optimista de mesa libre: aún no hay fila en BD o la RPC está en curso.
+    if (searchParams.get("origin") === "mesas" && searchParams.get("openTable")) return;
 
     const originValue = searchParams.get("origin");
     const fallbackPath = fromEditar
@@ -993,7 +1143,18 @@ const OrdenesContent = () => {
           : "/mesas";
 
     navigate(fallbackPath, { replace: true });
-  }, [fromEditar, isLoading, navigate, order, orderId, redirectingAfterDelete, removingSplit, shiftGateQuery.isLoading]);
+  }, [
+    fromEditar,
+    isFetching,
+    isLoading,
+    navigate,
+    order,
+    orderId,
+    redirectingAfterDelete,
+    removingSplit,
+    searchParams,
+    shiftGateQuery.isLoading,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1288,13 +1449,6 @@ const OrdenesContent = () => {
     return `Orden ${Number(tableOrder.table_order_position ?? 1)}`;
   };
 
-  const getVisibleOrderCodeNumber = (tableOrder: { order_code?: string | null; order_number: number | null }) => {
-    const codeSuffix = String(tableOrder.order_code ?? "").trim().split("-").pop();
-    const codeNumber = Number(codeSuffix);
-    if (Number.isFinite(codeNumber) && codeNumber > 0) return codeNumber;
-    return Number(tableOrder.order_number ?? Number.MAX_SAFE_INTEGER);
-  };
-
   const total = itemsToUse.reduce((s, i) => s + i.total, 0);
   const draftItemsTotal = itemsToUse
     .filter((item) => item.status === "DRAFT")
@@ -1317,35 +1471,21 @@ const OrdenesContent = () => {
       : [];
   const visibleTableOrders = isTakeoutOrder
     ? tableOrders.filter((tableOrder) => tableOrder.id === currentTableOrder?.id || tableOrder.item_count > 0)
-    : tableOrders.filter((tableOrder) => tableOrder.id === currentTableOrder?.id || tableOrder.item_count > 0);
+    : tableOrders;
   const mergedTableOrders = isTakeoutOrder
-    ? [...visibleTableOrders].sort((left, right) => {
-        const leftNumber = getVisibleOrderCodeNumber(left);
-        const rightNumber = getVisibleOrderCodeNumber(right);
-
-        if (leftNumber !== rightNumber) {
-          return leftNumber - rightNumber;
-        }
-
-        return String(left.id).localeCompare(String(right.id));
-      })
+    ? [...visibleTableOrders].sort(compareSiblingOrderTabs)
     : currentTableOrder
       ? visibleTableOrders
         .map((tableOrder) => (tableOrder.id === currentTableOrder.id ? currentTableOrder : tableOrder))
-        .sort((left, right) => {
-          const leftPos = Number(left.table_order_position ?? Number.MAX_SAFE_INTEGER);
-          const rightPos = Number(right.table_order_position ?? Number.MAX_SAFE_INTEGER);
-
-          if (leftPos !== rightPos) {
-            return leftPos - rightPos;
-          }
-
-          return Number(left.order_number ?? 0) - Number(right.order_number ?? 0);
-        })
+        .sort(compareSiblingOrderTabs)
       : visibleTableOrders;
   const hasSiblings = mergedTableOrders.length > 1;
   const hasOrderItems = itemsToUse.length > 0;
-  const allExistingTableOrdersHaveItems = mergedTableOrders.every((sibling) => sibling.item_count > 0);
+  const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
+  /** Para llevar siempre exige turno en RPC; en mesa los admins pueden pasar sin turno según create_additional_dine_in_order. */
+  const shiftOkForSiblingOrder =
+    shiftOpen ||
+    (!isTakeoutOrder && (canManageOrders || isGlobalAdmin));
   const orderGroupLabel = isTakeoutOrder ? "Para Llevar" : "mesa";
 
   const isEditableInCaja = order.status === "SENT_TO_KITCHEN";
@@ -1367,12 +1507,9 @@ const OrdenesContent = () => {
     canOperateOrders &&
     ((order.order_type === "DINE_IN" && !!order.table_id) || isTakeoutOrder) &&
     order.status !== "CANCELLED" &&
-    // En Para llevar mantenemos la orden visible incluso si ya fue pagada,
-    // y debe permitir abrir una nueva orden desde el "+".
-    (isTakeoutOrder || order.status !== "PAID") &&
     !isLockedFromEditar &&
     orderItems.length > 0 &&
-    allExistingTableOrdersHaveItems;
+    shiftOkForSiblingOrder;
   const canDeleteSplit =
     canOperateOrders &&
     hasSiblings &&
@@ -1548,18 +1685,18 @@ const OrdenesContent = () => {
     if (!user || !canOperateOrders) return;
     if (!((order.order_type === "DINE_IN" && order.table_id) || isTakeoutOrder)) return;
     if (order.status === "CANCELLED") return;
-    if (!isTakeoutOrder && order.status === "PAID") return;
     if (orderItems.length <= 0) {
       toast.error("La orden actual debe tener al menos un item");
       return;
     }
-    if (!allExistingTableOrdersHaveItems) {
-      toast.error(`No puedes crear una nueva orden hasta que todas las ordenes activas de ${orderGroupLabel} tengan al menos un item`);
+    if (!shiftOkForSiblingOrder) {
+      toast.error("Abre turno en caja para crear otra orden.");
       return;
     }
     setSplitting(true);
     try {
       let newOrderId: string;
+      const nowIso = new Date().toISOString();
       if (isTakeoutOrder) {
         const { data, error } = await supabase.rpc("create_takeout_order" as any, {
           p_branch_id: order.branch_id,
@@ -1576,48 +1713,55 @@ const OrdenesContent = () => {
       }
 
       if (isTakeoutOrder) {
-        qc.setQueryData(["takeout-orders", order.branch_id], [
-          ...tableOrders,
-          {
-            id: newOrderId,
-            order_number: null,
-            order_code: null,
-            split_code: null,
-            table_order_position: tableOrders.length + 1,
-            item_count: 0,
-          },
-        ] satisfies SiblingOrder[]);
-      } else if (order.table_id) {
-        qc.setQueryData(["table-orders", order.table_id], [
-          ...tableOrders,
-          {
-            id: newOrderId,
-            order_number: null,
-            order_code: null,
-            split_code: null,
-            table_order_position: tableOrders.length + 1,
-            item_count: 0,
-          },
-        ] satisfies SiblingOrder[]);
-      }
-      if (!isTakeoutOrder) {
-        seedDraftTableOrderCache(qc, newOrderId, {
-          branchId: order.branch_id,
-          tableId: order.table_id,
-          tableName: order.table_name,
-          createdAt: new Date().toISOString(),
-          tableOrderPosition: mergedTableOrders.length + 1,
-          siblings: [
-            ...mergedTableOrders,
+        qc.setQueryData(
+          ["takeout-orders", order.branch_id],
+          [
+            ...tableOrders,
             {
               id: newOrderId,
               order_number: null,
               order_code: null,
               split_code: null,
-              table_order_position: mergedTableOrders.length + 1,
+              table_order_position: tableOrders.length + 1,
               item_count: 0,
+              created_at: nowIso,
             },
-          ],
+          ].sort(compareSiblingOrderTabs),
+        );
+      } else if (order.table_id) {
+        qc.setQueryData(
+          ["table-orders", order.table_id],
+          [
+            ...tableOrders,
+            {
+              id: newOrderId,
+              order_number: null,
+              order_code: null,
+              split_code: null,
+              table_order_position: tableOrders.length + 1,
+              item_count: 0,
+              created_at: nowIso,
+            },
+          ].sort(compareSiblingOrderTabs),
+        );
+      }
+      if (!isTakeoutOrder) {
+        const newSibling: SiblingOrder = {
+          id: newOrderId,
+          order_number: null,
+          order_code: null,
+          split_code: null,
+          table_order_position: mergedTableOrders.length + 1,
+          item_count: 0,
+          created_at: nowIso,
+        };
+        seedDineInDraftOrderCache(qc, newOrderId, {
+          branchId: order.branch_id,
+          tableId: order.table_id!,
+          tableName: order.table_name,
+          createdAt: nowIso,
+          tableOrderPosition: mergedTableOrders.length + 1,
+          siblings: [...mergedTableOrders, newSibling].sort(compareSiblingOrderTabs),
         });
       }
       void qc.prefetchQuery({
@@ -1636,9 +1780,26 @@ const OrdenesContent = () => {
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
 
+      if (rawMessage.includes("Todas las ordenes activas de la mesa deben tener al menos un item")) {
+        toast.error(
+          "Hay una cuenta en borrador sin productos en esta mesa. Agrega ítems o elimina esa cuenta antes de abrir otra.",
+        );
+        if (order.table_id) {
+          void fetchSiblingOrders(order.table_id, order.branch_id, order.id).then((rows) => {
+            qc.setQueryData(["table-orders", order.table_id], rows);
+          });
+        }
+        return;
+      }
+
+      if (rawMessage.includes("No hay turno abierto")) {
+        toast.error("No hay turno abierto en esta sucursal.");
+        return;
+      }
+
       if (rawMessage.includes("No se encontro la orden origen")) {
         try {
-          const refreshedTableOrders = await fetchSiblingOrders(order.table_id, order.branch_id);
+          const refreshedTableOrders = await fetchSiblingOrders(order.table_id, order.branch_id, order.id);
           qc.setQueryData(["table-orders", order.table_id], refreshedTableOrders);
           qc.invalidateQueries({ queryKey: ["tables-with-status"] });
           qc.invalidateQueries({ queryKey: ["order"] });
@@ -2581,8 +2742,8 @@ const OrdenesContent = () => {
                         ? `No tienes permiso para crear nuevas ordenes en ${orderGroupLabel}`
                         : orderItems.length <= 0
                           ? "La orden actual debe tener al menos un item"
-                          : !allExistingTableOrdersHaveItems
-                            ? "Todas las ordenes existentes deben tener al menos un item"
+                          : !shiftOkForSiblingOrder
+                            ? "Abre turno en caja para crear otra orden"
                             : !canSplit
                             ? isTakeoutOrder ? "Para Llevar debe seguir activo para crear otra orden" : "La mesa debe seguir activa para crear otra orden"
                               : "Nueva orden"

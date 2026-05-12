@@ -12,6 +12,7 @@ import { canOperate } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
+  compareSiblingOrderTabs,
   fetchOrderDetail,
   fetchTakeoutSiblingOrders,
   getOrderQueryKey,
@@ -135,8 +136,9 @@ const ParaLlevar = () => {
           split_code: null,
           table_order_position: orders.length + 1,
           item_count: 0,
+          created_at: now,
         },
-      ] satisfies SiblingOrder[]);
+      ].sort(compareSiblingOrderTabs));
 
       toast.success("Abriendo nueva orden para llevar...");
       navigate(`/ordenes?order=${orderId}&origin=para-llevar`, { replace: true });

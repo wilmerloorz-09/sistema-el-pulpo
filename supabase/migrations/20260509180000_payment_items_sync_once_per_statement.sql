@@ -70,6 +70,9 @@ REVOKE ALL ON FUNCTION public.sync_order_payment_state_payment_items_after_delet
 REVOKE ALL ON FUNCTION public.sync_order_payment_state_payment_items_after_update_stmt() FROM PUBLIC;
 
 DROP TRIGGER IF EXISTS trg_sync_order_payment_state_on_payment_items ON public.payment_items;
+DROP TRIGGER IF EXISTS trg_sync_order_payment_state_payment_items_ins_stmt ON public.payment_items;
+DROP TRIGGER IF EXISTS trg_sync_order_payment_state_payment_items_del_stmt ON public.payment_items;
+DROP TRIGGER IF EXISTS trg_sync_order_payment_state_payment_items_upd_stmt ON public.payment_items;
 
 CREATE TRIGGER trg_sync_order_payment_state_payment_items_ins_stmt
 AFTER INSERT ON public.payment_items
