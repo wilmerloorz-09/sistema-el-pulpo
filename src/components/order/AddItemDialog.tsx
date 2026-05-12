@@ -22,8 +22,19 @@ interface Product {
   image_url?: string | null;
 }
 
+/** Vista previa instantánea desde el nodo de menú mientras se resuelve el catálogo en red */
+export interface AddItemResolvingShell {
+  description: string;
+  unit_price: number | null;
+  price_mode: "FIXED" | "MANUAL";
+  icon?: string | null;
+  image_url?: string | null;
+}
+
 interface Props {
   product: Product | null;
+  /** Datos del menú ya en memoria: permite abrir el modal de inmediato */
+  resolvingShell?: AddItemResolvingShell | null;
   modifiers: Modifier[];
   open: boolean;
   onClose: () => void;
@@ -46,6 +57,7 @@ interface Props {
 
 const AddItemDialog = ({
   product,
+  resolvingShell = null,
   modifiers,
   open,
   onClose,
@@ -58,6 +70,20 @@ const AddItemDialog = ({
   extraContent,
   buildItemNote,
 }: Props) => {
+  const isResolving = Boolean(resolvingShell && !product);
+  const displayProduct: Product | null =
+    product ??
+    (resolvingShell
+      ? {
+          id: "__resolving__",
+          description: resolvingShell.description,
+          unit_price: resolvingShell.unit_price,
+          price_mode: resolvingShell.price_mode,
+          icon: resolvingShell.icon,
+          image_url: resolvingShell.image_url,
+        }
+      : null);
+
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState("1");
   const [manualPrice, setManualPrice] = useState("");
@@ -77,16 +103,16 @@ const AddItemDialog = ({
     [modifiers],
   );
 
-  if (!product) return null;
+  if (!open || !displayProduct) return null;
 
-  const isManual = (priceModeOverride ?? product.price_mode) === "MANUAL";
-  const price = isManual ? parseDecimalInput(manualPrice) : (product.unit_price ?? 0);
+  const isManual = (priceModeOverride ?? displayProduct.price_mode) === "MANUAL";
+  const price = isManual ? parseDecimalInput(manualPrice) : (displayProduct.unit_price ?? 0);
   const effectiveQuantity = hideQuantity ? 1 : quantity;
-  const canAdd = effectiveQuantity > 0 && (!isManual || price > 0);
+  const canAdd = Boolean(product) && effectiveQuantity > 0 && (!isManual || price > 0);
   const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
 
   const handleConfirm = () => {
-    if (!canAdd) return;
+    if (!product || !canAdd) return;
 
     onConfirm({
       product_id: product.id,
@@ -131,24 +157,24 @@ const AddItemDialog = ({
         <DialogHeader className="mb-1 text-left">
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-100 text-primary shadow-sm">
-              {product.image_url ? (
-                <img src={product.image_url} alt={product.description} className="h-full w-full object-cover" />
-              ) : product.icon ? (
-                <span className="text-[1.5rem] leading-none">{product.icon}</span>
+              {displayProduct.image_url ? (
+                <img src={displayProduct.image_url} alt={displayProduct.description} className="h-full w-full object-cover" />
+              ) : displayProduct.icon ? (
+                <span className="text-[1.5rem] leading-none">{displayProduct.icon}</span>
               ) : (
                 <ImageIcon className="h-6 w-6 text-muted-foreground/60" />
               )}
             </div>
             <div className="min-w-0 flex-1">
               <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
-                {product.description}
+                {displayProduct.description}
               </DialogTitle>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-800">
                   Precio unitario
                 </span>
                 <span className="font-display text-lg font-black text-foreground">
-                  {isManual ? "$0.00" : `$${(product.unit_price ?? 0).toFixed(2)}`}
+                  {isManual ? "$0.00" : `$${(displayProduct.unit_price ?? 0).toFixed(2)}`}
                 </span>
               </div>
             </div>
@@ -224,25 +250,33 @@ const AddItemDialog = ({
           {sortedModifiers.length > 0 && (
             <div className="space-y-2.5">
               <Label className="text-sm font-semibold text-orange-600">Modificaciones</Label>
-              <div className="grid grid-cols-1 gap-1.5 max-h-[35vh] overflow-y-auto pr-1">
+              <div className="grid max-h-[35vh] grid-cols-1 gap-1.5 overflow-y-auto pr-1">
                 {sortedModifiers.map((modifier) => {
                   const isChecked = selectedMods.includes(modifier.id);
                   return (
                     <label
                       key={modifier.id}
                       className={cn(
-                        "flex items-center gap-2.5 rounded-[14px] border p-2.5 transition-all cursor-pointer",
+                        "flex cursor-pointer items-center gap-2.5 rounded-[14px] border p-2.5 transition-all",
                         isChecked
                           ? "border-orange-200 bg-orange-50 shadow-sm"
-                          : "border-border/60 bg-white/60 hover:border-orange-100 hover:bg-white"
+                          : "border-border/60 bg-white/60 hover:border-orange-100 hover:bg-white",
                       )}
                     >
                       <Checkbox
                         checked={isChecked}
                         onCheckedChange={() => toggleMod(modifier.id)}
-                        className={cn("h-4 w-4 rounded-[4px] border-orange-300", isChecked && "data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500")}
+                        className={cn(
+                          "h-4 w-4 rounded-[4px] border-orange-300",
+                          isChecked && "data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500",
+                        )}
                       />
-                      <span className={cn("text-[13px] font-medium leading-none", isChecked ? "text-orange-900" : "text-muted-foreground")}>
+                      <span
+                        className={cn(
+                          "text-[13px] font-medium leading-none",
+                          isChecked ? "text-orange-900" : "text-muted-foreground",
+                        )}
+                      >
                         {modifier.description}
                       </span>
                     </label>
@@ -252,15 +286,15 @@ const AddItemDialog = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between border-t border-border/60 pt-4 mt-2">
-            <span className="text-[13px] text-muted-foreground font-medium flex flex-col">
+          <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-4">
+            <span className="flex flex-col text-[13px] font-medium text-muted-foreground">
               Total
               <span className="font-display text-2xl font-black text-foreground">${(price * effectiveQuantity).toFixed(2)}</span>
             </span>
-            <Button 
-              onClick={handleConfirm} 
-              disabled={adding || !canAdd} 
-              className="h-11 rounded-xl px-5 font-bold shadow-sm flex items-center gap-1.5"
+            <Button
+              onClick={handleConfirm}
+              disabled={adding || !canAdd || isResolving}
+              className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
             >
               <ShoppingBag className="h-4 w-4" />
               {confirmLabel}

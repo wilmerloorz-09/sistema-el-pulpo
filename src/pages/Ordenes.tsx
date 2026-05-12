@@ -1,4 +1,5 @@
 ﻿import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchOrderDetail, fetchSiblingOrders, fetchTakeoutSiblingOrders, getOrderQueryKey, isTemporaryOrderItemId, useOrder, type SiblingOrder } from "@/hooks/useOrder";
 import { useAuth } from "@/contexts/AuthContext";
@@ -92,6 +93,75 @@ interface TakeoutCajaPreview {
 interface MenuProductLookupResult {
   product: SelectedProduct;
   modifiers: ProductModifierOption[];
+}
+
+/** En memoria: enlaces nodo↔modificador + textos, para armar la lista sin esperar al lookup del producto */
+interface BranchModifiersCatalog {
+  links: Array<{ node_id: string; modifier_id: string; display_order: number | null }>;
+  modifiersById: Map<string, { id: string; description: string }>;
+}
+
+async function fetchBranchModifiersCatalog(branchId: string): Promise<BranchModifiersCatalog> {
+  const { data: nodeRows, error: nErr } = await supabase.from("menu_nodes" as any).select("id").eq("branch_id", branchId);
+  if (nErr) throw nErr;
+  const nodeIds = ((nodeRows ?? []) as Array<{ id: string }>).map((r) => r.id).filter(Boolean);
+  if (nodeIds.length === 0) {
+    return { links: [], modifiersById: new Map() };
+  }
+
+  const { data: linkRows, error: lErr } = await supabase
+    .from("menu_node_modifiers" as any)
+    .select("node_id, modifier_id, display_order")
+    .in("node_id", nodeIds)
+    .eq("is_active", true)
+    .order("display_order", { ascending: true });
+  if (lErr) throw lErr;
+
+  const links = (linkRows ?? []) as Array<{ node_id: string; modifier_id: string; display_order: number | null }>;
+  const modifierIds = [...new Set(links.map((l) => l.modifier_id).filter(Boolean))];
+  if (modifierIds.length === 0) {
+    return { links, modifiersById: new Map() };
+  }
+
+  const { data: modRows, error: mErr } = await supabase
+    .from("modifiers" as any)
+    .select("id, description")
+    .eq("branch_id", branchId)
+    .eq("is_active", true)
+    .in("id", modifierIds);
+  if (mErr) throw mErr;
+
+  const modifiersById = new Map(
+    ((modRows ?? []) as Array<{ id: string; description: string }>).map((m) => [m.id, m]),
+  );
+  return { links, modifiersById };
+}
+
+/** Misma prioridad que en `fetchMenuProductLookup` (ancestro → producto, sin duplicar ids) */
+function buildModifiersForProductNode(node: MenuNode, catalog: BranchModifiersCatalog): ProductModifierOption[] {
+  const modifierNodeIds = [node.id, ...(node.ancestor_ids ?? [])];
+  const modifierLinks = catalog.links
+    .filter((link) => modifierNodeIds.includes(link.node_id))
+    .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0));
+
+  const linksByNode = new Map<string, typeof modifierLinks>();
+  for (const link of modifierLinks) {
+    const bucket = linksByNode.get(link.node_id) ?? [];
+    bucket.push(link);
+    linksByNode.set(link.node_id, bucket);
+  }
+
+  const seenModifierIds = new Set<string>();
+  return modifierNodeIds.flatMap((nodeId) => {
+    const nodeLinks = linksByNode.get(nodeId) ?? [];
+    return nodeLinks.flatMap((link) => {
+      if (seenModifierIds.has(link.modifier_id)) return [];
+      const modifier = catalog.modifiersById.get(link.modifier_id);
+      if (!modifier) return [];
+      seenModifierIds.add(link.modifier_id);
+      return [{ id: modifier.id, description: modifier.description }];
+    });
+  });
 }
 
 interface OrdenesErrorBoundaryState {
@@ -220,6 +290,23 @@ function isPlatosRootCategory(value?: string | null) {
   return normalizeMenuLabel(value).includes("PLATOS");
 }
 
+function buildProductLoadingShell(node: MenuNode, isTrayOrder: boolean, trayType: TrayItemType) {
+  const price_mode: "FIXED" | "MANUAL" = isTrayOrder
+    ? trayType === "C"
+      ? "MANUAL"
+      : "FIXED"
+    : node.manual_price_inherited
+      ? "MANUAL"
+      : "FIXED";
+  return {
+    description: node.name.trim() || "Producto",
+    unit_price: node.price == null ? null : Number(node.price),
+    price_mode,
+    icon: node.icon ?? null,
+    image_url: node.image_url ?? null,
+  };
+}
+
 /**
  * Diagnostico de rendimiento (2026-03-30)
  * - Medicion directa disponible desde este entorno: RTT base al endpoint REST de Supabase ~777ms.
@@ -235,26 +322,101 @@ async function fetchMenuProductLookup(params: {
   node: MenuNode;
   isTrayOrder: boolean;
   trayType: TrayItemType;
+  /** Si viene, los modificadores se resuelven en memoria (sin 3.er round-trip) */
+  catalog?: BranchModifiersCatalog | null;
 }): Promise<MenuProductLookupResult> {
-  const candidateProductIds = Array.from(new Set(
-    (
-      params.node.menu_scope === "TABLE"
-        ? [params.node.id, params.node.legacy_product_id]
-        : [params.node.legacy_product_id, params.node.id]
-    ).filter((value): value is string => typeof value === "string" && value.trim().length > 0),
-  ));
+  const candidateProductIds = Array.from(
+    new Set(
+      (
+        params.node.menu_scope === "TABLE"
+          ? [params.node.id, params.node.legacy_product_id]
+          : [params.node.legacy_product_id, params.node.id]
+      ).filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+    ),
+  );
 
   if (candidateProductIds.length === 0) {
     throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
   }
 
-  const { data: productRows, error: productError } = await supabase
-    .from("products")
-    .select("id, description, subcategory_id, unit_price, price_mode")
-    .in("id", candidateProductIds);
+  const modifierNodeIds = [params.node.id, ...(params.node.ancestor_ids ?? [])];
 
-  if (productError) {
-    throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+  let modifiers: ProductModifierOption[];
+  let productRows: unknown[] | null;
+
+  if (params.catalog) {
+    modifiers = buildModifiersForProductNode(params.node, params.catalog);
+    const { data, error: productError } = await supabase
+      .from("products")
+      .select("id, description, subcategory_id, unit_price, price_mode")
+      .in("id", candidateProductIds);
+    if (productError) {
+      throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+    }
+    productRows = data ?? [];
+  } else {
+    const [productsRes, linksRes] = await Promise.all([
+      supabase
+        .from("products")
+        .select("id, description, subcategory_id, unit_price, price_mode")
+        .in("id", candidateProductIds),
+      supabase
+        .from("menu_node_modifiers" as any)
+        .select("node_id, modifier_id, display_order, is_active")
+        .in("node_id", modifierNodeIds)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true }),
+    ]);
+
+    const { data: pr, error: productError } = productsRes;
+    const { data: links, error: linksError } = linksRes;
+
+    if (productError) {
+      throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+    }
+    if (linksError) throw linksError;
+    productRows = pr ?? [];
+
+    const modifierLinks = (links ?? []) as Array<{
+      node_id: string;
+      modifier_id: string;
+      display_order?: number | null;
+    }>;
+    const modifierIdSet = new Set<string>(modifierLinks.map((link) => link.modifier_id).filter(Boolean));
+    const modifierIds = Array.from(modifierIdSet);
+
+    modifiers = [];
+    if (modifierIds.length > 0) {
+      const modifierRows = await dbSelect<{ id: string; description: string }>("modifiers", {
+        select: "id, description",
+        branchId: params.branchId,
+        filters: [
+          { column: "is_active", op: "eq", value: true },
+          { column: "id", op: "in", value: modifierIds },
+        ],
+        orderBy: { column: "description" },
+      });
+
+      const modifiersById = new Map(modifierRows.map((modifier) => [modifier.id, modifier]));
+      const linksByNode = new Map<string, typeof modifierLinks>();
+      for (const link of modifierLinks) {
+        const bucket = linksByNode.get(link.node_id) ?? [];
+        bucket.push(link);
+        linksByNode.set(link.node_id, bucket);
+      }
+
+      const seenModifierIds = new Set<string>();
+      modifiers = modifierNodeIds.flatMap((nodeId) => {
+        const nodeLinks = linksByNode.get(nodeId) ?? [];
+        return nodeLinks.flatMap((link) => {
+          if (seenModifierIds.has(link.modifier_id)) return [];
+          const modifier = modifiersById.get(link.modifier_id);
+          if (!modifier) return [];
+          seenModifierIds.add(link.modifier_id);
+          return [{ id: modifier.id, description: modifier.description }];
+        });
+      });
+    }
   }
 
   const productRowsById = new Map(
@@ -286,56 +448,6 @@ async function fetchMenuProductLookup(params: {
     params.node.price == null
       ? (productRow.unit_price == null ? null : Number(productRow.unit_price))
       : Number(params.node.price);
-
-  const modifierNodeIds = [params.node.id, ...(params.node.ancestor_ids ?? [])];
-  const { data: links, error: linksError } = await supabase
-    .from("menu_node_modifiers" as any)
-    .select("node_id, modifier_id, display_order, is_active")
-    .in("node_id", modifierNodeIds)
-    .eq("is_active", true)
-    .order("display_order", { ascending: true });
-  if (linksError) throw linksError;
-
-  const modifierLinks = (links ?? []) as Array<{
-    node_id: string;
-    modifier_id: string;
-    display_order?: number | null;
-  }>;
-  const modifierIdSet = new Set<string>(modifierLinks.map((link) => link.modifier_id).filter(Boolean));
-  const modifierIds = Array.from(modifierIdSet);
-
-  let modifiers: ProductModifierOption[] = [];
-  if (modifierIds.length > 0) {
-    const modifierRows = await dbSelect<{ id: string; description: string }>("modifiers", {
-      select: "id, description",
-      branchId: params.branchId,
-      filters: [
-        { column: "is_active", op: "eq", value: true },
-        { column: "id", op: "in", value: modifierIds },
-      ],
-      orderBy: { column: "description" },
-    });
-
-    const modifiersById = new Map(modifierRows.map((modifier) => [modifier.id, modifier]));
-    const linksByNode = new Map<string, typeof modifierLinks>();
-    for (const link of modifierLinks) {
-      const bucket = linksByNode.get(link.node_id) ?? [];
-      bucket.push(link);
-      linksByNode.set(link.node_id, bucket);
-    }
-
-    const seenModifierIds = new Set<string>();
-    modifiers = modifierNodeIds.flatMap((nodeId) => {
-      const nodeLinks = linksByNode.get(nodeId) ?? [];
-      return nodeLinks.flatMap((link) => {
-        if (seenModifierIds.has(link.modifier_id)) return [];
-        const modifier = modifiersById.get(link.modifier_id);
-        if (!modifier) return [];
-        seenModifierIds.add(link.modifier_id);
-        return [{ id: modifier.id, description: modifier.description }];
-      });
-    });
-  }
 
   return {
     product: {
@@ -500,9 +612,18 @@ const OrdenesContent = () => {
     gcTime: 10 * 60_000,
   });
 
+  useQuery({
+    queryKey: ["branch-modifiers-catalog", activeBranchId],
+    queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
+    enabled: !!activeBranchId,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+  });
+
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
   const [selectedProductRootName, setSelectedProductRootName] = useState<string | null>(null);
   const [selectedProductModifiers, setSelectedProductModifiers] = useState<ProductModifierOption[]>([]);
+  const [productLoadingShell, setProductLoadingShell] = useState<ReturnType<typeof buildProductLoadingShell> | null>(null);
   const [selectingProductId, setSelectingProductId] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [splitting, setSplitting] = useState(false);
@@ -929,6 +1050,7 @@ const OrdenesContent = () => {
     setSelectedProduct(null);
     setSelectedProductRootName(null);
     setSelectedProductModifiers([]);
+    setProductLoadingShell(null);
     setSelectingProductId(null);
     setShowCart(false);
     // Siempre forzamos el cierre del dialogo al cambiar de mesa o refrescar
@@ -1338,9 +1460,23 @@ const OrdenesContent = () => {
       return;
     }
 
-    setSelectedProduct(null);
-    setSelectedProductRootName(null);
-    setSelectedProductModifiers([]);
+    let catalog = qc.getQueryData<BranchModifiersCatalog>(["branch-modifiers-catalog", activeBranchId]);
+    if (!catalog) {
+      catalog = await qc.ensureQueryData({
+        queryKey: ["branch-modifiers-catalog", activeBranchId],
+        queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
+        staleTime: 5 * 60_000,
+        gcTime: 30 * 60_000,
+      });
+    }
+    const initialModifiers = buildModifiersForProductNode(node, catalog);
+
+    flushSync(() => {
+      setSelectedProduct(null);
+      setSelectedProductModifiers(initialModifiers);
+      setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
+      setProductLoadingShell(buildProductLoadingShell(node, isTrayOrder, effectiveTrayType));
+    });
     setSelectingProductId(node.id);
     try {
       const lookup = await qc.fetchQuery({
@@ -1351,18 +1487,19 @@ const OrdenesContent = () => {
             node,
             isTrayOrder,
             trayType: effectiveTrayType,
+            catalog,
           }),
         staleTime: 60_000,
         gcTime: 10 * 60_000,
       });
 
       setSelectedProduct(lookup.product);
-      setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
       setSelectedProductModifiers(lookup.modifiers);
     } catch (error: any) {
       toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
     } finally {
       setSelectingProductId(null);
+      setProductLoadingShell(null);
     }
   };
   const canShowConvertToSpecial =
@@ -1872,6 +2009,7 @@ const OrdenesContent = () => {
                     setPendingTrayType(option.value);
                     setSelectedProduct(null);
                     setSelectedProductRootName(null);
+                    setProductLoadingShell(null);
                   }}
                   disabled={!canEditItems}
                   aria-pressed={checked}
@@ -2559,12 +2697,18 @@ const OrdenesContent = () => {
 
       <AddItemDialog
         product={canEditItems ? selectedProduct : null}
-        modifiers={selectedProduct && (!isTrayOrder || effectiveTrayType !== "A") ? selectedProductModifiers : []}
-        open={canEditItems && !!selectedProduct}
+        resolvingShell={canEditItems ? productLoadingShell : null}
+        modifiers={
+          (selectedProduct || productLoadingShell) && (!isTrayOrder || effectiveTrayType !== "A")
+            ? selectedProductModifiers
+            : []
+        }
+        open={canEditItems && (!!selectedProduct || !!productLoadingShell)}
         onClose={() => {
           setSelectedProduct(null);
           setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
+          setProductLoadingShell(null);
         }}
         priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
         manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
