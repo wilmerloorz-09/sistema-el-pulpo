@@ -40,6 +40,11 @@ const getLoginErrorMessage = (rawMessage?: string) => {
   return message;
 };
 
+/** Ventana emergente del navegador tras iniciar sesion correctamente (prueba / bienvenida). */
+const showWelcomeDialog = () => {
+  window.alert("¡Bienvenido al sistema!\n\nGracias por usar El Pulpo POS.");
+};
+
 const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
   const [identifier, setIdentifier] = useState("");
@@ -64,6 +69,7 @@ const Login = () => {
     setError(null);
     try {
       await signIn(identifier, password);
+      showWelcomeDialog();
     } catch (err: any) {
       const msg = getLoginErrorMessage(err.message || "Error al iniciar sesion");
       setError(msg);
@@ -93,7 +99,7 @@ const Login = () => {
           type: "magiclink",
         });
         if (otpError) throw otpError;
-
+        showWelcomeDialog();
       } else {
         setError("No se puede ingresar porque la verificacion de huella fallo.");
       }
