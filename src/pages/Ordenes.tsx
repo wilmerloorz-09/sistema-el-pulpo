@@ -40,7 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, LayoutGrid } from "lucide-react";
+import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, LayoutGrid, Menu } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM } from "@/lib/mesasFlow";
@@ -2536,6 +2536,7 @@ const OrdenesContent = () => {
 
   return (
     <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
+      {!isMesasChromeUi && (
       <div className="flex flex-wrap items-start gap-1 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
         <div className="min-w-0 w-full space-y-2">
           <div className="flex items-center justify-between gap-1">
@@ -2558,7 +2559,7 @@ const OrdenesContent = () => {
                     <Sparkles className="h-4 w-4" />
                     Orden Especial
                   </div>
-                ) : order.table_name && !isMesasChromeUi ? (
+                ) : order.table_name ? (
                   <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
                     {order.table_name}
                   </div>
@@ -2663,7 +2664,7 @@ const OrdenesContent = () => {
             )}
           </div>
 
-          {order.table_id && !isMesasChromeUi && (
+          {order.table_id && (
             <div className="flex items-center gap-2 pb-1">
               <div className="relative min-w-0 flex-1">
                 {tableOrdersTabsOverflow.left && (
@@ -2830,44 +2831,117 @@ const OrdenesContent = () => {
           </div>
         </div>
       </div>
+      )}
 
       {isMesasChromeUi && (
-        <div className="border-t border-orange-400/90 bg-gradient-to-b from-amber-50 via-orange-50/85 to-amber-100/65 px-4 py-3 sm:rounded-t-3xl">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
-              onClick={() =>
-                navigate(
-                  `/ordenes?order=${order.id}${sourceParamsNoMesaCards}&${MESAS_V2_CARDS_PARAM}=1`,
-                  { replace: true },
-                )
-              }
-            >
-              {order.table_name ?? "Mesa"}
-            </button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-9 shrink-0 gap-1.5 rounded-xl border-orange-400 bg-white/95 px-3 text-xs font-bold text-orange-950 shadow-sm hover:bg-orange-50"
-              onClick={() => void handleSplit()}
-              disabled={!canSplit || splitting}
-              title={
-                !canOperateOrders
-                  ? "No tienes permiso para crear nuevas ordenes en mesa"
-                  : orderItems.length <= 0
-                    ? "La orden actual debe tener al menos un item"
-                    : !shiftOkForSiblingOrder
-                      ? "Abre turno en caja para crear otra orden"
-                      : !canSplit
-                        ? "La mesa debe seguir activa para crear otra orden"
-                        : "Nueva orden"
-              }
-            >
-              {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
-              Añadir orden
-            </Button>
+        <div className="rounded-t-2xl border border-b-0 border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50/90 to-amber-100/70 px-3 py-2.5 shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:rounded-t-3xl sm:px-4 sm:py-3">
+          <div className="flex w-full min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <button
+                type="button"
+                className="min-w-0 truncate rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
+                onClick={() =>
+                  navigate(
+                    `/ordenes?order=${order.id}${sourceParamsNoMesaCards}&${MESAS_V2_CARDS_PARAM}=1`,
+                    { replace: true },
+                  )
+                }
+              >
+                {order.table_name ?? "Mesa"}
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 shrink-0 gap-1.5 whitespace-nowrap rounded-xl border-orange-400 bg-white/95 px-3 text-xs font-bold text-orange-950 shadow-sm hover:bg-orange-50"
+                onClick={() => void handleSplit()}
+                disabled={!canSplit || splitting}
+                title={
+                  !canOperateOrders
+                    ? "No tienes permiso para crear nuevas ordenes en mesa"
+                    : orderItems.length <= 0
+                      ? "La orden actual debe tener al menos un item"
+                      : !shiftOkForSiblingOrder
+                        ? "Abre turno en caja para crear otra orden"
+                        : !canSplit
+                          ? "La mesa debe seguir activa para crear otra orden"
+                          : "Nueva orden"
+                }
+              >
+                {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
+                Añadir orden
+              </Button>
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {!canOperateOrders && (
+                <span className="hidden rounded-full border border-orange-300/60 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
+                  Solo consulta
+                </span>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-xl border-orange-400 bg-white/95 text-orange-950 shadow-sm hover:bg-orange-50"
+                    aria-label="Mas opciones de la mesa"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onClick={handleMobileBackToMesas}>
+                    Volver a mesas
+                  </DropdownMenuItem>
+                  {canShowConvertToSpecial && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setConvertSpecialTotalInput(total.toFixed(2));
+                        setConvertSpecialDialogOpen(true);
+                      }}
+                      disabled={!canConvertToSpecial}
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Convertir orden especial
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => setMergeSplitOpen(true)} disabled={!canOperateOrders}>
+                    <ArrowRightLeft className="mr-2 h-4 w-4" />
+                    Mover Items/Mesa
+                  </DropdownMenuItem>
+                  {canShowChangeTable && (
+                    <DropdownMenuItem
+                      onClick={() => setShowChangeTableDialog(true)}
+                      disabled={!canChangeTable || moveToTable.isPending}
+                    >
+                      {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
+                      Cambiar mesa
+                    </DropdownMenuItem>
+                  )}
+                  {(canCancelOrderFromCaja || hasSiblings) && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (canCancelOrderFromCaja) {
+                          setConfirmDeleteCajaOrderOpen(true);
+                        } else {
+                          setShowDeleteSplitConfirm(true);
+                        }
+                      }}
+                      disabled={deletingCajaOrder || removingSplit || (!canCancelOrderFromCaja && !canDeleteSplit)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      {deletingCajaOrder || removingSplit ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <X className="mr-2 h-4 w-4" />
+                      )}
+                      Eliminar orden
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
       )}
