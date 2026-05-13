@@ -14,11 +14,13 @@ import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
 import {
   fetchOrderDetail,
+  fetchSiblingOrders,
   getOrderQueryKey,
   purgeEmptyDineInTableDraftsForBranch,
   seedDineInDraftOrderCache,
 } from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
+import { MESAS_ORIGIN_LEGACY, mesasOrdenesSearch } from "@/lib/mesasFlow";
 import {
   Dialog,
   DialogContent,
@@ -173,6 +175,23 @@ const Mesas = () => {
   };
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
+    const goOrdenesMesas = (orderId: string, opts?: { mesaCards?: boolean }) => {
+      navigate(`/ordenes?${mesasOrdenesSearch({ order: orderId, origin: MESAS_ORIGIN_LEGACY, mesaCards: opts?.mesaCards })}`, { replace: true });
+    };
+
+    const openWithCardsIfNeeded = async (orderId: string, tableId: string) => {
+      if (!activeBranchId) {
+        goOrdenesMesas(orderId);
+        return;
+      }
+      try {
+        const siblings = await fetchSiblingOrders(tableId, activeBranchId, orderId);
+        goOrdenesMesas(orderId, { mesaCards: siblings.length > 1 });
+      } catch {
+        goOrdenesMesas(orderId);
+      }
+    };
+
     if (table.status === "free") {
       if (!canOperateMesas) return;
       // activeOrderId / reusableDraftOrderId pueden quedar obsoletos en caché tras purgar un borrador vacío al salir de Órdenes.
@@ -181,7 +200,7 @@ const Mesas = () => {
           const detail = await fetchOrderDetail(table.activeOrderId);
           if (detail) {
             warmOrderId(table.activeOrderId);
-            navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
+            await openWithCardsIfNeeded(table.activeOrderId, table.id);
             return;
           }
         } catch {
@@ -194,7 +213,7 @@ const Mesas = () => {
           if (detail && detail.status === "DRAFT" && detail.order_type === "DINE_IN") {
             warmOrderId(table.reusableDraftOrderId);
             toast.success(`Entrando a ${table.name}...`);
-            navigate(`/ordenes?order=${table.reusableDraftOrderId}&origin=mesas`, { replace: true });
+            await openWithCardsIfNeeded(table.reusableDraftOrderId, table.id);
             return;
           }
         } catch {
@@ -223,13 +242,15 @@ const Mesas = () => {
         ],
       });
       toast.success(`Entrando a ${table.name}...`);
-      navigate(
-        `/ordenes?order=${optimisticOrderId}&openTable=${table.id}&tableName=${encodeURIComponent(table.name)}&origin=mesas`,
-        { replace: true },
-      );
+      const sp = new URLSearchParams();
+      sp.set("order", optimisticOrderId);
+      sp.set("openTable", table.id);
+      sp.set("tableName", table.name);
+      sp.set("origin", MESAS_ORIGIN_LEGACY);
+      navigate(`/ordenes?${sp.toString()}`, { replace: true });
     } else if (table.activeOrderId) {
       warmOrderId(table.activeOrderId);
-      navigate(`/ordenes?order=${table.activeOrderId}&origin=mesas`, { replace: true });
+      await openWithCardsIfNeeded(table.activeOrderId, table.id);
     }
   };
 

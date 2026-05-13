@@ -12,8 +12,6 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { cn } from "@/lib/utils";
 import {
   MESAS_ORIGIN_V2,
-  MESAS_V2_UI_PARAM,
-  MESAS_V2_UI_VALUE,
   mesasV2OrdenesSearch,
 } from "@/lib/mesasFlow";
 import { canOperate } from "@/lib/permissions";
@@ -249,7 +247,6 @@ const MesasV2 = () => {
       sp.set("openTable", table.id);
       sp.set("tableName", table.name);
       sp.set("origin", MESAS_ORIGIN_V2);
-      sp.set(MESAS_V2_UI_PARAM, MESAS_V2_UI_VALUE);
       navigate(`/ordenes?${sp.toString()}`, { replace: true });
     } else if (table.activeOrderId) {
       warmOrderId(table.activeOrderId);

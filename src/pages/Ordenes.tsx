@@ -43,7 +43,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, LayoutGrid } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
-import { isMesasListOrigin, mesasListPathForOrigin, MESAS_ORIGIN_V2, MESAS_V2_CARDS_PARAM, MESAS_V2_UI_PARAM, MESAS_V2_UI_VALUE } from "@/lib/mesasFlow";
+import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM } from "@/lib/mesasFlow";
 import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
@@ -572,15 +572,11 @@ const OrdenesContent = () => {
   const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
   const origin = searchParams.get("origin");
   const originParam = origin ? `&origin=${origin}` : "";
-  const mesaUiActive =
-    !fromEditar
-    && origin === MESAS_ORIGIN_V2
-    && searchParams.get(MESAS_V2_UI_PARAM) === MESAS_V2_UI_VALUE;
-  const mesaUiParam = mesaUiActive ? `&${MESAS_V2_UI_PARAM}=${MESAS_V2_UI_VALUE}` : "";
+  const mesasChromeActive = !fromEditar && isMesasListOrigin(origin);
   const mesaCardsParam =
-    mesaUiActive && searchParams.get(MESAS_V2_CARDS_PARAM) === "1" ? `&${MESAS_V2_CARDS_PARAM}=1` : "";
-  const sourceParams = (fromEditar ? "&from=editar" : "") + originParam + mesaUiParam + mesaCardsParam;
-  const sourceParamsNoMesaCards = (fromEditar ? "&from=editar" : "") + originParam + mesaUiParam;
+    mesasChromeActive && searchParams.get(MESAS_V2_CARDS_PARAM) === "1" ? `&${MESAS_V2_CARDS_PARAM}=1` : "";
+  const sourceParams = (fromEditar ? "&from=editar" : "") + originParam + mesaCardsParam;
+  const sourceParamsNoMesaCards = (fromEditar ? "&from=editar" : "") + originParam;
   const isTakeoutOrder = order?.order_type === "TAKEOUT" && !order?.is_tray_order && !order?.is_special;
 
   const canOperateMesasForOpen =
@@ -610,9 +606,6 @@ const OrdenesContent = () => {
       return enc ? decodeURIComponent(enc) : undefined;
     })();
 
-    const mesasV2OpenSuffix =
-      mesasOriginTag === MESAS_ORIGIN_V2 ? `&${MESAS_V2_UI_PARAM}=${MESAS_V2_UI_VALUE}` : "";
-
     let rpcPromise = mesaOpenDineInCreateByKey.get(flightKey);
     if (!rpcPromise) {
       rpcPromise = (async () => {
@@ -639,7 +632,7 @@ const OrdenesContent = () => {
         if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
 
         if (realId === orderId) {
-          navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}${mesasV2OpenSuffix}`, { replace: true });
+          navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
           qc.invalidateQueries({ queryKey: ["orders"] });
           qc.invalidateQueries({ queryKey: ["tables-with-status"] });
           qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
@@ -700,7 +693,7 @@ const OrdenesContent = () => {
 
         // Navegar antes de borrar caché del id optimista: si no, la URL sigue con el UUID viejo,
         // useOrder pierde datos y el efecto de "orden inexistente" manda al listado de mesas.
-        navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}${mesasV2OpenSuffix}`, { replace: true });
+        navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
         queueMicrotask(() => {
           qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
         });
@@ -1495,11 +1488,11 @@ const OrdenesContent = () => {
         .sort(compareSiblingOrderTabs)
       : visibleTableOrders;
   const hasSiblings = mergedTableOrders.length > 1;
-  const isMesasV2OrderUi =
-    mesaUiActive && order.order_type === "DINE_IN" && Boolean(order.table_id);
-  const mesaCardsMode = isMesasV2OrderUi && searchParams.get(MESAS_V2_CARDS_PARAM) === "1";
+  const isMesasChromeUi =
+    mesasChromeActive && order.order_type === "DINE_IN" && Boolean(order.table_id);
+  const mesaCardsMode = isMesasChromeUi && searchParams.get(MESAS_V2_CARDS_PARAM) === "1";
   const showMesasV2CardPicker =
-    isMesasV2OrderUi && mesaCardsMode && Boolean(order.table_id) && mergedTableOrders.length >= 1;
+    isMesasChromeUi && mesaCardsMode && Boolean(order.table_id) && mergedTableOrders.length >= 1;
   const hasOrderItems = itemsToUse.length > 0;
   const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
   /** Para llevar siempre exige turno en RPC; en mesa los admins pueden pasar sin turno según create_additional_dine_in_order. */
@@ -2565,7 +2558,7 @@ const OrdenesContent = () => {
                     <Sparkles className="h-4 w-4" />
                     Orden Especial
                   </div>
-                ) : order.table_name && !isMesasV2OrderUi ? (
+                ) : order.table_name && !isMesasChromeUi ? (
                   <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
                     {order.table_name}
                   </div>
@@ -2670,7 +2663,7 @@ const OrdenesContent = () => {
             )}
           </div>
 
-          {order.table_id && !isMesasV2OrderUi && (
+          {order.table_id && !isMesasChromeUi && (
             <div className="flex items-center gap-2 pb-1">
               <div className="relative min-w-0 flex-1">
                 {tableOrdersTabsOverflow.left && (
@@ -2838,7 +2831,7 @@ const OrdenesContent = () => {
         </div>
       </div>
 
-      {isMesasV2OrderUi && (
+      {isMesasChromeUi && (
         <div className="border-t border-orange-400/90 bg-gradient-to-b from-amber-50 via-orange-50/85 to-amber-100/65 px-4 py-3 sm:rounded-t-3xl">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
