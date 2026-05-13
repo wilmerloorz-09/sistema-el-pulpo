@@ -89,30 +89,37 @@ const AddItemDialog = ({
   const [manualPrice, setManualPrice] = useState("");
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
  
+  const dialogOpen = Boolean(open && displayProduct);
+
   useEffect(() => {
-    if (open) {
+    if (dialogOpen) {
       setQuantity(1);
       setQuantityInput("1");
       setManualPrice("");
       setSelectedMods([]);
     }
-  }, [open, product?.id]);
+  }, [dialogOpen, product?.id]);
 
   const sortedModifiers = useMemo(
     () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),
     [modifiers],
   );
 
-  if (!open || !displayProduct) return null;
-
-  const isManual = (priceModeOverride ?? displayProduct.price_mode) === "MANUAL";
-  const price = isManual ? parseDecimalInput(manualPrice) : (displayProduct.unit_price ?? 0);
+  const isManual =
+    displayProduct != null ? (priceModeOverride ?? displayProduct.price_mode) === "MANUAL" : false;
+  const price =
+    displayProduct != null
+      ? isManual
+        ? parseDecimalInput(manualPrice)
+        : (displayProduct.unit_price ?? 0)
+      : 0;
   const effectiveQuantity = hideQuantity ? 1 : quantity;
-  const canAdd = Boolean(product) && effectiveQuantity > 0 && (!isManual || price > 0);
+  const canAdd =
+    Boolean(product) && displayProduct != null && effectiveQuantity > 0 && (!isManual || price > 0);
   const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
 
   const handleConfirm = () => {
-    if (!product || !canAdd) return;
+    if (!product || !displayProduct || !canAdd) return;
 
     onConfirm({
       product_id: product.id,
@@ -152,7 +159,8 @@ const AddItemDialog = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+    <Dialog open={dialogOpen} onOpenChange={(value) => !value && onClose()}>
+      {displayProduct ? (
       <DialogContent className="max-w-sm rounded-[24px] p-5 shadow-xl sm:rounded-[28px] border-orange-200/40 bg-background">
         <DialogHeader className="mb-1 text-left">
           <div className="flex items-start gap-3">
@@ -302,6 +310,7 @@ const AddItemDialog = ({
           </div>
         </div>
       </DialogContent>
+      ) : null}
     </Dialog>
   );
 };

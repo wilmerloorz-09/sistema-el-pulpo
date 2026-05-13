@@ -1591,7 +1591,9 @@ const OrdenesContent = () => {
     (
       order.status === "DRAFT" ||
       hasDraftItems ||
-      !hasSentItems
+      !hasSentItems ||
+      /** Mesa con orden ya en caja: siempre se pueden agregar lineas nuevas en borrador (antes `canEditDraftOrder` quedaba en false y el flujo parecia “muerto”). */
+      (order.order_type === "DINE_IN" && Boolean(order.table_id))
     );
   const canEnterEditMode =
     !fromEditar &&
@@ -1603,17 +1605,6 @@ const OrdenesContent = () => {
     (canEditDraftOrder || (fromEditar && isEditableInCaja)) &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
-  /** Igual que antes al entrar desde Mesas: agregar productos no depende de `canEditDraftOrder` (evita menu muerto con cache/estado raro). */
-  const mesasMenuAddEnabled =
-    mesasChromeActive &&
-    Boolean(order.table_id) &&
-    !fromEditar &&
-    !hasPendingCancellationItems &&
-    !isLockedFromEditar &&
-    order.status !== "PAID" &&
-    order.status !== "CANCELLED" &&
-    (canOperateOrders || canUseEditarOrden);
-  const menuAddInteractionEnabled = canEditItems || mesasMenuAddEnabled;
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!activeBranchId) {
       toast.error("No hay sucursal activa. Selecciona una sucursal e intenta de nuevo.");
@@ -1624,25 +1615,24 @@ const OrdenesContent = () => {
       return;
     }
 
-    let catalog = qc.getQueryData<BranchModifiersCatalog>(["branch-modifiers-catalog", activeBranchId]);
-    if (!catalog) {
-      catalog = await qc.ensureQueryData({
-        queryKey: ["branch-modifiers-catalog", activeBranchId],
-        queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
-        staleTime: 5 * 60_000,
-        gcTime: 30 * 60_000,
-      });
-    }
-    const initialModifiers = buildModifiersForProductNode(node, catalog);
+    setSelectingProductId(node.id);
+    try {
+      let catalog = qc.getQueryData<BranchModifiersCatalog>(["branch-modifiers-catalog", activeBranchId]);
+      if (!catalog) {
+        catalog = await qc.ensureQueryData({
+          queryKey: ["branch-modifiers-catalog", activeBranchId],
+          queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
+          staleTime: 5 * 60_000,
+          gcTime: 30 * 60_000,
+        });
+      }
+      const initialModifiers = buildModifiersForProductNode(node, catalog);
 
-    flushSync(() => {
       setSelectedProduct(null);
       setSelectedProductModifiers(initialModifiers);
       setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
       setProductLoadingShell(buildProductLoadingShell(node, isTrayOrder, effectiveTrayType));
-    });
-    setSelectingProductId(node.id);
-    try {
+
       const lookup = await qc.fetchQuery({
         queryKey: ["menu-product-lookup", activeBranchId, currentMenuScope, node.id, isTrayOrder ? effectiveTrayType : "STANDARD"],
         queryFn: () =>
@@ -1661,6 +1651,9 @@ const OrdenesContent = () => {
       setSelectedProductModifiers(lookup.modifiers);
     } catch (error: any) {
       toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
+      setSelectedProduct(null);
+      setSelectedProductRootName(null);
+      setProductLoadingShell(null);
     } finally {
       setSelectingProductId(null);
       setProductLoadingShell(null);
@@ -2281,7 +2274,6 @@ const OrdenesContent = () => {
         forceLoading={(currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK") && scopeCompositeMenuQuery.isLoading}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
-        disabled={!menuAddInteractionEnabled}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
@@ -2962,9 +2954,8 @@ const OrdenesContent = () => {
 
       {showMesasV2CardPicker ? (
         <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="scrollbar-none flex-1 overflow-y-auto p-3 pb-24 sm:p-4 md:p-6">
-            <p className="mb-3 text-center text-sm font-semibold text-muted-foreground">Toca una orden para abrirla</p>
-            <div className="mx-auto grid max-w-4xl grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-3">
+          <div className="scrollbar-none flex-1 overflow-y-auto px-2.5 pb-24 pt-3 sm:px-4 sm:pb-24 md:px-6 md:pb-24 md:pt-4">
+            <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]">
               {mergedTableOrders.map((tableOrder, index) => {
                 const label = getTableOrderButtonLabel(tableOrder);
                 const cnt = Number(tableOrder.item_count ?? 0);
@@ -3015,29 +3006,25 @@ const OrdenesContent = () => {
         </div>
       ) : (
         <>
-      <div className="relative z-10 flex flex-1 overflow-hidden md:hidden">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-row overflow-hidden md:grid md:grid-cols-2 md:gap-4 md:p-4">
         <div
           className={cn(
-            "min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-24",
-            showCart && "hidden",
+            "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-24 md:p-0 md:pb-4",
+            showCart && "hidden md:block",
           )}
         >
           {menuPanel}
         </div>
 
-        <div className={cn("flex w-full flex-col overflow-y-auto border-border p-3 pb-24", !showCart && "hidden")}>
-          {orderPanel(true)}
-        </div>
-      </div>
-
-      <div className="relative z-10 hidden flex-1 overflow-hidden p-4 md:grid md:grid-cols-2 md:gap-4">
-        <div className="min-w-0 overflow-x-hidden overflow-y-auto">
-          {menuPanel}
-        </div>
-        <div className="min-w-0 overflow-y-auto">
-          <div className="w-full rounded-[28px] border border-orange-200/80 bg-white/88 p-5 shadow-[0_24px_60px_-40px_rgba(249,115,22,0.25)] backdrop-blur-sm">
-            <div className="w-full">
-              {orderPanel(false)}
+        <div
+          className={cn(
+            "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto border-border p-3 pb-24 md:border-0 md:p-0",
+            !showCart && "hidden md:flex",
+          )}
+        >
+          <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto md:rounded-[28px] md:border md:border-orange-200/80 md:bg-white/88 md:p-5 md:shadow-[0_24px_60px_-40px_rgba(249,115,22,0.25)] md:backdrop-blur-sm">
+            <div className="w-full min-h-0 flex-1 overflow-y-auto">
+              {orderPanel(!isDesktop)}
             </div>
           </div>
         </div>
@@ -3056,14 +3043,14 @@ const OrdenesContent = () => {
       )}
 
       <AddItemDialog
-        product={menuAddInteractionEnabled ? selectedProduct : null}
-        resolvingShell={menuAddInteractionEnabled ? productLoadingShell : null}
+        product={selectedProduct}
+        resolvingShell={productLoadingShell}
         modifiers={
           (selectedProduct || productLoadingShell) && (!isTrayOrder || effectiveTrayType !== "A")
             ? selectedProductModifiers
             : []
         }
-        open={menuAddInteractionEnabled && (!!selectedProduct || !!productLoadingShell)}
+        open={Boolean(selectedProduct || productLoadingShell)}
         onClose={() => {
           setSelectedProduct(null);
           setSelectedProductRootName(null);
