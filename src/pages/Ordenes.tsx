@@ -43,6 +43,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
+import { isMesasListOrigin, mesasListPathForOrigin } from "@/lib/mesasFlow";
 import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
@@ -582,15 +583,16 @@ const OrdenesContent = () => {
   const openTableIdForCreate = searchParams.get("openTable");
 
   useEffect(() => {
+    const mesasOriginTag = searchParams.get("origin");
     if (!openTableIdForCreate || !orderId) return;
-    if (searchParams.get("origin") !== "mesas") return;
+    if (!isMesasListOrigin(mesasOriginTag)) return;
     if (!user || !activeBranchId) return;
     if (shiftGateQuery.isLoading) return;
 
     if (!canOperateMesasForOpen) {
       toast.error("No tienes permiso para abrir mesas.");
       qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
-      navigate("/mesas", { replace: true });
+      navigate(mesasListPathForOrigin(mesasOriginTag), { replace: true });
       return;
     }
 
@@ -626,7 +628,7 @@ const OrdenesContent = () => {
         if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
 
         if (realId === orderId) {
-          navigate(`/ordenes?order=${realId}&origin=mesas`, { replace: true });
+          navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
           qc.invalidateQueries({ queryKey: ["orders"] });
           qc.invalidateQueries({ queryKey: ["tables-with-status"] });
           qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
@@ -686,8 +688,8 @@ const OrdenesContent = () => {
         }
 
         // Navegar antes de borrar caché del id optimista: si no, la URL sigue con el UUID viejo,
-        // useOrder pierde datos y el efecto de "orden inexistente" manda a /mesas.
-        navigate(`/ordenes?order=${realId}&origin=mesas`, { replace: true });
+        // useOrder pierde datos y el efecto de "orden inexistente" manda al listado de mesas.
+        navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
         queueMicrotask(() => {
           qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
         });
@@ -705,7 +707,7 @@ const OrdenesContent = () => {
         if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
         toast.error(err?.message || "Error al abrir la mesa");
         qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
-        navigate("/mesas", { replace: true });
+        navigate(mesasListPathForOrigin(mesasOriginTag), { replace: true });
       });
 
     return () => {
@@ -1000,7 +1002,7 @@ const OrdenesContent = () => {
         qc.invalidateQueries({ queryKey: ["table-orders"] });
         setConfirmDeleteCajaOrderOpen(false);
         if (order.table_id) {
-          navigate("/mesas", { replace: true });
+          navigate(mesasListPathForOrigin(origin), { replace: true });
         } else if (sourceParams.includes("origin=para-llevar")) {
           navigate("/para-llevar", { replace: true });
         } else if (sourceParams.includes("origin=orden-especial")) {
@@ -1071,7 +1073,7 @@ const OrdenesContent = () => {
 
       if (order.table_id) {
         qc.invalidateQueries({ queryKey: ["table-orders", order.table_id] });
-        navigate("/mesas", { replace: true });
+        navigate(mesasListPathForOrigin(origin), { replace: true });
       } else {
         qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
         if (sourceParams.includes("origin=para-llevar")) {
@@ -1088,7 +1090,7 @@ const OrdenesContent = () => {
     } finally {
       setDeletingCajaOrder(false);
     }
-  }, [cancelOrderMutation, deleteTableOrder, deletingCajaOrder, isPaidItem, navigate, order, qc, removeItem, user]);
+  }, [cancelOrderMutation, deleteTableOrder, deletingCajaOrder, isPaidItem, navigate, order, origin, qc, removeItem, user]);
 
   useEffect(() => {
     updateTableOrdersTabsOverflow();
@@ -1131,7 +1133,7 @@ const OrdenesContent = () => {
     if (!orderId || isLoading || isFetching || shiftGateQuery.isLoading) return;
     if (order || redirectingAfterDelete || removingSplit) return;
     // Apertura optimista de mesa libre: aún no hay fila en BD o la RPC está en curso.
-    if (searchParams.get("origin") === "mesas" && searchParams.get("openTable")) return;
+    if (isMesasListOrigin(searchParams.get("origin")) && searchParams.get("openTable")) return;
 
     const originValue = searchParams.get("origin");
     const fallbackPath = fromEditar
@@ -1140,7 +1142,9 @@ const OrdenesContent = () => {
         ? "/para-llevar"
         : originValue === "orden-especial"
           ? "/orden-especial"
-          : "/mesas";
+          : isMesasListOrigin(originValue)
+            ? mesasListPathForOrigin(originValue)
+            : "/mesas";
 
     navigate(fallbackPath, { replace: true });
   }, [
@@ -1296,8 +1300,8 @@ const OrdenesContent = () => {
       return;
     }
 
-    if (origin === "mesas" || order?.table_id) {
-      navigate("/mesas", { replace: true });
+    if (isMesasListOrigin(origin) || order?.table_id) {
+      navigate(mesasListPathForOrigin(origin), { replace: true });
       return;
     }
 
@@ -1813,7 +1817,7 @@ const OrdenesContent = () => {
           }
 
           toast.error("La orden actual ya no estaba vigente. La mesa quedo disponible nuevamente.");
-          navigate("/mesas", { replace: true });
+          navigate(mesasListPathForOrigin(origin), { replace: true });
           return;
         } catch {
           toast.error("La orden actual ya no estaba vigente. Recarga el estado de la mesa e intenta otra vez.");
@@ -1859,7 +1863,7 @@ const OrdenesContent = () => {
         navigate(`/ordenes?order=${nextOrderId}${sourceParams}`, { replace: true });
       } else {
         qc.removeQueries({ queryKey: ["order", orderId] });
-        navigate("/mesas", { replace: true });
+        navigate(mesasListPathForOrigin(origin), { replace: true });
       }
     } catch (err: any) {
       setRedirectingAfterDelete(false);
@@ -1874,7 +1878,7 @@ const OrdenesContent = () => {
     closeOrder.mutate(undefined, {
       onSuccess: () => {
         setShowCloseOrderConfirm(false);
-        navigate("/mesas", { replace: true });
+        navigate(mesasListPathForOrigin(origin), { replace: true });
       },
     });
   };
@@ -3018,7 +3022,7 @@ const OrdenesContent = () => {
               className="w-full rounded-xl"
               onClick={() => {
                 setTakeoutCajaPreview(null);
-                navigate("/mesas");
+                navigate(mesasListPathForOrigin(origin));
               }}
             >
               Aceptar

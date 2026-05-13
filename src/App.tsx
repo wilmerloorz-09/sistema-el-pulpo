@@ -15,6 +15,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Login from "./pages/Login";
 import Mesas from "./pages/Mesas";
+import MesasV2 from "./pages/MesasV2";
 import Ordenes from "./pages/Ordenes";
 import EditarOrden from "./pages/EditarOrden";
 import ParaLlevar from "./pages/ParaLlevar";
@@ -293,6 +294,14 @@ const App = () => (
                   </AuthGate>
                 }
               >
+                <Route
+                  path="/mesas-v2"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                      <MesasV2 />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/mesas"
                   element={

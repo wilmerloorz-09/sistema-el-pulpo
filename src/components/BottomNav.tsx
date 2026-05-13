@@ -2,6 +2,7 @@ import { UserRound, CreditCard, History, Camera } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
+import { isMesasListOrigin } from "@/lib/mesasFlow";
 import { useAuth } from "@/contexts/AuthContext";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import ThemeToggle from "@/components/nav/ThemeToggle";
@@ -36,7 +37,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
 
 
   const searchParams = new URLSearchParams(location.search);
-  const fromMesas = location.pathname === "/ordenes" && (searchParams.get("from") === "mesas" || searchParams.get("origin") === "mesas");
+  const fromMesas = location.pathname === "/ordenes" && (searchParams.get("from") === "mesas" || isMesasListOrigin(searchParams.get("origin")));
   const fromEditar = location.pathname === "/ordenes" && searchParams.get("from") === "editar";
   const fromParaLlevar = location.pathname === "/ordenes" && searchParams.get("origin") === "para-llevar";
   const fromOrdenEspecial = location.pathname === "/ordenes" && searchParams.get("origin") === "orden-especial";
@@ -62,7 +63,8 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
 
           let isItemActive = location.pathname === item.to;
           if (fromMesas) {
-            if (item.to === "/mesas") isItemActive = true;
+            if (item.to === "/mesas") isItemActive = searchParams.get("origin") !== "mesas-v2";
+            if (item.to === "/mesas-v2") isItemActive = searchParams.get("origin") === "mesas-v2";
             if (item.to === "/ordenes") isItemActive = false;
           }
           if (fromEditar) {

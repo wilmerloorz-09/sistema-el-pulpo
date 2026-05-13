@@ -14,6 +14,7 @@ import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { getUserDisplayName } from "@/lib/userDisplay";
+import { isMesasListOrigin } from "@/lib/mesasFlow";
 
 interface SidebarNavProps {
   isDark: boolean;
@@ -115,17 +116,22 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
 
       <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4">
         {visibleItems.map((item) => {
-          const isOriginMesas = searchParams.get("origin") === "mesas";
+          const mesasListOrigin = searchParams.get("origin");
+          const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
+          const isOriginMesasLegacy = mesasListOrigin === "mesas";
+          const isOriginMesasV2 = mesasListOrigin === "mesas-v2";
           const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
           const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
-          const isItemActive = item.to === "/mesas" 
-            ? (location.pathname === "/mesas" || (location.pathname === "/ordenes" && isOriginMesas))
+          const isItemActive = item.to === "/mesas"
+            ? (location.pathname === "/mesas" || (location.pathname === "/ordenes" && isOriginMesasLegacy))
+            : item.to === "/mesas-v2"
+              ? (location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasV2))
             : item.to === "/para-llevar"
               ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
               : item.to === "/orden-especial"
                 ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
             : item.to === "/ordenes"
-              ? (location.pathname === "/ordenes" && !isOriginMesas && !isOriginParaLlevar && !isOriginOrdenEspecial)
+              ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginOrdenEspecial)
               : location.pathname === item.to;
           const hasSubItems = (item.subItems?.length ?? 0) > 0;
 
