@@ -450,7 +450,7 @@ const MenuNavigator = ({
       </div>
 
       {!searchQuery.trim() && (
-        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
+        <div data-no-order-swipe className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
           {l1Nodes.map((node) => (
             <button
               key={node.id}
@@ -477,7 +477,10 @@ const MenuNavigator = ({
       )}
 
       {!searchQuery.trim() && showBreadcrumb && (
-        <div className="scrollbar-none inline-flex w-fit max-w-full items-center gap-2 overflow-x-auto whitespace-nowrap rounded-full border border-orange-200/70 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-1.5 text-xs shadow-[0_12px_28px_-24px_rgba(249,115,22,0.55)]">
+        <div
+          data-no-order-swipe
+          className="scrollbar-none inline-flex w-fit max-w-full items-center gap-2 overflow-x-auto whitespace-nowrap rounded-full border border-orange-200/70 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-3 py-1.5 text-xs shadow-[0_12px_28px_-24px_rgba(249,115,22,0.55)]"
+        >
           {breadcrumb.map((node, index) => {
             const isLast = index === breadcrumb.length - 1;
             return (

@@ -944,6 +944,123 @@ const OrdenesContent = () => {
     placeholderData: isTakeoutOrder && currentTableOrder ? [currentTableOrder] : undefined,
   });
 
+  /** Lista de hermanos en mesa (solo DINE_IN): misma regla que `mergedTableOrders` para gestos táctiles. */
+  const mergedTableOrdersForSwipe = useMemo((): SiblingOrder[] => {
+    if (!order || order.order_type !== "DINE_IN" || !order.table_id) return [];
+    const ct: SiblingOrder = {
+      id: order.id,
+      order_number: order.order_number,
+      order_code: order.order_code,
+      split_code: order.split_code ?? null,
+      table_order_position: Number(order.table_order_position ?? 0) || null,
+      created_at: order.created_at ?? null,
+      item_count: orderItems.length,
+    };
+    const tableOrders = tableOrdersQuery.data?.length
+      ? tableOrdersQuery.data
+      : [ct];
+    return tableOrders
+      .map((tableOrder) => (tableOrder.id === ct.id ? ct : tableOrder))
+      .sort(compareSiblingOrderTabs);
+  }, [
+    order?.id,
+    order?.table_id,
+    order?.order_type,
+    order?.order_number,
+    order?.order_code,
+    order?.split_code,
+    order?.table_order_position,
+    order?.created_at,
+    orderItems.length,
+    tableOrdersQuery.data,
+  ]);
+
+  const isMesasChromeUiForSwipe =
+    mesasChromeActive && order?.order_type === "DINE_IN" && Boolean(order?.table_id);
+  const showMesasV2CardPickerForSwipe =
+    isMesasChromeUiForSwipe &&
+    searchParams.get(MESAS_V2_CARDS_PARAM) === "1" &&
+    mergedTableOrdersForSwipe.length >= 1;
+
+  const tableOrderSwipeEnabled =
+    !isDesktop &&
+    Boolean(orderId) &&
+    !fromEditar &&
+    Boolean(order) &&
+    order.order_type === "DINE_IN" &&
+    Boolean(order.table_id) &&
+    mergedTableOrdersForSwipe.length > 1 &&
+    !showMesasV2CardPickerForSwipe;
+
+  const mergedTableOrdersSwipeKey = mergedTableOrdersForSwipe
+    .map((o) => `${o.id}:${o.item_count ?? 0}`)
+    .join("|");
+
+  useEffect(() => {
+    if (!tableOrderSwipeEnabled || !orderId) return;
+
+    const siblings = mergedTableOrdersForSwipe;
+    const touchRef = { x: 0, y: 0, t: 0, active: false };
+
+    const hasOpenModal = () =>
+      Boolean(
+        document.querySelector('[role="dialog"][data-state="open"]') ||
+          document.querySelector('[role="alertdialog"][data-state="open"]'),
+      );
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (target?.closest("[data-no-order-swipe]")) return;
+      touchRef.active = true;
+      touchRef.x = e.touches[0].clientX;
+      touchRef.y = e.touches[0].clientY;
+      touchRef.t = Date.now();
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      if (!touchRef.active) return;
+      touchRef.active = false;
+      if (e.changedTouches.length !== 1) return;
+      if (hasOpenModal()) return;
+
+      const dx = e.changedTouches[0].clientX - touchRef.x;
+      const dy = e.changedTouches[0].clientY - touchRef.y;
+      const dt = Date.now() - touchRef.t;
+
+      if (dt > 700) return;
+      if (Math.abs(dx) < 72) return;
+      if (Math.abs(dx) < Math.abs(dy) * 2) return;
+
+      const idx = siblings.findIndex((o) => o.id === orderId);
+      if (idx < 0) return;
+
+      if (dx < 0) {
+        if (idx < siblings.length - 1) {
+          const next = siblings[idx + 1];
+          navigate(`/ordenes?order=${next.id}${sourceParams}`, { replace: true });
+        }
+      } else if (idx > 0) {
+        const prev = siblings[idx - 1];
+        navigate(`/ordenes?order=${prev.id}${sourceParams}`, { replace: true });
+      }
+    };
+
+    const onCancel = () => {
+      touchRef.active = false;
+    };
+
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    window.addEventListener("touchcancel", onCancel, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchend", onEnd);
+      window.removeEventListener("touchcancel", onCancel);
+    };
+  }, [tableOrderSwipeEnabled, orderId, mergedTableOrdersSwipeKey, navigate, sourceParams, mergedTableOrdersForSwipe]);
+
   const updateTableOrdersTabsOverflow = useCallback(() => {
     const el = tableOrdersTabsRef.current;
     if (!el) return;
@@ -2699,6 +2816,7 @@ const OrdenesContent = () => {
                 )}
                 <div
                   ref={tableOrdersTabsRef}
+                  data-no-order-swipe
                   onScroll={updateTableOrdersTabsOverflow}
                   className={cn(
                     "scrollbar-none flex min-w-0 flex-1 items-stretch gap-0 overflow-x-auto scroll-smooth pr-1",
