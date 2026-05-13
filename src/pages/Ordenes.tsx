@@ -1,5 +1,5 @@
 ﻿import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
-import { flushSync } from "react-dom";
+import { motion } from "framer-motion";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   compareSiblingOrderTabs,
@@ -40,10 +40,10 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil } from "lucide-react";
+import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, LayoutGrid } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
-import { isMesasListOrigin, mesasListPathForOrigin } from "@/lib/mesasFlow";
+import { isMesasListOrigin, mesasListPathForOrigin, MESAS_ORIGIN_V2, MESAS_V2_CARDS_PARAM, MESAS_V2_UI_PARAM, MESAS_V2_UI_VALUE } from "@/lib/mesasFlow";
 import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
@@ -572,7 +572,15 @@ const OrdenesContent = () => {
   const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
   const origin = searchParams.get("origin");
   const originParam = origin ? `&origin=${origin}` : "";
-  const sourceParams = (fromEditar ? "&from=editar" : "") + originParam;
+  const mesaUiActive =
+    !fromEditar
+    && origin === MESAS_ORIGIN_V2
+    && searchParams.get(MESAS_V2_UI_PARAM) === MESAS_V2_UI_VALUE;
+  const mesaUiParam = mesaUiActive ? `&${MESAS_V2_UI_PARAM}=${MESAS_V2_UI_VALUE}` : "";
+  const mesaCardsParam =
+    mesaUiActive && searchParams.get(MESAS_V2_CARDS_PARAM) === "1" ? `&${MESAS_V2_CARDS_PARAM}=1` : "";
+  const sourceParams = (fromEditar ? "&from=editar" : "") + originParam + mesaUiParam + mesaCardsParam;
+  const sourceParamsNoMesaCards = (fromEditar ? "&from=editar" : "") + originParam + mesaUiParam;
   const isTakeoutOrder = order?.order_type === "TAKEOUT" && !order?.is_tray_order && !order?.is_special;
 
   const canOperateMesasForOpen =
@@ -602,6 +610,9 @@ const OrdenesContent = () => {
       return enc ? decodeURIComponent(enc) : undefined;
     })();
 
+    const mesasV2OpenSuffix =
+      mesasOriginTag === MESAS_ORIGIN_V2 ? `&${MESAS_V2_UI_PARAM}=${MESAS_V2_UI_VALUE}` : "";
+
     let rpcPromise = mesaOpenDineInCreateByKey.get(flightKey);
     if (!rpcPromise) {
       rpcPromise = (async () => {
@@ -628,7 +639,7 @@ const OrdenesContent = () => {
         if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
 
         if (realId === orderId) {
-          navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
+          navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}${mesasV2OpenSuffix}`, { replace: true });
           qc.invalidateQueries({ queryKey: ["orders"] });
           qc.invalidateQueries({ queryKey: ["tables-with-status"] });
           qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
@@ -689,7 +700,7 @@ const OrdenesContent = () => {
 
         // Navegar antes de borrar caché del id optimista: si no, la URL sigue con el UUID viejo,
         // useOrder pierde datos y el efecto de "orden inexistente" manda al listado de mesas.
-        navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
+        navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}${mesasV2OpenSuffix}`, { replace: true });
         queueMicrotask(() => {
           qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
         });
@@ -1484,6 +1495,11 @@ const OrdenesContent = () => {
         .sort(compareSiblingOrderTabs)
       : visibleTableOrders;
   const hasSiblings = mergedTableOrders.length > 1;
+  const isMesasV2OrderUi =
+    mesaUiActive && order.order_type === "DINE_IN" && Boolean(order.table_id);
+  const mesaCardsMode = isMesasV2OrderUi && searchParams.get(MESAS_V2_CARDS_PARAM) === "1";
+  const showMesasV2CardPicker =
+    isMesasV2OrderUi && mesaCardsMode && Boolean(order.table_id) && mergedTableOrders.length >= 1;
   const hasOrderItems = itemsToUse.length > 0;
   const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
   /** Para llevar siempre exige turno en RPC; en mesa los admins pueden pasar sin turno según create_additional_dine_in_order. */
@@ -1774,7 +1790,7 @@ const OrdenesContent = () => {
         staleTime: 15_000,
         gcTime: 10 * 60_000,
       });
-      navigate(`/ordenes?order=${newOrderId}${sourceParams}`, { replace: true });
+      navigate(`/ordenes?order=${newOrderId}${sourceParamsNoMesaCards}`, { replace: true });
 
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
@@ -2549,7 +2565,7 @@ const OrdenesContent = () => {
                     <Sparkles className="h-4 w-4" />
                     Orden Especial
                   </div>
-                ) : order.table_name ? (
+                ) : order.table_name && !isMesasV2OrderUi ? (
                   <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
                     {order.table_name}
                   </div>
@@ -2654,7 +2670,7 @@ const OrdenesContent = () => {
             )}
           </div>
 
-          {order.table_id && (
+          {order.table_id && !isMesasV2OrderUi && (
             <div className="flex items-center gap-2 pb-1">
               <div className="relative min-w-0 flex-1">
                 {tableOrdersTabsOverflow.left && (
@@ -2822,6 +2838,102 @@ const OrdenesContent = () => {
         </div>
       </div>
 
+      {isMesasV2OrderUi && (
+        <div className="border-t border-orange-400/90 bg-gradient-to-b from-amber-50 via-orange-50/85 to-amber-100/65 px-4 py-3 sm:rounded-t-3xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
+              onClick={() =>
+                navigate(
+                  `/ordenes?order=${order.id}${sourceParamsNoMesaCards}&${MESAS_V2_CARDS_PARAM}=1`,
+                  { replace: true },
+                )
+              }
+            >
+              {order.table_name ?? "Mesa"}
+            </button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-9 shrink-0 gap-1.5 rounded-xl border-orange-400 bg-white/95 px-3 text-xs font-bold text-orange-950 shadow-sm hover:bg-orange-50"
+              onClick={() => void handleSplit()}
+              disabled={!canSplit || splitting}
+              title={
+                !canOperateOrders
+                  ? "No tienes permiso para crear nuevas ordenes en mesa"
+                  : orderItems.length <= 0
+                    ? "La orden actual debe tener al menos un item"
+                    : !shiftOkForSiblingOrder
+                      ? "Abre turno en caja para crear otra orden"
+                      : !canSplit
+                        ? "La mesa debe seguir activa para crear otra orden"
+                        : "Nueva orden"
+              }
+            >
+              {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
+              Añadir orden
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showMesasV2CardPicker ? (
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="scrollbar-none flex-1 overflow-y-auto p-3 pb-24 sm:p-4 md:p-6">
+            <p className="mb-3 text-center text-sm font-semibold text-muted-foreground">Toca una orden para abrirla</p>
+            <div className="mx-auto grid max-w-4xl grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-3">
+              {mergedTableOrders.map((tableOrder, index) => {
+                const label = getTableOrderButtonLabel(tableOrder);
+                const cnt = Number(tableOrder.item_count ?? 0);
+                const isSel = tableOrder.id === order.id;
+                const cardDraft = cnt === 0;
+                return (
+                  <motion.button
+                    key={tableOrder.id}
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: (index + 1) * 0.04 }}
+                    onClick={() =>
+                      navigate(`/ordenes?order=${tableOrder.id}${sourceParamsNoMesaCards}`, { replace: true })
+                    }
+                    className={cn(
+                      "relative flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 p-3 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[160px] sm:gap-3 sm:rounded-[26px] sm:p-4",
+                      cardDraft
+                        ? "border-sky-300 bg-gradient-to-br from-sky-50 via-white to-cyan-50 dark:border-sky-800 dark:from-sky-950/25 dark:via-card dark:to-cyan-950/20"
+                        : "border-orange-300 bg-gradient-to-br from-orange-50 via-white to-amber-50 dark:border-primary/35 dark:from-orange-950/25 dark:via-card dark:to-amber-950/20",
+                      isSel && "ring-2 ring-orange-500 ring-offset-2 ring-offset-background",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-2xl border-2 sm:h-14 sm:w-14",
+                        cardDraft
+                          ? "border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-800 dark:bg-sky-950/80 dark:text-sky-300"
+                          : "border-orange-200 bg-orange-100 text-primary dark:border-primary/40 dark:bg-orange-950/80 dark:text-orange-300",
+                      )}
+                    >
+                      <LayoutGrid className="h-6 w-6 sm:h-7 sm:w-7" />
+                    </div>
+                    <span className="text-sm font-black text-foreground">{label}</span>
+                    <span
+                      className={cn(
+                        "text-[11px] font-semibold sm:text-xs",
+                        cardDraft ? "text-sky-700 dark:text-sky-400" : "text-orange-800 dark:text-orange-300",
+                      )}
+                    >
+                      {cnt === 0 ? "Borrador" : `${cnt} productos`}
+                    </span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="relative z-10 flex flex-1 overflow-hidden md:hidden">
         <div
           className={cn(
@@ -2849,8 +2961,10 @@ const OrdenesContent = () => {
           </div>
         </div>
       </div>
+        </>
+      )}
 
-      {!showCart && itemCount > 0 && (
+      {!showCart && itemCount > 0 && !showMesasV2CardPicker && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
           <span className="font-display text-sm font-bold">
