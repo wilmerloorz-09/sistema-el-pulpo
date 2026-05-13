@@ -1582,9 +1582,7 @@ const OrdenesContent = () => {
   const hasEditableOrderSurface =
     isTakeoutOrder ||
     Boolean(order.is_special) ||
-    (order.order_type === "DINE_IN" && Boolean(order.table_id)) ||
-    /** Desde Mesas: si hay mesa en la orden pero el tipo llega inconsistente en cache, no bloquear el menu. */
-    (isMesasListOrigin(origin) && Boolean(order.table_id) && !isTakeoutOrder && !order.is_tray_order);
+    (order.order_type === "DINE_IN" && Boolean(order.table_id));
   const canEditDraftOrder =
     !fromEditar &&
     order.status !== "PAID" &&
@@ -1605,6 +1603,17 @@ const OrdenesContent = () => {
     (canEditDraftOrder || (fromEditar && isEditableInCaja)) &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
+  /** Igual que antes al entrar desde Mesas: agregar productos no depende de `canEditDraftOrder` (evita menu muerto con cache/estado raro). */
+  const mesasMenuAddEnabled =
+    mesasChromeActive &&
+    Boolean(order.table_id) &&
+    !fromEditar &&
+    !hasPendingCancellationItems &&
+    !isLockedFromEditar &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED" &&
+    (canOperateOrders || canUseEditarOrden);
+  const menuAddInteractionEnabled = canEditItems || mesasMenuAddEnabled;
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!activeBranchId) {
       toast.error("No hay sucursal activa. Selecciona una sucursal e intenta de nuevo.");
@@ -2272,7 +2281,7 @@ const OrdenesContent = () => {
         forceLoading={(currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK") && scopeCompositeMenuQuery.isLoading}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         onSelectProduct={handleSelectMenuProduct}
-        disabled={!canEditItems}
+        disabled={!menuAddInteractionEnabled}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
@@ -3047,14 +3056,14 @@ const OrdenesContent = () => {
       )}
 
       <AddItemDialog
-        product={canEditItems ? selectedProduct : null}
-        resolvingShell={canEditItems ? productLoadingShell : null}
+        product={menuAddInteractionEnabled ? selectedProduct : null}
+        resolvingShell={menuAddInteractionEnabled ? productLoadingShell : null}
         modifiers={
           (selectedProduct || productLoadingShell) && (!isTrayOrder || effectiveTrayType !== "A")
             ? selectedProductModifiers
             : []
         }
-        open={canEditItems && (!!selectedProduct || !!productLoadingShell)}
+        open={menuAddInteractionEnabled && (!!selectedProduct || !!productLoadingShell)}
         onClose={() => {
           setSelectedProduct(null);
           setSelectedProductRootName(null);
