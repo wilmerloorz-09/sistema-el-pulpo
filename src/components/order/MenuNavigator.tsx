@@ -373,7 +373,7 @@ const MenuNavigator = ({
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col gap-3 transition-opacity", disabled && "pointer-events-none opacity-50")}>
+    <div className={cn("flex h-full min-h-0 flex-col gap-3 transition-opacity", disabled && "opacity-50")}>
       {trayMode && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Modo bandeja por monto: solo se muestran categorias bandeja y el precio se define manualmente.
@@ -389,6 +389,7 @@ const MenuNavigator = ({
             type="search"
             placeholder="Buscar producto..."
             value={searchQuery}
+            disabled={disabled}
             onFocus={() => setSearchFocused(true)}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(event) => {
@@ -454,7 +455,11 @@ const MenuNavigator = ({
             <button
               key={node.id}
               type="button"
-              onClick={() => selectL1(node.id)}
+              disabled={disabled}
+              onClick={() => {
+                if (disabled) return;
+                selectL1(node.id);
+              }}
             className={cn(
               "shrink-0 rounded-2xl border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors md:px-4 md:py-2 md:text-sm",
               activeL1?.id === node.id
@@ -482,7 +487,11 @@ const MenuNavigator = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => goToBreadcrumbIndex(index)}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      goToBreadcrumbIndex(index);
+                    }}
                     className="font-medium text-muted-foreground transition-colors hover:text-orange-700"
                   >
                     {node.name}

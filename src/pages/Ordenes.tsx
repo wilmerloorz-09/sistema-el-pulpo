@@ -1582,7 +1582,9 @@ const OrdenesContent = () => {
   const hasEditableOrderSurface =
     isTakeoutOrder ||
     Boolean(order.is_special) ||
-    (order.order_type === "DINE_IN" && Boolean(order.table_id));
+    (order.order_type === "DINE_IN" && Boolean(order.table_id)) ||
+    /** Desde Mesas: si hay mesa en la orden pero el tipo llega inconsistente en cache, no bloquear el menu. */
+    (isMesasListOrigin(origin) && Boolean(order.table_id) && !isTakeoutOrder && !order.is_tray_order);
   const canEditDraftOrder =
     !fromEditar &&
     order.status !== "PAID" &&
@@ -1604,7 +1606,10 @@ const OrdenesContent = () => {
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
-    if (!activeBranchId) return;
+    if (!activeBranchId) {
+      toast.error("No hay sucursal activa. Selecciona una sucursal e intenta de nuevo.");
+      return;
+    }
     if (hasPendingCancellationItems) {
       toast.error("No puedes agregar items mientras exista al menos un item con anulacion pendiente.");
       return;
