@@ -10,6 +10,7 @@ import {
   isTemporaryOrderItemId,
   seedDineInDraftOrderCache,
   useOrder,
+  buildItemPreviewLinesForTableCard,
   type Order,
   type SiblingOrder,
 } from "@/hooks/useOrder";
@@ -40,7 +41,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, LayoutGrid, Menu } from "lucide-react";
+import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM } from "@/lib/mesasFlow";
@@ -572,7 +573,9 @@ const OrdenesContent = () => {
   const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
   const origin = searchParams.get("origin");
   const originParam = origin ? `&origin=${origin}` : "";
-  const mesasChromeActive = !fromEditar && isMesasListOrigin(origin);
+  const mesasChromeActive =
+    !fromEditar
+    && (isMesasListOrigin(origin) || (order?.order_type === "DINE_IN" && Boolean(order?.table_id)));
   const mesaCardsParam =
     mesasChromeActive && searchParams.get(MESAS_V2_CARDS_PARAM) === "1" ? `&${MESAS_V2_CARDS_PARAM}=1` : "";
   const sourceParams = (fromEditar ? "&from=editar" : "") + originParam + mesaCardsParam;
@@ -900,6 +903,7 @@ const OrdenesContent = () => {
         table_order_position: Number(order.table_order_position ?? 0) || null,
         created_at: order.created_at ?? null,
         item_count: orderItems.length,
+        item_preview_lines: buildItemPreviewLinesForTableCard(order.items ?? []),
       }
     : null;
 
@@ -955,6 +959,7 @@ const OrdenesContent = () => {
       table_order_position: Number(order.table_order_position ?? 0) || null,
       created_at: order.created_at ?? null,
       item_count: orderItems.length,
+      item_preview_lines: buildItemPreviewLinesForTableCard(order.items ?? []),
     };
     const tableOrders = tableOrdersQuery.data?.length
       ? tableOrdersQuery.data
@@ -1610,6 +1615,32 @@ const OrdenesContent = () => {
   const mesaCardsMode = isMesasChromeUi && searchParams.get(MESAS_V2_CARDS_PARAM) === "1";
   const showMesasV2CardPicker =
     isMesasChromeUi && mesaCardsMode && Boolean(order.table_id) && mergedTableOrders.length >= 1;
+
+  /** Mismo criterio que las pestañas de orden; va tras "Orden #" en la barra de mesa. */
+  const getOrdenNumeroParaCabeceraMesa = (o: {
+    order_code?: string | null;
+    order_number: number | null;
+    table_order_position: number | null;
+  }) => {
+    const codeSuffix = String(o.order_code ?? "").trim().split("-").pop();
+    if (codeSuffix) return codeSuffix;
+    const n = Number(o.order_number ?? 0);
+    if (n > 0) return String(n).padStart(4, "0").slice(-4);
+    return String(Number(o.table_order_position ?? 1));
+  };
+
+  /** "Orden #…" solo al ver la orden (no en la rejilla de selección de órdenes de la mesa). */
+  const renderMesaChromeHeaderTitle = (o: typeof order, withOrdenLabel: boolean) => (
+    <span className="inline-flex min-w-0 max-w-full items-baseline gap-6 tabular-nums sm:gap-10">
+      <span className="min-w-0 truncate">{(o.table_name ?? "").trim() || "Mesa"}</span>
+      {withOrdenLabel ? (
+        <span className="shrink-0 font-black tracking-tight">
+          Orden #{getOrdenNumeroParaCabeceraMesa(o)}
+        </span>
+      ) : null}
+    </span>
+  );
+
   const hasOrderItems = itemsToUse.length > 0;
   const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
   /** Para llevar siempre exige turno en RPC; en mesa los admins pueden pasar sin turno según create_additional_dine_in_order. */
@@ -2684,7 +2715,7 @@ const OrdenesContent = () => {
                   </div>
                 ) : order.table_name ? (
                   <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
-                    {order.table_name}
+                    {(order.table_name ?? "").trim() || "Mesa"}
                   </div>
                 ) : isTakeout ? (
                   <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-emerald-800 dark:text-emerald-400">
@@ -2963,7 +2994,7 @@ const OrdenesContent = () => {
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <button
                 type="button"
-                className="min-w-0 truncate rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
+                className="min-w-0 max-w-full rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
                 onClick={() =>
                   navigate(
                     `/ordenes?order=${order.id}${sourceParamsNoMesaCards}&${MESAS_V2_CARDS_PARAM}=1`,
@@ -2971,8 +3002,15 @@ const OrdenesContent = () => {
                   )
                 }
               >
-                {order.table_name ?? "Mesa"}
+                {renderMesaChromeHeaderTitle(order, !showMesasV2CardPicker)}
               </button>
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {!canOperateOrders && (
+                <span className="hidden rounded-full border border-orange-300/60 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
+                  Solo consulta
+                </span>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -2995,13 +3033,6 @@ const OrdenesContent = () => {
                 {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
                 Añadir orden
               </Button>
-            </div>
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              {!canOperateOrders && (
-                <span className="hidden rounded-full border border-orange-300/60 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
-                  Solo consulta
-                </span>
-              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -3075,47 +3106,75 @@ const OrdenesContent = () => {
           <div className="scrollbar-none flex-1 overflow-y-auto px-2.5 pb-24 pt-3 sm:px-4 sm:pb-24 md:px-6 md:pb-24 md:pt-4">
             <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]">
               {mergedTableOrders.map((tableOrder, index) => {
-                const label = getTableOrderButtonLabel(tableOrder);
-                const cnt = Number(tableOrder.item_count ?? 0);
+                const previewLines = tableOrder.item_preview_lines ?? [];
                 const isSel = tableOrder.id === order.id;
-                const cardDraft = cnt === 0;
+                const cardDraft = previewLines.length === 0;
                 return (
                   <motion.button
                     key={tableOrder.id}
                     type="button"
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.97 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: (index + 1) * 0.04 }}
                     onClick={() =>
                       navigate(`/ordenes?order=${tableOrder.id}${sourceParamsNoMesaCards}`, { replace: true })
                     }
                     className={cn(
-                      "relative flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 p-3 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[160px] sm:gap-3 sm:rounded-[26px] sm:p-4",
+                      "relative flex min-h-[132px] flex-col rounded-[22px] border-2 p-3 text-left shadow-sm transition-shadow hover:shadow-md sm:min-h-[148px] sm:rounded-[26px] sm:p-3.5",
                       cardDraft
-                        ? "border-sky-300 bg-gradient-to-br from-sky-50 via-white to-cyan-50 dark:border-sky-800 dark:from-sky-950/25 dark:via-card dark:to-cyan-950/20"
-                        : "border-orange-300 bg-gradient-to-br from-orange-50 via-white to-amber-50 dark:border-primary/35 dark:from-orange-950/25 dark:via-card dark:to-amber-950/20",
-                      isSel && "ring-2 ring-orange-500 ring-offset-2 ring-offset-background",
+                        ? "border-sky-300/90 bg-gradient-to-br from-sky-50 via-white to-cyan-50 dark:border-sky-800 dark:from-sky-950/25 dark:via-card dark:to-cyan-950/20"
+                        : "border-orange-300/90 bg-gradient-to-br from-orange-50 via-white to-amber-50 dark:border-primary/35 dark:from-orange-950/25 dark:via-card dark:to-amber-950/20",
+                      isSel && "ring-2 ring-orange-500 ring-offset-2 ring-offset-background shadow-[0_12px_36px_-20px_rgba(249,115,22,0.35)]",
                     )}
                   >
                     <div
                       className={cn(
-                        "flex h-12 w-12 items-center justify-center rounded-2xl border-2 sm:h-14 sm:w-14",
-                        cardDraft
-                          ? "border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-800 dark:bg-sky-950/80 dark:text-sky-300"
-                          : "border-orange-200 bg-orange-100 text-primary dark:border-primary/40 dark:bg-orange-950/80 dark:text-orange-300",
+                        "mb-2 flex shrink-0 items-center gap-2 px-0.5",
+                        cardDraft ? "text-sky-800 dark:text-sky-300" : "text-orange-950 dark:text-orange-200",
                       )}
                     >
-                      <LayoutGrid className="h-6 w-6 sm:h-7 sm:w-7" />
+                      <span
+                        className={cn(
+                          "h-px min-w-[0.75rem] flex-1 rounded-full",
+                          cardDraft ? "bg-sky-300/80 dark:bg-sky-600/70" : "bg-orange-300/80 dark:bg-orange-600/60",
+                        )}
+                      />
+                      <span className="shrink-0 whitespace-nowrap text-center text-[11px] font-black tabular-nums sm:text-xs">
+                        Orden #{getOrdenNumeroParaCabeceraMesa(tableOrder)}
+                      </span>
+                      <span
+                        className={cn(
+                          "h-px min-w-[0.75rem] flex-1 rounded-full",
+                          cardDraft ? "bg-sky-300/80 dark:bg-sky-600/70" : "bg-orange-300/80 dark:bg-orange-600/60",
+                        )}
+                      />
                     </div>
-                    <span className="text-sm font-black text-foreground">{label}</span>
-                    <span
-                      className={cn(
-                        "text-[11px] font-semibold sm:text-xs",
-                        cardDraft ? "text-sky-700 dark:text-sky-400" : "text-orange-800 dark:text-orange-300",
+                    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+                      {previewLines.length > 0 ? (
+                        previewLines.map((line, lineIdx) => (
+                          <p
+                            key={`${tableOrder.id}-${lineIdx}`}
+                            className={cn(
+                              "break-words text-[11px] font-semibold leading-snug sm:text-xs",
+                              cardDraft ? "text-sky-900 dark:text-sky-200" : "text-foreground",
+                            )}
+                          >
+                            <span className="font-black tabular-nums">{line.quantity}</span>
+                            <span className="select-none"> </span>
+                            <span>{line.description}</span>
+                          </p>
+                        ))
+                      ) : (
+                        <p
+                          className={cn(
+                            "text-[11px] font-semibold sm:text-xs",
+                            cardDraft ? "text-sky-700 dark:text-sky-400" : "text-muted-foreground",
+                          )}
+                        >
+                          Borrador
+                        </p>
                       )}
-                    >
-                      {cnt === 0 ? "Borrador" : `${cnt} productos`}
-                    </span>
+                    </div>
                   </motion.button>
                 );
               })}

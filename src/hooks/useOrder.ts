@@ -55,6 +55,33 @@ export interface SiblingOrder {
   created_at?: string | null;
   item_count: number;
   total?: number;
+  /** Lineas para vista previa en tarjetas de seleccion de orden (cantidad + descripcion). */
+  item_preview_lines?: Array<{ quantity: number; description: string }>;
+}
+
+/** Texto compacto para tarjetas de mesa: cantidad + descripcion (snapshot). */
+export function buildItemPreviewLinesForTableCard(
+  items: Array<{ quantity?: number; description_snapshot?: string; status?: string | null }>,
+  descriptionMaxLen = 36,
+): Array<{ quantity: number; description: string }> {
+  const short = (raw: string) => {
+    const t = raw.trim();
+    if (t.length <= descriptionMaxLen) return t;
+    return `${t.slice(0, descriptionMaxLen - 1).trimEnd()}…`;
+  };
+
+  return items
+    .filter((it) => {
+      const q = Math.max(0, Number(it.quantity ?? 0));
+      if (q <= 0) return false;
+      const st = String(it.status ?? "");
+      if (st === "CANCELLED" || st.includes("CANCELLED")) return false;
+      return true;
+    })
+    .map((it) => ({
+      quantity: Math.max(0, Number(it.quantity ?? 0)),
+      description: short(String(it.description_snapshot ?? "").trim() || "Item"),
+    }));
 }
 
 function isBlockedPaymentNotes(notes: string | null) {
@@ -257,7 +284,7 @@ export async function fetchSiblingOrders(
 
   const { data: siblingOrders, error } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, notes, order_items(id)")
+    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, notes, order_items(id, description_snapshot, quantity, status)")
     .eq("table_id", tableId)
     .eq("branch_id", branchId)
     .eq("order_type", "DINE_IN")
@@ -284,15 +311,19 @@ export async function fetchSiblingOrders(
       if (String(sibling.status ?? "") !== "DRAFT") return true;
       return false;
     })
-    .map((sibling) => ({
-      id: sibling.id,
-      order_number: sibling.order_number,
-      order_code: sibling.order_code ?? null,
-      split_code: splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null,
-      table_order_position: Number(sibling.table_order_position ?? 0) || null,
-      created_at: sibling.created_at ?? null,
-      item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
-    }))
+    .map((sibling) => {
+      const rawItems = Array.isArray(sibling.order_items) ? sibling.order_items : [];
+      return {
+        id: sibling.id,
+        order_number: sibling.order_number,
+        order_code: sibling.order_code ?? null,
+        split_code: splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null,
+        table_order_position: Number(sibling.table_order_position ?? 0) || null,
+        created_at: sibling.created_at ?? null,
+        item_count: rawItems.length,
+        item_preview_lines: buildItemPreviewLinesForTableCard(rawItems as any[]),
+      };
+    })
     .sort(compareSiblingOrderTabs);
 }
 

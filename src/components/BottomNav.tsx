@@ -63,8 +63,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
 
           let isItemActive = location.pathname === item.to;
           if (fromMesas) {
-            if (item.to === "/mesas") isItemActive = searchParams.get("origin") !== "mesas-v2";
-            if (item.to === "/mesas-v2") isItemActive = searchParams.get("origin") === "mesas-v2";
+            if (item.to === "/mesas") isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
           }
           if (fromEditar) {

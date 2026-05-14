@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, FlaskConical, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -33,17 +33,6 @@ const NAV_ITEMS: AppNavItem[] = [
       active: "from-sky-500 to-cyan-400",
       idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
       iconIdle: "bg-sky-50 text-sky-600",
-    },
-    visible: (permissions) => canView(permissions, "mesas"),
-  },
-  {
-    to: "/mesas-v2",
-    label: "Mesas (beta)",
-    icon: <FlaskConical className="h-5 w-5" />,
-    tone: {
-      active: "from-violet-500 to-fuchsia-400",
-      idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
-      iconIdle: "bg-violet-50 text-violet-600",
     },
     visible: (permissions) => canView(permissions, "mesas"),
   },
@@ -195,8 +184,8 @@ export function useVisibleNavItems() {
         return true;
       }
 
-      if (item.to === "/mesas" || item.to === "/mesas-v2" || item.to === "/para-llevar" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
-        if (item.to === "/mesas" || item.to === "/mesas-v2") {
+      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
+        if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
         }
         if (item.to === "/para-llevar" || item.to === "/orden-especial") {

@@ -118,14 +118,10 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
         {visibleItems.map((item) => {
           const mesasListOrigin = searchParams.get("origin");
           const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
-          const isOriginMesasLegacy = mesasListOrigin === "mesas";
-          const isOriginMesasV2 = mesasListOrigin === "mesas-v2";
           const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
           const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
           const isItemActive = item.to === "/mesas"
-            ? (location.pathname === "/mesas" || (location.pathname === "/ordenes" && isOriginMesasLegacy))
-            : item.to === "/mesas-v2"
-              ? (location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasV2))
+            ? (location.pathname === "/mesas" || location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasList))
             : item.to === "/para-llevar"
               ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
               : item.to === "/orden-especial"
