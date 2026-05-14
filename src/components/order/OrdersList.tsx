@@ -11,7 +11,6 @@ import OrderListRow from "./OrderListRow";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign, ArrowRightLeft } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type TabType = "sent" | "draft" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
@@ -60,10 +59,11 @@ const tabs: TabInfo[] = [
   },
   {
     key: "cancelled",
-    label: "Anulada",
+    label: "Anulaciones",
     status: "CANCELLED",
     showCancel: false,
-    helperText: "Aqui ves las cantidades anuladas y tambien las ordenes para llevar ya despachadas.",
+    helperText:
+      "Ordenes con anulaciones ya aplicadas: totales o solo algunas cantidades (caja, despacho, politicas de anulacion, etc.). El nombre que ves suele ser quien abrio la orden, no quien aplico la anulacion.",
     icon: <Ban className="h-4 w-4" />,
   },
 ];
@@ -181,6 +181,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
     };
   }, [activeBranchId, qc]);
 
+  /** Todas las pestañas cargan en paralelo: bombillas correctas y cambio de pestaña instantaneo con caché. */
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
   const draftOrders = useOrdersByStatus("DRAFT");
   const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED");
@@ -217,6 +218,10 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
   const currentOrders = getOrdersForTab(activeTab);
   const currentTab = tabs.find((tab) => tab.key === activeTab)!;
   const totalOrders = tabs.reduce((sum, tab) => sum + getTabCount(tab.key), 0);
+  const anyTabStillLoading = tabs.some((tab) => {
+    const q = getOrdersForTab(tab.key);
+    return q.isLoading;
+  });
 
   return (
     <div className="w-full">
@@ -227,8 +232,12 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
               <ClipboardList className="h-5 w-5" />
             </div>
             <h2 className="font-display text-lg font-bold text-foreground">Todas las ordenes</h2>
-            <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-              ({totalOrders} total)
+            <span
+              className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm"
+              title="Total de ordenes listadas en todas las pestañas del turno actual."
+            >
+              ({getTabCount(activeTab)} en {currentTab.label}
+              {anyTabStillLoading ? " · …" : ""} · {totalOrders} total)
             </span>
             {readOnly && (
               <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
@@ -254,12 +263,15 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
         <div className="scrollbar-none min-w-0 flex-1 overflow-x-auto">
           <div className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm">
             {tabs.map((tab) => {
-              const count = getTabCount(tab.key);
+              const q = getOrdersForTab(tab.key);
+              const count = q.data?.length || 0;
               const isActive = activeTab === tab.key;
+              const showBadgeSpinner = q.isLoading;
 
               return (
                 <button
                   key={tab.key}
+                  type="button"
                   onClick={() => setActiveTab(tab.key)}
                   className={cn(
                     "relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm",
@@ -270,11 +282,15 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
                   <span className="flex items-center gap-1 whitespace-nowrap sm:gap-2">
                     <span className="shrink-0 [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-4 sm:[&_svg]:w-4">{tab.icon}</span>
                     <span className="text-left leading-tight">{tab.label}</span>
-                    {count > 0 && (
+                    {showBadgeSpinner ? (
+                      <span className="flex h-4 min-w-[18px] shrink-0 items-center justify-center sm:h-5 sm:min-w-[22px]">
+                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground sm:h-3.5 sm:w-3.5" aria-hidden />
+                      </span>
+                    ) : count > 0 ? (
                       <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
                         {count}
                       </span>
-                    )}
+                    ) : null}
                   </span>
                 </button>
               );
@@ -291,7 +307,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
         ) : !currentOrders.data || currentOrders.data.length === 0 ? (
           <div className="col-span-full rounded-[28px] border border-dashed border-orange-200 bg-white/70 px-6 py-16 text-center shadow-[0_16px_36px_-34px_rgba(249,115,22,0.4)]">
             <ClipboardList className="mx-auto mb-3 h-12 w-12 text-orange-300" />
-            <p className="font-display text-lg font-bold text-foreground">No hay ordenes {currentTab.label.toLowerCase()}</p>
+            <p className="font-display text-lg font-bold text-foreground">No hay ordenes para mostrar en {currentTab.label}</p>
             <p className="mt-1 text-sm text-muted-foreground">Cuando existan movimientos en esta etapa, apareceran aqui.</p>
           </div>
         ) : (

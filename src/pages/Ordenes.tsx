@@ -519,6 +519,64 @@ function OrdenesSkeleton() {
   );
 }
 
+/** Solo listado: evita montar useCaja, mesas, menús y el resto de OrdenesContent (carga como Caja > Por cobrar). */
+function OrdenesListShell() {
+  const { user } = useAuth();
+  const { permissions, isGlobalAdmin } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
+  const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
+  const [mergeSplitOpen, setMergeSplitOpen] = useState(false);
+
+  const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
+  const canOperateOrders =
+    isGlobalAdmin
+    || canManageOrders
+    || canOperate(permissions, "ordenes")
+    || canOperate(permissions, "mesas")
+    || Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canCancelOrders = canOperateOrders || canManageOrders;
+  const hasDirectCancelRole =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global")
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canAuthorizeCancel =
+    hasDirectCancelRole
+    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel);
+
+  return (
+    <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
+        <OrdersList
+          onCancelOrder={canCancelOrders ? setCancelOrder : undefined}
+          onOpenMergeSplitTool={canOperateOrders ? () => setMergeSplitOpen(true) : undefined}
+          readOnly={!canOperateOrders}
+        />
+      </div>
+      {cancelOrder && user && canCancelOrders && (
+        <CancelOrderDialog
+          orderId={cancelOrder.id}
+          orderNumber={getOrderRef(cancelOrder.order_code, cancelOrder.order_number)}
+          userId={user.id}
+          open={!!cancelOrder}
+          onOpenChange={(open) => !open && setCancelOrder(null)}
+          canAuthorizeCancel={canAuthorizeCancel}
+          isCancelRequested={!!cancelOrder.cancel_requested_at}
+          visibleItems={cancelOrder.items}
+        />
+      )}
+      <MergeSplitOrdersDialog
+        open={mergeSplitOpen}
+        onOpenChange={setMergeSplitOpen}
+        initialSourceOrderId={undefined}
+        initialSourceOption={undefined}
+      />
+    </div>
+  );
+}
+
 const OrdenesContent = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1544,38 +1602,6 @@ const OrdenesContent = () => {
     return `Entregar: ${previewRows.map((row) => `${row.included_node_name} X${row.matched_quantity}`).join(", ")}`;
   }, [resolveBulkIncludedPreview]);
 
-  if (!orderId) {
-    return (
-      <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
-        <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
-          <OrdersList
-            onCancelOrder={canCancelOrders ? setCancelOrder : undefined}
-            onOpenMergeSplitTool={canOperateOrders ? () => setMergeSplitOpen(true) : undefined}
-            readOnly={!canOperateOrders}
-          />
-        </div>
-        {cancelOrder && user && canCancelOrders && (
-        <CancelOrderDialog
-          orderId={cancelOrder.id}
-          orderNumber={getOrderRef(cancelOrder.order_code, cancelOrder.order_number)}
-          userId={user.id}
-          open={!!cancelOrder}
-          onOpenChange={(open) => !open && setCancelOrder(null)}
-          canAuthorizeCancel={canAuthorizeCancel}
-          isCancelRequested={!!cancelOrder.cancel_requested_at}
-          visibleItems={cancelOrder.items}
-        />
-      )}
-      <MergeSplitOrdersDialog
-        open={mergeSplitOpen}
-        onOpenChange={setMergeSplitOpen}
-        initialSourceOrderId={undefined}
-        initialSourceOption={undefined}
-      />
-      </div>
-    );
-  }
-
   if (isLoading && !order) {
     return <OrdenesSkeleton />;
   }
@@ -1754,12 +1780,13 @@ const OrdenesContent = () => {
     !fromEditar &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
+    order.status !== "SENT_TO_KITCHEN" &&
     hasEditableOrderSurface &&
     (
       order.status === "DRAFT" ||
       hasDraftItems ||
       !hasSentItems ||
-      /** Mesa con orden ya en caja: siempre se pueden agregar lineas nuevas en borrador (antes `canEditDraftOrder` quedaba en false y el flujo parecia “muerto”). */
+      /** Mesa: fuera de borrador/caja, permitir nuevas líneas en estados posteriores (p. ej. despacho), no en “En caja”. */
       (order.order_type === "DINE_IN" && Boolean(order.table_id))
     );
   const canEnterEditMode =
@@ -1773,6 +1800,10 @@ const OrdenesContent = () => {
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
+    if (!canEditItems) {
+      toast.error("Esta orden no admite agregar productos.");
+      return;
+    }
     if (!activeBranchId) {
       toast.error("No hay sucursal activa. Selecciona una sucursal e intenta de nuevo.");
       return;
@@ -2443,6 +2474,7 @@ const OrdenesContent = () => {
         nodesOverride={currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK" ? scopeCompositeMenuQuery.data ?? null : null}
         forceLoading={(currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK") && scopeCompositeMenuQuery.isLoading}
         trayMode={isTrayOrder && effectiveTrayType === "C"}
+        disabled={!canEditItems}
         onSelectProduct={handleSelectMenuProduct}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
@@ -3712,7 +3744,7 @@ const Ordenes = () => {
 
   return (
     <OrdenesErrorBoundary orderId={orderId}>
-      <OrdenesContent />
+      {orderId ? <OrdenesContent /> : <OrdenesListShell />}
     </OrdenesErrorBoundary>
   );
 };

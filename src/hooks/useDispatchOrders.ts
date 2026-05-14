@@ -235,7 +235,7 @@ export function useDispatchOrders(scope: DispatchView) {
         : [];
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
-      const dispatchMode = configLoading ? "SINGLE" : config?.dispatch_mode || "SINGLE";
+      const dispatchMode = config?.dispatch_mode || "SINGLE";
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
       const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
 
@@ -320,7 +320,9 @@ export function useDispatchOrders(scope: DispatchView) {
         counts
       };
     },
-    enabled: !!activeBranchId && !!user,
+    enabled: !!activeBranchId && !!user && !configLoading,
+    staleTime: 8_000,
+    refetchOnMount: true,
     refetchInterval: 5000,
   });
 

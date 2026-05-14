@@ -11,7 +11,7 @@ function resolveInitialView(availableViews: DispatchView[], storageKey: string):
 
   const saved = localStorage.getItem(storageKey);
   if ((saved === "ALL" || saved === "TABLE" || saved === "SPECIAL" || saved === "TAKEOUT") && availableViews.includes(saved as DispatchView)) {
-    return saved;
+    return saved as DispatchView;
   }
 
   if (availableViews.includes("ALL")) return "ALL";
@@ -47,49 +47,11 @@ const Despacho = () => {
 
   const resolvedView = activeView && availableViews.includes(activeView) ? activeView : resolveInitialView(availableViews, storageKey);
   const scope = resolvedView ?? "TABLE";
-    const { orders, counts, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem, dispatchOrder } = useDispatchOrders(scope);
+  const { orders, counts, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem, dispatchOrder } = useDispatchOrders(scope);
 
-  if (accessLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!hasAccess || !resolvedView) {
-    return (
-      <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
-        <AlertCircle className="mb-3 h-12 w-12 text-muted-foreground/40" />
-        <p className="font-display text-lg font-bold text-foreground">Despacho no disponible</p>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          No tienes una vista valida de despacho para la configuracion actual de la jornada.
-        </p>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
-        <AlertCircle className="mb-3 h-12 w-12 text-destructive/40" />
-        <p className="font-display text-lg font-bold text-foreground">Error al cargar ordenes</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          No se pudieron cargar las ordenes para despacho. Intenta recargar la pagina.
-        </p>
-      </div>
-    );
-  }
-
-  const readOnly = !canOperateView(scope);
+  const readOnly = !accessLoading && hasAccess && Boolean(resolvedView) && !canOperateView(scope);
+  const canShowMain = !accessLoading && hasAccess && Boolean(resolvedView);
+  const pendingLabel = accessLoading ? "…" : `${orders.length}`;
 
   return (
     <>
@@ -100,8 +62,10 @@ const Despacho = () => {
               <Truck className="h-5 w-5" />
             </div>
             <h1 className="font-display text-lg font-bold text-foreground">Despacho</h1>
-            <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">({orders.length} pendientes)</span>
-            {!showTabs && (
+            <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+              ({pendingLabel} pendientes)
+            </span>
+            {canShowMain && !showTabs && (
               <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
                 Vista: {getViewLabel(scope)}
               </span>
@@ -114,87 +78,115 @@ const Despacho = () => {
           </div>
         </div>
 
-        {showTabs && (
-          <div className="scrollbar-none mb-4 overflow-x-auto">
-            <ToggleGroup
-              type="single"
-              size="sm"
-              value={scope}
-              onValueChange={(value) => {
-                if (!value) return;
-                setActiveView(value as DispatchView);
-              }}
-              className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm"
-            >
-              {availableViews.map((view) => {
-                const Icon = getViewIcon(view);
-                const count = counts[view as keyof typeof counts] || 0;
-                
-                return (
-                  <ToggleGroupItem
-                    key={view}
-                    value={view}
-                    className="relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm"
-                    aria-label={getViewLabel(view)}
-                  >
-                    <span className="flex items-center gap-1 whitespace-nowrap sm:gap-2">
-                      <Icon className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
-                      <span className="text-left leading-tight">
-                        {getViewLabel(view)}
-                      </span>
-                      {count > 0 && (
-                        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in zoom-in duration-300 sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
-                          {count}
-                        </span>
-                      )}
-                    </span>
-                  </ToggleGroupItem>
-                );
-              })}
-            </ToggleGroup>
+        {accessLoading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
-        )}
-
-        {orders.length === 0 ? (
+        ) : !hasAccess || !resolvedView ? (
           <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
-            <Truck className="mb-3 h-12 w-12 text-muted-foreground/40" />
-            <p className="font-display text-lg font-bold text-foreground">Sin ordenes pendientes</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {scope === "ALL"
-                ? "Las ordenes listas para despachar apareceran aqui"
-                : `Las ordenes de ${getViewLabel(scope).toLowerCase()} listas para despachar apareceran aqui`}
+            <AlertCircle className="mb-3 h-12 w-12 text-muted-foreground/40" />
+            <p className="font-display text-lg font-bold text-foreground">Despacho no disponible</p>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              No tienes una vista valida de despacho para la configuracion actual de la jornada.
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
-            <div className="divide-y divide-slate-200">
-              {orders.map((order, index) => (
-                <DispatchCard
-                  key={order.card_id}
-                  order={order}
-                  index={index}
-                  onMarkOrderReady={(currentOrder) => {
-                    if (currentOrder.order_type === "TAKEOUT" || currentOrder.is_special) {
-                      dispatchOrder.mutate({ orderId: currentOrder.id });
-                      return;
-                    }
+          <>
+            {showTabs && (
+              <div className="scrollbar-none mb-4 overflow-x-auto">
+                <ToggleGroup
+                  type="single"
+                  size="sm"
+                  value={scope}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    setActiveView(value as DispatchView);
+                  }}
+                  className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm"
+                >
+                  {availableViews.map((view) => {
+                    const Icon = getViewIcon(view);
+                    const count = counts[view as keyof typeof counts] || 0;
 
-                    sendOrderReadyAlert.mutate({ orderId: currentOrder.id });
-                  }}
-                  onMarkItemReady={(_, item, qty) => {
-                    markItemReady.mutate({ orderId: order.id, itemId: item.id, qty });
-                  }}
-                  onDispatchItem={(_, item, qty) => {
-                    dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
-                  }}
-                  isMarkingOrderReady={sendOrderReadyAlert.isPending || dispatchOrder.isPending}
-                  isMarkingReady={markItemReady.isPending}
-                  isDispatching={dispatchItem.isPending}
-                  readOnly={readOnly}
-                />
-              ))}
-            </div>
-          </div>
+                    return (
+                      <ToggleGroupItem
+                        key={view}
+                        value={view}
+                        className="relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm"
+                        aria-label={getViewLabel(view)}
+                      >
+                        <span className="flex items-center gap-1 whitespace-nowrap sm:gap-2">
+                          <Icon className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" />
+                          <span className="text-left leading-tight">
+                            {getViewLabel(view)}
+                          </span>
+                          {count > 0 && (
+                            <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in zoom-in duration-300 sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
+                              {count}
+                            </span>
+                          )}
+                        </span>
+                      </ToggleGroupItem>
+                    );
+                  })}
+                </ToggleGroup>
+              </div>
+            )}
+
+            {isError ? (
+              <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
+                <AlertCircle className="mb-3 h-12 w-12 text-destructive/40" />
+                <p className="font-display text-lg font-bold text-foreground">Error al cargar ordenes</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No se pudieron cargar las ordenes para despacho. Intenta recargar la pagina.
+                </p>
+              </div>
+            ) : isLoading && orders.length === 0 ? (
+              <div className="flex justify-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
+                <Truck className="mb-3 h-12 w-12 text-muted-foreground/40" />
+                <p className="font-display text-lg font-bold text-foreground">Sin ordenes pendientes</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {scope === "ALL"
+                    ? "Las ordenes listas para despachar apareceran aqui"
+                    : `Las ordenes de ${getViewLabel(scope).toLowerCase()} listas para despachar apareceran aqui`}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
+                <div className="divide-y divide-slate-200">
+                  {orders.map((order, index) => (
+                    <DispatchCard
+                      key={order.card_id}
+                      order={order}
+                      index={index}
+                      onMarkOrderReady={(currentOrder) => {
+                        if (currentOrder.order_type === "TAKEOUT" || currentOrder.is_special) {
+                          dispatchOrder.mutate({ orderId: currentOrder.id });
+                          return;
+                        }
+
+                        sendOrderReadyAlert.mutate({ orderId: currentOrder.id });
+                      }}
+                      onMarkItemReady={(_, item, qty) => {
+                        markItemReady.mutate({ orderId: order.id, itemId: item.id, qty });
+                      }}
+                      onDispatchItem={(_, item, qty) => {
+                        dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
+                      }}
+                      isMarkingOrderReady={sendOrderReadyAlert.isPending || dispatchOrder.isPending}
+                      isMarkingReady={markItemReady.isPending}
+                      isDispatching={dispatchItem.isPending}
+                      readOnly={readOnly}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </>
@@ -202,4 +194,3 @@ const Despacho = () => {
 };
 
 export default Despacho;
-

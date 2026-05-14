@@ -87,7 +87,8 @@ export function useDispatchAccess() {
 
   return {
     ...access,
-    isLoading: isDispatchConfigLoading || shiftGateQuery.isLoading,
+    /** El turno ya resolvió en `ProtectedRoute`; aquí solo config despacho. */
+    isLoading: isDispatchConfigLoading,
     getViewLabel: (view: DispatchView) => DISPATCH_VIEW_LABELS[view],
     canOperateView: (view: DispatchView) => (
       view === "ALL"

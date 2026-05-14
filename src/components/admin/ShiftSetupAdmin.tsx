@@ -964,8 +964,8 @@ const ShiftSetupAdmin = () => {
     qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false });
     qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
     qc.invalidateQueries({ queryKey: ["current-shift"] });
-    qc.invalidateQueries({ queryKey: ["dispatch-config", activeBranchId] });
-    qc.invalidateQueries({ queryKey: ["dispatch-assignments"] });
+    qc.invalidateQueries({ queryKey: ["open-cash-shift-id"], exact: false });
+    qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] });
     qc.invalidateQueries({ queryKey: ["shift-admin-cancel-policy", activeBranchId] });
     qc.invalidateQueries({ queryKey: ["shift-admin-latest-shift-audit", activeBranchId] });
   };

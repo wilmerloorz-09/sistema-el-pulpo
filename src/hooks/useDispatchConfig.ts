@@ -25,6 +25,8 @@ export interface DispatchAssignment {
 
 type DispatchConfigUpdate = Partial<Pick<DispatchConfig, "dispatch_mode" | "table_enabled" | "takeout_enabled">> | DispatchMode;
 
+export type DispatchBootstrap = { config: DispatchConfig; assignments: DispatchAssignment[] };
+
 function createDefaultDispatchConfig(branchId: string): DispatchConfig {
   return {
     id: "",
@@ -37,89 +39,89 @@ function createDefaultDispatchConfig(branchId: string): DispatchConfig {
   };
 }
 
+async function loadConfigRow(activeBranchId: string): Promise<DispatchConfig> {
+  const result = await (supabase
+    .from("dispatch_config" as any)
+    .select("id, branch_id, dispatch_mode, table_enabled, takeout_enabled, created_at, updated_at")
+    .eq("branch_id", activeBranchId)
+    .maybeSingle() as any);
+
+  if (result.error) {
+    console.warn("[useDispatchConfig] Error loading config (using defaults):", result.error.message);
+    return createDefaultDispatchConfig(activeBranchId);
+  }
+
+  if (!result.data) {
+    return createDefaultDispatchConfig(activeBranchId);
+  }
+
+  const row = result.data as {
+    id: string;
+    branch_id: string;
+    dispatch_mode: string;
+    table_enabled?: boolean | null;
+    takeout_enabled?: boolean | null;
+    created_at: string;
+    updated_at: string;
+  };
+
+  return {
+    id: row.id,
+    branch_id: row.branch_id,
+    dispatch_mode: row.dispatch_mode === "SPLIT" ? "SPLIT" : "SINGLE",
+    table_enabled: row.table_enabled ?? true,
+    takeout_enabled: row.takeout_enabled ?? true,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function loadAssignmentsForConfig(configId: string): Promise<DispatchAssignment[]> {
+  if (!configId) return [];
+
+  const result = await (supabase
+    .from("dispatch_assignments" as any)
+    .select("*")
+    .eq("dispatch_config_id", configId) as any);
+
+  if (result.error) {
+    console.error("Error fetching assignments:", result.error);
+    return [];
+  }
+
+  return (result.data as DispatchAssignment[]) || [];
+}
+
+async function loadDispatchBootstrap(activeBranchId: string): Promise<DispatchBootstrap> {
+  const config = await loadConfigRow(activeBranchId);
+  const assignments = await loadAssignmentsForConfig(config.id);
+  return { config, assignments };
+}
+
 export function useDispatchConfig() {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
 
-  const fetchConfig = async (): Promise<DispatchConfig | null> => {
-    if (!activeBranchId) return null;
-
-    const result = await (supabase
-      .from("dispatch_config" as any)
-      .select("id, branch_id, dispatch_mode, table_enabled, takeout_enabled, created_at, updated_at")
-      .eq("branch_id", activeBranchId)
-      .maybeSingle() as any);
-
-    if (result.error) {
-      console.warn("[useDispatchConfig] Error loading config (using defaults):", result.error.message);
-      return createDefaultDispatchConfig(activeBranchId);
-    }
-
-    if (!result.data) {
-      return createDefaultDispatchConfig(activeBranchId);
-    }
-
-    const row = result.data as {
-      id: string;
-      branch_id: string;
-      dispatch_mode: string;
-      table_enabled?: boolean | null;
-      takeout_enabled?: boolean | null;
-      created_at: string;
-      updated_at: string;
-    };
-
-    return {
-      id: row.id,
-      branch_id: row.branch_id,
-      dispatch_mode: row.dispatch_mode === "SPLIT" ? "SPLIT" : "SINGLE",
-      table_enabled: row.table_enabled ?? true,
-      takeout_enabled: row.takeout_enabled ?? true,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
-  };
-
-  const configQuery = useQuery({
-    queryKey: ["dispatch-config", activeBranchId],
-    queryFn: fetchConfig,
+  const bootstrapQuery = useQuery({
+    queryKey: ["dispatch-bootstrap", activeBranchId],
+    queryFn: () => loadDispatchBootstrap(activeBranchId!),
     enabled: !!activeBranchId,
     retry: 1,
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: 5 * 60_000,
+    refetchOnMount: true,
+    gcTime: 15 * 60_000,
   });
 
-  const fetchAssignments = async () => {
-    if (!configQuery.data?.id) return [];
-
-    const result = await (supabase
-      .from("dispatch_assignments" as any)
-      .select("*")
-      .eq("dispatch_config_id", configQuery.data.id) as any);
-
-    if (result.error) {
-      console.error("Error fetching assignments:", result.error);
-      return [];
-    }
-
-    return (result.data as DispatchAssignment[]) || [];
-  };
-
-  const assignmentsQuery = useQuery({
-    queryKey: ["dispatch-assignments", configQuery.data?.id],
-    queryFn: fetchAssignments,
-    enabled: !!configQuery.data?.id,
-    retry: 1,
-    staleTime: 5 * 60 * 1000,
-  });
+  const config = bootstrapQuery.data?.config;
+  const assignments = bootstrapQuery.data?.assignments ?? [];
 
   const getUserDispatchType = (orderType: "TABLE" | "TAKEOUT"): DispatchType | null => {
-    if (!user || !configQuery.data) return null;
+    if (!user || !config) return null;
 
-    if (configQuery.data.dispatch_mode === "SINGLE") return "ALL";
+    if (config.dispatch_mode === "SINGLE") return "ALL";
 
-    const userAssignments = assignmentsQuery.data?.filter((assignment) => assignment.user_id === user.id) || [];
+    const userAssignments = assignments.filter((assignment) => assignment.user_id === user.id);
     if (userAssignments.length === 0) return null;
 
     const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
@@ -134,7 +136,8 @@ export function useDispatchConfig() {
       if (!activeBranchId) throw new Error("No branch selected");
 
       const patch = typeof input === "string" ? { dispatch_mode: input } : input;
-      const currentConfig = (qc.getQueryData(["dispatch-config", activeBranchId]) as DispatchConfig | undefined) ?? createDefaultDispatchConfig(activeBranchId);
+      const bundle = qc.getQueryData<DispatchBootstrap>(["dispatch-bootstrap", activeBranchId]);
+      const currentConfig = bundle?.config ?? createDefaultDispatchConfig(activeBranchId);
       const previousMode = currentConfig.dispatch_mode;
 
       const upsertPayload = {
@@ -159,8 +162,8 @@ export function useDispatchConfig() {
       const updatedConfig = upsertResult.data as DispatchConfig;
 
       if ((patch.dispatch_mode ?? currentConfig.dispatch_mode) === "SINGLE" && previousMode === "SPLIT") {
-        const assignments = assignmentsQuery.data || [];
-        for (const assignment of assignments) {
+        const currentAssignments = bundle?.assignments ?? [];
+        for (const assignment of currentAssignments) {
           const deleteResult = await (supabase
             .from("dispatch_assignments" as any)
             .delete()
@@ -173,10 +176,8 @@ export function useDispatchConfig() {
 
       return updatedConfig;
     },
-    onSuccess: (data) => {
-      qc.setQueryData(["dispatch-config", activeBranchId], data);
-      qc.invalidateQueries({ queryKey: ["dispatch-config", activeBranchId] });
-      qc.invalidateQueries({ queryKey: ["dispatch-assignments", data.id] });
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] });
       toast.success("Configuracion de despacho actualizada");
     },
     onError: (error: any) => {
@@ -186,9 +187,10 @@ export function useDispatchConfig() {
 
   const updateAssignment = useMutation({
     mutationFn: async (params: { userId: string; dispatchType: DispatchType; fullName?: string }) => {
-      if (!configQuery.data?.id) throw new Error("No config");
+      const bundle = qc.getQueryData<DispatchBootstrap>(["dispatch-bootstrap", activeBranchId]);
+      if (!bundle?.config?.id) throw new Error("No config");
 
-      const existingAssignments = (assignmentsQuery.data || []).filter((assignment) => assignment.user_id === params.userId);
+      const existingAssignments = (bundle.assignments || []).filter((assignment) => assignment.user_id === params.userId);
       for (const assignment of existingAssignments) {
         const deleteResult = await (supabase
           .from("dispatch_assignments" as any)
@@ -201,7 +203,7 @@ export function useDispatchConfig() {
       const insertResult = await (supabase
         .from("dispatch_assignments" as any)
         .insert({
-          dispatch_config_id: configQuery.data.id,
+          dispatch_config_id: bundle.config.id,
           user_id: params.userId,
           dispatch_type: params.dispatchType,
         })
@@ -212,7 +214,7 @@ export function useDispatchConfig() {
       return insertResult.data as DispatchAssignment;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dispatch-assignments", configQuery.data?.id] });
+      void qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] });
       toast.success("Despachador asignado");
     },
     onError: () => {
@@ -238,7 +240,7 @@ export function useDispatchConfig() {
       if (deleteResult.error) throw deleteResult.error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dispatch-assignments", configQuery.data?.id] });
+      void qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] });
       toast.success("Asignacion eliminada");
     },
     onError: () => {
@@ -247,11 +249,11 @@ export function useDispatchConfig() {
   });
 
   return {
-    config: configQuery.data,
-    assignments: assignmentsQuery.data || [],
-    isLoading: configQuery.isLoading || assignmentsQuery.isLoading,
-    isConfigLoading: configQuery.isLoading,
-    isAssignmentsLoading: assignmentsQuery.isLoading,
+    config,
+    assignments,
+    isLoading: bootstrapQuery.isLoading,
+    isConfigLoading: bootstrapQuery.isLoading,
+    isAssignmentsLoading: false,
     updateConfig,
     updateAssignment,
     removeAssignment,

@@ -90,20 +90,28 @@ export interface OrderSummary {
   items: OrderItemSummary[];
 }
 
-export function useOrdersByStatus(status: OrderStatus | null = null) {
+export function useOrdersByStatus(
+  status: OrderStatus | null = null,
+  options?: { enabled?: boolean },
+) {
+  const qc = useQueryClient();
   const { activeBranchId } = useBranch();
-  const qc = useQueryClient(); // Add useQueryClient if needed, wait, the original didn't have it.
   const { data: shiftGate } = useBranchShiftGate();
 
   return useQuery({
     queryKey: ["orders", activeBranchId, status, shiftGate?.shiftId ?? "_"],
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
 
-      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId);
+      const openShiftId = await qc.ensureQueryData({
+        queryKey: ["open-cash-shift-id", activeBranchId],
+        queryFn: () => getOpenCashShiftIdForBranch(activeBranchId),
+        staleTime: 0,
+        gcTime: 10 * 60_000,
+      });
       if (!openShiftId) return [];
 
       const cancelledView = status === "CANCELLED";
@@ -186,10 +194,17 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
       }
 
       if (cancelledView) {
-        const cancellationHeaders = await dbSelect<any>("order_cancellations", {
-          select: "order_id, status, created_at",
-          filters: [{ column: "status", op: "eq", value: "APPLIED" }]
-        });
+        const shiftOrderIds = orders.map((order) => order.id).filter(Boolean);
+        const cancellationHeaders =
+          shiftOrderIds.length === 0
+            ? []
+            : ((await dbSelect<any>("order_cancellations", {
+                select: "order_id, status, created_at",
+                filters: [
+                  { column: "status", op: "eq", value: "APPLIED" },
+                  { column: "order_id", op: "in", value: shiftOrderIds },
+                ],
+              })) ?? []);
 
         const cancelledOrderIds = new Set<string>();
         for (const header of cancellationHeaders ?? []) {
@@ -850,6 +865,6 @@ export function useOrdersByStatus(status: OrderStatus | null = null) {
           return true;
         });
     },
-    enabled: !!activeBranchId,
+    enabled: Boolean(activeBranchId) && (options?.enabled ?? true),
   });
 }

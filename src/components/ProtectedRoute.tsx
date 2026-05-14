@@ -52,7 +52,7 @@ const ProtectedRoute = ({
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const location = useLocation();
-  const { preferredPath, firstVisiblePath, canAccessAdmin: preferredCanAccessAdmin, isLoading: preferredPathLoading } = usePreferredHomePath();
+  const { preferredPath, firstVisiblePath, canAccessAdmin: preferredCanAccessAdmin } = usePreferredHomePath();
   const { visibleItems } = useVisibleNavItems();
 
   if (loading) {
@@ -65,7 +65,8 @@ const ProtectedRoute = ({
 
   if (!user) return <Navigate to="/login" replace />;
 
-  if (requiresOpenShift && (shiftGateQuery.isLoading || preferredPathLoading)) {
+  /** Solo turno: no esperar `usePreferredHomePath` (incluye config despacho) para montar la pantalla. */
+  if (requiresOpenShift && shiftGateQuery.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
