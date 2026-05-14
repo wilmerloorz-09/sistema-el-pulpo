@@ -1,5 +1,4 @@
 ﻿import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
-import { motion } from "framer-motion";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   compareSiblingOrderTabs,
@@ -57,6 +56,17 @@ import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 /** Una sola RPC create_dine_in_order por mesa+orden optimista (evita doble creación en Strict Mode). */
 const mesaOpenDineInCreateByKey = new Map<string, Promise<string>>();
+
+/** Estado en tarjetas del selector de cuentas (mesa). */
+const MESA_PICKER_CARD_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Borrador",
+  SENT_TO_KITCHEN: "En caja",
+  READY: "Listo",
+  KITCHEN_DISPATCHED: "Despachado",
+  PAID: "Pagado",
+  CANCELLED: "Anulada",
+  PENDING_CANCELLATION: "Pendiente",
+};
 
 interface SelectedProduct {
   id: string;
@@ -899,6 +909,7 @@ const OrdenesContent = () => {
         id: order.id,
         order_number: order.order_number,
         order_code: order.order_code,
+        status: order.status,
         split_code: order.split_code ?? null,
         table_order_position: Number(order.table_order_position ?? 0) || null,
         created_at: order.created_at ?? null,
@@ -941,11 +952,18 @@ const OrdenesContent = () => {
         ? fetchTakeoutSiblingOrders(order!.branch_id)
         : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
     enabled: isTakeoutOrder ? !!order?.branch_id : !!order?.table_id,
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: isTakeoutOrder ? 0 : 8_000,
+    refetchOnMount: isTakeoutOrder ? "always" : true,
     gcTime: 2 * 60_000,
-    /** Sin placeholder en mesa: evita pestañas falsas antes de purgar/listar hermanos. Para llevar mantiene la orden actual. */
-    placeholderData: isTakeoutOrder && currentTableOrder ? [currentTableOrder] : undefined,
+    /** Mesa: datos precargados desde Mesas/MesasV2 en caché. Llevar: orden actual mientras llegan hermanos. */
+    placeholderData: () => {
+      if (isTakeoutOrder) {
+        return currentTableOrder ? [currentTableOrder] : undefined;
+      }
+      const tid = order?.table_id;
+      if (!tid) return undefined;
+      return qc.getQueryData(["table-orders", tid]) as SiblingOrder[] | undefined;
+    },
   });
 
   /** Lista de hermanos en mesa (solo DINE_IN): misma regla que `mergedTableOrders` para gestos táctiles. */
@@ -955,6 +973,7 @@ const OrdenesContent = () => {
       id: order.id,
       order_number: order.order_number,
       order_code: order.order_code,
+      status: order.status,
       split_code: order.split_code ?? null,
       table_order_position: Number(order.table_order_position ?? 0) || null,
       created_at: order.created_at ?? null,
@@ -1557,7 +1576,7 @@ const OrdenesContent = () => {
     );
   }
 
-  if (isLoading || shiftGateQuery.isLoading) {
+  if (isLoading && !order) {
     return <OrdenesSkeleton />;
   }
 
@@ -1889,6 +1908,7 @@ const OrdenesContent = () => {
               id: newOrderId,
               order_number: null,
               order_code: null,
+              status: "DRAFT",
               split_code: null,
               table_order_position: tableOrders.length + 1,
               item_count: 0,
@@ -1905,6 +1925,7 @@ const OrdenesContent = () => {
               id: newOrderId,
               order_number: null,
               order_code: null,
+              status: "DRAFT",
               split_code: null,
               table_order_position: tableOrders.length + 1,
               item_count: 0,
@@ -1918,6 +1939,7 @@ const OrdenesContent = () => {
           id: newOrderId,
           order_number: null,
           order_code: null,
+          status: "DRAFT",
           split_code: null,
           table_order_position: mergedTableOrders.length + 1,
           item_count: 0,
@@ -3105,22 +3127,20 @@ const OrdenesContent = () => {
         <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="scrollbar-none flex-1 overflow-y-auto px-2.5 pb-24 pt-3 sm:px-4 sm:pb-24 md:px-6 md:pb-24 md:pt-4">
             <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]">
-              {mergedTableOrders.map((tableOrder, index) => {
+              {mergedTableOrders.map((tableOrder) => {
                 const previewLines = tableOrder.item_preview_lines ?? [];
                 const isSel = tableOrder.id === order.id;
-                const cardDraft = previewLines.length === 0;
+                const isDraftOrder = String(tableOrder.status ?? "DRAFT") === "DRAFT";
+                const cardDraft = previewLines.length === 0 && isDraftOrder;
                 return (
-                  <motion.button
+                  <button
                     key={tableOrder.id}
                     type="button"
-                    initial={{ opacity: 0, scale: 0.97 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: (index + 1) * 0.04 }}
                     onClick={() =>
                       navigate(`/ordenes?order=${tableOrder.id}${sourceParamsNoMesaCards}`, { replace: true })
                     }
                     className={cn(
-                      "relative flex min-h-[132px] flex-col rounded-[22px] border-2 p-3 text-left shadow-sm transition-shadow hover:shadow-md sm:min-h-[148px] sm:rounded-[26px] sm:p-3.5",
+                      "relative flex min-h-[132px] flex-col overflow-hidden rounded-[22px] border-2 p-0 text-left shadow-sm transition-shadow hover:shadow-md sm:min-h-[148px] sm:rounded-[26px]",
                       cardDraft
                         ? "border-sky-300/90 bg-gradient-to-br from-sky-50 via-white to-cyan-50 dark:border-sky-800 dark:from-sky-950/25 dark:via-card dark:to-cyan-950/20"
                         : "border-orange-300/90 bg-gradient-to-br from-orange-50 via-white to-amber-50 dark:border-primary/35 dark:from-orange-950/25 dark:via-card dark:to-amber-950/20",
@@ -3129,27 +3149,40 @@ const OrdenesContent = () => {
                   >
                     <div
                       className={cn(
-                        "mb-2 flex shrink-0 items-center gap-2 px-0.5",
-                        cardDraft ? "text-sky-800 dark:text-sky-300" : "text-orange-950 dark:text-orange-200",
+                        "shrink-0 border-b px-3 pb-2.5 pt-3 shadow-[0_3px_10px_-4px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.75)] sm:px-3.5 sm:pb-3 sm:pt-3.5 dark:shadow-[0_3px_12px_-4px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]",
+                        cardDraft
+                          ? "border-sky-300/80 bg-gradient-to-b from-white to-sky-100/90 dark:border-sky-700/70 dark:from-sky-900/55 dark:to-sky-950/40"
+                          : "border-orange-300/80 bg-gradient-to-b from-white to-orange-100/85 dark:border-orange-800/60 dark:from-orange-950/45 dark:to-orange-950/25",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "h-px min-w-[0.75rem] flex-1 rounded-full",
-                          cardDraft ? "bg-sky-300/80 dark:bg-sky-600/70" : "bg-orange-300/80 dark:bg-orange-600/60",
-                        )}
-                      />
-                      <span className="shrink-0 whitespace-nowrap text-center text-[11px] font-black tabular-nums sm:text-xs">
-                        Orden #{getOrdenNumeroParaCabeceraMesa(tableOrder)}
-                      </span>
-                      <span
-                        className={cn(
-                          "h-px min-w-[0.75rem] flex-1 rounded-full",
-                          cardDraft ? "bg-sky-300/80 dark:bg-sky-600/70" : "bg-orange-300/80 dark:bg-orange-600/60",
-                        )}
-                      />
+                      <div className="flex items-start justify-between gap-2">
+                        <span
+                          className={cn(
+                            "min-w-0 shrink text-left text-[11px] font-black tabular-nums sm:text-xs",
+                            cardDraft ? "text-sky-950 dark:text-sky-100" : "text-orange-950 dark:text-orange-50",
+                          )}
+                        >
+                          Orden #{getOrdenNumeroParaCabeceraMesa(tableOrder)}
+                        </span>
+                        <span
+                          className={cn(
+                            "max-w-[58%] shrink-0 truncate text-right text-[10px] font-bold leading-tight sm:text-[11px]",
+                            cardDraft ? "text-sky-800 dark:text-sky-300" : "text-orange-900 dark:text-orange-200/95",
+                          )}
+                          title={MESA_PICKER_CARD_STATUS_LABEL[String(tableOrder.status ?? "DRAFT")] ?? String(tableOrder.status ?? "")}
+                        >
+                          {MESA_PICKER_CARD_STATUS_LABEL[String(tableOrder.status ?? "DRAFT")] ?? String(tableOrder.status ?? "")}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+                    <div
+                      className={cn(
+                        "flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 py-2.5 sm:px-3.5 sm:py-3",
+                        cardDraft
+                          ? "bg-sky-50/80 shadow-[inset_0_2px_8px_rgba(14,116,144,0.08)] dark:bg-sky-950/30 dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.35)]"
+                          : "bg-white/60 shadow-[inset_0_2px_10px_rgba(234,88,12,0.07)] dark:bg-black/25 dark:shadow-[inset_0_2px_12px_rgba(0,0,0,0.4)]",
+                      )}
+                    >
                       {previewLines.length > 0 ? (
                         previewLines.map((line, lineIdx) => (
                           <p
@@ -3171,11 +3204,11 @@ const OrdenesContent = () => {
                             cardDraft ? "text-sky-700 dark:text-sky-400" : "text-muted-foreground",
                           )}
                         >
-                          Borrador
+                          {isDraftOrder ? "Borrador" : "Sin líneas"}
                         </p>
                       )}
                     </div>
-                  </motion.button>
+                  </button>
                 );
               })}
             </div>

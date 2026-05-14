@@ -61,7 +61,12 @@ export interface SiblingOrder {
 
 /** Texto compacto para tarjetas de mesa: cantidad + descripcion (snapshot). */
 export function buildItemPreviewLinesForTableCard(
-  items: Array<{ quantity?: number; description_snapshot?: string; status?: string | null }>,
+  items: Array<{
+    quantity?: number;
+    quantity_ordered?: number;
+    description_snapshot?: string;
+    status?: string | null;
+  }>,
   descriptionMaxLen = 36,
 ): Array<{ quantity: number; description: string }> {
   const short = (raw: string) => {
@@ -72,16 +77,25 @@ export function buildItemPreviewLinesForTableCard(
 
   return items
     .filter((it) => {
-      const q = Math.max(0, Number(it.quantity ?? 0));
-      if (q <= 0) return false;
       const st = String(it.status ?? "");
       if (st === "CANCELLED" || st.includes("CANCELLED")) return false;
-      return true;
+      const q = Math.max(0, Number(it.quantity ?? 0));
+      const qOrd = Math.max(0, Number(it.quantity_ordered ?? 0));
+      const effective = Math.max(q, qOrd);
+      if (effective > 0) return true;
+      /** Tras cobrar, `quantity` puede ser 0 y no hay columna `quantity_ordered` en la fila de BD. */
+      if ((st === "PAID" || st === "DISPATCHED") && String(it.description_snapshot ?? "").trim()) return true;
+      return false;
     })
-    .map((it) => ({
-      quantity: Math.max(0, Number(it.quantity ?? 0)),
-      description: short(String(it.description_snapshot ?? "").trim() || "Item"),
-    }));
+    .map((it) => {
+      const q = Math.max(0, Number(it.quantity ?? 0));
+      const qOrd = Math.max(0, Number(it.quantity_ordered ?? 0));
+      const displayQty = q > 0 ? q : qOrd > 0 ? qOrd : 1;
+      return {
+        quantity: displayQty,
+        description: short(String(it.description_snapshot ?? "").trim() || "Item"),
+      };
+    });
 }
 
 function isBlockedPaymentNotes(notes: string | null) {
@@ -317,6 +331,7 @@ export async function fetchSiblingOrders(
         id: sibling.id,
         order_number: sibling.order_number,
         order_code: sibling.order_code ?? null,
+        status: String(sibling.status ?? "DRAFT"),
         split_code: splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null,
         table_order_position: Number(sibling.table_order_position ?? 0) || null,
         created_at: sibling.created_at ?? null,
@@ -409,7 +424,6 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     splitResult,
     items,
     snapshotResult,
-    siblings,
     creatorProfiles,
   ] = await Promise.all([
     fetchOrderTableName(order.table_id),
@@ -424,7 +438,6 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     supabase.rpc("get_order_operational_snapshot" as any, {
       p_order_id: orderId,
     }),
-    order.table_id ? fetchSiblingOrders(order.table_id, order.branch_id, orderId) : Promise.resolve([] as SiblingOrder[]),
     order.created_by
       ? dbSelect<any>("profiles", {
           select: "id, first_name, full_name, username, email",
@@ -432,6 +445,9 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
         })
       : Promise.resolve([]),
   ]);
+
+  /** La pantalla de ordenes ya carga hermanos con `table-orders`; evitar segunda llamada aqui. */
+  const siblings: SiblingOrder[] = [];
 
   const tableName = tableResult ?? order.table_name_snapshot;
   const splitCode = (splitResult as any[])[0]?.split_code ?? null;
@@ -446,12 +462,20 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     
   const itemIds = items.map((item: any) => item.id);
   const paidQuantityByItem: Record<string, number> = {};
+  let modifiersData: any[] = [];
 
   if (itemIds.length > 0) {
-    const paymentItems = await dbSelect<any>("payment_items", {
-      select: "payment_id, order_item_id, quantity_paid",
-      filters: [{ column: "order_item_id", op: "in", value: itemIds }]
-    });
+    const [paymentItems, mods] = await Promise.all([
+      dbSelect<any>("payment_items", {
+        select: "payment_id, order_item_id, quantity_paid",
+        filters: [{ column: "order_item_id", op: "in", value: itemIds }],
+      }),
+      dbSelect<any>("order_item_modifiers", {
+        select: "id, modifier_id, order_item_id, modifiers(description)",
+        filters: [{ column: "order_item_id", op: "in", value: itemIds }],
+      }),
+    ]);
+    modifiersData = mods ?? [];
 
     const paymentIds = Array.from(new Set((paymentItems ?? []).map((row: any) => row.payment_id).filter(Boolean)));
     let blockedPaymentIds = new Set<string>();
@@ -459,7 +483,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     if (paymentIds.length > 0) {
       const payments = await dbSelect<any>("payments", {
         select: "id, notes",
-        filters: [{ column: "id", op: "in", value: paymentIds }]
+        filters: [{ column: "id", op: "in", value: paymentIds }],
       });
 
       blockedPaymentIds = new Set(
@@ -473,15 +497,6 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       if (blockedPaymentIds.has(row.payment_id)) continue;
       paidQuantityByItem[row.order_item_id] = (paidQuantityByItem[row.order_item_id] ?? 0) + Number(row.quantity_paid ?? 0);
     }
-  }
-
-  let modifiersData: any[] = [];
-  if (itemIds.length > 0) {
-    const mods = await dbSelect<any>("order_item_modifiers", {
-      select: "id, modifier_id, order_item_id, modifiers(description)",
-      filters: [{ column: "order_item_id", op: "in", value: itemIds }]
-    });
-    modifiersData = mods ?? [];
   }
 
   const pendingRequestQtyByItem: Record<string, number> = {};

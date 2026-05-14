@@ -185,6 +185,7 @@ const MesasV2 = () => {
       }
       try {
         const siblings = await fetchSiblingOrders(tableId, activeBranchId, orderId);
+        qc.setQueryData(["table-orders", tableId], siblings);
         const mesaCards = siblings.length > 1;
         navigate(`/ordenes?${mesasV2OrdenesSearch({ order: orderId, mesaCards })}`, { replace: true });
       } catch {

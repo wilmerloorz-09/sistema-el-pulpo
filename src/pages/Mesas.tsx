@@ -186,6 +186,7 @@ const Mesas = () => {
       }
       try {
         const siblings = await fetchSiblingOrders(tableId, activeBranchId, orderId);
+        qc.setQueryData(["table-orders", tableId], siblings);
         goOrdenesMesas(orderId, { mesaCards: siblings.length > 1 });
       } catch {
         goOrdenesMesas(orderId);
