@@ -68,6 +68,29 @@ function formatMoney(value: number | null | undefined) {
   return `$${Number(value ?? 0).toFixed(2)}`;
 }
 
+/** Misma lógica que en `OrderListRow` (mesa / órdenes): conteo por modificador alineado a la cantidad de línea. */
+function consolidateModifiersForDisplay(
+  modifiers: { description: string }[],
+  lineVisibleQty: number,
+): Array<{ description: string; count: number; key: string }> {
+  const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
+  for (const mod of modifiers) {
+    const desc = (mod.description || "").trim();
+    if (!desc) continue;
+    const key = desc.toLowerCase();
+    if (!modCounts[key]) {
+      modCounts[key] = { description: desc, count: lineVisibleQty, firstId: key };
+    } else {
+      modCounts[key].count += lineVisibleQty;
+    }
+  }
+  return Object.values(modCounts).map((mc) => ({
+    description: mc.description,
+    count: mc.count,
+    key: mc.firstId,
+  }));
+}
+
 function QuantityStepper({
   value,
   min,
@@ -393,16 +416,15 @@ export function DispatchCardBase({
                     </p>
                     {item.modifiers.length > 0 ? (
                       <div className="mt-1 flex flex-col gap-1">
-                        {item.modifiers
-                          .filter((mod) => String(mod.description ?? "").trim().length > 0)
-                          .map((mod, idx) => (
-                            <p
-                              key={idx}
-                              className="break-words whitespace-normal font-semibold text-red-700 text-sm"
-                            >
-                              - {mod.description}
-                            </p>
-                          ))}
+                        {consolidateModifiersForDisplay(item.modifiers, activeQuantity).map((mc) => (
+                          <p
+                            key={`${item.id}-modifier-${mc.key}`}
+                            className="break-words whitespace-normal text-sm font-semibold text-red-700"
+                          >
+                            - {mc.description}
+                            {mc.count > 1 ? ` (${mc.count})` : ""}
+                          </p>
+                        ))}
                       </div>
                     ) : null}
                     {trimmedItemNote ? (
