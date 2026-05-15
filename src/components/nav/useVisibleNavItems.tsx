@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -44,6 +44,17 @@ const NAV_ITEMS: AppNavItem[] = [
       active: "from-amber-500 to-yellow-300",
       idle: "hover:border-amber-200 hover:bg-amber-50/90 hover:text-amber-700",
       iconIdle: "bg-amber-50 text-amber-600",
+    },
+    visible: (permissions) => canView(permissions, "mesas"),
+  },
+  {
+    to: "/express",
+    label: "Express",
+    icon: <Zap className="h-5 w-5" />,
+    tone: {
+      active: "from-violet-500 to-fuchsia-400",
+      idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
+      iconIdle: "bg-violet-50 text-violet-600",
     },
     visible: (permissions) => canView(permissions, "mesas"),
   },
@@ -184,11 +195,11 @@ export function useVisibleNavItems() {
         return true;
       }
 
-      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
+      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
         }
-        if (item.to === "/para-llevar" || item.to === "/orden-especial") {
+        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
           return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
         }
         if (item.to === "/editar-orden") {

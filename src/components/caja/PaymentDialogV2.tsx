@@ -164,9 +164,15 @@ export default function PaymentDialogV2({
     () => unpaidPayableLines.reduce((s, i) => s + Math.floor(Number(i.quantity_pending ?? 0)), 0),
     [unpaidPayableLines],
   );
-  const canOfferItemSplit = Boolean(
-    order && !order.is_special && unpaidPayableLines.length > 0 && (totalPendingUnits > 1 || unpaidPayableLines.length > 1),
+  const wouldOfferItemSplit = Boolean(
+    order
+    && !order.is_special
+    && unpaidPayableLines.length > 0
+    && (totalPendingUnits > 1 || unpaidPayableLines.length > 1),
   );
+  const isExpressOrder = order?.order_type === "EXPRESS";
+  const canOfferItemSplit = wouldOfferItemSplit && !isExpressOrder;
+  const showDisabledItemSplit = wouldOfferItemSplit && isExpressOrder;
 
   useEffect(() => {
     if (!open) {
@@ -738,6 +744,17 @@ export default function PaymentDialogV2({
                           size="sm"
                           className="mt-2 h-8 border-sky-300 bg-white/90 text-xs font-semibold text-sky-900 hover:bg-sky-100"
                           onClick={() => setSplitItemsDialogOpen(true)}
+                        >
+                          Dividir pago
+                        </Button>
+                      ) : showDisabledItemSplit && !readOnly ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled
+                          title="Express solo permite cobro total de la orden"
+                          className="mt-2 h-8 cursor-not-allowed border-sky-200 bg-white/60 text-xs font-semibold text-sky-700/60"
                         >
                           Dividir pago
                         </Button>

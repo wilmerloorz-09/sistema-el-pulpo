@@ -119,15 +119,18 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
           const mesasListOrigin = searchParams.get("origin");
           const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
           const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
+          const isOriginExpress = searchParams.get("origin") === "express";
           const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
           const isItemActive = item.to === "/mesas"
             ? (location.pathname === "/mesas" || location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasList))
             : item.to === "/para-llevar"
               ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
+              : item.to === "/express"
+                ? (location.pathname === "/express" || (location.pathname === "/ordenes" && isOriginExpress))
               : item.to === "/orden-especial"
                 ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
             : item.to === "/ordenes"
-              ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginOrdenEspecial)
+              ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginOrdenEspecial)
               : location.pathname === item.to;
           const hasSubItems = (item.subItems?.length ?? 0) > 0;
 

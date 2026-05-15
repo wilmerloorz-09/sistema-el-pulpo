@@ -11,6 +11,7 @@ export interface DispatchConfig {
   dispatch_mode: DispatchMode;
   table_enabled: boolean;
   takeout_enabled: boolean;
+  express_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -23,7 +24,7 @@ export interface DispatchAssignment {
   created_at: string;
 }
 
-type DispatchConfigUpdate = Partial<Pick<DispatchConfig, "dispatch_mode" | "table_enabled" | "takeout_enabled">> | DispatchMode;
+type DispatchConfigUpdate = Partial<Pick<DispatchConfig, "dispatch_mode" | "table_enabled" | "takeout_enabled" | "express_enabled">> | DispatchMode;
 
 export type DispatchBootstrap = { config: DispatchConfig; assignments: DispatchAssignment[] };
 
@@ -34,6 +35,7 @@ function createDefaultDispatchConfig(branchId: string): DispatchConfig {
     dispatch_mode: "SINGLE",
     table_enabled: true,
     takeout_enabled: true,
+    express_enabled: true,
     created_at: "",
     updated_at: "",
   };
@@ -42,7 +44,7 @@ function createDefaultDispatchConfig(branchId: string): DispatchConfig {
 async function loadConfigRow(activeBranchId: string): Promise<DispatchConfig> {
   const result = await (supabase
     .from("dispatch_config" as any)
-    .select("id, branch_id, dispatch_mode, table_enabled, takeout_enabled, created_at, updated_at")
+    .select("id, branch_id, dispatch_mode, table_enabled, takeout_enabled, express_enabled, created_at, updated_at")
     .eq("branch_id", activeBranchId)
     .maybeSingle() as any);
 
@@ -61,6 +63,7 @@ async function loadConfigRow(activeBranchId: string): Promise<DispatchConfig> {
     dispatch_mode: string;
     table_enabled?: boolean | null;
     takeout_enabled?: boolean | null;
+    express_enabled?: boolean | null;
     created_at: string;
     updated_at: string;
   };
@@ -71,6 +74,7 @@ async function loadConfigRow(activeBranchId: string): Promise<DispatchConfig> {
     dispatch_mode: row.dispatch_mode === "SPLIT" ? "SPLIT" : "SINGLE",
     table_enabled: row.table_enabled ?? true,
     takeout_enabled: row.takeout_enabled ?? true,
+    express_enabled: row.express_enabled ?? true,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -145,6 +149,7 @@ export function useDispatchConfig() {
         dispatch_mode: patch.dispatch_mode ?? currentConfig.dispatch_mode,
         table_enabled: patch.table_enabled ?? currentConfig.table_enabled,
         takeout_enabled: patch.takeout_enabled ?? currentConfig.takeout_enabled,
+        express_enabled: patch.express_enabled ?? currentConfig.express_enabled,
         updated_at: new Date().toISOString(),
       };
 
@@ -154,7 +159,7 @@ export function useDispatchConfig() {
           onConflict: "branch_id",
           ignoreDuplicates: false,
         })
-        .select("id, branch_id, dispatch_mode, table_enabled, takeout_enabled, created_at, updated_at")
+        .select("id, branch_id, dispatch_mode, table_enabled, takeout_enabled, express_enabled, created_at, updated_at")
         .single() as any);
 
       if (upsertResult.error) throw upsertResult.error;

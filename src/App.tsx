@@ -19,6 +19,7 @@ import MesasV2 from "./pages/MesasV2";
 import Ordenes from "./pages/Ordenes";
 import EditarOrden from "./pages/EditarOrden";
 import ParaLlevar from "./pages/ParaLlevar";
+import Express from "./pages/Express";
 import OrdenEspecial from "./pages/OrdenEspecial";
 import Despacho from "./pages/Despacho";
 import Productos from "./pages/Productos";
@@ -315,6 +316,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
                       <ParaLlevar />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/express"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                      <Express />
                     </ProtectedRoute>
                   }
                 />

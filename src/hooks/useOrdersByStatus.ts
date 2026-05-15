@@ -143,6 +143,10 @@ export function useOrdersByStatus(
         })
       ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
+      if (sentView) {
+        orders = orders.filter((o) => o.order_type !== "EXPRESS");
+      }
+
       if (dispatchedView && orders.length > 0) {
         const candidateDispatchedOrderIds = orders.map((order) => order.id).filter(Boolean);
         const dispatchEvents = candidateDispatchedOrderIds.length > 0

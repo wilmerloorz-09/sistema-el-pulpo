@@ -5,6 +5,7 @@ import {
   fetchOrderDetail,
   fetchSiblingOrders,
   fetchTakeoutSiblingOrders,
+  fetchExpressSiblingOrders,
   getOrderQueryKey,
   isTemporaryOrderItemId,
   seedDineInDraftOrderCache,
@@ -40,7 +41,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu } from "lucide-react";
+import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu, Truck } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM } from "@/lib/mesasFlow";
@@ -50,6 +51,7 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
 import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { getOrderStatusLabel } from "@/lib/orderFlow";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
@@ -599,6 +601,7 @@ const OrdenesContent = () => {
     removeItem,
     updateQuantity,
     sendToKitchen,
+    sendToDispatch,
     moveToTable,
     createTableOrder,
     deleteTableOrder,
@@ -649,6 +652,8 @@ const OrdenesContent = () => {
   const sourceParams = (fromEditar ? "&from=editar" : "") + originParam + mesaCardsParam;
   const sourceParamsNoMesaCards = (fromEditar ? "&from=editar" : "") + originParam;
   const isTakeoutOrder = order?.order_type === "TAKEOUT" && !order?.is_tray_order && !order?.is_special;
+  const isExpressOrder = order?.order_type === "EXPRESS" && !order?.is_tray_order && !order?.is_special;
+  const isTakeoutMenuOrder = isTakeoutOrder || isExpressOrder;
 
   const canOperateMesasForOpen =
     canOperate(permissions, "mesas")
@@ -811,7 +816,7 @@ const OrdenesContent = () => {
     ? trayMenuScope
     : pendingMenuScopeSelection
       ? pendingMenuScopeSelection
-    : order?.order_type === "TAKEOUT"
+    : order?.order_type === "TAKEOUT" || order?.order_type === "EXPRESS"
       ? "TAKEOUT"
       : persistedMenuScope;
   const tablesQuery = useTablesWithStatus();
@@ -926,8 +931,8 @@ const OrdenesContent = () => {
 
   const isBulkScopeSelection = currentMenuScope === "BULK";
   const shouldCalculateBulkIncludedByAmount = isBulkScopeSelection && isPlatosRootCategory(selectedProductRootName);
-  const showMenuScopeTabs = order?.order_type === "DINE_IN" || isTakeoutOrder;
-  const menuScopeOptions: Array<{ value: MenuScope; label: string; icon: ReactNode; className: string }> = isTakeoutOrder
+  const showMenuScopeTabs = order?.order_type === "DINE_IN" || isTakeoutMenuOrder;
+  const menuScopeOptions: Array<{ value: MenuScope; label: string; icon: ReactNode; className: string }> = isTakeoutMenuOrder
     ? [
         {
           value: "TAKEOUT",
@@ -1006,18 +1011,24 @@ const OrdenesContent = () => {
   }, [order?.items, stagedDirty]);
 
   const tableOrdersQuery = useQuery({
-    queryKey: isTakeoutOrder ? ["takeout-orders", order?.branch_id ?? null] : ["table-orders", order?.table_id ?? null],
+    queryKey: isExpressOrder
+      ? ["express-orders", order?.branch_id ?? null]
+      : isTakeoutOrder
+        ? ["takeout-orders", order?.branch_id ?? null]
+        : ["table-orders", order?.table_id ?? null],
     queryFn: () =>
-      isTakeoutOrder
-        ? fetchTakeoutSiblingOrders(order!.branch_id)
-        : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
-    enabled: isTakeoutOrder ? !!order?.branch_id : !!order?.table_id,
-    staleTime: isTakeoutOrder ? 0 : 8_000,
-    refetchOnMount: isTakeoutOrder ? "always" : true,
+      isExpressOrder
+        ? fetchExpressSiblingOrders(order!.branch_id)
+        : isTakeoutOrder
+          ? fetchTakeoutSiblingOrders(order!.branch_id)
+          : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
+    enabled: isTakeoutMenuOrder ? !!order?.branch_id : !!order?.table_id,
+    staleTime: isTakeoutMenuOrder ? 0 : 8_000,
+    refetchOnMount: isTakeoutMenuOrder ? "always" : true,
     gcTime: 2 * 60_000,
-    /** Mesa: datos precargados desde Mesas/MesasV2 en caché. Llevar: orden actual mientras llegan hermanos. */
+    /** Mesa: datos precargados desde Mesas/MesasV2 en caché. Llevar/Express: orden actual mientras llegan hermanos. */
     placeholderData: () => {
-      if (isTakeoutOrder) {
+      if (isTakeoutMenuOrder) {
         return currentTableOrder ? [currentTableOrder] : undefined;
       }
       const tid = order?.table_id;
@@ -1210,6 +1221,8 @@ const OrdenesContent = () => {
           navigate(mesasListPathForOrigin(origin), { replace: true });
         } else if (sourceParams.includes("origin=para-llevar")) {
           navigate("/para-llevar", { replace: true });
+        } else if (sourceParams.includes("origin=express")) {
+          navigate("/express", { replace: true });
         } else if (sourceParams.includes("origin=orden-especial")) {
           navigate("/orden-especial", { replace: true });
         } else {
@@ -1283,6 +1296,8 @@ const OrdenesContent = () => {
         qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
         if (sourceParams.includes("origin=para-llevar")) {
           navigate("/para-llevar", { replace: true });
+        } else if (sourceParams.includes("origin=express")) {
+          navigate("/express", { replace: true });
         } else if (sourceParams.includes("origin=orden-especial")) {
           navigate("/orden-especial", { replace: true });
         } else {
@@ -1345,6 +1360,8 @@ const OrdenesContent = () => {
       ? "/editar-orden"
       : originValue === "para-llevar"
         ? "/para-llevar"
+        : originValue === "express"
+          ? "/express"
         : originValue === "orden-especial"
           ? "/orden-especial"
           : isMesasListOrigin(originValue)
@@ -1490,6 +1507,33 @@ const OrdenesContent = () => {
     };
   }, [isTakeoutOrder, navigate, order, sourceParams]);
 
+  useEffect(() => {
+    if (!order || !isExpressOrder) return;
+
+    if (order.status === "KITCHEN_DISPATCHED" || order.status === "PAID") {
+      navigate("/express", { replace: true });
+      return;
+    }
+
+    let cancelled = false;
+    void fetchExpressSiblingOrders(order.branch_id)
+      .then((orders) => {
+        if (cancelled) return;
+        const currentOrderIsStillActive = orders.some((expressOrder) => expressOrder.id === order.id);
+        if (currentOrderIsStillActive) return;
+
+        const nextOrderId = orders.find((expressOrder) => expressOrder.id !== order.id)?.id ?? null;
+        navigate(nextOrderId ? `/ordenes?order=${nextOrderId}${sourceParams}` : "/express", { replace: true });
+      })
+      .catch(() => {
+        if (!cancelled) navigate("/express", { replace: true });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isExpressOrder, navigate, order, order?.status, sourceParams]);
+
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
       ? pendingMenuScopeSelection
@@ -1531,6 +1575,11 @@ const OrdenesContent = () => {
       return;
     }
 
+    if (origin === "express" || isExpressOrder) {
+      navigate("/express", { replace: true });
+      return;
+    }
+
     if (isMesasListOrigin(origin) || order?.table_id) {
       navigate(mesasListPathForOrigin(origin), { replace: true });
       return;
@@ -1542,7 +1591,7 @@ const OrdenesContent = () => {
     }
 
     navigate("/ordenes", { replace: true });
-  }, [fromEditar, isTakeoutOrder, navigate, order?.is_special, order?.table_id, orderId, origin]);
+  }, [fromEditar, isExpressOrder, isTakeoutOrder, navigate, order?.is_special, order?.table_id, orderId, origin]);
 
   const bulkIncludedPreviewQuery = useQuery({
     queryKey: ["bulk-included-preview", activeBranchId, selectedProduct?.menu_node_id, shouldCalculateBulkIncludedByAmount],
@@ -1678,10 +1727,10 @@ const OrdenesContent = () => {
     : currentTableOrder
       ? [currentTableOrder]
       : [];
-  const visibleTableOrders = isTakeoutOrder
+  const visibleTableOrders = isTakeoutMenuOrder
     ? tableOrders.filter((tableOrder) => tableOrder.id === currentTableOrder?.id || tableOrder.item_count > 0)
     : tableOrders;
-  const mergedTableOrders = isTakeoutOrder
+  const mergedTableOrders = isTakeoutMenuOrder
     ? [...visibleTableOrders].sort(compareSiblingOrderTabs)
     : currentTableOrder
       ? visibleTableOrders
@@ -1726,7 +1775,7 @@ const OrdenesContent = () => {
   const shiftOkForSiblingOrder =
     shiftOpen ||
     (!isTakeoutOrder && (canManageOrders || isGlobalAdmin));
-  const orderGroupLabel = isTakeoutOrder ? "Para Llevar" : "mesa";
+  const orderGroupLabel = isExpressOrder ? "Express" : isTakeoutOrder ? "Para Llevar" : "mesa";
 
   const isEditableInCaja = order.status === "SENT_TO_KITCHEN";
   const isLockedFromEditar = fromEditar && !isEditableInCaja;
@@ -1745,7 +1794,7 @@ const OrdenesContent = () => {
   });
   const canSplit =
     canOperateOrders &&
-    ((order.order_type === "DINE_IN" && !!order.table_id) || isTakeoutOrder) &&
+    ((order.order_type === "DINE_IN" && !!order.table_id) || isTakeoutMenuOrder) &&
     order.status !== "CANCELLED" &&
     !isLockedFromEditar &&
     orderItems.length > 0 &&
@@ -1807,7 +1856,7 @@ const OrdenesContent = () => {
     order.status === "KITCHEN_DISPATCHED";
 
   const hasEditableOrderSurface =
-    isTakeoutOrder ||
+    isTakeoutMenuOrder ||
     Boolean(order.is_special) ||
     (order.order_type === "DINE_IN" && Boolean(order.table_id));
   const canEditDraftOrder =
@@ -1917,14 +1966,16 @@ const OrdenesContent = () => {
       ? "ORDEN ESPECIAL"
       : order.order_type === "DINE_IN"
         ? (order.table_name ?? "").trim()
-        : "PARA LLEVAR";
+        : isExpressOrder
+          ? "EXPRESS"
+          : "PARA LLEVAR";
   const statusLabel: Record<string, string> = {
-    DRAFT: "Borrador",
-    SENT_TO_KITCHEN: "En caja",
-    READY: "Lista para despachar",
-    KITCHEN_DISPATCHED: "Despachada",
-    PAID: "Pagada",
-    CANCELLED: "Cancelada",
+    DRAFT: getOrderStatusLabel("DRAFT", order.order_type),
+    SENT_TO_KITCHEN: getOrderStatusLabel("SENT_TO_KITCHEN", order.order_type),
+    READY: getOrderStatusLabel("READY", order.order_type),
+    KITCHEN_DISPATCHED: getOrderStatusLabel("KITCHEN_DISPATCHED", order.order_type),
+    PAID: getOrderStatusLabel("PAID", order.order_type),
+    CANCELLED: getOrderStatusLabel("CANCELLED", order.order_type),
   };
 
   const statusColor: Record<string, string> = {
@@ -1938,7 +1989,7 @@ const OrdenesContent = () => {
 
   const handleSplit = async () => {
     if (!user || !canOperateOrders) return;
-    if (!((order.order_type === "DINE_IN" && order.table_id) || isTakeoutOrder)) return;
+    if (!((order.order_type === "DINE_IN" && order.table_id) || isTakeoutMenuOrder)) return;
     if (order.status === "CANCELLED") return;
     if (orderItems.length <= 0) {
       toast.error("La orden actual debe tener al menos un item");
@@ -1952,7 +2003,14 @@ const OrdenesContent = () => {
     try {
       let newOrderId: string;
       const nowIso = new Date().toISOString();
-      if (isTakeoutOrder) {
+      if (isExpressOrder) {
+        const { data, error } = await supabase.rpc("create_express_order" as any, {
+          p_branch_id: order.branch_id,
+          p_created_by: user.id,
+        } as any);
+        if (error) throw error;
+        newOrderId = String(data);
+      } else if (isTakeoutOrder) {
         const { data, error } = await supabase.rpc("create_takeout_order" as any, {
           p_branch_id: order.branch_id,
           p_created_by: user.id,
@@ -1967,7 +2025,24 @@ const OrdenesContent = () => {
         throw new Error("No se pudo crear la nueva orden");
       }
 
-      if (isTakeoutOrder) {
+      if (isExpressOrder) {
+        qc.setQueryData(
+          ["express-orders", order.branch_id],
+          [
+            ...tableOrders,
+            {
+              id: newOrderId,
+              order_number: null,
+              order_code: null,
+              status: "DRAFT",
+              split_code: null,
+              table_order_position: tableOrders.length + 1,
+              item_count: 0,
+              created_at: nowIso,
+            },
+          ].sort(compareSiblingOrderTabs),
+        );
+      } else if (isTakeoutOrder) {
         qc.setQueryData(
           ["takeout-orders", order.branch_id],
           [
@@ -2032,7 +2107,9 @@ const OrdenesContent = () => {
 
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      if (isTakeoutOrder) {
+      if (isExpressOrder) {
+        qc.invalidateQueries({ queryKey: ["express-orders", order.branch_id] });
+      } else if (isTakeoutOrder) {
         qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
       }
     } catch (err: any) {
@@ -2479,7 +2556,7 @@ const OrdenesContent = () => {
                 return;
               }
 
-              if (isTakeoutOrder) {
+              if (isTakeoutMenuOrder) {
                 setPendingMenuScopeSelection("TAKEOUT");
                 return;
               }
@@ -2611,6 +2688,7 @@ const OrdenesContent = () => {
 
         <OrderItemsList
           items={fromEditar ? stagedItems : orderItems}
+          orderType={order.order_type}
           alwaysShowControls={fromEditar}
           hideItemControls={false}
           editableItemIds={[]}
@@ -2652,6 +2730,10 @@ const OrdenesContent = () => {
         <Button
           onClick={async () => {
             try {
+              if (isExpressOrder) {
+                await sendToDispatch.mutateAsync();
+                return;
+              }
               await sendToKitchen.mutateAsync();
               if (canUseCaja && (order?.id || orderId)) {
                 if (!shift || shift.caja_status !== "OPEN" || !shift.denoms || shift.denoms.length === 0) {
@@ -2660,22 +2742,26 @@ const OrdenesContent = () => {
                 }
 
                 if (isTablet10) {
-                  // Solo se abre por clic fisico aqui
                   setPaymentDialogOpenForOrderId(orderId);
                 } else {
                   toast.error("El dispositivo es demasiado pequeño para operar caja.");
                 }
               }
-            } catch (e) {
+            } catch {
               // error handled by hook
             }
           }}
-          disabled={sendToKitchen.isPending || addItem.isPending || hasTemporaryDraftItems}
+          disabled={(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems}
           title={addItem.isPending || hasTemporaryDraftItems ? "Espera a que el item termine de guardarse" : undefined}
           className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
         >
-          {sendToKitchen.isPending || addItem.isPending || hasTemporaryDraftItems ? (
+          {(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems ? (
             <Loader2 className="h-5 w-5 animate-spin" />
+          ) : isExpressOrder ? (
+            <>
+              <Truck className="h-5 w-5" />
+              Enviar a despacho - ${draftItemsTotal.toFixed(2)}
+            </>
           ) : (
             <>
               <CircleDollarSign className="h-5 w-5" />

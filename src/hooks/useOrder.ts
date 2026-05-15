@@ -408,6 +408,68 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
     .sort(compareSiblingOrderTabs);
 }
 
+export async function fetchExpressSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
+  const openShift = await getOpenCashShiftForBranch(branchId);
+  if (!openShift) return [];
+
+  const expressOrders = (
+    await dbSelect<any>("orders", {
+      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, order_items(id, total)",
+      filters: [
+        { column: "branch_id", op: "eq", value: branchId },
+        { column: "order_type", op: "eq", value: "EXPRESS" },
+        { column: "is_tray_order", op: "eq", value: false },
+        { column: "is_special", op: "eq", value: false },
+        { column: "cash_shift_id", op: "eq", value: openShift.id },
+        { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY"] },
+      ],
+      skipLocalCache: true,
+    })
+  ).filter((order) => orderBelongsToOpenCashShift(order, openShift));
+
+  if (!expressOrders || expressOrders.length === 0) return [];
+
+  const expressOrderIds = expressOrders.map((order: any) => order.id).filter(Boolean);
+  const dispatchEvents = expressOrderIds.length > 0
+    ? await dbSelect<any>("order_dispatch_events", {
+        select: "order_id",
+        filters: [
+          { column: "order_id", op: "in", value: expressOrderIds },
+          { column: "status", op: "eq", value: "APPLIED" },
+        ],
+      })
+    : [];
+  const dispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+
+  const creatorIds = Array.from(new Set(expressOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
+  const creatorProfiles = creatorIds.length > 0
+    ? await dbSelect<any>("profiles", {
+        select: "id, first_name, full_name, username, email",
+        filters: [{ column: "id", op: "in", value: creatorIds }],
+      })
+    : [];
+  const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+
+  return expressOrders
+    .filter((sibling: any) => !dispatchedOrderIds.has(sibling.id))
+    .filter((sibling: any) => !["PAID", "CANCELLED", "KITCHEN_DISPATCHED"].includes(String(sibling.status ?? "")))
+    .map((sibling) => ({
+      id: sibling.id,
+      order_number: sibling.order_number,
+      order_code: sibling.order_code ?? null,
+      status: sibling.status ?? null,
+      created_by_name: sibling.created_by ? (creatorNameMap[sibling.created_by] ?? "Usuario") : null,
+      split_code: null,
+      table_order_position: Number(sibling.table_order_position ?? 0) || null,
+      created_at: sibling.created_at ?? null,
+      item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
+      total: Array.isArray(sibling.order_items)
+        ? sibling.order_items.reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0)
+        : 0,
+    }))
+    .sort(compareSiblingOrderTabs);
+}
+
 async function fetchOrderTableName(tableId: string | null): Promise<string | null> {
   if (!tableId) return null;
 
@@ -915,6 +977,38 @@ export function useOrder(orderId: string | null) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const sendToDispatch = useMutation({
+    mutationFn: async () => {
+      const order = query.data;
+      if (!order) return;
+      if (order.order_type !== "EXPRESS") {
+        throw new Error("Solo las ordenes Express pueden enviarse a despacho desde aqui");
+      }
+
+      const draftItems = order.items.filter((item) => item.status === "DRAFT");
+      if (draftItems.length === 0) return;
+
+      const { error } = await supabase.rpc("submit_express_order_draft_items" as any, {
+        p_order_id: orderId!,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      const order = query.data;
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["express-orders"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+
+      const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
+      const message = hasSentAlready
+        ? "Nuevos items enviados a despacho"
+        : "Orden enviada a despacho";
+
+      toast.success(message);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   const moveToTable = useMutation({
     mutationFn: async (destinationTableId: string): Promise<MoveTableResult> => {
       if (!orderId) {
@@ -1133,6 +1227,7 @@ export function useOrder(orderId: string | null) {
     removeItem,
     updateQuantity,
     sendToKitchen,
+    sendToDispatch,
     moveToTable,
     createTableOrder,
     deleteTableOrder,

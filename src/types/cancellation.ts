@@ -5,7 +5,7 @@
 export type OrderItemStatus = 'DRAFT' | 'SENT' | 'DISPATCHED' | 'PAID' | 'CANCELLED';
 export type OrderStatus = 'DRAFT' | 'SENT_TO_KITCHEN' | 'READY' | 'KITCHEN_DISPATCHED' | 'PAID' | 'CANCELLED';
 export type DispatchMode = 'SINGLE' | 'SPLIT';
-export type DispatchType = 'ALL' | 'TABLE' | 'TAKEOUT';
+export type DispatchType = 'ALL' | 'TABLE' | 'TAKEOUT' | 'EXPRESS';
 export type CancellationReason = 
   | 'error_mesero'
   | 'cliente_cambio_opinion'
@@ -40,7 +40,7 @@ export interface Order {
   created_by: string;
   table_id: string | null;
   split_id: string | null;
-  order_type: 'DINE_IN' | 'TAKEOUT';
+  order_type: 'DINE_IN' | 'TAKEOUT' | 'EXPRESS';
   status: OrderStatus;
   total: number;
   created_at: string;

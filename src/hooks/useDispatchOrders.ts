@@ -42,7 +42,7 @@ export interface DispatchOrder {
   id: string;
   order_number: number | null;
   order_code: string | null;
-  order_type: "DINE_IN" | "TAKEOUT";
+  order_type: "DINE_IN" | "TAKEOUT" | "EXPRESS";
   is_special: boolean;
   is_tray_order?: boolean;
   created_by: string | null;
@@ -74,6 +74,7 @@ function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
   qc.invalidateQueries({ queryKey: ["payable-orders"] });
   qc.invalidateQueries({ queryKey: ["orders"] });
+  qc.invalidateQueries({ queryKey: ["express-orders"] });
   qc.invalidateQueries({ queryKey: ["tables-with-status"] });
 }
 
@@ -86,9 +87,10 @@ function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updat
 }
 
 function matchesScope(orderType: string, scope: DispatchView) {
-  if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT";
+  if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT" || orderType === "EXPRESS";
   if (scope === "SPECIAL") return false;
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE";
+  if (scope === "EXPRESS") return orderType === "EXPRESS";
   return orderType === "TAKEOUT";
 }
 
@@ -102,6 +104,9 @@ function paymentRowIsInactive(notes: string | null | undefined, status: string |
 
 function dispatchCardHasWork(card: DispatchOrder): boolean {
   if (card.items.length === 0) return false;
+  if (card.order_type === "EXPRESS") {
+    return card.items.some((it) => it.quantity_dispatchable > 0);
+  }
   return card.items.some((it) => it.quantity_paid > 0 && it.quantity_dispatched < it.quantity_paid);
 }
 
@@ -135,6 +140,8 @@ function groupItemsIntoDispatchCards(
     cancelledDispatchedMap,
   } = operationalMaps;
 
+  const isExpressOrder = order.order_type === "EXPRESS";
+
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
       if (item.order_id !== order.id) return false;
@@ -142,10 +149,13 @@ function groupItemsIntoDispatchCards(
       if (st === "DRAFT" || st === "CANCELLED") return false;
       const sent = !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
+      if (isExpressOrder) return Math.max(0, Math.floor(Number(item.quantity ?? 0))) > 0;
       return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId) > 0;
     })
     .map((item) => {
-      const quantityPaid = resolveDispatchLinePaidQty(item, clientPaidQtyByItemId);
+      const quantityPaid = isExpressOrder
+        ? Math.max(0, Math.floor(Number(item.quantity ?? 0)))
+        : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId);
       const quantities = computeOperationalQuantities({
         quantityOrdered: quantityPaid,
         quantityReadyTotal: readyMap[item.id] ?? 0,
@@ -253,10 +263,10 @@ export function useDispatchOrders(scope: DispatchView) {
   const query = useQuery({
     queryKey: ["dispatch-orders", activeBranchId, config?.dispatch_mode, user?.id, scope, shiftGate?.shiftId ?? "_"],
     queryFn: async () => {
-      if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
 
       const openShift = await getOpenCashShiftForBranch(activeBranchId);
-      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
 
       const ordersMerged = (
         await dbSelect<any>("orders", {
@@ -271,7 +281,7 @@ export function useDispatchOrders(scope: DispatchView) {
         })
       ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
-      if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
 
       const allOrderIds = ordersMerged.map((o) => o.id);
       const paymentsForOrders = await dbSelect<any>("payments", {
@@ -297,6 +307,9 @@ export function useDispatchOrders(scope: DispatchView) {
 
       const activeOrders = ordersMerged.filter((o) => {
         if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
+        if (o.order_type === "EXPRESS") {
+          return o.status === "SENT_TO_KITCHEN" || o.status === "READY";
+        }
         const hasAnyPay = ordersWithAnyPayment.has(o.id);
         const hasActivePay = ordersWithActivePayment.has(o.id);
         const hasPaidLine = ordersWithPaidLine.has(o.id);
@@ -308,7 +321,7 @@ export function useDispatchOrders(scope: DispatchView) {
         }
         return false;
       });
-      if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
@@ -333,7 +346,11 @@ export function useDispatchOrders(scope: DispatchView) {
         if (dispatchMode === "SPLIT") {
           if (userAssignments.length > 0 && !assignedTypes.has("ALL")) {
             baseFiltered = baseFiltered.filter((order) => {
-              const orderType = order.order_type === "DINE_IN" || order.order_type === "TABLE" ? "TABLE" : "TAKEOUT";
+              const orderType = order.order_type === "EXPRESS"
+                ? "EXPRESS"
+                : order.order_type === "DINE_IN" || order.order_type === "TABLE"
+                  ? "TABLE"
+                  : "TAKEOUT";
               return assignedTypes.has(orderType);
             });
           }
@@ -342,7 +359,7 @@ export function useDispatchOrders(scope: DispatchView) {
       };
 
       const allPermittedOrders = getPermittedForView("ALL", activeOrders);
-      if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
 
       const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
       const tableIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.table_id).filter(Boolean));
@@ -398,6 +415,7 @@ export function useDispatchOrders(scope: DispatchView) {
         ALL: allCards.length,
         TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE")).length,
         TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT").length,
+        EXPRESS: allCards.filter(c => c.order_type === "EXPRESS").length,
         SPECIAL: allCards.filter(c => c.is_special).length,
       };
 
@@ -557,7 +575,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
   return {
     orders: query.data?.orders || [],
-    counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 },
+    counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 },
     isLoading: query.isLoading,
     isError: query.isError,
     applyReadyOperation,

@@ -12,6 +12,7 @@ import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { orderIsPayableInCaja } from "@/lib/orderFlow";
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -300,7 +301,7 @@ export interface PayableOrder {
   id: string;
   order_number: number | null;
   order_code: string | null;
-  order_type: "DINE_IN" | "TAKEOUT";
+  order_type: "DINE_IN" | "TAKEOUT" | "EXPRESS";
   is_special: boolean;
   is_tray_order?: boolean;
   locked_for_editing?: boolean;
@@ -825,10 +826,13 @@ function resolvePaidQuantity(params: {
 }
 
 function getPayableQuantityForOrderType(
-  orderType: "DINE_IN" | "TAKEOUT",
+  orderType: "DINE_IN" | "TAKEOUT" | "EXPRESS",
   quantities: ReturnType<typeof computeOperationalQuantities>,
   workflowMode: string,
 ) {
+  if (orderType === "EXPRESS") {
+    return quantities.quantityDispatchedAvailable;
+  }
   if (orderType === "TAKEOUT" || workflowMode === "CASH_THEN_DISPATCH") {
     return Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
   }
@@ -1399,7 +1403,9 @@ export function useCaja(params?: {
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
       const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
-      return activeOrders
+      const payableSourceOrders = activeOrders.filter((o) => orderIsPayableInCaja(o));
+
+      return payableSourceOrders
         .map((o) => {
           const orderItems = (items ?? []).filter((i) => i.order_id === o.id && i.status !== "DRAFT");
           const mappedItems = orderItems
@@ -1416,7 +1422,7 @@ export function useCaja(params?: {
               const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
               const payableQty = (o as { is_special?: boolean | null }).is_special
                 ? activeOrderedQty
-                : getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT", quantities, activeWorkflowMode);
+                : getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT" | "EXPRESS", quantities, activeWorkflowMode);
               const paidQty = resolvePaidQuantity({
                 payableQuantity: payableQty,
                 orderedQuantity: Number(i.quantity ?? 0),
@@ -2142,26 +2148,26 @@ export function useCaja(params?: {
       const dbItems = allDbItems.filter(item => itemIds.includes(item.id));
       const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRowsData);
       const dbItemMap = Object.fromEntries(dbItems.map((item) => [item.id, item]));
+      const operationalMaps = await fetchOperationalMapsForOrders([orderId]);
 
       for (const itemSelection of itemSelections) {
         const dbItem = dbItemMap[itemSelection.itemId];
         if (!dbItem || dbItem.status === "DRAFT") {
           throw new Error("Un item borrador no puede cobrarse en caja.");
         }
-        /** CASH_THEN_DISPATCH: payable = pedido − cancelado aplicado; evita RPC get_order_operational_snapshot en cada cobro. */
         const quantities = computeOperationalQuantities({
           quantityOrdered: Number(dbItem.quantity ?? 0),
-          quantityReadyTotal: 0,
-          quantityDispatchedTotal: 0,
-          quantityCancelledPending: appliedCancelledByItem[itemSelection.itemId] ?? 0,
-          quantityCancelledReady: 0,
-          quantityCancelledDispatched: 0,
+          quantityReadyTotal: operationalMaps.readyMap[itemSelection.itemId] ?? 0,
+          quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[itemSelection.itemId] ?? 0,
+          quantityCancelledPending: operationalMaps.cancelledPendingMap[itemSelection.itemId] ?? appliedCancelledByItem[itemSelection.itemId] ?? 0,
+          quantityCancelledReady: operationalMaps.cancelledReadyMap[itemSelection.itemId] ?? 0,
+          quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[itemSelection.itemId] ?? 0,
         });
         const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
         const payableQty = orderIsSpecial
           ? activeOrderedQty
           : getPayableQuantityForOrderType(
-              orderData.order_type as "DINE_IN" | "TAKEOUT",
+              orderData.order_type as "DINE_IN" | "TAKEOUT" | "EXPRESS",
               quantities,
               activeWorkflowMode,
             );
@@ -2178,9 +2184,17 @@ export function useCaja(params?: {
           throw new Error(`En el item "${dbItem.id.slice(0, 5)}" quieres cobrar ${itemSelection.quantity} pero solo hay ${pendingPayableQty} pendiente.`);
         }
 
+        if (orderData.order_type === "EXPRESS" && itemSelection.quantity < pendingPayableQty) {
+          throw new Error("Las ordenes Express solo admiten cobro total de la orden");
+        }
+
         if (Math.abs(Number(dbItem.unit_price) - itemSelection.unitPrice) > 0.01) {
           throw new Error("Inconsistencia detectada en el precio unitario del item");
         }
+      }
+
+      if (orderData.order_type === "EXPRESS" && orderData.status !== "KITCHEN_DISPATCHED" && orderData.status !== "PAID") {
+        throw new Error("La orden Express debe estar despachada antes de cobrar en caja");
       }
 
       if (orderIsSpecial) {
@@ -2400,6 +2414,7 @@ export function useCaja(params?: {
       queueMicrotask(() => {
         qc.invalidateQueries({ queryKey: ["current-shift"] });
         qc.invalidateQueries({ queryKey: ["payable-orders"] });
+        qc.invalidateQueries({ queryKey: ["express-orders"] });
         qc.invalidateQueries({ queryKey: ["completed-payments"] });
         qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
         qc.invalidateQueries({ queryKey: ["tables-with-status"] });

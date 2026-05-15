@@ -8,6 +8,7 @@ import { useState } from "react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { isTemporaryOrderItemId } from "@/hooks/useOrder";
+import { getSentItemStageLabel } from "@/lib/orderFlow";
 
 interface OrderItem {
   id: string;
@@ -45,6 +46,8 @@ interface Props {
   specialOrderChargeTotal?: number | null;
   /** Suma de líneas a precio catálogo; solo referencia junto al total especial. */
   specialOrderCatalogTotal?: number | null;
+  /** TAKEOUT / EXPRESS / DINE_IN: etiqueta de linea enviada ("En caja" vs "En despacho"). */
+  orderType?: string | null;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
@@ -121,12 +124,12 @@ function getOrderItemStageStyles(stage: OrderItemStage) {
   }
 }
 
-function getOrderItemStageLabel(stage: OrderItemStage) {
+function getOrderItemStageLabel(stage: OrderItemStage, orderType?: string | null) {
   switch (stage) {
     case "draft":
       return "No enviado";
     case "sent":
-      return "En caja";
+      return getSentItemStageLabel(orderType);
     case "partial":
       return "Despacho parcial";
     case "dispatched":
@@ -184,6 +187,7 @@ const OrderItemsList = ({
   editableItemIds = [],
   specialOrderChargeTotal = null,
   specialOrderCatalogTotal = null,
+  orderType = null,
 }: Props) => {
   const total = items.reduce((sum, i) => sum + i.total, 0);
 
@@ -325,7 +329,7 @@ const OrderItemsList = ({
                           )}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-slate-500 sm:h-2 sm:w-2" />
-                          {getOrderItemStageLabel(itemStage)}
+                          {getOrderItemStageLabel(itemStage, orderType)}
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="end" side="top" className="w-auto px-3 py-2 text-xs font-medium sm:text-sm">
@@ -350,7 +354,7 @@ const OrderItemsList = ({
                           getOrderItemStageDotClass(itemStage),
                         )}
                       />
-                      {getOrderItemStageLabel(itemStage)}
+                      {getOrderItemStageLabel(itemStage, orderType)}
                     </span>
                   )
                 ) : null}

@@ -250,8 +250,10 @@ export function DispatchCardBase({
   const canMarkAnyReady = order.pending_prepare_count > 0;
   const canDispatchAny = order.dispatchable_count > 0;
   const previewableItems = useMemo(
-    () => order.items.filter((item) => item.quantity_paid > 0),
-    [order.items],
+    () => order.items.filter((item) =>
+      order.order_type === "EXPRESS" ? item.quantity_dispatchable > 0 || item.quantity_dispatched > 0 : item.quantity_paid > 0,
+    ),
+    [order.items, order.order_type],
   );
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
   const orderTotal = order.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
