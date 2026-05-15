@@ -862,6 +862,8 @@ const OrdenesContent = () => {
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
   const [takeoutCajaPreview, setTakeoutCajaPreview] = useState<TakeoutCajaPreview | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+  /** Evita volver a forzar el panel de orden en movil si el usuario ya paso al menu (misma orden). Se limpia al cambiar `orderId`. */
+  const mobileOrderDetailBootstrappedForIdRef = useRef<string | null>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
   const tableOrdersTabsRef = useRef<HTMLDivElement>(null);
   const [tableOrdersTabsOverflow, setTableOrdersTabsOverflow] = useState({
@@ -1421,9 +1423,35 @@ const OrdenesContent = () => {
     setProductLoadingShell(null);
     setSelectingProductId(null);
     setShowCart(false);
+    mobileOrderDetailBootstrappedForIdRef.current = null;
     // Siempre forzamos el cierre del dialogo al cambiar de mesa o refrescar
     setPaymentDialogOpenForOrderId(null);
   }, [orderId]);
+
+  /** Mesa + una sola orden: en movil abrir primero el detalle si la orden esta en caja, pagada o despachada. */
+  useEffect(() => {
+    if (isDesktop) return;
+    if (fromEditar) return;
+    if (!orderId || !order || order.id !== orderId) return;
+    if (mobileOrderDetailBootstrappedForIdRef.current === orderId) return;
+    if (order.order_type !== "DINE_IN" || !order.table_id) return;
+    if (showMesasV2CardPickerForSwipe) return;
+    if (mergedTableOrdersForSwipe.length !== 1) return;
+    if (mergedTableOrdersForSwipe[0]?.id !== order.id) return;
+    const st = order.status;
+    if (st !== "SENT_TO_KITCHEN" && st !== "PAID" && st !== "KITCHEN_DISPATCHED") return;
+
+    mobileOrderDetailBootstrappedForIdRef.current = orderId;
+    setShowCart(true);
+  }, [
+    isDesktop,
+    fromEditar,
+    orderId,
+    order,
+    mergedTableOrdersForSwipe,
+    mergedTableOrdersSwipeKey,
+    showMesasV2CardPickerForSwipe,
+  ]);
 
   // Limpieza total al salir del modulo para evitar "fantasmas"
   useEffect(() => {
