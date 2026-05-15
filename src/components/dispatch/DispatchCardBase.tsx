@@ -250,13 +250,7 @@ export function DispatchCardBase({
   const canMarkAnyReady = order.pending_prepare_count > 0;
   const canDispatchAny = order.dispatchable_count > 0;
   const previewableItems = useMemo(
-    () =>
-      order.items.filter(
-        (item) =>
-          item.quantity_pending_prepare > 0
-          || item.quantity_ready_available > 0
-          || item.quantity_dispatched > 0,
-      ),
+    () => order.items.filter((item) => item.quantity_paid > 0),
     [order.items],
   );
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
@@ -395,10 +389,7 @@ export function DispatchCardBase({
           const canDispatch = item.quantity_dispatchable > 0;
           const remainingToDispatch = item.quantity_dispatchable;
           const dispatchedQuantity = item.quantity_dispatched;
-          const activeQuantity = Math.max(
-            remainingToDispatch + dispatchedQuantity,
-            Math.max(0, item.quantity_ordered - item.quantity_cancelled),
-          );
+          const activeQuantity = Math.max(item.quantity_paid, remainingToDispatch + dispatchedQuantity);
           const isFullyDispatched = item.quantity_pending_prepare === 0 && item.quantity_dispatchable === 0 && dispatchedQuantity > 0;
 
           return (
@@ -491,7 +482,8 @@ export function DispatchCardBase({
                         size="default"
                         className="min-w-[6.5rem] gap-1.5 px-3 md:min-w-[7rem]"
                         disabled={order.locked_for_editing || isDispatching || isMarkingReady}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           const remainingQty = Math.max(0, item.quantity_dispatchable - selectedQty);
                           setQtyByItem((current) => ({
                             ...current,

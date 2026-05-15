@@ -10,6 +10,7 @@ import {
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
@@ -290,6 +291,9 @@ export async function fetchSiblingOrders(
   /** No purgar este borrador vacio (la orden abierta en pantalla). */
   keepOrderId?: string | null,
 ): Promise<SiblingOrder[]> {
+  const openShift = await getOpenCashShiftForBranch(branchId);
+  if (!openShift) return [];
+
   /** Purga en segundo plano: no bloquea el listado (ingreso rapido a mesa). */
   void supabase.rpc("purge_empty_dine_in_draft_orders_for_table" as any, {
     p_table_id: tableId,
@@ -298,10 +302,11 @@ export async function fetchSiblingOrders(
 
   const { data: siblingOrders, error } = await supabase
     .from("orders")
-    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, notes, order_items(id, description_snapshot, quantity, status)")
+    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, notes, order_items(id, description_snapshot, quantity, status)")
     .eq("table_id", tableId)
     .eq("branch_id", branchId)
     .eq("order_type", "DINE_IN")
+    .eq("cash_shift_id", openShift.id)
     .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]);
 
   if (error) throw error;
@@ -317,6 +322,7 @@ export async function fetchSiblingOrders(
     : [];
 
   return siblingOrders
+    .filter((sibling) => orderBelongsToOpenCashShift(sibling as any, openShift))
     .filter((sibling) => !String((sibling as any).notes ?? "").includes("VOID_SUCCESSOR_ORDER:"))
     .filter((sibling) => {
       const itemCount = Array.isArray(sibling.order_items) ? sibling.order_items.length : 0;
@@ -343,18 +349,23 @@ export async function fetchSiblingOrders(
 }
 
 export async function fetchTakeoutSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
-  const takeoutOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, table_order_position, status, created_at, created_by, order_items(id, total)",
-    filters: [
-      { column: "branch_id", op: "eq", value: branchId },
-      { column: "order_type", op: "eq", value: "TAKEOUT" },
-      { column: "is_tray_order", op: "eq", value: false },
-      { column: "is_special", op: "eq", value: false },
-      // Mantener "Para llevar" visible como pestaña incluso si ya fue pagada.
-      // Se excluye cuando ya existe despacho aplicado (order_dispatch_events).
-      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] }
-    ]
-  });
+  const openShift = await getOpenCashShiftForBranch(branchId);
+  if (!openShift) return [];
+
+  const takeoutOrders = (
+    await dbSelect<any>("orders", {
+      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, order_items(id, total)",
+      filters: [
+        { column: "branch_id", op: "eq", value: branchId },
+        { column: "order_type", op: "eq", value: "TAKEOUT" },
+        { column: "is_tray_order", op: "eq", value: false },
+        { column: "is_special", op: "eq", value: false },
+        { column: "cash_shift_id", op: "eq", value: openShift.id },
+        { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] },
+      ],
+      skipLocalCache: true,
+    })
+  ).filter((order) => orderBelongsToOpenCashShift(order, openShift));
 
   if (!takeoutOrders || takeoutOrders.length === 0) return [];
 

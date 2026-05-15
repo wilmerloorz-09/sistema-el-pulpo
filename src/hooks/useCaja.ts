@@ -11,6 +11,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -1296,25 +1297,22 @@ export function useCaja(params?: {
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const shifts = await dbSelect<{ id: string }>("cash_shifts", {
-        select: "id",
-        branchId: activeBranchId,
-        filters: [{ column: "status", op: "eq", value: "OPEN" }],
-        orderBy: { column: "opened_at", ascending: false },
-      });
-      const openShiftId = shifts[0]?.id ?? null;
-      if (!openShiftId) return [];
+      const openShift = await getOpenCashShiftForBranch(activeBranchId);
+      if (!openShift) return [];
 
-      const orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, special_total_manual, table_name_snapshot, locked_for_editing, notes",
-        branchId: activeBranchId,
-        filters: [
-          { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] },
-          { column: "cash_shift_id", op: "eq", value: openShiftId },
-        ],
-        orderBy: { column: "updated_at", ascending: false }
-      });
-      
+      const orders = (
+        await dbSelect<any>("orders", {
+          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, table_name_snapshot, locked_for_editing, notes",
+          branchId: activeBranchId,
+          filters: [
+            { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] },
+            { column: "cash_shift_id", op: "eq", value: openShift.id },
+          ],
+          orderBy: { column: "updated_at", ascending: false },
+          skipLocalCache: true,
+        })
+      ).filter((order) => orderBelongsToOpenCashShift(order, openShift));
+
       if (!orders || orders.length === 0) return [];
 
       const activeOrders = orders.filter((order) => !String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:"));

@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 
 export interface KitchenOrderItem {
   id: string;
@@ -63,10 +63,11 @@ export function useKitchenOrders() {
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId);
-      if (!openShiftId) return [];
+      const openShift = await getOpenCashShiftForBranch(activeBranchId);
+      if (!openShift) return [];
 
-      const orders = await dbSelect<{
+      const orders = (
+        await dbSelect<{
         id: string;
         order_number: number | null;
         order_code: string | null;
@@ -80,14 +81,15 @@ export function useKitchenOrders() {
         sent_to_kitchen_at: string | null;
         locked_for_editing?: boolean | null;
       }>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, updated_at, sent_to_kitchen_at, status, locked_for_editing",
+        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, created_at, updated_at, sent_to_kitchen_at, status, locked_for_editing",
         branchId: activeBranchId,
         filters: [
           { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] },
-          { column: "cash_shift_id", op: "eq", value: openShiftId },
+          { column: "cash_shift_id", op: "eq", value: openShift.id },
         ],
         orderBy: { column: "updated_at", ascending: true },
-      });
+      })
+      ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
       if (orders.length === 0) return [];
 

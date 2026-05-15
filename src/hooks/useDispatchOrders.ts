@@ -7,16 +7,19 @@ import { useDispatchConfig } from "./useDispatchConfig";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import type { OrderStatus } from "@/types/cancellation";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import { fetchActivePaidQuantityByOrderItemId } from "@/lib/orderItemActivePayments";
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 
 export interface DispatchOrderItem {
   id: string;
   description_snapshot: string;
   created_at?: string | null;
   quantity_ordered: number;
+  /** Cantidad cubierta por pagos activos (payment_items); puede ser > 0 aunque la fila operativa muestre 0 pendiente por inconsistencias o cobro antes de despacho. */
+  quantity_paid: number;
   quantity_pending_prepare: number;
   quantity_ready_available: number;
   quantity_dispatchable: number;
@@ -30,6 +33,8 @@ export interface DispatchOrderItem {
   item_note?: string | null;
   total?: number;
   sent_to_kitchen_at: string | null;
+  /** Marcador de linea cubierta en caja (sync_order_payment_state); util si el snapshot aun no refleja quantity_paid. */
+  paid_at: string | null;
 }
 
 export interface DispatchOrder {
@@ -87,7 +92,39 @@ function matchesScope(orderType: string, scope: DispatchView) {
   return orderType === "TAKEOUT";
 }
 
-function groupItemsIntoDispatchCards(order: any, items: any[], modifiersMap: Record<string, any[]>, operationalMaps: any): DispatchOrder[] {
+/** Igual criterio que caja / useOrder: pago que no debe contar para “hay cobro activo”. */
+function paymentRowIsInactive(notes: string | null | undefined, status: string | null | undefined): boolean {
+  const raw = String(notes ?? "");
+  if (raw.includes("VOIDED:") || raw.includes("REVERSED:") || raw.includes("TRANSFER_PROOF_PENDING:1")) return true;
+  const st = String(status ?? "").toLowerCase();
+  return st === "voided" || st === "reversed";
+}
+
+function dispatchCardHasWork(card: DispatchOrder): boolean {
+  if (card.items.length === 0) return false;
+  return card.items.some((it) => it.quantity_paid > 0 && it.quantity_dispatched < it.quantity_paid);
+}
+
+/** Misma regla que `useOrder` / caja: solo cantidad cubierta por `payment_items` activos (o `paid_at` de línea). */
+function resolveDispatchLinePaidQty(
+  item: { id: string; quantity?: number | null; paid_at?: string | null },
+  clientPaidQtyByItemId: Record<string, number>,
+): number {
+  const orderedQty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+  const fromPayments = Math.max(0, clientPaidQtyByItemId[item.id] ?? 0);
+  return Math.min(
+    orderedQty,
+    fromPayments > 0 ? fromPayments : item.paid_at ? orderedQty : 0,
+  );
+}
+
+function groupItemsIntoDispatchCards(
+  order: any,
+  items: any[],
+  modifiersMap: Record<string, any[]>,
+  operationalMaps: any,
+  clientPaidQtyByItemId: Record<string, number>,
+): DispatchOrder[] {
   const {
     readyMap,
     readyAvailableMap,
@@ -99,10 +136,18 @@ function groupItemsIntoDispatchCards(order: any, items: any[], modifiersMap: Rec
   } = operationalMaps;
 
   const mappedItems: DispatchOrderItem[] = items
-    .filter((item) => item.order_id === order.id && !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at))
+    .filter((item) => {
+      if (item.order_id !== order.id) return false;
+      const st = String(item.status ?? "").toUpperCase();
+      if (st === "DRAFT" || st === "CANCELLED") return false;
+      const sent = !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
+      if (!sent) return false;
+      return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId) > 0;
+    })
     .map((item) => {
+      const quantityPaid = resolveDispatchLinePaidQty(item, clientPaidQtyByItemId);
       const quantities = computeOperationalQuantities({
-        quantityOrdered: Number(item.quantity ?? 0),
+        quantityOrdered: quantityPaid,
         quantityReadyTotal: readyMap[item.id] ?? 0,
         quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
         quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
@@ -110,38 +155,55 @@ function groupItemsIntoDispatchCards(order: any, items: any[], modifiersMap: Rec
         quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
       });
 
-      const quantityPendingPrepare = pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare;
-      const quantityReadyAvailable = readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable;
-      const activeQuantity = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+      const quantityDispatched = Math.min(quantities.quantityDispatchedAvailable, quantityPaid);
+      const paidNotYetDispatched = Math.max(0, quantityPaid - quantityDispatched);
+      const quantityPendingPrepare = Math.min(
+        pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare,
+        paidNotYetDispatched,
+      );
+      const quantityReadyAvailable = Math.min(
+        readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable,
+        Math.max(0, paidNotYetDispatched - quantityPendingPrepare),
+      );
+      const quantityDispatchable = quantityPendingPrepare + quantityReadyAvailable;
+      const linePaidAt = item.paid_at ?? null;
+      const sentStamp = item.sent_to_kitchen_at ?? order.sent_to_kitchen_at ?? order.updated_at ?? null;
+      const trayContainerCost = Number(item.tray_container_cost ?? 0);
 
       return {
         id: item.id,
         description_snapshot: item.description_snapshot,
         created_at: item.created_at ?? null,
-        quantity_ordered: quantities.quantityOrdered,
+        quantity_ordered: quantityPaid,
+        quantity_paid: quantityPaid,
+        paid_at: linePaidAt,
         quantity_pending_prepare: quantityPendingPrepare,
         quantity_ready_available: quantityReadyAvailable,
-        quantity_dispatchable: quantityPendingPrepare + quantityReadyAvailable,
-        quantity_dispatched: quantities.quantityDispatchedAvailable,
-        quantity_cancelled: quantities.quantityCancelledTotal,
+        quantity_dispatchable: quantityDispatchable,
+        quantity_dispatched: quantityDispatched,
+        quantity_cancelled: Math.min(quantities.quantityCancelledTotal, quantityPaid),
         unit_price: Number(item.unit_price ?? 0),
         tray_item_type: item.tray_item_type ?? null,
-        tray_container_cost: Number(item.tray_container_cost ?? 0),
+        tray_container_cost: trayContainerCost,
         status: item.status ?? "SENT",
-        total: computeLineAmount(activeQuantity, Number(item.unit_price ?? 0)),
+        total:
+          computeLineAmount(quantityPaid, Number(item.unit_price ?? 0))
+          + (quantityPaid > 0 ? trayContainerCost : 0),
         modifiers: modifiersMap[item.id] ?? [],
         item_note: item.item_note ?? null,
-        sent_to_kitchen_at: item.sent_to_kitchen_at ?? order.sent_to_kitchen_at,
+        sent_to_kitchen_at: sentStamp,
       };
-    })
-    .filter((item) => item.quantity_ordered - item.quantity_cancelled > 0 && !!item.sent_to_kitchen_at);
+    });
 
   if (mappedItems.length === 0) return [];
 
-  const sentAt = mappedItems
+  const sentCandidates = mappedItems
     .map((item) => item.sent_to_kitchen_at)
-    .filter(Boolean)
-    .sort((left, right) => new Date(left!).getTime() - new Date(right!).getTime())[0]!;
+    .filter(Boolean) as string[];
+  const sentAt =
+    sentCandidates.length > 0
+      ? [...sentCandidates].sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0]!
+      : (order.sent_to_kitchen_at ?? order.updated_at);
 
   const sortedItems = [...mappedItems].sort((left, right) => {
     const leftTime = new Date(left.created_at ?? left.sent_to_kitchen_at ?? sentAt).getTime();
@@ -193,23 +255,25 @@ export function useDispatchOrders(scope: DispatchView) {
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const openShiftId = await getOpenCashShiftIdForBranch(activeBranchId);
-      if (!openShiftId) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      const openShift = await getOpenCashShiftForBranch(activeBranchId);
+      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing",
-        branchId: activeBranchId,
-        filters: [
-          { column: "status", op: "eq", value: "PAID" },
-          { column: "cash_shift_id", op: "eq", value: openShiftId },
-        ],
-        orderBy: { column: "updated_at", ascending: true }
-      });
+      const ordersMerged = (
+        await dbSelect<any>("orders", {
+          select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
+          branchId: activeBranchId,
+          filters: [
+            { column: "status", op: "in", value: ["PAID", "READY", "SENT_TO_KITCHEN"] },
+            { column: "cash_shift_id", op: "eq", value: openShift.id },
+          ],
+          orderBy: { column: "updated_at", ascending: true },
+          skipLocalCache: true,
+        })
+      ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
-      if (!orders || orders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+      if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      // Exclude orders where ALL payments are voided - they should not appear in dispatch
-      const allOrderIds = orders.map((o) => o.id);
+      const allOrderIds = ordersMerged.map((o) => o.id);
       const paymentsForOrders = await dbSelect<any>("payments", {
         select: "order_id, notes, status",
         filters: [{ column: "order_id", op: "in", value: allOrderIds }],
@@ -218,12 +282,32 @@ export function useDispatchOrders(scope: DispatchView) {
       const ordersWithAnyPayment = new Set<string>();
       for (const p of paymentsForOrders ?? []) {
         ordersWithAnyPayment.add(p.order_id);
-        const isVoided = String(p.notes ?? "").includes("VOIDED:") || p.status === "voided";
-        if (!isVoided) ordersWithActivePayment.add(p.order_id);
+        if (!paymentRowIsInactive(p.notes, p.status)) ordersWithActivePayment.add(p.order_id);
       }
-      const activeOrders = orders.filter((o) =>
-        !ordersWithAnyPayment.has(o.id) || ordersWithActivePayment.has(o.id)
+
+      const paidLineRows = await dbSelect<any>("order_items", {
+        select: "order_id, paid_at",
+        filters: [{ column: "order_id", op: "in", value: allOrderIds }],
+      });
+      const ordersWithPaidLine = new Set(
+        (paidLineRows ?? [])
+          .filter((row: any) => row.paid_at != null && String(row.paid_at).trim() !== "")
+          .map((row: any) => row.order_id),
       );
+
+      const activeOrders = ordersMerged.filter((o) => {
+        if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
+        const hasAnyPay = ordersWithAnyPayment.has(o.id);
+        const hasActivePay = ordersWithActivePayment.has(o.id);
+        const hasPaidLine = ordersWithPaidLine.has(o.id);
+        if (o.status === "PAID") {
+          return !hasAnyPay || hasActivePay;
+        }
+        if (o.status === "READY" || o.status === "SENT_TO_KITCHEN") {
+          return hasActivePay || !!o.paid_at || hasPaidLine;
+        }
+        return false;
+      });
       if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
@@ -296,6 +380,10 @@ export function useDispatchOrders(scope: DispatchView) {
 
       const operationalMaps = await fetchOperationalMapsForOrders(orderIdsToFetch);
 
+      const clientPaidQtyByItemId = await fetchActivePaidQuantityByOrderItemId(itemIds, {
+        skipLocalCache: true,
+      });
+
       const allCards = allPermittedOrders.flatMap((order) => {
         const orderWithContext = {
           ...order,
@@ -303,8 +391,8 @@ export function useDispatchOrders(scope: DispatchView) {
           table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
         };
-        return groupItemsIntoDispatchCards(orderWithContext, items, modifiersMap, operationalMaps);
-      }).filter((card) => card.items.length > 0 && (card.pending_prepare_count > 0 || card.ready_available_count > 0));
+        return groupItemsIntoDispatchCards(orderWithContext, items, modifiersMap, operationalMaps, clientPaidQtyByItemId);
+      }).filter((card) => dispatchCardHasWork(card));
 
       const counts = {
         ALL: allCards.length,

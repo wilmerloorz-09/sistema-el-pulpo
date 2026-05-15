@@ -6,6 +6,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -84,6 +85,8 @@ const withTablesTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise
   });
 
 async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWithStatusData> {
+  const openShift = await getOpenCashShiftForBranch(branchId);
+
   const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
     p_branch_id: branchId,
   } as any);
@@ -93,13 +96,23 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   const activeOrderIds = Array.from(
     new Set(rows.map((row) => row.active_order_id).filter((id): id is string => Boolean(id))),
   );
-  
+
   const activeOrders = activeOrderIds.length > 0
     ? ((await supabase
       .from("orders" as any)
-      .select("id, created_by")
+      .select("id, created_by, created_at, sent_to_kitchen_at, cash_shift_id")
       .in("id", activeOrderIds) as any).data ?? [])
     : [];
+
+  const activeOrderBelongsToShift = new Map<string, boolean>();
+  if (openShift) {
+    for (const order of activeOrders ?? []) {
+      activeOrderBelongsToShift.set(
+        order.id,
+        orderBelongsToOpenCashShift(order, openShift),
+      );
+    }
+  }
 
   const activeCreatorIds = Array.from(
     new Set((activeOrders ?? []).map((order: any) => order.created_by).filter(Boolean)),
@@ -125,20 +138,28 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   const voidedOrderIdSet = new Set<string>((voidedPayments ?? []).map((p: any) => String(p.order_id)));
 
   const tables = rows.map((row) => {
+    const staleShiftOrder =
+      Boolean(row.active_order_id)
+      && openShift
+      && activeOrderBelongsToShift.get(row.active_order_id!) === false;
+
     const hasVoidedPayment = row.active_order_id ? voidedOrderIdSet.has(row.active_order_id) : false;
     const isEmptyDraft =
-      row.active_order_status === "DRAFT"
+      !staleShiftOrder
+      && row.active_order_status === "DRAFT"
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
-    
-    const effectiveStatus = isEmptyDraft
-      ? "free"
-      : row.status === "to_pay"
-        ? "occupied"
-        : (row.status ?? "free");
 
-    const effectiveOrderId = isEmptyDraft ? undefined : (row.active_order_id ?? undefined);
-    const effectiveOrderStatus = isEmptyDraft ? undefined : (row.active_order_status ?? undefined);
+    const effectiveStatus = staleShiftOrder
+      ? "free"
+      : isEmptyDraft
+        ? "free"
+        : row.status === "to_pay"
+          ? "occupied"
+          : (row.status ?? "free");
+
+    const effectiveOrderId = staleShiftOrder || isEmptyDraft ? undefined : (row.active_order_id ?? undefined);
+    const effectiveOrderStatus = staleShiftOrder || isEmptyDraft ? undefined : (row.active_order_status ?? undefined);
     const effectiveSplitTotals = isEmptyDraft ? [] : parseSplitTotals(row.split_totals);
 
     return {

@@ -10,6 +10,7 @@ import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
+import { PaymentItemSplitDialog } from "@/components/caja/PaymentItemSplitDialog";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
 import { Banknote, CircleCheck, Coins, CreditCard, Loader2, Printer, UserRound, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -129,13 +130,50 @@ export default function PaymentDialogV2({
     };
   } | null>(null);
 
-  const orderChargeTotal = useMemo(() => (order ? getOrderTotalToCharge(order) : 0), [order]);
+  const [payItemQtys, setPayItemQtys] = useState<Record<string, number>>({});
+  const [splitItemsDialogOpen, setSplitItemsDialogOpen] = useState(false);
+
+  const orderUnpaidSignature = useMemo(
+    () =>
+      (order?.items ?? [])
+        .map((i) => `${i.id}:${i.quantity_pending}`)
+        .join("|"),
+    [order?.items],
+  );
+
+  const orderChargeTotal = useMemo(() => {
+    if (!order) return 0;
+    if (order.is_special) return roundMoney(Math.max(0, Number(order.special_pending_amount ?? 0)));
+    const lines = (order.items ?? []).filter((i) => Number(i.quantity_pending ?? 0) > 0);
+    const qtyMapReady = lines.length > 0 && lines.every((i) => typeof payItemQtys[i.id] === "number");
+    if (!qtyMapReady) return getOrderTotalToCharge(order);
+    return roundMoney(
+      lines.reduce((sum, item) => {
+        const q = Math.max(0, Math.floor(Number(payItemQtys[item.id] ?? 0)));
+        if (q <= 0) return sum;
+        return sum + computeLineAmount(q, item.unit_price) + (q > 0 ? Number(item.tray_container_cost ?? 0) : 0);
+      }, 0),
+    );
+  }, [order, payItemQtys]);
+
+  const unpaidPayableLines = useMemo(
+    () => (order?.items ?? []).filter((i) => Number(i.quantity_pending ?? 0) > 0),
+    [order?.items],
+  );
+  const totalPendingUnits = useMemo(
+    () => unpaidPayableLines.reduce((s, i) => s + Math.floor(Number(i.quantity_pending ?? 0)), 0),
+    [unpaidPayableLines],
+  );
+  const canOfferItemSplit = Boolean(
+    order && !order.is_special && unpaidPayableLines.length > 0 && (totalPendingUnits > 1 || unpaidPayableLines.length > 1),
+  );
 
   useEffect(() => {
     if (!open) {
       setPostPaySummary(null);
       pendingPayPromiseRef.current = null;
       suppressCloseOnceRef.current = false;
+      setSplitItemsDialogOpen(false);
       return;
     }
     if (!order) return;
@@ -144,7 +182,18 @@ export default function PaymentDialogV2({
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
+    setSplitItemsDialogOpen(false);
   }, [open, order?.id]);
+
+  useEffect(() => {
+    if (!open || !order) return;
+    const next: Record<string, number> = {};
+    for (const item of order.items ?? []) {
+      const p = Math.floor(Number(item.quantity_pending ?? 0));
+      if (p > 0) next[item.id] = p;
+    }
+    setPayItemQtys(next);
+  }, [open, order?.id, orderUnpaidSignature]);
 
   const sortedDenoms = useMemo(
     () => [...shiftDenoms].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value),
@@ -272,15 +321,15 @@ export default function PaymentDialogV2({
   const handleCobrar = useCallback(async () => {
     if (!order || readOnly || paying || !canPay) return;
 
-    const unpaidItems = (order.items ?? []).filter((item) => Number(item.quantity_pending ?? 0) > 0);
+    const unpaidItems = (order.items ?? []).filter((item) => (payItemQtys[item.id] ?? 0) > 0);
     if (unpaidItems.length === 0) {
-      toast.error("No hay lineas pendientes para cobrar");
+      toast.error("Selecciona al menos una linea o unidad para cobrar");
       return;
     }
 
     const chargeTotalRounded = roundMoney(orderChargeTotal);
     const catalogWeights = unpaidItems.map((item) => {
-      const qty = Number(item.quantity_pending ?? 0);
+      const qty = Number(payItemQtys[item.id] ?? 0);
       return roundMoney(computeLineAmount(qty, item.unit_price) + (qty > 0 ? Number(item.tray_container_cost ?? 0) : 0));
     });
     const catalogSum = roundMoney(catalogWeights.reduce((s, w) => s + w, 0));
@@ -293,7 +342,7 @@ export default function PaymentDialogV2({
 
     const itemSelections = unpaidItems.map((item, idx) => ({
       itemId: item.id,
-      quantity: Number(item.quantity_pending ?? 0),
+      quantity: Number(payItemQtys[item.id] ?? 0),
       unitPrice: item.unit_price,
       amount: lineChargeAmounts[idx] ?? 0,
     }));
@@ -460,6 +509,7 @@ export default function PaymentDialogV2({
     cashMethod,
     paymentMethods,
     onPay,
+    payItemQtys,
   ]);
 
   const addDenom = (denominationId: string) => {
@@ -531,6 +581,16 @@ export default function PaymentDialogV2({
   return (
     <>
       {postPaySummary ? <PaymentReceipt {...postPaySummary.receipt} /> : null}
+      {order && !postPaySummary ? (
+        <PaymentItemSplitDialog
+          open={splitItemsDialogOpen}
+          onOpenChange={setSplitItemsDialogOpen}
+          order={order}
+          qtyByItemId={payItemQtys}
+          onQtyByItemIdChange={setPayItemQtys}
+          readOnly={readOnly}
+        />
+      ) : null}
       <Dialog
         open={open}
         onOpenChange={(isOpen) => {
@@ -661,19 +721,30 @@ export default function PaymentDialogV2({
             <div className="flex flex-col gap-5 xl:gap-6">
               {/* Fila superior: total, transferencia y resumen en horizontal desde md */}
               <div className="grid gap-3 md:grid-cols-3 md:items-stretch lg:gap-4">
-                <div className="flex min-h-[100px] items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm">
-                  <div className="flex min-w-0 items-center gap-3">
+                <div className="flex min-h-[100px] flex-col justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm sm:flex-row sm:items-stretch">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
                       <CreditCard className="h-5 w-5" />
                     </span>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">Total de la orden</p>
                       <p className="truncate text-xs text-sky-700/90">
                         {order.is_special ? "Saldo precio especial" : "Pendiente por cobrar"}
                       </p>
+                      {canOfferItemSplit && !readOnly ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-8 border-sky-300 bg-white/90 text-xs font-semibold text-sky-900 hover:bg-sky-100"
+                          onClick={() => setSplitItemsDialogOpen(true)}
+                        >
+                          Dividir pago
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
-                  <p className="shrink-0 font-display text-2xl font-black tabular-nums tracking-tight text-sky-950 sm:text-3xl">
+                  <p className="shrink-0 self-center font-display text-2xl font-black tabular-nums tracking-tight text-sky-950 sm:text-right">
                     {formatCurrency(orderChargeTotal)}
                   </p>
                 </div>

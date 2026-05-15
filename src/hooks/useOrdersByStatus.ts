@@ -7,7 +7,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "PENDING_CANCELLATION";
 
@@ -106,13 +106,13 @@ export function useOrdersByStatus(
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
 
-      const openShiftId = await qc.ensureQueryData({
-        queryKey: ["open-cash-shift-id", activeBranchId],
-        queryFn: () => getOpenCashShiftIdForBranch(activeBranchId),
+      const openShift = await qc.ensureQueryData({
+        queryKey: ["open-cash-shift", activeBranchId],
+        queryFn: () => getOpenCashShiftForBranch(activeBranchId),
         staleTime: 0,
         gcTime: 10 * 60_000,
       });
-      if (!openShiftId) return [];
+      if (!openShift) return [];
 
       const cancelledView = status === "CANCELLED";
       const sentView = status === "SENT_TO_KITCHEN";
@@ -131,14 +131,17 @@ export function useOrdersByStatus(
         return [{ column: "status", op: "eq", value: status }];
       })();
 
-      filters.push({ column: "cash_shift_id", op: "eq", value: openShiftId });
+      filters.push({ column: "cash_shift_id", op: "eq", value: openShift.id });
 
-      let orders = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
-        branchId: activeBranchId,
-        filters,
-        orderBy: { column: "created_at", ascending: false },
-      });
+      let orders = (
+        await dbSelect<any>("orders", {
+          select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+          branchId: activeBranchId,
+          filters,
+          orderBy: { column: "created_at", ascending: false },
+          skipLocalCache: true,
+        })
+      ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
       if (dispatchedView && orders.length > 0) {
         const candidateDispatchedOrderIds = orders.map((order) => order.id).filter(Boolean);
@@ -182,13 +185,16 @@ export function useOrdersByStatus(
             branchId: activeBranchId,
             filters: [
               { column: "id", op: "in", value: missingPendingOrderIds },
-              { column: "cash_shift_id", op: "eq", value: openShiftId },
+              { column: "cash_shift_id", op: "eq", value: openShift.id },
             ],
             orderBy: { column: "created_at", ascending: false },
           });
 
           if (pendingOrders.length > 0) {
-            orders = [...orders, ...pendingOrders];
+            orders = [
+              ...orders,
+              ...pendingOrders.filter((o) => orderBelongsToOpenCashShift(o, openShift)),
+            ];
           }
         }
       }

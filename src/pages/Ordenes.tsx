@@ -1814,13 +1814,16 @@ const OrdenesContent = () => {
     !fromEditar &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
-    order.status !== "SENT_TO_KITCHEN" &&
     hasEditableOrderSurface &&
     (
       order.status === "DRAFT" ||
       hasDraftItems ||
       !hasSentItems ||
-      /** Mesa: fuera de borrador/caja, permitir nuevas líneas en estados posteriores (p. ej. despacho), no en “En caja”. */
+      /**
+       * Mesa: permite nuevas líneas (borrador) también en "En caja" y estados posteriores hasta pagar.
+       * Para llevar en caja sin borradores y con líneas enviadas, no aplica esta rama y queda deshabilitado
+       * (no `hasDraftItems` ni `!hasSentItems`).
+       */
       (order.order_type === "DINE_IN" && Boolean(order.table_id))
     );
   const canEnterEditMode =
@@ -3080,18 +3083,24 @@ const OrdenesContent = () => {
         <div className="rounded-t-2xl border border-b-0 border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50/90 to-amber-100/70 px-3 py-2.5 shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:rounded-t-3xl sm:px-4 sm:py-3">
           <div className="flex w-full min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <button
-                type="button"
-                className="min-w-0 max-w-full rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
-                onClick={() =>
-                  navigate(
-                    `/ordenes?order=${order.id}${sourceParamsNoMesaCards}&${MESAS_V2_CARDS_PARAM}=1`,
-                    { replace: true },
-                  )
-                }
-              >
-                {renderMesaChromeHeaderTitle(order, !showMesasV2CardPicker)}
-              </button>
+              {hasSiblings ? (
+                <button
+                  type="button"
+                  className="min-w-0 max-w-full rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground transition hover:bg-orange-200/35"
+                  onClick={() =>
+                    navigate(
+                      `/ordenes?order=${order.id}${sourceParamsNoMesaCards}&${MESAS_V2_CARDS_PARAM}=1`,
+                      { replace: true },
+                    )
+                  }
+                >
+                  {renderMesaChromeHeaderTitle(order, !showMesasV2CardPicker)}
+                </button>
+              ) : (
+                <span className="min-w-0 max-w-full rounded-lg px-1 py-0.5 text-left font-display text-base font-black tracking-tight text-foreground">
+                  {renderMesaChromeHeaderTitle(order, !showMesasV2CardPicker)}
+                </span>
+              )}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               {!canOperateOrders && (

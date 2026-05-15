@@ -21,6 +21,7 @@ import {
 } from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
 import { MESAS_ORIGIN_LEGACY, mesasOrdenesSearch } from "@/lib/mesasFlow";
+import { orderBelongsToOpenCashShiftForBranch } from "@/lib/openCashShift";
 import {
   Dialog,
   DialogContent,
@@ -199,7 +200,11 @@ const Mesas = () => {
       if (table.activeOrderId) {
         try {
           const detail = await fetchOrderDetail(table.activeOrderId);
-          if (detail) {
+          if (
+            detail
+            && activeBranchId
+            && (await orderBelongsToOpenCashShiftForBranch(activeBranchId, detail))
+          ) {
             warmOrderId(table.activeOrderId);
             await openWithCardsIfNeeded(table.activeOrderId, table.id);
             return;
@@ -250,6 +255,14 @@ const Mesas = () => {
       sp.set("origin", MESAS_ORIGIN_LEGACY);
       navigate(`/ordenes?${sp.toString()}`, { replace: true });
     } else if (table.activeOrderId) {
+      if (activeBranchId) {
+        const detail = await fetchOrderDetail(table.activeOrderId);
+        if (!detail || !(await orderBelongsToOpenCashShiftForBranch(activeBranchId, detail))) {
+          toast.info("La orden de esta mesa es de un turno anterior. Actualizando mesas...");
+          void qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId] });
+          return;
+        }
+      }
       warmOrderId(table.activeOrderId);
       await openWithCardsIfNeeded(table.activeOrderId, table.id);
     }
