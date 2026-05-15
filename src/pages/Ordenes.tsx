@@ -1611,6 +1611,12 @@ const OrdenesContent = () => {
   }
 
   const itemCount = itemsToUse.reduce((s, i) => s + i.quantity, 0);
+  /** En móvil el panel de orden se oculta detrás de `showCart`; `quantity` puede ser 0 con líneas despachadas aún visibles. */
+  const mobileOrderBadgeCount = itemsToUse.reduce((sum, i) => {
+    const qo = Number((i as { quantity_ordered?: number }).quantity_ordered ?? 0);
+    if (qo > 0) return sum + qo;
+    return sum + Math.max(0, Number(i.quantity ?? 0));
+  }, 0);
   const getTableOrderButtonLabel = (tableOrder: { order_code?: string | null; order_number: number | null; table_order_position: number | null }) => {
     const codeSuffix = String(tableOrder.order_code ?? "").trim().split("-").pop();
     if (codeSuffix) {
@@ -2987,9 +2993,9 @@ const OrdenesContent = () => {
                 aria-label={showCart ? "Volver al menu" : "Ver orden"}
               >
                 {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-                {!showCart && itemCount > 0 && (
+                {!showCart && mobileOrderBadgeCount > 0 && (
                   <span className="absolute right-1 top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
-                    {itemCount}
+                    {mobileOrderBadgeCount}
                   </span>
                 )}
               </Button>
@@ -3065,6 +3071,23 @@ const OrdenesContent = () => {
                   Solo consulta
                 </span>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "relative h-9 min-w-[46px] shrink-0 overflow-visible rounded-xl border-orange-400 bg-white/95 px-2 text-orange-950 shadow-sm hover:bg-orange-50 md:hidden",
+                  showCart && "border-orange-500 bg-orange-100/90 text-orange-900",
+                )}
+                onClick={() => setShowCart((current) => !current)}
+                aria-label={showCart ? "Volver al menu" : "Ver orden"}
+              >
+                {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                {!showCart && mobileOrderBadgeCount > 0 && (
+                  <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
+                    {mobileOrderBadgeCount}
+                  </span>
+                )}
+              </Button>
               <Button
                 type="button"
                 size="sm"
@@ -3274,12 +3297,11 @@ const OrdenesContent = () => {
         </>
       )}
 
-      {!showCart && itemCount > 0 && !showMesasV2CardPicker && (
+      {!showCart && hasOrderItems && !showMesasV2CardPicker && (
         <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
           <ShoppingBag className="h-5 w-5" />
           <span className="font-display text-sm font-bold">
-            {itemCount} items - $
-            {(order.is_special && specialTotalManual != null ? specialTotalManual : total).toFixed(2)}
+            {`${mobileOrderBadgeCount > 0 ? `${mobileOrderBadgeCount} items · ` : "Ver orden · "}$${(order.is_special && specialTotalManual != null ? specialTotalManual : total).toFixed(2)}`}
           </span>
         </button>
       )}

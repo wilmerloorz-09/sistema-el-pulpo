@@ -30,6 +30,48 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+/** Círculo compacto con la cantidad (sin "x"); va antes del icono y del nombre. */
+function DenominationQtyCircle({
+  qty,
+  size = "md",
+  tone = "emerald",
+}: {
+  qty: number;
+  size?: "sm" | "md";
+  tone?: "emerald" | "slate";
+}) {
+  const badgeTone =
+    tone === "slate"
+      ? "bg-slate-600 text-white ring-1 ring-slate-400/35"
+      : "bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-500/40";
+
+  const dimensions =
+    size === "sm"
+      ? "h-6 w-6 text-[10px] sm:text-[11px]"
+      : "h-7 w-7 text-[11px] sm:h-8 sm:w-8 sm:text-xs";
+
+  const wide =
+    qty >= 100
+      ? "min-w-[1.85rem] px-1 sm:min-w-8 sm:px-1.5"
+      : qty >= 10
+        ? "min-w-7 px-0.5 sm:min-w-[1.85rem] sm:px-1"
+        : "";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full font-display font-bold tabular-nums leading-none",
+        dimensions,
+        wide,
+        badgeTone,
+      )}
+      aria-label={`Cantidad: ${qty}`}
+    >
+      {qty}
+    </span>
+  );
+}
+
 function getPayFailureMessage(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message;
   return "No se pudo registrar el cobro.";
@@ -513,11 +555,11 @@ export default function PaymentDialogV2({
           className={cn(
             "flex flex-col overflow-hidden bg-white p-0 sm:max-h-[94vh]",
             postPaySummary
-              ? "no-print max-h-[min(92dvh,720px)] w-[min(420px,calc(100vw-1.25rem))] max-w-[min(420px,calc(100vw-1.25rem))] sm:max-w-md"
+              ? "no-print max-h-[94dvh] w-[min(560px,calc(100vw-1.25rem))] max-w-[min(560px,calc(100vw-1.25rem))] sm:max-w-2xl"
               : "max-h-[calc(100dvh-0.75rem)] w-[calc(100vw-0.75rem)] max-w-[min(1320px,calc(100vw-0.75rem))] sm:w-[calc(100vw-1rem)] sm:max-w-[min(1320px,calc(100vw-1rem))] lg:max-w-[min(1400px,calc(100vw-1.5rem))]",
           )}
         >
-        <DialogHeader className="shrink-0 border-b border-border bg-white px-4 py-3 sm:px-5">
+        <DialogHeader className={cn("shrink-0 border-b border-border bg-white px-4 sm:px-5", postPaySummary ? "py-2 sm:py-2.5" : "py-3")}>
           <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-lg sm:text-xl">
             <span className="min-w-0">
               {postPaySummary ? (
@@ -563,48 +605,56 @@ export default function PaymentDialogV2({
           )}
         </DialogHeader>
 
-        <div className={cn("scrollbar-none min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6", postPaySummary && "no-print")}>
+        <div
+          className={cn(
+            "scrollbar-none min-h-0 flex-1 overflow-y-auto",
+            postPaySummary ? "px-3 py-2 sm:px-4 sm:py-2" : "px-4 py-4 sm:px-6",
+            postPaySummary && "no-print",
+          )}
+        >
           {postPaySummary && order ? (
-            <div className="mx-auto flex w-full max-w-md flex-col gap-4 py-2">
-              <p className="text-center text-sm text-muted-foreground">El pago quedo registrado en caja.</p>
+            <div className="mx-auto flex w-full max-w-full flex-col gap-2 py-0">
               {postPaySummary.changeAmount > 0.001 ? (
-                <div className="rounded-2xl border border-emerald-500/25 bg-emerald-50/90 p-4 shadow-sm">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-emerald-950">Cambio a entregar desde caja</p>
-                    <p className="font-display text-xl font-bold tabular-nums text-emerald-800">
+                <div className="rounded-2xl border border-emerald-500/25 bg-emerald-50/90 p-2 shadow-sm sm:p-2.5">
+                  <div className="mb-1.5 flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                    <p className="min-w-0 flex-1 text-base font-semibold leading-tight text-emerald-950 sm:text-lg">
+                      Cambio a entregar desde caja
+                    </p>
+                    <p className="shrink-0 font-display text-2xl font-bold tabular-nums leading-none text-emerald-800 sm:text-3xl">
                       {formatCurrency(postPaySummary.changeAmount)}
                     </p>
                   </div>
                   {postPaySummary.lines.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       {postPaySummary.lines.map((denomination) => (
                         <div
                           key={denomination.denomination_id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200/60 bg-white/90 px-2 py-2 text-sm"
+                          className="flex items-center justify-between gap-1.5 rounded-lg border border-emerald-200/60 bg-white/90 px-2 py-1 text-base sm:text-lg"
                         >
-                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <DenominationQtyCircle qty={denomination.qty} size="md" tone="emerald" />
                             <DenominationVisual
                               label={denomination.label}
                               imageUrl={denomination.image_url}
-                              className="h-9 w-9 shrink-0 rounded-xl border border-emerald-100 bg-white"
-                              iconClassName="h-4 w-4"
+                              className="h-9 w-9 shrink-0 rounded-md border border-emerald-100 bg-white"
+                              iconClassName="h-3.5 w-3.5 sm:h-4 sm:w-4"
                             />
-                            <span className="truncate font-medium text-foreground">
-                              {denomination.qty}× {denomination.label}
+                            <span className="min-w-0 flex-1 break-words font-semibold leading-tight text-foreground sm:text-lg">
+                              {denomination.label}
                             </span>
                           </div>
-                          <span className="shrink-0 font-semibold tabular-nums text-emerald-900">
+                          <span className="shrink-0 font-bold tabular-nums leading-none text-emerald-900 sm:text-xl">
                             {formatCurrency(denomination.qty * denomination.value)}
                           </span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No hay desglose por denominacion para este cambio.</p>
+                    <p className="text-base text-muted-foreground sm:text-lg">No hay desglose por denominacion para este cambio.</p>
                   )}
                 </div>
               ) : (
-                <p className="text-center text-sm font-medium text-foreground">No hay cambio que entregar al cliente.</p>
+                <p className="text-center text-base font-medium text-foreground sm:text-lg">No hay cambio que entregar al cliente.</p>
               )}
             </div>
           ) : !order ? null : (
@@ -739,9 +789,10 @@ export default function PaymentDialogV2({
                             key={line.denomination_id}
                             className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm shadow-sm"
                           >
-                            <span className="min-w-0 truncate text-muted-foreground">
-                              {line.qty}× {line.label}
-                            </span>
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                              <DenominationQtyCircle qty={line.qty} size="sm" tone="slate" />
+                              <span className="min-w-0 flex-1 truncate text-muted-foreground">{line.label}</span>
+                            </div>
                             <div className="flex shrink-0 items-center gap-1.5">
                               <span className="font-semibold tabular-nums text-slate-900">{formatCurrency(line.lineTotal)}</span>
                               {!readOnly && (
@@ -775,15 +826,16 @@ export default function PaymentDialogV2({
                               key={denomination.denomination_id}
                               className="flex items-center justify-between gap-2 text-sm"
                             >
-                              <div className="flex min-w-0 items-center gap-2">
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <DenominationQtyCircle qty={denomination.qty} size="sm" tone="emerald" />
                                 <DenominationVisual
                                   label={denomination.label}
                                   imageUrl={denomination.image_url}
                                   className="h-8 w-8 shrink-0 rounded-lg border border-emerald-100 bg-white"
                                   iconClassName="h-3.5 w-3.5"
                                 />
-                                <span className="truncate text-foreground">
-                                  {denomination.qty}× {denomination.label}
+                                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                                  {denomination.label}
                                 </span>
                               </div>
                               <span className="shrink-0 font-medium tabular-nums text-emerald-900">
@@ -809,16 +861,17 @@ export default function PaymentDialogV2({
 
         <div
           className={cn(
-            "flex shrink-0 flex-col gap-2 border-t border-border bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6",
+            "flex shrink-0 flex-col gap-2 border-t border-border bg-white px-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6",
+            postPaySummary ? "py-2" : "py-3",
             postPaySummary && "no-print",
           )}
         >
           {postPaySummary ? (
-            <div className="flex w-full flex-col gap-2 sm:ms-auto sm:max-w-xs sm:flex-row sm:justify-end">
+            <div className="flex w-full flex-col gap-2 sm:ms-auto sm:flex-row sm:justify-end sm:gap-3">
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 w-full gap-2 rounded-2xl border-2 font-semibold shadow-sm sm:flex-1"
+                className="h-10 w-full gap-2 rounded-2xl border-2 text-sm font-semibold shadow-sm sm:flex-1"
                 onClick={() => window.print()}
               >
                 <Printer className="h-4 w-4 shrink-0" />
@@ -826,7 +879,7 @@ export default function PaymentDialogV2({
               </Button>
               <Button
                 type="button"
-                className="h-11 w-full rounded-2xl font-semibold shadow-md sm:flex-1"
+                className="h-10 w-full rounded-2xl text-sm font-semibold shadow-md sm:flex-1"
                 onClick={() => {
                   void (async () => {
                     await settlePendingPay();

@@ -1279,15 +1279,16 @@ export function useCaja(params?: {
     };
   };
 
+  const openShiftIdForMovements = shiftQuery.data?.id;
   const movementsQuery = useQuery({
-    queryKey: ["cash-register-movements", shiftQuery.data?.id],
-    queryFn: async () => {
-      const shift = shiftQuery.data;
-      if (!shift) return [];
+    queryKey: ["cash-register-movements", openShiftIdForMovements],
+    queryFn: async ({ queryKey }) => {
+      const shiftId = queryKey[1] as string | undefined;
+      if (!shiftId) return [];
 
-      return fetchCashRegisterMovementsForShift(shift.id);
+      return fetchCashRegisterMovementsForShift(shiftId);
     },
-    enabled: !!shiftQuery.data?.id,
+    enabled: !!openShiftIdForMovements,
   });
 
   const ordersQuery = useQuery({
@@ -2526,25 +2527,34 @@ export function useCaja(params?: {
       type: "entrada" | "salida" | "cambio_denominacion";
       amount: number;
       reason: string;
-      movement_detail?: CashRegisterMovementDetail;
+      /** Alias usado por `CashRegisterMovementsDialog` / `ShiftSummary`. */
+      detail?: CashRegisterMovementDetail | null;
+      movement_detail?: CashRegisterMovementDetail | null;
     }) => {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
       if (!user) throw new Error("No user");
 
-      const { error } = await supabase.rpc("registrar_movimiento_caja" as any, {
+      const movementDetail = params.movement_detail ?? params.detail ?? null;
+
+      const { error } = await supabase.rpc("registrar_movimiento_caja", {
         p_turno_id: shift.id,
-        p_recorded_by: user.id,
-        p_movement_type: params.type,
-        p_amount: params.amount,
-        p_reason: params.reason,
-        p_movement_detail: params.movement_detail ?? null,
+        p_tipo: params.type,
+        p_monto: params.amount,
+        p_motivo: params.reason,
+        p_detail: movementDetail as import("@/integrations/supabase/types").Json | null,
       });
       if (error) throw error;
     },
-    onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: ["current-shift"] });
-      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
+    onSuccess: async (_, variables) => {
+      try {
+        await Promise.all([
+          qc.refetchQueries({ queryKey: ["current-shift", activeBranchId] }),
+          qc.refetchQueries({ queryKey: ["cash-register-movements"], exact: false }),
+        ]);
+      } catch (e) {
+        console.warn("[useCaja] Refetch tras movimiento de caja:", e);
+      }
       toast.success(variables.type === "cambio_denominacion" ? "Cambio registrado" : "Movimiento registrado");
     },
     onError: (err: any) => toast.error(err.message),

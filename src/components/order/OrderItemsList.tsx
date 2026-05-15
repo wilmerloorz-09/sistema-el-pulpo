@@ -201,44 +201,44 @@ const OrderItemsList = ({
 
 
       {(() => {
-        const groups: Record<string, OrderItem & { groupItemIds: string[], modifierQuantities: Array<{ mod: any, qty: number }> }> = {};
+        const groups: Record<string, OrderItem & { groupItemIds: string[]; modifierQuantities: Array<{ mod: any; qty: number }> }> = {};
         for (const item of items) {
           const modKey = (item.modifiers || [])
-            .map(m => m.description.trim().toLowerCase())
+            .map((m) => m.description.trim().toLowerCase())
             .sort()
             .join("|");
           const key = `${item.description_snapshot}_${item.unit_price}_${modKey}`;
           const itemQty = item.quantity || item.quantity_ordered || 0;
           if (!groups[key]) {
-            groups[key] = { 
-              ...item, 
+            groups[key] = {
+              ...item,
               groupItemIds: [item.id],
-              modifierQuantities: item.modifiers.map(m => ({ mod: m, qty: itemQty }))
+              modifierQuantities: item.modifiers.map((m) => ({ mod: m, qty: itemQty })),
             };
           } else {
             groups[key].quantity += item.quantity;
             groups[key].total += item.total;
             groups[key].groupItemIds.push(item.id);
-            groups[key].modifierQuantities.push(...item.modifiers.map(m => ({ mod: m, qty: itemQty })));
+            groups[key].modifierQuantities.push(...item.modifiers.map((m) => ({ mod: m, qty: itemQty })));
           }
         }
 
-        const consolidatedGroups = Object.values(groups).map(group => {
-          const modCounts: Record<string, { description: string, count: number, firstId: string }> = {};
+        const consolidatedGroups = Object.values(groups).map((group) => {
+          const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
           for (const mq of group.modifierQuantities) {
             const desc = mq.mod.description.trim();
             if (!desc) continue;
-            const key = desc.toLowerCase();
-            if (!modCounts[key]) {
-              modCounts[key] = { description: desc, count: mq.qty, firstId: mq.mod.id };
+            const mk = desc.toLowerCase();
+            if (!modCounts[mk]) {
+              modCounts[mk] = { description: desc, count: mq.qty, firstId: mq.mod.id };
             } else {
-              modCounts[key].count += mq.qty;
+              modCounts[mk].count += mq.qty;
             }
           }
 
-          const consolidatedModifiers = Object.values(modCounts).map(mc => ({
+          const consolidatedModifiers = Object.values(modCounts).map((mc) => ({
             id: mc.firstId,
-            description: mc.count > 1 ? `${mc.description} (${mc.count})` : mc.description
+            description: mc.count > 1 ? `${mc.description} (${mc.count})` : mc.description,
           }));
 
           return { ...group, modifiers: consolidatedModifiers };
@@ -248,7 +248,7 @@ const OrderItemsList = ({
       })().map((item) => {
         const isPending = item.status === "DRAFT";
         const isTemporaryItem = isTemporaryOrderItemId(item.id);
-        const canShowControlsForItem = !hideItemControls || editableItemIds.some(id => item.groupItemIds.includes(id));
+        const canShowControlsForItem = !hideItemControls || editableItemIds.some((id) => item.groupItemIds.includes(id));
         const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || alwaysShowControls);
         const draftDisabled = isPending && disableDraftEditing;
         const controlsDisabled = alwaysShowControls ? false : draftDisabled;
