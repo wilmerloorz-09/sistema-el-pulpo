@@ -883,9 +883,9 @@ export function useCaja(params?: {
   });
 
   const shiftQuery = useQuery({
-    queryKey: ["current-shift", activeBranchId],
+    queryKey: ["current-shift", activeBranchId, user?.id ?? null],
     queryFn: async () => {
-      if (!activeBranchId) return null;
+      if (!activeBranchId || !user?.id) return null;
 
       const shifts = await dbSelect<any>("cash_shifts", {
         select: "id, branch_id, status, caja_status, cashier_id, capture_user_id, capture_device_label, opened_at, closed_at, notes, active_tables_count",
@@ -899,7 +899,10 @@ export function useCaja(params?: {
 
       const denoms = await dbSelect<any>("cash_shift_denoms", {
         select: "id, denomination_id, qty_initial, qty_current",
-        filters: [{ column: "shift_id", op: "eq", value: shiftData.id }]
+        filters: [
+          { column: "shift_id", op: "eq", value: shiftData.id },
+          { column: "cashier_id", op: "eq", value: user.id },
+        ],
       });
 
       const allDenoms = denomsQuery.data ?? [];
@@ -922,7 +925,9 @@ export function useCaja(params?: {
         p_shift_id: shiftData.id 
       });
 
-      const openingHistory = ((openingHistoryData ?? []) as any[]).map((row) => ({
+      const openingHistory = ((openingHistoryData ?? []) as any[])
+        .filter((row) => row.cashier_id === user.id)
+        .map((row) => ({
         id: row.id,
         shift_id: row.shift_id,
         status: row.status,
@@ -957,7 +962,7 @@ export function useCaja(params?: {
         is_stale: isStale,
       } as CashShift;
     },
-    enabled: !!activeBranchId && !!denomsQuery.data,
+    enabled: !!activeBranchId && !!user?.id && !!denomsQuery.data,
   });
 
   const captureCandidatesQuery = useQuery({

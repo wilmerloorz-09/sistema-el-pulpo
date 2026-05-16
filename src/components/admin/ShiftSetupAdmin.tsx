@@ -1214,49 +1214,7 @@ const ShiftSetupAdmin = () => {
       isSupervisor: boolean;
     }>,
   ) => {
-    const cashierUserId =
-      sanitizedEnabledUsers.find((entry) => entry.canUseCaja)?.userId ?? null;
-
-    const oldCashierQuery = (supabase
-      .from("cash_shift_users" as any)
-      .delete()
-      .eq("shift_id", shiftId)
-      .eq("is_enabled", true)
-      .eq("can_use_caja", true)
-      .eq("can_serve_tables", false)
-      .eq("can_access_orders", false)
-      .eq("can_edit_orders", false)
-      .eq("can_dispatch_orders", false)
-      .eq("can_manage_products", false)
-      .eq("can_authorize_order_cancel", false)
-      .eq("is_supervisor", false) as any);
-
-    const { error: deleteOnlyCajaError } = cashierUserId
-      ? await oldCashierQuery.neq("user_id", cashierUserId)
-      : await oldCashierQuery;
-
-    if (deleteOnlyCajaError) throw deleteOnlyCajaError;
-
-    // Clear any previously enabled cashier first so reassignments do not
-    // collide with the one-cashier-per-shift unique index.
-    const clearCashierQuery = (supabase
-      .from("cash_shift_users" as any)
-      .update({ can_use_caja: false, can_double_session: false } as any)
-      .eq("shift_id", shiftId)
-      .eq("is_enabled", true)
-      .eq("can_use_caja", true) as any);
-
-    const { error: clearCashierError } = cashierUserId
-      ? await clearCashierQuery.neq("user_id", cashierUserId)
-      : await clearCashierQuery;
-
-    if (clearCashierError) throw clearCashierError;
-
     for (const entry of sanitizedEnabledUsers) {
-      if (entry.userId === cashierUserId) {
-        continue;
-      }
-
       await setShiftUserEnabledCompat({
         shiftId,
         userId: entry.userId,
@@ -1266,36 +1224,12 @@ const ShiftSetupAdmin = () => {
         canEditOrders: entry.canEditOrders,
         canDispatchOrders: entry.canDispatchOrders,
         canManageProducts: entry.canManageProducts,
-        canUseCaja: false,
+        canUseCaja: entry.canUseCaja,
         canAuthorizeOrderCancel: entry.canAuthorizeOrderCancel,
-        canDoubleSession: false,
+        canDoubleSession: entry.canDoubleSession,
         isSupervisor: entry.isSupervisor,
       });
     }
-
-    if (!cashierUserId) {
-      return;
-    }
-
-    const cashierEntry = sanitizedEnabledUsers.find((entry) => entry.userId === cashierUserId);
-    if (!cashierEntry) {
-      return;
-    }
-
-    await setShiftUserEnabledCompat({
-      shiftId,
-      userId: cashierEntry.userId,
-      isEnabled: true,
-      canServeTables: cashierEntry.canServeTables,
-      canAccessOrders: cashierEntry.canAccessOrders,
-      canEditOrders: cashierEntry.canEditOrders,
-      canDispatchOrders: cashierEntry.canDispatchOrders,
-      canManageProducts: cashierEntry.canManageProducts,
-      canUseCaja: true,
-      canAuthorizeOrderCancel: cashierEntry.canAuthorizeOrderCancel,
-      canDoubleSession: cashierEntry.canDoubleSession,
-      isSupervisor: cashierEntry.isSupervisor,
-    });
   };
 
   const resolveCurrentOpenShiftId = async () => {

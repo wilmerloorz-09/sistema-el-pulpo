@@ -2740,7 +2740,12 @@ const OrdenesContent = () => {
               }
               await sendToKitchen.mutateAsync();
               if (canUseCaja && (order?.id || orderId)) {
-                if (!shift || shift.caja_status !== "OPEN" || !shift.denoms || shift.denoms.length === 0) {
+                if (
+                  !shiftGateQuery.data?.shiftOpen
+                  || shiftGateQuery.data?.cajaStatus !== "OPEN"
+                  || !shift?.denoms
+                  || shift.denoms.length === 0
+                ) {
                   setShowCajaUnopenedAlert(true);
                   return;
                 }

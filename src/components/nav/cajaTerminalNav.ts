@@ -12,11 +12,11 @@ export function computeCajaAbrirTerminalState(sg: BranchShiftGate | undefined) {
   if (!sg?.shiftOpen) abrirDisabledReason = "No hay turno abierto.";
   else if (!sg?.userEnabled) abrirDisabledReason = "No estas habilitado en el turno.";
   else if (!sg?.canUseCaja) abrirDisabledReason = "Sin permiso de Caja.";
-  else if (tabRegistered) abrirDisabledReason = "Ya abriste Caja en esta terminal.";
-  else if (globalUsed >= maxCap) abrirDisabledReason = "Ya estan abiertas todas las terminales permitidas.";
-  else if (userSlots.length >= userMaxSlots) abrirDisabledReason = "Alcanzaste el limite de terminales para tu usuario.";
+  else if (sg?.cajaStatus === "OPEN") abrirDisabledReason = "Tu caja ya esta abierta en este turno.";
 
   const canOpenAbrirCaja = !abrirDisabledReason;
 
-  return { canOpenAbrirCaja, abrirDisabledReason, maxCap, globalUsed, tabRegistered, userSlots, userMaxSlots };
+  const abrirNavLabel = sg?.cajaStatus === "CLOSED" ? "Reabrir mi caja..." : "Abrir mi caja...";
+
+  return { canOpenAbrirCaja, abrirDisabledReason, maxCap, globalUsed, tabRegistered, userSlots, userMaxSlots, abrirNavLabel };
 }

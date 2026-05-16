@@ -182,7 +182,7 @@ export function useVisibleNavItems() {
 
   return useMemo(() => {
     const sg = shiftGateQuery.data;
-    const { canOpenAbrirCaja, abrirDisabledReason } = computeCajaAbrirTerminalState(sg);
+    const { canOpenAbrirCaja, abrirDisabledReason, abrirNavLabel } = computeCajaAbrirTerminalState(sg);
 
     const navItemsResolved = NAV_ITEMS.map((navItem) => {
       if (navItem.to !== "/caja") return navItem;
@@ -190,8 +190,8 @@ export function useVisibleNavItems() {
         ...navItem,
         subItems: [
           {
-            to: "/caja?intent=claim-terminal",
-            label: "Abrir Caja...",
+            to: "/caja",
+            label: abrirNavLabel,
             disabled: !canOpenAbrirCaja,
             disabledReason: abrirDisabledReason,
           },
@@ -278,5 +278,6 @@ export function useVisibleNavItems() {
     shiftGateQuery.data?.cajaSessionSlots,
     shiftGateQuery.data?.shiftOpen,
     shiftGateQuery.data?.userEnabled,
+    shiftGateQuery.data?.cajaStatus,
   ]);
 }

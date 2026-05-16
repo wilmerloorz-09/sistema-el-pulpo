@@ -33,7 +33,7 @@ function getInitials(name?: string | null) {
 const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => {
   const { visibleItems } = useVisibleNavItems();
   const shiftGateQuery = useBranchShiftGate();
-  const { canOpenAbrirCaja, abrirDisabledReason } = computeCajaAbrirTerminalState(shiftGateQuery.data);
+  const { canOpenAbrirCaja, abrirDisabledReason, abrirNavLabel } = computeCajaAbrirTerminalState(shiftGateQuery.data);
   const { profile } = useAuth();
   const accountLabel = getUserDisplayName(profile);
   const initials = getInitials(accountLabel);
@@ -110,13 +110,13 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                   {canOpenAbrirCaja ? (
                     <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-emerald-50 focus:text-emerald-950 dark:focus:bg-emerald-500/20">
                       <Link
-                        to="/caja?intent=claim-terminal"
+                        to="/caja"
                         className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer"
                       >
                         <div className="flex bg-emerald-100 text-emerald-700 p-2 rounded-[12px] dark:bg-emerald-500/20 dark:text-emerald-300 shadow-sm">
                           <KeyRound className="h-4 w-4" />
                         </div>
-                        <span className="text-sm">Abrir Caja...</span>
+                        <span className="text-sm">{abrirNavLabel}</span>
                       </Link>
                     </DropdownMenuItem>
                   ) : (
@@ -129,7 +129,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                         <div className="flex bg-muted text-muted-foreground p-2 rounded-[12px]">
                           <KeyRound className="h-4 w-4" />
                         </div>
-                        <span className="text-sm font-semibold">Abrir Caja...</span>
+                        <span className="text-sm font-semibold">{abrirNavLabel}</span>
                       </div>
                     </DropdownMenuItem>
                   )}

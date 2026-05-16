@@ -21,6 +21,8 @@ interface Props {
   denominations: Denomination[];
   templates?: CashRegisterTemplate[];
   hasCashierUser: boolean;
+  /** Si hay al menos un usuario del turno con Caja habilitado (puede diferir del usuario logueado). */
+  shiftHasConfiguredCashiers?: boolean;
   cashierUserLabel?: string | null;
   onOpen: (payload: {
     counts: { denomination_id: string; qty: number }[];
@@ -38,6 +40,7 @@ export default function OpenShiftForm({
   denominations,
   templates = [],
   hasCashierUser,
+  shiftHasConfiguredCashiers = true,
   cashierUserLabel = null,
   onOpen,
   opening,
@@ -226,7 +229,9 @@ export default function OpenShiftForm({
 
       {hasDenominations && !readOnly && hasPositiveOpeningTotal && !hasCashierUser && (
         <p className="mt-3 text-center text-xs text-amber-700">
-          No puedes abrir caja hasta definir un unico usuario con permiso de Caja en este turno.
+          {shiftHasConfiguredCashiers
+            ? "No puedes abrir caja con esta cuenta: no tienes permiso de Caja en este turno."
+            : "No puedes abrir caja hasta que exista al menos un usuario con permiso de Caja en el turno."}
         </p>
       )}
 

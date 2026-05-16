@@ -3,8 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useBranchShiftGate, TAB_SESSION_ID } from "@/hooks/useBranchShiftGate";
-import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { supabase } from "@/services/DatabaseService";
 import { Button } from "@/components/ui/button";
@@ -98,13 +97,6 @@ const Caja = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  useEffect(() => {
-    if (searchParams.get("intent") !== "claim-terminal") return;
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("intent");
-    setSearchParams(nextParams, { replace: true });
-  }, [searchParams, setSearchParams]);
-
   const canOperateCaja =
     canOperate(permissions, "caja")
     || isGlobalAdmin
@@ -147,10 +139,12 @@ const Caja = () => {
     closeCashRegister,
     annulCashOpening,
     registerCashMovement,
-    takeCajaControl,
   } = useCaja({ completedPaymentsFilters: completedFilters, autoOpenOrderId });
 
-
+  const currentUserCashierCandidate = useMemo(
+    () => (user?.id ? captureCandidates.find((c) => c.id === user.id) ?? null : null),
+    [user?.id, captureCandidates],
+  );
 
   const activeCaptureRequest = useMemo(
     () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
@@ -176,38 +170,14 @@ const Caja = () => {
     setPreparingPhoto(false);
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
 
-  const occupiedCajaSessions =
-    shiftGateQuery.data?.cajaSessionSlots?.filter((value) =>
-      typeof value === "string" ? value.trim().length > 0 : Boolean(value),
-    ) ?? [];
+  const userCajaStatus = shiftGateQuery.data?.cajaStatus ?? "UNOPENED";
+  const userCajaIsOpen = userCajaStatus === "OPEN";
+  const cajaPanelReadOnly = !canOperateCaja || !userCajaIsOpen;
 
-  const { maxCap, globalUsed: globalTerminalSessionsUsed } = computeCajaAbrirTerminalState(
-    shiftGateQuery.data,
+  const userOpeningHistory = useMemo(
+    () => (shift?.openingHistory ?? []).filter((entry) => entry.cashier_id === user?.id),
+    [shift?.openingHistory, user?.id],
   );
-
-  const isCurrentTabRegisteredInCaja = occupiedCajaSessions.includes(TAB_SESSION_ID);
-  const userTerminalSlotCap = shiftGateQuery.data?.canDoubleSession ? Math.min(maxCap, 2) : 1;
-  const hasCajaSessionSlotAvailable =
-    occupiedCajaSessions.length < userTerminalSlotCap && globalTerminalSessionsUsed < maxCap;
-
-  useEffect(() => {
-    const shiftId = shiftGateQuery.data?.shiftId;
-    if (!shiftId || !shiftGateQuery.data?.userEnabled || isCurrentTabRegisteredInCaja || !hasCajaSessionSlotAvailable) {
-      return;
-    }
-    void takeCajaControl({ sessionId: TAB_SESSION_ID, shiftId });
-  }, [
-    hasCajaSessionSlotAvailable,
-    isCurrentTabRegisteredInCaja,
-    shiftGateQuery.data?.shiftId,
-    shiftGateQuery.data?.userEnabled,
-    takeCajaControl,
-  ]);
-
-  const isSessionAuthorized =
-    !shiftGateQuery.data?.shiftId
-    || !shiftGateQuery.data?.userEnabled
-    || isCurrentTabRegisteredInCaja;
 
   const clearSelectedPhoto = () => {
     if (photoPreviewUrl) {
@@ -561,7 +531,7 @@ const Caja = () => {
 
   const isCaptureDeviceOnly = false;
 
-  if (activeTab === "completed" && (!shift || shift.caja_status !== "OPEN")) {
+  if (activeTab === "completed" && !shift) {
     return (
       <div className="min-h-full bg-slate-50 px-4 pt-4 pb-8 sm:px-6 sm:pt-6 lg:px-10">
         <div className="w-full space-y-6">
@@ -662,7 +632,7 @@ const Caja = () => {
     }
   };
 
-  if (shift.caja_status !== "OPEN") {
+  if (!userCajaIsOpen) {
     return (
       <div className="bg-slate-50 px-4 py-2 sm:px-6 lg:px-10">
         <div className="w-full space-y-6">
@@ -671,42 +641,36 @@ const Caja = () => {
               Caja · {activeBranch?.name ?? "Sucursal"}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              La jornada ya esta abierta. Falta preparar la caja para cobrar.
+              {userCajaStatus === "CLOSED"
+                ? "Tu caja esta cerrada. Ingresa un nuevo arqueo inicial para volver a cobrar en este turno."
+                : "El turno esta abierto. Debes abrir tu propia caja con tu arqueo de monedas y billetes antes de cobrar."}
             </p>
           </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]">
-            {shift.caja_status !== "OPEN" ? (
-              <OpenShiftForm
+            <OpenShiftForm
                 denominations={denominations}
                 templates={cashRegisterTemplates}
-                hasCashierUser={captureCandidates.length === 1}
+                hasCashierUser={Boolean(currentUserCashierCandidate)}
+                shiftHasConfiguredCashiers={captureCandidates.length > 0}
                 cashierUserLabel={
-                  captureCandidates.length === 1
-                    ? `${captureCandidates[0].full_name} @${captureCandidates[0].username}`
+                  currentUserCashierCandidate
+                    ? `${currentUserCashierCandidate.full_name} @${currentUserCashierCandidate.username}`
                     : null
                 }
                 onOpen={({ counts }) => openCashRegister.mutate({ counts })}
                 opening={openCashRegister.isPending}
                 readOnly={!canOperateCaja}
-                title={shift.caja_status === "CLOSED" ? "Reabrir Caja" : "Abrir Caja"}
+                title={userCajaStatus === "CLOSED" ? "Reabrir mi caja" : "Abrir mi caja"}
                 description={
-                  shift.caja_status === "CLOSED"
-                    ? `La caja fue cerrada antes, pero el turno sigue abierto. Ingresa un nuevo conteo inicial para reanudar cobros. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`
-                    : `Ingresa el conteo inicial de caja. El turno tiene ${branchReferenceTableCount} mesa(s) de referencia en esta sucursal.`
+                  userCajaStatus === "CLOSED"
+                    ? `Cerraste tu caja en este turno, pero la jornada sigue abierta. Ingresa tu nuevo arqueo inicial para volver a cobrar. Referencia: ${branchReferenceTableCount} mesa(s) en esta sucursal.`
+                    : `Ingresa tu conteo inicial de monedas y billetes. Cada cajero habilitado abre su propia caja en el mismo turno. Referencia: ${branchReferenceTableCount} mesa(s) en esta sucursal.`
                 }
-                openingHistory={shift.openingHistory}
+                openingHistory={userOpeningHistory}
                 onRegenerateShiftReport={handleRegenerateShiftReport}
                 onReprintOpeningReport={handleReprintOpeningReport}
               />
-            ) : (
-              <div className="mx-auto max-w-md text-center">
-                <h2 className="font-display text-xl font-bold text-foreground">Caja cerrada</h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  La caja de este turno ya fue cerrada. Para volver a cobrar necesitas abrir una nueva jornada desde Administracion.
-                </p>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1038,7 +1002,7 @@ const Caja = () => {
                   </p>
                   <div className="flex items-center gap-2">
                     <span className="inline-block h-2 w-2 rounded-full bg-[#0f766e]" />
-                    <span className="text-sm text-slate-700">Caja abierta</span>
+                    <span className="text-sm text-slate-700">Mi caja abierta</span>
                     {!canOperateCaja && (
                       <span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-500">
                         Solo consulta
@@ -1056,13 +1020,17 @@ const Caja = () => {
                 movements={cashRegisterMovements}
                 movementsLoading={isLoadingCashRegisterMovements}
                 onClose={handleCloseCashRegister}
-                onAnnulOpen={(reason) => annulCashOpening.mutateAsync({ reason })}
+                onAnnulOpen={async (reason) => {
+                  const opening = shift.openingHistory.find((entry) => entry.is_current);
+                  if (!opening) throw new Error("No hay apertura activa para anular");
+                  await annulCashOpening.mutateAsync({ openingId: opening.id, reason });
+                }}
                 onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
                 closing={closeCashRegister.isPending}
                 annulling={annulCashOpening.isPending}
                 registeringMovement={registerCashMovement.isPending}
                 canAnnulOpen={canAnnulOpening}
-                readOnly={!canOperateCaja}
+                readOnly={cajaPanelReadOnly}
               />
             )}
           </div>
@@ -1080,7 +1048,7 @@ const Caja = () => {
                 onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
                 getTransferProofReadiness={getTransferProofReadiness}
                 paying={payOrder.isPending}
-                readOnly={!canOperateCaja}
+                readOnly={cajaPanelReadOnly}
                 autoOpenOrderId={autoOpenOrderId}
                 onAutoOpenOrderConsumed={clearAutoOpenOrder}
               />
