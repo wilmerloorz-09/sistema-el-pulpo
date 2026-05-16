@@ -10,7 +10,11 @@ import {
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import {
+  getOpenCashShiftForBranch,
+  orderBelongsToOpenCashShift,
+  type OpenCashShift,
+} from "@/lib/openCashShift";
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
@@ -290,8 +294,10 @@ export async function fetchSiblingOrders(
   branchId: string,
   /** No purgar este borrador vacio (la orden abierta en pantalla). */
   keepOrderId?: string | null,
+  /** Si ya resolviste el turno abierto (p. ej. en Mesas), evita otra lectura duplicada. */
+  cachedOpenShift?: OpenCashShift | null,
 ): Promise<SiblingOrder[]> {
-  const openShift = await getOpenCashShiftForBranch(branchId);
+  const openShift = cachedOpenShift ?? (await getOpenCashShiftForBranch(branchId));
   if (!openShift) return [];
 
   /** Purga en segundo plano: no bloquea el listado (ingreso rapido a mesa). */
@@ -710,6 +716,31 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
 
 export async function fetchOrderDetail(orderId: string): Promise<Order | null> {
   return withOrderDetailTimeout(fetchOrderDetailInternal(orderId));
+}
+
+/** Lectura liviana antes de navegar desde Mesas: solo sirve para validar turno (evita fetchOrderDetail completo). */
+export async function fetchOrderShiftGateFields(orderId: string): Promise<{
+  cash_shift_id: string | null;
+  created_at: string | null;
+  sent_to_kitchen_at: string | null;
+} | null> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("cash_shift_id, created_at, sent_to_kitchen_at")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as Pick<
+    Database["public"]["Tables"]["orders"]["Row"],
+    "cash_shift_id" | "created_at" | "sent_to_kitchen_at"
+  >;
+  return {
+    cash_shift_id: row.cash_shift_id ?? null,
+    created_at: row.created_at ?? null,
+    sent_to_kitchen_at: row.sent_to_kitchen_at ?? null,
+  };
 }
 
 export function useOrder(orderId: string | null) {

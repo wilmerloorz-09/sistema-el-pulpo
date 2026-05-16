@@ -1392,20 +1392,24 @@ const OrdenesContent = () => {
   }, [fromEditar, orderId]);
 
   useEffect(() => {
-    if (!orderId || !order?.branch_id || !activeBranchId) return;
-    if (order.branch_id === activeBranchId) return;
-    if (syncedOrderBranchRef.current === order.branch_id) return;
-
-    const matchingBranch = branches.find((branch) => branch.id === order.branch_id);
-    if (!matchingBranch) {
-      toast.error("Esta orden pertenece a una sucursal que no esta disponible en tu contexto actual.");
+    if (!orderId || !order?.branch_id) return;
+    if (activeBranchId === order.branch_id) {
       syncedOrderBranchRef.current = order.branch_id;
       return;
     }
 
-    syncedOrderBranchRef.current = order.branch_id;
+    const matchingBranch = branches.find((branch) => branch.id === order.branch_id);
+    if (!matchingBranch) {
+      toast.error("Esta orden pertenece a una sucursal que no esta disponible en tu contexto actual.");
+      return;
+    }
+
+    const previousBranchId = activeBranchId;
     void setActiveBranch(matchingBranch).then(() => {
-      toast.info("Se cambio la sucursal activa para mostrar la orden en su contexto correcto.");
+      syncedOrderBranchRef.current = order.branch_id;
+      if (previousBranchId && previousBranchId !== order.branch_id) {
+        toast.info("Se cambio la sucursal activa para mostrar la orden en su contexto correcto.");
+      }
     });
   }, [orderId, order?.branch_id, activeBranchId, branches, setActiveBranch]);
 

@@ -4,6 +4,7 @@ import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilt
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchShiftGate, TAB_SESSION_ID } from "@/hooks/useBranchShiftGate";
+import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { supabase } from "@/services/DatabaseService";
 import { Button } from "@/components/ui/button";
@@ -97,6 +98,13 @@ const Caja = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (searchParams.get("intent") !== "claim-terminal") return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("intent");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const canOperateCaja =
     canOperate(permissions, "caja")
     || isGlobalAdmin
@@ -168,14 +176,19 @@ const Caja = () => {
     setPreparingPhoto(false);
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
 
-  const activeCajaSessionIds = [
-    shiftGateQuery.data?.lastSessionId,
-    shiftGateQuery.data?.secondarySessionId,
-  ].filter((value): value is string => Boolean(value));
-  const isCurrentTabRegisteredInCaja = activeCajaSessionIds.includes(TAB_SESSION_ID);
+  const occupiedCajaSessions =
+    shiftGateQuery.data?.cajaSessionSlots?.filter((value) =>
+      typeof value === "string" ? value.trim().length > 0 : Boolean(value),
+    ) ?? [];
+
+  const { maxCap, globalUsed: globalTerminalSessionsUsed } = computeCajaAbrirTerminalState(
+    shiftGateQuery.data,
+  );
+
+  const isCurrentTabRegisteredInCaja = occupiedCajaSessions.includes(TAB_SESSION_ID);
+  const userTerminalSlotCap = shiftGateQuery.data?.canDoubleSession ? Math.min(maxCap, 2) : 1;
   const hasCajaSessionSlotAvailable =
-    activeCajaSessionIds.length === 0
-    || (Boolean(shiftGateQuery.data?.canDoubleSession) && activeCajaSessionIds.length < 2);
+    occupiedCajaSessions.length < userTerminalSlotCap && globalTerminalSessionsUsed < maxCap;
 
   useEffect(() => {
     const shiftId = shiftGateQuery.data?.shiftId;

@@ -6,7 +6,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, type OpenCashShift } from "@/lib/openCashShift";
 
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -35,6 +35,8 @@ export interface TableWithStatus {
 
 export interface TablesWithStatusData {
   tables: TableWithStatus[];
+  /** Turno abierto usado para filtrar mesas por turno — se replica en React Query [`open-cash-shift`, branchId]. */
+  openCashShift: OpenCashShift | null;
 }
 
 interface TablesOverviewRow {
@@ -185,7 +187,7 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
     };
   });
 
-  return { tables };
+  return { tables, openCashShift: openShift ?? null };
 }
 
 export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {
@@ -340,7 +342,11 @@ export function useTablesWithStatus() {
 
   const query = useQuery({
     queryKey: getTablesWithStatusQueryKey(activeBranchId, tablesShiftKeyPart),
-    queryFn: () => fetchTablesWithStatus(activeBranchId!),
+    queryFn: async () => {
+      const data = await fetchTablesWithStatus(activeBranchId!);
+      qc.setQueryData(["open-cash-shift", activeBranchId], data.openCashShift);
+      return data;
+    },
     enabled: !!activeBranchId,
     staleTime: 5_000,
     gcTime: 10 * 60_000,

@@ -1,4 +1,4 @@
-import { UserRound, CreditCard, History, Camera } from "lucide-react";
+import { UserRound, CreditCard, History, KeyRound } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
+import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +32,8 @@ function getInitials(name?: string | null) {
 
 const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => {
   const { visibleItems } = useVisibleNavItems();
+  const shiftGateQuery = useBranchShiftGate();
+  const { canOpenAbrirCaja, abrirDisabledReason } = computeCajaAbrirTerminalState(shiftGateQuery.data);
   const { profile } = useAuth();
   const accountLabel = getUserDisplayName(profile);
   const initials = getInitials(accountLabel);
@@ -103,6 +107,32 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="center" side="top" sideOffset={16} className="w-52 z-[100] rounded-[20px] p-2 mb-2 bg-white/95 backdrop-blur-md shadow-xl border-orange-200 dark:bg-card/95 dark:border-border">
+                  {canOpenAbrirCaja ? (
+                    <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-emerald-50 focus:text-emerald-950 dark:focus:bg-emerald-500/20">
+                      <Link
+                        to="/caja?intent=claim-terminal"
+                        className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer"
+                      >
+                        <div className="flex bg-emerald-100 text-emerald-700 p-2 rounded-[12px] dark:bg-emerald-500/20 dark:text-emerald-300 shadow-sm">
+                          <KeyRound className="h-4 w-4" />
+                        </div>
+                        <span className="text-sm">Abrir Caja...</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      disabled
+                      className="mb-1 cursor-not-allowed rounded-xl p-2.5 opacity-60"
+                      title={abrirDisabledReason}
+                    >
+                      <div className="flex items-center gap-3 w-full">
+                        <div className="flex bg-muted text-muted-foreground p-2 rounded-[12px]">
+                          <KeyRound className="h-4 w-4" />
+                        </div>
+                        <span className="text-sm font-semibold">Abrir Caja...</span>
+                      </div>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-orange-50 focus:text-orange-950 dark:focus:bg-primary/20">
                     <Link to="/caja?tab=pending" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
                       <div className="flex bg-orange-100 text-orange-600 p-2 rounded-[12px] dark:bg-primary/20 dark:text-primary shadow-sm"><CreditCard className="h-4 w-4" /></div>

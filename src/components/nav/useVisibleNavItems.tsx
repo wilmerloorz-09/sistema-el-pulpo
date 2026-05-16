@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
+import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { canView } from "@/lib/permissions";
@@ -9,6 +10,9 @@ export interface NavSubItem {
   to: string;
   label: string;
   end?: boolean;
+  disabled?: boolean;
+  /** Texto para tooltip cuando está deshabilitado */
+  disabledReason?: string;
 }
 
 export interface AppNavItem {
@@ -177,12 +181,32 @@ export function useVisibleNavItems() {
   const shiftGateQuery = useBranchShiftGate();
 
   return useMemo(() => {
+    const sg = shiftGateQuery.data;
+    const { canOpenAbrirCaja, abrirDisabledReason } = computeCajaAbrirTerminalState(sg);
+
+    const navItemsResolved = NAV_ITEMS.map((navItem) => {
+      if (navItem.to !== "/caja") return navItem;
+      return {
+        ...navItem,
+        subItems: [
+          {
+            to: "/caja?intent=claim-terminal",
+            label: "Abrir Caja...",
+            disabled: !canOpenAbrirCaja,
+            disabledReason: abrirDisabledReason,
+          },
+          { to: "/caja", label: "Por cobrar", end: true },
+          { to: "/caja?tab=completed", label: "Pagos del turno" },
+        ],
+      };
+    });
+
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
     const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
-    const hasOperationalShift = Boolean(shiftGateQuery.data?.shiftOpen) && Boolean(shiftGateQuery.data?.userEnabled);
-    const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
-    const visibleItems = NAV_ITEMS.filter((item) => {
+    const hasOperationalShift = Boolean(sg?.shiftOpen) && Boolean(sg?.userEnabled);
+    const hasSupervisorBypass = Boolean(sg?.isSupervisor);
+    const visibleItems = navItemsResolved.filter((item) => {
       if (isGlobalAdminWithoutBranches) {
         return item.to === "/admin";
       }
@@ -197,31 +221,31 @@ export function useVisibleNavItems() {
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
         if (item.to === "/mesas") {
-          return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
+          return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
         if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
-          return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canServeTables);
+          return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
         if (item.to === "/editar-orden") {
-          return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canEditOrders);
+          return hasSupervisorBypass || Boolean(sg?.canEditOrders);
         }
         return hasSupervisorBypass
-          || Boolean(shiftGateQuery.data?.canServeTables)
-          || Boolean(shiftGateQuery.data?.canAccessOrders);
+          || Boolean(sg?.canServeTables)
+          || Boolean(sg?.canAccessOrders);
       }
 
       if (item.to === "/productos") {
         return hasSupervisorBypass
-          || Boolean(shiftGateQuery.data?.canDispatchOrders)
-          || Boolean(shiftGateQuery.data?.canManageProducts);
+          || Boolean(sg?.canDispatchOrders)
+          || Boolean(sg?.canManageProducts);
       }
 
       if (item.to === "/caja") {
-        return hasSupervisorBypass || Boolean(shiftGateQuery.data?.canUseCaja);
+        return hasSupervisorBypass || Boolean(sg?.canUseCaja);
       }
 
       if (item.to === "/despacho") {
-        if (!(hasSupervisorBypass || Boolean(shiftGateQuery.data?.canDispatchOrders))) return false;
+        if (!(hasSupervisorBypass || Boolean(sg?.canDispatchOrders))) return false;
         return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
       }
 
@@ -246,8 +270,12 @@ export function useVisibleNavItems() {
     shiftGateQuery.data?.canDispatchOrders,
     shiftGateQuery.data?.canManageProducts,
     shiftGateQuery.data?.canServeTables,
+    shiftGateQuery.data?.canDoubleSession,
     shiftGateQuery.data?.canUseCaja,
+    shiftGateQuery.data?.globalCajaSessionsUsed,
     shiftGateQuery.data?.isSupervisor,
+    shiftGateQuery.data?.maxCajaSessions,
+    shiftGateQuery.data?.cajaSessionSlots,
     shiftGateQuery.data?.shiftOpen,
     shiftGateQuery.data?.userEnabled,
   ]);

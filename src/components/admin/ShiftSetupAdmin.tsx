@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
+  Banknote,
   LayoutGrid,
   Loader2,
   Plus,
@@ -120,6 +121,19 @@ function normalizeShiftUser(user: ShiftUserRow, useFallbackServeRole: boolean): 
   }
 
   return normalized;
+}
+
+function trimExcessCajaUsersByCap(users: ShiftUserRow[], maxCajaUsers: number): ShiftUserRow[] {
+  const cap = Math.max(1, Math.min(10, Math.trunc(Number(maxCajaUsers) || 1)));
+  let remaining = cap;
+  return users.map((u) => {
+    if (!u.can_use_caja) return u;
+    if (remaining > 0) {
+      remaining--;
+      return u;
+    }
+    return normalizeShiftUser({ ...u, can_use_caja: false, can_double_session: false }, false);
+  });
 }
 
 function sanitizeShiftUserCapability<T extends {
@@ -315,6 +329,7 @@ const ShiftSetupAdmin = () => {
   const { user, profile } = useAuth();
   const { activeBranchId, activeBranch, isGlobalAdmin } = useBranch();
   const [activeTablesCount, setActiveTablesCount] = useState(0);
+  const [maxCajaSessionsCount, setMaxCajaSessionsCount] = useState(1);
   const [shiftUsersState, setShiftUsersState] = useState<ShiftUserRow[]>([]);
   const [selectedUserToAdd, setSelectedUserToAdd] = useState("");
   const [checkingUserToAdd, setCheckingUserToAdd] = useState(false);
@@ -365,7 +380,7 @@ const ShiftSetupAdmin = () => {
       if (!activeBranchId) return null;
       const { data, error } = await supabase
         .from("cash_shifts")
-        .select("id, status, opened_at, active_tables_count")
+        .select("id, status, opened_at, active_tables_count, max_caja_sessions")
         .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
         .order("opened_at", { ascending: false })
@@ -384,6 +399,7 @@ const ShiftSetupAdmin = () => {
           status: data.status,
           opened_at: data.opened_at,
           active_tables_count: Number(data.active_tables_count ?? 0),
+          max_caja_sessions: Math.max(1, Math.min(10, Number(data.max_caja_sessions ?? 1))),
           is_stale: isStale,
         };
       }
@@ -549,6 +565,9 @@ const ShiftSetupAdmin = () => {
   const isCashThenDispatch = branchSettingsQuery.data?.workflowMode === "CASH_THEN_DISPATCH";
   const allBranchUsers = shiftUsersQuery.data ?? [];
   const persistedTablesCount = isOpen ? shiftQuery.data?.active_tables_count ?? 0 : referenceCount;
+  const persistedMaxCajaSessions = isOpen
+    ? shiftQuery.data?.max_caja_sessions ?? 1
+    : 1;
   const persistedEnabledUsersRawData = useMemo(
     () => (shiftUsersQuery.data ?? []).filter((row) => row.is_enabled),
     [shiftUsersQuery.data],
@@ -626,6 +645,10 @@ const ShiftSetupAdmin = () => {
     () => dispatchCapableUsers.map((userState) => userState.user_id),
     [dispatchCapableUsers],
   );
+
+  useEffect(() => {
+    setMaxCajaSessionsCount(persistedMaxCajaSessions);
+  }, [persistedMaxCajaSessions]);
 
   useEffect(() => {
     setActiveTablesCount(persistedTablesCount);
@@ -708,11 +731,17 @@ const ShiftSetupAdmin = () => {
     }
 
     if (cajaCapableUsers.length === 0) {
-      issues.push("Debe haber exactamente un usuario con permiso de Caja en este turno.");
+      issues.push("Debe haber por lo menos un usuario con permiso de Caja en este turno.");
     }
 
-    if (cajaCapableUsers.length > 1) {
-      issues.push("Solo puede haber un usuario con permiso de Caja por turno.");
+    const normalizedMaxCajaTerminals = Math.max(1, Math.min(10, Math.trunc(Number(maxCajaSessionsCount) || 1)));
+
+    if (isCashThenDispatch && cajaCapableUsers.length !== 1) {
+      issues.push("En modo Caja-Despacho debe haber exactamente un usuario con permiso de Caja.");
+    }
+
+    if (!isCashThenDispatch && cajaCapableUsers.length > normalizedMaxCajaTerminals) {
+      issues.push(`Como maximo ${normalizedMaxCajaTerminals} usuario(s) pueden tener permiso de Caja (terminales configuradas).`);
     }
 
     if ((workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT") {
@@ -735,6 +764,8 @@ const ShiftSetupAdmin = () => {
     enabledUserIds.length,
     shiftUsersState,
     missingDispatchViews,
+    isCashThenDispatch,
+    maxCajaSessionsCount,
   ]);
 
   const hasSetupIssues = setupIssues.length > 0;
@@ -756,6 +787,7 @@ const ShiftSetupAdmin = () => {
     !== JSON.stringify(comparableCancelPolicies.persisted);
   const hasLocalChanges =
     activeTablesCount !== persistedTablesCount ||
+    maxCajaSessionsCount !== persistedMaxCajaSessions ||
     !sameMembers(shiftUsersState.map(u => u.user_id), persistedEnabledUserIds) ||
     JSON.stringify(shiftUsersState.map(u => ({
       can_serve_tables: u.can_serve_tables,
@@ -920,37 +952,48 @@ const ShiftSetupAdmin = () => {
       return;
     }
 
-    setShiftUsersState((prev) => prev.map((u) => {
+    setShiftUsersState((prev) => {
       if (isCashThenDispatch && role === "can_use_caja") {
-        if (u.user_id === userId) {
-          return normalizeShiftUser({
-            ...u,
-            can_use_caja: value,
-            can_double_session: value ? u.can_double_session : false,
-          }, false);
-        }
+        return prev.map((u) => {
+          if (u.user_id === userId) {
+            return normalizeShiftUser({
+              ...u,
+              can_use_caja: value,
+              can_double_session: value && maxCajaSessionsCount > 1,
+            }, false);
+          }
 
-        if (value) {
-          return normalizeShiftUser({
-            ...u,
-            can_use_caja: false,
-            can_double_session: false,
-          }, false);
-        }
+          if (value) {
+            return normalizeShiftUser({
+              ...u,
+              can_use_caja: false,
+              can_double_session: false,
+            }, false);
+          }
 
-        return u;
+          return u;
+        });
       }
 
       if (role === "can_use_caja" && value === true) {
-        if (u.user_id === userId) {
-          return normalizeShiftUser({ ...u, [role]: true }, false);
+        const othersWithCaja = prev.filter((x) => x.user_id !== userId && x.can_use_caja).length;
+        const cap = Math.max(1, Math.min(10, Math.trunc(Number(maxCajaSessionsCount) || 1)));
+        if (othersWithCaja >= cap) {
+          toast.error(`Solo ${cap} usuario(s) pueden tener permiso de Caja (terminales del turno).`);
+          return prev;
         }
-        return normalizeShiftUser({ ...u, can_use_caja: false }, false);
+        return prev.map((u) =>
+          u.user_id === userId
+            ? normalizeShiftUser({ ...u, can_use_caja: true, can_double_session: maxCajaSessionsCount > 1 }, false)
+            : u,
+        );
       }
 
-      if (u.user_id !== userId) return u;
-      return normalizeShiftUser({ ...u, [role]: value }, false);
-    }));
+      return prev.map((u) => {
+        if (u.user_id !== userId) return u;
+        return normalizeShiftUser({ ...u, [role]: value }, false);
+      });
+    });
   };
 
   const invalidateShiftState = () => {
@@ -1144,7 +1187,8 @@ const ShiftSetupAdmin = () => {
         can_manage_products: sanitizedParams.canManageProducts,
         can_use_caja: sanitizedParams.canUseCaja,
         can_authorize_order_cancel: sanitizedParams.canAuthorizeOrderCancel,
-        can_double_session: sanitizedParams.canDoubleSession && sanitizedParams.canUseCaja,
+        can_double_session: sanitizedParams.canUseCaja
+          && Math.max(1, Math.min(10, Math.trunc(Number(maxCajaSessionsCount) || 1))) > 1,
         is_supervisor: sanitizedParams.isSupervisor,
       } as any, {
         onConflict: "shift_id,user_id",
@@ -1276,6 +1320,7 @@ const ShiftSetupAdmin = () => {
     if (!activeBranchId) throw new Error("No hay sucursal activa");
 
     const normalizedCount = Math.max(0, Math.trunc(activeTablesCount || 0));
+    const normalizedMaxCajaSessions = Math.max(1, Math.min(10, Math.trunc(Number(maxCajaSessionsCount) || 1)));
     const sanitizedEnabledUsers = shiftUsersState.map((u) => sanitizeShiftUserCapability({
       isEnabled: true,
       user_id: u.user_id,
@@ -1286,7 +1331,7 @@ const ShiftSetupAdmin = () => {
       canManageProducts: u.can_manage_products,
       canUseCaja: u.can_use_caja,
       canAuthorizeOrderCancel: u.can_authorize_order_cancel,
-      canDoubleSession: u.can_double_session,
+      canDoubleSession: normalizedMaxCajaSessions > 1 && u.can_use_caja,
       isSupervisor: u.is_supervisor,
     }))
       .filter((entry) => entry.isEnabled);
@@ -1305,7 +1350,7 @@ const ShiftSetupAdmin = () => {
         can_manage_products: entry.canManageProducts,
         can_use_caja: entry.canUseCaja,
         can_authorize_order_cancel: entry.canAuthorizeOrderCancel,
-        can_double_session: entry.canDoubleSession && entry.canUseCaja,
+        can_double_session: normalizedMaxCajaSessions > 1 && entry.canUseCaja,
         is_supervisor: entry.isSupervisor,
       }));
 
@@ -1314,6 +1359,7 @@ const ShiftSetupAdmin = () => {
       p_branch_id: activeBranchId,
       p_active_tables_count: normalizedCount,
       p_enabled_users: enabledUsersJson,
+      p_max_caja_sessions: normalizedMaxCajaSessions,
     } as any);
 
     if (!error) {
@@ -1373,6 +1419,15 @@ const ShiftSetupAdmin = () => {
       })).filter((entry) => entry.isEnabled),
     );
 
+    const { error: maxAfterLegacy } = await supabase.rpc("configure_shift_max_caja_sessions" as any, {
+      p_branch_id: activeBranchId,
+      p_shift_id: shiftId,
+      p_max_caja_sessions: normalizedMaxCajaSessions,
+    } as any);
+    if (maxAfterLegacy && !isMissingFunctionOrSchemaError(maxAfterLegacy, "configure_shift_max_caja_sessions")) {
+      throw maxAfterLegacy;
+    }
+
     return shiftId;
   };
 
@@ -1407,6 +1462,14 @@ const ShiftSetupAdmin = () => {
       } as any);
       if (tablesError) throw tablesError;
 
+      const normalizedMaxCajaSessions = Math.max(1, Math.min(10, Math.trunc(Number(maxCajaSessionsCount) || 1)));
+      const { error: maxCajaError } = await supabase.rpc("configure_shift_max_caja_sessions" as any, {
+        p_branch_id: activeBranchId,
+        p_shift_id: shiftQuery.data.id,
+        p_max_caja_sessions: normalizedMaxCajaSessions,
+      } as any);
+      if (maxCajaError) throw maxCajaError;
+
       const sanitizedEnabledUsers = shiftUsersState
         .map((entry) => sanitizeShiftUserCapability({
           shiftId: shiftQuery.data!.id,
@@ -1419,7 +1482,7 @@ const ShiftSetupAdmin = () => {
           canManageProducts: entry.can_manage_products,
           canUseCaja: entry.can_use_caja,
           canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
-          canDoubleSession: entry.can_double_session,
+          canDoubleSession: normalizedMaxCajaSessions > 1 && entry.can_use_caja,
           isSupervisor: entry.is_supervisor,
         }))
         .filter((entry) => entry.isEnabled);
@@ -1780,31 +1843,78 @@ const ShiftSetupAdmin = () => {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-        <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 text-sky-700">
-                <LayoutGrid className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black text-foreground sm:text-base">Numero de mesas</h4>
+        <div className="flex min-h-0 flex-col gap-4">
+          <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 text-sky-700">
+                  <LayoutGrid className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-foreground sm:text-base">Numero de mesas</h4>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-4 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-100 via-white to-cyan-100 p-3.5 shadow-sm sm:p-4">
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
-              Mesas habilitadas del turno
-            </label>
-            <NumericInput
-              value={activeTablesCount}
-              onValueChange={setActiveTablesCount}
-              min={0}
-              disabled={isStale}
-              className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
-            />
-          </div>
-        </section>
+            <div className="mt-4 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-100 via-white to-cyan-100 p-3.5 shadow-sm sm:p-4">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
+                Mesas habilitadas del turno
+              </label>
+              <NumericInput
+                value={activeTablesCount}
+                onValueChange={setActiveTablesCount}
+                min={0}
+                disabled={isStale}
+                className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
+              />
+            </div>
+          </section>
+
+          <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-800">
+                  <Banknote className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-foreground sm:text-base">Cajeros simultaneos</h4>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-100 via-white to-orange-50 p-3.5 shadow-sm sm:p-4">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                Terminales Caja concurrentes por turno
+              </label>
+              <NumericInput
+                value={maxCajaSessionsCount}
+                onValueChange={(raw) => {
+                  const capped = Math.max(1, Math.min(10, Math.trunc(Number(raw) || 1)));
+                  setMaxCajaSessionsCount(capped);
+                  setShiftUsersState((prev) =>
+                    trimExcessCajaUsersByCap(
+                      prev.map((userRow) =>
+                        normalizeShiftUser(
+                          {
+                            ...userRow,
+                            can_double_session: !!userRow.can_use_caja && capped > 1,
+                          },
+                          false,
+                        ),
+                      ),
+                      capped,
+                    ),
+                  );
+                }}
+                showStepButtons
+                min={1}
+                max={10}
+                disabled={isStale}
+                className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
+              />
+            </div>
+          </section>
+        </div>
 
         <BranchCancelPolicyEditor
           rows={cancelPolicyState}
@@ -1960,10 +2070,20 @@ const ShiftSetupAdmin = () => {
                         />
                         <span className="min-w-0 text-muted-foreground">Productos</span>
                       </label>
-                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
+                      <label
+                        className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
+                        title={
+                          !userState?.can_use_caja && cajaCapableUsers.length >= maxCajaSessionsCount
+                            ? `Solo ${maxCajaSessionsCount} usuario(s) con permiso de Caja segun terminales del turno.`
+                            : undefined
+                        }
+                      >
                         <Checkbox
                           checked={userState?.can_use_caja ?? false}
-                          disabled={isStale}
+                          disabled={
+                            isStale
+                            || (!userState?.can_use_caja && cajaCapableUsers.length >= maxCajaSessionsCount)
+                          }
                           onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_use_caja", c === true)}
                         />
                         <span className="min-w-0 text-muted-foreground">Caja</span>
@@ -1977,15 +2097,15 @@ const ShiftSetupAdmin = () => {
                         <span className="min-w-0 text-muted-foreground">Autorizar anul.</span>
                       </label>
                       <label
-                        className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
-                        title={userState?.can_use_caja ? "Permite hasta 2 sesiones simultaneas de Caja para este usuario" : "Primero habilita Caja para usar Sesion doble"}
+                        className="flex min-w-0 cursor-not-allowed items-center gap-1.5 text-[11px] leading-tight opacity-85"
+                        title="Se sincroniza con Cajeros simultaneos: mas de uno solo si el turno permite varias sesiones de Caja"
                       >
                         <Checkbox
-                          checked={userState?.can_double_session ?? false}
-                          disabled={!(userState?.can_use_caja ?? false)}
-                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_double_session", c === true)}
+                          checked={Boolean(userState?.can_use_caja && maxCajaSessionsCount > 1)}
+                          disabled
+                          onCheckedChange={() => {}}
                         />
-                        <span className="min-w-0 text-muted-foreground">Sesion doble</span>
+                        <span className="min-w-0 text-muted-foreground">Multisesion Caja</span>
                       </label>
                     </div>
                   </div>

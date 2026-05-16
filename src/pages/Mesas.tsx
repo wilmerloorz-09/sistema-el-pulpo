@@ -14,6 +14,7 @@ import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
 import {
   fetchOrderDetail,
+  fetchOrderShiftGateFields,
   fetchSiblingOrders,
   getOrderQueryKey,
   purgeEmptyDineInTableDraftsForBranch,
@@ -21,7 +22,10 @@ import {
 } from "@/hooks/useOrder";
 import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuScope } from "@/hooks/useMenuTree";
 import { MESAS_ORIGIN_LEGACY, mesasOrdenesSearch } from "@/lib/mesasFlow";
-import { orderBelongsToOpenCashShiftForBranch } from "@/lib/openCashShift";
+import {
+  getOpenCashShiftForBranch,
+  orderBelongsToOpenCashShift,
+} from "@/lib/openCashShift";
 import {
   Dialog,
   DialogContent,
@@ -180,13 +184,17 @@ const Mesas = () => {
       navigate(`/ordenes?${mesasOrdenesSearch({ order: orderId, origin: MESAS_ORIGIN_LEGACY, mesaCards: opts?.mesaCards })}`, { replace: true });
     };
 
-    const openWithCardsIfNeeded = async (orderId: string, tableId: string) => {
+    const openWithCardsIfNeeded = async (
+      orderId: string,
+      tableId: string,
+      cachedOpenShift?: Awaited<ReturnType<typeof getOpenCashShiftForBranch>>,
+    ) => {
       if (!activeBranchId) {
         goOrdenesMesas(orderId);
         return;
       }
       try {
-        const siblings = await fetchSiblingOrders(tableId, activeBranchId, orderId);
+        const siblings = await fetchSiblingOrders(tableId, activeBranchId, orderId, cachedOpenShift ?? undefined);
         qc.setQueryData(["table-orders", tableId], siblings);
         goOrdenesMesas(orderId, { mesaCards: siblings.length > 1 });
       } catch {
@@ -197,16 +205,15 @@ const Mesas = () => {
     if (table.status === "free") {
       if (!canOperateMesas) return;
       // activeOrderId / reusableDraftOrderId pueden quedar obsoletos en caché tras purgar un borrador vacío al salir de Órdenes.
-      if (table.activeOrderId) {
+      if (table.activeOrderId && activeBranchId) {
         try {
-          const detail = await fetchOrderDetail(table.activeOrderId);
-          if (
-            detail
-            && activeBranchId
-            && (await orderBelongsToOpenCashShiftForBranch(activeBranchId, detail))
-          ) {
+          const [gateFields, openShift] = await Promise.all([
+            fetchOrderShiftGateFields(table.activeOrderId),
+            getOpenCashShiftForBranch(activeBranchId),
+          ]);
+          if (gateFields && openShift && orderBelongsToOpenCashShift(gateFields, openShift)) {
             warmOrderId(table.activeOrderId);
-            await openWithCardsIfNeeded(table.activeOrderId, table.id);
+            await openWithCardsIfNeeded(table.activeOrderId, table.id, openShift);
             return;
           }
         } catch {
@@ -255,16 +262,35 @@ const Mesas = () => {
       sp.set("origin", MESAS_ORIGIN_LEGACY);
       navigate(`/ordenes?${sp.toString()}`, { replace: true });
     } else if (table.activeOrderId) {
+      const orderId = table.activeOrderId;
+      const tableId = table.id;
+      warmOrderId(orderId);
       if (activeBranchId) {
-        const detail = await fetchOrderDetail(table.activeOrderId);
-        if (!detail || !(await orderBelongsToOpenCashShiftForBranch(activeBranchId, detail))) {
-          toast.info("La orden de esta mesa es de un turno anterior. Actualizando mesas...");
-          void qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId] });
-          return;
-        }
+        // Vista de mesas no libre: `useTablesWithStatus` ya marcó órdenes de otro turno como libres.
+        // Navegar al instante como en mesa libre optimista; hermanos/mesaCards en segundo plano.
+        goOrdenesMesas(orderId);
+        void qc
+          .ensureQueryData({
+            queryKey: ["open-cash-shift", activeBranchId],
+            queryFn: () => getOpenCashShiftForBranch(activeBranchId),
+            staleTime: 30_000,
+            gcTime: 10 * 60_000,
+          })
+          .then((openShift) => {
+            if (!openShift) return;
+            void fetchSiblingOrders(tableId, activeBranchId, orderId, openShift)
+              .then((siblings) => {
+                qc.setQueryData(["table-orders", tableId], siblings);
+                if (siblings.length > 1) {
+                  goOrdenesMesas(orderId, { mesaCards: true });
+                }
+              })
+              .catch(() => {});
+          })
+          .catch(() => {});
+        return;
       }
-      warmOrderId(table.activeOrderId);
-      await openWithCardsIfNeeded(table.activeOrderId, table.id);
+      await openWithCardsIfNeeded(orderId, tableId);
     }
   };
 

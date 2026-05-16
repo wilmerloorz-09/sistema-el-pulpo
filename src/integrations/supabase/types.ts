@@ -568,6 +568,7 @@ export type Database = {
           id: string
           is_enabled: boolean
           is_supervisor: boolean
+          caja_session_slots: string[]
           last_session_id: string | null
           secondary_session_id: string | null
           shift_id: string
@@ -587,6 +588,7 @@ export type Database = {
           id?: string
           is_enabled?: boolean
           is_supervisor?: boolean
+          caja_session_slots?: string[]
           last_session_id?: string | null
           secondary_session_id?: string | null
           shift_id: string
@@ -606,6 +608,7 @@ export type Database = {
           id?: string
           is_enabled?: boolean
           is_supervisor?: boolean
+          caja_session_slots?: string[]
           last_session_id?: string | null
           secondary_session_id?: string | null
           shift_id?: string
@@ -632,6 +635,7 @@ export type Database = {
       cash_shifts: {
         Row: {
           active_tables_count: number
+          max_caja_sessions: number
           branch_id: string
           caja_status: Database["public"]["Enums"]["caja_status"]
           capture_device_label: string | null
@@ -650,6 +654,7 @@ export type Database = {
         }
         Insert: {
           active_tables_count?: number
+          max_caja_sessions?: number
           branch_id: string
           caja_status?: Database["public"]["Enums"]["caja_status"]
           capture_device_label?: string | null
@@ -668,6 +673,7 @@ export type Database = {
         }
         Update: {
           active_tables_count?: number
+          max_caja_sessions?: number
           branch_id?: string
           caja_status?: Database["public"]["Enums"]["caja_status"]
           capture_device_label?: string | null
@@ -3346,6 +3352,14 @@ export type Database = {
           secondary_session_id: string
         }[]
       }
+      get_caja_shift_terminal_usage: {
+        Args: { p_branch_id: string }
+        Returns: {
+          shift_id: string
+          shift_max: number
+          global_sessions_used: number
+        }[]
+      }
       clear_my_single_session: {
         Args: { p_session_id?: string }
         Returns: undefined
@@ -3519,6 +3533,7 @@ export type Database = {
         }[]
       }
       get_my_access_context: { Args: never; Returns: Json }
+      get_my_open_shift_branch_id: { Args: never; Returns: string | null }
       get_my_branch_shift_gate: {
         Args: { p_branch_id: string }
         Returns: {

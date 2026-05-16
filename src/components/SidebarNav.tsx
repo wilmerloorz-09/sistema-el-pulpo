@@ -206,9 +206,29 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                 >
                   <div className="flex flex-col gap-1">
                     {item.subItems?.map((subItem) => {
-                      const isSubActive = 
+                      const isSubActive =
                         (subItem.to === location.pathname + location.search) ||
-                        (subItem.end && location.pathname === subItem.to && !location.search);
+                        (Boolean(subItem.end) && location.pathname === subItem.to && !location.search);
+
+                      if (subItem.disabled) {
+                        return (
+                          <Tooltip key={`${subItem.label}-${subItem.to}`}>
+                            <TooltipTrigger asChild>
+                              <span
+                                className={cn(
+                                  "group/sub flex cursor-not-allowed items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-sidebar-foreground/35",
+                                )}
+                              >
+                                <div className="h-1.5 w-1.5 rounded-full bg-sidebar-foreground/15" />
+                                {subItem.label}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-[220px] text-xs">
+                              {subItem.disabledReason ?? "No disponible"}
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      }
 
                       return (
                         <NavLink
@@ -227,7 +247,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                         >
                           <div className={cn(
                             "h-1.5 w-1.5 rounded-full transition-all",
-                            isSubActive ? "bg-primary scale-100" : "bg-sidebar-foreground/20 scale-0 group-hover/sub:scale-100"
+                            isSubActive ? "bg-primary scale-100" : "bg-sidebar-foreground/20 scale-0 group-hover/sub:scale-100",
                           )} />
                           {subItem.label}
                         </NavLink>

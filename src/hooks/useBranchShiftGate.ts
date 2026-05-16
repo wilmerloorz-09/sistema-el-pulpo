@@ -11,6 +11,12 @@ export interface BranchShiftGate {
   userEnabled: boolean;
   lastSessionId: string | null;
   secondarySessionId: string | null;
+  /** IDs de navegador con sesión de Caja activa para el usuario actual. */
+  cajaSessionSlots: string[];
+  /** Máximo de terminales Caja simultáneos configurado en Admin > Turno. */
+  maxCajaSessions: number;
+  /** Suma de sesiones activas (todas las terminales) en el turno abierto. */
+  globalCajaSessionsUsed: number;
   tabSessionId: string;
   cashierId: string | null;
   captureUserId: string | null;
@@ -44,6 +50,9 @@ export function useBranchShiftGate() {
           userEnabled: false,
           lastSessionId: null,
           secondarySessionId: null,
+          cajaSessionSlots: [],
+          maxCajaSessions: 1,
+          globalCajaSessionsUsed: 0,
           tabSessionId: TAB_SESSION_ID,
           cashierId: null,
           captureUserId: null,
@@ -79,6 +88,9 @@ export function useBranchShiftGate() {
           userEnabled: Boolean(row?.user_enabled),
           lastSessionId: null,
           secondarySessionId: null,
+          cajaSessionSlots: [],
+          maxCajaSessions: 1,
+          globalCajaSessionsUsed: 0,
           tabSessionId: TAB_SESSION_ID,
           cashierId: null,
           captureUserId: null,
@@ -101,7 +113,7 @@ export function useBranchShiftGate() {
 
       const { data: shiftMetaRow, error: shiftMetaError } = await (supabase
         .from("cash_shifts" as any)
-        .select("cashier_id, capture_user_id, opened_at")
+        .select("cashier_id, capture_user_id, opened_at, max_caja_sessions")
         .eq("id", shiftId)
         .maybeSingle() as any);
       if (shiftMetaError) throw shiftMetaError;
@@ -116,7 +128,7 @@ export function useBranchShiftGate() {
 
       const { data: shiftUserRow, error: shiftUserError } = await (supabase
         .from("cash_shift_users" as any)
-        .select("is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id")
+        .select("is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots")
         .eq("shift_id", shiftId)
         .eq("user_id", user.id)
         .maybeSingle() as any);
@@ -127,6 +139,27 @@ export function useBranchShiftGate() {
       const hasDirectShiftRow = shiftUserRow != null;
       const cashierId = shiftMetaRow?.cashier_id ?? null;
       const captureUserId = shiftMetaRow?.capture_user_id ?? null;
+      const maxCajaSessions = Math.max(
+        1,
+        Math.min(10, Number(shiftMetaRow?.max_caja_sessions ?? 1)),
+      );
+      const { data: usageRows, error: usageError } = await supabase.rpc("get_caja_shift_terminal_usage", {
+        p_branch_id: activeBranchId,
+      } as any);
+      let globalCajaSessionsUsed = 0;
+      if (!usageError && Array.isArray(usageRows) && usageRows.length > 0) {
+        globalCajaSessionsUsed = Math.max(0, Number((usageRows[0] as any)?.global_sessions_used ?? 0));
+      }
+
+      const slotsFromRow = Array.isArray(shiftUserRow?.caja_session_slots)
+        ? (shiftUserRow!.caja_session_slots as string[]).filter((s) => Boolean(s && String(s).trim()))
+        : [];
+      const cajaSessionSlots =
+        slotsFromRow.length > 0
+          ? slotsFromRow
+          : [shiftUserRow?.last_session_id, shiftUserRow?.secondary_session_id].filter(
+              (s): s is string => Boolean(s && String(s).trim()),
+            );
 
       return {
         shiftId,
@@ -134,6 +167,9 @@ export function useBranchShiftGate() {
         userEnabled: hasDirectShiftRow ? directUserEnabled : Boolean(row?.user_enabled),
         lastSessionId: shiftUserRow?.last_session_id ?? null,
         secondarySessionId: shiftUserRow?.secondary_session_id ?? null,
+        cajaSessionSlots,
+        maxCajaSessions,
+        globalCajaSessionsUsed,
         tabSessionId: TAB_SESSION_ID,
         cashierId,
         captureUserId,
