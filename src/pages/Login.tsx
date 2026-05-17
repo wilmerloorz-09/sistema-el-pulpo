@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { AlertCircle, Fingerprint, Loader2, LogIn } from "lucide-react";
+import { AlertCircle, Loader2, LogIn } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser";
+// Removed WebAuthn imports
 
 const getLoginErrorMessage = (rawMessage?: string) => {
   const message = rawMessage?.trim() || "No se pudo iniciar sesion.";
@@ -45,9 +45,7 @@ const Login = () => {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supportsPasskey = browserSupportsWebAuthn();
 
   if (authLoading) {
     return (
@@ -72,41 +70,7 @@ const Login = () => {
     }
   };
 
-  const handlePasskeyLogin = async () => {
-    setPasskeyLoading(true);
-    setError(null);
-    try {
-      const { data: options, error: optErr } = await supabase.functions.invoke("webauthn-authenticate", { body: { action: "options" } });
-      if (optErr) throw new Error(optErr.message);
 
-      const { challengeId, ...optionsJSON } = options;
-      const assertion = await startAuthentication({ optionsJSON });
-
-      const { data: result, error: verErr } = await supabase.functions.invoke("webauthn-authenticate", {
-        body: { action: "verify", assertion, challengeId },
-      });
-      if (verErr) throw new Error(verErr.message);
-
-      if (result.verified && result.token_hash) {
-        const { error: otpError } = await supabase.auth.verifyOtp({
-          token_hash: result.token_hash,
-          type: "magiclink",
-        });
-        if (otpError) throw otpError;
-
-      } else {
-        setError("No se puede ingresar porque la verificacion de huella fallo.");
-      }
-    } catch (err: any) {
-      if (err.name === "NotAllowedError") {
-        setError("No se puede ingresar porque la operacion de huella fue cancelada.");
-      } else {
-        setError(getLoginErrorMessage(err.message || "Error al autenticar con huella"));
-      }
-    } finally {
-      setPasskeyLoading(false);
-    }
-  };
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
@@ -174,28 +138,6 @@ const Login = () => {
           </Button>
         </form>
 
-        {supportsPasskey && (
-          <div className="space-y-3">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="rounded-full bg-white/90 px-3 py-1 text-muted-foreground shadow-sm">o</span>
-              </div>
-            </div>
-            <Button variant="outline" onClick={handlePasskeyLogin} disabled={passkeyLoading} className="h-12 w-full text-base gap-2">
-              {passkeyLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <>
-                  <Fingerprint className="h-5 w-5" />
-                  Ingresar con huella
-                </>
-              )}
-            </Button>
-          </div>
-        )}
       </motion.div>
 
       <AlertDialog open={Boolean(error)} onOpenChange={(open) => !open && setError(null)}>

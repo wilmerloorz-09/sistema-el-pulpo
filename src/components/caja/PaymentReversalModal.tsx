@@ -6,6 +6,7 @@ import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CashRefundDenomInput, CompletedPaymentStatus, PaymentVoidSelectionInput, ShiftDenom } from "@/hooks/useCaja";
 import { cn } from "@/lib/utils";
 import { roundMoney } from "@/lib/paymentQuantity";
+import { isCashPaymentMethodName } from "@/lib/paymentMethods";
 import { ArrowLeft, ArrowRight, Loader2, ReceiptText, RotateCcw } from "lucide-react";
 
 export interface ReversalPaymentData {
@@ -16,11 +17,13 @@ export interface ReversalPaymentData {
   tableLabel: string;
   createdAt: string;
   cashierName: string;
+  cashierId: string | null;
   amount: number;
   status: CompletedPaymentStatus;
   notes: string | null;
   methodsSummary: string;
   orderHasDispatchedItems: boolean;
+  requiresSupervisor?: boolean;
   items: {
     id: string;
     paymentEntryId: string;
@@ -54,6 +57,7 @@ interface Props {
     reason: string;
     paymentSelections: PaymentVoidSelectionInput[];
     cashRefundDenoms: CashRefundDenomInput[];
+    refundAmount: number;
   }) => Promise<void> | void;
 }
 
@@ -156,10 +160,12 @@ export default function PaymentReversalModal({
   const selectedUnits = useMemo(() => selectedItems.reduce((sum, item) => sum + item.selectedQty, 0), [selectedItems]);
   const pendingTotal = useMemo(() => roundMoney(pendingItems.reduce((sum, item) => sum + item.pendingAmount, 0)), [pendingItems]);
   const selectedTotal = useMemo(() => roundMoney(selectedItems.reduce((sum, item) => sum + item.selectedAmount, 0)), [selectedItems]);
-  const requiresSupervisor = payment?.orderHasDispatchedItems ?? true;
+  const requiresSupervisor = payment?.requiresSupervisor || (payment?.orderHasDispatchedItems ?? true);
+
+  const isCash = payment ? isCashPaymentMethodName(payment.methodsSummary) : false;
 
   const refundBreakdown = useMemo(() => {
-    if (selectedTotal <= 0) return [];
+    if (selectedTotal <= 0 || !isCash) return [];
 
     const sorted = [...shiftDenoms]
       .filter((denomination) => denomination.value > 0)
@@ -198,7 +204,7 @@ export default function PaymentReversalModal({
     }
 
     return result;
-  }, [selectedTotal, shiftDenoms]);
+  }, [selectedTotal, shiftDenoms, isCash]);
 
   const refundTotal = useMemo(
     () => roundMoney(refundBreakdown.reduce((sum, denomination) => sum + denomination.total, 0)),
@@ -244,6 +250,7 @@ export default function PaymentReversalModal({
         reason: reason.trim(),
         paymentSelections,
         cashRefundDenoms,
+        refundAmount: selectedTotal,
       });
     } catch (error: any) {
       setSubmitError(error?.message || "No se pudo completar la anulacion.");
@@ -385,9 +392,11 @@ export default function PaymentReversalModal({
           )}
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-sm text-slate-600">
-            {requiresSupervisor
-              ? "Se enviara una solicitud de autorizacion al supervisor para procesar esta anulacion."
-              : "Esta anulacion se procesara directamente ya que no hay items despachados."}
+            {mode === "execute" 
+              ? "Esta anulación cuenta con autorización y se procesará inmediatamente."
+              : requiresSupervisor
+                ? "Se enviara una solicitud de autorizacion al supervisor para procesar esta anulacion."
+                : "Esta anulacion se procesara directamente ya que no hay items despachados."}
           </div>
 
           {submitError && (
@@ -409,7 +418,11 @@ export default function PaymentReversalModal({
             disabled={!canOpenConfirm || loading || confirmSubmitting}
             className="bg-red-600 hover:bg-red-700"
           >
-            {loading || confirmSubmitting ? "Procesando..." : requiresSupervisor ? "Solicitar autorizacion" : "Confirmar anulacion"}
+            {loading || confirmSubmitting 
+              ? "Procesando..." 
+              : (mode === "execute" || !requiresSupervisor) 
+                ? "Confirmar anulacion" 
+                : "Solicitar autorizacion"}
           </Button>
         </div>
       </div>
@@ -573,7 +586,7 @@ export default function PaymentReversalModal({
                     ) : (
                       <RotateCcw className="mr-2 h-4 w-4" />
                     )}
-                    {submitLabelOverride || (requiresSupervisor ? "Solicitar autorización" : "Confirmar anulación")}
+                    {submitLabelOverride || ((mode === "execute" || !requiresSupervisor) ? "Confirmar anulación" : "Solicitar autorización")}
                   </Button>
                 </div>
               </div>

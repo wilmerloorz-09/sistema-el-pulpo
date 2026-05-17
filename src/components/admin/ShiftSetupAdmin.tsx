@@ -736,11 +736,7 @@ const ShiftSetupAdmin = () => {
 
     const normalizedMaxCajaTerminals = Math.max(1, Math.min(10, Math.trunc(Number(maxCajaSessionsCount) || 1)));
 
-    if (isCashThenDispatch && cajaCapableUsers.length !== 1) {
-      issues.push("En modo Caja-Despacho debe haber exactamente un usuario con permiso de Caja.");
-    }
-
-    if (!isCashThenDispatch && cajaCapableUsers.length > normalizedMaxCajaTerminals) {
+    if (cajaCapableUsers.length > normalizedMaxCajaTerminals) {
       issues.push(`Como maximo ${normalizedMaxCajaTerminals} usuario(s) pueden tener permiso de Caja (terminales configuradas).`);
     }
 
@@ -895,9 +891,9 @@ const ShiftSetupAdmin = () => {
           is_enabled: true,
           can_serve_tables: true,
           can_access_orders: true,
-          can_use_caja: isCashThenDispatch ? isFirstShiftUser : false,
+          can_use_caja: isFirstShiftUser,
           can_double_session: false,
-        }, !isCashThenDispatch);
+        }, false);
 
         return [...prev, defaultShiftUser];
       }
@@ -953,27 +949,7 @@ const ShiftSetupAdmin = () => {
     }
 
     setShiftUsersState((prev) => {
-      if (isCashThenDispatch && role === "can_use_caja") {
-        return prev.map((u) => {
-          if (u.user_id === userId) {
-            return normalizeShiftUser({
-              ...u,
-              can_use_caja: value,
-              can_double_session: value && maxCajaSessionsCount > 1,
-            }, false);
-          }
 
-          if (value) {
-            return normalizeShiftUser({
-              ...u,
-              can_use_caja: false,
-              can_double_session: false,
-            }, false);
-          }
-
-          return u;
-        });
-      }
 
       if (role === "can_use_caja" && value === true) {
         const othersWithCaja = prev.filter((x) => x.user_id !== userId && x.can_use_caja).length;
@@ -1434,7 +1410,7 @@ const ShiftSetupAdmin = () => {
         .eq("shift_id", shiftQuery.data.id) as any);
 
       const { error: cleanupError } = enabledUserIdsForShift.length > 0
-        ? await deleteQuery.not("user_id", "in", `(${enabledUserIdsForShift.map((id) => `"${id}"`).join(",")})`)
+        ? await deleteQuery.not("user_id", "in", `(${enabledUserIdsForShift.join(",")})`)
         : await deleteQuery;
 
       if (cleanupError) throw cleanupError;

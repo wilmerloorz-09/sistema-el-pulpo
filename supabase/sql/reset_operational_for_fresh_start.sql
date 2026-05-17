@@ -10,6 +10,7 @@
 --   - incluye borradores vacios ocultos, borradores con items visibles y orden visual consecutivo calculado por UI
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
+--   - incluye ordenes Express (`order_type = EXPRESS`) en cualquier etapa del flujo despacho-cobro
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye la numeracion visible unificada: `orders.order_number` se deriva del sufijo de `orders.order_code`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
@@ -58,8 +59,10 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
---   - el flujo de cobro/despacho es global: Caja primero y Despacho despues
---   - Caja cobra cantidades ordenadas activas antes del despacho
+--   - el flujo de cobro/despacho es global: Caja primero y Despacho despues (excepto Express: despacho -> cobro)
+--   - varios cajeros pueden tener can_use_caja en el mismo turno (hasta max_caja_sessions); cada uno abre su propia caja y denoms por cashier_id
+--   - al borrar cash_register_openings y cash_shift_denoms se eliminan todas las aperturas/denominaciones de todos los cajeros del turno
+--   - Caja cobra cantidades ordenadas activas antes del despacho (Express solo cuando KITCHEN_DISPATCHED)
 --   - Caja excluye siempre items borrador; solo cobra items ya enviados al flujo operativo
 --   - el cierre de turno cancela borradores no enviados sin pagos ni items operativos antes de evaluar bloqueos
 --   - cerrar turno puede resolver ordenes especiales pendientes de `$0` solo con confirmacion explicita antes de invocar el cierre normal
@@ -324,7 +327,8 @@ COMMIT;
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, aperturas multi-cajero por cashier_id, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
+-- - 0 aperturas de caja por cajero (cash_register_openings) ni denominaciones particionadas (cash_shift_denoms.cashier_id / opening_id)
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
 -- - 0 posiciones visibles de cuentas por mesa ni snapshots historicos de nombre de mesa

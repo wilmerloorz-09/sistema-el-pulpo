@@ -389,6 +389,7 @@ export interface CompletedPayment {
   id: string;
   payment_group_id: string | null;
   created_at: string;
+  cashier_id: string | null;
   cashier_name: string;
   amount: number;
   method_name: string;
@@ -963,6 +964,43 @@ export function useCaja(params?: {
       } as CashShift;
     },
     enabled: !!activeBranchId && !!user?.id && !!denomsQuery.data,
+  });
+
+  const enabledShiftUsersQuery = useQuery({
+    queryKey: ["shift-enabled-users", shiftQuery.data?.id],
+    queryFn: async (): Promise<CashShiftCaptureCandidate[]> => {
+      const shift = shiftQuery.data;
+      if (!shift?.id) return [];
+
+      const shiftUsers = await dbSelect<any>("cash_shift_users", {
+        select: "user_id",
+        filters: [
+          { column: "shift_id", op: "eq", value: shift.id },
+          { column: "is_enabled", op: "eq", value: true },
+        ]
+      });
+
+      const userIds = Array.from(new Set((shiftUsers ?? []).map((r: any) => r.user_id).filter(Boolean)));
+      if (userIds.length === 0) return [];
+
+      const profiles = await dbSelect<any>("profiles", {
+        select: "id, first_name, full_name, username, is_active",
+        filters: [{ column: "id", op: "in", value: userIds }]
+      });
+
+      return (profiles ?? [])
+        .filter((p: any) => p.is_active !== false)
+        .map((p: any) => ({
+          id: p.id,
+          full_name: p.first_name ?? p.full_name ?? "Usuario",
+          username: p.username ?? "",
+        }))
+        .sort((a, b) =>
+          a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" })
+          || a.username.localeCompare(b.username, "es", { sensitivity: "base" }),
+        );
+    },
+    enabled: !!shiftQuery.data?.id,
   });
 
   const captureCandidatesQuery = useQuery({
@@ -1573,6 +1611,7 @@ export function useCaja(params?: {
       activeBranchId,
       shiftQuery.data?.id,
       completedPaymentsFilters?.scope ?? "ALL",
+      completedPaymentsFilters?.cashierName ?? "ALL",
     ],
     queryFn: async (): Promise<CompletedPaymentsResult> => {
       if (!activeBranchId) {
@@ -1610,13 +1649,20 @@ export function useCaja(params?: {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
+      const paymentsFilters: any[] = [
+        { column: "order_id", op: "in", value: branchOrderIds },
+        { column: "created_at", op: "gte", value: effectiveStartIso },
+        { column: "created_at", op: "lte", value: effectiveEndIso },
+      ];
+
+      const filterCashierId = completedPaymentsFilters?.cashierName ?? "ALL";
+      if (filterCashierId !== "ALL") {
+        paymentsFilters.push({ column: "created_by", op: "eq", value: filterCashierId });
+      }
+
       const allPaymentsInRange = await dbSelect<any>("payments", {
         select: "id, created_at, amount, notes, order_id, payment_method_id, created_by",
-        filters: [
-          { column: "order_id", op: "in", value: branchOrderIds },
-          { column: "created_at", op: "gte", value: effectiveStartIso },
-          { column: "created_at", op: "lte", value: effectiveEndIso },
-        ],
+        filters: paymentsFilters,
         orderBy: { column: "created_at", ascending: false }
       });
 
@@ -1890,6 +1936,7 @@ export function useCaja(params?: {
               id: payment.id,
               payment_group_id: parsePaymentNotes(payment.notes).paymentGroupId ?? payment.id,
               created_at: payment.created_at,
+              cashier_id: payment.created_by ?? null,
               cashier_name: profilesMap[payment.created_by] ?? "Usuario",
               amount: Number(payment.amount),
               method_name: methodsMap[payment.payment_method_id] ?? "Metodo",
@@ -1932,6 +1979,7 @@ export function useCaja(params?: {
             id: payment.id,
             payment_group_id: parsePaymentNotes(payment.notes).paymentGroupId ?? payment.id,
             created_at: payment.created_at,
+            cashier_id: payment.created_by ?? null,
             cashier_name: profilesMap[payment.created_by] ?? "Usuario",
             amount: Number(payment.amount),
             method_name: methodsMap[payment.payment_method_id] ?? "Metodo",
@@ -2432,26 +2480,45 @@ export function useCaja(params?: {
   });
 
   const requestPaymentVoid = useMutation({
-    mutationFn: async ({ paymentId, reason, paymentSelections, cashRefundDenoms }: {
+    mutationFn: async ({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount }: {
       paymentId: string;
+      orderId: string;
       reason: string;
       paymentSelections: PaymentVoidSelectionInput[];
       cashRefundDenoms: CashRefundDenomInput[];
+      refundAmount: number;
     }) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
 
-      const requestId = generateUUID();
-      await dbInsert("payment_void_requests", {
+      // Check for an existing pending request to avoid unique constraint violations
+      const { data: existing } = await supabase
+        .from("payment_void_requests")
+        .select("id")
+        .eq("payment_id", paymentId)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      const requestId = existing?.id || generateUUID();
+
+      const { error } = await supabase.from("payment_void_requests").upsert({
         id: requestId,
         payment_id: paymentId,
-        requested_by: user.id,
+        order_id: orderId,
+        shift_id: shift.id,
+        requested_by_user_id: user.id,
         reason: reason,
         status: "pending",
-        payment_selections: paymentSelections as any,
+        refund_amount: refundAmount,
+        payment_item_selections: paymentSelections.map((sel) => ({
+          payment_item_id: sel.paymentEntryId,
+          quantity: sel.quantity,
+        })),
         cash_refund_detail: cashRefundDenoms as any,
       });
+
+      if (error) throw error;
 
       return { requestId };
     },
@@ -2476,18 +2543,35 @@ export function useCaja(params?: {
       if (!shift) throw new Error("No hay turno abierto");
       if (!user) throw new Error("No user");
 
-      const { error } = await supabase.rpc("void_payment_with_supervisor" as any, {
-        p_payment_id: paymentId,
-        p_void_request_id: requestId ?? null,
-        p_supervisor_identifier: supervisorIdentifier,
-        p_supervisor_password: supervisorPassword,
-        p_reason: reason,
-        p_executor_id: user.id,
-        p_selections: paymentSelections as any,
-        p_cash_refund_denoms: cashRefundDenoms as any,
+      const { data, error } = await supabase.functions.invoke("void-payment", {
+        body: {
+          payment_id: paymentId,
+          request_id: requestId ?? undefined,
+          current_shift_id: shift.id,
+          reason: reason,
+          supervisor_identifier: supervisorIdentifier,
+          supervisor_password: supervisorPassword,
+          payment_item_selections: paymentSelections.map((sel) => ({
+            payment_item_id: sel.paymentEntryId,
+            quantity: sel.quantity,
+          })),
+          cash_refund_detail: cashRefundDenoms,
+        },
       });
 
-      if (error) throw error;
+      if (error || data?.error) {
+        let msg = data?.error || error?.message || "Error al procesar la anulación";
+        
+        // Try to parse error.context if it's a FunctionsHttpError
+        if (error && (error as any).context && typeof (error as any).context.json === 'function') {
+          try {
+             const contextJson = await (error as any).context.json();
+             if (contextJson?.error) msg = contextJson.error;
+          } catch(e) {}
+        }
+        
+        throw new Error(msg);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
@@ -2612,6 +2696,7 @@ export function useCaja(params?: {
     cashierReverseWindowMinutes: cashierReverseWindowQuery.data ?? DEFAULT_CASHIER_REVERSE_WINDOW_MINUTES,
     branchReferenceTableCount: branchTableSettingsQuery.data?.reference_table_count ?? 0,
     captureCandidates: captureCandidatesQuery.data ?? [],
+    enabledShiftUsers: enabledShiftUsersQuery.data ?? [],
     isLoadingCaptureCandidates: captureCandidatesQuery.isLoading,
     cashRegisterTemplates: cashRegisterTemplatesQuery.data ?? [],
     pendingCaptureRequests: pendingCaptureRequestsQuery.data ?? [],

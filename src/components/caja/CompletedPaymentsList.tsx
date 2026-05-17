@@ -6,8 +6,10 @@ import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caj
 import SupervisorAuthorizationDialog from "@/components/caja/SupervisorAuthorizationDialog";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import type {
   CashRefundDenomInput,
+  CashShiftCaptureCandidate,
   CompletedPayment,
   CompletedPaymentsFilters,
   CompletedPaymentsScope,
@@ -32,6 +34,7 @@ interface PaymentGroup {
   /** Cobro completo (transferencia + efectivo, etc.); mismo valor en todas las filas del mismo grupo. */
   paymentGroupId: string;
   created_at: string;
+  cashier_id: string | null;
   cashier_name: string;
   amount: number;
   status: CompletedPayment["status"];
@@ -81,12 +84,16 @@ interface Props {
   actionLoading?: boolean;
   onFiltersChange: (next: CompletedPaymentsFilters) => void;
   shiftDenoms: ShiftDenom[];
+  cashierUsers: CashShiftCaptureCandidate[];
+  currentUserId: string | null;
   onRequestVoid: (
     paymentId: string,
+    orderId: string,
     reason: string,
     paymentSelections: PaymentVoidSelectionInput[],
     cashRefundDenoms: CashRefundDenomInput[],
-  ) => Promise<string>;
+    refundAmount: number,
+  ) => Promise<{ requestId: string }>;
   onVoidWithSupervisor: (
     paymentId: string,
     requestId: string,
@@ -208,6 +215,8 @@ export default function CompletedPaymentsList({
   filters,
   permissions,
   shiftDenoms,
+  cashierUsers,
+  currentUserId,
   actionLoading = false,
   onFiltersChange,
   onRequestVoid,
@@ -231,6 +240,14 @@ export default function CompletedPaymentsList({
     draft: null,
     autoOpenConfirm: false,
   });
+  const [preAuthorization, setPreAuthorization] = useState<{
+    open: boolean;
+    paymentGroup: PaymentGroup | null;
+  }>({
+    open: false,
+    paymentGroup: null,
+  });
+
   const [pendingAuthorization, setPendingAuthorization] = useState<{
     open: boolean;
     requestId: string | null;
@@ -284,6 +301,7 @@ export default function CompletedPaymentsList({
           paymentId: row.id,
           paymentGroupId: row.payment_group_id ?? row.id,
           created_at: row.created_at,
+          cashier_id: row.cashier_id ?? null,
           cashier_name: row.cashier_name,
           amount: row.amount,
           status: row.status,
@@ -350,17 +368,15 @@ export default function CompletedPaymentsList({
     return result;
   }, [payments]);
 
-  const cashierOptions = useMemo(
-    () =>
-      Array.from(new Set(groupedPayments.map((payment) => payment.cashier_name).filter(Boolean)))
-        .sort((a, b) => a.localeCompare(b, "es")),
-    [groupedPayments],
-  );
 
   const visiblePayments = useMemo(() => {
     if (filters.cashierName === "ALL") return groupedPayments;
-    return groupedPayments.filter((payment) => payment.cashier_name === filters.cashierName);
-  }, [filters.cashierName, groupedPayments]);
+    return groupedPayments.filter((payment) => {
+      // Buscar el cashier_id en las filas originales de este pago
+      const matchingRow = payments.find((r) => r.id === payment.paymentId);
+      return matchingRow?.cashier_id === filters.cashierName;
+    });
+  }, [filters.cashierName, groupedPayments, payments]);
 
   const visibleTotal = visiblePayments.length;
   const visibleCollectedTotal = visiblePayments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -376,6 +392,13 @@ export default function CompletedPaymentsList({
       isTrayOrder: (payment.order as { is_tray_order?: boolean | null }).is_tray_order,
     });
 
+    const isForeignCashier = payment.cashier_id !== currentUserId;
+
+    if (isForeignCashier) {
+      setPreAuthorization({ open: true, paymentGroup: payment });
+      return;
+    }
+
     setModalState({
       open: true,
       mode: "request",
@@ -387,11 +410,13 @@ export default function CompletedPaymentsList({
         tableLabel,
         createdAt: payment.created_at,
         cashierName: payment.cashier_name,
+        cashierId: payment.cashier_id,
         amount: payment.amount,
         status: payment.status,
         notes: payment.notes,
         methodsSummary: methods || payment.method_name,
         orderHasDispatchedItems: payment.order_has_dispatched_items,
+        requiresSupervisor: isForeignCashier,
         items: payment.items.map((item) => ({
           id: item.id,
           paymentEntryId: item.paymentEntryId,
@@ -432,9 +457,14 @@ export default function CompletedPaymentsList({
               className="h-10 min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300"
             >
               <option value="ALL">Todos los cajeros</option>
-              {cashierOptions.map((cashierName) => (
-                <option key={cashierName} value={cashierName}>
-                  {cashierName}
+              {currentUserId && (
+                <option value={currentUserId}>Mi caja</option>
+              )}
+              {cashierUsers
+                .filter((u) => u.id !== currentUserId)
+                .map((cashier) => (
+                <option key={cashier.id} value={cashier.id}>
+                  {cashier.full_name} @{cashier.username}
                 </option>
               ))}
             </select>
@@ -805,9 +835,8 @@ export default function CompletedPaymentsList({
           titleOverride="Anular pago"
           initialDraft={modalState.draft}
           autoOpenConfirm={modalState.autoOpenConfirm}
-          onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms }) => {
+          onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms, refundAmount }) => {
             try {
-              if (modalState.mode === "request") {
               const itemList = modalState.payment?.items ?? [];
               const selectedAmount = paymentSelections.reduce((sum, selection) => {
                 const item = itemList.find((entry) => entry.paymentEntryId === selection.paymentEntryId);
@@ -815,71 +844,177 @@ export default function CompletedPaymentsList({
                 return sum + unitAmount * selection.quantity;
               }, 0);
 
-            const requestId = await onRequestVoid(paymentId, reason, paymentSelections, cashRefundDenoms);
-
-            if (!modalState.payment?.orderHasDispatchedItems) {
-              // Direct reversal - no dispatched items, no supervisor needed
-              await onVoidWithSupervisor(
+              const requestIdResponse = await onRequestVoid(
                 paymentId,
-                requestId,
+                modalState.payment?.orderId ?? "",
                 reason,
-                "",
-                "",
                 paymentSelections,
                 cashRefundDenoms,
+                refundAmount,
               );
-              setModalState({ open: false, mode: "request", payment: null, draft: null, autoOpenConfirm: false });
-              return;
+              const requestId = requestIdResponse.requestId;
+
+              if (!modalState.payment?.orderHasDispatchedItems && !modalState.payment?.requiresSupervisor) {
+                // Direct reversal - same cashier, no dispatched items, no supervisor needed
+                await onVoidWithSupervisor(
+                  paymentId,
+                  requestId,
+                  reason,
+                  "",
+                  "",
+                  paymentSelections,
+                  cashRefundDenoms,
+                );
+                setModalState({ open: false, mode: "request", payment: null, draft: null, autoOpenConfirm: false });
+                return;
+              }
+
+              // Requires supervisor authorization
+              if (modalState.payment?.requiresSupervisor && pendingAuthorization.supervisorPassword) {
+                // We already have pre-authorization credentials from the initial step
+                await onVoidWithSupervisor(
+                  paymentId,
+                  requestId,
+                  reason,
+                  pendingAuthorization.supervisorIdentifier,
+                  pendingAuthorization.supervisorPassword,
+                  paymentSelections,
+                  cashRefundDenoms,
+                );
+                setModalState({ open: false, mode: "request", payment: null, draft: null, autoOpenConfirm: false });
+                setPendingAuthorization({
+                  open: false,
+                  requestId: null,
+                  payment: null,
+                  reason: "",
+                  paymentSelections: [],
+                  cashRefundDenoms: [],
+                  selectedAmount: 0,
+                  supervisorIdentifier: "",
+                  supervisorPassword: "",
+                });
+                return;
+              }
+
+              // Otherwise, we need to ask for supervisor authorization now (for dispatched items)
+              setModalState({
+                open: true,
+                mode: "request",
+                payment: modalState.payment,
+                draft: {
+                  reason,
+                  paymentSelections,
+                  cashRefundDenoms,
+                },
+                autoOpenConfirm: false,
+              });
+              setPendingAuthorization({
+                open: true,
+                requestId,
+                payment: modalState.payment,
+                reason,
+                paymentSelections,
+                cashRefundDenoms,
+                selectedAmount,
+                supervisorIdentifier: "",
+                supervisorPassword: "",
+              });
+            } catch (error: any) {
+              toast.error(error?.message || "Error al procesar la anulacion");
+              throw error;
+            }
+          }}
+        />
+      ) : null}
+
+      {preAuthorization.open ? (
+        <SupervisorAuthorizationDialog
+          open={preAuthorization.open}
+          onOpenChange={(open) => setPreAuthorization((prev) => ({ ...prev, open }))}
+          loading={actionLoading}
+          paymentLabel={
+            preAuthorization.paymentGroup
+              ? `${getCajaOrderOriginLabel({
+                  orderType: preAuthorization.paymentGroup.order.type,
+                  tableName: preAuthorization.paymentGroup.order.table_name,
+                  splitCode: preAuthorization.paymentGroup.order.split_code,
+                  isSpecial: preAuthorization.paymentGroup.order.is_special,
+                  isTrayOrder: (preAuthorization.paymentGroup.order as any).is_tray_order,
+                })} - ${preAuthorization.paymentGroup.order.code ?? `#${preAuthorization.paymentGroup.order.number}`}`
+              : "Pago"
+          }
+          amountLabel={
+            preAuthorization.paymentGroup ? formatCurrency(preAuthorization.paymentGroup.amount) : formatCurrency(0)
+          }
+          shiftLabel="Turno actual"
+          cashierName={preAuthorization.paymentGroup?.cashier_name ?? "No identificado"}
+          paymentMethod={Array.from(new Set(preAuthorization.paymentGroup?.items.map((i) => i.method_name))).join(", ") || "Metodo"}
+          reason="Autorización requerida para anular un pago cobrado por otro cajero."
+          onConfirm={async ({ identifier, password }) => {
+            if (!preAuthorization.paymentGroup) return;
+
+            // Validate credentials first!
+            const { data, error: validationError } = await supabase.functions.invoke("login-with-identifier", {
+              body: { identifier, password },
+            });
+
+            if (validationError || data?.error) {
+              throw new Error(data?.error || "Credenciales invalidas");
             }
 
-            setModalState({
-              open: true,
-              mode: "request",
-              payment: modalState.payment,
-              draft: {
-                reason,
-                paymentSelections,
-                cashRefundDenoms,
-              },
-              autoOpenConfirm: false,
+            const payment = preAuthorization.paymentGroup;
+            const tableLabel = getCajaOrderOriginLabel({
+              orderType: payment.order.type,
+              tableName: payment.order.table_name,
+              splitCode: payment.order.split_code,
+              isSpecial: payment.order.is_special,
+              isTrayOrder: (payment.order as { is_tray_order?: boolean | null }).is_tray_order,
             });
-            setPendingAuthorization({
-              open: true,
-              requestId,
-              payment: modalState.payment,
-              reason,
-              paymentSelections,
-              cashRefundDenoms,
-              selectedAmount,
-              supervisorIdentifier: "",
-              supervisorPassword: "",
-            });
-            return;
-          }
+            const methodSet = new Set<string>(payment.items.map((item) => item.method_name));
+            const methods = Array.from(methodSet).join(", ");
+
+            // We store the credentials to be used when the user submits the actual void modal
+            setPendingAuthorization((prev) => ({
+              ...prev,
+              supervisorIdentifier: identifier,
+              supervisorPassword: password,
+            }));
 
             setModalState({
-              open: false,
-              mode: "request",
-              payment: null,
-            draft: null,
-            autoOpenConfirm: false,
-          });
-          setPendingAuthorization({
-            open: false,
-            requestId: null,
-              payment: null,
-              reason: "",
-              paymentSelections: [],
-              cashRefundDenoms: [],
-              selectedAmount: 0,
-              supervisorIdentifier: "",
-              supervisorPassword: "",
+              open: true,
+              mode: "execute",
+              payment: {
+                paymentId: payment.paymentId,
+                orderId: payment.order.id,
+                orderCode: payment.order.code,
+                orderNumber: payment.order.number,
+                tableLabel,
+                createdAt: payment.created_at,
+                cashierName: payment.cashier_name,
+                cashierId: payment.cashier_id,
+                amount: payment.amount,
+                status: payment.status,
+                notes: payment.notes,
+                methodsSummary: methods || payment.method_name,
+                orderHasDispatchedItems: payment.order_has_dispatched_items,
+                requiresSupervisor: true,
+                items: payment.items.map((item) => ({
+                  id: item.id,
+                  paymentEntryId: item.paymentEntryId,
+                  productName: item.product_name,
+                  quantity: item.quantity,
+                  tray_item_type: item.tray_item_type ?? null,
+                  amount: item.amount,
+                  methodName: item.method_name,
+                  status: item.status,
+                })),
+              },
+              draft: null,
+              autoOpenConfirm: false,
             });
-          } catch (error: any) {
-            toast.error(error?.message || "Error al procesar la anulacion");
-            throw error;
-          }
-        }}
+
+            setPreAuthorization({ open: false, paymentGroup: null });
+          }}
         />
       ) : null}
 

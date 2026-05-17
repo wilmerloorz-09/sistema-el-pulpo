@@ -10,6 +10,7 @@
 --   - incluye borradores vacios ocultos, borradores con items visibles y orden visual consecutivo calculado por UI
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
+--   - incluye ordenes Express (`order_type = EXPRESS`) y su flujo despacho antes de cobro
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
@@ -27,7 +28,9 @@
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
+--   - incluye multiples aperturas por turno (una por cajero en cash_register_openings) y denoms por cashier_id/opening_id
 --   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
+--   - incluye `cash_shifts.max_caja_sessions` y slots de sesion Caja en cash_shift_users (caja_session_slots)
 --   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
 --   - incluye templates persistentes de apertura de caja y su composicion por denominacion
 --   - deja sin base transaccional los reportes de caja por apertura y el consolidado por turno
@@ -103,7 +106,8 @@
 --   - si existe algun item despachado, pagado o con anulacion pendiente, no debe mostrarse ni ejecutarse
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
---   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial deben pagarse para ser elegibles para despacho).
+--   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial); Express es despacho antes de cobro.
+--   - cada cajero habilitado abre su propia caja en el mismo turno; el reset borra todas las aperturas y denoms asociadas.
 --   - Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
 --   - Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
 --   - Si la anulacion conserva una cuenta activa, la orden original queda historica `CANCELLED` con su numero original y la sucesora recibe un numero nuevo.
@@ -413,7 +417,8 @@ COMMIT;
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 aperturas multi-cajero ni cash_shift_denoms por cashier_id
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`
 -- - 0 base transaccional para reimprimir reportes de caja por apertura ni consolidado por turno

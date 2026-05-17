@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-05-09)
+## Estado operativo vigente (2026-05-22)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -41,6 +41,13 @@
     - `origin=para-llevar`
     - `origin=orden-especial`
   - Las tarjetas de `Mesas`, `Para llevar` y `Orden especial` comparten formato visual; solo cambia el icono/logo. El numero superior es el orden visual consecutivo, el codigo/numero de orden se muestra completo una sola vez y siempre debe aparecer el usuario creador.
+- **Express (`order_type = EXPRESS`):**
+  - Modulo propio en navegacion (`/express`) con grilla de tarjetas similar a Para llevar.
+  - Comparte menu/catalogo operativo con para llevar; el flujo operativo es **despacho antes de cobro** (inverso al global Mesa/Para llevar/Especial).
+  - Tras enviar, la orden queda `SENT_TO_KITCHEN` con etiqueta operativa **En despacho**; en `Despacho` aparece en pestaña Express.
+  - Solo entra a `Caja > Por cobrar` cuando esta `KITCHEN_DISPATCHED` (despachada, pendiente de cobro total).
+  - No admite cobro parcial en el flujo Express.
+  - `dispatch_config.express_enabled` controla visibilidad en Despacho.
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
@@ -57,11 +64,23 @@
 - No se puede abrir ni guardar un turno sin al menos un usuario habilitado con rol operativo.
 - `cash_shift_users` define capacidades operativas reales dentro del turno:
   - `can_serve_tables`
+  - `can_access_orders`
   - `can_dispatch_orders`
+  - `can_manage_products`
   - `can_use_caja`
   - `can_authorize_order_cancel`
   - `can_double_session`
   - `is_supervisor`
+- **Varios cajeros por turno (2026-05-21+):**
+  - Puede haber **varios** usuarios con `can_use_caja = true` en el mismo turno, hasta el cupo `cash_shifts.max_caja_sessions` (terminales configuradas en `Admin > Turno`).
+  - Ya no existe restriccion de un solo cajero habilitado por turno (`ux_cash_shift_users_one_enabled_cashier_per_shift` eliminado).
+  - Cada cajero habilitado debe **abrir su propia caja** con su propio arqueo; no comparten una sola apertura global del turno.
+  - `cash_register_openings` permite una apertura `abierta` por par `(shift_id, cashier_id)`.
+  - `cash_shift_denoms` se particiona por `cashier_id` y `opening_id`; el indice unico vigente es `(shift_id, cashier_id, denomination_id)`.
+  - `get_my_branch_shift_gate(...)` devuelve `caja_status` **del usuario autenticado** via `get_user_caja_status(...)`, no el agregado de `cash_shifts.caja_status`.
+  - `cash_shifts.caja_status` sigue existiendo como resumen agregado (hay alguna caja abierta en el turno), pero la UI de Caja y el menu lateral usan el estado por usuario.
+  - No usar flujo de "conectar terminal" / `claim_cash_session_slot` para un segundo cajero: cada uno ve `Abrir mi caja` y completa su arqueo.
+  - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
 - Si un usuario del turno tiene `cash_shift_users.can_double_session = true` y `can_use_caja = true`, puede conservar una segunda sesion simultanea mediante:
   - `profiles.current_app_secondary_session_id`
@@ -85,6 +104,10 @@
   - `KITCHEN_DISPATCHED` sin `paid_at`
 
 ### 3. Caja y pagos
+- **Apertura por cajero:** Si Ivonne ya abrio su caja, otro cajero habilitado (p. ej. usuario1) debe ver el formulario de arqueo propio en `/caja`, no un bloqueo por "caja ya abierta en el turno".
+- **Validacion de cobro:** `useCaja` carga `cash_shift_denoms` filtrando `cashier_id = auth.uid()`. `Ordenes` valida cobro rapido con `shiftGateQuery.data.cajaStatus === 'OPEN'`, no con `shift.caja_status` global.
+- **Historial:** `list_cash_register_openings` marca `is_current` cuando la apertura abierta pertenece al usuario actual. El historial mostrado en `OpenShiftForm` se filtra por cajero en cliente.
+- **Anulacion de apertura:** usar RPC `annul_cash_opening(p_opening_id, ...)`; solo borra denominaciones de esa apertura/cajero, no las de otros cajeros del mismo turno.
 - **Diálogo de cobro (dos variantes):**
   - `PaymentDialog` (`src/components/caja/PaymentDialog.tsx`): flujo clásico; sigue siendo la referencia para comprobante de transferencia preparado (`onPrepareTransferProof`, `getTransferProofReadiness`).
   - `PaymentDialogV2` (`src/components/caja/PaymentDialogV2.tsx`): cobro por denominaciones + transferencia; botón **Cobrar** registra pago vía `useCaja.payOrder`; tras éxito muestra desglose de vuelto, **Imprimir Comprobante** (`PaymentReceipt` + `window.print`) y **Listo**; modal de éxito más estrecho que el de cobro.

@@ -62,7 +62,10 @@ const Caja = () => {
   const shiftGateQuery = useBranchShiftGate();
   const { isDesktop } = useBreakpoint();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [completedFilters, setCompletedFilters] = useState<CompletedPaymentsFilters>(initialCompletedFilters);
+  const [completedFilters, setCompletedFilters] = useState<CompletedPaymentsFilters>({
+    scope: "ALL",
+    cashierName: user?.id ?? "ALL",
+  });
 
   const [activeCaptureRequestId, setActiveCaptureRequestId] = useState<string | null>(null);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
@@ -554,10 +557,12 @@ const Caja = () => {
               filters={completedFilters}
               permissions={permissions}
               shiftDenoms={shift?.denoms ?? []}
+              cashierUsers={captureCandidates}
+              currentUserId={user?.id ?? null}
               actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
               onFiltersChange={setCompletedFilters}
-              onRequestVoid={(paymentId, reason, paymentSelections, cashRefundDenoms) =>
-                requestPaymentVoid.mutateAsync({ paymentId, reason, paymentSelections, cashRefundDenoms })
+              onRequestVoid={(paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount) =>
+                requestPaymentVoid.mutateAsync({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount })
               }
               onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms) =>
                 voidPaymentWithSupervisor.mutateAsync({
@@ -1067,10 +1072,12 @@ const Caja = () => {
                 filters={completedFilters}
                 permissions={permissions}
                 shiftDenoms={shift.denoms}
+                cashierUsers={captureCandidates}
+                currentUserId={user?.id ?? null}
                 actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
                 onFiltersChange={setCompletedFilters}
-                onRequestVoid={(paymentId, reason, paymentSelections, cashRefundDenoms) =>
-                  requestPaymentVoid.mutateAsync({ paymentId, reason, paymentSelections, cashRefundDenoms })
+                onRequestVoid={(paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount) =>
+                  requestPaymentVoid.mutateAsync({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount })
                 }
                 onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms) =>
                   voidPaymentWithSupervisor.mutateAsync({

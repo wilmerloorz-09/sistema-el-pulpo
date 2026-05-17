@@ -28,8 +28,11 @@
 - Capa 1: permisos efectivos por modulo/sucursal.
 - Capa 2: capacidades por turno en `cash_shift_users`.
 - `get_my_branch_shift_gate(...)` sigue siendo el gate principal para habilitar vistas operativas.
-- `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa y toma de control para Caja.
-- `cash_shift_users.can_double_session` permite una segunda sesion solo para usuarios habilitados en turno abierto con acceso a Caja; esa segunda sesion se registra en `profiles.current_app_secondary_session_id` con campos auxiliares.
+- El campo `caja_status` de ese gate es **por usuario** (`get_user_caja_status`), no el estado global del turno.
+- `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa.
+- `cash_shift_users.caja_session_slots` y `cash_shifts.max_caja_sessions` limitan terminales simultaneas; varios usuarios pueden tener `can_use_caja` en el mismo turno.
+- `cash_shift_users.can_double_session` permite una segunda sesion de app para el **mismo** usuario con Caja; se registra en `profiles.current_app_secondary_session_id`.
+- Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -37,6 +40,7 @@
   - `TABLE`
   - `TAKEOUT`
   - `BULK`
+- Ordenes `EXPRESS` usan el mismo arbol de menu que para llevar pero con flujo **despacho -> cobro** (ver `src/lib/orderFlow.ts`).
 - Fuente transaccional legacy que sigue viva:
   - `categories`
   - `subcategories`
@@ -132,11 +136,14 @@
 
 ### 8. Caja
 - `Caja` se divide en:
-  - apertura/resumen del turno
-  - ordenes por cobrar
+  - apertura de **mi caja** (arqueo propio por cajero habilitado)
+  - resumen/cierre de la apertura del usuario logueado
+  - ordenes por cobrar (incluye Express despachadas pendientes de pago)
   - pagos realizados
   - movimientos de caja
   - anulacion de pagos
+- Si el usuario no tiene caja abierta (`userCajaIsOpen` / `shiftGate.cajaStatus !== OPEN`), la pagina muestra `OpenShiftForm` aunque otro cajero del turno ya haya abierto la suya.
+- Navegacion: subitem deshabilitado `Abrir mi caja...` / `Reabrir mi caja...` segun `computeCajaAbrirTerminalState` en `src/components/nav/cajaTerminalNav.ts` (ya no redirige a `claim-terminal`).
 - **Modal de pago dual:**
   - `PaymentDialog`: selección de líneas/cantidades, splits por método, comprobante de transferencia preparado, confirmación y recibo.
   - `PaymentDialogV2`: total a cobrar, efectivo por denominaciones del turno, transferencia libre, vista previa y post-cobro de vuelto; **Cobrar** → `payOrder.mutateAsync` con mismos invariantes que V1.
@@ -169,7 +176,7 @@
 - El resumen ya usa efectivo neto aplicado, no `tendered` bruto.
 - **Integridad Financiera (2026-05-09):**
   - **Redondeo:** Todas las operaciones monetarias aplican `round(val, 2)` de forma centralizada.
-  - **Validación de Apertura:** No se permite procesar cobros sin una apertura de caja activa verificada en `cash_shift_denoms`.
+  - **Validación de Apertura:** No se permite procesar cobros sin denominaciones activas del **cajero actual** en `cash_shift_denoms` (`cashier_id = auth.uid()`).
   - **Exclusión de Cancelados:** Los ítems anulados o en proceso de anulación no suman al saldo de la orden ni al resumen de caja.
   - Se aplica redondeo financiero centralizado para evitar errores de punto flotante en el "Cuadre de caja".
 

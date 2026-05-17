@@ -1,5 +1,5 @@
 import { UserRound, ChevronRight } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NavLink } from "@/components/NavLink";
@@ -50,6 +50,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const accountLabel = getUserDisplayName(profile);
   const initials = getInitials(accountLabel);
   const location = useLocation();
+  const navigate = useNavigate();
   const [openHoverCard, setOpenHoverCard] = useState<string | null>(null);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
   const appVersion = useAppVersion();
@@ -121,6 +122,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
           const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
           const isOriginExpress = searchParams.get("origin") === "express";
           const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
+          const hasSubItems = (item.subItems?.length ?? 0) > 0;
           const isItemActive = item.to === "/mesas"
             ? (location.pathname === "/mesas" || location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasList))
             : item.to === "/para-llevar"
@@ -131,8 +133,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                 ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
             : item.to === "/ordenes"
               ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginOrdenEspecial)
-              : location.pathname === item.to;
-          const hasSubItems = (item.subItems?.length ?? 0) > 0;
+              : (location.pathname === item.to || (hasSubItems && location.pathname.startsWith(item.to)));
 
           const navLink = !hasSubItems ? (
             <NavLink
@@ -160,10 +161,11 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                 "group flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
                 "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
                 isItemActive && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
-                isItemActive && item.tone.active
+                isItemActive && item.tone.active,
+                (!isItemActive && openHoverCard === item.to) && "bg-white/10 border-white/5 text-sidebar-foreground"
               )}
-              onClick={(e) => {
-                e.preventDefault();
+               onClick={() => {
+                navigate(item.to);
                 setOpenHoverCard(prev => prev === item.to ? null : item.to);
               }}
             >

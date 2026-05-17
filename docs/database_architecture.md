@@ -34,8 +34,8 @@
 - `user_branch_roles`
 - `user_branch_modules`
 - `cash_shift_users`
-- `webauthn_credentials`
-- `webauthn_challenges`
+// Removed WebAuthn tables from active operation
+
 
 ### 2. Catalogo
 - Modelo principal:
@@ -72,8 +72,13 @@
 
 ### 5. Caja y pagos
 - `cash_shifts`
+  - `max_caja_sessions`: cupo de usuarios/terminales Caja habilitados simultaneos en el turno (1–10).
+  - `caja_status`: resumen agregado del turno (alguna apertura abierta/cerrada); no sustituye el estado por cajero en UI.
 - `cash_shift_denoms`
+  - `cashier_id`, `opening_id`: particion por cajero y apertura dentro del turno.
+  - indice unico: `(shift_id, cashier_id, denomination_id)` cuando `cashier_id` no es null.
 - `cash_register_openings`
+  - una fila `abierta` maxima por `(shift_id, cashier_id)`.
 - `cash_register_movements`
 - `cash_movements`
 - `payments`
@@ -147,8 +152,14 @@
 ### Caja
 - `cash_shifts` representa el turno operativo.
 - `cash_shifts.opened_at` es la fecha/hora de apertura del turno y se presenta en `Admin > Turno` mientras el turno esta `OPEN`.
-- `cash_register_openings` representa historial real de aperturas, cierres y anulaciones de caja.
-- `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja.
+- `cash_register_openings` representa historial real de aperturas, cierres y anulaciones **por cajero** dentro del turno.
+- `cash_shift_denoms.qty_current` es la fuente real de composicion actual de caja **del cajero** (filtrar por `cashier_id` en RPCs y cliente).
+- Varios cajeros pueden tener aperturas `abierta` en paralelo en el mismo `shift_id`.
+- `get_user_caja_status(shift_id, user_id)` devuelve `UNOPENED` | `OPEN` | `CLOSED` segun la ultima apertura de ese cajero.
+- `get_my_branch_shift_gate` expone ese estado en `caja_status` para el usuario autenticado. **No hacer DROP** de esta funcion en migraciones: politicas RLS de cancelaciones dependen de ella; usar solo `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
+- `open_cash_register` retorna `uuid` (id de apertura). Si cambia el tipo de retorno, ejecutar antes `DROP FUNCTION open_cash_register(uuid, uuid, uuid, jsonb)`.
+- `registrar_movimiento_caja` / `registrar_movimiento_caja_operativo` actualizan denominaciones solo del `auth.uid()`.
+- `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
 - `Pagos del turno` debe filtrar por el rango real de `cash_shifts.opened_at` a `cash_shifts.closed_at`/`now()`, no por inicio del dia calendario.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
 - `cash_shift_users.can_double_session` habilita una segunda sesion de app solo para usuarios de caja en turno abierto.
@@ -199,6 +210,13 @@
 - `recalculate_check_balance(...)` debe revisar `VOID_SUCCESSOR_ORDER` antes de invocar sincronizaciones que puedan recalcular estado, para no revivir historicas anuladas.
 - La anulacion operativa de pago solo debe proceder para ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
 
+### Express (`order_type = EXPRESS`)
+- Enum `order_type` incluye `EXPRESS` (migracion `20260516000000_add_express_order_type.sql`).
+- Flujo: borrador -> envio a despacho (`SENT_TO_KITCHEN` / En despacho) -> despacho total -> `KITCHEN_DISPATCHED` -> cobro total en Caja -> `PAID`.
+- `orderIsPayableInCaja` en cliente solo incluye Express en `KITCHEN_DISPATCHED`.
+- `dispatch_config.express_enabled` habilita la pestaña/modulo en Despacho.
+- RPC `create_express_order(...)` crea la orden ligada al turno abierto.
+
 ### Para llevar (TAKEOUT) y Orden especial como tarjetas dinamicas
 - El listado principal de tarjetas `Para llevar` se filtra por:
   - `orders.order_type = 'TAKEOUT'`
@@ -244,14 +262,18 @@
 ### Caja
 - `sync_order_payment_state(...)` (RPC con comprobación de permisos; expone `sync_order_payment_state_internal`)
 - `sync_order_payment_state_internal(...)` (invocado por triggers en `payments` / `payment_items` y por otras RPCs)
-- `open_cash_register(...)`
-- `close_cash_register(...)`
+- `get_user_caja_status(shift_id, user_id)`
+- `open_cash_register(...)` → `RETURNS uuid`
+- `close_cash_register(...)` (solo apertura abierta del cajero autenticado)
+- `sync_shift_caja_status_from_openings(shift_id)`
 - `cancel_empty_draft_orders_for_branch(...)`
 - `list_branch_closure_blocking_orders(...)`
-- `anular_apertura_caja(...)`
+- `anular_apertura_caja(...)` (legacy por turno; preferir `annul_cash_opening` por apertura)
+- `annul_cash_opening(p_opening_id, p_admin_id, p_reason)`
 - `list_cash_register_openings(...)`
 - `registrar_movimiento_caja(...)`
 - `list_cash_register_movements(...)`
+- `claim_cash_session_slot(...)` (sesion de terminal; no sustituye apertura de caja por cajero)
 
 ### Anulacion de pagos
 - `can_void_payment(...)`
@@ -276,6 +298,8 @@
 - `20260329134000_add_bulk_included_products.sql`
 
 ### Caja / apertura / movimientos
+- `20260521100000_allow_multiple_shift_caja_users.sql` (varios `can_use_caja` por turno; `open_cash_register` sin cupo de un solo UUID)
+- `20260522120000_per_cashier_caja_register.sql` (denoms por cajero, apertura independiente, gate por usuario, `annul_cash_opening`)
 - `20260317124500_cash_register_opening_annulment.sql`
 - `20260317133000_cash_register_movements.sql`
 - `20260317143000_apply_cash_register_movement_to_denoms.sql`
@@ -299,6 +323,9 @@
 - `20260507033000_split_order_after_payment_void.sql`
 - `20260507120000_define_paid_before_dispatch_flow.sql`
 - `20260507123000_keep_paid_orders_on_tables_until_dispatch.sql`
+
+### Express y flujo despacho-cobro
+- `20260516000000_add_express_order_type.sql`
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`

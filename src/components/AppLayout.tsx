@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { purgeEmptyDineInTableDraftOnLeave } from "@/hooks/useOrder";
-import { Building2, Fingerprint, KeyRound, LogOut, UserRound, WifiOff, Menu } from "lucide-react";
+import { Building2, KeyRound, LogOut, UserRound, WifiOff, Menu } from "lucide-react";
 import BottomNav from "./BottomNav";
 import SidebarNav from "./SidebarNav";
 import ChangePasswordDialog from "./ChangePasswordDialog";
-import PasskeyRegisterButton from "./PasskeyRegisterButton";
+
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useNetwork } from "@/contexts/NetworkContext";
@@ -191,14 +191,7 @@ const AppLayout = () => {
                   </Button>
                 }
               />
-              <PasskeyRegisterButton
-                trigger={
-                  <Button variant="outline" className="h-11 justify-start rounded-2xl">
-                    <Fingerprint className="mr-2 h-4 w-4" />
-                    Biometrico
-                  </Button>
-                }
-              />
+
               <Button
                 variant="outline"
                 className="h-11 justify-start rounded-2xl border-red-200 text-destructive hover:bg-red-50 hover:text-destructive"

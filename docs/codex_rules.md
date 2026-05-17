@@ -26,7 +26,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
 
 ### 2.1 Flujo global Caja - Despacho
-- Todas las sucursales trabajan con el mismo flujo: cobro primero y despacho despues.
+- Todas las sucursales trabajan con el mismo flujo: cobro primero y despacho despues, **excepto Express** (`order_type = EXPRESS`): despacho primero, cobro total despues en Caja cuando la orden esta `KITCHEN_DISPATCHED`.
 - El CRUD de sucursales no debe mostrar un campo de flujo ni un check `Mesero-Cajero`.
 - `branches.workflow_mode` queda como compatibilidad interna y debe estar forzado a `CASH_THEN_DISPATCH`.
 - Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
@@ -55,7 +55,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 4. Caja y turno no son lo mismo
 - No mezclar cierre de caja con cierre de turno.
-- `close_cash_register(...)` puede cerrar solo la caja.
+- No asumir una sola caja abierta por turno: cada cajero con `can_use_caja` abre la suya (`cash_register_openings` + `cash_shift_denoms` por `cashier_id`).
+- La UI y el gate operativo usan `get_my_branch_shift_gate(...).caja_status` / `get_user_caja_status`, no `cash_shifts.caja_status` global, para decidir si mostrar cobros o el formulario de apertura.
+- Varios usuarios pueden tener `can_use_caja` en el mismo turno hasta `cash_shifts.max_caja_sessions`; no reintroducir indice/trigger de un solo cajero por turno.
+- No usar "conectar terminal" como sustituto de segunda apertura: el segundo cajero debe ver `Abrir mi caja` con arqueo propio.
+- `close_cash_register(...)` cierra solo la apertura `abierta` del cajero autenticado.
 - `close_cash_shift_with_tables(...)` es cierre de turno. Si el flujo UI debe resolver ordenes especiales `$0`, debe hacerlo con confirmacion explicita antes de llamar al cierre.
 - Antes de bloquear cierre por borradores, usar la logica central que cancela borradores no enviados sin cobros ni items operativos.
 - Un `DRAFT` vacio o con solo items `DRAFT` no debe impedir cerrar turno.
@@ -64,7 +68,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - `cash_shifts` como turno
   - `cash_shifts.opened_at` como fecha/hora visible de apertura del turno abierto en `Admin > Turno`
   - `cash_register_openings` como historial de aperturas
-  - `cash_shift_denoms` como caja fisica real
+  - `cash_shift_denoms` como caja fisica real (por cajero; columnas `cashier_id`, `opening_id`)
+- Migraciones de caja multi-cajero obligatorias en cada entorno: `20260521100000_allow_multiple_shift_caja_users.sql`, `20260522120000_per_cashier_caja_register.sql`.
+- Al cambiar `open_cash_register`, si el retorno pasa de `void` a `uuid`, incluir `DROP FUNCTION IF EXISTS public.open_cash_register(uuid, uuid, uuid, jsonb)` antes del `CREATE`.
+- **No** hacer `DROP FUNCTION get_my_branch_shift_gate(uuid)` en migraciones: politicas RLS de `order_cancellations` / `order_item_cancellations` dependen de ella; usar `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
 - Si se toca apertura de caja, mantener soporte para:
   - `cash_register_templates`
   - `cash_register_template_denoms`
@@ -176,7 +183,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 12. Integridad Financiera y Caja
 - **Integridad Financiera (2026-05-09):**
   - **Redondeo:** Todos los cálculos financieros deben redondearse a 2 decimales en el origen (BD/RPC) y en la UI para evitar errores de precisión.
-  - **Caja Abierta:** Los diálogos de pago (`PaymentDialog` y `PaymentDialogV2`) no deben permitir cobros si no existe apertura de caja válida (`cash_shift_denoms`) para el turno.
+  - **Caja Abierta:** Los diálogos de pago no deben permitir cobros si el cajero actual no tiene apertura activa (`cash_shift_denoms` con su `cashier_id` o `shiftGate.cajaStatus === OPEN`).
   - **Exclusión de Cancelados:** Los ítems con anulación confirmada o pendiente no deben sumarse a ninguna cifra operativa de cobro.
   - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
@@ -213,7 +220,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ## Checklist minimo antes de cerrar una tarea
 1. Si hubo cambio de codigo, correr verificacion tecnica adecuada.
-2. Si se toco caja, validar apertura, cobro, cierre o anulacion segun corresponda.
+2. Si se toco caja, validar apertura por cajero, cobro con denoms del usuario, cierre individual y que un segundo cajero habilitado pueda abrir su propia caja sin bloqueo global.
 3. Si se toco reporteria de caja, validar consolidado y por apertura.
 4. Si se toco anulacion de pagos, validar total y parcial.
 5. Si se toco `Unir/Dividir`, validar que no mueva cantidades pagadas y que preserve historial operativo.
