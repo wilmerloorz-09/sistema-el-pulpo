@@ -834,7 +834,7 @@ function getPayableQuantityForOrderType(
   if (orderType === "EXPRESS") {
     return quantities.quantityDispatchedAvailable;
   }
-  if (orderType === "TAKEOUT" || workflowMode === "CASH_THEN_DISPATCH") {
+  if (orderType === "TAKEOUT" || orderType === "EXTRA" || workflowMode === "CASH_THEN_DISPATCH") {
     return Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
   }
 
@@ -2468,6 +2468,7 @@ export function useCaja(params?: {
         qc.invalidateQueries({ queryKey: ["current-shift"] });
         qc.invalidateQueries({ queryKey: ["payable-orders"] });
         qc.invalidateQueries({ queryKey: ["express-orders"] });
+        qc.invalidateQueries({ queryKey: ["extra-orders"] });
         qc.invalidateQueries({ queryKey: ["completed-payments"] });
         qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
         qc.invalidateQueries({ queryKey: ["tables-with-status"] });

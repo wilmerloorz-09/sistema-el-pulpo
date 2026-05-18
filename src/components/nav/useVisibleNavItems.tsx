@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -59,6 +59,17 @@ const NAV_ITEMS: AppNavItem[] = [
       active: "from-violet-500 to-fuchsia-400",
       idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
       iconIdle: "bg-violet-50 text-violet-600",
+    },
+    visible: (permissions) => canView(permissions, "mesas"),
+  },
+  {
+    to: "/extra",
+    label: "Extra",
+    icon: <PackagePlus className="h-5 w-5" />,
+    tone: {
+      active: "from-teal-500 to-cyan-400",
+      idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
+      iconIdle: "bg-teal-50 text-teal-600",
     },
     visible: (permissions) => canView(permissions, "mesas"),
   },
@@ -219,11 +230,11 @@ export function useVisibleNavItems() {
         return true;
       }
 
-      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
+      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
-        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
+        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
         if (item.to === "/editar-orden") {

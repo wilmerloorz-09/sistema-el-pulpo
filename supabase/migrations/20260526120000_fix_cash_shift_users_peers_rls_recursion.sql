@@ -1,8 +1,6 @@
--- Ampliar la politica SELECT de cash_shift_users para que cualquier
--- usuario habilitado en un turno pueda ver a TODOS los compañeros del turno.
--- Esto es necesario para que el dropdown "Pagos del turno" muestre todos los cajeros.
+-- Corrige recursividad infinita en politica "Users can view shift members"
+-- (EXISTS sobre cash_shift_users dentro de politica ON cash_shift_users).
 
-DROP POLICY IF EXISTS "Users can view own shift enablement" ON public.cash_shift_users;
 DROP POLICY IF EXISTS "Users can view shift members" ON public.cash_shift_users;
 
 CREATE POLICY "Users can view shift members"

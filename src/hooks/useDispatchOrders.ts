@@ -75,6 +75,7 @@ function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["payable-orders"] });
   qc.invalidateQueries({ queryKey: ["orders"] });
   qc.invalidateQueries({ queryKey: ["express-orders"] });
+  qc.invalidateQueries({ queryKey: ["extra-orders"] });
   qc.invalidateQueries({ queryKey: ["tables-with-status"] });
 }
 
@@ -87,9 +88,9 @@ function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updat
 }
 
 function matchesScope(orderType: string, scope: DispatchView) {
-  if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT" || orderType === "EXPRESS";
+  if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT" || orderType === "EXPRESS" || orderType === "EXTRA";
   if (scope === "SPECIAL") return false;
-  if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE";
+  if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "EXTRA";
   if (scope === "EXPRESS") return orderType === "EXPRESS";
   return orderType === "TAKEOUT";
 }
@@ -348,7 +349,7 @@ export function useDispatchOrders(scope: DispatchView) {
             baseFiltered = baseFiltered.filter((order) => {
               const orderType = order.order_type === "EXPRESS"
                 ? "EXPRESS"
-                : order.order_type === "DINE_IN" || order.order_type === "TABLE"
+                : order.order_type === "DINE_IN" || order.order_type === "TABLE" || order.order_type === "EXTRA"
                   ? "TABLE"
                   : "TAKEOUT";
               return assignedTypes.has(orderType);
@@ -413,7 +414,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
       const counts = {
         ALL: allCards.length,
-        TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE")).length,
+        TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
         TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT").length,
         EXPRESS: allCards.filter(c => c.order_type === "EXPRESS").length,
         SPECIAL: allCards.filter(c => c.is_special).length,

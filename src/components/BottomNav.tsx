@@ -45,6 +45,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
   const fromEditar = location.pathname === "/ordenes" && searchParams.get("from") === "editar";
   const fromParaLlevar = location.pathname === "/ordenes" && searchParams.get("origin") === "para-llevar";
   const fromExpress = location.pathname === "/ordenes" && searchParams.get("origin") === "express";
+  const fromExtra = location.pathname === "/ordenes" && searchParams.get("origin") === "extra";
   const fromOrdenEspecial = location.pathname === "/ordenes" && searchParams.get("origin") === "orden-especial";
 
   if (visibleItems.length === 0) {
@@ -81,6 +82,10 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
           }
           if (fromExpress) {
             if (item.to === "/express") isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
+          if (fromExtra) {
+            if (item.to === "/extra") isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
           }
           if (fromOrdenEspecial) {

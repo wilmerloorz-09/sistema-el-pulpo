@@ -121,6 +121,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
           const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
           const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
           const isOriginExpress = searchParams.get("origin") === "express";
+          const isOriginExtra = searchParams.get("origin") === "extra";
           const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
           const hasSubItems = (item.subItems?.length ?? 0) > 0;
           const isItemActive = item.to === "/mesas"
@@ -129,10 +130,12 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
               ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
               : item.to === "/express"
                 ? (location.pathname === "/express" || (location.pathname === "/ordenes" && isOriginExpress))
+              : item.to === "/extra"
+                ? (location.pathname === "/extra" || (location.pathname === "/ordenes" && isOriginExtra))
               : item.to === "/orden-especial"
                 ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
             : item.to === "/ordenes"
-              ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginOrdenEspecial)
+              ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginExtra && !isOriginOrdenEspecial)
               : (location.pathname === item.to || (hasSubItems && location.pathname.startsWith(item.to)));
 
           const navLink = !hasSubItems ? (

@@ -476,6 +476,66 @@ export async function fetchExpressSiblingOrders(branchId: string): Promise<Sibli
     .sort(compareSiblingOrderTabs);
 }
 
+export async function fetchExtraSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
+  const openShift = await getOpenCashShiftForBranch(branchId);
+  if (!openShift) return [];
+
+  const extraOrders = (
+    await dbSelect<any>("orders", {
+      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, order_items(id, total)",
+      filters: [
+        { column: "branch_id", op: "eq", value: branchId },
+        { column: "order_type", op: "eq", value: "EXTRA" },
+        { column: "is_tray_order", op: "eq", value: false },
+        { column: "is_special", op: "eq", value: false },
+        { column: "cash_shift_id", op: "eq", value: openShift.id },
+        { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] },
+      ],
+      skipLocalCache: true,
+    })
+  ).filter((order) => orderBelongsToOpenCashShift(order, openShift));
+
+  if (!extraOrders || extraOrders.length === 0) return [];
+
+  const extraOrderIds = extraOrders.map((order: any) => order.id).filter(Boolean);
+  const dispatchEvents = extraOrderIds.length > 0
+    ? await dbSelect<any>("order_dispatch_events", {
+        select: "order_id",
+        filters: [
+          { column: "order_id", op: "in", value: extraOrderIds },
+          { column: "status", op: "eq", value: "APPLIED" },
+        ],
+      })
+    : [];
+  const actuallyDispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+  const creatorIds = Array.from(new Set(extraOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
+  const creatorProfiles = creatorIds.length > 0
+    ? await dbSelect<any>("profiles", {
+        select: "id, first_name, full_name, username, email",
+        filters: [{ column: "id", op: "in", value: creatorIds }],
+      })
+    : [];
+  const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+
+  return extraOrders
+    .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
+    .map((sibling) => ({
+      id: sibling.id,
+      order_number: sibling.order_number,
+      order_code: sibling.order_code ?? null,
+      status: sibling.status ?? null,
+      created_by_name: sibling.created_by ? (creatorNameMap[sibling.created_by] ?? "Usuario") : null,
+      split_code: null,
+      table_order_position: Number(sibling.table_order_position ?? 0) || null,
+      created_at: sibling.created_at ?? null,
+      item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,
+      total: Array.isArray(sibling.order_items)
+        ? sibling.order_items.reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0)
+        : 0,
+    }))
+    .sort(compareSiblingOrderTabs);
+}
+
 async function fetchOrderTableName(tableId: string | null): Promise<string | null> {
   if (!tableId) return null;
 
@@ -997,6 +1057,9 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      if (order?.order_type === "EXTRA" && order.branch_id) {
+        qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
+      }
 
       const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
       const message = hasSentAlready

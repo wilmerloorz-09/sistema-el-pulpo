@@ -17,6 +17,10 @@ export function getOrderOriginLabel(params: {
     return "Express";
   }
 
+  if (params.orderType === "EXTRA") {
+    return "Extra";
+  }
+
   if (params.orderType === "TAKEOUT") {
     return "Para llevar";
   }
@@ -33,6 +37,7 @@ export function getOrderKind(params: {
   if (params.isTrayOrder) return "tray" as const;
   if (params.isSpecial) return "special" as const;
   if (params.orderType === "EXPRESS") return "express" as const;
+  if (params.orderType === "EXTRA") return "extra" as const;
   if (params.orderType === "TAKEOUT") return "takeout" as const;
   return "table" as const;
 }

@@ -28,6 +28,10 @@ export interface BranchShiftGate {
   canDispatchOrders: boolean;
   canManageProducts: boolean;
   canUseCaja: boolean;
+  /** Cajero principal del turno (caja principal). */
+  primaryCashierId: string | null;
+  /** Usuario actual es cajero secundario (tiene caja y no es el principal). */
+  isSecondaryCashier: boolean;
   canAuthorizeOrderCancel: boolean;
   canDoubleSession: boolean;
   isSupervisor: boolean;
@@ -64,6 +68,8 @@ export function useBranchShiftGate() {
           canDispatchOrders: false,
           canManageProducts: false,
           canUseCaja: false,
+          primaryCashierId: null,
+          isSecondaryCashier: false,
           canAuthorizeOrderCancel: false,
           canDoubleSession: false,
           isSupervisor: false,
@@ -102,6 +108,8 @@ export function useBranchShiftGate() {
           canDispatchOrders: Boolean(row?.can_dispatch_orders),
           canManageProducts: Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
           canUseCaja: Boolean(row?.can_use_caja),
+          primaryCashierId: null,
+          isSecondaryCashier: false,
           canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
           canDoubleSession: Boolean(row?.can_double_session),
           isSupervisor: Boolean(row?.is_supervisor),
@@ -113,7 +121,7 @@ export function useBranchShiftGate() {
 
       const { data: shiftMetaRow, error: shiftMetaError } = await (supabase
         .from("cash_shifts" as any)
-        .select("cashier_id, capture_user_id, opened_at, max_caja_sessions")
+        .select("cashier_id, capture_user_id, opened_at, primary_cashier_id")
         .eq("id", shiftId)
         .maybeSingle() as any);
       if (shiftMetaError) throw shiftMetaError;
@@ -137,18 +145,27 @@ export function useBranchShiftGate() {
 
       const directUserEnabled = Boolean(shiftUserRow?.is_enabled);
       const hasDirectShiftRow = shiftUserRow != null;
+      const primaryCashierId = (shiftMetaRow?.primary_cashier_id as string | null) ?? null;
+      const isPrimaryCashierForShift =
+        Boolean(primaryCashierId) && primaryCashierId === user.id && directUserEnabled;
+      const resolvedCanUseCaja = hasDirectShiftRow
+        ? Boolean(shiftUserRow?.can_use_caja) || isPrimaryCashierForShift
+        : Boolean(row?.can_use_caja) || isPrimaryCashierForShift;
+      const isSecondaryCashier =
+        resolvedCanUseCaja
+        && Boolean(primaryCashierId)
+        && primaryCashierId !== user.id;
       const cashierId = shiftMetaRow?.cashier_id ?? null;
       const captureUserId = shiftMetaRow?.capture_user_id ?? null;
-      const maxCajaSessions = Math.max(
-        1,
-        Math.min(10, Number(shiftMetaRow?.max_caja_sessions ?? 1)),
-      );
       const { data: usageRows, error: usageError } = await supabase.rpc("get_caja_shift_terminal_usage", {
         p_branch_id: activeBranchId,
       } as any);
       let globalCajaSessionsUsed = 0;
+      let maxCajaSessions = 1;
       if (!usageError && Array.isArray(usageRows) && usageRows.length > 0) {
-        globalCajaSessionsUsed = Math.max(0, Number((usageRows[0] as any)?.global_sessions_used ?? 0));
+        const usageRow = usageRows[0] as { global_sessions_used?: number; shift_max?: number };
+        globalCajaSessionsUsed = Math.max(0, Number(usageRow?.global_sessions_used ?? 0));
+        maxCajaSessions = Math.max(1, Math.min(10, Number(usageRow?.shift_max ?? 1)));
       }
 
       const slotsFromRow = Array.isArray(shiftUserRow?.caja_session_slots)
@@ -184,7 +201,9 @@ export function useBranchShiftGate() {
         canManageProducts: hasDirectShiftRow
           ? Boolean(shiftUserRow?.can_manage_products ?? shiftUserRow?.can_dispatch_orders)
           : Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
-        canUseCaja: hasDirectShiftRow ? Boolean(shiftUserRow?.can_use_caja) : Boolean(row?.can_use_caja),
+        canUseCaja: resolvedCanUseCaja,
+        primaryCashierId,
+        isSecondaryCashier,
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         canDoubleSession: hasDirectShiftRow ? Boolean(shiftUserRow?.can_double_session) : Boolean(row?.can_double_session),
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),

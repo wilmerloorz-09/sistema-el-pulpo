@@ -6,6 +6,14 @@ export function isExpressOrder(order: {
   return order?.order_type === "EXPRESS" && !order?.is_tray_order && !order?.is_special;
 }
 
+export function isExtraOrder(order: {
+  order_type?: string | null;
+  is_tray_order?: boolean | null;
+  is_special?: boolean | null;
+} | null | undefined): boolean {
+  return order?.order_type === "EXTRA" && !order?.is_tray_order && !order?.is_special;
+}
+
 /** Express enviado y pendiente en modulo Despacho (aun no cobrado). */
 export function expressOrderAwaitingDispatch(order: {
   order_type?: string | null;

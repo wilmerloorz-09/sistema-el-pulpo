@@ -157,6 +157,7 @@
 - Varios cajeros pueden tener aperturas `abierta` en paralelo en el mismo `shift_id`.
 - `get_user_caja_status(shift_id, user_id)` devuelve `UNOPENED` | `OPEN` | `CLOSED` segun la ultima apertura de ese cajero.
 - `get_my_branch_shift_gate` expone ese estado en `caja_status` para el usuario autenticado. **No hacer DROP** de esta funcion en migraciones: politicas RLS de cancelaciones dependen de ella; usar solo `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
+- **Administrador general:** `set_my_active_branch` y `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`) permiten fijar cualquier sucursal activa sin redireccion por turno ni auto-reasignacion al refrescar contexto.
 - `open_cash_register` retorna `uuid` (id de apertura). Si cambia el tipo de retorno, ejecutar antes `DROP FUNCTION open_cash_register(uuid, uuid, uuid, jsonb)`.
 - `registrar_movimiento_caja` / `registrar_movimiento_caja_operativo` actualizan denominaciones solo del `auth.uid()`.
 - `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
@@ -300,6 +301,7 @@
 ### Caja / apertura / movimientos
 - `20260521100000_allow_multiple_shift_caja_users.sql` (varios `can_use_caja` por turno; `open_cash_register` sin cupo de un solo UUID)
 - `20260522120000_per_cashier_caja_register.sql` (denoms por cajero, apertura independiente, gate por usuario, `annul_cash_opening`)
+- `20260524120000_global_admin_free_branch_switch.sql` (admin global: cambio libre de sucursal activa)
 - `20260317124500_cash_register_opening_annulment.sql`
 - `20260317133000_cash_register_movements.sql`
 - `20260317143000_apply_cash_register_movement_to_denoms.sql`

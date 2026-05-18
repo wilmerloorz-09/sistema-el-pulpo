@@ -16,6 +16,8 @@ interface MenuNavigatorProps {
   nodesOverride?: MenuNode[] | null;
   forceLoading?: boolean;
   disabled?: boolean;
+  /** Oculta categorias raiz del menu (ej. PLATOS en ordenes Extra). */
+  excludedRootCategoryNames?: string[];
 }
 
 const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
@@ -147,6 +149,13 @@ const NodeCard = ({
   );
 };
 
+const normalizeCategoryLabel = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+
 const MenuNavigator = ({
   onSelectProduct,
   includeInactive = false,
@@ -157,6 +166,7 @@ const MenuNavigator = ({
   nodesOverride,
   forceLoading = false,
   disabled = false,
+  excludedRootCategoryNames = [],
 }: MenuNavigatorProps) => {
   const {
     visibleNodes,
@@ -174,6 +184,7 @@ const MenuNavigator = ({
     includeInactive,
     menuScope,
     nodesOverride: nodesOverride ?? (trayMode && trayNodes ? trayNodes : null),
+    excludedRootCategoryNames,
   });
 
   const panelRef = useRef<HTMLDivElement>(null);
@@ -269,10 +280,25 @@ const MenuNavigator = ({
     const rootNodes = getChildren(null);
     const foundInsideNavigation = recursiveFind(rootNodes);
     
-    const dedupedResults = Array.from(new Map(foundInsideNavigation.map(item => [item.id, item])).values());
+    const excludedMatchers = excludedRootCategoryNames.map((name) => normalizeCategoryLabel(name)).filter(Boolean);
+    const excludedRootIds = new Set(
+      getChildren(null)
+        .filter((node) => {
+          if (node.node_type !== "category") return false;
+          const normalizedName = normalizeCategoryLabel(node.name);
+          return excludedMatchers.some((matcher) => normalizedName.includes(matcher));
+        })
+        .map((node) => node.id),
+    );
+    const isUnderExcludedRoot = (node: MenuNode) =>
+      excludedRootIds.size > 0
+      && (excludedRootIds.has(node.id) || (node.ancestor_ids ?? []).some((ancestorId) => excludedRootIds.has(ancestorId)));
+
+    const dedupedResults = Array.from(new Map(foundInsideNavigation.map(item => [item.id, item])).values())
+      .filter((node) => !isUnderExcludedRoot(node));
     
     return dedupedResults;
-  }, [searchQuery, getChildren]);
+  }, [searchQuery, getChildren, excludedRootCategoryNames]);
 
   const displayNodes = searchQuery.trim() ? searchResults : renderedNodes;
 
@@ -328,10 +354,15 @@ const MenuNavigator = ({
     }
   }, [renderedNodes.length, visibleNodes]);
 
-  const l1Nodes = useMemo(
-    () => getChildren(null).filter((node) => node.node_type === "category"),
-    [getChildren],
-  );
+  const l1Nodes = useMemo(() => {
+    const excludedMatchers = excludedRootCategoryNames.map((name) => normalizeCategoryLabel(name)).filter(Boolean);
+    return getChildren(null).filter((node) => {
+      if (node.node_type !== "category") return false;
+      if (excludedMatchers.length === 0) return true;
+      const normalizedName = normalizeCategoryLabel(node.name);
+      return !excludedMatchers.some((matcher) => normalizedName.includes(matcher));
+    });
+  }, [getChildren, excludedRootCategoryNames]);
   const showBreadcrumb = breadcrumb.length > 1;
   if ((loading || forceLoading) && showSlowLoading) {
     return (

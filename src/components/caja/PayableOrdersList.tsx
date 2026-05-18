@@ -6,7 +6,9 @@ import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, 
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
 import PaymentDialogV2 from "./PaymentDialogV2";
-import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
+import PaymentDialogSecondary from "./PaymentDialogSecondary";
+import { USE_PAYMENT_DIALOG_V2, canOpenPaymentUiOnDevice, shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -62,6 +64,8 @@ export default function PayableOrdersList({
   onTakeControl,
 }: Props) {
   const { isTablet10 } = useBreakpoint();
+  const shiftGateQuery = useBranchShiftGate();
+  const useSecondaryPaymentUi = shouldUseSecondaryPaymentDialog(shiftGateQuery.data);
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -244,7 +248,7 @@ export default function PayableOrdersList({
                             disabled={readOnly || order.locked_for_editing}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!isTablet10) {
+                              if (!canOpenPaymentUiOnDevice(shiftGateQuery.data, isTablet10)) {
                                 toast.error("El dispositivo es demasiado pequeño para operar caja.");
                                 return;
                               }
@@ -367,7 +371,18 @@ export default function PayableOrdersList({
         </section>
       </section>
 
-      {USE_PAYMENT_DIALOG_V2 ? (
+      {useSecondaryPaymentUi ? (
+        <PaymentDialogSecondary
+          order={selectedOrder}
+          shiftDenoms={shiftDenoms}
+          paymentMethods={paymentMethods}
+          onPay={onPay}
+          paying={paying}
+          open={!!selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+          readOnly={readOnly}
+        />
+      ) : USE_PAYMENT_DIALOG_V2 ? (
         <PaymentDialogV2
           order={selectedOrder}
           shiftDenoms={shiftDenoms}

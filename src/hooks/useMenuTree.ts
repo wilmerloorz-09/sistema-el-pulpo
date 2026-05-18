@@ -28,10 +28,20 @@ export interface MenuNode {
   manual_price_inherited?: boolean;
 }
 
+function normalizeCategoryLabel(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
 interface UseMenuTreeOptions {
   includeInactive?: boolean;
   menuScope?: MenuScope;
   nodesOverride?: MenuNode[] | null;
+  /** Oculta categorias raiz cuyo nombre contenga alguno de estos textos (ej. PLATOS). */
+  excludedRootCategoryNames?: string[];
 }
 
 interface UseMenuTreeReturn {
@@ -114,6 +124,7 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
   const includeInactive = options.includeInactive ?? false;
   const menuScope = options.menuScope ?? "TABLE";
   const overrideNodes = options.nodesOverride ?? null;
+  const excludedRootCategoryNames = options.excludedRootCategoryNames ?? [];
 
   const query = useQuery({
     queryKey: getMenuTreeQueryKey({
@@ -206,9 +217,34 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
 
   const getChildren = (parentId: string | null) => childrenByParent.get(parentId) ?? [];
 
+  const excludedRootMatchers = useMemo(
+    () => excludedRootCategoryNames.map((name) => normalizeCategoryLabel(name)).filter(Boolean),
+    [excludedRootCategoryNames],
+  );
+
+  const excludedRootIds = useMemo(() => {
+    if (excludedRootMatchers.length === 0) return new Set<string>();
+    return new Set(
+      getChildren(null)
+        .filter((node) => {
+          if (node.node_type !== "category") return false;
+          const normalizedName = normalizeCategoryLabel(node.name);
+          return excludedRootMatchers.some((matcher) => normalizedName.includes(matcher));
+        })
+        .map((node) => node.id),
+    );
+  }, [childrenByParent, excludedRootMatchers]);
+
+  const isNodeUnderExcludedRoot = (node: MenuNode) =>
+    excludedRootIds.size > 0
+    && (excludedRootIds.has(node.id) || (node.ancestor_ids ?? []).some((ancestorId) => excludedRootIds.has(ancestorId)));
+
   const rootNodes = useMemo(
-    () => getChildren(null).filter((node) => node.node_type === "category"),
-    [childrenByParent],
+    () =>
+      getChildren(null).filter(
+        (node) => node.node_type === "category" && !excludedRootIds.has(node.id),
+      ),
+    [childrenByParent, excludedRootIds],
   );
 
   useEffect(() => {
@@ -239,8 +275,8 @@ export function useMenuTree(options: UseMenuTreeOptions = {}): UseMenuTreeReturn
 
   const visibleNodes = useMemo(() => {
     if (!currentNode) return [];
-    return getChildren(currentNode.id);
-  }, [currentNode, childrenByParent]);
+    return getChildren(currentNode.id).filter((node) => !isNodeUnderExcludedRoot(node));
+  }, [currentNode, childrenByParent, excludedRootIds]);
 
   const selectL1 = (nodeId: string) => {
     const l1 = nodesById.get(nodeId);
