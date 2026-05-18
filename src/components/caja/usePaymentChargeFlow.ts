@@ -14,7 +14,10 @@ function getPayFailureMessage(e: unknown): string {
 
 export interface PaymentChargeFlowOptions {
   order: PayableOrder | null;
-  shiftDenoms: ShiftDenom[];
+  /** Catálogo completo: lo que el cliente puede entregar. */
+  paymentDenominations: ShiftDenom[];
+  /** Inventario de la caja del cajero (plantilla / arqueo): para calcular cambio. */
+  drawerDenoms: ShiftDenom[];
   paymentMethods: { id: string; name: string }[];
   onPay: (params: PayOrderParams) => Promise<unknown> | void;
   paying: boolean;
@@ -24,7 +27,8 @@ export interface PaymentChargeFlowOptions {
 
 export function usePaymentChargeFlow({
   order,
-  shiftDenoms,
+  paymentDenominations,
+  drawerDenoms,
   paymentMethods,
   onPay,
   paying,
@@ -101,8 +105,11 @@ export function usePaymentChargeFlow({
   }, [open, order?.id, orderUnpaidSignature]);
 
   const sortedDenoms = useMemo(
-    () => [...shiftDenoms].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value),
-    [shiftDenoms],
+    () =>
+      [...paymentDenominations].sort(
+        (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value,
+      ),
+    [paymentDenominations],
   );
   const coinDenoms = useMemo(() => sortedDenoms.filter((d) => d.denomination_type !== "bill"), [sortedDenoms]);
   const billDenoms = useMemo(() => sortedDenoms.filter((d) => d.denomination_type === "bill"), [sortedDenoms]);
@@ -110,9 +117,12 @@ export function usePaymentChargeFlow({
   const cashTotal = useMemo(
     () =>
       roundMoney(
-        shiftDenoms.reduce((sum, d) => sum + (receivedByDenom[d.denomination_id] || 0) * d.value, 0),
+        paymentDenominations.reduce(
+          (sum, d) => sum + (receivedByDenom[d.denomination_id] || 0) * d.value,
+          0,
+        ),
       ),
-    [receivedByDenom, shiftDenoms],
+    [receivedByDenom, paymentDenominations],
   );
 
   const transferAmount = useMemo(() => {
@@ -129,7 +139,7 @@ export function usePaymentChargeFlow({
 
   const changeDenomBreakdown = useMemo(() => {
     if (changeAmount <= 0.001) return [];
-    const sorted = [...shiftDenoms].filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
+    const sorted = [...drawerDenoms].filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
     const result: {
       denomination_id: string;
       qty: number;
@@ -155,7 +165,7 @@ export function usePaymentChargeFlow({
       }
     }
     return result;
-  }, [changeAmount, shiftDenoms, receivedByDenom]);
+  }, [changeAmount, drawerDenoms, receivedByDenom]);
 
   const changeGiven = roundMoney(changeDenomBreakdown.reduce((sum, d) => sum + d.qty * d.value, 0));
   const cannotMakeChange = changeAmount > 0 && Math.abs(changeGiven - changeAmount) > 0.001;

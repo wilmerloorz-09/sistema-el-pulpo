@@ -33,6 +33,8 @@
 - `cash_shift_users.caja_session_slots` y `cash_shifts.max_caja_sessions` limitan terminales simultaneas; varios usuarios pueden tener `can_use_caja` en el mismo turno.
 - `cash_shift_users.can_double_session` permite una segunda sesion de app para el **mismo** usuario con Caja; se registra en `profiles.current_app_secondary_session_id`.
 - Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
+- Por turno puede configurarse **caja principal** (`primary_cashier_id`) y **cajas secundarias** con plantilla de arqueo (`apply_shift_caja_configuration`, `register_role` en aperturas).
+- `useBranchShiftGate` expone `isSecondaryCashier` para elegir UI de cobro secundaria.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -41,6 +43,7 @@
   - `TAKEOUT`
   - `BULK`
 - Ordenes `EXPRESS` usan el mismo arbol de menu que para llevar pero con flujo **despacho -> cobro** (ver `src/lib/orderFlow.ts`).
+- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, sin mesa fisica, flujo **caja -> despacho** como mesa (`src/pages/Extra.tsx`, RPC `create_extra_order`).
 - Fuente transaccional legacy que sigue viva:
   - `categories`
   - `subcategories`
@@ -144,11 +147,14 @@
   - anulacion de pagos
 - Si el usuario no tiene caja abierta (`userCajaIsOpen` / `shiftGate.cajaStatus !== OPEN`), la pagina muestra `OpenShiftForm` aunque otro cajero del turno ya haya abierto la suya.
 - Navegacion: subitem deshabilitado `Abrir mi caja...` / `Reabrir mi caja...` segun `computeCajaAbrirTerminalState` en `src/components/nav/cajaTerminalNav.ts` (ya no redirige a `claim-terminal`).
-- **Modal de pago dual:**
+- **Modal de pago (tres variantes):**
   - `PaymentDialog`: selección de líneas/cantidades, splits por método, comprobante de transferencia preparado, confirmación y recibo.
-  - `PaymentDialogV2`: total a cobrar, efectivo por denominaciones del turno, transferencia libre, vista previa y post-cobro de vuelto; **Cobrar** → `payOrder.mutateAsync` con mismos invariantes que V1.
-  - Flag `USE_PAYMENT_DIALOG_V2` en `src/lib/cajaPaymentUi.ts`; `PayableOrdersList` y `Ordenes` eligen el componente.
-  - Recibo impreso: ambos pueden usar `PaymentReceipt` (`#print-receipt`); estilos de impresión en `src/index.css`.
+  - `PaymentDialogV2`: caja **principal** (tablet/escritorio); total a cobrar, efectivo por denominaciones, transferencia; **Cobrar** → `payOrder.mutateAsync`.
+  - `PaymentDialogSecondary`: cajeros **secundarios**; layout vertical compacto (móvil/tablet); sin dividir pago; misma lógica de cobro vía `usePaymentChargeFlow`.
+  - **Denominaciones en cobro:** `paymentDenominations` = catálogo global `denominations` (`catalogToPaymentDenoms`); `drawerDenoms` = `shift.denoms` del cajero para calcular cambio. La plantilla de apertura solo define el arqueo inicial, no limita lo que el cliente puede entregar.
+  - Flags en `src/lib/cajaPaymentUi.ts`: `USE_PAYMENT_DIALOG_V2`, `shouldUseSecondaryPaymentDialog`, `canOpenPaymentUiOnDevice` (secundaria cobra en teléfono sin exigir `isTablet10`).
+  - `PayableOrdersList` y `Ordenes` eligen Secondary / V2 / V1 según rol.
+  - Recibo: `PaymentReceipt` + `window.print`; estilos en `src/index.css`.
 - **Capa de datos en cobro (`useCaja.payOrder`):**
   - Lecturas: `dbSelect` opción `skipLocalCache` para no persistir cada lectura en Dexie durante el cobro.
   - Escrituras: `dbInsert` / `dbInsertMany` opción `hotPath` (sin `.select()` ni cache local inmediato) en filas generadas con UUID en cliente (`payments`, `payment_items`, `cash_movements` en fallback).
@@ -176,7 +182,7 @@
 - El resumen ya usa efectivo neto aplicado, no `tendered` bruto.
 - **Integridad Financiera (2026-05-09):**
   - **Redondeo:** Todas las operaciones monetarias aplican `round(val, 2)` de forma centralizada.
-  - **Validación de Apertura:** No se permite procesar cobros sin denominaciones activas del **cajero actual** en `cash_shift_denoms` (`cashier_id = auth.uid()`).
+  - **Validación de Apertura:** El cajero debe tener caja abierta (`shiftGate.cajaStatus === OPEN`). El cobro lista todas las `denominations` activas; al registrar efectivo, `registrar_movimiento_caja_operativo` actualiza o crea filas en `cash_shift_denoms` del cajero autenticado.
   - **Exclusión de Cancelados:** Los ítems anulados o en proceso de anulación no suman al saldo de la orden ni al resumen de caja.
   - Se aplica redondeo financiero centralizado para evitar errores de punto flotante en el "Cuadre de caja".
 
@@ -248,10 +254,15 @@
   - `src/pages/Mesas.tsx`
 - Caja:
   - `src/hooks/useCaja.ts`
-  - `src/lib/cajaPaymentUi.ts` (feature flag UI de pago)
+  - `src/lib/cajaPaymentUi.ts` (flags UI de pago y caja secundaria)
+  - `src/lib/cajaDenominations.ts` (`catalogToPaymentDenoms`)
+  - `src/components/caja/usePaymentChargeFlow.ts` (logica compartida V2/Secondary)
   - `src/components/caja/PaymentDialog.tsx`
   - `src/components/caja/PaymentDialogV2.tsx`
+  - `src/components/caja/PaymentDialogSecondary.tsx`
   - `src/components/caja/PaymentReceipt.tsx`
+  - `src/hooks/useBranchShiftGate.ts` (`isSecondaryCashier`, `primaryCashierId`)
+  - `src/components/admin/ShiftSetupAdmin.tsx` (config caja por turno)
   - `src/services/DatabaseService.ts` (`dbSelect` `skipLocalCache`, `dbInsert`/`dbInsertMany` `hotPath`)
   - `src/components/caja/CompletedPaymentsList.tsx`
   - `src/components/caja/PaymentReversalModal.tsx`
@@ -284,3 +295,5 @@
 17. **Tarjetas Para llevar / Especial:** Toda modificacion de `ParaLlevar`, `OrdenEspecial` o `useOrder` debe preservar `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez, usuario creador y formato compatible con Mesa.
 18. **Cobro V2 y BD:** Cambios en `payOrder` o en triggers de `payment_items` deben mantener coherencia con `sync_order_payment_state_internal`; si se insertan muchos `payment_items` en un lote, la BD debe sincronizar la orden **una vez por sentencia** (migración `20260509180000`).
 19. **`Ordenes.tsx`:** Usar lista de ítems defensiva (`order?.items ?? []`) en el contenido del detalle para tolerar órdenes parciales en caché.
+20. **Plantilla vs cobro:** No usar solo `shift.denoms` para botones de monedas/billetes en cobro; usar catálogo `denominations`. No mezclar arqueo de plantilla con lo que puede pagar el cliente.
+21. **Caja secundaria:** No alterar `PaymentDialogV2` para secundarios; usar `PaymentDialogSecondary` y `shouldUseSecondaryPaymentDialog`.

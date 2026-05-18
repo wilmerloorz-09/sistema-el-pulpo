@@ -33,6 +33,7 @@ import PaymentDialog from "@/components/caja/PaymentDialog";
 import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
 import PaymentDialogSecondary from "@/components/caja/PaymentDialogSecondary";
 import { USE_PAYMENT_DIALOG_V2, canOpenPaymentUiOnDevice, shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
+import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 import { useCaja, type PayableOrder } from "@/hooks/useCaja";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import { Button } from "@/components/ui/button";
@@ -896,6 +897,8 @@ const OrdenesContent = () => {
     discardPreparedTransferProof, 
     getTransferProofReadiness 
   } = useCaja();
+
+  const paymentDenominations = useMemo(() => catalogToPaymentDenoms(denominations), [denominations]);
 
   const payableOrder: PayableOrder | null = useMemo(() => {
     if (!order) return null;
@@ -3891,7 +3894,8 @@ const OrdenesContent = () => {
       {useSecondaryPaymentUi ? (
         <PaymentDialogSecondary
           order={payableOrder}
-          shiftDenoms={shift?.denoms ?? []}
+          paymentDenominations={paymentDenominations}
+          drawerDenoms={shift?.denoms ?? []}
           paymentMethods={paymentMethods}
           paying={payOrder.isPending}
           onPay={(params) => payOrder.mutateAsync(params)}

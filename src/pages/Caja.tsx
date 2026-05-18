@@ -1047,6 +1047,7 @@ const Caja = () => {
               <PayableOrdersList
                 orders={payableOrders}
                 paymentMethods={paymentMethods}
+                denominations={denominations}
                 shiftDenoms={shift.denoms}
                 onPay={(params) => payOrder.mutateAsync(params)}
                 onPrepareTransferProof={(params) => prepareTransferProof(params)}

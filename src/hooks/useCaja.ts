@@ -301,7 +301,7 @@ export interface PayableOrder {
   id: string;
   order_number: number | null;
   order_code: string | null;
-  order_type: "DINE_IN" | "TAKEOUT" | "EXPRESS";
+  order_type: "DINE_IN" | "TAKEOUT" | "EXPRESS" | "EXTRA";
   is_special: boolean;
   is_tray_order?: boolean;
   locked_for_editing?: boolean;
@@ -915,7 +915,7 @@ export function useCaja(params?: {
         return {
           ...d,
           label: denom?.label ?? d.label ?? `Valor $${(d.value ?? 0).toFixed(2)}`,
-          denomination_type: denom?.denomination_type ?? d.denomination_type ?? 'coin',
+          denomination_type: denom?.denomination_type ?? d.denomination_type ?? "coin",
           display_order: denom?.display_order ?? d.display_order ?? 999,
           value: denom?.value ?? d.value ?? 0,
           image_url: denom?.image_url ?? d.image_url ?? null,
@@ -1529,7 +1529,10 @@ export function useCaja(params?: {
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
-            table_name: resolveTableName(o.table_id, (o as any).table_name_snapshot),
+            table_name:
+              o.order_type === "DINE_IN" && o.table_id
+                ? resolveTableName(o.table_id, (o as any).table_name_snapshot)
+                : null,
             table_name_snapshot: (o as any).table_name_snapshot,
             split_code: o.split_id ? splitsMap[o.split_id] : null,
             total: displayTotal,
@@ -1947,7 +1950,10 @@ export function useCaja(params?: {
               is_special: Boolean(order.is_special),
               created_by: (order as any).created_by ?? null,
               created_by_name: (order as any).created_by ? (orderCreatorNameMap[(order as any).created_by] ?? "Usuario") : null,
-              table_name: resolveTableName(order.table_id, (order as any).table_name_snapshot),
+              table_name:
+                order.order_type === "DINE_IN" && order.table_id
+                  ? resolveTableName(order.table_id, (order as any).table_name_snapshot)
+                  : null,
               split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
               order_total: orderTotal,
               order_paid_amount: paidAmount,
@@ -1990,7 +1996,10 @@ export function useCaja(params?: {
             is_special: Boolean(order.is_special),
             created_by: (order as any).created_by ?? null,
             created_by_name: (order as any).created_by ? (orderCreatorNameMap[(order as any).created_by] ?? "Usuario") : null,
-            table_name: resolveTableName(order.table_id, (order as any).table_name_snapshot),
+            table_name:
+              order.order_type === "DINE_IN" && order.table_id
+                ? resolveTableName(order.table_id, (order as any).table_name_snapshot)
+                : null,
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             order_total: orderTotal,
             order_paid_amount: paidAmount,

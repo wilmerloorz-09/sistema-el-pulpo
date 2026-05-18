@@ -74,11 +74,16 @@
 - `cash_shifts`
   - `max_caja_sessions`: cupo de usuarios/terminales Caja habilitados simultaneos en el turno (1–10).
   - `caja_status`: resumen agregado del turno (alguna apertura abierta/cerrada); no sustituye el estado por cajero en UI.
+  - `primary_cashier_id`: cajero de la caja principal del turno.
+  - `secondary_cajas_enabled`, `secondary_caja_template_id`: cajas secundarias y plantilla de arqueo inicial.
+- `denominations`: catalogo global de tipos de moneda/billete activos (`is_active`); **independiente** de la plantilla de apertura.
 - `cash_shift_denoms`
   - `cashier_id`, `opening_id`: particion por cajero y apertura dentro del turno.
   - indice unico: `(shift_id, cashier_id, denomination_id)` cuando `cashier_id` no es null.
+  - refleja inventario/arqueo del cajero; al cobrar, `PAYMENT_IN` puede **crear** fila con `qty_initial = 0` si el cliente entrega una denominacion no incluida en la plantilla.
 - `cash_register_openings`
   - una fila `abierta` maxima por `(shift_id, cashier_id)`.
+  - `register_role`: `primary` | `secondary` | `standard` (legacy).
 - `cash_register_movements`
 - `cash_movements`
 - `payments`
@@ -159,7 +164,9 @@
 - `get_my_branch_shift_gate` expone ese estado en `caja_status` para el usuario autenticado. **No hacer DROP** de esta funcion en migraciones: politicas RLS de cancelaciones dependen de ella; usar solo `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
 - **Administrador general:** `set_my_active_branch` y `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`) permiten fijar cualquier sucursal activa sin redireccion por turno ni auto-reasignacion al refrescar contexto.
 - `open_cash_register` retorna `uuid` (id de apertura). Si cambia el tipo de retorno, ejecutar antes `DROP FUNCTION open_cash_register(uuid, uuid, uuid, jsonb)`.
-- `registrar_movimiento_caja` / `registrar_movimiento_caja_operativo` actualizan denominaciones solo del `auth.uid()`.
+- `internal_open_cash_register_for_cashier(...)` abre caja secundaria al configurar turno; con plantilla inserta cantidades del template; el cobro no debe limitarse a esas filas en UI.
+- `apply_shift_caja_configuration(...)` persiste principal, secundarios y abre cajas secundarias con plantilla.
+- `registrar_movimiento_caja_operativo`: movimientos `PAYMENT_IN` / `CHANGE_OUT` filtran por `shift_id`, `cashier_id = auth.uid()` y `denomination_id`. Si `PAYMENT_IN` no encuentra fila, inserta con apertura abierta del cajero y luego suma `qty_current`.
 - `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
 - `Pagos del turno` debe filtrar por el rango real de `cash_shifts.opened_at` a `cash_shifts.closed_at`/`now()`, no por inicio del dia calendario.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
@@ -218,6 +225,12 @@
 - `dispatch_config.express_enabled` habilita la pestaña/modulo en Despacho.
 - RPC `create_express_order(...)` crea la orden ligada al turno abierto.
 
+### Extra (`order_type = EXTRA`)
+- Enum `order_type` incluye `EXTRA` (migracion `20260527120000_add_extra_order_type.sql`).
+- Sin `table_id`; `menu_scope = TABLE` sin categoria PLATOS.
+- Flujo: borrador -> envio a caja -> pago -> despacho (igual que mesa, no como Express).
+- RPC `create_extra_order(...)`; en listados de caja, `table_name` solo se resuelve para `DINE_IN` con `table_id` (Extra muestra etiqueta **Extra**).
+
 ### Para llevar (TAKEOUT) y Orden especial como tarjetas dinamicas
 - El listado principal de tarjetas `Para llevar` se filtra por:
   - `orders.order_type = 'TAKEOUT'`
@@ -273,8 +286,13 @@
 - `annul_cash_opening(p_opening_id, p_admin_id, p_reason)`
 - `list_cash_register_openings(...)`
 - `registrar_movimiento_caja(...)`
+- `registrar_movimiento_caja_operativo(...)` (`PAYMENT_IN` upsert por cajero autenticado)
+- `apply_shift_caja_configuration(...)`
+- `internal_open_cash_register_for_cashier(...)`
+- `template_denoms_to_jsonb(...)`
 - `list_cash_register_movements(...)`
 - `claim_cash_session_slot(...)` (sesion de terminal; no sustituye apertura de caja por cajero)
+- `create_extra_order(...)`
 
 ### Anulacion de pagos
 - `can_void_payment(...)`
@@ -302,6 +320,9 @@
 - `20260521100000_allow_multiple_shift_caja_users.sql` (varios `can_use_caja` por turno; `open_cash_register` sin cupo de un solo UUID)
 - `20260522120000_per_cashier_caja_register.sql` (denoms por cajero, apertura independiente, gate por usuario, `annul_cash_opening`)
 - `20260524120000_global_admin_free_branch_switch.sql` (admin global: cambio libre de sucursal activa)
+- `20260525120000_shift_caja_structure.sql` (principal/secundarias, `register_role`, `apply_shift_caja_configuration`)
+- `20260526150000_remove_max_caja_sessions_cap.sql`
+- `20260528130000_payment_in_upsert_per_cashier.sql` (cobro: crear fila en `cash_shift_denoms` si el cliente paga con denominacion no en plantilla)
 - `20260317124500_cash_register_opening_annulment.sql`
 - `20260317133000_cash_register_movements.sql`
 - `20260317143000_apply_cash_register_movement_to_denoms.sql`
@@ -328,6 +349,7 @@
 
 ### Express y flujo despacho-cobro
 - `20260516000000_add_express_order_type.sql`
+- `20260527120000_add_extra_order_type.sql`
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
@@ -363,3 +385,5 @@
 13. Si se toca `Despacho`, preservar una sola tarjeta/fila por orden pagada; no partir la misma orden por tiempos de envio de items.
 14. Si se toca Para llevar u Orden especial, preservar tarjetas dinamicas con `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez y salida por despacho aplicado/cancelacion.
 15. Si se modifican triggers de `payment_items` que llaman a `sync_order_payment_state_internal`, mantener sincronización **por sentencia** (como en `20260509180000`) o equivalente que evite invocar la función una vez por cada fila insertada en el mismo lote.
+16. **Plantilla vs cobro:** `cash_register_template_denoms` define arqueo inicial; el cobro en UI usa `denominations` activas; `registrar_movimiento_caja_operativo` debe permitir `PAYMENT_IN` aunque la denominacion no estuviera en la plantilla.
+17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`.

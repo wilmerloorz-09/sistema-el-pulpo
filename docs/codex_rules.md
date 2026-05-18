@@ -39,9 +39,17 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 - Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
 
-### 2.2 Cobro en caja: UI dual y rendimiento
-- Conviven `PaymentDialog` (clásico) y `PaymentDialogV2`; la elección va por `USE_PAYMENT_DIALOG_V2` en `src/lib/cajaPaymentUi.ts`. No romper el clásico mientras V2 no cubra comprobante de transferencia preparado end-to-end.
-- V2 debe seguir enviando a `payOrder` los mismos invariantes (`PayOrderParams`) que el clásico: `itemSelections`, `paymentSplits`, `tenderedSplits`, denominaciones recibidas/cambio, `specialAmount` si aplica.
+### 2.2 Cobro en caja: UI, caja secundaria y rendimiento
+- Conviven `PaymentDialog` (clásico), `PaymentDialogV2` (caja principal tablet/escritorio) y `PaymentDialogSecondary` (cajeros secundarios, móvil/tablet).
+- La elección va por `src/lib/cajaPaymentUi.ts`: `USE_PAYMENT_DIALOG_V2`, `shouldUseSecondaryPaymentDialog(shiftGate)`, `canOpenPaymentUiOnDevice` (secundaria cobra en teléfono sin exigir ancho tablet).
+- **No modificar `PaymentDialogV2` para caja secundaria**; usar `PaymentDialogSecondary` + `usePaymentChargeFlow`.
+- V2 y Secondary deben enviar a `payOrder` los mismos invariantes (`PayOrderParams`) que el clásico.
+- **Plantilla de apertura ≠ denominaciones de cobro:**
+  - Plantilla (`cash_register_template_denoms`, `OpenShiftForm`): arqueo inicial del cajero en `cash_shift_denoms`.
+  - Cobro (UI): catálogo `denominations` activas vía `catalogToPaymentDenoms` (`src/lib/cajaDenominations.ts`).
+  - Cambio: inventario del cajero (`drawerDenoms` / `shift.denoms`).
+  - BD: `registrar_movimiento_caja_operativo` con `PAYMENT_IN` debe crear fila en `cash_shift_denoms` del cajero si falta (`20260528130000_payment_in_upsert_per_cashier.sql`).
+- No listar solo `shift.denoms` en botones de monedas/billetes del diálogo de cobro.
 - **Base de datos:** cualquier entorno donde se cobre debe tener aplicada la migración `20260509180000_payment_items_sync_once_per_statement.sql`; sin ella, cada fila de `payment_items` dispara una sincronización completa de orden y el POS se siente lento.
 - **Cliente (`DatabaseService`):** reservar `hotPath` en `dbInsert`/`dbInsertMany` solo cuando el registro lleve `id` (u otros NOT NULL) generados en cliente; reservar `skipLocalCache` en `dbSelect` para lecturas calientes del flujo de cobro donde no haga falta actualizar Dexie en el mismo tick.
 - No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
@@ -69,7 +77,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - `cash_shifts.opened_at` como fecha/hora visible de apertura del turno abierto en `Admin > Turno`
   - `cash_register_openings` como historial de aperturas
   - `cash_shift_denoms` como caja fisica real (por cajero; columnas `cashier_id`, `opening_id`)
-- Migraciones de caja multi-cajero obligatorias en cada entorno: `20260521100000_allow_multiple_shift_caja_users.sql`, `20260522120000_per_cashier_caja_register.sql`.
+- Migraciones de caja multi-cajero obligatorias en cada entorno: `20260521100000_allow_multiple_shift_caja_users.sql`, `20260522120000_per_cashier_caja_register.sql`, `20260525120000_shift_caja_structure.sql`, `20260528130000_payment_in_upsert_per_cashier.sql`.
+- Al configurar turno con caja principal/secundarias: `apply_shift_caja_configuration` en BD; en frontend llamar `persistShiftCajaConfiguration` **después** de `persistShiftUsersForShift` para no borrar `can_use_caja` del cajero principal.
 - Al cambiar `open_cash_register`, si el retorno pasa de `void` a `uuid`, incluir `DROP FUNCTION IF EXISTS public.open_cash_register(uuid, uuid, uuid, jsonb)` antes del `CREATE`.
 - **No** hacer `DROP FUNCTION get_my_branch_shift_gate(uuid)` en migraciones: politicas RLS de `order_cancellations` / `order_item_cancellations` dependen de ella; usar `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
 - Si se toca apertura de caja, mantener soporte para:
@@ -183,7 +192,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 12. Integridad Financiera y Caja
 - **Integridad Financiera (2026-05-09):**
   - **Redondeo:** Todos los cálculos financieros deben redondearse a 2 decimales en el origen (BD/RPC) y en la UI para evitar errores de precisión.
-  - **Caja Abierta:** Los diálogos de pago no deben permitir cobros si el cajero actual no tiene apertura activa (`cash_shift_denoms` con su `cashier_id` o `shiftGate.cajaStatus === OPEN`).
+  - **Caja Abierta:** Los diálogos de pago no deben permitir cobros si el cajero no tiene apertura activa (`shiftGate.cajaStatus === OPEN`). El catálogo de denominaciones en cobro viene de `denominations`, no de la plantilla sola.
   - **Exclusión de Cancelados:** Los ítems con anulación confirmada o pendiente no deben sumarse a ninguna cifra operativa de cobro.
   - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
@@ -238,6 +247,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes y asegurar que:
    - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
-10. Si se toca el diálogo de pago (V1 o V2), validar que exija la inicialización de caja, el redondeo financiero y, en V2, recibo/vuelto/imprimir; confirmar migración `20260509180000` en BD si se miden tiempos de cobro.
+10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
+11. Si se toca caja secundaria, validar `isSecondaryCashier`, `PaymentDialogSecondary`, cobro en pantalla pequeña y que Extra no muestre mesa en subtítulo.
+12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, RPC `create_extra_order`, flujo caja antes de despacho.
 11. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
 12. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez (agrupamiento por `order_code`), aunque tenga items enviados en distintos momentos.

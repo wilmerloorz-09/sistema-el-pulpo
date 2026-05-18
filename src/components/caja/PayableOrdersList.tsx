@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
+import type { Denomination, PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
+import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 import { Button } from "@/components/ui/button";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
@@ -24,6 +25,7 @@ import { useBreakpoint } from "@/hooks/useBreakpoint";
 interface Props {
   orders: PayableOrder[];
   paymentMethods: { id: string; name: string }[];
+  denominations: Denomination[];
   shiftDenoms: ShiftDenom[];
   onPay: (params: PayOrderParams) => Promise<any> | void;
   onPrepareTransferProof: (params: {
@@ -52,6 +54,7 @@ function formatCurrency(amount: number) {
 export default function PayableOrdersList({
   orders,
   paymentMethods,
+  denominations,
   shiftDenoms,
   onPay,
   onPrepareTransferProof,
@@ -66,6 +69,7 @@ export default function PayableOrdersList({
   const { isTablet10 } = useBreakpoint();
   const shiftGateQuery = useBranchShiftGate();
   const useSecondaryPaymentUi = shouldUseSecondaryPaymentDialog(shiftGateQuery.data);
+  const paymentDenominations = catalogToPaymentDenoms(denominations);
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -374,7 +378,8 @@ export default function PayableOrdersList({
       {useSecondaryPaymentUi ? (
         <PaymentDialogSecondary
           order={selectedOrder}
-          shiftDenoms={shiftDenoms}
+          paymentDenominations={paymentDenominations}
+          drawerDenoms={shiftDenoms}
           paymentMethods={paymentMethods}
           onPay={onPay}
           paying={paying}

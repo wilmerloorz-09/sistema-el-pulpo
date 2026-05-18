@@ -28,7 +28,8 @@ function formatCurrency(amount: number) {
 
 interface Props {
   order: PayableOrder | null;
-  shiftDenoms: ShiftDenom[];
+  paymentDenominations: ShiftDenom[];
+  drawerDenoms: ShiftDenom[];
   paymentMethods: { id: string; name: string }[];
   onPay: (params: PayOrderParams) => Promise<unknown> | void;
   paying: boolean;
@@ -40,7 +41,8 @@ interface Props {
 /** Cobro para caja secundaria: layout vertical optimizado para telefono y tablet. */
 export default function PaymentDialogSecondary({
   order,
-  shiftDenoms,
+  paymentDenominations,
+  drawerDenoms,
   paymentMethods,
   onPay,
   paying,
@@ -50,7 +52,8 @@ export default function PaymentDialogSecondary({
 }: Props) {
   const flow = usePaymentChargeFlow({
     order,
-    shiftDenoms,
+    paymentDenominations,
+    drawerDenoms,
     paymentMethods,
     onPay,
     paying,
@@ -176,11 +179,6 @@ export default function PaymentDialogSecondary({
                 {order.created_by_name}
               </div>
             )}
-            {!postPaySummary && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Caja secundaria · transferencia y efectivo por denominaciones
-              </p>
-            )}
           </DialogHeader>
 
           <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -208,28 +206,29 @@ export default function PaymentDialogSecondary({
               </div>
             ) : !order ? null : (
               <div className="flex flex-col gap-3">
-                <div className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-800">Total a cobrar</p>
-                  <p className="font-display text-3xl font-black tabular-nums text-sky-950">
-                    {formatCurrency(orderChargeTotal)}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-violet-200 bg-violet-50/80 px-3 py-3">
-                  <label htmlFor="secondary-transfer" className="flex items-center gap-2 text-[10px] font-semibold uppercase text-violet-800">
-                    <Banknote className="h-3.5 w-3.5" />
-                    Transferencia
-                  </label>
-                  <Input
-                    id="secondary-transfer"
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={transferInput}
-                    onChange={(e) => setTransferInput(sanitizeDecimalInput(e.target.value))}
-                    disabled={readOnly}
-                    className="mt-2 h-11 rounded-xl border-violet-200 bg-white text-lg font-semibold tabular-nums"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex min-w-0 flex-col justify-center rounded-2xl border border-sky-200 bg-sky-50 px-2.5 py-2">
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-sky-800">Total a cobrar</p>
+                    <p className="font-display text-xl font-black leading-tight tabular-nums text-sky-950 sm:text-2xl">
+                      {formatCurrency(orderChargeTotal)}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 flex-col justify-center rounded-2xl border border-violet-200 bg-violet-50/80 px-2.5 py-2">
+                    <label htmlFor="secondary-transfer" className="flex items-center gap-1 text-[9px] font-semibold uppercase text-violet-800">
+                      <Banknote className="h-3 w-3 shrink-0" />
+                      Transferencia
+                    </label>
+                    <Input
+                      id="secondary-transfer"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={transferInput}
+                      onChange={(e) => setTransferInput(sanitizeDecimalInput(e.target.value))}
+                      disabled={readOnly}
+                      className="mt-1 h-10 rounded-xl border-violet-200 bg-white px-2 text-base font-semibold tabular-nums"
+                    />
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5">
@@ -272,7 +271,7 @@ export default function PaymentDialogSecondary({
                       </Button>
                     )}
                   </div>
-                  {shiftDenoms.length === 0 ? (
+                  {paymentDenominations.length === 0 ? (
                     <p className="text-xs text-muted-foreground">Sin denominaciones en esta caja.</p>
                   ) : (
                     <div className="space-y-3">
@@ -312,7 +311,7 @@ export default function PaymentDialogSecondary({
                                 className="h-6 px-1.5 text-[10px]"
                                 onClick={() => subtractDenom(line.denomination_id)}
                               >
-                                −1
+                                âˆ’1
                               </Button>
                             )}
                           </div>
@@ -365,7 +364,7 @@ export default function PaymentDialogSecondary({
                       {paying ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Cobrando…
+                          Cobrandoâ€¦
                         </>
                       ) : (
                         "Cobrar"
