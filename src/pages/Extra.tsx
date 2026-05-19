@@ -17,7 +17,11 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
-import { fetchExtraFrequentProducts, getExtraFrequentProductsQueryKey } from "@/hooks/useExtraFrequentProducts";
+import {
+  FREQUENT_PRODUCT_CONTEXTS,
+  fetchFrequentProducts,
+  getFrequentProductsQueryKey,
+} from "@/hooks/useFrequentProducts";
 
 const seedExtraOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -89,11 +93,13 @@ const Extra = () => {
 
   useEffect(() => {
     if (!activeBranchId) return;
-    void qc.prefetchQuery({
-      queryKey: getExtraFrequentProductsQueryKey(activeBranchId),
-      queryFn: () => fetchExtraFrequentProducts(activeBranchId),
-      staleTime: 30_000,
-    });
+    for (const item of FREQUENT_PRODUCT_CONTEXTS) {
+      void qc.prefetchQuery({
+        queryKey: getFrequentProductsQueryKey(activeBranchId, item.value),
+        queryFn: () => fetchFrequentProducts(activeBranchId, item.value),
+        staleTime: 30_000,
+      });
+    }
   }, [activeBranchId, qc]);
 
   useEffect(() => {

@@ -22,7 +22,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import MenuNavigator from "@/components/order/MenuNavigator";
-import ExtraFrequentProductCards from "@/components/order/ExtraFrequentProductCards";
+import FrequentProductCards from "@/components/order/FrequentProductCards";
+import type { FrequentProductContext } from "@/hooks/useFrequentProducts";
+import { buildCompositeMenuNodes } from "@/lib/compositeMenuTree";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
 import ThermalReceipt from "@/components/order/ThermalReceipt";
@@ -236,58 +238,6 @@ class OrdenesErrorBoundary extends React.Component<{ children: React.ReactNode; 
       </div>
     );
   }
-}
-
-const sortMenuNodes = (nodes: MenuNode[]) =>
-  [...nodes].sort((a, b) => {
-    if (a.display_order !== b.display_order) return a.display_order - b.display_order;
-    return a.name.localeCompare(b.name);
-  });
-
-function buildCompositeMenuNodes(scopeNodes: MenuNode[], tableNodes: MenuNode[]) {
-  const scopeRootNodes = sortMenuNodes(
-    scopeNodes.filter((node) => node.parent_id === null && node.node_type === "category"),
-  );
-  const tableRootNodes = sortMenuNodes(
-    tableNodes.filter((node) => node.parent_id === null && node.node_type === "category"),
-  );
-
-  const tableRootsToAppend = tableRootNodes.slice(1);
-  if (tableRootsToAppend.length === 0) {
-    return scopeNodes;
-  }
-
-  const allowedRootIds = new Set(tableRootsToAppend.map((node) => node.id));
-  const tableNodesById = new Map(tableNodes.map((node) => [node.id, node]));
-  const includedTableNodes = tableNodes.filter((node) => {
-    if (allowedRootIds.has(node.id)) return true;
-
-    let currentParentId = node.parent_id;
-    while (currentParentId) {
-      if (allowedRootIds.has(currentParentId)) return true;
-      currentParentId = tableNodesById.get(currentParentId)?.parent_id ?? null;
-    }
-
-    return false;
-  });
-
-  const nextRootDisplayOrder = scopeRootNodes.reduce(
-    (maxValue, node) => Math.max(maxValue, Number(node.display_order ?? 0)),
-    0,
-  );
-  const appendedRootDisplayOrder = new Map(
-    tableRootsToAppend.map((node, index) => [node.id, nextRootDisplayOrder + index + 1]),
-  );
-
-  const normalizedTableNodes = includedTableNodes.map((node) => ({
-    ...node,
-    display_order:
-      node.parent_id === null
-        ? (appendedRootDisplayOrder.get(node.id) ?? node.display_order)
-        : node.display_order,
-  }));
-
-  return [...scopeNodes, ...normalizedTableNodes];
 }
 
 function normalizeMenuLabel(value?: string | null) {
@@ -662,6 +612,23 @@ const OrdenesContent = () => {
   const isExtraOrder = orderIsExtra(order);
   const isTakeoutMenuOrder = isTakeoutOrder || isExpressOrder;
   const isBranchSiblingOrder = isTakeoutOrder || isExpressOrder || isExtraOrder;
+  const frequentProductContext = useMemo((): FrequentProductContext | null => {
+    if (isExtraOrder) return "EXTRA";
+    if (isExpressOrder) return "EXPRESS";
+    if (isTakeoutOrder) return "TAKEOUT";
+    if (order?.order_type === "DINE_IN" && order?.table_id && !order?.is_special && !order?.is_tray_order) {
+      return "MESA";
+    }
+    return null;
+  }, [
+    isExtraOrder,
+    isExpressOrder,
+    isTakeoutOrder,
+    order?.order_type,
+    order?.table_id,
+    order?.is_special,
+    order?.is_tray_order,
+  ]);
 
   const canOperateMesasForOpen =
     canOperate(permissions, "mesas")
@@ -2575,6 +2542,15 @@ const OrdenesContent = () => {
     setInlineCancelOpen(true);
   };
 
+  const frequentProductCardsPanel =
+    frequentProductContext != null ? (
+      <FrequentProductCards
+        context={frequentProductContext}
+        onSelectProduct={handleSelectMenuProduct}
+        disabled={!canEditItems}
+      />
+    ) : null;
+
   const menuPanel = (
     <div className="space-y-3">
       {isTrayOrder ? (
@@ -2633,6 +2609,8 @@ const OrdenesContent = () => {
         </div>
       ) : null}
 
+      {frequentProductContext === "MESA" ? frequentProductCardsPanel : null}
+
       {showMenuScopeTabs ? (
         <div className="scrollbar-none -mx-1 overflow-x-auto px-1 pb-0.5">
           <Tabs
@@ -2674,9 +2652,7 @@ const OrdenesContent = () => {
           </Tabs>
         </div>
       ) : null}
-      {isExtraOrder ? (
-        <ExtraFrequentProductCards onSelectProduct={handleSelectMenuProduct} disabled={!canEditItems} />
-      ) : null}
+      {frequentProductContext != null && frequentProductContext !== "MESA" ? frequentProductCardsPanel : null}
       <MenuNavigator
         menuScope={currentMenuScope}
         nodesOverride={currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK" ? scopeCompositeMenuQuery.data ?? null : null}

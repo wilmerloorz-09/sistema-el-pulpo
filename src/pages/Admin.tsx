@@ -8,7 +8,7 @@ import CashRegisterTemplatesCrud from "@/components/admin/CashRegisterTemplatesC
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
-import ExtraFrequentProductsAdmin from "@/components/admin/ExtraFrequentProductsAdmin";
+import FrequentProductsAdmin from "@/components/admin/FrequentProductsAdmin";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
 import ShiftSetupAdmin from "@/components/admin/ShiftSetupAdmin";
 import { useBranch } from "@/contexts/BranchContext";
@@ -37,7 +37,7 @@ const MenuNodesCrudBulk = () => (
   <MenuNodesCrud menuScope="BULK" title="A Granel" />
 );
 
-const MenuNodesCrudExtra = () => <ExtraFrequentProductsAdmin />;
+const MenuNodesCrudExtra = () => <FrequentProductsAdmin />;
 
 interface AdminErrorBoundaryProps {
   activeTabLabel: string;
@@ -122,7 +122,7 @@ const TABS: AdminTab[] = [
   },
   {
     value: "menu-tree-extra",
-    label: "Más frecuentes (Extra)",
+    label: "Más frecuentes",
     icon: <PackagePlus className="h-4 w-4" />,
     component: MenuNodesCrudExtra,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
