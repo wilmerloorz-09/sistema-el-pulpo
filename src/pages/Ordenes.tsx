@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import MenuNavigator from "@/components/order/MenuNavigator";
+import ExtraFrequentProductCards from "@/components/order/ExtraFrequentProductCards";
 import AddItemDialog from "@/components/order/AddItemDialog";
 import OrderItemsList from "@/components/order/OrderItemsList";
 import ThermalReceipt from "@/components/order/ThermalReceipt";
@@ -33,6 +34,7 @@ import PaymentDialog from "@/components/caja/PaymentDialog";
 import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
 import PaymentDialogSecondary from "@/components/caja/PaymentDialogSecondary";
 import { USE_PAYMENT_DIALOG_V2, canOpenPaymentUiOnDevice, shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
+import { orderVisibleToSecondaryCashier } from "@/lib/secondaryCajaPayable";
 import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 import { useCaja, type PayableOrder } from "@/hooks/useCaja";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -1507,10 +1509,18 @@ const OrdenesContent = () => {
     isGlobalAdmin || 
     canManageOrders || 
     Boolean(shiftGateQuery.data?.canUseCaja);
-  
+  const canPayCurrentOrderInSecondaryCaja = useMemo(() => {
+    if (!order || !shiftGateQuery.data?.isSecondaryCashier || !user?.id) return true;
+    return orderVisibleToSecondaryCashier(order, {
+      userId: user.id,
+      takeoutEnabled: Boolean(shiftGateQuery.data.secondaryCajaTakeoutEnabled),
+      expressEnabled: Boolean(shiftGateQuery.data.secondaryCajaExpressEnabled),
+    });
+  }, [order, shiftGateQuery.data, user?.id]);
 
   useEffect(() => {
     if (!order || !isTakeoutOrder) return;
+    if (paymentDialogOpenForOrderId === order.id) return;
 
     let cancelled = false;
     void fetchTakeoutSiblingOrders(order.branch_id)
@@ -1529,10 +1539,11 @@ const OrdenesContent = () => {
     return () => {
       cancelled = true;
     };
-  }, [isTakeoutOrder, navigate, order, sourceParams]);
+  }, [isTakeoutOrder, navigate, order, paymentDialogOpenForOrderId, sourceParams]);
 
   useEffect(() => {
     if (!order || !isExpressOrder) return;
+    if (paymentDialogOpenForOrderId === order.id) return;
 
     if (order.status === "KITCHEN_DISPATCHED" || order.status === "PAID") {
       navigate("/express", { replace: true });
@@ -1556,10 +1567,11 @@ const OrdenesContent = () => {
     return () => {
       cancelled = true;
     };
-  }, [isExpressOrder, navigate, order, order?.status, sourceParams]);
+  }, [isExpressOrder, navigate, order, order?.status, paymentDialogOpenForOrderId, sourceParams]);
 
   useEffect(() => {
     if (!order || !isExtraOrder) return;
+    if (paymentDialogOpenForOrderId === order.id) return;
 
     let cancelled = false;
     void fetchExtraSiblingOrders(order.branch_id)
@@ -1578,7 +1590,7 @@ const OrdenesContent = () => {
     return () => {
       cancelled = true;
     };
-  }, [isExtraOrder, navigate, order, sourceParams]);
+  }, [isExtraOrder, navigate, order, paymentDialogOpenForOrderId, sourceParams]);
 
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection
@@ -2662,6 +2674,9 @@ const OrdenesContent = () => {
           </Tabs>
         </div>
       ) : null}
+      {isExtraOrder ? (
+        <ExtraFrequentProductCards onSelectProduct={handleSelectMenuProduct} disabled={!canEditItems} />
+      ) : null}
       <MenuNavigator
         menuScope={currentMenuScope}
         nodesOverride={currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK" ? scopeCompositeMenuQuery.data ?? null : null}
@@ -2823,6 +2838,11 @@ const OrdenesContent = () => {
                   || shift.denoms.length === 0
                 ) {
                   setShowCajaUnopenedAlert(true);
+                  return;
+                }
+
+                if (!canPayCurrentOrderInSecondaryCaja) {
+                  toast.error("Esta orden no esta disponible para cobro en tu caja secundaria.");
                   return;
                 }
 
@@ -3899,7 +3919,7 @@ const OrdenesContent = () => {
           paymentMethods={paymentMethods}
           paying={payOrder.isPending}
           onPay={(params) => payOrder.mutateAsync(params)}
-          open={!isLoading && showPaymentDialog}
+          open={showPaymentDialog}
           onClose={() => setPaymentDialogOpenForOrderId(null)}
         />
       ) : USE_PAYMENT_DIALOG_V2 ? (
@@ -3909,7 +3929,7 @@ const OrdenesContent = () => {
           paymentMethods={paymentMethods}
           paying={payOrder.isPending}
           onPay={(params) => payOrder.mutateAsync(params)}
-          open={!isLoading && showPaymentDialog}
+          open={showPaymentDialog}
           onClose={() => setPaymentDialogOpenForOrderId(null)}
         />
       ) : (
@@ -3923,7 +3943,7 @@ const OrdenesContent = () => {
           onDiscardPreparedTransferProof={discardPreparedTransferProof}
           getTransferProofReadiness={getTransferProofReadiness}
           onClose={() => setPaymentDialogOpenForOrderId(null)}
-          open={!isLoading && showPaymentDialog}
+          open={showPaymentDialog}
         />
       )}
 

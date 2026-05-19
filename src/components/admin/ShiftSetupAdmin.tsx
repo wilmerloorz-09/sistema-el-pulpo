@@ -32,6 +32,7 @@ import {
   type MethodSummaryEntry
 } from "@/lib/cashReportUtils";
 import { toast } from "sonner";
+import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
 import DispatchConfig from "@/components/admin/DispatchConfig";
 import BranchCancelPolicyEditor, { type BranchCancelPolicyDraftRow } from "@/components/admin/BranchCancelPolicyEditor";
 import ShiftCajaSetupSection, {
@@ -63,6 +64,8 @@ interface ShiftUserRow {
   can_authorize_order_cancel: boolean;
   can_double_session: boolean;
   is_supervisor: boolean;
+  secondary_caja_takeout_enabled?: boolean;
+  secondary_caja_express_enabled?: boolean;
 }
 
 interface ZeroValueSpecialOrder {
@@ -91,12 +94,26 @@ function getSecondaryCashierIdsFromSetup(state: ShiftCajaSetupState) {
   return state.secondaryCajas.map((row) => row.user_id).filter(Boolean);
 }
 
+function buildSecondaryCajaConfig(state: ShiftCajaSetupState) {
+  if (!state.secondaryCajasEnabled) return [];
+  return state.secondaryCajas
+    .filter((row) => row.user_id)
+    .map((row) => ({
+      user_id: row.user_id,
+      takeout_enabled: Boolean(row.takeout_enabled),
+      express_enabled: Boolean(row.express_enabled),
+    }));
+}
+
 function cajaSetupSignature(state: ShiftCajaSetupState) {
+  const secondaryConfig = buildSecondaryCajaConfig(state).sort((a, b) =>
+    a.user_id.localeCompare(b.user_id),
+  );
   return JSON.stringify({
     primaryCashierId: state.primaryCashierId,
     secondaryCajasEnabled: state.secondaryCajasEnabled,
     secondaryTemplateId: state.secondaryTemplateId,
-    secondaryCashierIds: getSecondaryCashierIdsFromSetup(state).sort(),
+    secondaryConfig,
   });
 }
 
@@ -146,13 +163,19 @@ function formatCajaSetupSummary(rows: ShiftUserRow[], setup: ShiftCajaSetupState
   const primary = setup.primaryCashierId
     ? labelFor(setup.primaryCashierId)
     : "Sin asignar";
-  const secondaries = getSecondaryCashierIdsFromSetup(setup).map(labelFor);
+  const secondaries = getSecondaryCashierIdsFromSetup(setup).map((userId) => {
+    const row = setup.secondaryCajas.find((item) => item.user_id === userId);
+    const scopes: string[] = ["Extra"];
+    if (row?.takeout_enabled) scopes.push("Para llevar");
+    if (row?.express_enabled) scopes.push("Express");
+    return `${labelFor(userId)} (${scopes.join(", ")})`;
+  });
 
   if (!setup.secondaryCajasEnabled || secondaries.length === 0) {
     return `Principal: ${primary}`;
   }
 
-  return `Principal: ${primary}; Secundarias: ${secondaries.join(", ")}`;
+  return `Principal: ${primary}; Secundarias: ${secondaries.join("; ")}`;
 }
 
 type ShiftUserRoleKey = keyof Pick<
@@ -524,12 +547,27 @@ const ShiftSetupAdmin = () => {
         return baseRows.map((row) => normalizeShiftUser(row, false));
       }
 
-      const { data: shiftUsersData, error: shiftUsersError } = await (supabase
+      const shiftUserSelectBase =
+        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor";
+      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled`;
+
+      let shiftUsersData: unknown[] | null = null;
+      const extendedShiftUsersResult = await (supabase
         .from("cash_shift_users" as any)
-        .select("user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor")
+        .select(shiftUserSelectExtended)
         .eq("shift_id", shiftId) as any);
 
-      if (shiftUsersError) throw shiftUsersError;
+      if (extendedShiftUsersResult.error && isMissingColumnError(extendedShiftUsersResult.error)) {
+        const baseShiftUsersResult = await (supabase
+          .from("cash_shift_users" as any)
+          .select(shiftUserSelectBase)
+          .eq("shift_id", shiftId) as any);
+        if (baseShiftUsersResult.error) throw baseShiftUsersResult.error;
+        shiftUsersData = baseShiftUsersResult.data ?? [];
+      } else {
+        if (extendedShiftUsersResult.error) throw extendedShiftUsersResult.error;
+        shiftUsersData = extendedShiftUsersResult.data ?? [];
+      }
 
       const shiftUsersMap = new Map<string, {
         is_enabled: boolean;
@@ -542,6 +580,8 @@ const ShiftSetupAdmin = () => {
         can_authorize_order_cancel: boolean;
         can_double_session: boolean;
         is_supervisor: boolean;
+        secondary_caja_takeout_enabled: boolean;
+        secondary_caja_express_enabled: boolean;
       }>();
 
       for (const row of (shiftUsersData ?? []) as Array<{
@@ -556,6 +596,8 @@ const ShiftSetupAdmin = () => {
         can_authorize_order_cancel: boolean | null;
         can_double_session: boolean | null;
         is_supervisor: boolean | null;
+        secondary_caja_takeout_enabled: boolean | null;
+        secondary_caja_express_enabled: boolean | null;
       }>) {
         shiftUsersMap.set(row.user_id, {
           is_enabled: Boolean(row.is_enabled),
@@ -568,6 +610,8 @@ const ShiftSetupAdmin = () => {
           can_authorize_order_cancel: Boolean(row.can_authorize_order_cancel),
           can_double_session: Boolean(row.can_double_session),
           is_supervisor: Boolean(row.is_supervisor),
+          secondary_caja_takeout_enabled: Boolean(row.secondary_caja_takeout_enabled),
+          secondary_caja_express_enabled: Boolean(row.secondary_caja_express_enabled),
         });
       }
 
@@ -690,17 +734,25 @@ const ShiftSetupAdmin = () => {
 
     const primaryCashierId = shiftQuery.data.primary_cashier_id ?? persistedCajaUserIds[0] ?? "";
     const secondaryCashierIds = persistedCajaUserIds.filter((userId) => userId !== primaryCashierId);
+    const shiftUserById = new Map(
+      persistedEnabledUsersData.map((row) => [row.user_id, row]),
+    );
 
     return {
       primaryCashierId,
       secondaryCajasEnabled: Boolean(shiftQuery.data.secondary_cajas_enabled),
       secondaryTemplateId: shiftQuery.data.secondary_caja_template_id ?? "",
-      secondaryCajas: secondaryCashierIds.map((userId, index) => ({
-        id: `persisted-${userId}-${index}`,
-        user_id: userId,
-      })),
+      secondaryCajas: secondaryCashierIds.map((userId, index) => {
+        const shiftUser = shiftUserById.get(userId);
+        return {
+          id: `persisted-${userId}-${index}`,
+          user_id: userId,
+          takeout_enabled: Boolean(shiftUser?.secondary_caja_takeout_enabled),
+          express_enabled: Boolean(shiftUser?.secondary_caja_express_enabled),
+        };
+      }),
     };
-  }, [isOpen, persistedCajaUserIds, shiftQuery.data]);
+  }, [isOpen, persistedCajaUserIds, persistedEnabledUsersData, shiftQuery.data]);
   const persistedEnabledUserIdsKey = persistedEnabledUserIds.join("|");
   const persistedCajaSetupKey = cajaSetupSignature(persistedCajaSetup);
   const enabledUserIds = useMemo(() => shiftUsersState.map((userState) => userState.user_id), [shiftUsersState]);
@@ -1322,7 +1374,23 @@ const ShiftSetupAdmin = () => {
         ? shiftCajaSetup.secondaryTemplateId || null
         : null,
       p_secondary_cashier_ids: secondaryCashierIds,
+      p_secondary_caja_config: buildSecondaryCajaConfig(shiftCajaSetup),
     } as any);
+
+    if (error && (isMissingColumnError(error) || isMissingFunctionOrSchemaError(error, "apply_shift_caja_configuration"))) {
+      const { error: legacyError } = await supabase.rpc("apply_shift_caja_configuration" as any, {
+        p_shift_id: shiftId,
+        p_branch_id: activeBranchId,
+        p_primary_cashier_id: shiftCajaSetup.primaryCashierId,
+        p_secondary_cajas_enabled: shiftCajaSetup.secondaryCajasEnabled,
+        p_secondary_caja_template_id: shiftCajaSetup.secondaryCajasEnabled
+          ? shiftCajaSetup.secondaryTemplateId || null
+          : null,
+        p_secondary_cashier_ids: secondaryCashierIds,
+      } as any);
+      if (legacyError) throw legacyError;
+      return;
+    }
 
     if (error) throw error;
   };
@@ -1425,6 +1493,7 @@ const ShiftSetupAdmin = () => {
         ? shiftCajaSetup.secondaryTemplateId || null
         : null,
       p_secondary_cashier_ids: secondaryCashierIds,
+      p_secondary_caja_config: buildSecondaryCajaConfig(shiftCajaSetup),
     } as any);
 
     if (!error) {

@@ -43,8 +43,12 @@ export function getSentItemStageLabel(orderType?: string | null): string {
 export function getOrderStatusLabel(
   status: string | null | undefined,
   orderType?: string | null,
+  closedAt?: string | null,
 ): string {
   const st = String(status ?? "");
+  if (orderType === "EXTRA" && closedAt) {
+    return "Cerrada";
+  }
   if (orderType === "EXPRESS") {
     switch (st) {
       case "DRAFT":

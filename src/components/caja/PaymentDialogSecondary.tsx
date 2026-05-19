@@ -134,6 +134,7 @@ export default function PaymentDialogSecondary({
               return;
             }
             suppressCloseOnceRef.current = false;
+            if (dismissedFromSuccessUi) setPostPaySummary(null);
             onClose();
           })();
         }}

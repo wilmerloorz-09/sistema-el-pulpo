@@ -81,7 +81,7 @@ const EditarOrden = () => {
   useEffect(() => {
     if (!activeBranchId) return;
 
-    const menuScopes: MenuScope[] = ["TABLE", "TAKEOUT", "BULK"];
+    const menuScopes: MenuScope[] = ["TABLE", "TAKEOUT", "BULK", "EXTRA"];
     for (const menuScope of menuScopes) {
       void qc.prefetchQuery({
         queryKey: getMenuTreeQueryKey({

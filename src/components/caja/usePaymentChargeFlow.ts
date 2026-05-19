@@ -81,18 +81,18 @@ export function usePaymentChargeFlow({
 
   useEffect(() => {
     if (!open) {
-      setPostPaySummary(null);
       pendingPayPromiseRef.current = null;
       suppressCloseOnceRef.current = false;
       return;
     }
     if (!order) return;
+    if (postPaySummary) return;
     setReceivedByDenom({});
     setTransferInput("");
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
-  }, [open, order?.id]);
+  }, [open, order?.id, postPaySummary]);
 
   useEffect(() => {
     if (!open || !order) return;

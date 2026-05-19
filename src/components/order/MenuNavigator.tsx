@@ -18,6 +18,8 @@ interface MenuNavigatorProps {
   disabled?: boolean;
   /** Oculta categorias raiz del menu (ej. PLATOS en ordenes Extra). */
   excludedRootCategoryNames?: string[];
+  /** Oculta precios en tarjetas de producto (config admin frecuentes). */
+  hidePrices?: boolean;
 }
 
 const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
@@ -52,11 +54,13 @@ const NodeCard = ({
   onClick,
   nodeAction,
   trayMode = false,
+  hidePrices = false,
 }: {
   node: MenuNode;
   onClick: () => void;
   nodeAction?: ReactNode;
   trayMode?: boolean;
+  hidePrices?: boolean;
 }) => {
   const isProduct = node.node_type === "product";
   const isDisabledNode = !node.is_active && !nodeAction;
@@ -88,9 +92,11 @@ const NodeCard = ({
 
         <div className="min-w-0 flex flex-1 items-center justify-between gap-3">
           <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
-          <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">
-            {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
-          </p>
+          {!hidePrices ? (
+            <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">
+              {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
+            </p>
+          ) : null}
         </div>
 
         {!node.is_active && (
@@ -167,6 +173,7 @@ const MenuNavigator = ({
   forceLoading = false,
   disabled = false,
   excludedRootCategoryNames = [],
+  hidePrices = false,
 }: MenuNavigatorProps) => {
   const {
     visibleNodes,
@@ -551,6 +558,7 @@ const MenuNavigator = ({
               key={node.id}
               node={node}
               trayMode={trayMode}
+              hidePrices={hidePrices}
               onClick={() => {
                 if (disabled) return;
                 if (!node.is_active && !renderNodeAction?.(node)) return;

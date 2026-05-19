@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
 
 export const TAB_SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36);
 
@@ -32,6 +33,10 @@ export interface BranchShiftGate {
   primaryCashierId: string | null;
   /** Usuario actual es cajero secundario (tiene caja y no es el principal). */
   isSecondaryCashier: boolean;
+  /** Cajero secundario: puede cobrar sus TAKEOUT propias. */
+  secondaryCajaTakeoutEnabled: boolean;
+  /** Cajero secundario: puede cobrar sus EXPRESS propias. */
+  secondaryCajaExpressEnabled: boolean;
   canAuthorizeOrderCancel: boolean;
   canDoubleSession: boolean;
   isSupervisor: boolean;
@@ -70,6 +75,8 @@ export function useBranchShiftGate() {
           canUseCaja: false,
           primaryCashierId: null,
           isSecondaryCashier: false,
+          secondaryCajaTakeoutEnabled: false,
+          secondaryCajaExpressEnabled: false,
           canAuthorizeOrderCancel: false,
           canDoubleSession: false,
           isSupervisor: false,
@@ -110,6 +117,8 @@ export function useBranchShiftGate() {
           canUseCaja: Boolean(row?.can_use_caja),
           primaryCashierId: null,
           isSecondaryCashier: false,
+          secondaryCajaTakeoutEnabled: false,
+          secondaryCajaExpressEnabled: false,
           canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
           canDoubleSession: Boolean(row?.can_double_session),
           isSupervisor: Boolean(row?.is_supervisor),
@@ -134,14 +143,31 @@ export function useBranchShiftGate() {
            openedDate.getDate() !== today.getDate())
         : false;
 
-      const { data: shiftUserRow, error: shiftUserError } = await (supabase
+      const shiftUserSelectBase =
+        "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots";
+      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled`;
+
+      let shiftUserRow: Record<string, unknown> | null = null;
+      const extendedShiftUserResult = await (supabase
         .from("cash_shift_users" as any)
-        .select("is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots")
+        .select(shiftUserSelectExtended)
         .eq("shift_id", shiftId)
         .eq("user_id", user.id)
         .maybeSingle() as any);
 
-      if (shiftUserError) throw shiftUserError;
+      if (extendedShiftUserResult.error && isMissingColumnError(extendedShiftUserResult.error)) {
+        const baseShiftUserResult = await (supabase
+          .from("cash_shift_users" as any)
+          .select(shiftUserSelectBase)
+          .eq("shift_id", shiftId)
+          .eq("user_id", user.id)
+          .maybeSingle() as any);
+        if (baseShiftUserResult.error) throw baseShiftUserResult.error;
+        shiftUserRow = baseShiftUserResult.data ?? null;
+      } else {
+        if (extendedShiftUserResult.error) throw extendedShiftUserResult.error;
+        shiftUserRow = extendedShiftUserResult.data ?? null;
+      }
 
       const directUserEnabled = Boolean(shiftUserRow?.is_enabled);
       const hasDirectShiftRow = shiftUserRow != null;
@@ -204,6 +230,12 @@ export function useBranchShiftGate() {
         canUseCaja: resolvedCanUseCaja,
         primaryCashierId,
         isSecondaryCashier,
+        secondaryCajaTakeoutEnabled: isSecondaryCashier
+          ? Boolean(shiftUserRow?.secondary_caja_takeout_enabled)
+          : false,
+        secondaryCajaExpressEnabled: isSecondaryCashier
+          ? Boolean(shiftUserRow?.secondary_caja_express_enabled)
+          : false,
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         canDoubleSession: hasDirectShiftRow ? Boolean(shiftUserRow?.can_double_session) : Boolean(row?.can_double_session),
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),

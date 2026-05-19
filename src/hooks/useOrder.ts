@@ -482,7 +482,7 @@ export async function fetchExtraSiblingOrders(branchId: string): Promise<Sibling
 
   const extraOrders = (
     await dbSelect<any>("orders", {
-      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, order_items(id, total)",
+      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, closed_at, order_items(id, total)",
       filters: [
         { column: "branch_id", op: "eq", value: branchId },
         { column: "order_type", op: "eq", value: "EXTRA" },
@@ -519,6 +519,7 @@ export async function fetchExtraSiblingOrders(branchId: string): Promise<Sibling
 
   return extraOrders
     .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
+    .filter((sibling: any) => !sibling.closed_at)
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,

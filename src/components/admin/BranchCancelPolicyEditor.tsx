@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 export interface BranchCancelPolicyDraftRow {
   menu_node_id: string;
   menu_node_name: string;
-  menu_scope?: "TABLE" | "TAKEOUT" | "BULK" | null;
+  menu_scope?: "TABLE" | "TAKEOUT" | "BULK" | "EXTRA" | null;
   parent_id: string | null;
   depth: number;
   descendant_product_count: number;
@@ -14,9 +14,10 @@ export interface BranchCancelPolicyDraftRow {
   allow_direct_cancel: boolean;
 }
 
-function getMenuScopeLabel(menuScope?: "TABLE" | "TAKEOUT" | "BULK" | null) {
+function getMenuScopeLabel(menuScope?: "TABLE" | "TAKEOUT" | "BULK" | "EXTRA" | null) {
   if (menuScope === "TAKEOUT") return "Menu para llevar";
   if (menuScope === "BULK") return "Menu A Granel";
+  if (menuScope === "EXTRA") return "Más frecuentes (Extra)";
   return "Menu mesa";
 }
 

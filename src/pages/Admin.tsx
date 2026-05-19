@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack } from "lucide-react";
+import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus } from "lucide-react";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -8,6 +8,7 @@ import CashRegisterTemplatesCrud from "@/components/admin/CashRegisterTemplatesC
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
+import ExtraFrequentProductsAdmin from "@/components/admin/ExtraFrequentProductsAdmin";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
 import ShiftSetupAdmin from "@/components/admin/ShiftSetupAdmin";
 import { useBranch } from "@/contexts/BranchContext";
@@ -22,7 +23,7 @@ interface AdminTab {
   visible: (permissions: Record<string, any>, isGlobalAdmin: boolean) => boolean;
 }
 
-const MENU_TAB_VALUES = ["menu-tree-table", "menu-tree-takeout", "menu-tree-bulk"] as const;
+const MENU_TAB_VALUES = ["menu-tree-table", "menu-tree-takeout", "menu-tree-bulk", "menu-tree-extra"] as const;
 
 const MenuNodesCrudTable = () => (
   <MenuNodesCrud menuScope="TABLE" title="Menu Mesa" />
@@ -35,6 +36,8 @@ const MenuNodesCrudTakeout = () => (
 const MenuNodesCrudBulk = () => (
   <MenuNodesCrud menuScope="BULK" title="A Granel" />
 );
+
+const MenuNodesCrudExtra = () => <ExtraFrequentProductsAdmin />;
 
 interface AdminErrorBoundaryProps {
   activeTabLabel: string;
@@ -115,6 +118,13 @@ const TABS: AdminTab[] = [
     label: "A Granel",
     icon: <Scale className="h-4 w-4" />,
     component: MenuNodesCrudBulk,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+  },
+  {
+    value: "menu-tree-extra",
+    label: "Más frecuentes (Extra)",
+    icon: <PackagePlus className="h-4 w-4" />,
+    component: MenuNodesCrudExtra,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {

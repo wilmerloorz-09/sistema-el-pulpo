@@ -1,15 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Loader2, Plus, RefreshCw, PackagePlus, UserRound } from "lucide-react";
+import { Loader2, RefreshCw, PackagePlus, UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { canOperate } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   compareSiblingOrderTabs,
@@ -18,6 +17,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
+import { fetchExtraFrequentProducts, getExtraFrequentProductsQueryKey } from "@/hooks/useExtraFrequentProducts";
 
 const seedExtraOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -60,6 +60,8 @@ const Extra = () => {
   const { activeBranchId, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const [creating, setCreating] = useState(false);
+  const [autoLaunchFailed, setAutoLaunchFailed] = useState(false);
+  const autoLaunchAttemptedRef = useRef(false);
 
   const canOperateExtra =
     canOperate(permissions, "mesas")
@@ -86,6 +88,15 @@ const Extra = () => {
   });
 
   useEffect(() => {
+    if (!activeBranchId) return;
+    void qc.prefetchQuery({
+      queryKey: getExtraFrequentProductsQueryKey(activeBranchId),
+      queryFn: () => fetchExtraFrequentProducts(activeBranchId),
+      staleTime: 30_000,
+    });
+  }, [activeBranchId, qc]);
+
+  useEffect(() => {
     for (const order of orders) {
       void qc.prefetchQuery({
         queryKey: getOrderQueryKey(order.id),
@@ -110,22 +121,23 @@ const Extra = () => {
     navigate(`/ordenes?order=${orderId}&origin=extra`, { replace: true });
   };
 
-  const handleCreateOrder = async () => {
+  const handleCreateOrder = useCallback(async () => {
     if (!user) {
       toast.error("Debes iniciar sesion para crear una orden.");
-      return;
+      return false;
     }
     if (!activeBranchId) {
       toast.error("Selecciona una sucursal activa.");
-      return;
+      return false;
     }
     if (!canOperateExtra) {
       toast.error("No tienes permiso para crear ordenes Extra en este turno.");
-      return;
+      return false;
     }
-    if (creating) return;
+    if (creating) return false;
 
     setCreating(true);
+    setAutoLaunchFailed(false);
     try {
       const now = new Date().toISOString();
       const { data, error } = await supabase.rpc("create_extra_order" as any, {
@@ -139,7 +151,7 @@ const Extra = () => {
       seedExtraOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
       qc.setQueryData(
-        ["extra-orders", activeBranchId],
+        ["extra-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"],
         [
           ...orders,
           {
@@ -154,17 +166,48 @@ const Extra = () => {
         ].sort(compareSiblingOrderTabs),
       );
 
-      toast.success("Abriendo nueva orden Extra...");
       navigate(`/ordenes?order=${orderId}&origin=extra`, { replace: true });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["extra-orders", activeBranchId] });
-      warmExtraOrder(orderId);
+      void qc.prefetchQuery({
+        queryKey: getOrderQueryKey(orderId),
+        queryFn: () => fetchOrderDetail(orderId),
+        staleTime: 15_000,
+        gcTime: 10 * 60_000,
+      });
+      return true;
     } catch (err: any) {
+      setAutoLaunchFailed(true);
       toast.error(err?.message || "Error al abrir orden Extra");
+      return false;
     } finally {
       setCreating(false);
     }
-  };
+  }, [
+    activeBranchId,
+    canOperateExtra,
+    creating,
+    navigate,
+    orders,
+    qc,
+    shiftGateQuery.data?.shiftId,
+    user,
+  ]);
+
+  useEffect(() => {
+    if (!canOperateExtra || !user || !activeBranchId) return;
+    if (extraOrdersQuery.isLoading) return;
+    if (autoLaunchAttemptedRef.current) return;
+
+    autoLaunchAttemptedRef.current = true;
+    void handleCreateOrder();
+  }, [
+    activeBranchId,
+    canOperateExtra,
+    extraOrdersQuery.isLoading,
+    handleCreateOrder,
+    user,
+  ]);
 
   if (extraOrdersQuery.isError) {
     return (
@@ -188,6 +231,39 @@ const Extra = () => {
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
+    );
+  }
+
+  if (canOperateExtra && (creating || !autoLaunchFailed)) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        <p className="text-sm text-muted-foreground">Abriendo orden Extra...</p>
+      </div>
+    );
+  }
+
+  if (canOperateExtra && autoLaunchFailed) {
+    return (
+      <motion.div className="p-4">
+        <div className="rounded-[24px] border border-teal-200 bg-white/80 p-5 text-center text-sm text-muted-foreground shadow-sm">
+          <p className="font-semibold text-foreground">No se pudo abrir la orden Extra</p>
+          <p className="mt-2">Revisa el turno y tus permisos, luego intenta de nuevo.</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4 rounded-2xl"
+            disabled={creating}
+            onClick={() => {
+              autoLaunchAttemptedRef.current = false;
+              void handleCreateOrder();
+            }}
+          >
+            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Reintentar
+          </Button>
+        </div>
+      </motion.div>
     );
   }
 
@@ -264,30 +340,6 @@ const Extra = () => {
             );
           })}
 
-          <motion.button
-            key="new-extra-order"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: (orders.length + 1) * 0.03 }}
-            onClick={handleCreateOrder}
-            disabled={creating || !canOperateExtra}
-            className={cn(
-              "relative flex min-h-[142px] flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-teal-400/35 bg-gradient-to-br from-teal-50 via-white to-cyan-100 p-2.5 text-center shadow-[0_20px_45px_-30px_rgba(15,23,42,0.18)] transition-all active:scale-95 sm:min-h-[188px] sm:gap-3 sm:rounded-[28px] sm:p-5",
-              canOperateExtra && "hover:border-teal-500/55 hover:bg-teal-500/5",
-              (!canOperateExtra || creating) && "cursor-not-allowed opacity-70",
-            )}
-          >
-            {creating ? (
-              <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
-            ) : (
-              <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border-2 border-teal-200 bg-gradient-to-br from-teal-600 via-cyan-500 to-teal-400 text-white shadow-[0_18px_38px_-24px_rgba(13,148,136,0.82)] sm:h-16 sm:w-16 sm:rounded-[22px]">
-                  <Plus className="h-8 w-8" />
-                </div>
-                <div className="text-[10px] font-semibold text-teal-700 sm:text-xs">Nueva orden</div>
-              </>
-            )}
-          </motion.button>
         </div>
       </div>
     </div>

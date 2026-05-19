@@ -19,6 +19,10 @@ export interface ShiftCajaSetupUserOption {
 export interface SecondaryCajaRow {
   id: string;
   user_id: string;
+  /** Puede cobrar sus propias ordenes TAKEOUT. Extra siempre aplica sin checkbox. */
+  takeout_enabled?: boolean;
+  /** Puede cobrar sus propias ordenes EXPRESS despachadas. */
+  express_enabled?: boolean;
 }
 
 export interface CashRegisterTemplateOption {
@@ -43,6 +47,11 @@ interface Props {
 
 function nextSecondaryId() {
   return `sec-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function resolveSelectUserId(userId: string, options: ShiftCajaSetupUserOption[]) {
+  if (!userId) return undefined;
+  return options.some((user) => user.user_id === userId) ? userId : undefined;
 }
 
 export default function ShiftCajaSetupSection({
@@ -73,7 +82,7 @@ export default function ShiftCajaSetupSection({
       ...value,
       secondaryCajas: [
         ...value.secondaryCajas,
-        { id: nextSecondaryId(), user_id: candidate.user_id },
+        { id: nextSecondaryId(), user_id: candidate.user_id, takeout_enabled: false, express_enabled: false },
       ],
     });
   };
@@ -91,6 +100,19 @@ export default function ShiftCajaSetupSection({
     onChange({
       ...value,
       secondaryCajas: value.secondaryCajas.filter((row) => row.id !== rowId),
+    });
+  };
+
+  const updateSecondaryFlag = (
+    rowId: string,
+    key: "takeout_enabled" | "express_enabled",
+    checked: boolean,
+  ) => {
+    onChange({
+      ...value,
+      secondaryCajas: value.secondaryCajas.map((row) =>
+        row.id === rowId ? { ...row, [key]: checked } : row,
+      ),
     });
   };
 
@@ -117,7 +139,7 @@ export default function ShiftCajaSetupSection({
             Este cajero abrira su arqueo al entrar al modulo Caja.
           </p>
           <Select
-            value={value.primaryCashierId || undefined}
+            value={resolveSelectUserId(value.primaryCashierId, availableForPrimary)}
             onValueChange={(id) => onChange({ ...value, primaryCashierId: id })}
             disabled={disabled || enabledUsers.length === 0}
           >
@@ -189,28 +211,58 @@ export default function ShiftCajaSetupSection({
               )}
             </div>
 
+            <p className="text-xs text-muted-foreground">
+              Cada cajero secundario cobra solo sus propias ordenes. Extra siempre aplica; Para llevar y Express son opcionales por cajero.
+            </p>
+
             <div className="space-y-2">
-              {value.secondaryCajas.map((row) => (
+              {value.secondaryCajas.map((row) => {
+                const secondaryOptions = availableForSecondary(row.user_id);
+                const secondarySelectValue = resolveSelectUserId(row.user_id, secondaryOptions);
+
+                return (
                 <div
                   key={row.id}
-                  className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-100 bg-white p-2"
+                  className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-100 bg-white p-2.5"
                 >
-                  <Select
-                    value={row.user_id || undefined}
-                    onValueChange={(id) => updateSecondaryUser(row.id, id)}
-                    disabled={disabled || enabledUsers.length === 0}
-                  >
-                    <SelectTrigger className="h-10 min-w-[200px] flex-1 rounded-xl">
-                      <SelectValue placeholder="Cajero secundario..." />
-                    </SelectTrigger>
+                  <div className="min-w-[220px] flex-1">
+                    <Select
+                      value={secondarySelectValue}
+                      onValueChange={(id) => updateSecondaryUser(row.id, id)}
+                      disabled={disabled || enabledUsers.length === 0}
+                    >
+                      <SelectTrigger className="h-10 w-full rounded-xl">
+                        <SelectValue placeholder="Cajero secundario..." />
+                      </SelectTrigger>
                     <SelectContent>
-                      {availableForSecondary(row.user_id).map((u) => (
+                      {secondaryOptions.map((u) => (
                         <SelectItem key={u.user_id} value={u.user_id}>
                           {u.full_name || u.username} (@{u.username})
                         </SelectItem>
                       ))}
                     </SelectContent>
-                  </Select>
+                    </Select>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
+                    <Checkbox
+                      checked={Boolean(row.takeout_enabled)}
+                      disabled={disabled || !row.user_id}
+                      onCheckedChange={(checked) =>
+                        updateSecondaryFlag(row.id, "takeout_enabled", checked === true)
+                      }
+                    />
+                    Para llevar
+                  </label>
+                  <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
+                    <Checkbox
+                      checked={Boolean(row.express_enabled)}
+                      disabled={disabled || !row.user_id}
+                      onCheckedChange={(checked) =>
+                        updateSecondaryFlag(row.id, "express_enabled", checked === true)
+                      }
+                    />
+                    Express
+                  </label>
                   <Button
                     type="button"
                     variant="ghost"
@@ -222,7 +274,8 @@ export default function ShiftCajaSetupSection({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <Button
