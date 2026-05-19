@@ -12,6 +12,8 @@
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye ordenes Express (`order_type = EXPRESS`) en cualquier etapa del flujo despacho-cobro
 --   - incluye ordenes Extra (`order_type = EXTRA`) en cualquier etapa del flujo caja-despacho (sin mesa)
+--   - incluye auto-despacho/cierre Extra al cobrar total (`auto_finalize_extra_order_after_payment`)
+--   - incluye alcance de caja secundaria Por llevar/Express por cajero (`secondary_caja_*`)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye la numeracion visible unificada: `orders.order_number` se deriva del sufijo de `orders.order_code`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
@@ -48,6 +50,7 @@
 --   - al limpiar cash_shift_users tambien se eliminan los session locks operativos (`last_session_id`) y cualquier toma de control vigente en Caja
 --   - tambien limpia los session locks guardados en `profiles`, incluida la segunda sesion autorizada para Caja
 -- - Conserva arbol menu, categorias, subcategorias, productos, modificadores y configuracion base
+-- - Conserva productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
 -- - Conserva todos los arboles operativos de menu_nodes:
 --   - `TABLE`
 --   - `TAKEOUT`
@@ -60,9 +63,9 @@
 --   - `cash_register_template_denoms`
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
---   - el flujo de cobro/despacho es global: Caja primero y Despacho despues (excepto Express: despacho -> cobro; Extra como mesa)
+--   - el flujo de cobro/despacho es global: Caja primero y Despacho despues (excepto Express: despacho -> cobro; Extra: caja -> despacho con auto-finalize al cobrar)
 --   - varios cajeros pueden tener can_use_caja en el mismo turno (hasta max_caja_sessions); cada uno abre su propia caja y denoms por cashier_id
---   - incluye configuracion de caja principal (`primary_cashier_id`) y secundarias con plantilla de arqueo (`register_role = secondary`)
+--   - incluye configuracion de caja principal (`primary_cashier_id`) y secundarias con plantilla de arqueo (`register_role = secondary`) y flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`
 --   - al borrar cash_register_openings y cash_shift_denoms se eliminan todas las aperturas/denominaciones de todos los cajeros del turno
 --   - el catalogo `denominations` se conserva; define lo que el cliente puede entregar al cobrar (independiente de plantilla de apertura)
 --   - Caja cobra cantidades ordenadas activas antes del despacho (Express solo cuando KITCHEN_DISPATCHED)
@@ -329,8 +332,8 @@ COMMIT;
 -- - 0 ordenes especiales `PAID` historicas ocultas por falta de detalle cobrado en `payment_items`
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
--- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel y asignaciones por nodo)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra, aperturas multi-cajero y principal/secundaria, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
+-- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel, asignaciones por nodo y productos frecuentes por contexto)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con auto-despacho post-pago, aperturas multi-cajero y principal/secundaria con flags takeout/express, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
 -- - 0 aperturas de caja por cajero (cash_register_openings) ni denominaciones particionadas (cash_shift_denoms.cashier_id / opening_id)
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo

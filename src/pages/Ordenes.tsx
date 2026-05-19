@@ -51,7 +51,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu, Truck } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
-import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM } from "@/lib/mesasFlow";
+import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM, formatTableBadge } from "@/lib/mesasFlow";
 import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
@@ -1789,8 +1789,13 @@ const OrdenesContent = () => {
 
   /** "Orden #…" solo al ver la orden (no en la rejilla de selección de órdenes de la mesa). */
   const renderMesaChromeHeaderTitle = (o: typeof order, withOrdenLabel: boolean) => (
-    <span className="inline-flex min-w-0 max-w-full items-baseline gap-6 tabular-nums sm:gap-10">
-      <span className="min-w-0 truncate">{(o.table_name ?? "").trim() || "Mesa"}</span>
+    <span className="inline-flex min-w-0 max-w-full items-center gap-3 tabular-nums sm:gap-4">
+      <span
+        className="inline-flex min-h-[2rem] min-w-[2rem] shrink-0 items-center justify-center rounded-full border border-orange-300 bg-amber-100 px-2 text-base font-black leading-none text-primary shadow-sm dark:border-primary/40 dark:bg-orange-950/80 dark:text-orange-300 sm:min-h-[2.35rem] sm:min-w-[2.35rem] sm:text-lg"
+        aria-label={`Mesa ${formatTableBadge((o?.table_name ?? "").trim() || "Mesa")}`}
+      >
+        {formatTableBadge((o?.table_name ?? "").trim() || "Mesa")}
+      </span>
       {withOrdenLabel ? (
         <span className="shrink-0 font-black tracking-tight">
           Orden #{getOrdenNumeroParaCabeceraMesa(o)}

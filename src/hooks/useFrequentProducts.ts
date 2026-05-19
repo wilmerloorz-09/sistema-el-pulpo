@@ -50,28 +50,28 @@ export async function fetchFrequentProducts(
   }));
 }
 
-async function applyDisplayOrders(branchId: string, context: FrequentProductContext, orderedIds: string[]) {
-  await Promise.all(
-    orderedIds.map((id, index) =>
-      supabase
-        .from("extra_frequent_products" as any)
-        .update({ display_order: -(index + 1) })
-        .eq("id", id)
-        .eq("branch_id", branchId)
-        .eq("context", context),
-    ),
-  );
+const DISPLAY_ORDER_STAGING_OFFSET = 100_000;
 
-  await Promise.all(
-    orderedIds.map((id, index) =>
-      supabase
-        .from("extra_frequent_products" as any)
-        .update({ display_order: index + 1 })
-        .eq("id", id)
-        .eq("branch_id", branchId)
-        .eq("context", context),
-    ),
-  );
+async function applyDisplayOrders(branchId: string, context: FrequentProductContext, orderedIds: string[]) {
+  for (let index = 0; index < orderedIds.length; index++) {
+    const { error } = await supabase
+      .from("extra_frequent_products" as any)
+      .update({ display_order: DISPLAY_ORDER_STAGING_OFFSET + index + 1 })
+      .eq("id", orderedIds[index])
+      .eq("branch_id", branchId)
+      .eq("context", context);
+    if (error) throw error;
+  }
+
+  for (let index = 0; index < orderedIds.length; index++) {
+    const { error } = await supabase
+      .from("extra_frequent_products" as any)
+      .update({ display_order: index + 1 })
+      .eq("id", orderedIds[index])
+      .eq("branch_id", branchId)
+      .eq("context", context);
+    if (error) throw error;
+  }
 }
 
 export function useFrequentProducts(

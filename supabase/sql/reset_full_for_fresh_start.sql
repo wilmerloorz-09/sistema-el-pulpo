@@ -12,6 +12,9 @@
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye ordenes Express (`order_type = EXPRESS`) y su flujo despacho antes de cobro
 --   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja antes de despacho (sin mesa)
+--   - incluye auto-despacho/cierre Extra al cobrar total (`auto_finalize_extra_order_after_payment`)
+--   - incluye alcance de caja secundaria Por llevar/Express (`secondary_caja_takeout_enabled`, `secondary_caja_express_enabled`)
+--   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
@@ -30,7 +33,7 @@
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 --   - incluye multiples aperturas por turno (una por cajero en cash_register_openings) y denoms por cashier_id/opening_id
---   - incluye caja principal/secundaria por turno (`primary_cashier_id`, `register_role`, plantillas secundarias)
+--   - incluye caja principal/secundaria por turno (`primary_cashier_id`, `register_role`, plantillas secundarias, flags `secondary_caja_*`)
 --   - incluye cobro con catalogo global de denominaciones (UI) vs plantilla de arqueo (apertura); tras reset solo queda el catalogo en `denominations`
 --   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
 --   - incluye `cash_shifts.max_caja_sessions` y slots de sesion Caja en cash_shift_users (caja_session_slots)
@@ -110,6 +113,7 @@
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
 --   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra); Express es despacho antes de cobro.
+--   - Extra auto-despacha al cobrar total via BD; no requiere paso manual en Despacho para cerrar la orden.
 --   - cada cajero habilitado abre su propia caja en el mismo turno; el reset borra todas las aperturas y denoms asociadas.
 --   - la plantilla de apertura (`cash_register_template_denoms`) es independiente del catalogo `denominations` usado en cobro
 --   - Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
@@ -180,6 +184,7 @@ DECLARE
     'public.branch_cancel_policy',
 
     -- Catalogos
+    'public.extra_frequent_products',
     'public.bulk_included_product_ranges',
     'public.bulk_included_products',
     'public.menu_node_modifiers',
@@ -421,7 +426,8 @@ COMMIT;
 -- - 0 configuraciones de precios manuales por categoria
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra, caja principal/secundaria, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 productos frecuentes configurados (`extra_frequent_products` por contexto)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con auto-despacho post-pago, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
 -- - 0 aperturas multi-cajero ni cash_shift_denoms por cashier_id
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`

@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-05-28)
+## Estado operativo vigente (2026-05-31)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -51,9 +51,19 @@
 - **Extra (`order_type = EXTRA`):**
   - Modulo propio en navegacion (`/extra`) con grilla de tarjetas similar a Para llevar.
   - Sin mesa (`table_id` null); usa menu **Mesas** (`menu_scope = TABLE`) sin categoria raiz PLATOS ni pestañas Con envase / A granel.
-  - Flujo operativo igual que mesa: **envio a caja → pago → despacho** (no como Express).
+  - Flujo operativo: **envio a caja → pago → despacho** (no como Express).
+  - Tras cobro total, la BD invoca `auto_finalize_extra_order_after_payment(...)` desde `sync_order_payment_state_internal`: auto-despacho, `closed_at` y `locked_for_editing` (migracion `20260530120000_extra_auto_dispatch_on_payment.sql`).
   - RPC `create_extra_order(...)`; en Caja el subtitulo debe mostrar **Extra**, no nombre de mesa.
-  - Migracion: `20260527120000_add_extra_order_type.sql`.
+  - Productos frecuentes operativos: contexto `EXTRA` en `extra_frequent_products`.
+  - Migracion base: `20260527120000_add_extra_order_type.sql`.
+- **Productos frecuentes ("Mas frecuentes"):**
+  - Tabla `extra_frequent_products` con columna `context` ∈ `MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA` (sin limite de cantidad; migraciones `20260531130000`, `20260531140000`).
+  - Admin: pestaña **Mas frecuentes** en `/admin` (`FrequentProductsAdmin`) — selector de contexto, menu segun contexto, lista con agregar/eliminar/reordenar.
+  - Caja/ordenes: tarjetas `FrequentProductCards` en `Ordenes.tsx` segun origen:
+    - **Mesa:** encima de pestañas Menu Mesas / Con envase / A granel.
+    - **Para llevar, Express, Extra:** debajo de pestañas.
+  - Layout: 1 fila si caben todos los productos; maximo 2 filas con scroll horizontal tactil cuando hay mas.
+  - Default: seccion expandida; click en titulo contrae/expande.
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
@@ -92,7 +102,11 @@
   - `apply_shift_caja_configuration(...)` asigna `can_use_caja` al principal y a los cajeros secundarios, y abre caja secundaria con `internal_open_cash_register_for_cashier(..., register_role = secondary)`.
   - Tras abrir/guardar turno, el frontend debe llamar `persistShiftCajaConfiguration` **despues** de `persistShiftUsersForShift` para no borrar `can_use_caja` del cajero principal.
   - `useBranchShiftGate`: `isSecondaryCashier` = habilitado con caja y distinto de `primary_cashier_id`; define UI de cobro secundaria.
-  - Migraciones: `20260525120000_shift_caja_structure.sql`, `20260526150000_remove_max_caja_sessions_cap.sql`.
+  - **Alcance de ordenes en caja secundaria (2026-05-29+):**
+    - Columnas `cash_shift_users.secondary_caja_takeout_enabled` y `secondary_caja_express_enabled`.
+    - Configuracion por cajero secundario en `Admin > Turno` via `apply_shift_caja_configuration(..., p_secondary_caja_config jsonb)`.
+    - Filtro en cliente: `orderVisibleToSecondaryCashier` (`src/lib/secondaryCajaPayable.ts`) — solo ordenes **propias** (`created_by`); **Extra siempre** visible para el cajero secundario que las creo; Para llevar/Express segun flags.
+  - Migraciones: `20260525120000_shift_caja_structure.sql`, `20260526150000_remove_max_caja_sessions_cap.sql`, `20260529120000_secondary_caja_order_scope.sql`.
 - **Administrador general:** puede cambiar a cualquier sucursal activa cuando quiera; no aplica redireccion por turno ni auto-reasignacion al refrescar `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`).
   - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
@@ -409,15 +423,20 @@
   - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
   - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
 
-### 2026-05-25 / 2026-05-28
+### 2026-05-25 / 2026-05-31
 - Turno / caja:
   - Estructura caja principal + secundarias por turno (`primary_cashier_id`, plantilla secundaria, `register_role` en aperturas).
-  - Fix persistencia `can_use_caja` del cajero principal al guardar usuarios del turno (`persistShiftCajaConfiguration` despues de `persistShiftUsersForShift`).
-  - Separacion plantilla de arqueo vs catalogo de denominaciones en cobro (`catalogToPaymentDenoms`, `usePaymentChargeFlow`).
+  - Alcance Por llevar / Express por cajero secundario (`secondary_caja_*`, `p_secondary_caja_config`).
+  - Fix persistencia `can_use_caja` del cajero principal al guardar usuarios del turno.
+  - Separacion plantilla de arqueo vs catalogo de denominaciones en cobro.
   - `PaymentDialogSecondary` para cajeros secundarios en movil/tablet.
   - `registrar_movimiento_caja_operativo`: `PAYMENT_IN` por cajero con upsert si falta denominacion en caja.
 - Extra:
-  - `order_type = EXTRA`, pagina `/extra`, flujo caja-despacho como mesa, menu sin PLATOS.
+  - `order_type = EXTRA`, pagina `/extra`, flujo caja-despacho, menu sin PLATOS.
+  - Auto-despacho y cierre al cobrar total (`auto_finalize_extra_order_after_payment`).
+- Productos frecuentes:
+  - Tabla `extra_frequent_products` multi-contexto (Mesa, Para llevar, Express, Extra).
+  - Admin reordenable; tarjetas en caja con 1–2 filas y scroll horizontal.
 
 ### 2026-05-09 (ampliado — cobro V2 y rendimiento)
 - Caja / UI de cobro:
@@ -449,7 +468,9 @@
 9. Cualquier cambio en `Despacho` debe preservar una sola tarjeta por orden pagada; no volver a separar la misma orden por `sent_to_kitchen_at` de los items.
 10. Cobros lentos con muchas líneas: verificar que la migración `20260509180000_payment_items_sync_once_per_statement.sql` esté aplicada en la BD remota; sin ella, cada fila de `payment_items` dispara sincronización completa de orden.
 11. No confundir **plantilla de apertura** con **denominaciones que puede entregar el cliente**; el cobro debe listar `denominations` activas; el arqueo y el cambio usan `cash_shift_denoms` del cajero.
-12. Cajero secundario: validar `isSecondaryCashier`, migracion `20260528130000_payment_in_upsert_per_cashier.sql`, y que Extra no muestre "Mesa N" si `order_type` es `EXTRA` y `table_name` es null.
+12. Cajero secundario: validar `isSecondaryCashier`, flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`, `orderVisibleToSecondaryCashier`, migracion `20260528130000_payment_in_upsert_per_cashier.sql`, y que Extra no muestre "Mesa N" si `order_type` es `EXTRA` y `table_name` es null.
+13. Extra post-cobro: verificar migracion `20260530120000` y que orden Extra pagada auto-despache/cierre sin paso manual en Despacho.
+14. Productos frecuentes: verificar migraciones `20260531130000` y `20260531140000`; reordenar usa `display_order` con staging positivo (no valores negativos).
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.

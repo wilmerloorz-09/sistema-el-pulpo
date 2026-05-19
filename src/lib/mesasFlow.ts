@@ -17,6 +17,11 @@ export function mesasListPathForOrigin(origin: string | null): "/mesas" | "/mesa
   return "/mesas";
 }
 
+/** Extrae el número visible de una mesa (ej. "Mesa 1" → "1"). */
+export function formatTableBadge(name: string) {
+  return name.replace(/^mesa\s*/i, "").trim() || name;
+}
+
 /** Query string para `/ordenes` con `origin` de mesas (clásico o beta) y selector opcional en tarjetas. */
 export function mesasOrdenesSearch(opts: { order: string; origin: string; mesaCards?: boolean }): string {
   const p = new URLSearchParams();

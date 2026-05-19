@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ImageIcon, Loader2 } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useFrequentProducts, type FrequentProductContext } from "@/hooks/useFrequentProducts";
@@ -15,8 +15,36 @@ export default function FrequentProductCards({ context, onSelectProduct, disable
   const { activeBranchId } = useBranch();
   const { products, isLoading } = useFrequentProducts(activeBranchId, context);
   const [expanded, setExpanded] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [rowCount, setRowCount] = useState(1);
 
   const visibleProducts = products.filter((row) => row.menu_node?.is_active !== false);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || visibleProducts.length === 0) return;
+
+    const CARD_WIDTH = 74.4;
+    const CARD_WIDTH_SM = 80;
+    const GAP = 6;
+
+    const updateLayout = () => {
+      const width = container.clientWidth;
+      const isSm = window.matchMedia("(min-width: 640px)").matches;
+      const cardWidth = isSm ? CARD_WIDTH_SM : CARD_WIDTH;
+      const perRow = Math.max(1, Math.floor((width + GAP) / (cardWidth + GAP)));
+      setRowCount(visibleProducts.length <= perRow ? 1 : 2);
+    };
+
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(container);
+    window.addEventListener("resize", updateLayout);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateLayout);
+    };
+  }, [visibleProducts.length, expanded]);
 
   if (isLoading) {
     return (
@@ -46,11 +74,17 @@ export default function FrequentProductCards({ context, onSelectProduct, disable
       </button>
       {expanded ? (
         <div
+          ref={scrollRef}
           data-no-order-swipe
           className="scrollbar-none -mx-1 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 pb-0.5 touch-pan-x"
           style={{ WebkitOverflowScrolling: "touch" }}
         >
-          <div className="grid w-max grid-flow-col grid-rows-2 gap-1.5 auto-cols-[4.65rem] sm:auto-cols-[5rem]">
+          <div
+            className={cn(
+              "grid w-max grid-flow-col gap-1.5 auto-cols-[4.65rem] sm:auto-cols-[5rem]",
+              rowCount === 1 ? "grid-rows-1" : "grid-rows-2",
+            )}
+          >
             {visibleProducts.map((row) => {
               const node = row.menu_node;
               if (!node) return null;

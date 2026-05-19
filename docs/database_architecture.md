@@ -34,15 +34,19 @@
 - `user_branch_roles`
 - `user_branch_modules`
 - `cash_shift_users`
+  - capacidades operativas por turno (`can_serve_tables`, `can_use_caja`, etc.)
+  - `secondary_caja_takeout_enabled`: cajero secundario puede cobrar sus TAKEOUT.
+  - `secondary_caja_express_enabled`: cajero secundario puede cobrar sus EXPRESS despachadas.
 // Removed WebAuthn tables from active operation
 
 
 ### 2. Catalogo
 - Modelo principal:
-  - `menu_nodes`
+  - `menu_nodes` (alcances: `TABLE`, `TAKEOUT`, `BULK`; opcional `EXTRA` en BD para arbol dedicado)
   - `menu_node_modifiers`
   - `bulk_included_products`
   - `bulk_included_product_ranges`
+  - `extra_frequent_products` (accesos rapidos por sucursal y contexto)
 - Modelo legacy aun activo:
   - `categories`
   - `subcategories`
@@ -165,7 +169,9 @@
 - **Administrador general:** `set_my_active_branch` y `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`) permiten fijar cualquier sucursal activa sin redireccion por turno ni auto-reasignacion al refrescar contexto.
 - `open_cash_register` retorna `uuid` (id de apertura). Si cambia el tipo de retorno, ejecutar antes `DROP FUNCTION open_cash_register(uuid, uuid, uuid, jsonb)`.
 - `internal_open_cash_register_for_cashier(...)` abre caja secundaria al configurar turno; con plantilla inserta cantidades del template; el cobro no debe limitarse a esas filas en UI.
-- `apply_shift_caja_configuration(...)` persiste principal, secundarios y abre cajas secundarias con plantilla.
+- `apply_shift_caja_configuration(..., p_secondary_caja_config jsonb)` persiste principal, secundarios, flags takeout/express y abre cajas secundarias.
+- `open_cash_shift_with_tables(..., p_secondary_caja_config jsonb)` reenvia config secundaria a apply.
+- `auto_finalize_extra_order_after_payment(p_order_id uuid)`
 - `registrar_movimiento_caja_operativo`: movimientos `PAYMENT_IN` / `CHANGE_OUT` filtran por `shift_id`, `cashier_id = auth.uid()` y `denomination_id`. Si `PAYMENT_IN` no encuentra fila, inserta con apertura abierta del cajero y luego suma `qty_current`.
 - `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
 - `Pagos del turno` debe filtrar por el rango real de `cash_shifts.opened_at` a `cash_shifts.closed_at`/`now()`, no por inicio del dia calendario.
@@ -225,11 +231,24 @@
 - `dispatch_config.express_enabled` habilita la pestaña/modulo en Despacho.
 - RPC `create_express_order(...)` crea la orden ligada al turno abierto.
 
+### Productos frecuentes
+- Tabla `extra_frequent_products`:
+  - `branch_id`, `menu_node_id`, `context`, `display_order`, `created_at`
+  - `context` ∈ `MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA`
+  - unique `(branch_id, context, menu_node_id)` y `(branch_id, context, display_order)`
+  - sin limite de cantidad (el check `display_order <= 10` fue eliminado en `20260531140000`)
+- RLS: SELECT usuarios con `active_branch_id`; INSERT/UPDATE/DELETE admins de sucursal.
+- Reordenar en cliente: fase staging con `display_order` alto (≥ 100001) antes de asignar orden final 1..N (respeta check `display_order >= 1`).
+
 ### Extra (`order_type = EXTRA`)
 - Enum `order_type` incluye `EXTRA` (migracion `20260527120000_add_extra_order_type.sql`).
 - Sin `table_id`; `menu_scope = TABLE` sin categoria PLATOS.
-- Flujo: borrador -> envio a caja -> pago -> despacho (igual que mesa, no como Express).
-- RPC `create_extra_order(...)`; en listados de caja, `table_name` solo se resuelve para `DINE_IN` con `table_id` (Extra muestra etiqueta **Extra**).
+- Flujo: borrador -> envio a caja -> pago -> despacho.
+- Tras pago total, `sync_order_payment_state_internal` invoca `auto_finalize_extra_order_after_payment(...)`:
+  - despacho total automatico (`dispatch_order_quantities` con operacion total)
+  - `closed_at` y `locked_for_editing = true` cuando queda `KITCHEN_DISPATCHED`
+  - migracion `20260530120000_extra_auto_dispatch_on_payment.sql`
+- RPC `create_extra_order(...)`; en listados de caja, `table_name` solo para `DINE_IN` con `table_id`.
 
 ### Para llevar (TAKEOUT) y Orden especial como tarjetas dinamicas
 - El listado principal de tarjetas `Para llevar` se filtra por:
@@ -350,6 +369,11 @@
 ### Express y flujo despacho-cobro
 - `20260516000000_add_express_order_type.sql`
 - `20260527120000_add_extra_order_type.sql`
+- `20260529120000_secondary_caja_order_scope.sql`
+- `20260530120000_extra_auto_dispatch_on_payment.sql`
+- `20260531120000_add_extra_menu_scope.sql` (opcional; `menu_scope` acepta `EXTRA`)
+- `20260531130000_extra_frequent_products.sql`
+- `20260531140000_frequent_products_multi_context.sql`
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
@@ -386,4 +410,6 @@
 14. Si se toca Para llevar u Orden especial, preservar tarjetas dinamicas con `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez y salida por despacho aplicado/cancelacion.
 15. Si se modifican triggers de `payment_items` que llaman a `sync_order_payment_state_internal`, mantener sincronización **por sentencia** (como en `20260509180000`) o equivalente que evite invocar la función una vez por cada fila insertada en el mismo lote.
 16. **Plantilla vs cobro:** `cash_register_template_denoms` define arqueo inicial; el cobro en UI usa `denominations` activas; `registrar_movimiento_caja_operativo` debe permitir `PAYMENT_IN` aunque la denominacion no estuviera en la plantilla.
-17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`.
+17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`; post-pago usar auto-finalize en BD, no solo UI de Despacho.
+18. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
+19. **Caja secundaria:** flags `secondary_caja_*` en `cash_shift_users`; filtro `created_by` en cliente para Por cobrar.

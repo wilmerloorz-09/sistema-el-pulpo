@@ -34,6 +34,7 @@
 - `cash_shift_users.can_double_session` permite una segunda sesion de app para el **mismo** usuario con Caja; se registra en `profiles.current_app_secondary_session_id`.
 - Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
 - Por turno puede configurarse **caja principal** (`primary_cashier_id`) y **cajas secundarias** con plantilla de arqueo (`apply_shift_caja_configuration`, `register_role` en aperturas).
+- Cajeros secundarios filtran `Por cobrar` con `orderVisibleToSecondaryCashier` (`src/lib/secondaryCajaPayable.ts`): solo ordenes propias; Extra siempre; Para llevar/Express segun `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`.
 - `useBranchShiftGate` expone `isSecondaryCashier` para elegir UI de cobro secundaria.
 
 ### 3. Catalogo
@@ -43,7 +44,8 @@
   - `TAKEOUT`
   - `BULK`
 - Ordenes `EXPRESS` usan el mismo arbol de menu que para llevar pero con flujo **despacho -> cobro** (ver `src/lib/orderFlow.ts`).
-- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, sin mesa fisica, flujo **caja -> despacho** como mesa (`src/pages/Extra.tsx`, RPC `create_extra_order`).
+- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, sin mesa fisica, flujo **caja -> despacho**; al cobrar total la BD auto-despacha y cierra (`auto_finalize_extra_order_after_payment`).
+- **Productos frecuentes:** configuracion en `extra_frequent_products` por `context` (`MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA`); UI operativa `FrequentProductCards`, admin `FrequentProductsAdmin`; menú compuesto Para llevar/Express via `buildCompositeMenuNodes` (`src/lib/compositeMenuTree.ts`).
 - Fuente transaccional legacy que sigue viva:
   - `categories`
   - `subcategories`
@@ -239,8 +241,12 @@
 ## Componentes y hooks clave
 - Catalogo:
   - `src/hooks/useMenuTree.ts`
+  - `src/hooks/useFrequentProducts.ts`
   - `src/components/order/MenuNavigator.tsx`
+  - `src/components/order/FrequentProductCards.tsx`
   - `src/components/admin/MenuNodesCrud.tsx`
+  - `src/components/admin/FrequentProductsAdmin.tsx`
+  - `src/lib/compositeMenuTree.ts`
 - Ordenes y mesas:
   - `src/hooks/useOrder.ts`
   - `src/hooks/useOrdersByStatus.ts`
@@ -262,6 +268,7 @@
   - `src/components/caja/PaymentDialogSecondary.tsx`
   - `src/components/caja/PaymentReceipt.tsx`
   - `src/hooks/useBranchShiftGate.ts` (`isSecondaryCashier`, `primaryCashierId`)
+  - `src/lib/secondaryCajaPayable.ts` (filtro Por cobrar caja secundaria)
   - `src/components/admin/ShiftSetupAdmin.tsx` (config caja por turno)
   - `src/services/DatabaseService.ts` (`dbSelect` `skipLocalCache`, `dbInsert`/`dbInsertMany` `hotPath`)
   - `src/components/caja/CompletedPaymentsList.tsx`
@@ -296,4 +303,6 @@
 18. **Cobro V2 y BD:** Cambios en `payOrder` o en triggers de `payment_items` deben mantener coherencia con `sync_order_payment_state_internal`; si se insertan muchos `payment_items` en un lote, la BD debe sincronizar la orden **una vez por sentencia** (migración `20260509180000`).
 19. **`Ordenes.tsx`:** Usar lista de ítems defensiva (`order?.items ?? []`) en el contenido del detalle para tolerar órdenes parciales en caché.
 20. **Plantilla vs cobro:** No usar solo `shift.denoms` para botones de monedas/billetes en cobro; usar catálogo `denominations`. No mezclar arqueo de plantilla con lo que puede pagar el cliente.
-21. **Caja secundaria:** No alterar `PaymentDialogV2` para secundarios; usar `PaymentDialogSecondary` y `shouldUseSecondaryPaymentDialog`.
+21. **Caja secundaria:** No alterar `PaymentDialogV2` para secundarios; usar `PaymentDialogSecondary` y `shouldUseSecondaryPaymentDialog`. Validar flags `secondary_caja_*` y `orderVisibleToSecondaryCashier`.
+22. **Extra:** Auto-despacho al cobrar total vive en BD (`auto_finalize_extra_order_after_payment`); no depender solo de Despacho manual.
+23. **Productos frecuentes:** Cambios en admin deben respetar `context` y unique `(branch_id, context, display_order)`; UI en caja usa 1 fila si cabe, max 2 filas con scroll.

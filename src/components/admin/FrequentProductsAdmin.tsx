@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { GripVertical, ImageIcon, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import {
   FREQUENT_PRODUCT_CONTEXTS,
   useFrequentProducts,
   type FrequentProductContext,
+  type FrequentProductRow,
 } from "@/hooks/useFrequentProducts";
 import { fetchMenuTreeNodes, type MenuNode } from "@/hooks/useMenuTree";
 import { buildCompositeMenuNodes } from "@/lib/compositeMenuTree";
@@ -33,6 +34,29 @@ export default function FrequentProductsAdmin() {
   const [pickerNode, setPickerNode] = useState<MenuNode | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [localProducts, setLocalProducts] = useState<FrequentProductRow[]>([]);
+  const draggingIdRef = useRef<string | null>(null);
+  const dragOverIdRef = useRef<string | null>(null);
+  const pointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void;
+    end: (event: PointerEvent) => void;
+  } | null>(null);
+
+  useEffect(() => {
+    setLocalProducts(products);
+  }, [products]);
+
+  useEffect(() => {
+    return () => {
+      if (pointerListenersRef.current) {
+        window.removeEventListener("pointermove", pointerListenersRef.current.move);
+        window.removeEventListener("pointerup", pointerListenersRef.current.end);
+        window.removeEventListener("pointercancel", pointerListenersRef.current.end);
+      }
+    };
+  }, []);
+
+  const listProducts = localProducts.length > 0 || !isLoading ? localProducts : products;
 
   const usesCompositeTakeoutMenu = context === "TAKEOUT" || context === "EXPRESS";
 
@@ -49,7 +73,7 @@ export default function FrequentProductsAdmin() {
     staleTime: 60_000,
   });
 
-  const selectedNodeIds = useMemo(() => new Set(products.map((row) => row.menu_node_id)), [products]);
+  const selectedNodeIds = useMemo(() => new Set(listProducts.map((row) => row.menu_node_id)), [listProducts]);
 
   const handleSelectProduct = (node: MenuNode) => {
     if (node.node_type !== "product") return;
@@ -73,30 +97,89 @@ export default function FrequentProductsAdmin() {
     }
   };
 
-  const handleDrop = async (targetId: string) => {
-    if (!draggingId || draggingId === targetId) {
-      setDraggingId(null);
-      setDragOverId(null);
-      return;
-    }
+  const reorderLocalList = (fromId: string, toId: string) => {
+    const currentIds = listProducts.map((row) => row.id);
+    const fromIndex = currentIds.indexOf(fromId);
+    const toIndex = currentIds.indexOf(toId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return null;
 
-    const currentIds = products.map((row) => row.id);
-    const fromIndex = currentIds.indexOf(draggingId);
-    const toIndex = currentIds.indexOf(targetId);
-    if (fromIndex < 0 || toIndex < 0) return;
+    const nextRows = [...listProducts];
+    const [moved] = nextRows.splice(fromIndex, 1);
+    nextRows.splice(toIndex, 0, moved);
+    return nextRows;
+  };
 
-    const nextIds = [...currentIds];
-    const [moved] = nextIds.splice(fromIndex, 1);
-    nextIds.splice(toIndex, 0, moved);
+  const applyReorder = async (fromId: string, toId: string) => {
+    if (fromId === toId) return;
 
-    setDraggingId(null);
-    setDragOverId(null);
+    const nextRows = reorderLocalList(fromId, toId);
+    if (!nextRows) return;
+
+    const nextIds = nextRows.map((row) => row.id);
+    setLocalProducts(nextRows);
 
     try {
       await reorderProducts.mutateAsync(nextIds);
     } catch (error: any) {
+      setLocalProducts(products);
       toast.error(error?.message || "No se pudo reordenar la lista.");
     }
+  };
+
+  const clearDragState = () => {
+    draggingIdRef.current = null;
+    dragOverIdRef.current = null;
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
+  const stopPointerDragListeners = () => {
+    if (!pointerListenersRef.current) return;
+    window.removeEventListener("pointermove", pointerListenersRef.current.move);
+    window.removeEventListener("pointerup", pointerListenersRef.current.end);
+    window.removeEventListener("pointercancel", pointerListenersRef.current.end);
+    pointerListenersRef.current = null;
+  };
+
+  const startPointerDrag = (rowId: string, event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    const gripEl = event.currentTarget;
+    draggingIdRef.current = rowId;
+    dragOverIdRef.current = rowId;
+    setDraggingId(rowId);
+    setDragOverId(rowId);
+    gripEl.setPointerCapture(event.pointerId);
+    event.preventDefault();
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const hovered = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const rowEl = hovered?.closest("[data-frequent-row-id]");
+      const hoveredId = rowEl?.getAttribute("data-frequent-row-id");
+      if (!hoveredId || hoveredId === dragOverIdRef.current) return;
+      dragOverIdRef.current = hoveredId;
+      setDragOverId(hoveredId);
+    };
+
+    const handlePointerEnd = (endEvent: PointerEvent) => {
+      if (gripEl.hasPointerCapture(endEvent.pointerId)) {
+        gripEl.releasePointerCapture(endEvent.pointerId);
+      }
+      stopPointerDragListeners();
+
+      const fromId = draggingIdRef.current;
+      const toId = dragOverIdRef.current;
+      clearDragState();
+
+      if (fromId && toId) {
+        void applyReorder(fromId, toId);
+      }
+    };
+
+    pointerListenersRef.current = { move: handlePointerMove, end: handlePointerEnd };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerEnd);
+    window.addEventListener("pointercancel", handlePointerEnd);
   };
 
   if (!activeBranchId) {
@@ -160,20 +243,20 @@ export default function FrequentProductsAdmin() {
         <div className="flex min-h-[480px] flex-col rounded-[24px] border border-teal-200 bg-gradient-to-br from-teal-50/80 via-white to-cyan-50/60 p-4 shadow-sm">
           <div className="mb-3">
             <h3 className="font-display text-base font-bold text-foreground">Lista de frecuentes — {contextLabel}</h3>
-            <p className="text-xs text-muted-foreground">{products.length} productos</p>
+            <p className="text-xs text-muted-foreground">{listProducts.length} productos</p>
           </div>
 
           {isLoading ? (
             <div className="flex flex-1 items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : products.length === 0 ? (
+          ) : listProducts.length === 0 ? (
             <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-teal-200 bg-white/70 p-6 text-center text-sm text-muted-foreground">
               Aún no hay productos frecuentes. Selecciona productos del menú de la izquierda.
             </div>
           ) : (
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {products.map((row, index) => {
+            <div className={cn("min-h-0 flex-1 space-y-2 overflow-y-auto pr-1", draggingId && "select-none")}>
+              {listProducts.map((row, index) => {
                 const node = row.menu_node;
                 const label = node?.name ?? "Producto";
                 const isDragOver = dragOverId === row.id && draggingId !== row.id;
@@ -181,33 +264,21 @@ export default function FrequentProductsAdmin() {
                 return (
                   <div
                     key={row.id}
-                    draggable
-                    onDragStart={() => setDraggingId(row.id)}
-                    onDragEnd={() => {
-                      setDraggingId(null);
-                      setDragOverId(null);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDragOverId(row.id);
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      void handleDrop(row.id);
-                    }}
+                    data-frequent-row-id={row.id}
                     className={cn(
                       "flex items-center gap-2 rounded-2xl border bg-white p-2 shadow-sm transition",
                       draggingId === row.id && "opacity-60",
                       isDragOver ? "border-teal-400 ring-2 ring-teal-200" : "border-teal-100",
                     )}
                   >
-                    <button
-                      type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-grab items-center justify-center rounded-xl text-muted-foreground active:cursor-grabbing"
+                    <div
+                      onPointerDown={(event) => startPointerDrag(row.id, event)}
+                      className="flex h-9 w-9 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-xl text-muted-foreground active:cursor-grabbing"
                       aria-label={`Reordenar ${label}`}
+                      title="Arrastrar para reordenar"
                     >
-                      <GripVertical className="h-4 w-4" />
-                    </button>
+                      <GripVertical className="h-4 w-4 pointer-events-none" />
+                    </div>
 
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-bold text-teal-800">
                       {index + 1}
