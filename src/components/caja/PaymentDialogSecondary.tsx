@@ -8,7 +8,7 @@ import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
 import { usePaymentChargeFlow } from "@/components/caja/usePaymentChargeFlow";
-import { Banknote, CircleCheck, Coins, Loader2, Printer, UserRound, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, Coins, Loader2, Printer, UserRound, Wallet, CopyCheck } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -215,10 +215,22 @@ export default function PaymentDialogSecondary({
                     </p>
                   </div>
                   <div className="flex min-w-0 flex-col justify-center rounded-2xl border border-violet-200 bg-violet-50/80 px-2.5 py-2">
-                    <label htmlFor="secondary-transfer" className="flex items-center gap-1 text-[9px] font-semibold uppercase text-violet-800">
-                      <Banknote className="h-3 w-3 shrink-0" />
-                      Transferencia
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="secondary-transfer" className="flex items-center gap-1 text-[9px] font-semibold uppercase text-violet-800">
+                        <Banknote className="h-3 w-3 shrink-0" />
+                        Transferencia
+                      </label>
+                      <button
+                        type="button"
+                        disabled={readOnly}
+                        onClick={() => setTransferInput(orderChargeTotal.toFixed(2))}
+                        className="flex items-center gap-1 rounded-md border border-violet-300 bg-white/60 px-2 py-0.5 text-[9px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
+                        title="Usar monto total"
+                      >
+                        <CopyCheck className="h-3 w-3" />
+                        Exacto
+                      </button>
+                    </div>
                     <Input
                       id="secondary-transfer"
                       type="text"
