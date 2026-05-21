@@ -386,7 +386,11 @@ const App = () => (
                 />
                 <Route
                   path="/reportes"
-                  element={<Navigate to="/" replace />}
+                  element={
+                    <ProtectedRoute>
+                      <Reportes />
+                    </ProtectedRoute>
+                  }
                 />
                 <Route
                   path="/turno"

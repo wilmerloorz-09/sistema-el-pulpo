@@ -1,295 +1,196 @@
-import { useState } from 'react';
-import { useReportesData } from '@/hooks/useReportesData';
+import { useState, useEffect } from 'react';
+import { useBranch } from '@/contexts/BranchContext';
+import { useBranchShiftGate } from '@/hooks/useBranchShiftGate';
+import { hasPermission } from '@/lib/permissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, RefreshCw, Loader2, Smartphone, Cloud, UserRound } from 'lucide-react';
-import { getOrderRef } from '@/lib/orderPresentation';
-import { formatDistanceToNow } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { Card, CardContent } from '@/components/ui/card';
+import { Wallet, ShieldAlert, Soup, BarChart4, Lock, AlertCircle } from 'lucide-react';
+
+// Componentes del Módulo
+import FiltrosPanel from '@/components/reportes/FiltrosPanel';
+import ReportePagos from '@/components/reportes/ReportePagos';
+import ReporteAnulaciones from '@/components/reportes/ReporteAnulaciones';
+import ReporteProductos from '@/components/reportes/ReporteProductos';
+import type { ReportesFilters } from '@/hooks/useReportesOnlineData';
 
 const Reportes = () => {
-  const {
-    localOrders,
-    remoteOrders,
-    pendingCount,
-    syncMutation,
-    isOnline,
-  } = useReportesData();
+  const { permissions, isGlobalAdmin, activeBranchId, branches } = useBranch();
+  const { data: sg, isLoading: sgLoading } = useBranchShiftGate();
+  
+  const [activeTab, setActiveTab] = useState<string>('payments');
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      DRAFT: 'secondary',
-      SENT_TO_KITCHEN: 'outline',
-      READY: 'outline',
-      KITCHEN_DISPATCHED: 'outline',
-      PAID: 'default',
-      CANCELLED: 'destructive',
-    };
-    return variants[status] || 'default';
-  };
+  // Rango de fechas por defecto: Hoy de 00:00:00 a 23:59:59
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-  const getSyncStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive'> = {
-      synced: 'default',
-      pending_create: 'secondary',
-      pending_update: 'secondary',
-      pending_delete: 'destructive',
-    };
-    return variants[status] || 'secondary';
-  };
+  const [filters, setFilters] = useState<ReportesFilters>({
+    branchId: activeBranchId || '',
+    desde: startOfToday.toISOString(),
+    hasta: endOfToday.toISOString(),
+    shiftId: null,
+    cashierId: null,
+    creatorId: null,
+    productIds: null,
+    orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA']
+  });
 
-  const formatDate = (date: string) => {
-    return formatDistanceToNow(new Date(date), {
-      addSuffix: true,
-      locale: es,
-    });
+  // Mantener sincronizado el branchId del filtro con el branch activo del contexto
+  useEffect(() => {
+    if (activeBranchId) {
+      setFilters(prev => ({
+        ...prev,
+        branchId: activeBranchId
+      }));
+    }
+  }, [activeBranchId]);
+
+  // Validaciones de Acceso
+  const canAccessAdmin = isGlobalAdmin
+    || hasPermission(permissions, "admin_sucursal", "VIEW")
+    || hasPermission(permissions, "admin_global", "VIEW");
+
+  const isSupervisor = Boolean(sg?.isSupervisor);
+  const canAuthorizeOrderCancel = Boolean(sg?.canAuthorizeOrderCancel);
+
+  // Tiene acceso si es Administrador, Supervisor o si tiene capacidad de autorizar cancelaciones
+  const hasAccess = canAccessAdmin || isSupervisor || canAuthorizeOrderCancel;
+
+  if (sgLoading) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!activeBranchId) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+        <Card className="w-full max-w-md rounded-[28px] border-border/80 text-center p-6 shadow-sm">
+          <AlertCircle className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display text-base font-bold text-foreground">Sucursal no seleccionada</h3>
+          <p className="text-xs text-muted-foreground mt-1">Por favor selecciona una sucursal activa en la barra superior para poder consultar los reportes del negocio.</p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+        <Card className="w-full max-w-md rounded-[28px] border border-destructive/20 bg-destructive/5 text-center p-6 shadow-[0_22px_55px_-42px_rgba(239,68,68,0.25)]">
+          <Lock className="w-10 h-10 text-destructive mx-auto mb-3" />
+          <h2 className="font-display text-lg font-black text-destructive">Acceso Restringido</h2>
+          <p className="text-xs text-muted-foreground mt-2">
+            El módulo de reportes históricos e informes dinámicos requiere privilegios de **Administrador**, **Supervisor** o credenciales autorizadas del turno operativo.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  const handleFilterChange = (newFilters: ReportesFilters) => {
+    setFilters(newFilters);
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto print:p-0 print:m-0 print:max-w-none">
+      {/* Estilos CSS específicos para Impresión */}
+      <style>{`
+        @media print {
+          /* Ocultar barra lateral, barra de navegación, panel de filtros y pestañas */
+          aside, nav, header, footer, 
+          .print\\:hidden, 
+          [role="tablist"], 
+          button {
+            display: none !important;
+          }
+          
+          /* Forzar fondo blanco y texto oscuro */
+          body, html, main, #root {
+            background: white !important;
+            color: black !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          /* Evitar saltos de página a mitad de tablas o gráficos */
+          .card, tr, table {
+            page-break-inside: avoid !important;
+          }
+
+          /* Asegurar que las tablas ocupen el ancho completo */
+          table {
+            width: 100% !important;
+          }
+        }
+      `}</style>
+
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start print:mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-foreground">
-            Reportes de Ordenes
+          <h1 className="font-display text-2xl font-black text-foreground">
+            Reportes Parametrizables
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Ver todas las ordenes (locales y sincronizadas)
+          <p className="text-xs text-muted-foreground mt-1 print:hidden">
+            Consultas, auditoría de flujo financiero y métricas operativas directas de Supabase.
+          </p>
+          <p className="text-xs font-bold text-foreground mt-1 hidden print:block">
+            Sucursal: {branches.find(b => b.id === activeBranchId)?.name || activeBranchId} | Generado el: {new Date().toLocaleString('es-EC')}
           </p>
         </div>
 
-        {/* Estado de conexion */}
-        <div className="flex items-center gap-2">
-          {isOnline ? (
-            <Badge className="bg-green-600">🟢 Online</Badge>
-          ) : (
-            <Badge variant="destructive">🔴 Offline</Badge>
-          )}
-          
-          {pendingCount.data !== undefined && pendingCount.data > 0 && (
-            <Badge variant="secondary">
-              ⏳ {pendingCount.data} pendientes
-            </Badge>
-          )}
+        {/* Roles Badge */}
+        <div className="flex items-center gap-2 print:hidden">
+          {canAccessAdmin && <Badge className="bg-violet-600 rounded-lg text-[10px] font-bold">🛠️ Administrador</Badge>}
+          {!canAccessAdmin && isSupervisor && <Badge className="bg-indigo-600 rounded-lg text-[10px] font-bold">🛡️ Supervisor</Badge>}
+          {!canAccessAdmin && !isSupervisor && canAuthorizeOrderCancel && <Badge className="bg-amber-600 rounded-lg text-[10px] font-bold">🔑 Autorizante</Badge>}
         </div>
       </div>
 
-      {/* Boton de sincronizacion */}
-      {pendingCount.data !== undefined && pendingCount.data > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-yellow-600" />
-            <p className="text-sm text-yellow-800">
-              Tienes {pendingCount.data} operaciones pendientes de sincronizar
-            </p>
-          </div>
-          <Button
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending || !isOnline}
-            size="sm"
-          >
-            {syncMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Sincronizar ahora
-              </>
-            )}
-          </Button>
-        </div>
-      )}
+      {/* Panel de Filtros Global */}
+      <FiltrosPanel 
+        branchId={activeBranchId} 
+        onFilterChange={handleFilterChange} 
+        activeTab={activeTab}
+      />
 
-      {/* Tabs */}
-      <Tabs defaultValue="local" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="local" className="flex items-center gap-2">
-            <Smartphone className="h-4 w-4" />
-            Locales ({localOrders.data?.length || 0})
+      {/* Tabs de Reportes */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 bg-muted/60 p-1 rounded-2xl print:hidden">
+          <TabsTrigger value="payments" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
+            <Wallet className="h-4 w-4" />
+            Pagos Realizados
           </TabsTrigger>
-          <TabsTrigger value="remote" className="flex items-center gap-2">
-            <Cloud className="h-4 w-4" />
-            Sincronizadas ({remoteOrders.data?.length || 0})
+          <TabsTrigger value="voids" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
+            <ShieldAlert className="h-4 w-4" />
+            Anulación de Pagos
+          </TabsTrigger>
+          <TabsTrigger value="products" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
+            <Soup className="h-4 w-4" />
+            Productos Vendidos
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab: Ordenes Locales */}
-        <TabsContent value="local" className="mt-4">
-          {localOrders.isLoading ? (
-            <div className="flex justify-center items-center p-8">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : localOrders.data?.length === 0 ? (
-            <div className="text-center p-8 text-muted-foreground">
-              <p className="text-sm">No hay ordenes locales</p>
-            </div>
-          ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted">
-                    <TableHead>Orden #</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Items</TableHead>
-                    <TableHead>Genero</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Sincronizacion</TableHead>
-                    <TableHead>Fecha</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {localOrders.data?.map((order) => (
-                    <TableRow key={order.id} className="hover:bg-muted/50">
-                      <TableCell className="font-mono font-semibold">
-                        {getOrderRef(order.order_code, order.order_number)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadge(order.status)}>
-                          {order.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {order.items_count}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {order.created_by_name ? (
-                          <span className="inline-flex items-center gap-1">
-                            <UserRound className="h-3.5 w-3.5" />
-                            {order.created_by_name}
-                          </span>
-                        ) : "Usuario"}
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        ${order.total.toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getSyncStatusBadge(order.sync_status)}>
-                          {order.sync_status === 'synced'
-                            ? '✅ Sincronizado'
-                            : '⏳ Pendiente'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(order.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        {/* Contenido: Pagos */}
+        <TabsContent value="payments" className="mt-6 border-none p-0 outline-none">
+          <ReportePagos filters={filters} />
         </TabsContent>
 
-        {/* Tab: Ordenes Sincronizadas */}
-        <TabsContent value="remote" className="mt-4">
-          {!isOnline ? (
-            <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-8 text-center">
-              <AlertCircle className="w-6 h-6 text-yellow-600 mx-auto mb-2" />
-              <p className="text-sm text-yellow-800">
-                No estas conectado. Activa tu conexion para ver ordenes sincronizadas.
-              </p>
-            </div>
-          ) : remoteOrders.isLoading ? (
-            <div className="flex justify-center items-center p-8">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : remoteOrders.data?.length === 0 ? (
-            <div className="text-center p-8 text-muted-foreground">
-              <p className="text-sm">No hay ordenes sincronizadas en Supabase</p>
-            </div>
-          ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted">
-                    <TableHead>Orden #</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Items</TableHead>
-                    <TableHead>Genero</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead className="text-center">Fuente</TableHead>
-                    <TableHead>Fecha</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {remoteOrders.data?.map((order) => (
-                    <TableRow key={order.id} className="hover:bg-muted/50">
-                      <TableCell className="font-mono font-semibold">
-                        {getOrderRef(order.order_code, order.order_number)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadge(order.status)}>
-                          {order.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {order.items_count}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {order.created_by_name ? (
-                          <span className="inline-flex items-center gap-1">
-                            <UserRound className="h-3.5 w-3.5" />
-                            {order.created_by_name}
-                          </span>
-                        ) : "Usuario"}
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        ${order.total.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="default">Supabase</Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(order.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        {/* Contenido: Anulaciones */}
+        <TabsContent value="voids" className="mt-6 border-none p-0 outline-none">
+          <ReporteAnulaciones filters={filters} />
+        </TabsContent>
+
+        {/* Contenido: Productos Vendidos */}
+        <TabsContent value="products" className="mt-6 border-none p-0 outline-none">
+          <ReporteProductos filters={filters} />
         </TabsContent>
       </Tabs>
-
-      {/* Resumen */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm text-blue-600 font-semibold">Ordenes Locales</p>
-          <p className="text-2xl font-bold text-blue-900 mt-2">
-            {localOrders.data?.length || 0}
-          </p>
-        </div>
-
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <p className="text-sm text-green-600 font-semibold">Sincronizadas</p>
-          <p className="text-2xl font-bold text-green-900 mt-2">
-            {remoteOrders.data?.length || 0}
-          </p>
-        </div>
-
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <p className="text-sm text-orange-600 font-semibold">Pendientes</p>
-          <p className="text-2xl font-bold text-orange-900 mt-2">
-            {pendingCount.data || 0}
-          </p>
-        </div>
-      </div>
     </div>
   );
 };
 
 export default Reportes;
-
-

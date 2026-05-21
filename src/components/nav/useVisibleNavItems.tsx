@@ -159,7 +159,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
       iconIdle: "bg-violet-50 text-violet-600",
     },
-    visible: () => false,
+    visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
     to: "/turno",
@@ -223,11 +223,15 @@ export function useVisibleNavItems() {
       }
 
       if (!hasOperationalShift) {
-        return (item.to === "/admin" && canAccessAdmin) || (item.to === "/turno" && canAccessTurno);
+        return (item.to === "/admin" && canAccessAdmin) || (item.to === "/turno" && canAccessTurno) || (item.to === "/reportes" && canAccessAdmin);
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {
         return true;
+      }
+
+      if (item.to === "/reportes") {
+        return canAccessAdmin || hasSupervisorBypass || Boolean(sg?.isSupervisor) || Boolean(sg?.canAuthorizeOrderCancel);
       }
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes" || item.to === "/editar-orden") {
@@ -285,6 +289,7 @@ export function useVisibleNavItems() {
     shiftGateQuery.data?.canUseCaja,
     shiftGateQuery.data?.globalCajaSessionsUsed,
     shiftGateQuery.data?.isSupervisor,
+    shiftGateQuery.data?.canAuthorizeOrderCancel,
     shiftGateQuery.data?.maxCajaSessions,
     shiftGateQuery.data?.cajaSessionSlots,
     shiftGateQuery.data?.shiftOpen,

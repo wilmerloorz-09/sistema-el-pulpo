@@ -202,16 +202,29 @@ const Extra = () => {
 
   useEffect(() => {
     if (!canOperateExtra || !user || !activeBranchId) return;
-    if (extraOrdersQuery.isLoading) return;
+    if (extraOrdersQuery.isLoading) return; // Must wait for query to check for drafts
     if (autoLaunchAttemptedRef.current) return;
 
     autoLaunchAttemptedRef.current = true;
-    void handleCreateOrder();
+
+    // Fast path: Reuse an existing empty draft if available
+    const emptyDraft = (extraOrdersQuery.data ?? []).find(
+      (o) => o.status === "DRAFT" && Number(o.item_count ?? 0) === 0
+    );
+
+    if (emptyDraft) {
+      warmExtraOrder(emptyDraft.id);
+      navigate(`/ordenes?order=${emptyDraft.id}&origin=extra`, { replace: true });
+    } else {
+      void handleCreateOrder();
+    }
   }, [
     activeBranchId,
     canOperateExtra,
+    extraOrdersQuery.data,
     extraOrdersQuery.isLoading,
     handleCreateOrder,
+    navigate,
     user,
   ]);
 
