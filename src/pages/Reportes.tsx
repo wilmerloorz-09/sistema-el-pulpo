@@ -152,7 +152,7 @@ const Reportes = () => {
 
       {/* Panel de Filtros Global */}
       <FiltrosPanel 
-        branchId={activeBranchId} 
+        branchId={filters.branchId} 
         onFilterChange={handleFilterChange} 
         activeTab={activeTab}
       />

@@ -2115,7 +2115,7 @@ const ShiftSetupAdmin = () => {
                       </Button>
                     </div>
 
-                    <div className="mt-1.5 grid grid-cols-3 gap-1.5 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm">
+                    <div className="mt-1.5 grid grid-cols-2 gap-2 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm">
                       <label
                         className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
                         title="Todo usuario agregado al turno debe tener Mesas habilitado"
@@ -2157,14 +2157,6 @@ const ShiftSetupAdmin = () => {
                         />
                         <span className="min-w-0 text-muted-foreground">Productos</span>
                       </label>
-                      <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
-                        <Checkbox
-                          checked={userState?.can_authorize_order_cancel ?? false}
-                          disabled={isStale}
-                          onCheckedChange={(c) => updateUserRole(branchUser.user_id, "can_authorize_order_cancel", c === true)}
-                        />
-                        <span className="min-w-0 text-muted-foreground">Autorizar anul.</span>
-                      </label>
                     </div>
                   </div>
                 );
@@ -2182,30 +2174,7 @@ const ShiftSetupAdmin = () => {
         disabled={isStale || openShiftMutation.isPending || saveShiftMutation.isPending}
       />
 
-      <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700">
-              <Truck className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-black text-foreground sm:text-base">Metodo de despacho</h4>
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-4">
-          <DispatchConfig
-            enabledUserIds={dispatchCapableUserIds}
-            availableViewTypes={enabledViews.map((view) => view.code)}
-            configOverride={workingDispatchConfig}
-            assignmentsOverride={workingAssignments}
-            onConfigChange={setDraftDispatchConfig}
-            onAssignmentsChange={setDraftAssignments}
-            disabled={isStale}
-          />
-        </div>
-      </section>
 
       <section className="rounded-[22px] border border-orange-200 bg-gradient-to-r from-white via-orange-50 to-amber-50 p-4 shadow-sm sm:rounded-[26px]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">

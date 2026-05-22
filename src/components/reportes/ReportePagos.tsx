@@ -36,6 +36,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
       'Orden Code',
       'Orden Nro',
       'Referencia Orden',
+      'Tipo de Orden',
       'Fecha y Hora',
       'Cajero',
       'Usuario Creador',
@@ -45,18 +46,22 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
       'Total Neto Aplicado ($)'
     ];
 
-    const rows = payments.map((p) => [
-      p.orderCode || '',
-      p.orderNumber || '',
-      getOrderRef(p.orderCode, p.orderNumber),
-      format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm:ss'),
-      p.cashierName,
-      p.creatorName,
-      p.methodName,
-      p.amount.toFixed(2),
-      p.change.toFixed(2),
-      p.netApplied.toFixed(2)
-    ]);
+    const rows = payments.map((p) => {
+      const typeName = p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra/General';
+      return [
+        p.orderCode || '',
+        p.orderNumber || '',
+        getOrderRef(p.orderCode, p.orderNumber),
+        typeName,
+        format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        p.cashierName,
+        p.creatorName,
+        p.methodName,
+        p.amount.toFixed(2),
+        p.change.toFixed(2),
+        p.netApplied.toFixed(2)
+      ];
+    });
 
     // Usamos ';' como separador y comillas para evitar problemas de formato regional
     const csvRows = [headers.join(';'), ...rows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))];
@@ -222,6 +227,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="font-bold text-foreground py-3">Código/Orden</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Tipo</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Fecha y Hora</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Cajero</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Creador Orden</TableHead>
@@ -236,6 +242,9 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                   <TableRow key={p.id} className="hover:bg-muted/30">
                     <TableCell className="font-mono font-bold text-xs">
                       {getOrderRef(p.orderCode, p.orderNumber)}
+                    </TableCell>
+                    <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
+                      {p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra'}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm')}

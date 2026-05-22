@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useReportesFiltros, type ReportesFilters } from '@/hooks/useReportesOnlineData';
 import { useBranchShiftGate } from '@/hooks/useBranchShiftGate';
+import { useBranch } from '@/contexts/BranchContext';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -21,8 +22,14 @@ interface FiltrosPanelProps {
 export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: FiltrosPanelProps) {
   const { data: filtersData, isLoading } = useReportesFiltros(branchId);
   const { data: shiftGate } = useBranchShiftGate();
+  const { isGlobalAdmin, branches } = useBranch();
 
   // Estados de filtros
+  const [localBranchId, setLocalBranchId] = useState<string>(branchId);
+  
+  useEffect(() => {
+    setLocalBranchId(branchId);
+  }, [branchId]);
   const [rangeType, setRangeType] = useState<string>('HOY');
   const [desde, setDesde] = useState<string>('');
   const [hasta, setHasta] = useState<string>('');
@@ -30,8 +37,8 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const [cashierId, setCashierId] = useState<string>('ALL');
   const [creatorId, setCreatorId] = useState<string>('ALL');
   const [supervisorId, setSupervisorId] = useState<string>('ALL');
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const [selectedOrderTypes, setSelectedOrderTypes] = useState<string[]>(['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA']);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectedOrderType, setSelectedOrderType] = useState<string>('ALL');
 
   // Buscador de productos
   const [productSearch, setProductSearch] = useState<string>('');
@@ -119,45 +126,146 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     const desdeISO = desde ? new Date(desde).toISOString() : null;
     const hastaISO = hasta ? new Date(hasta).toISOString() : null;
 
+    // Resolver los nodos seleccionados a sus IDs de producto legacy para el backend
+    const resolvedProductIds = new Set<string>();
+    const menuNodes = filtersData?.menuNodes || [];
+    const legacyProducts = filtersData?.products || [];
+    
+    const collectLegacyIds = (nodeId: string) => {
+      const node = menuNodes.find((n: any) => n.id === nodeId);
+      if (!node) return;
+      
+      // Añadimos tanto el ID del nodo como su ID legacy para asegurar compatibilidad total con la tabla de orders_items
+      resolvedProductIds.add(node.id);
+      if (node.legacy_product_id) {
+        resolvedProductIds.add(node.legacy_product_id);
+      }
+
+      // Fallback: Si un producto antiguo no está enlazado correctamente al árbol, lo buscamos por nombre
+      if (node.name) {
+        const nodeNameLower = node.name.toLowerCase().trim();
+        const matchingLegacy = legacyProducts.filter((p: any) => {
+          if (!p.description) return false;
+          const descLower = p.description.toLowerCase().trim();
+          if (descLower === nodeNameLower) return true;
+          // Si el nombre tiene 4 letras o más, permitimos coincidencia parcial (ej: "Encebollado" coincide con "Encebollado Mixto")
+          if (nodeNameLower.length >= 4 && descLower.includes(nodeNameLower)) return true;
+          return false;
+        });
+        matchingLegacy.forEach((p: any) => resolvedProductIds.add(p.id));
+      }
+
+      const children = menuNodes.filter((n: any) => n.parent_id === nodeId);
+      for (const child of children) {
+        collectLegacyIds(child.id);
+      }
+    };
+
+    for (const nodeId of selectedNodeIds) {
+      collectLegacyIds(nodeId);
+    }
+    
+    const finalProductIds = Array.from(resolvedProductIds).filter(Boolean);
+
     onFilterChange({
-      branchId,
+      branchId: localBranchId,
       desde: desdeISO,
       hasta: hastaISO,
       shiftId: shiftId === 'ALL' ? null : shiftId,
       cashierId: cashierId === 'ALL' ? null : cashierId,
       creatorId: creatorId === 'ALL' ? null : creatorId,
       supervisorId: supervisorId === 'ALL' ? null : supervisorId,
-      productIds: selectedProductIds.length === 0 ? null : selectedProductIds,
-      orderTypes: selectedOrderTypes.length === 0 ? null : selectedOrderTypes,
+      productIds: finalProductIds.length === 0 ? null : finalProductIds,
+      orderTypes: selectedOrderType === 'ALL' ? ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA'] : [selectedOrderType],
     });
   };
 
   // Limpiar filtros
   const handleClearFilters = () => {
+    setLocalBranchId(branchId);
     setRangeType('HOY');
     setShiftId('ALL');
     setCashierId('ALL');
     setCreatorId('ALL');
     setSupervisorId('ALL');
-    setSelectedProductIds([]);
-    setSelectedOrderTypes(['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA']);
+    setSelectedNodeIds([]);
+    setSelectedOrderType('ALL');
   };
 
-  // Filtrar productos por búsqueda
-  const filteredProducts = (filtersData?.products || []).filter((p) =>
-    p.description.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  const menuNodes = filtersData?.menuNodes || [];
 
-  const toggleProduct = (productId: string) => {
-    setSelectedProductIds((prev) =>
-      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]
-    );
+  const isNodeSelected = (nodeId: string): boolean => {
+    if (selectedNodeIds.includes(nodeId)) return true;
+    const node = menuNodes.find((n: any) => n.id === nodeId);
+    if (!node || !node.parent_id) return false;
+    return isNodeSelected(node.parent_id);
   };
 
-  const toggleOrderType = (type: string) => {
-    setSelectedOrderTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    );
+  const toggleNode = (nodeId: string) => {
+    setSelectedNodeIds((prev) => {
+      if (prev.includes(nodeId)) {
+        return prev.filter((id) => id !== nodeId);
+      } else {
+        return [...prev, nodeId];
+      }
+    });
+  };
+
+  const getScopeSuffix = (scope?: string) => {
+    switch (scope) {
+      case 'TABLE': return ' DE MESA';
+      case 'TAKEOUT': return ' CON ENVASE';
+      case 'BULK': return ' A GRANEL';
+      case 'EXTRA': return ' EXTRA';
+      default: return '';
+    }
+  };
+
+  const getDisplayName = (node: any) => {
+    if (!node.parent_id && node.menu_scope) {
+      return node.name + getScopeSuffix(node.menu_scope);
+    }
+    return node.name;
+  };
+
+  const getPath = (nodeId: string): string => {
+    const node = menuNodes.find((n: any) => n.id === nodeId);
+    if (!node) return '';
+    const displayName = getDisplayName(node);
+    if (!node.parent_id) return displayName;
+    return `${getPath(node.parent_id)} > ${displayName}`;
+  };
+
+  const filteredSearchNodes = productSearch.trim()
+    ? menuNodes.filter((n: any) => getDisplayName(n).toLowerCase().includes(productSearch.toLowerCase()))
+    : [];
+
+  const rootNodes = menuNodes.filter((n: any) => !n.parent_id);
+
+  const renderTree = (nodes: any[], depth = 0) => {
+    return nodes.map((node) => {
+      const isSelected = isNodeSelected(node.id);
+      const children = menuNodes.filter((n: any) => n.parent_id === node.id);
+      return (
+        <div key={node.id} className="flex flex-col w-full">
+          <button
+            type="button"
+            onClick={() => toggleNode(node.id)}
+            className="flex w-full items-center gap-2 rounded-xl py-1.5 text-left text-xs transition-colors hover:bg-muted"
+            style={{ paddingLeft: `${0.5 + depth * 1.5}rem`, paddingRight: '0.5rem' }}
+          >
+            <Checkbox 
+              checked={isSelected} 
+              className="rounded-md h-3.5 w-3.5 pointer-events-none" 
+            />
+            <span className={`truncate leading-tight ${node.node_type === 'category' ? 'font-bold' : ''}`}>
+              {getDisplayName(node)}
+            </span>
+          </button>
+          {children.length > 0 && renderTree(children, depth + 1)}
+        </div>
+      );
+    });
   };
 
   return (
@@ -169,6 +277,24 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* Filtro de Sucursal (Solo Admin Global) */}
+        {isGlobalAdmin && (
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-muted-foreground">Sucursal</Label>
+            <Select value={localBranchId} onValueChange={setLocalBranchId}>
+              <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80">
+                <SelectValue placeholder="Seleccionar sucursal" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL" className="font-bold text-primary">🏢 Todas las sucursales</SelectItem>
+                {branches.map(b => (
+                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* Rango de Tiempo Rápido */}
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Rango de Tiempo</Label>
@@ -296,7 +422,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         )}
 
         {/* Buscador de Productos Multiselect */}
-        {activeTab !== 'voids' && (
+        {activeTab === 'items' && (
           <div className="space-y-1.5">
             <Label className="text-xs font-bold text-muted-foreground">Filtrar por Productos</Label>
             <Popover open={isProductsOpen} onOpenChange={setIsProductsOpen}>
@@ -306,9 +432,9 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
                   className="flex h-10 w-full justify-between rounded-xl bg-background/80 border-border/80 px-3 text-left font-normal text-xs"
                 >
                   <span className="truncate">
-                    {selectedProductIds.length === 0
+                    {selectedNodeIds.length === 0
                       ? 'Todos los productos'
-                      : `${selectedProductIds.length} prod. seleccionados`}
+                      : `${selectedNodeIds.length} selecciones`}
                   </span>
                   <ChevronDown className="h-4 w-4 opacity-50" />
                 </Button>
@@ -335,38 +461,49 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
                 </div>
                 <ScrollArea className="h-60 p-2">
                   <div className="space-y-1">
-                    {filteredProducts.length === 0 ? (
-                      <p className="p-4 text-center text-xs text-muted-foreground">No se encontraron productos</p>
+                    {productSearch.trim() ? (
+                      filteredSearchNodes.length === 0 ? (
+                        <p className="p-4 text-center text-xs text-muted-foreground">No se encontraron productos</p>
+                      ) : (
+                        filteredSearchNodes.map((n) => {
+                          const isSelected = isNodeSelected(n.id);
+                          return (
+                            <button
+                              key={n.id}
+                              type="button"
+                              onClick={() => toggleNode(n.id)}
+                              className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-[11px] transition-colors hover:bg-muted"
+                            >
+                              <Checkbox checked={isSelected} className="rounded-md h-3.5 w-3.5 pointer-events-none" />
+                              <div className="flex flex-col min-w-0">
+                                <span className="truncate leading-none font-bold">{n.name}</span>
+                                <span className="truncate text-[9px] text-muted-foreground">{getPath(n.id)}</span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )
                     ) : (
-                      filteredProducts.map((p) => {
-                        const isSelected = selectedProductIds.includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => toggleProduct(p.id)}
-                            className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-xs transition-colors hover:bg-muted"
-                          >
-                            <Checkbox checked={isSelected} id={`check-${p.id}`} className="rounded-md" />
-                            <span className="truncate leading-none">{p.description}</span>
-                          </button>
-                        );
-                      })
+                      rootNodes.length === 0 ? (
+                        <p className="p-4 text-center text-xs text-muted-foreground">No hay productos en el menú</p>
+                      ) : (
+                        renderTree(rootNodes)
+                      )
                     )}
                   </div>
                 </ScrollArea>
-                {selectedProductIds.length > 0 && (
+                {selectedNodeIds.length > 0 && (
                   <div className="flex items-center justify-between border-t border-border/60 p-2">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setSelectedProductIds([])}
+                      onClick={() => setSelectedNodeIds([])}
                       className="text-[10px] font-bold rounded-lg h-7"
                     >
                       Limpiar
                     </Button>
                     <Badge variant="secondary" className="text-[10px]">
-                      {selectedProductIds.length} seleccionados
+                      {selectedNodeIds.length} seleccionados
                     </Badge>
                   </div>
                 )}
@@ -376,52 +513,41 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         )}
 
         {/* Tipos de Orden */}
-        <div className="space-y-1.5 lg:col-span-2">
+        <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Tipo de Orden</Label>
-          <div className="flex flex-wrap gap-x-4 gap-y-2 py-1">
-            {[
-              { id: 'DINE_IN', label: '🪑 Mesas (Dine-in)' },
-              { id: 'TAKEOUT', label: '🥡 Para Llevar' },
-              { id: 'EXPRESS', label: '⚡ Express' },
-              { id: 'EXTRA', label: '📦 Extra/General' },
-            ].map((type) => {
-              const isChecked = selectedOrderTypes.includes(type.id);
-              return (
-                <label
-                  key={type.id}
-                  className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-foreground/80 hover:text-foreground"
-                >
-                  <Checkbox
-                    checked={isChecked}
-                    onCheckedChange={() => toggleOrderType(type.id)}
-                    className="rounded-md"
-                  />
-                  <span>{type.label}</span>
-                </label>
-              );
-            })}
-          </div>
+          <Select value={selectedOrderType} onValueChange={setSelectedOrderType}>
+            <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
+              <SelectValue placeholder="Todos los tipos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Todos los tipos</SelectItem>
+              <SelectItem value="DINE_IN">🪑 Mesas (Dine-in)</SelectItem>
+              <SelectItem value="TAKEOUT">🥡 Para Llevar</SelectItem>
+              <SelectItem value="EXPRESS">⚡ Express</SelectItem>
+              <SelectItem value="EXTRA">📦 Extra/General</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 mt-5 pt-4">
         {/* Chips de productos seleccionados */}
         <div className="flex flex-wrap gap-1 max-w-[70%]">
-          {selectedProductIds.slice(0, 3).map((id) => {
-            const prod = filtersData?.products?.find((p) => p.id === id);
+          {selectedNodeIds.slice(0, 3).map((id) => {
+            const node = menuNodes.find((n: any) => n.id === id);
             return (
               <Badge key={id} variant="secondary" className="text-[10px] rounded-lg gap-1">
-                <span className="truncate max-w-[80px]">{prod?.description || id}</span>
+                <span className="truncate max-w-[80px]">{node?.name || id}</span>
                 <X
                   className="h-3 w-3 cursor-pointer opacity-60 hover:opacity-100"
-                  onClick={() => toggleProduct(id)}
+                  onClick={() => toggleNode(id)}
                 />
               </Badge>
             );
           })}
-          {selectedProductIds.length > 3 && (
+          {selectedNodeIds.length > 3 && (
             <Badge variant="outline" className="text-[10px] rounded-lg">
-              +{selectedProductIds.length - 3} más
+              +{selectedNodeIds.length - 3} más
             </Badge>
           )}
         </div>

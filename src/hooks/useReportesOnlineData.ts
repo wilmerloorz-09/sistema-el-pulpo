@@ -35,17 +35,22 @@ export function getProfileLabel(profile: any): string {
  */
 export function useReportesFiltros(branchId: string) {
   return useQuery({
-    queryKey: ['reportes-filtros-data', branchId],
+    queryKey: ['reportes-filtros-data', branchId, 'v2'],
     queryFn: async () => {
       if (!branchId) return { shifts: [], profiles: [], products: [] };
 
       // 1. Cargar turnos de la sucursal (últimos 100)
-      const { data: shiftsData, error: shiftsError } = await supabase
+      let shiftsQuery = supabase
         .from('cash_shifts')
         .select('id, opened_at, closed_at, shift_number, shift_code')
-        .eq('branch_id', branchId)
         .order('opened_at', { ascending: false })
         .limit(100);
+
+      if (branchId !== 'ALL') {
+        shiftsQuery = shiftsQuery.eq('branch_id', branchId);
+      }
+
+      const { data: shiftsData, error: shiftsError } = await shiftsQuery;
 
       if (shiftsError) throw shiftsError;
 
@@ -57,10 +62,26 @@ export function useReportesFiltros(branchId: string) {
 
       if (profilesError) throw profilesError;
 
-      // 3. Cargar productos activos e inactivos vendidos
+      // 3. Cargar el árbol de menú (categorías y productos)
+      let menuQuery = supabase
+        .from('menu_nodes')
+        .select('id, parent_id, name, node_type, legacy_product_id, is_active, menu_scope')
+        .order('depth', { ascending: true })
+        .order('display_order', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (branchId !== 'ALL') {
+        menuQuery = menuQuery.eq('branch_id', branchId);
+      }
+
+      const { data: menuNodesData, error: menuNodesError } = await menuQuery;
+
+      if (menuNodesError) throw menuNodesError;
+
+      // 4. Cargar productos legacy para fallback de nombres
       const { data: productsData, error: productsError } = await supabase
         .from('products')
-        .select('id, description, is_active')
+        .select('id, description')
         .order('description', { ascending: true });
 
       if (productsError) throw productsError;
@@ -68,6 +89,7 @@ export function useReportesFiltros(branchId: string) {
       return {
         shifts: shiftsData || [],
         profiles: profilesData || [],
+        menuNodes: menuNodesData || [],
         products: productsData || [],
       };
     },
@@ -130,8 +152,11 @@ export function useReportesPagos(filters: ReportesFilters) {
             creator:profiles!orders_created_by_fkey (id, first_name, last_name, full_name, username)
           )
         `)
-        .eq('order.branch_id', branchId)
         .eq('status', 'COMPLETED'); // Solo pagos válidos/pagados (excluyendo anulados que tienen otro status)
+
+      if (branchId !== 'ALL') {
+        query = query.eq('order.branch_id', branchId);
+      }
 
       // Aplicar filtros de fecha/hora
       if (desde) query = query.gte('created_at', desde);
@@ -167,9 +192,20 @@ export function useReportesPagos(filters: ReportesFilters) {
       const uniqueOrderIds = new Set<string>();
 
       const processedPayments = paymentsRaw.map((pay: any) => {
-        const amount = Number(pay.amount || 0);
-        const change = Number(pay.change_amount || 0);
-        const netApplied = round2(Math.max(0, amount - change));
+        let dbAmount = Number(pay.amount || 0);
+        let change = Number(pay.change_amount || 0);
+        let tenderedAmount = dbAmount;
+        let netApplied = round2(Math.max(0, dbAmount - change));
+
+        if (pay.notes) {
+          const match = pay.notes.match(/TENDERED:([0-9.]+)/);
+          if (match && match[1]) {
+            tenderedAmount = Number(match[1]);
+            // En el flujo actual, dbAmount es el monto aplicado, y tendered es el recibido
+            change = Math.max(0, tenderedAmount - dbAmount);
+            netApplied = dbAmount;
+          }
+        }
 
         totalNetoSum = round2(totalNetoSum + netApplied);
 
@@ -189,7 +225,7 @@ export function useReportesPagos(filters: ReportesFilters) {
           cashierName: getProfileLabel(pay.cashier),
           creatorName: getProfileLabel(pay.order?.creator),
           methodName,
-          amount,
+          amount: tenderedAmount,
           change,
           netApplied,
           orderType: pay.order?.order_type || 'EXTRA',
@@ -248,8 +284,11 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
             notes
           )
         `)
-        .eq('order.branch_id', branchId)
         .in('status', ['approved', 'executed']);
+
+      if (branchId !== 'ALL') {
+        query = query.eq('order.branch_id', branchId);
+      }
 
       // Filtros
       if (desde) query = query.gte('created_at', desde);
@@ -396,10 +435,13 @@ export function useReportesProductos(filters: ReportesFilters) {
             )
           )
         `)
-        .eq('order.branch_id', branchId)
         .neq('order.status', 'DRAFT') // Excluir borradores
         .is('cancelled_at', null) // Excluir anulaciones directas de ítems
         .not('status', 'eq', 'CANCELLED'); // Excluir ítems con estado cancelado
+
+      if (branchId !== 'ALL') {
+        query = query.eq('order.branch_id', branchId);
+      }
 
       // Filtros de fecha en la orden
       if (desde) query = query.gte('order.created_at', desde);

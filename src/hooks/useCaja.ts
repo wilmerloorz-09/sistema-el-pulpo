@@ -1233,6 +1233,7 @@ export function useCaja(params?: {
         order_id: orderId,
         payment_method_id: paymentSplit.methodId,
         amount: paymentSplit.amount,
+        change_amount: Math.max(0, Number(tenderedByMethod[paymentSplit.methodId] ?? paymentSplit.amount) - Number(paymentSplit.amount)),
         notes: buildPaymentNote({
           paymentGroupId,
           index,
@@ -2443,6 +2444,7 @@ export function useCaja(params?: {
               order_id: orderId,
               payment_method_id: split.methodId,
               amount: split.amount,
+              change_amount: Math.max(0, Number(tenderedByMethod[split.methodId] ?? split.amount) - Number(split.amount)),
               notes: buildPaymentNote({
                 paymentGroupId,
                 index: anchorPaymentId ? 1 : 0,
@@ -2486,6 +2488,7 @@ export function useCaja(params?: {
               order_id: orderId,
               payment_method_id: split.methodId,
               amount: split.amount,
+              change_amount: Math.max(0, Number(tenderedByMethod[split.methodId] ?? split.amount) - Number(split.amount)),
               notes: buildPaymentNote({
                 paymentGroupId,
                 index,
