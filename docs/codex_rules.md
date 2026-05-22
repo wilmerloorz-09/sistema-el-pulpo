@@ -192,9 +192,18 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - La limpieza de metadata SQL y la limpieza del bucket `payment-proofs` son procesos separados.
 
 ### 12.1 Extra
-- `order_type = EXTRA`: menu mesa sin PLATOS, sin mesa, flujo caja → despacho (no Express).
-- Tras cobro total, la BD debe auto-despachar y cerrar via `auto_finalize_extra_order_after_payment` (`20260530120000`); no asumir paso manual obligatorio en Despacho.
-- En Caja, subtitulo **Extra**; no mostrar nombre de mesa.
+- `order_type = EXTRA`: menu mesa sin PLATOS, sin mesa, flujo caja → despacho manual (como mesa; no Express).
+- Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` (`20260602130000`).
+- Modulo `/extra`: solo el creador ve sus ordenes activas; sin pagos parciales; cajero secundario sin imprimir comprobante.
+- En Caja: subtitulo **Extra**; visible para creador o cajero principal del turno; no mostrar nombre de mesa.
+- En Despacho: listar en pestañas **Mesa** y **Todos**; no exigir `sent_to_kitchen_at` en lineas Extra para armar tarjeta.
+
+### 12.2 Despacho
+- Pestañas: `Todos`, `Mesa` (incluye `EXTRA`), `Para llevar / Express` (unifica `TAKEOUT`+`EXPRESS`), `Orden especial`.
+- No reintroducir pestaña Express separada; normalizar `localStorage` `EXPRESS` → `TAKEOUT`.
+- Modo SPLIT: asignacion `TAKEOUT` o `EXPRESS` habilita la pestaña unificada; `EXTRA` se evalua como `TABLE`.
+- Conservar una tarjeta por `order_code`; usar `get_batch_order_operational_snapshots` si existe (`20260602140000`).
+- **Despachar todo:** `dispatch_order_quantities` con operacion total e items vacios.
 
 ### 13. Integridad Financiera y Caja
 - **Integridad Financiera (2026-05-09):**
@@ -252,13 +261,14 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes y asegurar que:
-   - **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial, Extra) deben pagarse para ser elegibles para despacho. Express invierte el flujo. Extra auto-despacha al cobrar.
+   - **Flujo Global:** Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra). Express invierte el flujo (despacho antes de cobro). Extra: despacho manual tras `PAID`; cierre con `close_extra_order`.
+   - **Despacho:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; migracion batch `20260602140000` recomendada.
    - **Productos frecuentes:** reset total borra `extra_frequent_products`; reset operativo los conserva.
    - **Caja secundaria:** documentar flags `secondary_caja_*` y filtro `created_by` en cliente.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
 10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
 11. Si se toca caja secundaria, validar `isSecondaryCashier`, `PaymentDialogSecondary`, flags `secondary_caja_*`, `orderVisibleToSecondaryCashier`, cobro en pantalla pequena y que Extra no muestre mesa en subtítulo.
-12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, RPC `create_extra_order`, flujo caja antes de despacho y auto-finalize al cobrar (`20260530120000`).
+12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, RPC `create_extra_order`, flujo caja → `PAID` → despacho manual, `20260602120000`/`20260602130000`, visibilidad creador/cajero principal y aparicion en Despacho (Mesa/Todos).
 13. Si se toca productos frecuentes, validar migraciones `20260531130000` y `20260531140000`, contexto correcto y layout 1–2 filas en `FrequentProductCards`.
 14. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
-15. Si se toca Despacho, validar la visualización en 1280px y confirmar que una misma orden pagada aparece una sola vez (agrupamiento por `order_code`), aunque tenga items enviados en distintos momentos.
+15. Si se toca Despacho, validar pestaña unificada Para llevar/Express, Extra en Mesa/Todos, una tarjeta por `order_code`, **Despachar todo**, batch snapshots (`20260602140000`) y tablet 1280px.

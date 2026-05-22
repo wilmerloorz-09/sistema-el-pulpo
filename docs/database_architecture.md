@@ -16,7 +16,8 @@
 - `PAID` y `KITCHEN_DISPATCHED` son estados finales visibles mutuamente excluyentes para clasificacion; una orden no debe aparecer en ambas pestanas.
 - Para clasificacion visual, `Despachada` incluye cabecera `KITCHEN_DISPATCHED` y tambien cabecera `PAID` con despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la sincronizacion final de cabecera no haya corrido.
 - Las lecturas de `Despacho` deben agrupar por `orders.id` / `order_code`; `order_items.sent_to_kitchen_at` no debe crear tarjetas operativas separadas para la misma orden.
-- En Despacho, `TAKEOUT` y `orders.is_special = true` se procesan como despacho total de la orden; no deben dividirse por botones de item en la UI.
+- En Despacho, `TAKEOUT`, `EXPRESS` (pestaña unificada **Para llevar / Express**) y `orders.is_special = true` se procesan como despacho total de la orden; no deben dividirse por botones de item en la UI.
+- Las ordenes `EXTRA` pagadas se agrupan en pestañas **Mesa** y **Todos**; el listado no exige `sent_to_kitchen_at` en lineas Extra (a diferencia de mesa clasica).
 - Cuando se anula un pago, la sucesora activa queda con nuevo numero en `SENT_TO_KITCHEN`/En Caja.
 
 ## Dominios principales
@@ -228,7 +229,7 @@
 - Enum `order_type` incluye `EXPRESS` (migracion `20260516000000_add_express_order_type.sql`).
 - Flujo: borrador -> envio a despacho (`SENT_TO_KITCHEN` / En despacho) -> despacho total -> `KITCHEN_DISPATCHED` -> cobro total en Caja -> `PAID`.
 - `orderIsPayableInCaja` en cliente solo incluye Express en `KITCHEN_DISPATCHED`.
-- `dispatch_config.express_enabled` habilita la pestaña/modulo en Despacho.
+- `dispatch_config.takeout_enabled` y/o `dispatch_config.express_enabled` habilitan la pestaña unificada **Para llevar / Express** en Despacho (una sola pestaña para ambos tipos).
 - RPC `create_express_order(...)` crea la orden ligada al turno abierto.
 
 ### Productos frecuentes
@@ -243,11 +244,11 @@
 ### Extra (`order_type = EXTRA`)
 - Enum `order_type` incluye `EXTRA` (migracion `20260527120000_add_extra_order_type.sql`).
 - Sin `table_id`; `menu_scope = TABLE` sin categoria PLATOS.
-- Flujo: borrador -> envio a caja -> pago -> despacho.
-- Tras pago total, `sync_order_payment_state_internal` invoca `auto_finalize_extra_order_after_payment(...)`:
-  - despacho total automatico (`dispatch_order_quantities` con operacion total)
-  - `closed_at` y `locked_for_editing = true` cuando queda `KITCHEN_DISPATCHED`
-  - migracion `20260530120000_extra_auto_dispatch_on_payment.sql`
+- Flujo: borrador -> envio a caja -> pago (`PAID`) -> despacho manual -> cierre.
+- Tras pago total, `sync_order_payment_state_internal` **no** invoca `auto_finalize_extra_order_after_payment` (`20260602120000_extra_flow_like_table_orders.sql`). La funcion legacy puede existir en BD pero queda fuera del sync de pagos.
+- Despacho: ordenes `EXTRA` en `PAID` aparecen en pestañas Mesa/Todos del modulo Despacho; asignacion SPLIT las trata como `TABLE`.
+- Cierre operativo desde UI Extra: `close_extra_order(p_order_id)` (`20260602130000_close_extra_order.sql`) cuando la orden esta despachada y sin `closed_at`.
+- Caja: cobro total obligatorio (sin parcial); visibilidad creador o cajero principal del turno.
 - RPC `create_extra_order(...)`; en listados de caja, `table_name` solo para `DINE_IN` con `table_id`.
 
 ### Para llevar (TAKEOUT) y Orden especial como tarjetas dinamicas
@@ -278,6 +279,8 @@
 - `submit_order_draft_items(...)`
 - `convert_order_to_special(...)`
 - `get_order_operational_snapshot(...)`
+- `get_batch_order_operational_snapshots(p_order_ids uuid[])` — lectura batch para Despacho (`20260602140000_batch_operational_snapshots.sql`); 16 columnas alineadas al snapshot individual.
+- `close_extra_order(p_order_id uuid)`
 - `create_pending_order_cancellation_request(...)`
 - `request_order_cancellation(...)`
 - `clear_pending_order_cancellation_request(...)`
@@ -370,7 +373,10 @@
 - `20260516000000_add_express_order_type.sql`
 - `20260527120000_add_extra_order_type.sql`
 - `20260529120000_secondary_caja_order_scope.sql`
-- `20260530120000_extra_auto_dispatch_on_payment.sql`
+- `20260530120000_extra_auto_dispatch_on_payment.sql` (historica; el sync vigente ya no la invoca — ver `20260602120000`)
+- `20260602120000_extra_flow_like_table_orders.sql`
+- `20260602130000_close_extra_order.sql`
+- `20260602140000_batch_operational_snapshots.sql`
 - `20260531120000_add_extra_menu_scope.sql` (opcional; `menu_scope` acepta `EXTRA`)
 - `20260531130000_extra_frequent_products.sql`
 - `20260531140000_frequent_products_multi_context.sql`
@@ -410,6 +416,7 @@
 14. Si se toca Para llevar u Orden especial, preservar tarjetas dinamicas con `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez y salida por despacho aplicado/cancelacion.
 15. Si se modifican triggers de `payment_items` que llaman a `sync_order_payment_state_internal`, mantener sincronización **por sentencia** (como en `20260509180000`) o equivalente que evite invocar la función una vez por cada fila insertada en el mismo lote.
 16. **Plantilla vs cobro:** `cash_register_template_denoms` define arqueo inicial; el cobro en UI usa `denominations` activas; `registrar_movimiento_caja_operativo` debe permitir `PAYMENT_IN` aunque la denominacion no estuviera en la plantilla.
-17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`; post-pago usar auto-finalize en BD, no solo UI de Despacho.
-18. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
-19. **Caja secundaria:** flags `secondary_caja_*` en `cash_shift_users`; filtro `created_by` en cliente para Por cobrar.
+17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`; post-pago queda `PAID` hasta despacho manual; cierre con `close_extra_order`, no auto-finalize en sync de pagos.
+18. **Despacho UI:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; preferir `get_batch_order_operational_snapshots` cuando exista la migracion.
+19. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
+20. **Caja secundaria:** flags `secondary_caja_*` en `cash_shift_users`; filtro `created_by` en cliente para Por cobrar.

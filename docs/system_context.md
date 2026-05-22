@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-05-31)
+## Estado operativo vigente (2026-06-02)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -44,18 +44,30 @@
 - **Express (`order_type = EXPRESS`):**
   - Modulo propio en navegacion (`/express`) con grilla de tarjetas similar a Para llevar.
   - Comparte menu/catalogo operativo con para llevar; el flujo operativo es **despacho antes de cobro** (inverso al global Mesa/Para llevar/Especial).
-  - Tras enviar, la orden queda `SENT_TO_KITCHEN` con etiqueta operativa **En despacho**; en `Despacho` aparece en pestaña Express.
+  - Tras enviar, la orden queda `SENT_TO_KITCHEN` con etiqueta operativa **En despacho**; en `Despacho` aparece en la pestaña unificada **Para llevar / Express**.
   - Solo entra a `Caja > Por cobrar` cuando esta `KITCHEN_DISPATCHED` (despachada, pendiente de cobro total).
   - No admite cobro parcial en el flujo Express.
-  - `dispatch_config.express_enabled` controla visibilidad en Despacho.
+  - `dispatch_config.takeout_enabled` o `express_enabled` habilitan la pestaña unificada en Despacho (si cualquiera esta activo).
 - **Extra (`order_type = EXTRA`):**
-  - Modulo propio en navegacion (`/extra`) con grilla de tarjetas similar a Para llevar.
+  - Modulo propio en navegacion (`/extra`) con grilla de tarjetas similar a Para llevar / Express.
+  - Solo el **creador** ve sus ordenes Extra activas en `/extra`; al entrar sin ordenes propias se auto-abre/crea una; con ordenes existentes muestra tarjetas + boton **+**.
   - Sin mesa (`table_id` null); usa menu **Mesas** (`menu_scope = TABLE`) sin categoria raiz PLATOS ni pestañas Con envase / A granel.
-  - Flujo operativo: **envio a caja → pago → despacho** (no como Express).
-  - Tras cobro total, la BD invoca `auto_finalize_extra_order_after_payment(...)` desde `sync_order_payment_state_internal`: auto-despacho, `closed_at` y `locked_for_editing` (migracion `20260530120000_extra_auto_dispatch_on_payment.sql`).
+  - Flujo operativo: **envio a caja → pago → despacho manual** (como mesa; no como Express).
+  - Tras cobro total queda `PAID`; **no** hay auto-despacho ni cierre automatico al pagar (`20260602120000_extra_flow_like_table_orders.sql` retira `auto_finalize_extra_order_after_payment` del sync de pagos).
+  - En `Despacho`, las ordenes Extra pagadas aparecen en pestañas **Mesa** y **Todos** (no requieren `sent_to_kitchen_at` en items para listarse).
+  - Cierre desde `/extra`: boton **X** en ordenes despachadas ejecuta `close_extra_order(...)` (`20260602130000_close_extra_order.sql`); las ordenes cerradas no se muestran en Extra.
+  - Caja: visible para el creador; si otro usuario cobra, solo el **cajero principal** del turno (`primary_cashier_id`). Sin pagos parciales en Extra.
+  - Cajero secundario: sin imprimir comprobante en `PaymentDialogSecondary` / `PaymentDialogV2` cuando aplica dialogo secundario.
   - RPC `create_extra_order(...)`; en Caja el subtitulo debe mostrar **Extra**, no nombre de mesa.
   - Productos frecuentes operativos: contexto `EXTRA` en `extra_frequent_products`.
-  - Migracion base: `20260527120000_add_extra_order_type.sql`.
+  - Migraciones: `20260527120000_add_extra_order_type.sql`, `20260602120000`, `20260602130000`.
+- **Despacho (pestanas y rendimiento):**
+  - Pestañas vigentes: **Todos**, **Mesa** (incluye `DINE_IN`, `TABLE` y `EXTRA`), **Para llevar / Express** (unifica `TAKEOUT` y `EXPRESS`), **Orden especial**.
+  - Ya no existe pestaña Express separada; `localStorage` con vista `EXPRESS` se normaliza a `TAKEOUT`.
+  - Modo `SPLIT`: asignacion `TAKEOUT` o `EXPRESS` en `dispatch_assignments` habilita la pestaña unificada.
+  - Boton **Despachar todo** por orden en `DispatchCardBase` / `Despacho.tsx`.
+  - Lecturas: RPC batch `get_batch_order_operational_snapshots(...)` (`20260602140000`) con fallback a `get_order_operational_snapshot` por orden.
+  - Tras despachar: actualizacion optimista en cliente e invalidacion diferida de queries secundarias (~2,5 s).
 - **Productos frecuentes ("Mas frecuentes"):**
   - Tabla `extra_frequent_products` con columna `context` ∈ `MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA` (sin limite de cantidad; migraciones `20260531130000`, `20260531140000`).
   - Admin: pestaña **Mas frecuentes** en `/admin` (`FrequentProductsAdmin`) — selector de contexto, menu segun contexto, lista con agregar/eliminar/reordenar.
@@ -423,6 +435,16 @@
   - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
   - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
 
+### 2026-06-02
+- Extra:
+  - Flujo alineado a mesa: pago deja `PAID` y despacho/cierre son manuales (sin auto-finalize al cobrar).
+  - Visibilidad en Despacho: pestañas Mesa y Todos; items Extra no exigen `sent_to_kitchen_at` para armar tarjeta.
+  - Modulo `/extra`: solo creador, grilla/+ vs auto-apertura, cierre con `close_extra_order`, sin ordenes cerradas en home.
+  - Caja: creador o cajero principal; sin cobro parcial; secundario sin imprimir comprobante.
+- Despacho:
+  - Pestaña unificada **Para llevar / Express**; Extra en Mesa/Todos; **Despachar todo**; snapshots batch y cache optimista.
+- Migraciones pendientes de aplicar manualmente en Supabase: `20260602120000`, `20260602130000`, `20260602140000`.
+
 ### 2026-05-25 / 2026-05-31
 - Turno / caja:
   - Estructura caja principal + secundarias por turno (`primary_cashier_id`, plantilla secundaria, `register_role` en aperturas).
@@ -432,8 +454,8 @@
   - `PaymentDialogSecondary` para cajeros secundarios en movil/tablet.
   - `registrar_movimiento_caja_operativo`: `PAYMENT_IN` por cajero con upsert si falta denominacion en caja.
 - Extra:
-  - `order_type = EXTRA`, pagina `/extra`, flujo caja-despacho, menu sin PLATOS.
-  - Auto-despacho y cierre al cobrar total (`auto_finalize_extra_order_after_payment`).
+  - `order_type = EXTRA`, pagina `/extra`, flujo caja → despacho manual (como mesa), menu sin PLATOS.
+  - Sin auto-despacho al cobrar; cierre manual con `close_extra_order` desde `/extra`.
 - Productos frecuentes:
   - Tabla `extra_frequent_products` multi-contexto (Mesa, Para llevar, Express, Extra).
   - Admin reordenable; tarjetas en caja con 1–2 filas y scroll horizontal.
@@ -468,9 +490,10 @@
 9. Cualquier cambio en `Despacho` debe preservar una sola tarjeta por orden pagada; no volver a separar la misma orden por `sent_to_kitchen_at` de los items.
 10. Cobros lentos con muchas líneas: verificar que la migración `20260509180000_payment_items_sync_once_per_statement.sql` esté aplicada en la BD remota; sin ella, cada fila de `payment_items` dispara sincronización completa de orden.
 11. No confundir **plantilla de apertura** con **denominaciones que puede entregar el cliente**; el cobro debe listar `denominations` activas; el arqueo y el cambio usan `cash_shift_denoms` del cajero.
-12. Cajero secundario: validar `isSecondaryCashier`, flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`, `orderVisibleToSecondaryCashier`, migracion `20260528130000_payment_in_upsert_per_cashier.sql`, y que Extra no muestre "Mesa N" si `order_type` es `EXTRA` y `table_name` es null.
-13. Extra post-cobro: verificar migracion `20260530120000` y que orden Extra pagada auto-despache/cierre sin paso manual en Despacho.
-14. Productos frecuentes: verificar migraciones `20260531130000` y `20260531140000`; reordenar usa `display_order` con staging positivo (no valores negativos).
+12. Cajero secundario: validar `isSecondaryCashier`, flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`, `orderVisibleToSecondaryCashier`, migracion `20260528130000_payment_in_upsert_per_cashier.sql`, que Extra no muestre "Mesa N" si `order_type` es `EXTRA` y `table_name` es null, y que no imprima comprobante en dialogos secundarios.
+13. Extra post-cobro: verificar `20260602120000` (sin auto-despacho), que la orden `PAID` aparezca en Despacho (Mesa/Todos) y que el cierre use `20260602130000` desde `/extra`.
+14. Despacho: pestaña unificada Para llevar/Express; Extra en Mesa; una tarjeta por orden; migracion `20260602140000` para snapshots batch.
+15. Productos frecuentes: verificar migraciones `20260531130000` y `20260531140000`; reordenar usa `display_order` con staging positivo (no valores negativos).
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.

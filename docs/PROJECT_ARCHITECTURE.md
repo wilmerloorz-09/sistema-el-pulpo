@@ -44,7 +44,7 @@
   - `TAKEOUT`
   - `BULK`
 - Ordenes `EXPRESS` usan el mismo arbol de menu que para llevar pero con flujo **despacho -> cobro** (ver `src/lib/orderFlow.ts`).
-- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, sin mesa fisica, flujo **caja -> despacho**; al cobrar total la BD auto-despacha y cierra (`auto_finalize_extra_order_after_payment`).
+- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, sin mesa fisica, flujo **caja -> despacho manual** (como mesa). Tras cobrar quedan `PAID` hasta despacho en modulo Despacho (pestañas Mesa/Todos); cierre con `close_extra_order` desde `/extra`.
 - **Productos frecuentes:** configuracion en `extra_frequent_products` por `context` (`MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA`); UI operativa `FrequentProductCards`, admin `FrequentProductsAdmin`; menú compuesto Para llevar/Express via `buildCompositeMenuNodes` (`src/lib/compositeMenuTree.ts`).
 - Fuente transaccional legacy que sigue viva:
   - `categories`
@@ -66,7 +66,9 @@
 - El envio de borradores usa `submit_order_draft_items(...)`; mesa, para llevar y orden especial quedan primero cobrables en Caja.
 - Despacho recibe la orden despues del pago.
 - Despacho no debe dividir una misma orden por marcas de tiempo de `order_items.sent_to_kitchen_at`; la unidad visible es la orden completa con cantidades pendientes agregadas.
-- En `Despacho`, las ordenes `TAKEOUT` y las ordenes especiales se despachan como orden completa; el detalle puede expandirse para consulta, pero no debe exponer botones de despacho por item.
+- En `Despacho`, las ordenes `TAKEOUT`, `EXPRESS` (misma pestaña unificada **Para llevar / Express**) y las ordenes especiales se despachan como orden completa; el detalle puede expandirse para consulta, pero no debe exponer botones de despacho por item.
+- Las ordenes `EXTRA` pagadas se listan en pestañas **Mesa** y **Todos**; comparten despacho por item como mesa (no como Express).
+- Pestañas de `Despacho`: `Todos`, `Mesa` (`DINE_IN`/`TABLE`/`EXTRA`), `Para llevar / Express` (`TAKEOUT`+`EXPRESS`), `Orden especial`. Vista guardada `EXPRESS` en `localStorage` se mapea a `TAKEOUT`.
 - `Ordenes` usa lista expandible y detalle inline.
 - **Entradas dedicadas en navegación lateral (2026-05-08):**
   - Existen rutas dedicadas con pantalla principal propia:
@@ -220,7 +222,14 @@
   - `recalculate_check_balance(...)` debe preservar primero las historicas `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
 - No se debe permitir anulacion operativa de pago sobre una orden `KITCHEN_DISPATCHED`.
 
-### 11. Comprobantes de transferencia
+### 11. Despacho
+- Pagina: `src/pages/Despacho.tsx`; acceso: `src/hooks/useDispatchAccess.ts`; datos: `src/hooks/useDispatchOrders.ts`; tarjetas: `src/components/dispatch/DispatchCardBase.tsx`.
+- Solo ordenes elegibles con cobro activo y cantidades pendientes de despacho; Express usa criterio distinto (despacho antes de cobro) pero comparte pestaña con Para llevar.
+- **Despachar todo:** `dispatchOrder` con `operation_type: 'total'` y `p_items: []`.
+- **Rendimiento:** `get_batch_order_operational_snapshots` (migracion `20260602140000`) + actualizacion optimista e invalidacion diferida de React Query.
+- Modo `SPLIT`: filtro por `dispatch_assignments`; `EXTRA` cuenta como `TABLE` en asignaciones.
+
+### 12. Comprobantes de transferencia
 - `PaymentDialog` puede preparar una sesion provisional de pago con comprobante.
 - Persistencia:
   - `payment_capture_requests`
@@ -230,7 +239,7 @@
   - OCR basico opcional con `tesseract`
 - `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo.
 
-### 12. Usuarios
+### 13. Usuarios
 - Crear/editar usuario incluye datos de contacto extendidos: nombres, apellidos, cedula, direccion, telefono.
 - `profiles.first_name` y `profiles.last_name` son los campos administrables para usuario.
 - `profiles.full_name` queda como compatibilidad legacy y debe reflejar `first_name` mediante `sync_profile_full_name()`.
@@ -277,6 +286,16 @@
   - `src/components/caja/CashRegisterOpeningHistory.tsx`
   - `src/components/caja/OpenShiftForm.tsx`
   - `src/pages/Caja.tsx`
+- Despacho:
+  - `src/pages/Despacho.tsx`
+  - `src/hooks/useDispatchAccess.ts`
+  - `src/hooks/useDispatchOrders.ts`
+  - `src/components/dispatch/DispatchCard.tsx`
+  - `src/components/dispatch/DispatchCardBase.tsx`
+  - `src/lib/orderOperational.ts` (snapshots batch)
+- Extra:
+  - `src/pages/Extra.tsx`
+  - `src/lib/extraOrders.ts`
 - Shell y gate:
   - `src/components/AppLayout.tsx`
   - `src/components/BottomNav.tsx`
@@ -304,5 +323,6 @@
 19. **`Ordenes.tsx`:** Usar lista de ítems defensiva (`order?.items ?? []`) en el contenido del detalle para tolerar órdenes parciales en caché.
 20. **Plantilla vs cobro:** No usar solo `shift.denoms` para botones de monedas/billetes en cobro; usar catálogo `denominations`. No mezclar arqueo de plantilla con lo que puede pagar el cliente.
 21. **Caja secundaria:** No alterar `PaymentDialogV2` para secundarios; usar `PaymentDialogSecondary` y `shouldUseSecondaryPaymentDialog`. Validar flags `secondary_caja_*` y `orderVisibleToSecondaryCashier`.
-22. **Extra:** Auto-despacho al cobrar total vive en BD (`auto_finalize_extra_order_after_payment`); no depender solo de Despacho manual.
-23. **Productos frecuentes:** Cambios en admin deben respetar `context` y unique `(branch_id, context, display_order)`; UI en caja usa 1 fila si cabe, max 2 filas con scroll.
+22. **Extra:** Tras cobrar queda `PAID` y requiere despacho manual en Despacho (Mesa/Todos); cierre con `close_extra_order`. No reactivar auto-despacho en `sync_order_payment_state_internal` sin acuerdo de producto.
+23. **Despacho — pestañas:** Mantener pestaña unificada Para llevar/Express; Extra en Mesa y Todos; no reintroducir pestaña Express separada.
+24. **Productos frecuentes:** Cambios en admin deben respetar `context` y unique `(branch_id, context, display_order)`; UI en caja usa 1 fila si cabe, max 2 filas con scroll.

@@ -11,8 +11,9 @@
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye ordenes Express (`order_type = EXPRESS`) y su flujo despacho antes de cobro
---   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja antes de despacho (sin mesa)
---   - incluye auto-despacho/cierre Extra al cobrar total (`auto_finalize_extra_order_after_payment`)
+--   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja -> PAID -> despacho manual (sin mesa)
+--   - incluye cierre Extra desde /extra via `close_extra_order` (sin auto-despacho al cobrar; ver `20260602120000`)
+--   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestaña unificada Para llevar / Express)
 --   - incluye alcance de caja secundaria Por llevar/Express (`secondary_caja_takeout_enabled`, `secondary_caja_express_enabled`)
 --   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
@@ -113,7 +114,8 @@
 -- - ESTE RESET BORRA DATOS DE CAJA/PAGOS, PERO NO CAMBIA LA REGLA DE PRODUCTO:
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
 --   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra); Express es despacho antes de cobro.
---   - Extra auto-despacha al cobrar total via BD; no requiere paso manual en Despacho para cerrar la orden.
+--   - Extra queda PAID tras cobrar y requiere despacho manual en Despacho (Mesa/Todos); cierre con `close_extra_order` desde /extra.
+--   - Despacho usa pestaña unificada Para llevar / Express (TAKEOUT + EXPRESS); ya no hay pestaña Express separada.
 --   - cada cajero habilitado abre su propia caja en el mismo turno; el reset borra todas las aperturas y denoms asociadas.
 --   - la plantilla de apertura (`cash_register_template_denoms`) es independiente del catalogo `denominations` usado en cobro
 --   - Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
@@ -427,7 +429,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 productos frecuentes configurados (`extra_frequent_products` por contexto)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con auto-despacho post-pago, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
 -- - 0 aperturas multi-cajero ni cash_shift_denoms por cashier_id
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`
