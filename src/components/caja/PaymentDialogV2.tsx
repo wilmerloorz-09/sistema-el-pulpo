@@ -813,12 +813,19 @@ export default function PaymentDialogV2({
                     <button
                       type="button"
                       disabled={readOnly}
-                      onClick={() => setTransferInput(orderChargeTotal.toFixed(2))}
+                      onClick={() => {
+                        const isExact = Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005;
+                        if (isExact) {
+                          setTransferInput("");
+                        } else {
+                          setTransferInput(orderChargeTotal.toFixed(2));
+                        }
+                      }}
                       className="flex items-center gap-1 rounded-md border border-violet-300 bg-white/60 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
-                      title="Usar monto total"
+                      title={Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005 ? "Limpiar monto" : "Usar monto total"}
                     >
                       <CopyCheck className="h-3 w-3" />
-                      Exacto
+                      {Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005 ? "Limpiar" : "Exacto"}
                     </button>
                   </div>
                   <Input

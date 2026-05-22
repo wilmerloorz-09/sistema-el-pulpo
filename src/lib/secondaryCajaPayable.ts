@@ -25,13 +25,5 @@ export function orderVisibleToSecondaryCashier(
     return true;
   }
 
-  if (orderType === "TAKEOUT" && scope.takeoutEnabled && !order.is_tray_order && !order.is_special) {
-    return true;
-  }
-
-  if (orderType === "EXPRESS" && scope.expressEnabled && !order.is_tray_order && !order.is_special) {
-    return true;
-  }
-
   return false;
 }

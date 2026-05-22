@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   compareSiblingOrderTabs,
@@ -2824,7 +2824,6 @@ const OrdenesContent = () => {
                 }
 
                 if (!canPayCurrentOrderInSecondaryCaja) {
-                  toast.error("Esta orden no esta disponible para cobro en tu caja secundaria.");
                   return;
                 }
 
