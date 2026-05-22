@@ -42,7 +42,7 @@ export interface DispatchOrder {
   id: string;
   order_number: number | null;
   order_code: string | null;
-  order_type: "DINE_IN" | "TAKEOUT" | "EXPRESS";
+  order_type: "DINE_IN" | "TABLE" | "TAKEOUT" | "EXPRESS" | "EXTRA";
   is_special: boolean;
   is_tray_order?: boolean;
   created_by: string | null;
@@ -71,7 +71,7 @@ export interface OperationPayload {
 
 type DispatchOrdersCache = {
   orders: DispatchOrder[];
-  counts: { ALL: number; TABLE: number; TAKEOUT: number; EXPRESS: number; SPECIAL: number };
+  counts: { ALL: number; TABLE: number; TAKEOUT: number; SPECIAL: number };
 };
 
 let deferredDispatchInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,8 +80,7 @@ function recountDispatchCards(cards: DispatchOrder[]): DispatchOrdersCache["coun
   return {
     ALL: cards.length,
     TABLE: cards.filter((c) => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
-    TAKEOUT: cards.filter((c) => c.order_type === "TAKEOUT").length,
-    EXPRESS: cards.filter((c) => c.order_type === "EXPRESS").length,
+    TAKEOUT: cards.filter((c) => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS").length,
     SPECIAL: cards.filter((c) => c.is_special).length,
   };
 }
@@ -207,8 +206,8 @@ function matchesScope(orderType: string, scope: DispatchView) {
   if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT" || orderType === "EXPRESS" || orderType === "EXTRA";
   if (scope === "SPECIAL") return false;
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "EXTRA";
-  if (scope === "EXPRESS") return orderType === "EXPRESS";
-  return orderType === "TAKEOUT";
+  if (scope === "TAKEOUT") return orderType === "TAKEOUT" || orderType === "EXPRESS";
+  return false;
 }
 
 /** Igual criterio que caja / useOrder: pago que no debe contar para “hay cobro activo”. */
@@ -258,13 +257,14 @@ function groupItemsIntoDispatchCards(
   } = operationalMaps;
 
   const isExpressOrder = order.order_type === "EXPRESS";
+  const isExtraOrder = order.order_type === "EXTRA";
 
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
       if (item.order_id !== order.id) return false;
       const st = String(item.status ?? "").toUpperCase();
       if (st === "DRAFT" || st === "CANCELLED") return false;
-      const sent = !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
+      const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
       if (isExpressOrder) return Math.max(0, Math.floor(Number(item.quantity ?? 0))) > 0;
       return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId) > 0;
@@ -348,7 +348,7 @@ function groupItemsIntoDispatchCards(
     id: order.id,
     order_number: order.order_number,
     order_code: order.order_code,
-    order_type: order.order_type as "DINE_IN" | "TAKEOUT",
+    order_type: order.order_type as DispatchOrder["order_type"],
     is_special: Boolean(order.is_special),
     is_tray_order: Boolean(order.is_tray_order),
     created_by: order.created_by ?? null,
@@ -389,10 +389,10 @@ export function useDispatchOrders(scope: DispatchView) {
   const query = useQuery({
     queryKey: dispatchOrdersQueryKey,
     queryFn: async () => {
-      if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
+      if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const openShift = await getOpenCashShiftForBranch(activeBranchId);
-      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
+      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const ordersMerged = (
         await dbSelect<any>("orders", {
@@ -407,7 +407,7 @@ export function useDispatchOrders(scope: DispatchView) {
         })
       ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
-      if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
+      if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const allOrderIds = ordersMerged.map((o) => o.id);
       const paymentsForOrders = await dbSelect<any>("payments", {
@@ -447,7 +447,7 @@ export function useDispatchOrders(scope: DispatchView) {
         }
         return false;
       });
-      if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
+      if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
@@ -485,7 +485,7 @@ export function useDispatchOrders(scope: DispatchView) {
       };
 
       const allPermittedOrders = getPermittedForView("ALL", activeOrders);
-      if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 } };
+      if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
       const tableIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.table_id).filter(Boolean));
@@ -540,8 +540,7 @@ export function useDispatchOrders(scope: DispatchView) {
       const counts = {
         ALL: allCards.length,
         TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
-        TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT").length,
-        EXPRESS: allCards.filter(c => c.order_type === "EXPRESS").length,
+        TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS").length,
         SPECIAL: allCards.filter(c => c.is_special).length,
       };
 
@@ -715,7 +714,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
   return {
     orders: query.data?.orders || [],
-    counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, EXPRESS: 0, SPECIAL: 0 },
+    counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 },
     isLoading: query.isLoading,
     isError: query.isError,
     applyReadyOperation,

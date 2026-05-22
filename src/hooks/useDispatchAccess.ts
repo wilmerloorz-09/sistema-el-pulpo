@@ -5,14 +5,13 @@ import { canOperate, canView } from "@/lib/permissions";
 import { useDispatchConfig } from "@/hooks/useDispatchConfig";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 
-export type DispatchView = "ALL" | "TABLE" | "SPECIAL" | "TAKEOUT" | "EXPRESS";
+export type DispatchView = "ALL" | "TABLE" | "SPECIAL" | "TAKEOUT";
 
 export const DISPATCH_VIEW_LABELS: Record<DispatchView, string> = {
   ALL: "Todos",
   TABLE: "Mesa",
   SPECIAL: "Orden especial",
-  TAKEOUT: "Para llevar",
-  EXPRESS: "Express",
+  TAKEOUT: "Para llevar / Express",
 };
 
 export function useDispatchAccess() {
@@ -36,10 +35,10 @@ export function useDispatchAccess() {
     const tableEnabled = config?.table_enabled ?? true;
     const takeoutEnabled = config?.takeout_enabled ?? true;
     const expressEnabled = config?.express_enabled ?? true;
-    const baseViews: Array<Extract<DispatchView, "TABLE" | "SPECIAL" | "TAKEOUT" | "EXPRESS">> = [];
+    const takeoutOrExpressEnabled = takeoutEnabled || expressEnabled;
+    const baseViews: Array<Extract<DispatchView, "TABLE" | "SPECIAL" | "TAKEOUT">> = [];
     if (hasDispatchShiftAccess && canViewTable && tableEnabled) baseViews.push("TABLE");
-    if (hasDispatchShiftAccess && canViewTakeout && takeoutEnabled) baseViews.push("TAKEOUT");
-    if (hasDispatchShiftAccess && canViewTakeout && expressEnabled) baseViews.push("EXPRESS");
+    if (hasDispatchShiftAccess && canViewTakeout && takeoutOrExpressEnabled) baseViews.push("TAKEOUT");
     if (hasDispatchShiftAccess && canViewTable && tableEnabled) baseViews.push("SPECIAL");
 
     const userAssignedTypes = new Set(
@@ -53,7 +52,12 @@ export function useDispatchAccess() {
       if (userAssignedTypes.has("ALL")) {
         scopedViews = baseViews;
       } else if (userAssignedTypes.size > 0) {
-        scopedViews = baseViews.filter((view) => userAssignedTypes.has(view));
+        scopedViews = baseViews.filter((view) => {
+          if (view === "TAKEOUT") {
+            return userAssignedTypes.has("TAKEOUT") || userAssignedTypes.has("EXPRESS");
+          }
+          return userAssignedTypes.has(view);
+        });
       } else {
         scopedViews = [];
       }
