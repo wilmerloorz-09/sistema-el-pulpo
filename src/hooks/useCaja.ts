@@ -13,6 +13,8 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 import { orderIsPayableInCaja } from "@/lib/orderFlow";
+import { canUserPayExtraOrder, extraOrderVisibleInCaja } from "@/lib/extraOrders";
+import { isExtraOrder } from "@/lib/orderFlow";
 import { orderVisibleToSecondaryCashier } from "@/lib/secondaryCajaPayable";
 
 export const ensureTableSnapshot = async (orderId: string) => {
@@ -828,7 +830,7 @@ function resolvePaidQuantity(params: {
 }
 
 function getPayableQuantityForOrderType(
-  orderType: "DINE_IN" | "TAKEOUT" | "EXPRESS",
+  orderType: "DINE_IN" | "TAKEOUT" | "EXPRESS" | "EXTRA",
   quantities: ReturnType<typeof computeOperationalQuantities>,
   workflowMode: string,
 ) {
@@ -1456,9 +1458,17 @@ export function useCaja(params?: {
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
       const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
+      const extraCajaScope = {
+        userId: user?.id ?? "",
+        primaryCashierId: shiftGate?.primaryCashierId ?? null,
+      };
+
       const payableSourceOrders = activeOrders
         .filter((o) => orderIsPayableInCaja(o))
         .filter((o) => {
+          if (isExtraOrder(o)) {
+            return extraOrderVisibleInCaja(o, extraCajaScope);
+          }
           if (!shiftGate?.isSecondaryCashier || !user?.id) return true;
           return orderVisibleToSecondaryCashier(o, {
             userId: user.id,
@@ -1484,7 +1494,7 @@ export function useCaja(params?: {
               const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
               const payableQty = (o as { is_special?: boolean | null }).is_special
                 ? activeOrderedQty
-                : getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT" | "EXPRESS", quantities, activeWorkflowMode);
+                : getPayableQuantityForOrderType(o.order_type as "DINE_IN" | "TAKEOUT" | "EXPRESS" | "EXTRA", quantities, activeWorkflowMode);
               const paidQty = resolvePaidQuantity({
                 payableQuantity: payableQty,
                 orderedQuantity: Number(i.quantity ?? 0),
@@ -2213,7 +2223,15 @@ export function useCaja(params?: {
       const effectiveCashChangeDenoms = Array.isArray(cashChangeDenoms) ? cashChangeDenoms : [];
 
       if (!orderData) throw new Error("Orden no encontrada");
-      if (
+      const extraCajaScope = {
+        userId: user?.id ?? "",
+        primaryCashierId: shiftGate?.primaryCashierId ?? null,
+      };
+      if (isExtraOrder(orderData)) {
+        if (!canUserPayExtraOrder(orderData, extraCajaScope)) {
+          throw new Error("Solo el creador o el cajero principal del turno puede cobrar esta orden Extra");
+        }
+      } else if (
         shiftGate?.isSecondaryCashier
         && user?.id
         && !orderVisibleToSecondaryCashier(orderData, {
@@ -2280,8 +2298,45 @@ export function useCaja(params?: {
           throw new Error("Las ordenes Express solo admiten cobro total de la orden");
         }
 
+        if (orderData.order_type === "EXTRA" && itemSelection.quantity < pendingPayableQty) {
+          throw new Error("Las ordenes Extra solo admiten cobro total de la orden");
+        }
+
         if (Math.abs(Number(dbItem.unit_price) - itemSelection.unitPrice) > 0.01) {
           throw new Error("Inconsistencia detectada en el precio unitario del item");
+        }
+      }
+
+      if (orderData.order_type === "EXTRA" && !orderIsSpecial) {
+        for (const dbItem of allDbItems.filter((item) => item.status !== "DRAFT")) {
+          const quantities = computeOperationalQuantities({
+            quantityOrdered: Number(dbItem.quantity ?? 0),
+            quantityReadyTotal: operationalMaps.readyMap[dbItem.id] ?? 0,
+            quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[dbItem.id] ?? 0,
+            quantityCancelledPending: operationalMaps.cancelledPendingMap[dbItem.id] ?? appliedCancelledByItem[dbItem.id] ?? 0,
+            quantityCancelledReady: operationalMaps.cancelledReadyMap[dbItem.id] ?? 0,
+            quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[dbItem.id] ?? 0,
+          });
+          const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+          const payableQty = getPayableQuantityForOrderType(
+            "EXTRA",
+            quantities,
+            activeWorkflowMode,
+          );
+          const alreadyPaidQty = resolvePaidQuantity({
+            payableQuantity: payableQty,
+            orderedQuantity: Number(dbItem.quantity ?? 0),
+            paidQuantityFromPayments: paidQtyMap[dbItem.id] ?? 0,
+            paidAt: dbItem.paid_at,
+            allowPaidAtFallback: false,
+          });
+          const pendingPayableQty = Math.max(0, payableQty - alreadyPaidQty);
+          if (pendingPayableQty <= 0) continue;
+
+          const selection = itemSelections.find((item) => item.itemId === dbItem.id);
+          if (!selection || selection.quantity !== pendingPayableQty) {
+            throw new Error("Las ordenes Extra solo admiten cobro total de la orden");
+          }
         }
       }
 

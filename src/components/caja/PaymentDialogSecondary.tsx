@@ -9,6 +9,8 @@ import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
 import { usePaymentChargeFlow } from "@/components/caja/usePaymentChargeFlow";
 import { Banknote, CircleCheck, Coins, Loader2, Printer, UserRound, Wallet, CopyCheck } from "lucide-react";
+import { toast } from "sonner";
+import { printPaymentReceipt } from "@/lib/thermalPrint";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -340,7 +342,24 @@ export default function PaymentDialogSecondary({
           <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-white px-3 py-3 safe-bottom">
             {postPaySummary ? (
               <div className="flex flex-col gap-2">
-                <Button type="button" variant="outline" className="h-11 gap-2 rounded-xl" onClick={() => window.print()}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 gap-2 rounded-xl"
+                  onClick={() => {
+                    if (!postPaySummary?.receipt) {
+                      window.print();
+                      return;
+                    }
+                    void printPaymentReceipt(postPaySummary.receipt).then((result) => {
+                      if (result.mode === "html" && result.error) {
+                        toast.warning(
+                          "Impresion HTML (puente ESC/POS no disponible). Ejecute: node scripts/thermal-print-bridge.mjs",
+                        );
+                      }
+                    });
+                  }}
+                >
                   <Printer className="h-4 w-4" />
                   Imprimir
                 </Button>

@@ -67,12 +67,16 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
         id="print-receipt"
         className="hidden print:block"
         style={{
-          width: "80mm",
+          width: "76mm",
+          maxWidth: "76mm",
           fontFamily: "monospace",
-          fontSize: "12px",
-          padding: "4mm",
+          fontSize: "11px",
+          lineHeight: 1.25,
+          padding: "1mm 2mm",
+          margin: 0,
           color: "#000",
           background: "#fff",
+          boxSizing: "border-box",
         }}
       >
         <div style={{ textAlign: "center", marginBottom: "8px" }}>

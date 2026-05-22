@@ -993,7 +993,7 @@ const OrdenesContent = () => {
     queryKey: isExpressOrder
       ? ["express-orders", order?.branch_id ?? null]
       : isExtraOrder
-        ? ["extra-orders", order?.branch_id ?? null]
+        ? ["extra-orders", order?.branch_id ?? null, user?.id ?? "_"]
         : isTakeoutOrder
           ? ["takeout-orders", order?.branch_id ?? null]
           : ["table-orders", order?.table_id ?? null],
@@ -1001,7 +1001,7 @@ const OrdenesContent = () => {
       isExpressOrder
         ? fetchExpressSiblingOrders(order!.branch_id)
         : isExtraOrder
-          ? fetchExtraSiblingOrders(order!.branch_id)
+          ? fetchExtraSiblingOrders(order!.branch_id, user!.id)
           : isTakeoutOrder
             ? fetchTakeoutSiblingOrders(order!.branch_id)
             : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
@@ -1541,7 +1541,8 @@ const OrdenesContent = () => {
     if (paymentDialogOpenForOrderId === order.id) return;
 
     let cancelled = false;
-    void fetchExtraSiblingOrders(order.branch_id)
+    if (!user?.id) return;
+    void fetchExtraSiblingOrders(order.branch_id, user.id)
       .then((orders) => {
         if (cancelled) return;
         const currentOrderIsStillActive = orders.some((extraOrder) => extraOrder.id === order.id);
@@ -1557,7 +1558,7 @@ const OrdenesContent = () => {
     return () => {
       cancelled = true;
     };
-  }, [isExtraOrder, navigate, order, paymentDialogOpenForOrderId, sourceParams]);
+  }, [isExtraOrder, navigate, order, paymentDialogOpenForOrderId, sourceParams, user?.id]);
 
   const interactiveMenuScope =
     !isTrayOrder && pendingMenuScopeSelection

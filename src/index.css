@@ -209,26 +209,44 @@
   }
 }
 
-/* Estilos de Impresión */
+/* Estilos de Impresión — ticket 80mm (fallback HTML cuando no hay puente ESC/POS) */
 @media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
   /* Ocultar TODO por defecto */
   body * {
     visibility: hidden !important;
   }
 
   /* Mostrar solo el área del recibo y sus hijos */
-  #print-receipt, #print-receipt * {
+  #print-receipt,
+  #print-receipt * {
     visibility: visible !important;
   }
 
-  /* Posicionar el recibo en la esquina superior izquierda */
+  /* Posicionar el recibo sin márgenes que congelen el buffer */
   #print-receipt {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     margin: 0 !important;
-    padding: 2mm !important;
+    padding: 1mm 2mm !important;
     width: 76mm !important;
+    max-width: 76mm !important;
+    box-sizing: border-box !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
     background: white !important;
     color: black !important;
     display: block !important;
@@ -240,7 +258,11 @@
   }
 
   /* Ocultar elementos que sabemos que NO queremos */
-  header, footer, nav, .no-print, button {
+  header,
+  footer,
+  nav,
+  .no-print,
+  button {
     display: none !important;
   }
 }

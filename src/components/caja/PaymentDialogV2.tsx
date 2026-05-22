@@ -4,8 +4,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
+import {
+  buildPayItemQtysAllPending,
+  buildPayItemQtysNoneSelected,
+  hasPayItemQtySelection,
+} from "@/lib/payItemQtys";
 import { computeLineAmount, distributeProportionalAmounts, roundMoney } from "@/lib/paymentQuantity";
 import { isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
+import { isExtraOrder } from "@/lib/orderFlow";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
@@ -14,6 +20,7 @@ import { PaymentItemSplitDialog } from "@/components/caja/PaymentItemSplitDialog
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
 import { Banknote, CircleCheck, Coins, CreditCard, Loader2, Printer, UserRound, Wallet, CopyCheck } from "lucide-react";
 import { toast } from "sonner";
+import { printPaymentReceipt } from "@/lib/thermalPrint";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -132,6 +139,8 @@ export default function PaymentDialogV2({
 
   const [payItemQtys, setPayItemQtys] = useState<Record<string, number>>({});
   const [splitItemsDialogOpen, setSplitItemsDialogOpen] = useState(false);
+  /** El usuario ya movió ítems en el split de este cobro; reaperturas conservan payItemQtys. */
+  const itemSplitHasSignaledRef = useRef(false);
 
   const orderUnpaidSignature = useMemo(
     () =>
@@ -171,14 +180,16 @@ export default function PaymentDialogV2({
     && (totalPendingUnits > 1 || unpaidPayableLines.length > 1),
   );
   const isExpressOrder = order?.order_type === "EXPRESS";
-  const canOfferItemSplit = wouldOfferItemSplit && !isExpressOrder;
-  const showDisabledItemSplit = wouldOfferItemSplit && isExpressOrder;
+  const isExtraOrderType = isExtraOrder(order);
+  const canOfferItemSplit = wouldOfferItemSplit && !isExpressOrder && !isExtraOrderType;
+  const showDisabledItemSplit = wouldOfferItemSplit && (isExpressOrder || isExtraOrderType);
 
   useEffect(() => {
     if (!open) {
       setPostPaySummary(null);
       pendingPayPromiseRef.current = null;
       suppressCloseOnceRef.current = false;
+      itemSplitHasSignaledRef.current = false;
       setSplitItemsDialogOpen(false);
       return;
     }
@@ -188,18 +199,41 @@ export default function PaymentDialogV2({
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
+    itemSplitHasSignaledRef.current = false;
     setSplitItemsDialogOpen(false);
   }, [open, order?.id]);
 
   useEffect(() => {
     if (!open || !order) return;
-    const next: Record<string, number> = {};
-    for (const item of order.items ?? []) {
-      const p = Math.floor(Number(item.quantity_pending ?? 0));
-      if (p > 0) next[item.id] = p;
-    }
-    setPayItemQtys(next);
+    itemSplitHasSignaledRef.current = false;
+    setPayItemQtys(buildPayItemQtysAllPending(order));
   }, [open, order?.id, orderUnpaidSignature]);
+
+  const handleSplitItemsDialogOpenChange = useCallback(
+    (isOpen: boolean) => {
+      if (!order) {
+        setSplitItemsDialogOpen(isOpen);
+        return;
+      }
+      if (isOpen) {
+        if (!itemSplitHasSignaledRef.current) {
+          setPayItemQtys(buildPayItemQtysNoneSelected(order));
+        }
+        setSplitItemsDialogOpen(true);
+        return;
+      }
+      setSplitItemsDialogOpen(false);
+      setPayItemQtys((prev) => {
+        if (hasPayItemQtySelection(order, prev)) {
+          itemSplitHasSignaledRef.current = true;
+          return prev;
+        }
+        itemSplitHasSignaledRef.current = false;
+        return buildPayItemQtysAllPending(order);
+      });
+    },
+    [order],
+  );
 
   const sortedDenoms = useMemo(
     () => [...shiftDenoms].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value),
@@ -590,7 +624,7 @@ export default function PaymentDialogV2({
       {order && !postPaySummary ? (
         <PaymentItemSplitDialog
           open={splitItemsDialogOpen}
-          onOpenChange={setSplitItemsDialogOpen}
+          onOpenChange={handleSplitItemsDialogOpenChange}
           order={order}
           qtyByItemId={payItemQtys}
           onQtyByItemIdChange={setPayItemQtys}
@@ -743,7 +777,7 @@ export default function PaymentDialogV2({
                           variant="outline"
                           size="sm"
                           className="mt-2 h-8 border-sky-300 bg-white/90 text-xs font-semibold text-sky-900 hover:bg-sky-100"
-                          onClick={() => setSplitItemsDialogOpen(true)}
+                          onClick={() => handleSplitItemsDialogOpenChange(true)}
                         >
                           Dividir pago
                         </Button>
@@ -753,7 +787,7 @@ export default function PaymentDialogV2({
                           variant="outline"
                           size="sm"
                           disabled
-                          title="Express solo permite cobro total de la orden"
+                          title="Express y Extra solo permiten cobro total de la orden"
                           className="mt-2 h-8 cursor-not-allowed border-sky-200 bg-white/60 text-xs font-semibold text-sky-700/60"
                         >
                           Dividir pago
@@ -972,7 +1006,19 @@ export default function PaymentDialogV2({
                 type="button"
                 variant="outline"
                 className="h-10 w-full gap-2 rounded-2xl border-2 text-sm font-semibold shadow-sm sm:flex-1"
-                onClick={() => window.print()}
+                onClick={() => {
+                  if (!postPaySummary?.receipt) {
+                    window.print();
+                    return;
+                  }
+                  void printPaymentReceipt(postPaySummary.receipt).then((result) => {
+                    if (result.mode === "html" && result.error) {
+                      toast.warning(
+                        "Impresion HTML (puente ESC/POS no disponible). Ejecute: node scripts/thermal-print-bridge.mjs",
+                      );
+                    }
+                  });
+                }}
               >
                 <Printer className="h-4 w-4 shrink-0" />
                 Imprimir Comprobante

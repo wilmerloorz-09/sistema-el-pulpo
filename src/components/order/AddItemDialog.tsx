@@ -258,14 +258,14 @@ const AddItemDialog = ({
           {sortedModifiers.length > 0 && (
             <div className="space-y-2.5">
               <Label className="text-sm font-semibold text-orange-600">Modificaciones</Label>
-              <div className="grid max-h-[35vh] grid-cols-1 gap-1.5 overflow-y-auto pr-1">
+              <div className="grid max-h-[35vh] grid-cols-2 gap-x-2 gap-y-1.5 overflow-y-auto pr-1">
                 {sortedModifiers.map((modifier) => {
                   const isChecked = selectedMods.includes(modifier.id);
                   return (
                     <label
                       key={modifier.id}
                       className={cn(
-                        "flex cursor-pointer items-center gap-2.5 rounded-[14px] border p-2.5 transition-all",
+                        "flex min-w-0 cursor-pointer items-center gap-2 rounded-[14px] border p-2 transition-all",
                         isChecked
                           ? "border-orange-200 bg-orange-50 shadow-sm"
                           : "border-border/60 bg-white/60 hover:border-orange-100 hover:bg-white",
@@ -281,7 +281,7 @@ const AddItemDialog = ({
                       />
                       <span
                         className={cn(
-                          "text-[13px] font-medium leading-none",
+                          "min-w-0 flex-1 truncate text-[12px] font-medium leading-tight",
                           isChecked ? "text-orange-900" : "text-muted-foreground",
                         )}
                       >

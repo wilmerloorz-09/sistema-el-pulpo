@@ -53,6 +53,7 @@ export interface SiblingOrder {
   order_number: number | null;
   order_code: string | null;
   status?: string | null;
+  closed_at?: string | null;
   created_by_name?: string | null;
   split_code: string | null;
   table_order_position: number | null;
@@ -476,9 +477,12 @@ export async function fetchExpressSiblingOrders(branchId: string): Promise<Sibli
     .sort(compareSiblingOrderTabs);
 }
 
-export async function fetchExtraSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
+export async function fetchExtraSiblingOrders(
+  branchId: string,
+  createdByUserId: string,
+): Promise<SiblingOrder[]> {
   const openShift = await getOpenCashShiftForBranch(branchId);
-  if (!openShift) return [];
+  if (!openShift || !createdByUserId) return [];
 
   const extraOrders = (
     await dbSelect<any>("orders", {
@@ -489,6 +493,7 @@ export async function fetchExtraSiblingOrders(branchId: string): Promise<Sibling
         { column: "is_tray_order", op: "eq", value: false },
         { column: "is_special", op: "eq", value: false },
         { column: "cash_shift_id", op: "eq", value: openShift.id },
+        { column: "created_by", op: "eq", value: createdByUserId },
         { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] },
       ],
       skipLocalCache: true,
@@ -497,17 +502,6 @@ export async function fetchExtraSiblingOrders(branchId: string): Promise<Sibling
 
   if (!extraOrders || extraOrders.length === 0) return [];
 
-  const extraOrderIds = extraOrders.map((order: any) => order.id).filter(Boolean);
-  const dispatchEvents = extraOrderIds.length > 0
-    ? await dbSelect<any>("order_dispatch_events", {
-        select: "order_id",
-        filters: [
-          { column: "order_id", op: "in", value: extraOrderIds },
-          { column: "status", op: "eq", value: "APPLIED" },
-        ],
-      })
-    : [];
-  const actuallyDispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
   const creatorIds = Array.from(new Set(extraOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
   const creatorProfiles = creatorIds.length > 0
     ? await dbSelect<any>("profiles", {
@@ -518,13 +512,13 @@ export async function fetchExtraSiblingOrders(branchId: string): Promise<Sibling
   const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
   return extraOrders
-    .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
     .filter((sibling: any) => !sibling.closed_at)
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
       order_code: sibling.order_code ?? null,
       status: sibling.status ?? null,
+      closed_at: sibling.closed_at ?? null,
       created_by_name: sibling.created_by ? (creatorNameMap[sibling.created_by] ?? "Usuario") : null,
       split_code: null,
       table_order_position: Number(sibling.table_order_position ?? 0) || null,

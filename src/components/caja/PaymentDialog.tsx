@@ -33,6 +33,7 @@ import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, BadgeDollarSign, Check
 import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "./PaymentReceipt";
+import { printPaymentReceipt } from "@/lib/thermalPrint";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -1497,7 +1498,19 @@ export default function PaymentDialog({
               <Button
                 variant="outline"
                 className="h-12 gap-2 rounded-2xl font-bold shadow-sm border-2 hover:bg-slate-50"
-                onClick={() => window.print()}
+                onClick={() => {
+                  if (!lastTransactionData) {
+                    window.print();
+                    return;
+                  }
+                  void printPaymentReceipt(lastTransactionData).then((result) => {
+                    if (result.mode === "html" && result.error) {
+                      toast.warning(
+                        "Impresion HTML (puente ESC/POS no disponible). Ejecute: node scripts/thermal-print-bridge.mjs",
+                      );
+                    }
+                  });
+                }}
               >
                 <Printer className="h-5 w-5" />
                 Imprimir Comprobante

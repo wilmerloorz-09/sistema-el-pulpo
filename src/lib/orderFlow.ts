@@ -46,8 +46,10 @@ export function getOrderStatusLabel(
   closedAt?: string | null,
 ): string {
   const st = String(status ?? "");
-  if (orderType === "EXTRA" && closedAt) {
-    return "Cerrada";
+  if (orderType === "EXTRA") {
+    if (closedAt) return "Cerrada";
+    if (st === "PAID") return "Pagada";
+    if (st === "KITCHEN_DISPATCHED") return "Despachada";
   }
   if (orderType === "EXPRESS") {
     switch (st) {

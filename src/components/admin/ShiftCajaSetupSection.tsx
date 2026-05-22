@@ -204,9 +204,10 @@ export default function ShiftCajaSetupSection({
                   ))}
                 </SelectContent>
               </Select>
-              {templates.length === 0 && (
+              {templates.length === 0 && !disabled && (
                 <p className="mt-2 text-xs text-amber-800">
-                  No hay plantillas activas en esta sucursal. Configuralas en Administracion.
+                  No hay plantillas activas en esta sucursal. Un administrador de sucursal puede crearlas en
+                  Administracion &gt; Plantillas de caja.
                 </p>
               )}
             </div>
