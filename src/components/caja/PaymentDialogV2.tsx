@@ -14,7 +14,9 @@ import { isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paym
 import { isExtraOrder } from "@/lib/orderFlow";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
+import { shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import { PaymentItemSplitDialog } from "@/components/caja/PaymentItemSplitDialog";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
@@ -114,6 +116,8 @@ export default function PaymentDialogV2({
   onClose,
   readOnly = false,
 }: Props) {
+  const shiftGateQuery = useBranchShiftGate();
+  const hidePrintReceipt = shouldUseSecondaryPaymentDialog(shiftGateQuery.data);
   const pendingPayPromiseRef = useRef<Promise<unknown> | null>(null);
   const suppressCloseOnceRef = useRef(false);
 
@@ -620,7 +624,7 @@ export default function PaymentDialogV2({
 
   return (
     <>
-      {postPaySummary ? <PaymentReceipt {...postPaySummary.receipt} /> : null}
+      {postPaySummary && !hidePrintReceipt ? <PaymentReceipt {...postPaySummary.receipt} /> : null}
       {order && !postPaySummary ? (
         <PaymentItemSplitDialog
           open={splitItemsDialogOpen}
@@ -1001,31 +1005,41 @@ export default function PaymentDialogV2({
           )}
         >
           {postPaySummary ? (
-            <div className="flex w-full flex-col gap-2 sm:ms-auto sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 w-full gap-2 rounded-2xl border-2 text-sm font-semibold shadow-sm sm:flex-1"
-                onClick={() => {
-                  if (!postPaySummary?.receipt) {
-                    window.print();
-                    return;
-                  }
-                  void printPaymentReceipt(postPaySummary.receipt).then((result) => {
-                    if (result.mode === "html" && result.error) {
-                      toast.warning(
-                        "Impresion HTML (puente ESC/POS no disponible). Ejecute: node scripts/thermal-print-bridge.mjs",
-                      );
+            <div
+              className={cn(
+                "flex w-full flex-col gap-2 sm:ms-auto sm:flex-row sm:justify-end sm:gap-3",
+                hidePrintReceipt && "sm:justify-stretch",
+              )}
+            >
+              {!hidePrintReceipt ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 w-full gap-2 rounded-2xl border-2 text-sm font-semibold shadow-sm sm:flex-1"
+                  onClick={() => {
+                    if (!postPaySummary?.receipt) {
+                      window.print();
+                      return;
                     }
-                  });
-                }}
-              >
-                <Printer className="h-4 w-4 shrink-0" />
-                Imprimir Comprobante
-              </Button>
+                    void printPaymentReceipt(postPaySummary.receipt).then((result) => {
+                      if (result.mode === "html" && result.error) {
+                        toast.warning(
+                          "Impresion HTML (puente ESC/POS no disponible). Ejecute: node scripts/thermal-print-bridge.mjs",
+                        );
+                      }
+                    });
+                  }}
+                >
+                  <Printer className="h-4 w-4 shrink-0" />
+                  Imprimir Comprobante
+                </Button>
+              ) : null}
               <Button
                 type="button"
-                className="h-10 w-full rounded-2xl text-sm font-semibold shadow-md sm:flex-1"
+                className={cn(
+                  "h-10 w-full rounded-2xl text-sm font-semibold shadow-md",
+                  hidePrintReceipt ? "sm:w-full" : "sm:flex-1",
+                )}
                 onClick={() => {
                   void (async () => {
                     await settlePendingPay();

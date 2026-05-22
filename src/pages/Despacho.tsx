@@ -48,7 +48,9 @@ const Despacho = () => {
 
   const resolvedView = activeView && availableViews.includes(activeView) ? activeView : resolveInitialView(availableViews, storageKey);
   const scope = resolvedView ?? "TABLE";
-  const { orders, counts, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem, dispatchOrder } = useDispatchOrders(scope);
+  const { orders, counts, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem, dispatchOrder } =
+    useDispatchOrders(scope);
+  const [dispatchingOrderId, setDispatchingOrderId] = useState<string | null>(null);
 
   const readOnly = !accessLoading && hasAccess && Boolean(resolvedView) && !canOperateView(scope);
   const canShowMain = !accessLoading && hasAccess && Boolean(resolvedView);
@@ -178,9 +180,17 @@ const Despacho = () => {
                       onDispatchItem={(_, item, qty) => {
                         dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
                       }}
+                      onDispatchAll={(currentOrder) => {
+                        setDispatchingOrderId(currentOrder.id);
+                        dispatchOrder.mutate(
+                          { orderId: currentOrder.id },
+                          { onSettled: () => setDispatchingOrderId(null) },
+                        );
+                      }}
                       isMarkingOrderReady={sendOrderReadyAlert.isPending || dispatchOrder.isPending}
                       isMarkingReady={markItemReady.isPending}
                       isDispatching={dispatchItem.isPending}
+                      isDispatchingOrder={dispatchOrder.isPending && dispatchingOrderId === order.id}
                       readOnly={readOnly}
                     />
                   ))}

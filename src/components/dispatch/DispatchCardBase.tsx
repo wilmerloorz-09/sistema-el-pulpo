@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
-import { Clock, Check, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
+import { Clock, Check, Loader2, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -23,9 +23,11 @@ interface DispatchCardBaseProps {
   onMarkOrderReady: (order: DispatchOrder) => void;
   onMarkItemReady: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
   onDispatchItem: (order: DispatchOrder, item: DispatchOrderItem, qty: number) => void;
+  onDispatchAll: (order: DispatchOrder) => void;
   isMarkingOrderReady?: boolean;
   isMarkingReady?: boolean;
   isDispatching?: boolean;
+  isDispatchingOrder?: boolean;
   readOnly?: boolean;
 }
 
@@ -203,9 +205,11 @@ export function DispatchCardBase({
   onMarkOrderReady,
   onMarkItemReady,
   onDispatchItem,
+  onDispatchAll,
   isMarkingOrderReady = false,
   isMarkingReady = false,
   isDispatching = false,
+  isDispatchingOrder = false,
   readOnly = false,
 }: DispatchCardBaseProps) {
   const since = order.sent_to_kitchen_at || order.updated_at;
@@ -249,6 +253,8 @@ export function DispatchCardBase({
   });
   const canMarkAnyReady = order.pending_prepare_count > 0;
   const canDispatchAny = order.dispatchable_count > 0;
+  const dispatchAllBusy = isDispatching || isDispatchingOrder;
+  const dispatchAllDisabled = order.locked_for_editing || dispatchAllBusy || !canDispatchAny;
   const previewableItems = useMemo(
     () => order.items.filter((item) =>
       order.order_type === "EXPRESS" ? item.quantity_dispatchable > 0 || item.quantity_dispatched > 0 : item.quantity_paid > 0,
@@ -305,9 +311,27 @@ export function DispatchCardBase({
                       <span className="truncate">{order.created_by_name}</span>
                     </p>
                   )}
-                  <p className="shrink-0 font-mono text-[10px] font-bold tracking-[0.08em] text-slate-700 sm:hidden">
-                    {getOrderRef(order.order_code, order.order_number)}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
+                    <p className="font-mono text-[10px] font-bold tracking-[0.08em] text-slate-700">
+                      {getOrderRef(order.order_code, order.order_number)}
+                    </p>
+                    {!readOnly && canDispatchAny ? (
+                      <Button
+                        type="button"
+                        variant="success"
+                        size="sm"
+                        disabled={dispatchAllDisabled}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDispatchAll(order);
+                        }}
+                        className="h-7 gap-1 rounded-full px-2.5 text-[10px] font-bold"
+                      >
+                        {isDispatchingOrder ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
+                        Despachar todo
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
@@ -372,10 +396,26 @@ export function DispatchCardBase({
             </div>
           </div>
         </div>
-        <div className="hidden min-w-0 sm:block">
+        <div className="hidden min-w-0 items-center justify-end gap-2 sm:flex">
           <p className="truncate font-mono text-[11px] font-bold tracking-[0.05em] text-slate-500 sm:text-xs">
             {getOrderRef(order.order_code, order.order_number)}
           </p>
+          {!readOnly && canDispatchAny ? (
+            <Button
+              type="button"
+              variant="success"
+              size="sm"
+              disabled={dispatchAllDisabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDispatchAll(order);
+              }}
+              className="h-8 shrink-0 gap-1 rounded-full px-3 text-xs font-bold"
+            >
+              {isDispatchingOrder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
+              Despachar todo
+            </Button>
+          ) : null}
         </div>
       </div>
 

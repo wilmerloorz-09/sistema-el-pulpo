@@ -168,6 +168,18 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
   }
 
   const uniqueOrderIds = Array.from(new Set(orderIds));
+
+  try {
+    const { data, error } = await (supabase as any).rpc("get_orders_operational_snapshots", {
+      p_order_ids: uniqueOrderIds,
+    });
+    if (!error) {
+      return buildOperationalMapsFromSnapshotRows((data ?? []) as OrderOperationalSnapshotRow[]);
+    }
+  } catch {
+    // Fallback si la migracion batch aun no esta aplicada.
+  }
+
   const snapshots = await Promise.all(
     uniqueOrderIds.map(async (orderId) => {
       try {
