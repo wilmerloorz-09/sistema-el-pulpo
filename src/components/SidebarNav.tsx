@@ -10,7 +10,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
-import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { getUserDisplayName } from "@/lib/userDisplay";
@@ -51,7 +50,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const initials = getInitials(accountLabel);
   const location = useLocation();
   const navigate = useNavigate();
-  const [openHoverCard, setOpenHoverCard] = useState<string | null>(null);
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
   const appVersion = useAppVersion();
 
@@ -62,18 +61,18 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   }
 
   return (
-    <aside className={cn("hidden w-[248px] flex-col self-start border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:min-h-screen z-40", className)}>
-      <div className="shrink-0 border-b border-sidebar-border/80 px-4 py-4">
+    <aside className={cn("hidden w-[248px] flex-col self-start border-r border-slate-800 bg-slate-900 text-slate-300 md:sticky md:top-0 md:flex md:h-screen md:min-h-screen z-40", className)}>
+      <div className="shrink-0 border-b border-slate-800 px-4 py-4">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain" />
+          <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain brightness-0 invert" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sidebar-foreground/55">Sistema</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Sistema</p>
             <div className="flex min-w-0 items-baseline gap-2">
-              <p className="truncate font-display text-lg font-black text-sidebar-foreground">El Pulpo</p>
+              <p className="truncate font-display text-lg font-black text-white">El Pulpo</p>
               {appVersion.version ? (
                 <button
                   type="button"
-                  className="shrink-0 rounded-md px-1 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-sidebar-foreground/45 transition-colors hover:bg-white/10 hover:text-sidebar-foreground/80"
+                  className="shrink-0 rounded-md px-1 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
                   onClick={() => setIsVersionOpen(true)}
                   title="Ver version instalada"
                 >
@@ -96,7 +95,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
               }}
               disabled={loading}
             >
-              <SelectTrigger className="h-11 w-full rounded-2xl border border-sidebar-border/80 bg-white/10 px-3 text-left text-xs font-semibold text-sidebar-foreground shadow-none hover:bg-white/12 [&>span]:truncate">
+              <SelectTrigger className="h-11 w-full rounded-2xl border border-slate-700 bg-slate-800/50 px-3 text-left text-xs font-semibold text-slate-200 shadow-none hover:bg-slate-800 [&>span]:truncate">
                 <SelectValue placeholder="Seleccionar sucursal" />
               </SelectTrigger>
               <SelectContent>
@@ -108,191 +107,190 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
               </SelectContent>
             </Select>
           ) : activeBranch ? (
-            <div className="inline-flex min-h-[42px] w-full items-center rounded-2xl border border-emerald-400/20 bg-emerald-400/12 px-3 py-2 text-xs font-semibold text-emerald-100">
+            <div className="inline-flex min-h-[42px] w-full items-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-400">
               <span className="truncate">{activeBranch.name}</span>
             </div>
           ) : null}
         </div>
       </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4">
-        {visibleItems.map((item) => {
-          const mesasListOrigin = searchParams.get("origin");
-          const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
-          const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
-          const isOriginExpress = searchParams.get("origin") === "express";
-          const isOriginExtra = searchParams.get("origin") === "extra";
-          const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
-          const hasSubItems = (item.subItems?.length ?? 0) > 0;
-          const isItemActive = item.to === "/mesas"
-            ? (location.pathname === "/mesas" || location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasList))
-            : item.to === "/para-llevar"
-              ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
-              : item.to === "/express"
-                ? (location.pathname === "/express" || (location.pathname === "/ordenes" && isOriginExpress))
-              : item.to === "/extra"
-                ? (location.pathname === "/extra" || (location.pathname === "/ordenes" && isOriginExtra))
-              : item.to === "/orden-especial"
-                ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
-            : item.to === "/ordenes"
-              ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginExtra && !isOriginOrdenEspecial)
-              : (location.pathname === item.to || (hasSubItems && location.pathname.startsWith(item.to)));
-
-          const navLink = !hasSubItems ? (
-            <NavLink
-              to={item.to}
-              onClick={onClose}
-              forceActive={isItemActive}
-              suppressActive={!isItemActive}
-              className={cn(
-                "group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
-                "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
-              )}
-              activeClassName={cn(
-                "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
-                item.tone.active,
-              )}
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 transition-transform group-hover:scale-105">
-                {item.icon}
-              </span>
-              <span className="truncate text-sm font-bold">{item.label}</span>
-            </NavLink>
-          ) : (
-            <div
-              className={cn(
-                "group flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sidebar-foreground/72 transition-all",
-                "hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground",
-                isItemActive && "border-white/10 bg-gradient-to-r text-white shadow-[0_18px_38px_-24px_rgba(245,158,11,0.82)]",
-                isItemActive && item.tone.active,
-                (!isItemActive && openHoverCard === item.to) && "bg-white/10 border-white/5 text-sidebar-foreground"
-              )}
-               onClick={() => {
-                navigate(item.to);
-                setOpenHoverCard(prev => prev === item.to ? null : item.to);
-              }}
-            >
-              <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 transition-transform group-hover:scale-105">
-                {item.icon}
-              </span>
-              <span className="relative z-10 truncate text-sm font-bold">{item.label}</span>
-              <ChevronRight className={cn(
-                "relative z-10 ml-auto h-4 w-4 shrink-0 opacity-40 transition-transform duration-300",
-                (isItemActive || openHoverCard === item.to) && "rotate-90 opacity-100"
-              )} />
-            </div>
-          );
-
-          if (hasSubItems) {
-            return (
-              <HoverCard 
-                key={item.to} 
-                open={openHoverCard === item.to}
-                onOpenChange={(open) => {
-                  if (open) {
-                    setOpenHoverCard(item.to);
-                  } else if (openHoverCard === item.to) {
-                    setOpenHoverCard(null);
-                  }
-                }}
-                openDelay={0} 
-                closeDelay={500}
-              >
-                <HoverCardTrigger asChild>
-                  {navLink}
-                </HoverCardTrigger>
-                <HoverCardContent 
-                  side="right" 
-                  align="start" 
-                  sideOffset={4}
-                  className="z-[100] w-56 rounded-[24px] border border-sidebar-border bg-sidebar p-2 shadow-2xl"
-                  onMouseEnter={() => setOpenHoverCard(item.to)}
-                  onMouseLeave={() => setOpenHoverCard(null)}
-                >
-                  <div className="flex flex-col gap-1">
-                    {item.subItems?.map((subItem) => {
-                      const isSubActive =
-                        (subItem.to === location.pathname + location.search) ||
-                        (Boolean(subItem.end) && location.pathname === subItem.to && !location.search);
-
-                      if (subItem.disabled) {
-                        return (
-                          <Tooltip key={`${subItem.label}-${subItem.to}`}>
-                            <TooltipTrigger asChild>
-                              <span
-                                className={cn(
-                                  "group/sub flex cursor-not-allowed items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-sidebar-foreground/35",
-                                )}
-                              >
-                                <div className="h-1.5 w-1.5 rounded-full bg-sidebar-foreground/15" />
-                                {subItem.label}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="max-w-[220px] text-xs">
-                              {subItem.disabledReason ?? "No disponible"}
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      }
-
-                      return (
-                        <NavLink
-                          key={subItem.to}
-                          to={subItem.to}
-                          end={subItem.end}
-                          onClick={() => {
-                            setOpenHoverCard(null);
-                            onClose?.();
-                          }}
-                          className={cn(
-                            "group/sub flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-sidebar-foreground/70 transition-all",
-                            "hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground",
-                            isSubActive && "bg-sidebar-foreground/15 text-sidebar-foreground shadow-sm",
-                          )}
-                        >
-                          <div className={cn(
-                            "h-1.5 w-1.5 rounded-full transition-all",
-                            isSubActive ? "bg-primary scale-100" : "bg-sidebar-foreground/20 scale-0 group-hover/sub:scale-100",
-                          )} />
-                          {subItem.label}
-                        </NavLink>
-                      );
-                    })}
-                  </div>
-                </HoverCardContent>
-              </HoverCard>
-            );
-          }
+      <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
+        {(["VENTA", "OPERATIVO", "FINANZAS", "ADMINISTRACIÓN"] as const).map(group => {
+          const items = visibleItems.filter(item => item.group === group);
+          if (items.length === 0) return null;
 
           return (
-            <div key={item.to}>
-              <Tooltip delayDuration={120}>
-                <TooltipTrigger asChild>
-                  {navLink}
-                </TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
-              </Tooltip>
+            <div key={group} className="flex flex-col gap-1.5">
+              <h3 className="mb-1 px-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
+                {group}
+              </h3>
+              <div className="flex flex-col gap-1">
+                {items.map((item) => {
+                  const mesasListOrigin = searchParams.get("origin");
+                  const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
+                  const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
+                  const isOriginExpress = searchParams.get("origin") === "express";
+                  const isOriginExtra = searchParams.get("origin") === "extra";
+                  const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
+                  const hasSubItems = (item.subItems?.length ?? 0) > 0;
+                  const isItemActive = item.to === "/mesas"
+                    ? (location.pathname === "/mesas" || location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasList))
+                    : item.to === "/para-llevar"
+                      ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
+                      : item.to === "/express"
+                        ? (location.pathname === "/express" || (location.pathname === "/ordenes" && isOriginExpress))
+                      : item.to === "/extra"
+                        ? (location.pathname === "/extra" || (location.pathname === "/ordenes" && isOriginExtra))
+                      : item.to === "/orden-especial"
+                        ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
+                    : item.to === "/ordenes"
+                      ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginExtra && !isOriginOrdenEspecial)
+                      : item.to.includes("?") 
+                        ? (location.pathname + location.search === item.to)
+                        : item.end
+                          ? (location.pathname === item.to && location.search === "")
+                          : (location.pathname === item.to || (hasSubItems && location.pathname.startsWith(item.to)));
+
+                  const isExpanded = expandedItem === item.to;
+
+                  const navLinkContent = (
+                    <>
+                      <span className={cn(
+                        "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+                        isItemActive ? "bg-indigo-500 text-white" : "text-slate-400 group-hover:text-slate-200"
+                      )}>
+                        {item.icon}
+                      </span>
+                      <span className={cn(
+                        "relative z-10 truncate text-[13px] transition-colors",
+                        isItemActive ? "font-semibold text-white" : "font-medium text-slate-300 group-hover:text-slate-100"
+                      )}>
+                        {item.label}
+                      </span>
+                      {hasSubItems && (
+                        <ChevronRight className={cn(
+                          "relative z-10 ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform duration-300",
+                          isExpanded && "rotate-90 text-slate-300"
+                        )} />
+                      )}
+                    </>
+                  );
+
+                  const linkClasses = cn(
+                    "group flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-1 transition-all",
+                    "hover:bg-slate-800/50",
+                    isItemActive && "bg-slate-800 border-slate-700",
+                    isExpanded && !isItemActive && "bg-slate-800/30"
+                  );
+
+                  if (item.disabled) {
+                    return (
+                      <Tooltip key={`${item.to}-${item.label}`}>
+                        <TooltipTrigger asChild>
+                          <div className={cn(linkClasses, "cursor-not-allowed opacity-50 hover:bg-transparent")}>
+                            {navLinkContent}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-[220px] text-xs">
+                          {item.disabledReason ?? "No disponible"}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  }
+
+                  return (
+                    <div key={`${item.to}-${item.label}`} className="flex flex-col">
+                      {!hasSubItems ? (
+                        <NavLink
+                          to={item.to}
+                          onClick={onClose}
+                          forceActive={isItemActive}
+                          suppressActive={!isItemActive}
+                          className={linkClasses}
+                          activeClassName="bg-slate-800 border-slate-700"
+                        >
+                          {navLinkContent}
+                        </NavLink>
+                      ) : (
+                        <div
+                          className={cn(linkClasses, "cursor-pointer")}
+                          onClick={() => {
+                            if (!isExpanded) navigate(item.to);
+                            setExpandedItem(prev => prev === item.to ? null : item.to);
+                          }}
+                        >
+                          {navLinkContent}
+                        </div>
+                      )}
+
+                      {hasSubItems && (
+                        <AnimatePresence initial={false}>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2, ease: "easeInOut" }}
+                              className="overflow-hidden"
+                            >
+                              <div className="mt-1 flex flex-col gap-1 py-1 pl-11 pr-2">
+                                {item.subItems?.map((subItem) => {
+                                  const isSubActive =
+                                    (subItem.to === location.pathname + location.search) ||
+                                    (Boolean(subItem.end) && location.pathname === subItem.to && !location.search);
+
+                                  if (subItem.disabled) {
+                                    return (
+                                      <Tooltip key={`${subItem.label}-${subItem.to}`}>
+                                        <TooltipTrigger asChild>
+                                          <div className="flex cursor-not-allowed items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold text-slate-600">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-slate-700" />
+                                            <span className="truncate">{subItem.label}</span>
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" className="max-w-[220px] text-xs">
+                                          {subItem.disabledReason ?? "No disponible"}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    );
+                                  }
+
+                                  return (
+                                    <NavLink
+                                      key={subItem.to}
+                                      to={subItem.to}
+                                      end={subItem.end}
+                                      onClick={onClose}
+                                      className={cn(
+                                        "group/sub flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold text-slate-400 transition-colors",
+                                        "hover:bg-slate-800/80 hover:text-slate-200",
+                                        isSubActive && "bg-slate-800 text-slate-100"
+                                      )}
+                                    >
+                                      <div className={cn(
+                                        "h-1.5 w-1.5 rounded-full transition-all",
+                                        isSubActive ? "bg-indigo-400 scale-100" : "bg-slate-600 scale-0 group-hover/sub:scale-100",
+                                      )} />
+                                      <span className="truncate">{subItem.label}</span>
+                                    </NavLink>
+                                  );
+                                })}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })}
       </nav>
 
-      <div className="shrink-0 border-t border-sidebar-border/80 px-3 py-4">
+      <div className="shrink-0 border-t border-slate-800 px-3 py-4">
         <div className="flex flex-col gap-2">
-          <Tooltip delayDuration={120}>
-            <TooltipTrigger asChild>
-              <div>
-                <ThemeToggle
-                  isDark={isDark}
-                  onToggle={onToggleTheme}
-                  label={isDark ? "Tema claro" : "Tema oscuro"}
-                  className="flex h-12 w-full items-center justify-start gap-3 rounded-2xl border border-transparent px-3 text-sidebar-foreground/78 hover:border-white/10 hover:bg-white/10 hover:text-sidebar-foreground"
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">{isDark ? "Cambiar a claro" : "Cambiar a oscuro"}</TooltipContent>
-          </Tooltip>
-
           <Tooltip delayDuration={120}>
             <TooltipTrigger asChild>
               <button
@@ -301,10 +299,10 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                   onOpenAccount();
                   onClose?.();
                 }}
-                className="flex h-12 w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 text-sidebar-foreground transition-colors hover:bg-white/12"
+                className="flex h-11 w-full items-center gap-3 rounded-xl border border-slate-700 bg-slate-800/50 px-3 text-slate-300 transition-colors hover:bg-slate-800"
                 aria-label="Mi cuenta"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/10">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-700 text-slate-300">
                   {profile?.avatar_url ? (
                     <img
                       src={profile.avatar_url}
@@ -312,12 +310,13 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                       className="h-full w-full object-cover"
                     />
                   ) : initials ? (
-                    <span className="text-xs font-black tracking-wide">{initials}</span>
+                    <span className="text-[10px] font-black tracking-wide">{initials}</span>
                   ) : (
-                    <UserRound className="h-5 w-5" />
+                    <UserRound className="h-4 w-4" />
                   )}
                 </span>
-                <span className="truncate text-sm font-bold">{accountLabel}</span>
+                <span className="truncate text-xs font-bold text-slate-200">{accountLabel}</span>
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500">Rol: {profile?.role_name ?? "Usuario"}</span>
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">{accountLabel}</TooltipContent>

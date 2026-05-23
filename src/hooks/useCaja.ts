@@ -2128,12 +2128,14 @@ export function useCaja(params?: {
         qty: Math.max(0, Math.trunc(denom.qty || 0)),
       }));
 
-      const { error } = await supabase.rpc("open_cash_register" as any, {
+      console.log("RPC Payload:", { p_shift_id: shift.id, p_cashier_id: user.id, p_branch_id: activeBranchId, p_denoms: normalizedDenomCounts });
+      const { data, error } = await supabase.rpc("open_cash_register" as any, {
         p_shift_id: shift.id,
         p_cashier_id: user.id,
         p_branch_id: activeBranchId,
         p_denoms: normalizedDenomCounts,
       });
+      console.log("RPC Result:", { data, error });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -2690,9 +2692,12 @@ export function useCaja(params?: {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
 
+      if (!activeBranchId) throw new Error("No branch selected");
+
       const { error } = await supabase.rpc("close_cash_register" as any, {
         p_shift_id: shift.id,
         p_cashier_id: user.id,
+        p_branch_id: activeBranchId,
         p_notes: notes ?? null,
       });
       if (error) throw error;

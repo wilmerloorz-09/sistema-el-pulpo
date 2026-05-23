@@ -239,10 +239,17 @@ export default function PaymentDialogV2({
     [order],
   );
 
-  const sortedDenoms = useMemo(
-    () => [...shiftDenoms].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value),
-    [shiftDenoms],
-  );
+  const sortedDenoms = useMemo(() => {
+    const uniqueDenoms = new Map<string, ShiftDenom>();
+    for (const d of shiftDenoms) {
+      if (!uniqueDenoms.has(d.denomination_id)) {
+        uniqueDenoms.set(d.denomination_id, d);
+      }
+    }
+    return Array.from(uniqueDenoms.values()).sort(
+      (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value,
+    );
+  }, [shiftDenoms]);
   const coinDenoms = useMemo(
     () => sortedDenoms.filter((d) => d.denomination_type !== "bill"),
     [sortedDenoms],
@@ -582,34 +589,30 @@ export default function PaymentDialogV2({
 
   const renderDenomButton = (d: ShiftDenom) => {
     const qty = receivedByDenom[d.denomination_id] || 0;
-    return (
-      <button
-        key={d.denomination_id}
-        type="button"
-        onClick={() => addDenom(d.denomination_id)}
-        disabled={readOnly}
-        className={cn(
-          "group relative w-full overflow-hidden rounded-2xl border bg-card text-left transition-all",
-          qty > 0 ? "border-primary/50 shadow-sm" : "border-border hover:border-primary/30 hover:shadow-sm",
-        )}
-      >
-        {qty > 0 && (
-          <span className="absolute right-1 top-1 z-10 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground shadow-sm">
-            x{qty}
-          </span>
-        )}
-        <DenominationVisual
-          label={d.label}
-          imageUrl={d.image_url}
-          className="h-12 w-full rounded-none border-0 bg-white sm:h-14"
-          imageClassName="object-contain bg-white p-1"
-          iconClassName="h-5 w-5"
-        />
-        <div className="border-t border-border bg-muted/20 px-1 py-1 text-center">
-          <div className="text-xs font-black leading-none text-primary">${d.value.toFixed(2)}</div>
-        </div>
-      </button>
-    );
+    return <button
+          key={d.denomination_id}
+          type="button"
+          onClick={() => addDenom(d.denomination_id)}
+          disabled={readOnly}
+          className={cn(
+            "group relative flex items-center gap-2 rounded-xl border bg-card px-2.5 py-1.5 text-left transition-colors outline-none focus:outline-none select-none transform-gpu",
+            qty > 0 ? "border-primary/50 bg-primary/5 shadow-sm" : "border-border hover:border-primary/30 hover:shadow-sm"
+          )}
+        >
+          {qty > 0 && (
+            <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground shadow-sm">
+              {qty}
+            </span>
+          )}
+          <DenominationVisual
+            label={d.label}
+            imageUrl={d.image_url}
+            className="h-8 w-8 shrink-0 rounded-md border border-slate-100 bg-white shadow-sm"
+            imageClassName="object-contain p-0.5"
+            iconClassName="h-4 w-4"
+          />
+          <div className="text-xs font-black text-slate-700 sm:text-sm">${d.value.toFixed(2)}</div>
+        </button>;
   };
 
   const selectedLines = useMemo(() => {
@@ -696,11 +699,7 @@ export default function PaymentDialogV2({
               {order.created_by_name}
             </div>
           )}
-          {!postPaySummary && (
-            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-              Indica transferencia y efectivo por denominaciones; al cobrar se registra el pago en el turno actual.
-            </p>
-          )}
+
           {postPaySummary && order && (
             <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
               Orden {order.order_code ?? `#${order.order_number}`}
@@ -867,38 +866,37 @@ export default function PaymentDialogV2({
                   )}
                 </div>
               </div>
-
               {/* Efectivo y detalle: dos cuadros hermanos (lado a lado en lg) */}
-              <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,32%)] lg:items-stretch lg:gap-5">
-                <div className="flex min-h-0 flex-col rounded-[22px] border border-amber-200 bg-gradient-to-br from-amber-50/95 via-white to-emerald-50/40 p-4 shadow-sm sm:p-5 lg:h-full">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
+              <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(240px,1fr)_minmax(240px,1fr)] lg:items-stretch lg:gap-5">
+                <div className="flex min-h-0 flex-col rounded-[22px] border border-amber-200 bg-gradient-to-br from-amber-50/95 via-white to-emerald-50/40 p-4 shadow-sm sm:p-5 lg:h-full transform-gpu">
+                  <div className="mb-4 flex items-start justify-between gap-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="shrink-0 rounded-xl bg-amber-100 p-2 text-amber-700 hidden sm:block">
                         <Coins className="h-4 w-4" />
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">Efectivo entregado</p>
-                        <p className="text-[11px] text-muted-foreground">Toca las denominaciones para sumar</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">Efectivo entregado</p>
+                        <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">Toca las denominaciones para sumar</p>
                       </div>
                     </div>
                     {!readOnly && Object.keys(receivedByDenom).length > 0 && (
-                      <Button type="button" variant="ghost" size="sm" className="h-8 text-amber-900" onClick={clearCash}>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-[11px] text-amber-900 sm:px-3 sm:text-xs" onClick={clearCash}>
                         Limpiar efectivo
                       </Button>
                     )}
                   </div>
 
-                  <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-x-hidden lg:overflow-y-auto">
                     {!shiftDenoms || shiftDenoms.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
                         No hay denominaciones configuradas para este turno. Abre la caja correctamente.
                       </p>
                     ) : (
-                      <div className="min-h-0 min-w-0 flex-1 space-y-5 lg:overflow-y-auto">
+                      <>
                         {coinDenoms.length > 0 && (
                           <div>
-                            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">Monedas</p>
-                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-4 xl:grid-cols-5">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">Monedas</p>
+                            <div className="flex flex-wrap gap-2 sm:gap-3">
                               {coinDenoms.map(renderDenomButton)}
                             </div>
                           </div>
@@ -906,12 +904,12 @@ export default function PaymentDialogV2({
                         {billDenoms.length > 0 && (
                           <div>
                             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800">Billetes</p>
-                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-4 xl:grid-cols-5">
+                            <div className="flex flex-wrap gap-2 sm:gap-3">
                               {billDenoms.map(renderDenomButton)}
                             </div>
                           </div>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -957,47 +955,61 @@ export default function PaymentDialogV2({
                       </div>
                     )}
                   </div>
+                </div>
 
-                  {changeAmount > 0.001 && !cannotMakeChange ? (
-                    <div className="shrink-0 rounded-2xl border border-emerald-500/25 bg-emerald-50/90 p-3 shadow-sm">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Cambio a entregar</p>
-                        <p className="font-display text-lg font-bold tabular-nums text-emerald-800">{formatCurrency(changeAmount)}</p>
-                      </div>
-                      {changeDenomBreakdown.length > 0 ? (
-                        <div className="max-h-[40vh] space-y-1.5 overflow-y-auto lg:max-h-none">
-                          {changeDenomBreakdown.map((denomination) => (
-                            <div
-                              key={denomination.denomination_id}
-                              className="flex items-center justify-between gap-2 text-sm"
-                            >
-                              <div className="flex min-w-0 flex-1 items-center gap-2">
-                                <DenominationQtyCircle qty={denomination.qty} size="sm" tone="emerald" />
-                                <DenominationVisual
-                                  label={denomination.label}
-                                  imageUrl={denomination.image_url}
-                                  className="h-8 w-8 shrink-0 rounded-lg border border-emerald-100 bg-white"
-                                  iconClassName="h-3.5 w-3.5"
-                                />
-                                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                                  {denomination.label}
+                <div className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[22px] border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm sm:p-5 lg:h-full">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <p className="mb-3 shrink-0 text-xs font-semibold uppercase tracking-wide text-emerald-900">
+                      Cambio a entregar
+                    </p>
+
+                    {changeAmount > 0.001 && !cannotMakeChange ? (
+                      <>
+                        <div className="mb-2 flex shrink-0 items-center justify-between gap-2 rounded-xl bg-emerald-100/50 px-3 py-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Total</p>
+                          <p className="font-display text-lg font-bold tabular-nums text-emerald-800">{formatCurrency(changeAmount)}</p>
+                        </div>
+                        {changeDenomBreakdown.length > 0 ? (
+                          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+                            {changeDenomBreakdown.map((denomination) => (
+                              <div
+                                key={denomination.denomination_id}
+                                className="flex items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-white/60 px-2.5 py-2 text-sm shadow-sm"
+                              >
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                  <DenominationQtyCircle qty={denomination.qty} size="sm" tone="emerald" />
+                                  <DenominationVisual
+                                    label={denomination.label}
+                                    imageUrl={denomination.image_url}
+                                    className="h-8 w-8 shrink-0 rounded-lg border border-emerald-100 bg-white"
+                                    iconClassName="h-3.5 w-3.5"
+                                  />
+                                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                                    {denomination.label}
+                                  </span>
+                                </div>
+                                <span className="shrink-0 font-medium tabular-nums text-emerald-900">
+                                  {formatCurrency(denomination.qty * denomination.value)}
                                 </span>
                               </div>
-                              <span className="shrink-0 font-medium tabular-nums text-emerald-900">
-                                {formatCurrency(denomination.qty * denomination.value)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">Sin desglose por denominacion.</p>
-                      )}
-                    </div>
-                  ) : changeAmount > 0.001 && cannotMakeChange ? (
-                    <div className="shrink-0 rounded-2xl border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
-                      Hay vuelto por {formatCurrency(changeAmount)} pero no alcanzan las piezas en caja para armarlo.
-                    </div>
-                  ) : null}
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-1 items-center justify-center text-center">
+                            <p className="text-xs text-muted-foreground">Sin desglose por denominacion.</p>
+                          </div>
+                        )}
+                      </>
+                    ) : changeAmount > 0.001 && cannotMakeChange ? (
+                      <div className="shrink-0 rounded-2xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">
+                        Hay vuelto por {formatCurrency(changeAmount)} pero no alcanzan las piezas en caja para armarlo.
+                      </div>
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-emerald-200/60 bg-emerald-50/30 p-4 text-center">
+                        <p className="text-sm text-emerald-700/60">No hay cambio que entregar.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
