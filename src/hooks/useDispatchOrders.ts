@@ -194,8 +194,14 @@ function reconcileDispatchOrdersInBackground(qc: ReturnType<typeof useQueryClien
   void qc.invalidateQueries({ queryKey, exact: true });
 }
 
-function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updated_at: string }>(rows: T[]) {
+function sortByBatchArrival<T extends { sent_to_kitchen_at: string | null; updated_at: string; order_type?: string }>(rows: T[]) {
   return [...rows].sort((left, right) => {
+    const leftIsPriority = left.order_type === "EXPRESS" || left.order_type === "EXTRA";
+    const rightIsPriority = right.order_type === "EXPRESS" || right.order_type === "EXTRA";
+
+    if (leftIsPriority && !rightIsPriority) return -1;
+    if (!leftIsPriority && rightIsPriority) return 1;
+
     const leftTime = new Date(left.sent_to_kitchen_at ?? left.updated_at).getTime();
     const rightTime = new Date(right.sent_to_kitchen_at ?? right.updated_at).getTime();
     return leftTime - rightTime;
