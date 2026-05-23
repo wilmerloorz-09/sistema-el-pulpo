@@ -190,9 +190,12 @@ const Despacho = () => {
                           { onSettled: () => setDispatchingOrderId(null) },
                         );
                       }}
-                      isMarkingOrderReady={sendOrderReadyAlert.isPending || dispatchOrder.isPending}
-                      isMarkingReady={markItemReady.isPending}
-                      isDispatching={dispatchItem.isPending}
+                      isMarkingOrderReady={
+                        (sendOrderReadyAlert.isPending && sendOrderReadyAlert.variables?.orderId === order.id) ||
+                        (dispatchOrder.isPending && dispatchOrder.variables?.orderId === order.id && dispatchingOrderId !== order.id)
+                      }
+                      isMarkingReady={markItemReady.isPending && markItemReady.variables?.orderId === order.id}
+                      isDispatching={dispatchItem.isPending && dispatchItem.variables?.orderId === order.id}
                       isDispatchingOrder={dispatchOrder.isPending && dispatchingOrderId === order.id}
                       readOnly={readOnly}
                     />

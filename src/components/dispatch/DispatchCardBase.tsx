@@ -275,147 +275,132 @@ export function DispatchCardBase({
       <div
         onClick={onToggleExpand}
         className={cn(
-          "group px-3 py-2.5 transition-colors sm:grid sm:gap-2 sm:px-6 sm:py-3 sm:grid-cols-[32px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(90px,0.7fr)_minmax(120px,1fr)_minmax(140px,1.1fr)] sm:items-center",
+          "group flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 sm:px-6 transition-colors",
           "cursor-pointer hover:bg-slate-100/50",
         )}
       >
-        <div className="sm:contents">
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 sm:contents">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800 sm:self-center"
-              aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
-            >
-              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </div>
+        {/* Left Section: Chevron, Icon, Type, User, Order Ref */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
+            aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
+          >
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
 
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                  {isTray ? (
-                    <ShoppingBag className="h-4 w-4" />
-                  ) : isTakeout ? (
-                    <ShoppingBag className="h-4 w-4" />
-                  ) : isSpecial ? (
-                    <CreditCard className="h-4 w-4" />
-                  ) : (
-                    <UtensilsCrossed className="h-4 w-4" />
-                  )}
-                </span>
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                  <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-950 sm:text-base">
-                    {label}
-                  </p>
-                  {order.created_by_name && (
-                    <p className="mt-0.5 hidden items-center gap-1.5 truncate text-xs font-semibold text-slate-500 sm:flex">
-                      <UserRound className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{order.created_by_name}</span>
-                    </p>
-                  )}
-                  <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
-                    <p className="font-mono text-[10px] font-bold tracking-[0.08em] text-slate-700">
-                      {getOrderRef(order.order_code, order.order_number)}
-                    </p>
-                    {!readOnly && canDispatchAny ? (
-                      <Button
-                        type="button"
-                        variant="success"
-                        size="sm"
-                        disabled={dispatchAllDisabled}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDispatchAll(order);
-                        }}
-                        className="h-7 gap-1 rounded-full px-2.5 text-[10px] font-bold"
-                      >
-                        {isDispatchingOrder ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
-                        Despachar todo
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {order.created_by_name && (
-              <div className="col-start-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500 sm:hidden">
-                <UserRound className="h-3.5 w-3.5" />
-                <span className="truncate">{order.created_by_name}</span>
-              </div>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+            {isTray ? (
+              <ShoppingBag className="h-5 w-5" />
+            ) : isTakeout ? (
+              <ShoppingBag className="h-5 w-5" />
+            ) : isSpecial ? (
+              <CreditCard className="h-5 w-5" />
+            ) : (
+              <UtensilsCrossed className="h-5 w-5" />
             )}
+          </span>
 
-            {order.locked_for_editing && (
-              <div className="col-start-2 sm:col-start-auto">
-                <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1 text-xs font-bold text-destructive">
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-[15px] font-bold tracking-[-0.01em] text-slate-950 sm:text-base">
+                {label}
+              </p>
+              {order.locked_for_editing && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
                   <Lock className="h-3 w-3" /> Editando
                 </span>
-              </div>
-            )}
-
-            <div className="col-start-2 flex min-w-0 items-center justify-between gap-3 sm:contents">
-              <div className="min-w-0 sm:text-right">
-                <p className="truncate text-xs font-semibold text-slate-950 sm:text-[13px]">
-                  {summaryText}
-                </p>
-                <p className="mt-0.5 text-xs font-black text-emerald-700 sm:text-sm">
-                  Total {formatMoney(orderTotal)}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3 sm:contents">
-                <div className="shrink-0 sm:text-right">
-                  <div className={cn(
-                    "inline-flex items-center gap-1.5 font-mono text-sm font-semibold",
-                    isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500"
-                  )}>
-                    <Clock className="h-3.5 w-3.5 shrink-0" />
-                    {timeDisplay}
-                  </div>
-                </div>
-
-                <div className="shrink-0 sm:justify-self-end">
-                  {!readOnly ? (
-                    <Button
-                      type="button"
-                      variant="info"
-                      size="sm"
-                      disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching || (usesOrderLevelDispatch && !canDispatchAny)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onMarkOrderReady(order);
-                      }}
-                      className="h-8 min-w-[5.5rem] gap-1 rounded-full px-3 text-xs font-bold sm:h-9 sm:min-w-[6rem] sm:text-sm"
-                    >
-                      {order.locked_for_editing ? <Lock className="h-4 w-4 shrink-0" /> : usesOrderLevelDispatch ? <Truck className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
-                      {order.locked_for_editing ? "Editando" : usesOrderLevelDispatch ? "Despachar" : "Listo"}
-                    </Button>
-                  ) : (
-                    <span className="px-4 text-xs text-muted-foreground">Solo consulta</span>
-                  )}
-                </div>
-              </div>
+              )}
+            </div>
+            
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
+              <span className="font-mono font-bold text-slate-700 tracking-wider">
+                {getOrderRef(order.order_code, order.order_number)}
+              </span>
+              {order.created_by_name && (
+                <span className="flex items-center gap-1 truncate">
+                  <UserRound className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{order.created_by_name}</span>
+                </span>
+              )}
             </div>
           </div>
         </div>
-        <div className="hidden min-w-0 items-center justify-end gap-2 sm:flex">
-          <p className="truncate font-mono text-[11px] font-bold tracking-[0.05em] text-slate-500 sm:text-xs">
-            {getOrderRef(order.order_code, order.order_number)}
-          </p>
-          {!readOnly && canDispatchAny ? (
-            <Button
-              type="button"
-              variant="success"
-              size="sm"
-              disabled={dispatchAllDisabled}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDispatchAll(order);
-              }}
-              className="h-8 shrink-0 gap-1 rounded-full px-3 text-xs font-bold"
-            >
-              {isDispatchingOrder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
-              Despachar todo
-            </Button>
-          ) : null}
+
+        {/* Middle Section: Summary & Time (Desktop) */}
+        <div className="hidden sm:flex items-center gap-6 shrink-0 px-4">
+          <div className="text-right">
+            <p className="truncate text-[13px] font-semibold text-slate-700">
+              {summaryText}
+            </p>
+            <p className="mt-0.5 text-sm font-black text-emerald-700">
+              Total {formatMoney(orderTotal)}
+            </p>
+          </div>
+          <div className={cn(
+            "flex w-[100px] items-center justify-end gap-1.5 font-mono text-sm font-bold",
+            isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-600"
+          )}>
+            <Clock className="h-4 w-4 shrink-0" />
+            <span>{timeDisplay}</span>
+          </div>
+        </div>
+
+        {/* Mobile Middle Section */}
+        <div className="flex sm:hidden items-center justify-between pl-11">
+          <div>
+             <p className="text-xs font-semibold text-slate-700">{summaryText}</p>
+             <p className="mt-0.5 text-xs font-black text-emerald-700">Total {formatMoney(orderTotal)}</p>
+          </div>
+          <div className={cn(
+            "flex items-center gap-1.5 font-mono text-xs font-bold",
+            isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-600"
+          )}>
+            <Clock className="h-3.5 w-3.5" />
+            <span>{timeDisplay}</span>
+          </div>
+        </div>
+
+        {/* Right Section: Actions */}
+        <div className="flex items-center justify-end gap-2 pl-11 sm:pl-0 shrink-0">
+          {!readOnly ? (
+            <>
+              <Button
+                type="button"
+                variant="info"
+                size="sm"
+                disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching || (usesOrderLevelDispatch && !canDispatchAny)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMarkOrderReady(order);
+                }}
+                className="h-9 gap-1.5 rounded-xl px-4 text-sm font-bold shadow-sm"
+              >
+                {order.locked_for_editing ? <Lock className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                <span className="hidden sm:inline">{order.locked_for_editing ? "Editando" : "Listo"}</span>
+                <span className="sm:hidden">Listo</span>
+              </Button>
+              
+              {canDispatchAny && (
+                <Button
+                  type="button"
+                  variant="success"
+                  size="sm"
+                  disabled={dispatchAllDisabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDispatchAll(order);
+                  }}
+                  className="h-9 gap-1.5 rounded-xl px-4 text-sm font-bold shadow-sm"
+                >
+                  {isDispatchingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
+                  <span className="hidden xl:inline">Despachar todo</span>
+                  <span className="xl:hidden">Todo</span>
+                </Button>
+              )}
+            </>
+          ) : (
+            <span className="px-2 text-xs font-medium text-slate-400">Solo consulta</span>
+          )}
         </div>
       </div>
 
