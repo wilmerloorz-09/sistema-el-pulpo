@@ -76,11 +76,14 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Respetar:
   - `cash_shifts` como turno
   - `cash_shifts.opened_at` como fecha/hora visible de apertura del turno abierto en `Admin > Turno`
-  - `cash_register_openings` como historial de aperturas
+  - `cash_register_openings` como historico de aperturas
+  - principal vs secundarias (ya no usan `register_role`, se identifican por `primary_cashier_id` vs rest)
+  - multiples cajeros (limitado a `max_caja_sessions`)
   - `cash_shift_denoms` como caja fisica real (por cajero; columnas `cashier_id`, `opening_id`)
 - Migraciones de caja multi-cajero obligatorias en cada entorno: `20260521100000_allow_multiple_shift_caja_users.sql`, `20260522120000_per_cashier_caja_register.sql`, `20260525120000_shift_caja_structure.sql`, `20260528130000_payment_in_upsert_per_cashier.sql`, `20260529120000_secondary_caja_order_scope.sql`.
 - Al configurar turno con caja principal/secundarias: `apply_shift_caja_configuration(..., p_secondary_caja_config jsonb)` en BD; en frontend llamar `persistShiftCajaConfiguration` **después** de `persistShiftUsersForShift` para no borrar `can_use_caja` del cajero principal.
 - Cajeros secundarios en `Por cobrar`: filtrar con `orderVisibleToSecondaryCashier` — solo ordenes propias (`created_by`); Extra siempre; Para llevar/Express segun `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled` en `cash_shift_users`.
+- Si se añaden características globales o se toca el estado de los turnos, asegurarse de que no interfieran con la vista del Administrador en `/admin/monitoreo-global` (Monitoreo Global de Turnos). Esta interfaz depende de `supabase_realtime` en las tablas principales de la operación (profiles, cash_shifts, orders, cash_shift_users).
 - Al cambiar `open_cash_register`, si el retorno pasa de `void` a `uuid`, incluir `DROP FUNCTION IF EXISTS public.open_cash_register(uuid, uuid, uuid, jsonb)` antes del `CREATE`.
 - **No** hacer `DROP FUNCTION get_my_branch_shift_gate(uuid)` en migraciones: politicas RLS de `order_cancellations` / `order_item_cancellations` dependen de ella; usar `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
 - Si se toca apertura de caja, mantener soporte para:

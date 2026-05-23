@@ -29,13 +29,14 @@
 - Capa 2: capacidades por turno en `cash_shift_users`.
 - `get_my_branch_shift_gate(...)` sigue siendo el gate principal para habilitar vistas operativas.
 - El campo `caja_status` de ese gate es **por usuario** (`get_user_caja_status`), no el estado global del turno.
-- `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa.
+- `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa. (Utilizado tambien en `Monitoreo Global` para ver quien esta operando en linea y en caja).
 - `cash_shift_users.caja_session_slots` y `cash_shifts.max_caja_sessions` limitan terminales simultaneas; varios usuarios pueden tener `can_use_caja` en el mismo turno.
 - `cash_shift_users.can_double_session` permite una segunda sesion de app para el **mismo** usuario con Caja; se registra en `profiles.current_app_secondary_session_id`.
 - Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
-- Por turno puede configurarse **caja principal** (`primary_cashier_id`) y **cajas secundarias** con plantilla de arqueo (`apply_shift_caja_configuration`, `register_role` en aperturas).
+- Por turno puede configurarse **caja principal** (`primary_cashier_id`) y **cajas secundarias** con plantilla de arqueo (`apply_shift_caja_configuration`). Ya no se utiliza `register_role` en `cash_shift_users`.
 - Cajeros secundarios filtran `Por cobrar` con `orderVisibleToSecondaryCashier` (`src/lib/secondaryCajaPayable.ts`): solo ordenes propias; Extra siempre; Para llevar/Express segun `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`.
 - `useBranchShiftGate` expone `isSecondaryCashier` para elegir UI de cobro secundaria.
+- **Monitoreo Global (`/admin/monitoreo-global`)**: Interfaz para Administradores Generales que consolida todos los turnos abiertos en tiempo real usando subscripciones a PostgreSQL (`supabase_realtime`) y un intervalo de respaldo (fallback) de 15s.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.

@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -184,6 +184,18 @@ const NAV_ITEMS: AppNavItem[] = [
     },
     visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
+  {
+    to: "/monitoreo-global",
+    label: "Monitoreo Global",
+    icon: <MonitorCheck className="h-5 w-5" />,
+    tone: {
+      active: "from-indigo-600 to-violet-500",
+      idle: "hover:border-indigo-200 hover:bg-indigo-50/90 hover:text-indigo-700",
+      iconIdle: "bg-indigo-50 text-indigo-600",
+    },
+    // Visibility is handled manually in the useMemo below (isGlobalAdmin check)
+    visible: () => false,
+  },
 ];
 
 export function useVisibleNavItems() {
@@ -262,6 +274,10 @@ export function useVisibleNavItems() {
       if (item.to === "/despacho") {
         if (!(hasSupervisorBypass || Boolean(sg?.canDispatchOrders))) return false;
         return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
+      }
+
+      if (item.to === "/monitoreo-global") {
+        return isGlobalAdmin;
       }
 
       if (!item.visible(permissions)) return false;

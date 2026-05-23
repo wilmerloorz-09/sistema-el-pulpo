@@ -34,7 +34,7 @@
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 --   - incluye multiples aperturas por turno (una por cajero en cash_register_openings) y denoms por cashier_id/opening_id
---   - incluye caja principal/secundaria por turno (`primary_cashier_id`, `register_role`, plantillas secundarias, flags `secondary_caja_*`)
+--   - incluye caja principal/secundaria por turno (`primary_cashier_id`, plantillas secundarias, flags `secondary_caja_*`)
 --   - incluye cobro con catalogo global de denominaciones (UI) vs plantilla de arqueo (apertura); tras reset solo queda el catalogo en `denominations`
 --   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
 --   - incluye `cash_shifts.max_caja_sessions` y slots de sesion Caja en cash_shift_users (caja_session_slots)

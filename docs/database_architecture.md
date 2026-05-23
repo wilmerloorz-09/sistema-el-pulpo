@@ -248,6 +248,10 @@
 - Tras pago total, `sync_order_payment_state_internal` **no** invoca `auto_finalize_extra_order_after_payment` (`20260602120000_extra_flow_like_table_orders.sql`). La funcion legacy puede existir en BD pero queda fuera del sync de pagos.
 - Despacho: ordenes `EXTRA` en `PAID` aparecen en pestañas Mesa/Todos del modulo Despacho; asignacion SPLIT las trata como `TABLE`.
 - Cierre operativo desde UI Extra: `close_extra_order(p_order_id)` (`20260602130000_close_extra_order.sql`) cuando la orden esta despachada y sin `closed_at`.
+
+### Monitoreo Global
+- `profiles.current_app_session_id`, `cash_shifts`, `cash_shift_users`, y `orders` son monitoreados vía subscripción en tiempo real (`supabase_realtime`) por el modulo `/admin/monitoreo-global`.
+- El Administrador general tiene vista global de turnos sin importar la sucursal, requiriendo que la publicación de Supabase incluya estas tablas.
 - Caja: cobro total obligatorio (sin parcial); visibilidad creador o cajero principal del turno.
 - RPC `create_extra_order(...)`; en listados de caja, `table_name` solo para `DINE_IN` con `table_id`.
 

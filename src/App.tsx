@@ -28,6 +28,7 @@ import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
+import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -405,6 +406,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
                       <Admin />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/monitoreo-global"
+                  element={
+                    <ProtectedRoute allowedModules={["admin_global"]}>
+                      <MonitoreoGlobal />
                     </ProtectedRoute>
                   }
                 />

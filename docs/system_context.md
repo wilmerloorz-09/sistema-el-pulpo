@@ -109,8 +109,9 @@
   - `cash_shifts.caja_status` sigue existiendo como resumen agregado (hay alguna caja abierta en el turno), pero la UI de Caja y el menu lateral usan el estado por usuario.
   - No usar flujo de "conectar terminal" / `claim_cash_session_slot` para un segundo cajero: cada uno ve `Abrir mi caja` y completa su arqueo.
 - **Caja principal vs secundarias por turno (2026-05-25+):**
-  - `cash_shifts.primary_cashier_id`: cajero de la caja principal (arqueo en modulo `/caja`).
-  - `cash_shifts.secondary_cajas_enabled` + `secondary_caja_template_id`: habilitan cajas secundarias con plantilla de **arqueo inicial**.
+  - `cash_shifts.primary_cashier_id`: cajero de la caja principal (arqueo en modulo `/caja`). En la UI se identifica como "Caja Principal".
+  - `cash_shifts.secondary_cajas_enabled` + `secondary_caja_template_id`: habilitan cajas secundarias (se identifican como "Caja Secundaria" en UI si `can_use_caja` es true y no son el principal).
+  - Ya no existe `register_role` en `cash_shift_users`.
   - `apply_shift_caja_configuration(...)` asigna `can_use_caja` al principal y a los cajeros secundarios, y abre caja secundaria con `internal_open_cash_register_for_cashier(..., register_role = secondary)`.
   - Tras abrir/guardar turno, el frontend debe llamar `persistShiftCajaConfiguration` **despues** de `persistShiftUsersForShift` para no borrar `can_use_caja` del cajero principal.
   - `useBranchShiftGate`: `isSecondaryCashier` = habilitado con caja y distinto de `primary_cashier_id`; define UI de cobro secundaria.
@@ -120,6 +121,13 @@
     - Filtro en cliente: `orderVisibleToSecondaryCashier` (`src/lib/secondaryCajaPayable.ts`) — solo ordenes **propias** (`created_by`); **Extra siempre** visible para el cajero secundario que las creo; Para llevar/Express segun flags.
   - Migraciones: `20260525120000_shift_caja_structure.sql`, `20260526150000_remove_max_caja_sessions_cap.sql`, `20260529120000_secondary_caja_order_scope.sql`.
 - **Administrador general:** puede cambiar a cualquier sucursal activa cuando quiera; no aplica redireccion por turno ni auto-reasignacion al refrescar `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`).
+  - **Monitoreo Global de Turnos (`/admin/monitoreo-global`):**
+    - Vista exclusiva para el Administrador General que consolida todas las sucursales en tiempo real.
+    - Utiliza `supabase_realtime` sobre `cash_shifts`, `cash_shift_users`, `orders` y `profiles`.
+    - Muestra usuarios de turno conectados/desconectados en tiempo real (🟢 basado en `profiles.current_app_session_id`).
+    - Muestra estado de operacion de caja en tiempo real (etiqueta "En Caja" basada en `last_session_id` o `secondary_session_id`).
+    - Embudo de ordenes consolidado para cada sucursal (Generadas, En Caja, Pagadas, Despachadas, Anuladas).
+    - Mecanismos de robustez: nombre de canal dinamico (`global-monitor-${hash}`) y `fallbackInterval` de 15s para evitar desconexiones silenciosas de Supabase. Boton de "Actualizar" manual disponible.
   - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
 - Si un usuario del turno tiene `cash_shift_users.can_double_session = true` y `can_use_caja = true`, puede conservar una segunda sesion simultanea mediante:

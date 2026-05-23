@@ -67,7 +67,7 @@
 --   - el flujo de cobro/despacho es global: Caja primero y Despacho despues (excepto Express: despacho -> cobro; Extra: caja -> PAID -> despacho manual, cierre con `close_extra_order`)
 --   - Despacho en UI: pestaña unificada Para llevar / Express; Extra visible en Mesa y Todos
 --   - varios cajeros pueden tener can_use_caja en el mismo turno (hasta max_caja_sessions); cada uno abre su propia caja y denoms por cashier_id
---   - incluye configuracion de caja principal (`primary_cashier_id`) y secundarias con plantilla de arqueo (`register_role = secondary`) y flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`
+--   - incluye configuracion de caja principal (`primary_cashier_id`) y secundarias con plantilla de arqueo y flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`
 --   - al borrar cash_register_openings y cash_shift_denoms se eliminan todas las aperturas/denominaciones de todos los cajeros del turno
 --   - el catalogo `denominations` se conserva; define lo que el cliente puede entregar al cobrar (independiente de plantilla de apertura)
 --   - Caja cobra cantidades ordenadas activas antes del despacho (Express solo cuando KITCHEN_DISPATCHED)
