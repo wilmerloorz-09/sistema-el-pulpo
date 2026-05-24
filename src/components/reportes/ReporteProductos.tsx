@@ -44,10 +44,11 @@ export default function ReporteProductos({ filters }: ReporteProductosProps) {
 
   // Traducir tipos de orden para display
   const ORDER_TYPE_LABELS: Record<string, string> = {
-    DINE_IN: '🪑 Mesas',
-    TAKEOUT: '🥡 Para Llevar',
-    EXPRESS: '⚡ Express',
-    EXTRA: '📦 Extra',
+    DINE_IN: '🍽️ Mesas',
+    TAKEOUT: '🛍️ Para Llevar',
+    EXPRESS: '🚀 Express',
+    EXTRA: '📋 Extra',
+    SPECIAL: '🌟 Especial',
   };
 
   const handleExportCSV = () => {

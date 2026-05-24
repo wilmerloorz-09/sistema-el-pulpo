@@ -132,23 +132,18 @@ function computeFunnel(orders: OrderRow[]): Record<OrderType, FunnelCounts> {
 
     const st = order.status?.toUpperCase();
 
-    // Generadas: everything except pure draft (DRAFT status)
-    if (st !== "DRAFT") counts.generadas++;
-
-    // En Caja: SENT_TO_KITCHEN or READY with an order_code
-    if ((st === "SENT_TO_KITCHEN" || st === "READY") && order.order_code) {
-      counts.enCaja++;
-    }
-
-    // Pagadas: PAID
-    if (st === "PAID") counts.pagadas++;
-
-    // Despachadas: KITCHEN_DISPATCHED
-    if (st === "KITCHEN_DISPATCHED") counts.despachadas++;
-
-    // Anuladas: CANCELLED + notes contains VOID_SUCCESSOR_ORDER
+    // Ensure mutual exclusion so an order only appears in one stage of the funnel
     if (st === "CANCELLED" && String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER")) {
       counts.anuladas++;
+    } else if (st === "KITCHEN_DISPATCHED") {
+      counts.despachadas++;
+    } else if (st === "PAID" || order.paid_at) {
+      counts.pagadas++;
+    } else if ((st === "SENT_TO_KITCHEN" || st === "READY") && order.order_code) {
+      counts.enCaja++;
+    } else if (st !== "DRAFT" && type === "EXPRESS") {
+      // Generadas: everything except pure draft. Per user request, only show for EXPRESS.
+      counts.generadas++;
     }
   }
 
@@ -687,6 +682,20 @@ const MonitoreoGlobal = () => {
 
   const { state: monitorState, forceReloadAll } = useGlobalMonitor(branches);
 
+  const sortedBranches = useMemo(() => {
+    return [...branches].sort((a, b) => {
+      const shiftA = monitorState[a.id]?.shift;
+      const shiftB = monitorState[b.id]?.shift;
+
+      if (shiftA && shiftB) {
+        return new Date(shiftA.opened_at).getTime() - new Date(shiftB.opened_at).getTime();
+      }
+      if (shiftA && !shiftB) return -1;
+      if (!shiftA && shiftB) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [branches, monitorState]);
+
   return (
     <div className="px-2 py-3 sm:px-4 md:px-5 md:py-4 lg:px-6">
       {/* Header */}
@@ -759,8 +768,8 @@ const MonitoreoGlobal = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {branches.map((branch) => (
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
+          {sortedBranches.map((branch) => (
             <BranchCard
               key={branch.id}
               branch={branch}

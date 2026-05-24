@@ -259,13 +259,7 @@ export default function PaymentDialogV2({
     [sortedDenoms],
   );
 
-  const cashTotal = useMemo(
-    () =>
-      roundMoney(
-        shiftDenoms.reduce((sum, d) => sum + (receivedByDenom[d.denomination_id] || 0) * d.value, 0),
-      ),
-    [receivedByDenom, shiftDenoms],
-  );
+  const cashTotal = useMemo(() => roundMoney(sortedDenoms.reduce((sum, d) => sum + (receivedByDenom[d.denomination_id] || 0) * d.value, 0)), [receivedByDenom, sortedDenoms]);
 
   const transferAmount = useMemo(() => {
     const n = Number(transferInput.replace(",", "."));

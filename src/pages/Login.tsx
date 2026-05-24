@@ -85,7 +85,7 @@ const Login = () => {
           <img
             src="/logo.png"
             alt="El Pulpo"
-            className="mx-auto h-28 w-28 rounded-[28px] border border-orange-200 bg-white/90 object-cover shadow-[0_20px_45px_-30px_rgba(249,115,22,0.75)]"
+            className="mx-auto h-28 w-28 rounded-full object-cover shadow-[0_20px_45px_-30px_rgba(249,115,22,0.75)]"
           />
           <div className="space-y-1">
             <h1 className="font-display text-2xl font-black text-foreground">El Pulpo POS</h1>

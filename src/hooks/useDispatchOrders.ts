@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { dbSelect, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
@@ -394,6 +394,7 @@ export function useDispatchOrders(scope: DispatchView) {
 
   const query = useQuery({
     queryKey: dispatchOrdersQueryKey,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 

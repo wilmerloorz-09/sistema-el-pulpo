@@ -148,6 +148,7 @@ export function useReportesPagos(filters: ReportesFilters) {
             order_number,
             created_by,
             order_type,
+            is_special,
             branch_id,
             creator:profiles!orders_created_by_fkey (id, first_name, last_name, full_name, username)
           )
@@ -171,9 +172,12 @@ export function useReportesPagos(filters: ReportesFilters) {
       // Aplicar usuario creador de la orden
       if (creatorId) query = query.eq('order.created_by', creatorId);
 
-      // Aplicar tipos de orden
+      // Aplicar tipos de orden en DB (excluyendo SPECIAL que no es enum válido en DB)
       if (orderTypes && orderTypes.length > 0) {
-        query = query.in('order.order_type', orderTypes);
+        const dbTypes = orderTypes.filter(t => t !== 'SPECIAL');
+        if (dbTypes.length > 0) {
+          query = query.in('order.order_type', dbTypes);
+        }
       }
 
       // Aplicar filtro de productos resuelto anteriormente
@@ -184,7 +188,12 @@ export function useReportesPagos(filters: ReportesFilters) {
       const { data, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
 
-      const paymentsRaw = data || [];
+      // Filtrar en memoria por orderType efectivo para abarcar SPECIAL
+      const paymentsRaw = (data || []).filter((pay: any) => {
+        if (!orderTypes || orderTypes.length === 0) return true;
+        const effectiveType = pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA');
+        return orderTypes.includes(effectiveType);
+      });
 
       // Procesar datos y calcular KPIs
       let totalNetoSum = 0;
@@ -228,7 +237,7 @@ export function useReportesPagos(filters: ReportesFilters) {
           amount: tenderedAmount,
           change,
           netApplied,
-          orderType: pay.order?.order_type || 'EXTRA',
+          orderType: pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA'),
           notes: pay.notes
         };
       });
@@ -419,6 +428,7 @@ export function useReportesProductos(filters: ReportesFilters) {
             branch_id,
             created_at,
             order_type,
+            is_special,
             status,
             cash_shift_id
           ),
@@ -458,15 +468,23 @@ export function useReportesProductos(filters: ReportesFilters) {
         query = query.in('product_id', productIds);
       }
 
-      // Filtro de tipos de orden
+      // Filtro de tipos de orden en DB
       if (orderTypes && orderTypes.length > 0) {
-        query = query.in('order.order_type', orderTypes);
+        const dbTypes = orderTypes.filter(t => t !== 'SPECIAL');
+        if (dbTypes.length > 0) {
+          query = query.in('order.order_type', dbTypes);
+        }
       }
 
       const { data, error } = await query;
       if (error) throw error;
 
-      const itemsRaw = data || [];
+      // Filtrar en memoria por orderType efectivo para abarcar SPECIAL
+      const itemsRaw = (data || []).filter((item: any) => {
+        if (!orderTypes || orderTypes.length === 0) return true;
+        const effectiveType = item.order?.is_special ? 'SPECIAL' : (item.order?.order_type || 'EXTRA');
+        return orderTypes.includes(effectiveType);
+      });
 
       // Agrupamiento en cliente por product_id + unit_price (y fallback a description_snapshot si no hay product)
       const groupedMap = new Map<string, {
@@ -507,10 +525,10 @@ export function useReportesProductos(filters: ReportesFilters) {
         if (existing) {
           existing.quantityTotal += qty;
           existing.totalRecaudado = round2(existing.totalRecaudado + itemTotal);
-          const type = item.order?.order_type || 'EXTRA';
+          const type = item.order?.is_special ? 'SPECIAL' : (item.order?.order_type || 'EXTRA');
           existing.orderTypesCount[type] = (existing.orderTypesCount[type] || 0) + qty;
         } else {
-          const type = item.order?.order_type || 'EXTRA';
+          const type = item.order?.is_special ? 'SPECIAL' : (item.order?.order_type || 'EXTRA');
           groupedMap.set(groupKey, {
             productId: prodId,
             name: prodName,

@@ -81,9 +81,7 @@ const AppLayout = () => {
               <div className="flex items-center gap-3">
                 <MobileMenuSheet onOpenAccount={() => setUserMenuOpen(true)} />
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 p-1 dark:bg-orange-950/20">
-                    <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
-                  </div>
+                  <img src="/logo.png" alt="Logo" className="h-8 w-8 rounded-full object-cover" />
                   <span className="font-display text-sm font-black tracking-tight text-foreground sm:text-base">
                     POS El pulpo
                   </span>

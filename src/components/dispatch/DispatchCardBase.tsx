@@ -271,12 +271,15 @@ export function DispatchCardBase({
   const summaryText = summaryParts.length > 0 ? summaryParts.join(" - ") : "Sin acciones pendientes";
 
   return (
-    <div className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
+    <div className={cn(
+      "rounded-2xl border border-slate-200 shadow-sm transition-shadow hover:shadow-md overflow-hidden",
+      index % 2 === 0 ? "bg-white" : "bg-slate-100"
+    )}>
       <div
         onClick={onToggleExpand}
         className={cn(
-          "group flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 sm:px-6 transition-colors",
-          "cursor-pointer hover:bg-slate-100/50",
+          "group flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-4 py-4 lg:px-6 transition-colors",
+          "cursor-pointer hover:bg-slate-50",
         )}
       >
         {/* Left Section: Chevron, Icon, Type, User, Order Ref */}
@@ -302,7 +305,7 @@ export function DispatchCardBase({
 
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
-              <p className="truncate text-[15px] font-bold tracking-[-0.01em] text-slate-950 sm:text-base">
+              <p className="truncate text-[15px] font-bold tracking-[-0.01em] text-slate-950 lg:text-base">
                 {label}
               </p>
               {order.locked_for_editing && (
@@ -327,7 +330,7 @@ export function DispatchCardBase({
         </div>
 
         {/* Middle Section: Summary & Time (Desktop) */}
-        <div className="hidden sm:flex items-center gap-6 shrink-0 px-4">
+        <div className="hidden lg:flex items-center gap-6 shrink-0 px-4">
           <div className="text-right">
             <p className="truncate text-[13px] font-semibold text-slate-700">
               {summaryText}
@@ -337,8 +340,8 @@ export function DispatchCardBase({
             </p>
           </div>
           <div className={cn(
-            "flex w-[100px] items-center justify-end gap-1.5 font-mono text-sm font-bold",
-            isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-600"
+            "flex shrink-0 items-center justify-end gap-1.5 rounded-full border px-3 py-1 font-mono text-sm font-bold shadow-sm",
+            isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
           )}>
             <Clock className="h-4 w-4 shrink-0" />
             <span>{timeDisplay}</span>
@@ -346,55 +349,54 @@ export function DispatchCardBase({
         </div>
 
         {/* Mobile Middle Section */}
-        <div className="flex sm:hidden items-center justify-between pl-11">
+        <div className="flex lg:hidden items-center justify-between pl-11">
           <div>
              <p className="text-xs font-semibold text-slate-700">{summaryText}</p>
              <p className="mt-0.5 text-xs font-black text-emerald-700">Total {formatMoney(orderTotal)}</p>
           </div>
           <div className={cn(
-            "flex items-center gap-1.5 font-mono text-xs font-bold",
-            isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-600"
+            "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold shadow-sm",
+            isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
           )}>
-            <Clock className="h-3.5 w-3.5" />
+            <Clock className="h-3.5 w-3.5 shrink-0" />
             <span>{timeDisplay}</span>
           </div>
         </div>
 
         {/* Right Section: Actions */}
-        <div className="flex items-center justify-end gap-2 pl-11 sm:pl-0 shrink-0">
+        <div className="flex items-center justify-end gap-2 pl-11 lg:pl-0 shrink-0">
           {!readOnly ? (
             <>
               <Button
                 type="button"
-                variant="info"
+                variant="outline"
                 size="sm"
                 disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching || (usesOrderLevelDispatch && !canDispatchAny)}
                 onClick={(e) => {
                   e.stopPropagation();
                   onMarkOrderReady(order);
                 }}
-                className="h-9 gap-1.5 rounded-xl px-4 text-sm font-bold shadow-sm"
+                className="h-10 gap-1.5 rounded-xl border-blue-200 bg-blue-50 px-5 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100 hover:text-blue-800"
               >
                 {order.locked_for_editing ? <Lock className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                <span className="hidden sm:inline">{order.locked_for_editing ? "Editando" : "Listo"}</span>
-                <span className="sm:hidden">Listo</span>
+                <span className="hidden lg:inline">{order.locked_for_editing ? "Editando" : "Listo"}</span>
+                <span className="lg:hidden">Listo</span>
               </Button>
               
               {canDispatchAny && (
                 <Button
                   type="button"
-                  variant="success"
                   size="sm"
                   disabled={dispatchAllDisabled}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDispatchAll(order);
                   }}
-                  className="h-9 gap-1.5 rounded-xl px-4 text-sm font-bold shadow-sm"
+                  className="h-10 gap-1.5 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-slate-800"
                 >
                   {isDispatchingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
-                  <span className="hidden xl:inline">Despachar todo</span>
-                  <span className="xl:hidden">Todo</span>
+                  <span className="hidden lg:inline">Despachar todo</span>
+                  <span className="lg:hidden">Todo</span>
                 </Button>
               )}
             </>
@@ -405,9 +407,8 @@ export function DispatchCardBase({
       </div>
 
       {isExpanded && (
-        <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50">
-            <div className="divide-y divide-slate-100">
+        <div className="border-t border-slate-200 bg-slate-50/70">
+          <div className="divide-y divide-slate-200/60">
         {previewableItems.map((item) => {
           const isBulkItem = item.tray_item_type === "C";
           const trimmedItemNote = String(item.item_note ?? "").trim();
@@ -420,8 +421,8 @@ export function DispatchCardBase({
           const isFullyDispatched = item.quantity_pending_prepare === 0 && item.quantity_dispatchable === 0 && dispatchedQuantity > 0;
 
           return (
-            <div key={item.id} className={cn("bg-white/70 px-4 py-4 sm:px-6", isFullyDispatched && "opacity-50 grayscale transition-opacity")}>
-              <div className="flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-3">
+            <div key={item.id} className={cn("px-4 py-4 lg:px-8", isFullyDispatched && "opacity-50 grayscale transition-opacity")}>
+              <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
                 <div className="flex min-w-0 items-start gap-3">
                   {!isBulkItem ? (
                     <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
@@ -530,13 +531,12 @@ export function DispatchCardBase({
           );
         })}
             </div>
-            <div className="flex items-center justify-end border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
-              <span className="text-sm font-black text-slate-950">
-                Total: {formatMoney(orderTotal)}
+            <div className="flex items-center justify-end border-t border-slate-200 bg-slate-100 px-4 py-3 lg:px-8">
+              <span className="text-[15px] font-black text-slate-900">
+                Total de la orden: {formatMoney(orderTotal)}
               </span>
             </div>
           </div>
-        </div>
       )}
     </div>
   );

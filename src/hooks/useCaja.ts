@@ -2555,7 +2555,7 @@ export function useCaja(params?: {
       }
 
       if (shouldMarkSpecialAsPaid) {
-        await dbUpdate("orders", orderId, { status: "READY", paid_at: now });
+        await dbUpdate("orders", orderId, { status: "PAID", paid_at: now });
       }
 
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */

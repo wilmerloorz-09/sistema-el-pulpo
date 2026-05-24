@@ -225,31 +225,30 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
 
   return (
     <div className="w-full">
-      <div className="surface-glow mb-4 px-3 py-3 sm:px-5 sm:py-4">
-        <div className="relative flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
-              <ClipboardList className="h-5 w-5" />
-            </div>
-            <h2 className="font-display text-lg font-bold text-foreground">Todas las ordenes</h2>
-            <span
-              className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm"
-              title="Total de ordenes listadas en todas las pestañas del turno actual."
-            >
-              ({getTabCount(activeTab)} en {currentTab.label}
-              {anyTabStillLoading ? " · …" : ""} · {totalOrders} total)
-            </span>
-            {readOnly && (
-              <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
-                Solo consulta
-              </span>
-            )}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-3 sm:px-5">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
+            <ClipboardList className="h-6 w-6" />
           </div>
+          <div>
+            <h2 className="font-display text-2xl font-bold tracking-tight text-slate-900">Todas las ordenes</h2>
+            <p className="text-sm font-medium text-slate-500">
+              {getTabCount(activeTab)} en {currentTab.label}
+              {anyTabStillLoading ? " · …" : ""} · {totalOrders} total
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {readOnly && (
+            <span className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-700 shadow-sm">
+              Solo consulta
+            </span>
+          )}
           {!readOnly && onOpenMergeSplitTool && (
             <Button
               type="button"
-              variant="info"
-              className="h-10 shrink-0 rounded-2xl px-3 text-xs font-semibold sm:px-4 sm:text-sm"
+              variant="outline"
+              className="h-10 shrink-0 gap-1.5 rounded-2xl border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
               onClick={onOpenMergeSplitTool}
             >
               <ArrowRightLeft className="h-4 w-4" />
@@ -259,9 +258,9 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
         </div>
       </div>
 
-      <div className="mb-4 flex items-start">
-        <div className="scrollbar-none min-w-0 flex-1 overflow-x-auto">
-          <div className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm">
+      <div className="mb-6 flex items-start px-3 sm:px-5">
+        <div className="scrollbar-none min-w-0 flex-1 overflow-x-auto pb-2">
+          <div className="inline-flex min-w-max flex-nowrap justify-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-1.5 shadow-sm">
             {tabs.map((tab) => {
               const q = getOrdersForTab(tab.key);
               const count = q.data?.length || 0;
@@ -274,8 +273,8 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
                   className={cn(
-                    "relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm",
-                    isActive && "border border-primary/20 bg-background text-primary shadow-sm",
+                    "relative h-9 shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-white hover:text-slate-900 sm:h-10 sm:px-4 sm:text-sm",
+                    isActive && "bg-white text-slate-900 shadow-sm",
                   )}
                   aria-label={tab.label}
                 >
@@ -287,7 +286,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
                         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground sm:h-3.5 sm:w-3.5" aria-hidden />
                       </span>
                     ) : count > 0 ? (
-                      <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
+                      <span className="ml-1.5 flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-slate-800 px-1 text-[10px] font-bold text-white sm:h-5 sm:min-w-[20px] sm:px-1.5">
                         {count}
                       </span>
                     ) : null}
@@ -311,25 +310,23 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
             <p className="mt-1 text-sm text-muted-foreground">Cuando existan movimientos en esta etapa, apareceran aqui.</p>
           </div>
         ) : (
-          <div className="col-span-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
-            <div className="divide-y divide-slate-200">
-              {currentOrders.data.map((order, index) => (
-                <OrderListRow
-                  key={order.id}
-                  order={order}
-                  index={index}
-                  isExpanded={expandedOrderId === order.id}
-                  onToggleExpand={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                  onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
-                  onApproveCancellation={activeTab === "pendingCancellation" ? (selectedOrder) => setApprovalTarget(selectedOrder) : undefined}
-                  onRejectCancel={activeTab === "pendingCancellation" ? (selectedOrder) => rejectCancellationRequestMutation.mutate({ orderId: selectedOrder.id }) : undefined}
-                  showCancelButton={false}
-                  showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
-                  readOnly={readOnly}
-                  canAuthorizeCancel={canAuthorizeCancel}
-                />
-              ))}
-            </div>
+          <div className="col-span-full flex flex-col gap-4 pb-12 px-3 sm:px-5">
+            {currentOrders.data.map((order, index) => (
+              <OrderListRow
+                key={order.id}
+                order={order}
+                index={index}
+                isExpanded={expandedOrderId === order.id}
+                onToggleExpand={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                onCancel={activeTab === "pendingCancellation" ? undefined : onCancelOrder}
+                onApproveCancellation={activeTab === "pendingCancellation" ? (selectedOrder) => setApprovalTarget(selectedOrder) : undefined}
+                onRejectCancel={activeTab === "pendingCancellation" ? (selectedOrder) => rejectCancellationRequestMutation.mutate({ orderId: selectedOrder.id }) : undefined}
+                showCancelButton={false}
+                showRejectButton={activeTab === "pendingCancellation" && canAuthorizeCancel && !readOnly}
+                readOnly={readOnly}
+                canAuthorizeCancel={canAuthorizeCancel}
+              />
+            ))}
           </div>
         )}
       </div>

@@ -61,23 +61,28 @@ const Despacho = () => {
 
   return (
     <>
-      <div className="px-2 py-3 sm:px-4 md:px-5 md:py-4 lg:px-6">
-        <div className="surface-glow mb-4 px-3 py-3 sm:px-5 sm:py-4">
-          <div className="relative flex flex-wrap items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-orange-200 bg-white/90 text-primary shadow-sm">
-              <Truck className="h-5 w-5" />
+      <div className="mx-auto max-w-7xl px-2 py-4 sm:px-4 md:px-5 md:py-6 lg:px-6">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
+              <Truck className="h-6 w-6" />
             </div>
-            <h1 className="font-display text-lg font-bold text-foreground">Despacho</h1>
-            <span className="rounded-full border border-white/70 bg-white/85 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-              ({pendingLabel} pendientes)
-            </span>
+            <div>
+              <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900">Despacho</h1>
+              <p className="text-sm font-medium text-slate-500">
+                {pendingLabel} órdenes pendientes
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
             {canShowMain && !showTabs && (
-              <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+              <span className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
                 Vista: {getViewLabel(scope)}
               </span>
             )}
             {readOnly && (
-              <span className="rounded-full border border-border bg-white/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+              <span className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-700 shadow-sm">
+                <AlertCircle className="h-3.5 w-3.5" />
                 Solo consulta
               </span>
             )}
@@ -99,7 +104,7 @@ const Despacho = () => {
         ) : (
           <>
             {showTabs && (
-              <div className="scrollbar-none mb-4 overflow-x-auto">
+              <div className="scrollbar-none mb-6 overflow-x-auto pb-2">
                 <ToggleGroup
                   type="single"
                   size="sm"
@@ -108,7 +113,7 @@ const Despacho = () => {
                     if (!value) return;
                     setActiveView(value as DispatchView);
                   }}
-                  className="inline-flex min-w-max flex-nowrap justify-start gap-0.5 rounded-2xl border border-border bg-muted/50 p-1 shadow-sm"
+                  className="inline-flex min-w-max flex-nowrap justify-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-1.5 shadow-sm"
                 >
                   {availableViews.map((view) => {
                     const Icon = getViewIcon(view);
@@ -118,7 +123,7 @@ const Despacho = () => {
                       <ToggleGroupItem
                         key={view}
                         value={view}
-                        className="relative h-8 shrink-0 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-background/70 hover:text-foreground data-[state=on]:border data-[state=on]:border-primary/20 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-sm sm:h-10 sm:px-4 sm:py-2.5 sm:text-sm"
+                        className="relative h-9 shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-white hover:text-slate-900 data-[state=on]:bg-white data-[state=on]:text-slate-900 data-[state=on]:shadow-sm sm:h-10 sm:px-4 sm:text-sm"
                         aria-label={getViewLabel(view)}
                       >
                         <span className="flex items-center gap-1 whitespace-nowrap sm:gap-2">
@@ -127,7 +132,7 @@ const Despacho = () => {
                             {getViewLabel(view)}
                           </span>
                           {count > 0 && (
-                            <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in zoom-in duration-300 sm:h-5 sm:min-w-[20px] sm:px-1.5 sm:text-[10px]">
+                            <span className="ml-1.5 flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-slate-800 px-1 text-[10px] font-bold text-white sm:h-5 sm:min-w-[20px] sm:px-1.5">
                               {count}
                             </span>
                           )}
@@ -162,9 +167,8 @@ const Despacho = () => {
                 </p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
-                <div className="divide-y divide-slate-200">
-                  {orders.map((order, index) => (
+              <div className="flex flex-col gap-4 pb-12">
+                {orders.map((order, index) => (
                     <DispatchCard
                       key={order.card_id}
                       order={order}
@@ -199,8 +203,7 @@ const Despacho = () => {
                       isDispatchingOrder={dispatchOrder.isPending && dispatchingOrderId === order.id}
                       readOnly={readOnly}
                     />
-                  ))}
-                </div>
+                ))}
               </div>
             )}
           </>

@@ -545,52 +545,57 @@ export default function CompletedPaymentsList({
                 <div key={payment.paymentId} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/70"}>
                   <div
                     onClick={() => setExpandedPaymentId((current) => (current === payment.paymentId ? null : payment.paymentId))}
-                    className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(150px,1fr)_100px_minmax(160px,0.9fr)_minmax(190px,0.8fr)_minmax(240px,1.2fr)_112px] sm:items-center sm:px-8"
+                    className="group flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-slate-100/50 cursor-pointer sm:px-8"
                   >
-                    <div
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
-                      aria-label={expanded ? "Ocultar detalle" : "Mostrar detalle"}
-                    >
-                      {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </div>
+                    {/* Left Section: Chevron + Icon + Details */}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
+                        aria-label={expanded ? "Ocultar detalle" : "Mostrar detalle"}
+                      >
+                        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </div>
 
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                          {orderKind === "takeout" ? (
-                            <ShoppingBag className="h-4 w-4" />
-                          ) : orderKind === "special" ? (
-                            <CreditCard className="h-4 w-4" />
-                          ) : (
-                            <UtensilsCrossed className="h-4 w-4" />
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                        {orderKind === "takeout" ? (
+                          <ShoppingBag className="h-5 w-5" />
+                        ) : orderKind === "special" ? (
+                          <CreditCard className="h-5 w-5" />
+                        ) : (
+                          <UtensilsCrossed className="h-5 w-5" />
+                        )}
+                      </span>
+
+                      <div className="flex flex-col min-w-0 gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
+                          <p className="font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
+                            {payment.order.code ?? `#${payment.order.number}`}
+                          </p>
+                          <PaymentStatusBadge status={payment.status} />
+                          {payment.reversal_requested && !isVoidedOrReversed && (
+                            <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                              Anulación Pendiente
+                            </Badge>
                           )}
-                        </span>
-                        <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
+                          {blockedByClosedOpening && (
+                            <Badge className="border-slate-200 bg-slate-100 text-slate-700">
+                              Caja cerrada
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="inline-flex items-center gap-1 text-sm text-slate-500">
+                            <Clock3 className="h-3.5 w-3.5" />
+                            {formatDateTime(payment.created_at)}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <PaymentStatusBadge status={payment.status} />
-                      {payment.reversal_requested && !isVoidedOrReversed && (
-                        <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                          Anulación Pendiente
-                        </Badge>
-                      )}
-                      {blockedByClosedOpening && (
-                        <Badge className="border-slate-200 bg-slate-100 text-slate-700">
-                          Caja cerrada
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
-                        {payment.order.code ?? `#${payment.order.number}`}
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-[96px_minmax(0,96px)] items-center gap-2">
-                      <p className="text-right text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
+                    {/* Middle Section: Amount and Detail Button */}
+                    <div className="flex flex-row items-center justify-between lg:justify-end gap-4 shrink-0 pl-11 lg:pl-0 mt-2 lg:mt-0">
+                      <p className="text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
                       {hasCashTrace && (
                         <button
                           type="button"
@@ -614,15 +619,8 @@ export default function CompletedPaymentsList({
                       )}
                     </div>
 
-                    <div className="min-w-0 sm:text-right">
-                      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
-                        <Clock3 className="h-3.5 w-3.5" />
-                        {formatDateTime(payment.created_at)}
-                      </span>
-                    </div>
-
-
-                    <div className="sm:justify-self-end">
+                    {/* Right Section: Actions */}
+                    <div className="flex items-center justify-start lg:justify-end gap-2 pl-11 lg:pl-0 shrink-0 mt-2 lg:mt-0">
                       {!blockedByState && permissionFlags.canStartVoid && (
                         <button
                           type="button"
@@ -637,7 +635,6 @@ export default function CompletedPaymentsList({
                         </button>
                       )}
                     </div>
-
                   </div>
 
                   {expanded && (

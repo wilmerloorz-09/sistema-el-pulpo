@@ -127,7 +127,7 @@ export function useOrdersByStatus(
         if (readyView) return [{ column: "status", op: "eq", value: "READY" }];
         if (dispatchedView) return [{ column: "status", op: "in", value: ["KITCHEN_DISPATCHED", "PAID"] }];
         if (sentView) return [{ column: "status", op: "eq", value: "SENT_TO_KITCHEN" }];
-        if (paidView) return [{ column: "status", op: "eq", value: "PAID" }];
+        if (paidView) return [{ column: "status", op: "in", value: ["PAID", "SENT_TO_KITCHEN", "READY"] }];
         return [{ column: "status", op: "eq", value: status }];
       })();
 
@@ -781,7 +781,7 @@ export function useOrdersByStatus(
             item_note: item.item_note ?? null,
           }));
 
-          if (paidView && Boolean(order.is_special) && order.status === "PAID" && formattedItems.length === 0) {
+          if (paidView && Boolean(order.is_special) && (order.status === "PAID" || !!order.paid_at) && formattedItems.length === 0) {
             formattedItems = items
               .filter((item) => item.order_id === order.id)
               .map((item) => {

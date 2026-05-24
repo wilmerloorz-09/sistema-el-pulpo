@@ -47,7 +47,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
     ];
 
     const rows = payments.map((p) => {
-      const typeName = p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra/General';
+      const typeName = p.orderType === 'SPECIAL' ? 'Especial' : p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra/General';
       return [
         p.orderCode || '',
         p.orderNumber || '',
@@ -244,7 +244,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                       {getOrderRef(p.orderCode, p.orderNumber)}
                     </TableCell>
                     <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
-                      {p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra'}
+                      {p.orderType === 'SPECIAL' ? 'Especial' : p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra'}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm')}

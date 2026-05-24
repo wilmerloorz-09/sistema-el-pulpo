@@ -33,7 +33,7 @@ const Reportes = () => {
     cashierId: null,
     creatorId: null,
     productIds: null,
-    orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA']
+    orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL']
   });
 
   // Mantener sincronizado el branchId del filtro con el branch activo del contexto

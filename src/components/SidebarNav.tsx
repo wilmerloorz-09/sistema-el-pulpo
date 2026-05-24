@@ -64,7 +64,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
     <aside className={cn("hidden w-[248px] flex-col self-start border-r border-slate-800 bg-slate-900 text-slate-300 md:sticky md:top-0 md:flex md:h-screen md:min-h-screen z-40", className)}>
       <div className="shrink-0 border-b border-slate-800 px-4 py-4">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="El Pulpo" className="h-10 w-auto object-contain brightness-0 invert" />
+          <img src="/logo.png" alt="El Pulpo" className="h-10 w-10 object-cover rounded-full" />
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Sistema</p>
             <div className="flex min-w-0 items-baseline gap-2">

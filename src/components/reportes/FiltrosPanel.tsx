@@ -176,7 +176,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
       creatorId: creatorId === 'ALL' ? null : creatorId,
       supervisorId: supervisorId === 'ALL' ? null : supervisorId,
       productIds: finalProductIds.length === 0 ? null : finalProductIds,
-      orderTypes: selectedOrderType === 'ALL' ? ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA'] : [selectedOrderType],
+      orderTypes: selectedOrderType === 'ALL' ? ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL'] : [selectedOrderType],
     });
   };
 
@@ -525,6 +525,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
               <SelectItem value="TAKEOUT">🥡 Para Llevar</SelectItem>
               <SelectItem value="EXPRESS">⚡ Express</SelectItem>
               <SelectItem value="EXTRA">📦 Extra/General</SelectItem>
+              <SelectItem value="SPECIAL">🌟 Especial</SelectItem>
             </SelectContent>
           </Select>
         </div>

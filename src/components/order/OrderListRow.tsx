@@ -230,7 +230,7 @@ export default function OrderListRow({
     if (!canShowMainAction && !canShowRejectAction) return null;
 
     return (
-      <div className={cn("flex items-center gap-2 sm:justify-end", compact ? "flex-nowrap" : "flex-wrap")}>
+      <div className={cn("flex items-center gap-2 lg:justify-end", compact ? "flex-nowrap" : "flex-wrap")}>
         {canShowRejectAction && (
           <Button
             type="button"
@@ -278,153 +278,98 @@ export default function OrderListRow({
   };
 
   return (
-    <div className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
+    <div className={cn(
+      "rounded-2xl border border-slate-200 shadow-sm transition-shadow hover:shadow-md overflow-hidden",
+      index % 2 === 0 ? "bg-white" : "bg-slate-100"
+    )}>
       <div
         onClick={onToggleExpand}
-        className="group cursor-pointer px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid sm:gap-3 sm:grid-cols-[auto_minmax(160px,1.15fr)_minmax(110px,0.8fr)_minmax(150px,0.9fr)_minmax(170px,1fr)_minmax(120px,0.8fr)_minmax(210px,1fr)] sm:items-center sm:px-8"
+        className={cn(
+          "group flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-4 py-4 lg:px-6 transition-colors",
+          "cursor-pointer hover:bg-slate-50",
+        )}
       >
-        <div className="space-y-2 sm:hidden">
-          <div className="flex items-center gap-2 min-w-0">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
-              aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
-            >
-              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </div>
-
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                {isTakeout ? (
-                  <ShoppingBag className="h-3.5 w-3.5" />
-                ) : isSpecial ? (
-                  <CreditCard className="h-3.5 w-3.5" />
-                ) : (
-                  <UtensilsCrossed className="h-3.5 w-3.5" />
-                )}
-              </span>
-              <span className="truncate text-sm font-semibold text-slate-950">{label}</span>
-            </div>
-
-            <span className="shrink-0 font-mono text-[11px] font-bold tracking-[0.08em] text-slate-700">
-              {getOrderRef(order.order_code, order.order_number)}
-            </span>
-
-            <span className="shrink-0 text-sm font-semibold text-slate-950">{mobileAmount}</span>
+        {/* Left Section: Chevron, Icon, Type, User, Order Ref */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
+            aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
+          >
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </div>
 
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-              <span className="truncate text-xs text-slate-600">{mobileSummary}</span>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+            {isTakeout ? (
+              <ShoppingBag className="h-5 w-5" />
+            ) : isSpecial ? (
+              <CreditCard className="h-5 w-5" />
+            ) : (
+              <UtensilsCrossed className="h-5 w-5" />
+            )}
+          </span>
 
-              {isPendingCancellationView && (
-                <span className="shrink-0 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                  Pendiente
+          <div className="flex flex-col min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate text-[15px] font-bold tracking-[-0.01em] text-slate-950 lg:text-base">
+                {label}
+              </p>
+              <p className="font-mono text-sm font-bold tracking-wider text-slate-700">
+                {getOrderRef(order.order_code, order.order_number)}
+              </p>
+            </div>
+            
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
+              {order.created_by_name && (
+                <span className="flex items-center gap-1 truncate">
+                  <UserRound className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{order.created_by_name}</span>
                 </span>
               )}
-
-              <div
-                className={cn(
-                  "shrink-0 inline-flex items-center gap-1 font-mono text-xs font-semibold",
-                  isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500",
-                )}
-              >
-                <Clock className="h-3.5 w-3.5 shrink-0" />
-                {compactTimeDisplay}
-              </div>
-            </div>
-
-            <div className="shrink-0">
-              {renderActions(true)}
-            </div>
-          </div>
-          {order.created_by_name && (
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-              <UserRound className="h-3.5 w-3.5" />
-              <span className="truncate">{order.created_by_name}</span>
-            </div>
-          )}
-        </div>
-
-        <div
-          className="hidden h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800 sm:flex"
-          aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
-        >
-          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </div>
-
-        <div className="hidden min-w-0 sm:block">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-              {isTakeout ? (
-                <ShoppingBag className="h-4 w-4" />
-              ) : isSpecial ? (
-                <CreditCard className="h-4 w-4" />
-              ) : (
-                <UtensilsCrossed className="h-4 w-4" />
-              )}
-            </span>
-            <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">
-              {label}
-            </p>
-            {order.created_by_name && (
-              <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs font-semibold text-slate-500">
-                <UserRound className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{order.created_by_name}</span>
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="hidden min-w-0 sm:block">
-          <p className="truncate font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
-            {getOrderRef(order.order_code, order.order_number)}
-          </p>
-        </div>
-
-        <div className="hidden sm:block sm:text-right">
-          <p className="text-[1.2rem] font-semibold tracking-[-0.03em] text-slate-950">
-            {formatCurrency(isSpecial ? (specialManualTotal ?? 0) : realTotal)}
-          </p>
-          {isSpecial && (
-            <p className="text-xs text-slate-500">
-              Real {formatCurrency(realTotal)}
-            </p>
-          )}
-        </div>
-
-        <div className="hidden sm:block sm:text-right">
-          <p className="text-sm font-semibold text-slate-950">{summaryPrimary}</p>
-          <div className="mt-1 flex flex-wrap items-center gap-2 sm:justify-end">
-            <span className="text-xs text-slate-500">{summarySecondary}</span>
-            {isPendingCancellationView && (
-              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                Solicitud pendiente
+              <span className="flex items-center gap-1 truncate font-semibold text-slate-700">
+                {summaryPrimary}
               </span>
-            )}
+              <span className="hidden lg:inline">{summarySecondary}</span>
+            </div>
           </div>
         </div>
 
-        <div className="hidden sm:block sm:text-right">
-          <div
-            className={cn(
-              "inline-flex items-center gap-1.5 font-mono text-sm font-semibold",
-              isUrgent ? "text-destructive" : isWarning ? "text-amber-600" : "text-slate-500",
-            )}
-          >
+        {/* Middle Section: Money and Time */}
+        <div className="flex flex-row items-center justify-between lg:justify-end gap-4 shrink-0 pl-11 lg:pl-0 mt-2 lg:mt-0">
+           <div className="flex flex-wrap items-center gap-2">
+             <span className="text-[1.15rem] font-bold tracking-[-0.03em] text-slate-950">
+               {formatCurrency(isSpecial ? (specialManualTotal ?? 0) : realTotal)}
+             </span>
+             {isPendingCancellationView && (
+               <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                 Solicitud pendiente
+               </span>
+             )}
+             {isSpecial && (
+               <span className="text-xs font-semibold text-slate-500">
+                 (Real {formatCurrency(realTotal)})
+               </span>
+             )}
+           </div>
+           
+          <div className={cn(
+            "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-sm font-bold shadow-sm",
+            isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
+          )}>
             <Clock className="h-4 w-4 shrink-0" />
-            {timeDisplay}
+            <span>{timeDisplay}</span>
           </div>
         </div>
 
-        <div className="hidden sm:justify-self-end sm:block">
+        {/* Right Section: Actions */}
+        <div className="flex items-center justify-start lg:justify-end gap-2 pl-11 lg:pl-0 shrink-0 mt-2 lg:mt-0">
           {renderActions(false)}
         </div>
       </div>
 
       {isExpanded && (
-        <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="hidden grid-cols-[minmax(0,1.75fr)_100px_90px_90px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:grid">
+        <div className="border-t border-slate-200 bg-slate-50/70">
+          <div className="overflow-hidden rounded-2xl">
+            <div className="hidden grid-cols-[minmax(0,1.75fr)_100px_90px_90px_110px] gap-3 border-b border-slate-200/60 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 lg:grid">
               <span>Detalle</span>
               <span className="text-right">{isPendingCancellationView ? "Solic." : "Cant."}</span>
               <span className="text-right">Desp.</span>
@@ -432,7 +377,7 @@ export default function OrderListRow({
               <span className="text-right">Subtotal</span>
             </div>
 
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-200/60">
               {order.items.map((item) => {
                 const isBulkItem = item.tray_item_type === "C";
                 const visibleQty = getDisplayQuantity(item, order.status);
@@ -442,7 +387,7 @@ export default function OrderListRow({
                 return (
                   <div
                     key={item.id}
-                    className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.75fr)_100px_90px_90px_110px] sm:gap-3"
+                    className="grid gap-2 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.75fr)_100px_90px_90px_110px] lg:gap-3 lg:px-8"
                   >
                     <div className="min-w-0">
                       <p className="break-words whitespace-normal font-medium text-slate-900">
@@ -500,21 +445,21 @@ export default function OrderListRow({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-4 gap-2 text-xs sm:contents sm:text-sm">
-                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-700 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                        {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span> : null}
+                    <div className="grid grid-cols-4 gap-2 text-xs lg:contents lg:text-sm">
+                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-700 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:text-right">
+                        {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 lg:hidden">Cant.</span> : null}
                         {isBulkItem ? "A granel" : visibleQty}
                       </span>
-                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                        <span className="mr-1 font-medium text-slate-500 sm:hidden">Desp.</span>
+                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:text-right">
+                        <span className="mr-1 font-medium text-slate-500 lg:hidden">Desp.</span>
                         {item.quantity_dispatched ?? 0}
                       </span>
-                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                        <span className="mr-1 font-medium text-slate-500 sm:hidden">Falt.</span>
+                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:text-right">
+                        <span className="mr-1 font-medium text-slate-500 lg:hidden">Falt.</span>
                         {item.quantity_remaining ?? 0}
                       </span>
-                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                        <span className="mr-1 font-medium text-slate-500 sm:hidden">Subtotal</span>
+                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:text-right">
+                        <span className="mr-1 font-medium text-slate-500 lg:hidden">Subtotal</span>
                         {formatCurrency(Number(item.total ?? 0))}
                       </span>
                     </div>
@@ -523,14 +468,14 @@ export default function OrderListRow({
               })}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-slate-200/60 bg-slate-100 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Package className="h-4 w-4" />
                 <span>{pluralize(footerItemCount, "item", "items")}</span>
               </div>
 
               <div className="text-right">
-                <p className="text-lg font-semibold tracking-[-0.02em] text-slate-950">
+                <p className="text-[15px] font-black text-slate-900">
                   {formatCurrency(isSpecial ? (specialManualTotal ?? 0) : realTotal)}
                 </p>
                 {isSpecial && (
