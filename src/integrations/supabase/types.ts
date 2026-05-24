@@ -574,6 +574,7 @@ export type Database = {
           shift_id: string
           updated_at: string
           user_id: string
+          secondary_caja_template_id: string | null
         }
         Insert: {
           can_access_orders?: boolean
@@ -594,6 +595,7 @@ export type Database = {
           shift_id: string
           updated_at?: string
           user_id: string
+          secondary_caja_template_id?: string | null
         }
         Update: {
           can_access_orders?: boolean
@@ -614,6 +616,7 @@ export type Database = {
           shift_id?: string
           updated_at?: string
           user_id?: string
+          secondary_caja_template_id?: string | null
         }
         Relationships: [
           {

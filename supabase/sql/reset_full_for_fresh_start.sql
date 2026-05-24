@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- RESET TOTAL DEL SISTEMA POS PARA PRUEBAS DESDE CERO (MODO DESTRUCTIVO)
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -13,23 +13,23 @@
 --   - incluye ordenes Express (`order_type = EXPRESS`) y su flujo despacho antes de cobro
 --   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja -> PAID -> despacho manual (sin mesa)
 --   - incluye cierre Extra desde /extra via `close_extra_order` (sin auto-despacho al cobrar; ver `20260602120000`)
---   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestaña unificada Para llevar / Express)
+--   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestaÃ±a unificada Para llevar / Express)
 --   - incluye alcance de caja secundaria Por llevar/Express (`secondary_caja_takeout_enabled`, `secondary_caja_express_enabled`)
 --   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
---   - incluye la persistencia del estado de navegación mediante el parámetro `origin` y resaltado manual (forceActive/suppressActive)
---   - incluye el bloqueo transaccional del botón "Cobrar" en Caja mientras una orden está en edición
---   - incluye el agrupamiento visual de ítems en toda la UI operativa (Caja, Ordenes)
---   - incluye la apertura de permisos operativos para edición de orden y búsqueda
+--   - incluye la persistencia del estado de navegaciÃ³n mediante el parÃ¡metro `origin` y resaltado manual (forceActive/suppressActive)
+--   - incluye el bloqueo transaccional del botÃ³n "Cobrar" en Caja mientras una orden estÃ¡ en ediciÃ³n
+--   - incluye el agrupamiento visual de Ã­tems en toda la UI operativa (Caja, Ordenes)
+--   - incluye la apertura de permisos operativos para ediciÃ³n de orden y bÃºsqueda
 --   - incluye solicitudes pendientes de anulacion de orden/item (`orders.cancel_requested_at`, `order_cancellations`, `order_item_cancellations`)
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
---   - incluye solicitudes de anulacion de pago, anulaciones parciales, pagos de reemplazo y registro histórico en `order_cancellations` y `orders.notes`
+--   - incluye solicitudes de anulacion de pago, anulaciones parciales, pagos de reemplazo y registro histÃ³rico en `order_cancellations` y `orders.notes`
 --   - incluye ordenes historicas por pago anulado marcadas con `VOID_SUCCESSOR_ORDER`, que deben quedar `CANCELLED` y no `PAID`
 --   - incluye ordenes sucesoras creadas por anulacion de pago con `SUCCESSOR_OF_VOIDED_ORDER` y nuevo `order_code` / `order_number`
---   - incluye la gestión simplificada de mesas con pagos anulados (eliminación del banner central de Pagos Anulados)
---   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones)
+--   - incluye la gestiÃ³n simplificada de mesas con pagos anulados (eliminaciÃ³n del banner central de Pagos Anulados)
+--   - incluye movimientos entre Ã³rdenes de mesa (anteriormente Unir/Dividir divisiones)
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
@@ -115,24 +115,24 @@
 --   - cerrar caja y cerrar turno siguen siendo operaciones distintas en la arquitectura
 --   - el flujo global sigue siendo Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra); Express es despacho antes de cobro.
 --   - Extra queda PAID tras cobrar y requiere despacho manual en Despacho (Mesa/Todos); cierre con `close_extra_order` desde /extra.
---   - Despacho usa pestaña unificada Para llevar / Express (TAKEOUT + EXPRESS); ya no hay pestaña Express separada.
+--   - Despacho usa pestaÃ±a unificada Para llevar / Express (TAKEOUT + EXPRESS); ya no hay pestaÃ±a Express separada.
 --   - cada cajero habilitado abre su propia caja en el mismo turno; el reset borra todas las aperturas y denoms asociadas.
 --   - la plantilla de apertura (`cash_register_template_denoms`) es independiente del catalogo `denominations` usado en cobro
---   - Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
---   - Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
+--   - AnulaciÃ³n de pagos requiere supervisor solo si hay Ã­tems despachados; de lo contrario, es directa.
+--   - Toda anulaciÃ³n de pago deja un rastro de auditorÃ­a en `order_cancellations` y una nota histÃ³rica en el pedido.
 --   - Si la anulacion conserva una cuenta activa, la orden original queda historica `CANCELLED` con su numero original y la sucesora recibe un numero nuevo.
 --   - `Pagos del turno` debe reconstruirse desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
 --   - `branches.workflow_mode` queda como compatibilidad interna con default `CASH_THEN_DISPATCH`
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
 -- - LOS AJUSTES RECIENTES de NAVEGACION (sidebar, bottom nav, tabs de Caja por URL) Y RENDIMIENTO SON SOLO FRONTEND Y NO SE VEN AFECTADOS POR ESTE RESET
 -- - TAMBIEN QUEDA INTACTA LA LOGICA DE EDICION:
---   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual (In-Situ) y de navegación (`origin`)
---   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
---   - el cálculo de cambio se unifica para contemplar excedentes de todos los métodos de pago (incluyendo transferencias)
---   - los ítems nuevos aceptados en órdenes "En caja" mantienen su flujo de cobro correcto
---   - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
---   - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
---   - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
+--   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual (In-Situ) y de navegaciÃ³n (`origin`)
+--   - el bloqueo de ediciÃ³n impide automÃ¡ticamente el cobro en Caja para evitar discrepancias
+--   - el cÃ¡lculo de cambio se unifica para contemplar excedentes de todos los mÃ©todos de pago (incluyendo transferencias)
+--   - los Ã­tems nuevos aceptados en Ã³rdenes "En caja" mantienen su flujo de cobro correcto
+--   - incluye la restricciÃ³n de **Caja Abierta**: el pago requiere obligatoriamente que la caja estÃ© inicializada con denominaciones
+--   - incluye la **Integridad Financiera**: precisiÃ³n decimal estricta, redondeo financiero en cuadre y exclusiÃ³n de cancelados en totales
+--   - incluye la **OptimizaciÃ³n para Tablet**: visualizaciÃ³n de Despacho ajustada a 1280px para mÃ¡xima operatividad
 --   - Para Llevar y Orden Especial se despachan como orden completa; el detalle puede expandirse, pero no debe mostrar botones por item
 -- ============================================================
 
@@ -358,7 +358,12 @@ BEGIN
     );
   END IF;
 
-  -- Elimina cualquier otro perfil del esquema publico.
+  --   - incluye auto-pago de ordenes especiales cuando los abonos/pagos alcanzan su valor manual, independientemente de sus items
+--   - incluye visualizacion explicita de ordenes 'Especial' en reportes, desvinculandolas de su tipo de base (Mesa/Extra)
+--   - incluye exclusividad mutua en embudo de Monitoreo Global para no sobrecontar ordenes despachadas como generadas
+--   - incluye grid responsivo mejorado y resolucion de truncamiento de timestamps en UI operativa (tablet)
+--   - incluye logo corporativo con enmascarado circular completo sin rebordes y assets PWA actualizados
+-- Elimina cualquier otro perfil del esquema publico.
   EXECUTE format(
     'DELETE FROM public.profiles WHERE id <> %L::uuid;',
     v_protected_user_id
@@ -429,7 +434,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 productos frecuentes configurados (`extra_frequent_products` por contexto)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre órdenes y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre Ã³rdenes y alertas de listo)
 -- - 0 aperturas multi-cajero ni cash_shift_denoms por cashier_id
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 ordenes historicas `VOID_SUCCESSOR_ORDER` y 0 ordenes sucesoras `SUCCESSOR_OF_VOIDED_ORDER`
@@ -441,3 +446,4 @@ COMMIT;
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - modulos, roles y permisos base intactos
 -- ============================================================
+

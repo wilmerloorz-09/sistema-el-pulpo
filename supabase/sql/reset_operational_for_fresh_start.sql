@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- RESET OPERATIVO DEL SISTEMA POS PARA PRUEBAS DESDE CERO
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -13,24 +13,24 @@
 --   - incluye ordenes Express (`order_type = EXPRESS`) en cualquier etapa del flujo despacho-cobro
 --   - incluye ordenes Extra (`order_type = EXTRA`) en cualquier etapa del flujo caja -> PAID -> despacho manual (sin mesa)
 --   - incluye cierre Extra con `close_extra_order` desde /extra (sin auto-despacho al cobrar; ver `20260602120000`)
---   - incluye tarjetas Extra pendientes en Despacho (pestanas Mesa y Todos; pestaña unificada Para llevar / Express)
+--   - incluye tarjetas Extra pendientes en Despacho (pestanas Mesa y Todos; pestaÃ±a unificada Para llevar / Express)
 --   - incluye alcance de caja secundaria Por llevar/Express por cajero (`secondary_caja_*`)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye la numeracion visible unificada: `orders.order_number` se deriva del sufijo de `orders.order_code`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
---   - incluye la persistencia del estado de navegación mediante el parámetro `origin` y resaltado manual (forceActive/suppressActive)
---   - incluye el bloqueo automático del botón "Cobrar" en Caja mientras una orden está en edición
---   - incluye el agrupamiento visual de ítems en Caja y Resumen de Orden para mejorar la legibilidad
---   - incluye la flexibilidad de permisos: usuarios operativos ahora pueden acceder a "Editar orden" y búsqueda
+--   - incluye la persistencia del estado de navegaciÃ³n mediante el parÃ¡metro `origin` y resaltado manual (forceActive/suppressActive)
+--   - incluye el bloqueo automÃ¡tico del botÃ³n "Cobrar" en Caja mientras una orden estÃ¡ en ediciÃ³n
+--   - incluye el agrupamiento visual de Ã­tems en Caja y Resumen de Orden para mejorar la legibilidad
+--   - incluye la flexibilidad de permisos: usuarios operativos ahora pueden acceder a "Editar orden" y bÃºsqueda
 --   - incluye la regla de Caja: una orden/item `DRAFT` nunca debe aparecer ni poder cobrarse en Caja
 --   - incluye solicitudes pendientes de anulacion por orden/item y sus payloads `[PENDING_REQUEST]`
---   - incluye anulaciones seguras de pago con autorizacion de supervisor, registro histórico en `order_cancellations` y notas en pedidos
+--   - incluye anulaciones seguras de pago con autorizacion de supervisor, registro histÃ³rico en `order_cancellations` y notas en pedidos
 --   - incluye ordenes historicas por pago anulado marcadas con `VOID_SUCCESSOR_ORDER`, que deben quedar `CANCELLED` y no `PAID`
 --   - incluye ordenes sucesoras creadas por anulacion de pago con `SUCCESSOR_OF_VOIDED_ORDER` y nuevo `order_code` / `order_number`
---   - incluye la gestión simplificada de mesas con pagos anulados (sin banner central de Pagos Anulados)
+--   - incluye la gestiÃ³n simplificada de mesas con pagos anulados (sin banner central de Pagos Anulados)
 --   - incluye reapertura operativa de cuentas/mesas derivada de pagos anulados
---   - incluye movimientos entre órdenes de mesa (anteriormente Unir/Dividir divisiones), junto con su redistribucion de historial READY/DISPATCHED
+--   - incluye movimientos entre Ã³rdenes de mesa (anteriormente Unir/Dividir divisiones), junto con su redistribucion de historial READY/DISPATCHED
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
@@ -40,8 +40,8 @@
 --   - `profiles.full_name` como compatibilidad legacy sincronizada desde `first_name`
 -- - Conserva el flujo global
 --    Caja antes de Despacho (Mesa, Para Llevar, Especial deben pagarse para ser elegibles para despacho).
---    Anulación de pagos requiere supervisor solo si hay ítems despachados; de lo contrario, es directa.
---    Toda anulación de pago deja un rastro de auditoría en `order_cancellations` y una nota histórica en el pedido.
+--    AnulaciÃ³n de pagos requiere supervisor solo si hay Ã­tems despachados; de lo contrario, es directa.
+--    Toda anulaciÃ³n de pago deja un rastro de auditorÃ­a en `order_cancellations` y una nota histÃ³rica en el pedido.
 --    Si la anulacion conserva una cuenta activa, la orden original queda historica `CANCELLED` con su numero original y la sucesora recibe un numero nuevo.
 --    `Pagos del turno` debe reconstruirse desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
 -- - `branches.workflow_mode` queda solo como compatibilidad interna forzada a `CASH_THEN_DISPATCH`
@@ -65,7 +65,7 @@
 -- - Conserva la diferencia arquitectonica entre caja y turno:
 --   - cerrar caja sigue siendo distinto de cerrar turno
 --   - el flujo de cobro/despacho es global: Caja primero y Despacho despues (excepto Express: despacho -> cobro; Extra: caja -> PAID -> despacho manual, cierre con `close_extra_order`)
---   - Despacho en UI: pestaña unificada Para llevar / Express; Extra visible en Mesa y Todos
+--   - Despacho en UI: pestaÃ±a unificada Para llevar / Express; Extra visible en Mesa y Todos
 --   - varios cajeros pueden tener can_use_caja en el mismo turno (hasta max_caja_sessions); cada uno abre su propia caja y denoms por cashier_id
 --   - incluye configuracion de caja principal (`primary_cashier_id`) y secundarias con plantilla de arqueo y flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`
 --   - al borrar cash_register_openings y cash_shift_denoms se eliminan todas las aperturas/denominaciones de todos los cajeros del turno
@@ -93,7 +93,7 @@
 -- - Conserva intactos los cambios frontend de shell responsivo, tabs de Caja por URL y rendimiento, porque no persisten en base de datos
 -- - Conserva politicas de cancelacion/anulacion por categoria por sucursal
 --   - por eso se mantiene que un mesero pueda anular directo solo en las categorias habilitadas por turno/sucursal
---   - si la selección toca una cantidad ya despachada, el flujo seguira requiriendo autorizacion
+--   - si la selecciÃ³n toca una cantidad ya despachada, el flujo seguira requiriendo autorizacion
 --   - administrador, supervisor y usuario con can_authorize_order_cancel conservan su capacidad de resolver directo
 -- - Conserva configuracion estructural de despacho por sucursal:
 --   - dispatch_config
@@ -119,15 +119,15 @@
 --   - si ya subiste comprobantes reales al bucket payment-proofs, su limpieza debe hacerse aparte
 --   - metodo recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 --   - wrapper opcional: `.\scripts\reset-payment-proofs-storage.ps1`
--- - Conserva la lógica de edición In-Situ:
---   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual y de navegación (`origin`)
---   - el bloqueo de edición impide automáticamente el cobro en Caja para evitar discrepancias
---   - el cálculo de cambio se unifica para contemplar excedentes de todos los métodos de pago (incluyendo transferencias)
+-- - Conserva la lÃ³gica de ediciÃ³n In-Situ:
+--   - `Editar Orden` usa buffer temporal, `locked_for_editing` y confirma con `Aceptar cambios` preservando el contexto visual y de navegaciÃ³n (`origin`)
+--   - el bloqueo de ediciÃ³n impide automÃ¡ticamente el cobro en Caja para evitar discrepancias
+--   - el cÃ¡lculo de cambio se unifica para contemplar excedentes de todos los mÃ©todos de pago (incluyendo transferencias)
 --   - al aumentar cantidad de un item ya enviado/en caja, se actualiza la misma linea si no tiene pagos registrados
 --   - los items nuevos aceptados en ordenes "En caja" mantienen su flujo de cobro correcto
---   - incluye la restricción de **Caja Abierta**: el pago requiere obligatoriamente que la caja esté inicializada con denominaciones
---   - incluye la **Integridad Financiera**: precisión decimal estricta, redondeo financiero en cuadre y exclusión de cancelados en totales
---   - incluye la **Optimización para Tablet**: visualización de Despacho ajustada a 1280px para máxima operatividad
+--   - incluye la restricciÃ³n de **Caja Abierta**: el pago requiere obligatoriamente que la caja estÃ© inicializada con denominaciones
+--   - incluye la **Integridad Financiera**: precisiÃ³n decimal estricta, redondeo financiero en cuadre y exclusiÃ³n de cancelados en totales
+--   - incluye la **OptimizaciÃ³n para Tablet**: visualizaciÃ³n de Despacho ajustada a 1280px para mÃ¡xima operatividad
 --   - Para Llevar y Orden Especial se despachan como orden completa; el detalle puede expandirse, pero no debe mostrar botones por item
 --
 -- IDEAL PARA:
@@ -335,7 +335,7 @@ COMMIT;
 -- - archivos en Supabase Storage no se borran con este SQL
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel, asignaciones por nodo y productos frecuentes por contexto)
--- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, aperturas multi-cajero y principal/secundaria con flags takeout/express, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre órdenes, órdenes reabiertas por anulacion y alertas de listo)
+-- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, aperturas multi-cajero y principal/secundaria con flags takeout/express, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre Ã³rdenes, Ã³rdenes reabiertas por anulacion y alertas de listo)
 -- - 0 aperturas de caja por cajero (cash_register_openings) ni denominaciones particionadas (cash_shift_denoms.cashier_id / opening_id)
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo
@@ -343,3 +343,4 @@ COMMIT;
 -- - 0 codigos/numeros visibles de orden previos; la siguiente orden vuelve a generar `order_code` y sincronizar `order_number`
 -- - Contadores de usuarios/mesas/sucursales preservados
 -- ============================================================
+

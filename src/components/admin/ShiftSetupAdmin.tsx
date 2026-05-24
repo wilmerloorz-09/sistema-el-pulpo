@@ -102,6 +102,7 @@ function buildSecondaryCajaConfig(state: ShiftCajaSetupState) {
       user_id: row.user_id,
       takeout_enabled: Boolean(row.takeout_enabled),
       express_enabled: Boolean(row.express_enabled),
+      template_id: row.template_id,
     }));
 }
 
@@ -549,7 +550,7 @@ const ShiftSetupAdmin = () => {
 
       const shiftUserSelectBase =
         "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor";
-      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled`;
+      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id`;
 
       let shiftUsersData: unknown[] | null = null;
       const extendedShiftUsersResult = await (supabase
@@ -582,6 +583,7 @@ const ShiftSetupAdmin = () => {
         is_supervisor: boolean;
         secondary_caja_takeout_enabled: boolean;
         secondary_caja_express_enabled: boolean;
+        secondary_caja_template_id: string | null;
       }>();
 
       for (const row of (shiftUsersData ?? []) as Array<{
@@ -598,6 +600,7 @@ const ShiftSetupAdmin = () => {
         is_supervisor: boolean | null;
         secondary_caja_takeout_enabled: boolean | null;
         secondary_caja_express_enabled: boolean | null;
+        secondary_caja_template_id: string | null;
       }>) {
         shiftUsersMap.set(row.user_id, {
           is_enabled: Boolean(row.is_enabled),
@@ -612,6 +615,7 @@ const ShiftSetupAdmin = () => {
           is_supervisor: Boolean(row.is_supervisor),
           secondary_caja_takeout_enabled: Boolean(row.secondary_caja_takeout_enabled),
           secondary_caja_express_enabled: Boolean(row.secondary_caja_express_enabled),
+          secondary_caja_template_id: row.secondary_caja_template_id,
         });
       }
 
@@ -749,6 +753,7 @@ const ShiftSetupAdmin = () => {
           user_id: userId,
           takeout_enabled: Boolean(shiftUser?.secondary_caja_takeout_enabled),
           express_enabled: Boolean(shiftUser?.secondary_caja_express_enabled),
+          template_id: shiftUser?.secondary_caja_template_id || undefined,
         };
       }),
     };

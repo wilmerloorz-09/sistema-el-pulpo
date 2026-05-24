@@ -275,3 +275,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 13. Si se toca productos frecuentes, validar migraciones `20260531130000` y `20260531140000`, contexto correcto y layout 1–2 filas en `FrequentProductCards`.
 14. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
 15. Si se toca Despacho, validar pestaña unificada Para llevar/Express, Extra en Mesa/Todos, una tarjeta por `order_code`, **Despachar todo**, batch snapshots (`20260602140000`) y tablet 1280px.
+
+### Actualizacion May 23, 2026
+- **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.
+- **UI/UX Monitoreo y Tarjetas:** Ajustes en MonitoreoGlobal.tsx para hacer el embudo mutuamente excluyente en la columna Generadas. Se implemento grid de 2 columnas para tarjetas en vista de tablet y se corrigio el truncado de fecha/hora de los items.
+- **Logo y PWA:** Se elimino el filtro CSS que ocultaba el color del logo en SidebarNav.tsx. Se aplico enmascarado circular (rounded-full object-cover) en Login, Sidebar y AppLayout. Se actualizaron los assets de PWA icon-192.png y icon-512.png con la nueva imagen cargada.

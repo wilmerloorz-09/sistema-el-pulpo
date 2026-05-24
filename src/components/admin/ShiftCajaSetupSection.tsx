@@ -19,10 +19,9 @@ export interface ShiftCajaSetupUserOption {
 export interface SecondaryCajaRow {
   id: string;
   user_id: string;
-  /** Puede cobrar sus propias ordenes TAKEOUT. Extra siempre aplica sin checkbox. */
   takeout_enabled?: boolean;
-  /** Puede cobrar sus propias ordenes EXPRESS despachadas. */
   express_enabled?: boolean;
+  template_id?: string;
 }
 
 export interface CashRegisterTemplateOption {
@@ -92,6 +91,15 @@ export default function ShiftCajaSetupSection({
       ...value,
       secondaryCajas: value.secondaryCajas.map((row) =>
         row.id === rowId ? { ...row, user_id: userId } : row,
+      ),
+    });
+  };
+
+  const updateSecondaryTemplate = (rowId: string, templateId: string | undefined) => {
+    onChange({
+      ...value,
+      secondaryCajas: value.secondaryCajas.map((row) =>
+        row.id === rowId ? { ...row, template_id: templateId } : row,
       ),
     });
   };
@@ -183,7 +191,7 @@ export default function ShiftCajaSetupSection({
           <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/40 p-3.5">
             <div>
               <Label className="text-xs font-semibold uppercase tracking-[0.15em] text-amber-900">
-                Plantilla para cajas secundarias
+                Plantilla general para cajas secundarias
               </Label>
               <p className="mt-1 text-xs text-muted-foreground">
                 Arqueo inicial compartido para todas las cajas secundarias del turno.
@@ -194,7 +202,7 @@ export default function ShiftCajaSetupSection({
                 disabled={disabled || templates.length === 0}
               >
                 <SelectTrigger className="mt-2 h-11 rounded-2xl border-amber-200 bg-white">
-                  <SelectValue placeholder="Selecciona plantilla..." />
+                  <SelectValue placeholder="Selecciona plantilla general..." />
                 </SelectTrigger>
                 <SelectContent>
                   {templates.map((t) => (
@@ -204,17 +212,7 @@ export default function ShiftCajaSetupSection({
                   ))}
                 </SelectContent>
               </Select>
-              {templates.length === 0 && !disabled && (
-                <p className="mt-2 text-xs text-amber-800">
-                  No hay plantillas activas en esta sucursal. Un administrador de sucursal puede crearlas en
-                  Administracion &gt; Plantillas de caja.
-                </p>
-              )}
             </div>
-
-            <p className="text-xs text-muted-foreground">
-              Cada cajero secundario cobra solo sus propias ordenes. Extra siempre aplica; Para llevar y Express son opcionales por cajero.
-            </p>
 
             <div className="space-y-2">
               {value.secondaryCajas.map((row) => {
@@ -226,7 +224,7 @@ export default function ShiftCajaSetupSection({
                   key={row.id}
                   className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-100 bg-white p-2.5"
                 >
-                  <div className="min-w-[220px] flex-1">
+                  <div className="min-w-[200px] flex-1">
                     <Select
                       value={secondarySelectValue}
                       onValueChange={(id) => updateSecondaryUser(row.id, id)}
@@ -244,6 +242,26 @@ export default function ShiftCajaSetupSection({
                     </SelectContent>
                     </Select>
                   </div>
+                  
+                  <div className="min-w-[180px] flex-1">
+                    <Select
+                      value={row.template_id || value.secondaryTemplateId || undefined}
+                      onValueChange={(val) => updateSecondaryTemplate(row.id, val === value.secondaryTemplateId ? undefined : val)}
+                      disabled={disabled}
+                    >
+                      <SelectTrigger className="h-10 w-full rounded-xl">
+                        <SelectValue placeholder="Plantilla..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
                     <Checkbox
                       checked={Boolean(row.takeout_enabled)}
