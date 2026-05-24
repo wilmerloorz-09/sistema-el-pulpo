@@ -2343,9 +2343,7 @@ export function useCaja(params?: {
         }
       }
 
-      if (orderData.order_type === "EXPRESS" && orderData.status !== "KITCHEN_DISPATCHED" && orderData.status !== "PAID") {
-        throw new Error("La orden Express debe estar despachada antes de cobrar en caja");
-      }
+
 
       if (orderIsSpecial) {
         const configuredSpecialTotal = orderData.special_total_manual;

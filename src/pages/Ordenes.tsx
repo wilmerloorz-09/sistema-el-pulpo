@@ -2008,12 +2008,12 @@ const OrdenesContent = () => {
             ? "EXTRA"
             : "PARA LLEVAR";
   const statusLabel: Record<string, string> = {
-    DRAFT: getOrderStatusLabel("DRAFT", order.order_type),
-    SENT_TO_KITCHEN: getOrderStatusLabel("SENT_TO_KITCHEN", order.order_type),
-    READY: getOrderStatusLabel("READY", order.order_type),
-    KITCHEN_DISPATCHED: getOrderStatusLabel("KITCHEN_DISPATCHED", order.order_type),
-    PAID: getOrderStatusLabel("PAID", order.order_type),
-    CANCELLED: getOrderStatusLabel("CANCELLED", order.order_type),
+    DRAFT: getOrderStatusLabel("DRAFT", order.order_type, null, order.paid_at),
+    SENT_TO_KITCHEN: getOrderStatusLabel("SENT_TO_KITCHEN", order.order_type, null, order.paid_at),
+    READY: getOrderStatusLabel("READY", order.order_type, null, order.paid_at),
+    KITCHEN_DISPATCHED: getOrderStatusLabel("KITCHEN_DISPATCHED", order.order_type, null, order.paid_at),
+    PAID: getOrderStatusLabel("PAID", order.order_type, null, order.paid_at),
+    CANCELLED: getOrderStatusLabel("CANCELLED", order.order_type, null, order.paid_at),
   };
 
   const statusColor: Record<string, string> = {
@@ -2809,10 +2809,10 @@ const OrdenesContent = () => {
             try {
               if (isExpressOrder) {
                 await sendToDispatch.mutateAsync();
-                return;
+              } else {
+                await sendToKitchen.mutateAsync();
               }
-              await sendToKitchen.mutateAsync();
-              if (canUseCaja && (order?.id || orderId)) {
+              if (!isExpressOrder && canUseCaja && (order?.id || orderId)) {
                 if (
                   !shiftGateQuery.data?.shiftOpen
                   || shiftGateQuery.data?.cajaStatus !== "OPEN"

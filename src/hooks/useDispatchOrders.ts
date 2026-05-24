@@ -441,7 +441,7 @@ export function useDispatchOrders(scope: DispatchView) {
       const activeOrders = ordersMerged.filter((o) => {
         if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
         if (o.order_type === "EXPRESS") {
-          return o.status === "SENT_TO_KITCHEN" || o.status === "READY";
+          return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";
         }
         const hasAnyPay = ordersWithAnyPayment.has(o.id);
         const hasActivePay = ordersWithActivePayment.has(o.id);

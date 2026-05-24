@@ -44,6 +44,7 @@ export function getOrderStatusLabel(
   status: string | null | undefined,
   orderType?: string | null,
   closedAt?: string | null,
+  paidAt?: string | null,
 ): string {
   const st = String(status ?? "");
   if (orderType === "EXTRA") {
@@ -60,7 +61,7 @@ export function getOrderStatusLabel(
       case "READY":
         return "Lista para despachar";
       case "KITCHEN_DISPATCHED":
-        return "Despachada — por cobrar";
+        return paidAt ? "Despachada" : "Despachada — por cobrar";
       case "PAID":
         return "Pagada";
       case "CANCELLED":
@@ -95,8 +96,5 @@ export function orderIsPayableInCaja(order: {
   is_tray_order?: boolean | null;
   is_special?: boolean | null;
 }): boolean {
-  if (isExpressOrder(order)) {
-    return String(order.status ?? "") === "KITCHEN_DISPATCHED";
-  }
   return ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"].includes(String(order.status ?? ""));
 }
