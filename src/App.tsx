@@ -1,5 +1,4 @@
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
@@ -282,7 +281,6 @@ const App = () => (
     <NetworkProvider>
       <TooltipProvider>
         <Toaster />
-        <SonnerToaster />
         <GlobalSystemAlert />
         <InstallPrompt />
         <SyncInit />
