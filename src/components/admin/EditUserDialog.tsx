@@ -72,6 +72,13 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
     phone: user.phone ?? "",
   });
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleClose = () => {
+    setErrorMsg(null);
+    onClose();
+  };
+
   const currentUserType = isAdmin
     ? "administrador"
     : user.branch_assignments.some((a) => a.role_code === "supervisor")
@@ -99,7 +106,51 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const canSaveProfile = usernameValid && firstNameValid && lastNameValid && identityNumberValid && homeAddressValid && emailValid && phoneValid;
 
   const saveUser = useMutation({
+    onMutate: () => {
+      setErrorMsg(null);
+    },
     mutationFn: async () => {
+      // Verificar que la sucursal no tenga ya un supervisor activo (distinto al usuario actual)
+      if (selectedUserType === "supervisor" && selectedBranchId) {
+        // 1. Obtener el role_id del supervisor
+        const { data: supervisorRole, error: roleErr } = await (supabase
+          .from("roles" as any)
+          .select("id")
+          .eq("code", "supervisor")
+          .eq("is_active", true)
+          .maybeSingle() as any);
+        if (roleErr) throw roleErr;
+
+        if (supervisorRole?.id) {
+          // 2. Buscar si ya existe otro supervisor activo en la sucursal
+          const { data: existingSupRows, error: checkErr } = await (supabase
+            .from("user_branch_roles" as any)
+            .select("user_id")
+            .eq("branch_id", selectedBranchId)
+            .eq("role_id", supervisorRole.id)
+            .eq("is_active", true)
+            .neq("user_id", user.id) as any);
+          if (checkErr) throw checkErr;
+
+          if (existingSupRows && existingSupRows.length > 0) {
+            // 3. Obtener el nombre del supervisor existente
+            const existingUserId = existingSupRows[0].user_id;
+            const { data: supProfile } = await (supabase
+              .from("profiles" as any)
+              .select("first_name, last_name, username")
+              .eq("id", existingUserId)
+              .maybeSingle() as any);
+            const p = supProfile as any;
+            const name = p?.first_name
+              ? `${p.first_name}${p.last_name ? " " + p.last_name : ""} (@${p.username})`
+              : `@${p?.username ?? "otro usuario"}`;
+            throw new Error(
+              `Esta sucursal ya tiene un supervisor asignado: ${name}. Solo puede haber un supervisor por sucursal.`
+            );
+          }
+        }
+      }
+
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
@@ -186,14 +237,19 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
       if (activeBranchError) throw activeBranchError;
     },
     onSuccess: () => {
+      setErrorMsg(null);
       onRefresh();
       if (user.id === profile?.id) {
         void refreshProfile();
       }
-      onClose();
+      handleClose();
       toast.success("Usuario actualizado");
     },
-    onError: (e: any) => toast.error(e.message || "Error al actualizar"),
+    onError: (e: any) => {
+      const msg = e.message || "Error al actualizar";
+      setErrorMsg(msg);
+      toast.error(msg);
+    },
   });
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -236,7 +292,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-3xl p-0">
         <div className="relative flex items-center gap-5 border-b border-slate-100 bg-gradient-to-r from-primary/5 to-transparent p-6">
           <div
@@ -455,6 +511,12 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
               </div>
             )}
           </div>
+          
+          {errorMsg && (
+            <div className="rounded-xl bg-destructive/10 p-3 text-xs font-semibold text-destructive border border-destructive/20 animate-in fade-in slide-in-from-bottom-2 duration-200">
+              {errorMsg}
+            </div>
+          )}
         </div>
 
         {!isProtected && (
@@ -463,7 +525,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
               size="sm"
               variant="ghost"
               className="h-9 rounded-xl px-5 text-xs font-semibold text-slate-600"
-              onClick={onClose}
+              onClick={handleClose}
             >
               Cancelar
             </Button>

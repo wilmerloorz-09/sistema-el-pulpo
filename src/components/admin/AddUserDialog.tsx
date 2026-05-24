@@ -78,6 +78,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isAdmin = form.user_type === "administrador";
   const isSupervisor = form.user_type === "supervisor";
@@ -95,6 +96,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
     setAvatarFile(null);
     setAvatarPreview(null);
     setSelectedBranchId("");
+    setErrorMsg(null);
     onClose();
   };
 
@@ -110,7 +112,50 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   };
 
   const createUser = useMutation({
+    onMutate: () => {
+      setErrorMsg(null);
+    },
     mutationFn: async () => {
+      // Verificar que la sucursal no tenga ya un supervisor activo
+      if (form.user_type === "supervisor" && selectedBranchId) {
+        // 1. Obtener el role_id del supervisor
+        const { data: supervisorRole, error: roleErr } = await (supabase
+          .from("roles" as any)
+          .select("id")
+          .eq("code", "supervisor")
+          .eq("is_active", true)
+          .maybeSingle() as any);
+        if (roleErr) throw roleErr;
+
+        if (supervisorRole?.id) {
+          // 2. Buscar si ya existe otro supervisor activo en la sucursal
+          const { data: existingSupRows, error: checkErr } = await (supabase
+            .from("user_branch_roles" as any)
+            .select("user_id")
+            .eq("branch_id", selectedBranchId)
+            .eq("role_id", supervisorRole.id)
+            .eq("is_active", true) as any);
+          if (checkErr) throw checkErr;
+
+          if (existingSupRows && existingSupRows.length > 0) {
+            // 3. Obtener el nombre del supervisor existente
+            const existingUserId = existingSupRows[0].user_id;
+            const { data: supProfile } = await (supabase
+              .from("profiles" as any)
+              .select("first_name, last_name, username")
+              .eq("id", existingUserId)
+              .maybeSingle() as any);
+            const p = supProfile as any;
+            const name = p?.first_name
+              ? `${p.first_name}${p.last_name ? " " + p.last_name : ""} (@${p.username})`
+              : `@${p?.username ?? "otro usuario"}`;
+            throw new Error(
+              `Esta sucursal ya tiene un supervisor asignado: ${name}. Solo puede haber un supervisor por sucursal.`
+            );
+          }
+        }
+      }
+
       const normalizedEmail = form.email.trim().toLowerCase();
       const normalizedUsername = form.username.trim().toLowerCase();
       const firstName = form.first_name.trim();
@@ -219,11 +264,16 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
       }
     },
     onSuccess: () => {
+      setErrorMsg(null);
       onRefresh();
       handleClose();
       toast.success("Usuario creado correctamente");
     },
-    onError: (e: any) => toast.error(e.message || "No se pudo crear el usuario"),
+    onError: (e: any) => {
+      const msg = e.message || "No se pudo crear el usuario";
+      setErrorMsg(msg);
+      toast.error(msg);
+    },
   });
 
   const passwordsMatch = form.password === form.confirmPassword;
@@ -480,6 +530,12 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   ? "El supervisor debe tener una sucursal asignada."
                   : "El usuario operativo puede crearse sin sucursal y asignarse despues."}
               </p>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="rounded-xl bg-destructive/10 p-3 text-xs font-semibold text-destructive border border-destructive/20 animate-in fade-in slide-in-from-bottom-2 duration-200">
+              {errorMsg}
             </div>
           )}
         </div>
