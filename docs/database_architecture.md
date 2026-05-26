@@ -155,6 +155,7 @@
 - `orders.table_name_snapshot` conserva el nombre de la mesa cuando una orden se desacopla de `table_id`.
 - `get_branch_tables_overview(...)` ignora borradores vacios al calcular ocupacion operativa.
 - `get_branch_tables_overview(...)` debe mantener ordenes `PAID` como ocupacion visible de mesa hasta que pasen a `KITCHEN_DISPATCHED`; pagar no libera la mesa.
+- `get_branch_tables_overview(...)` **no debe incluir** ordenes `KITCHEN_DISPATCHED` en la CTE `table_orders`; una orden despachada ya no ocupa la mesa y debe aparecer como `'free'`. Incluir `KITCHEN_DISPATCHED` produce el bug de "mesa atrapada": el RPC devuelve `occupied` para una mesa sin saldo, y el frontend al entrar no puede mostrar la orden y vuelve a Mesas silenciosamente.
 - En vistas activas, el nombre de mesa debe resolverse desde `restaurant_tables.name` cuando `orders.table_id` existe; `orders.table_name_snapshot` es fallback historico.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre órdenes de mesa.
 - **Gestión de Mesas con Pagos Anulados (2026-05-09):** Las mesas con pagos anulados mantienen su estado de ocupación. El sistema garantiza que la orden original (histórica) no bloquee el re-cobro de la nueva orden sucesora.
@@ -423,6 +424,7 @@
 17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`; post-pago queda `PAID` hasta despacho manual; cierre con `close_extra_order`, no auto-finalize en sync de pagos.
 18. **Despacho UI:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; preferir `get_batch_order_operational_snapshots` cuando exista la migracion.
 19. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
+20. **Mesas KITCHEN_DISPATCHED:** `get_branch_tables_overview` no incluye `KITCHEN_DISPATCHED` en el filtro de ordenes activas. En el frontend (`useTablesWithStatus`) existe la guardia `isDispatchedComplete` que fuerza `status = 'free'` si `active_order_status = 'KITCHEN_DISPATCHED'` y `total_due <= 0`, como defensa adicional. Migracion: `20260526120000_fix_dispatched_tables_show_as_free.sql`.
 20. **Caja secundaria:** flags `secondary_caja_*` en `cash_shift_users`; filtro `created_by` en cliente para Por cobrar.
 
 ### Actualizacion May 23, 2026

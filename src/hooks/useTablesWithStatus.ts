@@ -152,17 +152,25 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
 
-    const effectiveStatus = staleShiftOrder
-      ? "free"
-      : isEmptyDraft
-        ? "free"
-        : row.status === "to_pay"
-          ? "occupied"
-          : (row.status ?? "free");
+    // Una orden KITCHEN_DISPATCHED sin saldo pendiente significa que la mesa ya fue liberada.
+    // El RPC puede devolver 'occupied' en ese caso (bug conocido en get_branch_tables_overview);
+    // este guard corrige el estado en el cliente hasta que el backend lo resuelva en BD.
+    const isDispatchedComplete =
+      !staleShiftOrder
+      && row.active_order_status === "KITCHEN_DISPATCHED"
+      && Number(row.total_due ?? 0) <= 0;
 
-    const effectiveOrderId = staleShiftOrder || isEmptyDraft ? undefined : (row.active_order_id ?? undefined);
-    const effectiveOrderStatus = staleShiftOrder || isEmptyDraft ? undefined : (row.active_order_status ?? undefined);
-    const effectiveSplitTotals = isEmptyDraft ? [] : parseSplitTotals(row.split_totals);
+    const isFreeTable = staleShiftOrder || isEmptyDraft || isDispatchedComplete;
+
+    const effectiveStatus = isFreeTable
+      ? "free"
+      : row.status === "to_pay"
+        ? "occupied"
+        : (row.status ?? "free");
+
+    const effectiveOrderId = isFreeTable ? undefined : (row.active_order_id ?? undefined);
+    const effectiveOrderStatus = isFreeTable ? undefined : (row.active_order_status ?? undefined);
+    const effectiveSplitTotals = isFreeTable ? [] : parseSplitTotals(row.split_totals);
 
     return {
       id: row.table_id,
@@ -172,11 +180,11 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       status: effectiveStatus,
       activeOrderId: effectiveOrderId,
       orderStatus: effectiveOrderStatus,
-      splitCount: isEmptyDraft ? 0 : Number(row.split_count ?? 0),
-      totalDue: isEmptyDraft ? 0 : Number(row.total_due ?? 0),
+      splitCount: isFreeTable ? 0 : Number(row.split_count ?? 0),
+      totalDue: isFreeTable ? 0 : Number(row.total_due ?? 0),
       splitTotals: effectiveSplitTotals,
-      itemCount: isEmptyDraft ? 0 : Number(row.item_count ?? 0),
-      elapsedMinutes: isEmptyDraft ? 0 : Number(row.elapsed_minutes ?? 0),
+      itemCount: isFreeTable ? 0 : Number(row.item_count ?? 0),
+      elapsedMinutes: isFreeTable ? 0 : Number(row.elapsed_minutes ?? 0),
       hasVoidedPayment,
       reusableDraftOrderId: isEmptyDraft ? (row.active_order_id ?? undefined) : undefined,
       created_by_name: effectiveStatus !== "free" && effectiveOrderId
