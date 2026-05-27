@@ -46,3 +46,24 @@ export async function orderBelongsToOpenCashShiftForBranch(
   if (!openShift) return false;
   return orderBelongsToOpenCashShift(order, openShift);
 }
+
+/** True si la orden pertenece al turno abierto de la sucursal (p. ej. antes de abrir mesa ocupada en UI). */
+export async function orderIdBelongsToOpenBranchShift(
+  branchId: string,
+  orderId: string,
+  fetchGateFields: (id: string) => Promise<{
+    cash_shift_id: string | null;
+    created_at: string | null;
+    sent_to_kitchen_at: string | null;
+  } | null>,
+): Promise<boolean> {
+  const openShift = await getOpenCashShiftForBranch(branchId);
+  if (!openShift) return false;
+  try {
+    const fields = await fetchGateFields(orderId);
+    if (!fields) return false;
+    return orderBelongsToOpenCashShift(fields, openShift);
+  } catch {
+    return false;
+  }
+}

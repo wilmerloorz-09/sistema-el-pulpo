@@ -159,6 +159,7 @@
 - En vistas activas, el nombre de mesa debe resolverse desde `restaurant_tables.name` cuando `orders.table_id` existe; `orders.table_name_snapshot` es fallback historico.
 - `move_dine_in_order_items_between_orders(...)` es la RPC actual para mover items entre órdenes de mesa.
 - **Gestión de Mesas con Pagos Anulados (2026-05-09):** Las mesas con pagos anulados mantienen su estado de ocupación. El sistema garantiza que la orden original (histórica) no bloquee el re-cobro de la nueva orden sucesora.
+- **Turno nuevo = mesas limpias (2026-06-03):** `get_branch_tables_overview` y `create_dine_in_order` deben usar el **mismo** criterio: solo el `cash_shift_id` del turno `OPEN`. Órdenes `PAID` (u otras activas) de turnos cerrados **no** bloquean apertura ni ocupan mesa en UI. Migración: `20260603120000_scope_table_busy_check_to_open_shift.sql`. Verificación: `supabase/sql/verify_create_dine_in_order_shift_scope.sql`.
 
 ### Caja
 - `cash_shifts` representa el turno operativo.

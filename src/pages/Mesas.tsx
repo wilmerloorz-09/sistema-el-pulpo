@@ -25,6 +25,7 @@ import { MESAS_ORIGIN_LEGACY, mesasOrdenesSearch } from "@/lib/mesasFlow";
 import {
   getOpenCashShiftForBranch,
   orderBelongsToOpenCashShift,
+  orderIdBelongsToOpenBranchShift,
 } from "@/lib/openCashShift";
 import {
   Dialog,
@@ -184,6 +185,11 @@ const Mesas = () => {
       navigate(`/ordenes?${mesasOrdenesSearch({ order: orderId, origin: MESAS_ORIGIN_LEGACY, mesaCards: opts?.mesaCards })}`, { replace: true });
     };
 
+    const orderBelongsToCurrentShift = async (orderId: string) => {
+      if (!activeBranchId) return false;
+      return orderIdBelongsToOpenBranchShift(activeBranchId, orderId, fetchOrderShiftGateFields);
+    };
+
     const openWithCardsIfNeeded = async (
       orderId: string,
       tableId: string,
@@ -223,10 +229,24 @@ const Mesas = () => {
       if (table.reusableDraftOrderId) {
         try {
           const detail = await fetchOrderDetail(table.reusableDraftOrderId);
-          if (detail && detail.status === "DRAFT" && detail.order_type === "DINE_IN") {
+          const openShift = activeBranchId ? await getOpenCashShiftForBranch(activeBranchId) : null;
+          const draftInCurrentShift =
+            detail
+            && detail.status === "DRAFT"
+            && detail.order_type === "DINE_IN"
+            && openShift
+            && orderBelongsToOpenCashShift(
+              {
+                cash_shift_id: detail.cash_shift_id ?? null,
+                created_at: detail.created_at,
+                sent_to_kitchen_at: detail.sent_to_kitchen_at ?? null,
+              },
+              openShift,
+            );
+          if (draftInCurrentShift) {
             warmOrderId(table.reusableDraftOrderId);
             toast.success(`Entrando a ${table.name}...`);
-            await openWithCardsIfNeeded(table.reusableDraftOrderId, table.id);
+            await openWithCardsIfNeeded(table.reusableDraftOrderId, table.id, openShift);
             return;
           }
         } catch {
@@ -261,7 +281,42 @@ const Mesas = () => {
       sp.set("tableName", table.name);
       sp.set("origin", MESAS_ORIGIN_LEGACY);
       navigate(`/ordenes?${sp.toString()}`, { replace: true });
-    } else if (table.activeOrderId) {
+      return;
+    }
+
+    if (table.activeOrderId) {
+      const belongs = await orderBelongsToCurrentShift(table.activeOrderId);
+      if (!belongs) {
+        toast.success(`Entrando a ${table.name}...`);
+        const optimisticOrderId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        seedDineInDraftOrderCache(qc, optimisticOrderId, {
+          branchId: activeBranchId!,
+          tableId: table.id,
+          tableName: table.name,
+          createdAt: now,
+          tableOrderPosition: 1,
+          siblings: [
+            {
+              id: optimisticOrderId,
+              order_number: null,
+              order_code: null,
+              split_code: null,
+              table_order_position: 1,
+              item_count: 0,
+              created_at: now,
+            },
+          ],
+        });
+        const sp = new URLSearchParams();
+        sp.set("order", optimisticOrderId);
+        sp.set("openTable", table.id);
+        sp.set("tableName", table.name);
+        sp.set("origin", MESAS_ORIGIN_LEGACY);
+        navigate(`/ordenes?${sp.toString()}`, { replace: true });
+        return;
+      }
+
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);

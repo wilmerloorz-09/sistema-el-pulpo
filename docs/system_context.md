@@ -500,6 +500,7 @@
 11. No confundir **plantilla de apertura** con **denominaciones que puede entregar el cliente**; el cobro debe listar `denominations` activas; el arqueo y el cambio usan `cash_shift_denoms` del cajero.
 12. Cajero secundario: validar `isSecondaryCashier`, flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`, `orderVisibleToSecondaryCashier`, migracion `20260528130000_payment_in_upsert_per_cashier.sql`, que Extra no muestre "Mesa N" si `order_type` es `EXTRA` y `table_name` es null, y que no imprima comprobante en dialogos secundarios.
 13. Extra post-cobro: verificar `20260602120000` (sin auto-despacho), que la orden `PAID` aparezca en Despacho (Mesa/Todos) y que el cierre use `20260602130000` desde `/extra`.
+16. Turno nuevo / mesas: aplicar `20260603120000_scope_table_busy_check_to_open_shift.sql`; `create_dine_in_order` solo bloquea órdenes activas del **turno abierto**, no PAID de turnos cerrados.
 14. Despacho: pestaña unificada Para llevar/Express; Extra en Mesa; una tarjeta por orden; migracion `20260602140000` para snapshots batch.
 15. Productos frecuentes: verificar migraciones `20260531130000` y `20260531140000`; reordenar usa `display_order` con staging positivo (no valores negativos).
 
