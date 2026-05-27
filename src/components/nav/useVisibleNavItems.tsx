@@ -3,6 +3,7 @@ import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, MonitorCheck, Package
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
+import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
 import { canView } from "@/lib/permissions";
 
 export interface NavSubItem {
@@ -268,8 +269,8 @@ export function useVisibleNavItems() {
           || Boolean(sg?.canManageProducts);
       }
 
-      if (item.to === "/caja") {
-        return hasSupervisorBypass || Boolean(sg?.canUseCaja);
+      if (isCajaFinanceNavPath(item.to)) {
+        return canSeeCajaFinanceNav(sg);
       }
 
       if (item.to === "/despacho") {

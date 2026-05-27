@@ -1,6 +1,15 @@
 import type { BranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { TAB_SESSION_ID } from "@/hooks/useBranchShiftGate";
 
+/** Recaudar, Pagos del turno y rutas /caja?tab=... del grupo Finanzas. */
+export function isCajaFinanceNavPath(to: string): boolean {
+  return to === "/caja" || to.startsWith("/caja?");
+}
+
+export function canSeeCajaFinanceNav(sg: BranchShiftGate | undefined): boolean {
+  return Boolean(sg?.canUseCaja);
+}
+
 export function computeCajaAbrirTerminalState(sg: BranchShiftGate | undefined) {
   const maxCap = Math.max(1, Math.min(10, Number(sg?.maxCajaSessions ?? 1)));
   const globalUsed = Math.max(0, Number(sg?.globalCajaSessionsUsed ?? 0));

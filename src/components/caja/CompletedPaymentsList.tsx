@@ -81,6 +81,8 @@ interface Props {
   loading?: boolean;
   filters: CompletedPaymentsFilters;
   permissions: PermissionMap;
+  /** Si viene del padre (p. ej. turno con can_use_caja), tiene prioridad sobre solo permiso de módulo caja. */
+  canVoidPayments?: boolean;
   actionLoading?: boolean;
   onFiltersChange: (next: CompletedPaymentsFilters) => void;
   shiftDenoms: ShiftDenom[];
@@ -122,14 +124,14 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function getPermissionFlags(permissions: PermissionMap) {
+function getPermissionFlags(permissions: PermissionMap, canVoidPayments?: boolean) {
   const canOperateCaja = canOperate(permissions, "caja");
   const canManageAdmin = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
 
   return {
     canOperateCaja,
     canManageAdmin,
-    canStartVoid: canOperateCaja || canManageAdmin,
+    canStartVoid: canVoidPayments ?? (canOperateCaja || canManageAdmin),
   };
 }
 
@@ -214,6 +216,7 @@ export default function CompletedPaymentsList({
   loading = false,
   filters,
   permissions,
+  canVoidPayments,
   shiftDenoms,
   cashierUsers,
   currentUserId,
@@ -289,7 +292,7 @@ export default function CompletedPaymentsList({
     undocumentedChange: 0,
   });
 
-  const permissionFlags = getPermissionFlags(permissions);
+  const permissionFlags = getPermissionFlags(permissions, canVoidPayments);
 
   const groupedPayments = useMemo<PaymentGroup[]>(() => {
     const map = new Map<string, PaymentGroup>();

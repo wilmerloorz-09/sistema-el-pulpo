@@ -556,6 +556,7 @@ const Caja = () => {
               loading={isLoadingCompletedPayments}
               filters={completedFilters}
               permissions={permissions}
+              canVoidPayments={canOperateCaja}
               shiftDenoms={shift?.denoms ?? []}
               cashierUsers={captureCandidates}
               currentUserId={user?.id ?? null}
@@ -1072,6 +1073,7 @@ const Caja = () => {
                 loading={isLoadingCompletedPayments}
                 filters={completedFilters}
                 permissions={permissions}
+                canVoidPayments={canOperateCaja}
                 shiftDenoms={shift.denoms}
                 cashierUsers={captureCandidates}
                 currentUserId={user?.id ?? null}

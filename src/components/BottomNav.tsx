@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import ThemeToggle from "@/components/nav/ThemeToggle";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
-import { computeCajaAbrirTerminalState } from "@/components/nav/cajaTerminalNav";
+import { canSeeCajaFinanceNav, computeCajaAbrirTerminalState, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import {
   DropdownMenu,
@@ -34,6 +34,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
   const { visibleItems } = useVisibleNavItems();
   const shiftGateQuery = useBranchShiftGate();
   const { canOpenAbrirCaja, abrirDisabledReason, abrirNavLabel } = computeCajaAbrirTerminalState(shiftGateQuery.data);
+  const canSeeCajaFinance = canSeeCajaFinanceNav(shiftGateQuery.data);
   const { profile } = useAuth();
   const accountLabel = getUserDisplayName(profile);
   const initials = getInitials(accountLabel);
@@ -65,7 +66,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
     <nav className="fixed inset-x-0 bottom-0 z-50 overflow-hidden border-t border-orange-200/80 bg-white shadow-[0_-18px_35px_-28px_rgba(15,23,42,0.4)] safe-bottom dark:border-border dark:bg-card md:hidden">
       <div className={cn("mx-auto grid h-[60px] w-full max-w-md items-center justify-items-center gap-1 px-1", gridColsClass)}>
         {bottomNavItems.map((item) => {
-          const isCaja = item.to === "/caja";
+          const isCaja = isCajaFinanceNavPath(item.to);
 
           let isItemActive = location.pathname === item.to;
           if (fromMesas) {
@@ -138,18 +139,22 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
                       </div>
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-orange-50 focus:text-orange-950 dark:focus:bg-primary/20">
-                    <Link to="/caja?tab=pending" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
-                      <div className="flex bg-orange-100 text-orange-600 p-2 rounded-[12px] dark:bg-primary/20 dark:text-primary shadow-sm"><CreditCard className="h-4 w-4" /></div>
-                      <span className="text-sm">Por cobrar</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-violet-50 focus:text-violet-950 dark:focus:bg-violet-500/20">
-                    <Link to="/caja?tab=completed" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
-                      <div className="flex bg-violet-100 text-violet-600 p-2 rounded-[12px] dark:bg-violet-500/20 dark:text-violet-400 shadow-sm"><History className="h-4 w-4" /></div>
-                      <span className="text-sm">Pagos del turno</span>
-                    </Link>
-                  </DropdownMenuItem>
+                  {canSeeCajaFinance ? (
+                    <>
+                      <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-orange-50 focus:text-orange-950 dark:focus:bg-primary/20">
+                        <Link to="/caja?tab=pending" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
+                          <div className="flex bg-orange-100 text-orange-600 p-2 rounded-[12px] dark:bg-primary/20 dark:text-primary shadow-sm"><CreditCard className="h-4 w-4" /></div>
+                          <span className="text-sm">Por cobrar</span>
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild className="p-0 mb-1 rounded-xl focus:bg-violet-50 focus:text-violet-950 dark:focus:bg-violet-500/20">
+                        <Link to="/caja?tab=completed" className="flex items-center gap-3 w-full p-2.5 font-semibold cursor-pointer">
+                          <div className="flex bg-violet-100 text-violet-600 p-2 rounded-[12px] dark:bg-violet-500/20 dark:text-violet-400 shadow-sm"><History className="h-4 w-4" /></div>
+                          <span className="text-sm">Pagos del turno</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             );
