@@ -14,10 +14,12 @@ export function shouldUseSecondaryPaymentDialog(
   return Boolean(shiftGate?.isSecondaryCashier);
 }
 
-/** Caja principal: solo pantallas >= tablet 10". Secundaria: cualquier tamaño (telefono incluido). */
+/** Cobro permitido en cualquier dispositivo. */
 export function canOpenPaymentUiOnDevice(
   shiftGate: BranchShiftGate | null | undefined,
   isTablet10: boolean,
 ): boolean {
-  return isTablet10 || shouldUseSecondaryPaymentDialog(shiftGate);
+  void shiftGate;
+  void isTablet10;
+  return true;
 }
