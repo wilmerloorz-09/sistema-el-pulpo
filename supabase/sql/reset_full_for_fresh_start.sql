@@ -14,7 +14,7 @@
 --   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja -> PAID -> despacho manual (sin mesa)
 --   - incluye cierre Extra desde /extra via `close_extra_order` (sin auto-despacho al cobrar; ver `20260602120000`)
 --   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestaÃ±a unificada Para llevar / Express)
---   - incluye alcance de caja secundaria Por llevar/Express (`secondary_caja_takeout_enabled`, `secondary_caja_express_enabled`)
+--   - caja unificada: el alcance “todas/mías/por usuario” es UI (no flags `secondary_caja_*`)
 --   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
@@ -34,7 +34,7 @@
 --   - incluye resultados de OCR/analisis guardados en `payment_proofs`
 -- - Elimina historial de aperturas/anulaciones/movimientos de caja y usuarios habilitados por turno
 --   - incluye multiples aperturas por turno (una por cajero en cash_register_openings) y denoms por cashier_id/opening_id
---   - incluye caja principal/secundaria por turno (`primary_cashier_id`, plantillas secundarias, flags `secondary_caja_*`)
+--   - incluye configuración de caja por turno con principal opcional (`primary_cashier_id`) y plantilla por cajero
 --   - incluye cobro con catalogo global de denominaciones (UI) vs plantilla de arqueo (apertura); tras reset solo queda el catalogo en `denominations`
 --   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
 --   - incluye `cash_shifts.max_caja_sessions` y slots de sesion Caja en cash_shift_users (caja_session_slots)

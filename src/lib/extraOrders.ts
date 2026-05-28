@@ -77,7 +77,10 @@ export interface ExtraCajaVisibilityScope {
   primaryCashierId: string | null;
 }
 
-/** Caja: creador o cajero principal del turno pueden ver/cobrar Extra. */
+/**
+ * @deprecated La visibilidad de Extra en Recaudar se controla con el combo de alcance
+ * (`cajaPayableOrderScope`). Mantenido por compatibilidad con llamadas legacy.
+ */
 export function extraOrderVisibleInCaja(
   order: {
     order_type?: string | null;
@@ -89,18 +92,18 @@ export function extraOrderVisibleInCaja(
 ): boolean {
   if (!isExtraOrder(order)) return true;
   if (!scope.userId) return false;
-  if (scope.primaryCashierId && scope.userId === scope.primaryCashierId) return true;
-  return order.created_by === scope.userId;
+  return order.created_by === scope.userId || scope.userId === scope.primaryCashierId;
 }
 
+/** Cualquier cajero con turno abierto puede cobrar Extra visible en su lista. */
 export function canUserPayExtraOrder(
-  order: {
+  _order: {
     order_type?: string | null;
     created_by?: string | null;
     is_tray_order?: boolean | null;
     is_special?: boolean | null;
   },
-  scope: ExtraCajaVisibilityScope,
+  _scope: ExtraCajaVisibilityScope,
 ): boolean {
-  return extraOrderVisibleInCaja(order, scope);
+  return true;
 }

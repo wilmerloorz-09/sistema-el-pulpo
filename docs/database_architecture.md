@@ -36,8 +36,7 @@
 - `user_branch_modules`
 - `cash_shift_users`
   - capacidades operativas por turno (`can_serve_tables`, `can_use_caja`, etc.)
-  - `secondary_caja_takeout_enabled`: cajero secundario puede cobrar sus TAKEOUT.
-  - `secondary_caja_express_enabled`: cajero secundario puede cobrar sus EXPRESS despachadas.
+  - Nota: ya no se modela alcance de cobro por flags `secondary_caja_*` (caja unificada).
 // Removed WebAuthn tables from active operation
 
 
@@ -79,8 +78,8 @@
 - `cash_shifts`
   - `max_caja_sessions`: cupo de usuarios/terminales Caja habilitados simultaneos en el turno (1–10).
   - `caja_status`: resumen agregado del turno (alguna apertura abierta/cerrada); no sustituye el estado por cajero en UI.
-  - `primary_cashier_id`: cajero de la caja principal del turno.
-  - `secondary_cajas_enabled`, `secondary_caja_template_id`: cajas secundarias y plantilla de arqueo inicial.
+  - `primary_cashier_id`: cajero principal **opcional** (solo defaults de UI).
+  - La configuración de caja por turno se persiste por cajero (plantilla individual).
 - `denominations`: catalogo global de tipos de moneda/billete activos (`is_active`); **independiente** de la plantilla de apertura.
 - `cash_shift_denoms`
   - `cashier_id`, `opening_id`: particion por cajero y apertura dentro del turno.
@@ -172,8 +171,8 @@
 - **Administrador general:** `set_my_active_branch` y `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`) permiten fijar cualquier sucursal activa sin redireccion por turno ni auto-reasignacion al refrescar contexto.
 - `open_cash_register` retorna `uuid` (id de apertura). Si cambia el tipo de retorno, ejecutar antes `DROP FUNCTION open_cash_register(uuid, uuid, uuid, jsonb)`.
 - `internal_open_cash_register_for_cashier(...)` abre caja secundaria al configurar turno; con plantilla inserta cantidades del template; el cobro no debe limitarse a esas filas en UI.
-- `apply_shift_caja_configuration(..., p_secondary_caja_config jsonb)` persiste principal, secundarios, flags takeout/express y abre cajas secundarias.
-- `open_cash_shift_with_tables(..., p_secondary_caja_config jsonb)` reenvia config secundaria a apply.
+- `apply_shift_caja_configuration(...)`: aplica configuración unificada de cajeros (principal opcional; al menos 1 cajero).
+- `open_cash_shift_with_tables(...)`: abre turno y aplica configuración de caja.
 - `auto_finalize_extra_order_after_payment(p_order_id uuid)`
 - `registrar_movimiento_caja_operativo`: movimientos `PAYMENT_IN` / `CHANGE_OUT` filtran por `shift_id`, `cashier_id = auth.uid()` y `denomination_id`. Si `PAYMENT_IN` no encuentra fila, inserta con apertura abierta del cajero y luego suma `qty_current`.
 - `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
@@ -321,6 +320,9 @@
 - `list_cash_register_movements(...)`
 - `claim_cash_session_slot(...)` (sesion de terminal; no sustituye apertura de caja por cajero)
 - `create_extra_order(...)`
+- Cobro rápido (batch):
+  - `register_payment_with_items(p_payments jsonb, p_items jsonb)` inserta pagos + items en un solo roundtrip.
+  - `registrar_movimientos_caja_operativos_batch(p_shift_id uuid, p_movements jsonb)` registra movimientos operativos en lote.
 
 ### Anulacion de pagos
 - `can_void_payment(...)`
@@ -378,7 +380,7 @@
 ### Express y flujo despacho-cobro
 - `20260516000000_add_express_order_type.sql`
 - `20260527120000_add_extra_order_type.sql`
-- `20260529120000_secondary_caja_order_scope.sql`
+-- (deprecated) `20260529120000_secondary_caja_order_scope.sql` quedó obsoleta con caja unificada.
 - `20260530120000_extra_auto_dispatch_on_payment.sql` (historica; el sync vigente ya no la invoca — ver `20260602120000`)
 - `20260602120000_extra_flow_like_table_orders.sql`
 - `20260602130000_close_extra_order.sql`
@@ -426,7 +428,7 @@
 18. **Despacho UI:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; preferir `get_batch_order_operational_snapshots` cuando exista la migracion.
 19. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
 20. **Mesas KITCHEN_DISPATCHED:** `get_branch_tables_overview` no incluye `KITCHEN_DISPATCHED` en el filtro de ordenes activas. En el frontend (`useTablesWithStatus`) existe la guardia `isDispatchedComplete` que fuerza `status = 'free'` si `active_order_status = 'KITCHEN_DISPATCHED'` y `total_due <= 0`, como defensa adicional. Migracion: `20260526120000_fix_dispatched_tables_show_as_free.sql`.
-20. **Caja secundaria:** flags `secondary_caja_*` en `cash_shift_users`; filtro `created_by` en cliente para Por cobrar.
+20. **Caja unificada:** el alcance “todas/mías/por usuario” se maneja en cliente (combo en Recaudar), no por flags `secondary_caja_*`.
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,6 +23,15 @@ import {
 import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
+import CajaPayableOrderScopeSelect from "@/components/caja/CajaPayableOrderScopeSelect";
+import {
+  buildPayableOrderCreatorOptions,
+  getDefaultCajaPayableOrderScope,
+  loadPersistedCajaPayableScope,
+  orderMatchesCajaPayableScope,
+  persistCajaPayableScope,
+  type CajaPayableOrderScope,
+} from "@/lib/cajaPayableOrderScope";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
 import { toast } from "sonner";
 import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, RotateCcw, Upload } from "lucide-react";
@@ -42,6 +52,8 @@ import {
   type CompletedPayment,
   type CashMovement
 } from "@/lib/cashReportUtils";
+import { dbSelect } from "@/services/DatabaseService";
+import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   scope: "ALL",
@@ -75,6 +87,7 @@ const Caja = () => {
   const [uploadingCaptureRequestId, setUploadingCaptureRequestId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [payableOrderScope, setPayableOrderScope] = useState<CajaPayableOrderScope>("all");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeTabParam = searchParams.get("tab");
   const autoOpenOrderId = searchParams.get("order");
@@ -144,9 +157,89 @@ const Caja = () => {
     registerCashMovement,
   } = useCaja({ completedPaymentsFilters: completedFilters, autoOpenOrderId });
 
+  const cashierMethodSummaryQuery = useQuery({
+    queryKey: ["cashier-method-summary", activeBranch?.id ?? "_", shift?.id ?? "_", user?.id ?? "_"],
+    enabled: Boolean(activeBranch?.id) && Boolean(shift?.id) && Boolean(user?.id),
+    queryFn: async (): Promise<CompletedPaymentsMethodSummary[]> => {
+      if (!activeBranch?.id || !shift?.opened_at || !user?.id) return [];
+
+      const [payments, methods] = await Promise.all([
+        dbSelect<any>("payments", {
+          select: "id, amount, payment_method_id, created_at, created_by, notes",
+          filters: [
+            { column: "created_by", op: "eq", value: user.id },
+            { column: "created_at", op: "gte", value: shift.opened_at },
+            { column: "created_at", op: "lte", value: new Date().toISOString() },
+          ],
+        }),
+        dbSelect<any>("payment_methods", {
+          select: "id, name",
+          filters: [{ column: "branch_id", op: "eq", value: activeBranch.id }],
+        }),
+      ]);
+
+      const methodNameById = Object.fromEntries((methods ?? []).map((m: any) => [m.id, m.name]));
+      const byMethod = new Map<string, { amount: number; paymentCount: number }>();
+      for (const p of (payments ?? []) as any[]) {
+        // Nota: si hay marcadores de reverso/anulación en notes, el resumen debería excluirlos;
+        // el comportamiento actual de ShiftSummary es mostrar lo "cobrado" por este cajero.
+        const methodId = String(p.payment_method_id ?? "");
+        if (!methodId) continue;
+        const curr = byMethod.get(methodId) ?? { amount: 0, paymentCount: 0 };
+        curr.amount += Number(p.amount ?? 0);
+        curr.paymentCount += 1;
+        byMethod.set(methodId, curr);
+      }
+
+      return Array.from(byMethod.entries())
+        .map(([methodId, totals]) => ({
+          methodId,
+          methodName: methodNameById[methodId] ?? "Metodo",
+          amount: Number(totals.amount.toFixed(2)),
+          paymentCount: totals.paymentCount,
+        }))
+        .sort((a, b) => b.amount - a.amount || a.methodName.localeCompare(b.methodName));
+    },
+    refetchInterval: 10000,
+  });
+
+  const shiftSummaryMethodSummary = cashierMethodSummaryQuery.data ?? [];
+  const shiftSummaryMovements = useMemo(() => {
+    if (!user?.id) return cashRegisterMovements;
+    return (cashRegisterMovements ?? []).filter((m) => m.recordedBy === user.id);
+  }, [cashRegisterMovements, user?.id]);
+
   const currentUserCashierCandidate = useMemo(
     () => (user?.id ? captureCandidates.find((c) => c.id === user.id) ?? null : null),
     [user?.id, captureCandidates],
+  );
+
+  useEffect(() => {
+    if (!activeBranch?.id || !shiftGateQuery.data?.shiftId || !user?.id) return;
+    const persisted = loadPersistedCajaPayableScope(activeBranch.id, shiftGateQuery.data.shiftId);
+    setPayableOrderScope(
+      persisted ?? getDefaultCajaPayableOrderScope(user.id, shiftGateQuery.data.primaryCashierId),
+    );
+  }, [activeBranch?.id, shiftGateQuery.data?.shiftId, shiftGateQuery.data?.primaryCashierId, user?.id]);
+
+  const payableCreatorOptions = useMemo(
+    () => buildPayableOrderCreatorOptions(payableOrders),
+    [payableOrders],
+  );
+
+  const filteredPayableOrders = useMemo(() => {
+    if (!user?.id) return payableOrders;
+    return payableOrders.filter((order) =>
+      orderMatchesCajaPayableScope(order, payableOrderScope, user.id),
+    );
+  }, [payableOrders, payableOrderScope, user?.id]);
+
+  const handlePayableOrderScopeChange = useCallback(
+    (scope: CajaPayableOrderScope) => {
+      setPayableOrderScope(scope);
+      persistCajaPayableScope(activeBranch?.id, shiftGateQuery.data?.shiftId, scope);
+    },
+    [activeBranch?.id, shiftGateQuery.data?.shiftId],
   );
 
   const activeCaptureRequest = useMemo(
@@ -1022,8 +1115,8 @@ const Caja = () => {
             {activeTab !== "capture" && (
               <ShiftSummary
                 shift={shift}
-                methodSummary={completedPaymentsMethodSummary}
-                movements={cashRegisterMovements}
+                methodSummary={shiftSummaryMethodSummary}
+                movements={shiftSummaryMovements}
                 movementsLoading={isLoadingCashRegisterMovements}
                 onClose={handleCloseCashRegister}
                 onAnnulOpen={async (reason) => {
@@ -1045,8 +1138,16 @@ const Caja = () => {
         <div className={cn(!isDesktop && "space-y-4")}>
           {activeTab === "pending" ? (
             <div className={cn(!isDesktop && "rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]")}>
+              <div className="mb-4">
+                <CajaPayableOrderScopeSelect
+                  scope={payableOrderScope}
+                  creatorOptions={payableCreatorOptions}
+                  disabled={cajaPanelReadOnly}
+                  onScopeChange={handlePayableOrderScopeChange}
+                />
+              </div>
               <PayableOrdersList
-                orders={payableOrders}
+                orders={filteredPayableOrders}
                 paymentMethods={paymentMethods}
                 denominations={denominations}
                 shiftDenoms={shift.denoms}

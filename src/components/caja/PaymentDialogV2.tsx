@@ -13,15 +13,14 @@ import { isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paym
 import { isExtraOrder } from "@/lib/orderFlow";
 import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
-import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
-import { shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
+import type { Denomination, PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import { PaymentItemSplitDialog } from "@/components/caja/PaymentItemSplitDialog";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
 import { Banknote, CircleCheck, Coins, CreditCard, Loader2, Printer, UserRound, Wallet, CopyCheck } from "lucide-react";
 import { toast } from "sonner";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
+import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -96,6 +95,7 @@ export function getOrderTotalToCharge(order: PayableOrder): number {
 
 interface Props {
   order: PayableOrder | null;
+  denominations: Denomination[];
   shiftDenoms: ShiftDenom[];
   paymentMethods: { id: string; name: string }[];
   onPay: (params: PayOrderParams) => Promise<unknown> | void;
@@ -107,6 +107,7 @@ interface Props {
 
 export default function PaymentDialogV2({
   order,
+  denominations,
   shiftDenoms,
   paymentMethods,
   onPay,
@@ -115,8 +116,7 @@ export default function PaymentDialogV2({
   onClose,
   readOnly = false,
 }: Props) {
-  const shiftGateQuery = useBranchShiftGate();
-  const hidePrintReceipt = shouldUseSecondaryPaymentDialog(shiftGateQuery.data);
+  const hidePrintReceipt = false;
   const pendingPayPromiseRef = useRef<Promise<unknown> | null>(null);
   const suppressCloseOnceRef = useRef(false);
 
@@ -238,17 +238,22 @@ export default function PaymentDialogV2({
     [order],
   );
 
+  /**
+   * Denominaciones que el cliente puede entregar: catálogo global (independiente de la plantilla).
+   * `shiftDenoms` se usa para disponibilidad de cambio (caja).
+   */
   const sortedDenoms = useMemo(() => {
+    const paymentDenoms = catalogToPaymentDenoms(denominations);
     const uniqueDenoms = new Map<string, ShiftDenom>();
-    for (const d of shiftDenoms) {
+    for (const d of paymentDenoms) {
       if (!uniqueDenoms.has(d.denomination_id)) {
         uniqueDenoms.set(d.denomination_id, d);
       }
     }
-    return Array.from(uniqueDenoms.values()).sort(
-      (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value,
-    );
-  }, [shiftDenoms]);
+    return Array.from(uniqueDenoms.values())
+      .filter((d) => d.value > 0)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.value - b.value);
+  }, [denominations]);
   const coinDenoms = useMemo(
     () => sortedDenoms.filter((d) => d.denomination_type !== "bill"),
     [sortedDenoms],

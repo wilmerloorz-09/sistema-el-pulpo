@@ -56,8 +56,7 @@
   - Tras cobro total queda `PAID`; **no** hay auto-despacho ni cierre automatico al pagar (`20260602120000_extra_flow_like_table_orders.sql` retira `auto_finalize_extra_order_after_payment` del sync de pagos).
   - En `Despacho`, las ordenes Extra pagadas aparecen en pestañas **Mesa** y **Todos** (no requieren `sent_to_kitchen_at` en items para listarse).
   - Cierre desde `/extra`: boton **X** en ordenes despachadas ejecuta `close_extra_order(...)` (`20260602130000_close_extra_order.sql`); las ordenes cerradas no se muestran en Extra.
-  - Caja: visible para el creador; si otro usuario cobra, solo el **cajero principal** del turno (`primary_cashier_id`). Sin pagos parciales en Extra.
-  - Cajero secundario: sin imprimir comprobante en `PaymentDialogSecondary` / `PaymentDialogV2` cuando aplica dialogo secundario.
+  - Caja: sin restricción por “principal/secundario” (caja unificada). Mantener la regla de negocio de Extra (sin pagos parciales).
   - RPC `create_extra_order(...)`; en Caja el subtitulo debe mostrar **Extra**, no nombre de mesa.
   - Productos frecuentes operativos: contexto `EXTRA` en `extra_frequent_products`.
   - Migraciones: `20260527120000_add_extra_order_type.sql`, `20260602120000`, `20260602130000`.
@@ -108,18 +107,13 @@
   - `get_my_branch_shift_gate(...)` devuelve `caja_status` **del usuario autenticado** via `get_user_caja_status(...)`, no el agregado de `cash_shifts.caja_status`.
   - `cash_shifts.caja_status` sigue existiendo como resumen agregado (hay alguna caja abierta en el turno), pero la UI de Caja y el menu lateral usan el estado por usuario.
   - No usar flujo de "conectar terminal" / `claim_cash_session_slot` para un segundo cajero: cada uno ve `Abrir mi caja` y completa su arqueo.
-- **Caja principal vs secundarias por turno (2026-05-25+):**
-  - `cash_shifts.primary_cashier_id`: cajero de la caja principal (arqueo en modulo `/caja`). En la UI se identifica como "Caja Principal".
-  - `cash_shifts.secondary_cajas_enabled` + `secondary_caja_template_id`: habilitan cajas secundarias (se identifican como "Caja Secundaria" en UI si `can_use_caja` es true y no son el principal).
-  - Ya no existe `register_role` en `cash_shift_users`.
-  - `apply_shift_caja_configuration(...)` asigna `can_use_caja` al principal y a los cajeros secundarios, y abre caja secundaria con `internal_open_cash_register_for_cashier(..., register_role = secondary)`.
-  - Tras abrir/guardar turno, el frontend debe llamar `persistShiftCajaConfiguration` **despues** de `persistShiftUsersForShift` para no borrar `can_use_caja` del cajero principal.
-  - `useBranchShiftGate`: `isSecondaryCashier` = habilitado con caja y distinto de `primary_cashier_id`; define UI de cobro secundaria.
-  - **Alcance de ordenes en caja secundaria (2026-05-29+):**
-    - Columnas `cash_shift_users.secondary_caja_takeout_enabled` y `secondary_caja_express_enabled`.
-    - Configuracion por cajero secundario en `Admin > Turno` via `apply_shift_caja_configuration(..., p_secondary_caja_config jsonb)`.
-    - Filtro en cliente: `orderVisibleToSecondaryCashier` (`src/lib/secondaryCajaPayable.ts`) — solo ordenes **propias** (`created_by`); **Extra siempre** visible para el cajero secundario que las creo; Para llevar/Express segun flags.
-  - Migraciones: `20260525120000_shift_caja_structure.sql`, `20260526150000_remove_max_caja_sessions_cap.sql`, `20260529120000_secondary_caja_order_scope.sql`.
+- **Cajas unificadas (principal opcional) (2026-05-25+ / 2026-06-05+):**
+  - No existe distinción operativa entre “caja principal” y “secundaria”: cualquier cajero habilitado puede cobrar cualquier tipo de orden y de cualquier usuario.
+  - `cash_shifts.primary_cashier_id` existe solo como **default de UI** en Recaudar: si coincide con el usuario, por defecto ve **todas** las órdenes; si no, por defecto ve “solo mis órdenes”.
+  - El cajero principal es **opcional**: puede ser `NULL` siempre que exista al menos un cajero habilitado para caja.
+  - Configuración UI: lista única de cajeros (usuario + plantilla) con un checkbox “Principal” por fila (máximo 1).
+  - `apply_shift_caja_configuration(...)` aplica la lista (habilita `can_use_caja`) y abre cajas según plantilla.
+  - Migraciones clave: `20260604120000_secondary_caja_individual_template.sql` y `20260605120000_optional_primary_cashier.sql`.
 - **Administrador general:** puede cambiar a cualquier sucursal activa cuando quiera; no aplica redireccion por turno ni auto-reasignacion al refrescar `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`).
   - **Monitoreo Global de Turnos (`/admin/monitoreo-global`):**
     - Vista exclusiva para el Administrador General que consolida todas las sucursales en tiempo real.
@@ -154,20 +148,16 @@
 ### 3. Caja y pagos
 - **Apertura por cajero:** Si Ivonne ya abrio su caja, otro cajero habilitado (p. ej. usuario1) debe ver el formulario de arqueo propio en `/caja`, no un bloqueo por "caja ya abierta en el turno".
 - **Validacion de cobro:** `useCaja` carga `cash_shift_denoms` filtrando `cashier_id = auth.uid()`. `Ordenes` valida cobro rapido con `shiftGateQuery.data.cajaStatus === 'OPEN'`, no con `shift.caja_status` global.
-- **Plantilla de apertura vs catálogo de cobro (regla distinta):**
+- **Plantilla de apertura vs catálogo de cobro (regla estricta):**
   - **Plantilla / arqueo:** `cash_register_template_denoms` y `OpenShiftForm` definen **con qué empieza** el cajero en su caja (`qty_initial` / `qty_current` en `cash_shift_denoms` del cajero).
-  - **Cobro (lo que entrega el cliente):** la UI de pago usa el catálogo global `denominations` activas (`catalogToPaymentDenoms` en `src/lib/cajaDenominations.ts`), **no** solo las filas de la plantilla.
+  - **Cobro (Efectivo entregado):** la UI de pago usa el catálogo global `denominations` activas (`catalogToPaymentDenoms` en `src/lib/cajaDenominations.ts`), **no depende** de la plantilla.
   - **Cambio:** el desglose de vuelto usa `drawerDenoms` = inventario del cajero (`shift.denoms` desde `cash_shift_denoms`).
   - **Backend:** `registrar_movimiento_caja_operativo` con `PAYMENT_IN` crea la fila en `cash_shift_denoms` del cajero autenticado si el cliente paga con una denominacion que no estaba en la plantilla (`20260528130000_payment_in_upsert_per_cashier.sql`).
 - **Historial:** `list_cash_register_openings` marca `is_current` cuando la apertura abierta pertenece al usuario actual. El historial mostrado en `OpenShiftForm` se filtra por cajero en cliente.
 - **Anulacion de apertura:** usar RPC `annul_cash_opening(p_opening_id, ...)`; solo borra denominaciones de esa apertura/cajero, no las de otros cajeros del mismo turno.
-- **Diálogo de cobro (tres variantes):**
-  - `PaymentDialog` (`src/components/caja/PaymentDialog.tsx`): flujo clásico; referencia para comprobante de transferencia preparado (`onPrepareTransferProof`, `getTransferProofReadiness`).
-  - `PaymentDialogV2` (`src/components/caja/PaymentDialogV2.tsx`): caja **principal** en tablet/escritorio; denominaciones + transferencia; no modificar para caja secundaria.
-  - `PaymentDialogSecondary` (`src/components/caja/PaymentDialogSecondary.tsx`): cajeros secundarios (`isSecondaryCashier`); layout vertical compacto para telefono/tablet; sin "Dividir pago"; comparte logica en `usePaymentChargeFlow` con `paymentDenominations` + `drawerDenoms`.
-  - Conmutación: `src/lib/cajaPaymentUi.ts` — `USE_PAYMENT_DIALOG_V2`, `shouldUseSecondaryPaymentDialog(shiftGate)`, `canOpenPaymentUiOnDevice(shiftGate, isTablet10)` (secundaria puede cobrar en pantalla pequena aunque `isTablet10` sea false).
-  - `PayableOrdersList` y `Ordenes.tsx` eligen Secondary vs V2 vs V1 segun rol y flag.
-  - V2/Secondary hoy **no** replican el flujo completo de comprobante de transferencia preparado del clásico.
+- **Diálogo de cobro (unificado):**
+  - `PaymentDialogV2` (`src/components/caja/PaymentDialogV2.tsx`) es la UI estándar para cobrar (misma UI para todos los cajeros).
+  - `PaymentDialog` (`src/components/caja/PaymentDialog.tsx`) se conserva como referencia/compatibilidad.
 - **Rendimiento del cobro (cliente + BD):**
   - Inserciones calientes usan `dbInsert` / `dbInsertMany` con `hotPath` (insert sin `select` y sin escribir Dexie en ese momento) para `payments`, `payment_items` y fallback de `cash_movements`.
   - Lecturas previas al cobro en `payOrder` pueden usar `skipLocalCache` en `dbSelect` para no bloquear el hilo con `bulkPut` en IndexedDB.
@@ -180,6 +170,7 @@
   - `ShiftSummary`
   - `CashRegisterMovementsDialog`
   - `PaymentReversalModal`
+- **Resumen por cajero (regla UI):** dentro de `ShiftSummary`, las secciones **Resumen de caja**, **Desglose** y **Cambio** deben reflejar exclusivamente los pagos y movimientos del usuario logueado (no el total global del turno).
 - La caja fisica se reconstruye desde `cash_shift_denoms` + `cash_movements`.
 - El resumen de caja ya debe mostrar efectivo neto aplicado, no efectivo bruto recibido antes del cambio.
 - Caja debe considerar cobrable la cantidad ordenada activa completa, no solo la cantidad despachada, incluso para ordenes de mesa.
@@ -453,14 +444,13 @@
   - Pestaña unificada **Para llevar / Express**; Extra en Mesa/Todos; **Despachar todo**; snapshots batch y cache optimista.
 - Migraciones pendientes de aplicar manualmente en Supabase: `20260602120000`, `20260602130000`, `20260602140000`.
 
-### 2026-05-25 / 2026-05-31
+### 2026-05-25 / 2026-06-06
 - Turno / caja:
-  - Estructura caja principal + secundarias por turno (`primary_cashier_id`, plantilla secundaria, `register_role` en aperturas).
-  - Alcance Por llevar / Express por cajero secundario (`secondary_caja_*`, `p_secondary_caja_config`).
-  - Fix persistencia `can_use_caja` del cajero principal al guardar usuarios del turno.
-  - Separacion plantilla de arqueo vs catalogo de denominaciones en cobro.
-  - `PaymentDialogSecondary` para cajeros secundarios en movil/tablet.
-  - `registrar_movimiento_caja_operativo`: `PAYMENT_IN` por cajero con upsert si falta denominacion en caja.
+  - Cajas unificadas: todos los cajeros pueden cobrar cualquier orden (sin flags `secondary_caja_*` para alcance de cobro).
+  - `primary_cashier_id` es opcional y solo afecta defaults de UI en Recaudar.
+  - Configuración en una sola lista de cajeros (usuario + plantilla; “principal” por checkbox).
+  - Separación estricta: plantilla de arqueo ≠ denominaciones que puede entregar el cliente.
+  - `registrar_movimiento_caja_operativo`: `PAYMENT_IN` por cajero con upsert si falta denominación en caja.
 - Extra:
   - `order_type = EXTRA`, pagina `/extra`, flujo caja → despacho manual (como mesa), menu sin PLATOS.
   - Sin auto-despacho al cobrar; cierre manual con `close_extra_order` desde `/extra`.
@@ -498,7 +488,7 @@
 9. Cualquier cambio en `Despacho` debe preservar una sola tarjeta por orden pagada; no volver a separar la misma orden por `sent_to_kitchen_at` de los items.
 10. Cobros lentos con muchas líneas: verificar que la migración `20260509180000_payment_items_sync_once_per_statement.sql` esté aplicada en la BD remota; sin ella, cada fila de `payment_items` dispara sincronización completa de orden.
 11. No confundir **plantilla de apertura** con **denominaciones que puede entregar el cliente**; el cobro debe listar `denominations` activas; el arqueo y el cambio usan `cash_shift_denoms` del cajero.
-12. Cajero secundario: validar `isSecondaryCashier`, flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`, `orderVisibleToSecondaryCashier`, migracion `20260528130000_payment_in_upsert_per_cashier.sql`, que Extra no muestre "Mesa N" si `order_type` es `EXTRA` y `table_name` es null, y que no imprima comprobante en dialogos secundarios.
+12. Caja unificada: no reintroducir restricciones por “secundario” ni flags `secondary_caja_*` en caja/por-cobrar/cobro.
 13. Extra post-cobro: verificar `20260602120000` (sin auto-despacho), que la orden `PAID` aparezca en Despacho (Mesa/Todos) y que el cierre use `20260602130000` desde `/extra`.
 16. Turno nuevo / mesas: aplicar `20260603120000_scope_table_busy_check_to_open_shift.sql`; `create_dine_in_order` solo bloquea órdenes activas del **turno abierto**, no PAID de turnos cerrados.
 14. Despacho: pestaña unificada Para llevar/Express; Extra en Mesa; una tarjeta por orden; migracion `20260602140000` para snapshots batch.

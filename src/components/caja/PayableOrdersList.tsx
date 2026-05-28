@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
 import type { Denomination, PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
-import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 import { Button } from "@/components/ui/button";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
 import PaymentDialogV2 from "./PaymentDialogV2";
-import PaymentDialogSecondary from "./PaymentDialogSecondary";
-import { USE_PAYMENT_DIALOG_V2, canOpenPaymentUiOnDevice, shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
-import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -20,7 +17,6 @@ function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[
 }
 
 import { toast } from "sonner";
-import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface Props {
   orders: PayableOrder[];
@@ -66,10 +62,6 @@ export default function PayableOrdersList({
   onAutoOpenOrderConsumed,
   onTakeControl,
 }: Props) {
-  const { isTablet10 } = useBreakpoint();
-  const shiftGateQuery = useBranchShiftGate();
-  const useSecondaryPaymentUi = shouldUseSecondaryPaymentDialog(shiftGateQuery.data);
-  const paymentDenominations = catalogToPaymentDenoms(denominations);
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -252,10 +244,6 @@ export default function PayableOrdersList({
                             disabled={readOnly || order.locked_for_editing}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!canOpenPaymentUiOnDevice(shiftGateQuery.data, isTablet10)) {
-                                toast.error("El dispositivo es demasiado pequeño para operar caja.");
-                                return;
-                              }
                               setSelectedOrder(order);
                             }}
                             className="h-9 rounded-full border border-[#15803d] bg-[#15803d] px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
@@ -375,21 +363,10 @@ export default function PayableOrdersList({
         </section>
       </section>
 
-      {useSecondaryPaymentUi ? (
-        <PaymentDialogSecondary
-          order={selectedOrder}
-          paymentDenominations={paymentDenominations}
-          drawerDenoms={shiftDenoms}
-          paymentMethods={paymentMethods}
-          onPay={onPay}
-          paying={paying}
-          open={!!selectedOrder}
-          onClose={() => setSelectedOrder(null)}
-          readOnly={readOnly}
-        />
-      ) : USE_PAYMENT_DIALOG_V2 ? (
+      {USE_PAYMENT_DIALOG_V2 ? (
         <PaymentDialogV2
           order={selectedOrder}
+          denominations={denominations}
           shiftDenoms={shiftDenoms}
           paymentMethods={paymentMethods}
           onPay={onPay}

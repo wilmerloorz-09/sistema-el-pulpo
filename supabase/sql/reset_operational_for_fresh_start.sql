@@ -14,7 +14,7 @@
 --   - incluye ordenes Extra (`order_type = EXTRA`) en cualquier etapa del flujo caja -> PAID -> despacho manual (sin mesa)
 --   - incluye cierre Extra con `close_extra_order` desde /extra (sin auto-despacho al cobrar; ver `20260602120000`)
 --   - incluye tarjetas Extra pendientes en Despacho (pestanas Mesa y Todos; pestaÃ±a unificada Para llevar / Express)
---   - incluye alcance de caja secundaria Por llevar/Express por cajero (`secondary_caja_*`)
+--   - caja unificada: el alcance “todas/mías/por usuario” es UI (no flags `secondary_caja_*`)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye la numeracion visible unificada: `orders.order_number` se deriva del sufijo de `orders.order_code`
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
@@ -67,7 +67,7 @@
 --   - el flujo de cobro/despacho es global: Caja primero y Despacho despues (excepto Express: despacho -> cobro; Extra: caja -> PAID -> despacho manual, cierre con `close_extra_order`)
 --   - Despacho en UI: pestaÃ±a unificada Para llevar / Express; Extra visible en Mesa y Todos
 --   - varios cajeros pueden tener can_use_caja en el mismo turno (hasta max_caja_sessions); cada uno abre su propia caja y denoms por cashier_id
---   - incluye configuracion de caja principal (`primary_cashier_id`) y secundarias con plantilla de arqueo y flags `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled`
+--   - incluye configuración de caja con principal opcional (`primary_cashier_id`) y plantilla por cajero
 --   - al borrar cash_register_openings y cash_shift_denoms se eliminan todas las aperturas/denominaciones de todos los cajeros del turno
 --   - el catalogo `denominations` se conserva; define lo que el cliente puede entregar al cobrar (independiente de plantilla de apertura)
 --   - Caja cobra cantidades ordenadas activas antes del despacho (Express solo cuando KITCHEN_DISPATCHED)

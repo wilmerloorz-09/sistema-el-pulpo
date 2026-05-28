@@ -39,10 +39,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 - Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
 
-### 2.2 Cobro en caja: UI, caja secundaria y rendimiento
-- Conviven `PaymentDialog` (clásico), `PaymentDialogV2` (caja principal tablet/escritorio) y `PaymentDialogSecondary` (cajeros secundarios, móvil/tablet).
-- La elección va por `src/lib/cajaPaymentUi.ts`: `USE_PAYMENT_DIALOG_V2`, `shouldUseSecondaryPaymentDialog(shiftGate)`, `canOpenPaymentUiOnDevice` (secundaria cobra en teléfono sin exigir ancho tablet).
-- **No modificar `PaymentDialogV2` para caja secundaria**; usar `PaymentDialogSecondary` + `usePaymentChargeFlow`.
+### 2.2 Cobro en caja: UI unificada y rendimiento
+- La UI estándar de cobro es `PaymentDialogV2` (misma UI para todos los cajeros).
 - V2 y Secondary deben enviar a `payOrder` los mismos invariantes (`PayOrderParams`) que el clásico.
 - **Plantilla de apertura ≠ denominaciones de cobro:**
   - Plantilla (`cash_register_template_denoms`, `OpenShiftForm`): arqueo inicial del cajero en `cash_shift_denoms`.
@@ -80,9 +78,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - principal vs secundarias (ya no usan `register_role`, se identifican por `primary_cashier_id` vs rest)
   - multiples cajeros (limitado a `max_caja_sessions`)
   - `cash_shift_denoms` como caja fisica real (por cajero; columnas `cashier_id`, `opening_id`)
-- Migraciones de caja multi-cajero obligatorias en cada entorno: `20260521100000_allow_multiple_shift_caja_users.sql`, `20260522120000_per_cashier_caja_register.sql`, `20260525120000_shift_caja_structure.sql`, `20260528130000_payment_in_upsert_per_cashier.sql`, `20260529120000_secondary_caja_order_scope.sql`.
-- Al configurar turno con caja principal/secundarias: `apply_shift_caja_configuration(..., p_secondary_caja_config jsonb)` en BD; en frontend llamar `persistShiftCajaConfiguration` **después** de `persistShiftUsersForShift` para no borrar `can_use_caja` del cajero principal.
-- Cajeros secundarios en `Por cobrar`: filtrar con `orderVisibleToSecondaryCashier` — solo ordenes propias (`created_by`); Extra siempre; Para llevar/Express segun `secondary_caja_takeout_enabled` / `secondary_caja_express_enabled` en `cash_shift_users`.
+- Migraciones de caja (entornos que cobran): aplicar las migraciones de caja multi-cajero y las de configuración de caja por turno, incluyendo las más recientes de caja unificada (principal opcional y plantilla por cajero).
 - Si se añaden características globales o se toca el estado de los turnos, asegurarse de que no interfieran con la vista del Administrador en `/admin/monitoreo-global` (Monitoreo Global de Turnos). Esta interfaz depende de `supabase_realtime` en las tablas principales de la operación (profiles, cash_shifts, orders, cash_shift_users).
 - Al cambiar `open_cash_register`, si el retorno pasa de `void` a `uuid`, incluir `DROP FUNCTION IF EXISTS public.open_cash_register(uuid, uuid, uuid, jsonb)` antes del `CREATE`.
 - **No** hacer `DROP FUNCTION get_my_branch_shift_gate(uuid)` en migraciones: politicas RLS de `order_cancellations` / `order_item_cancellations` dependen de ella; usar `CREATE OR REPLACE` con la misma firma `RETURNS TABLE`.
@@ -267,10 +263,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - **Flujo Global:** Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra). Express invierte el flujo (despacho antes de cobro). Extra: despacho manual tras `PAID`; cierre con `close_extra_order`.
    - **Despacho:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; migracion batch `20260602140000` recomendada.
    - **Productos frecuentes:** reset total borra `extra_frequent_products`; reset operativo los conserva.
-   - **Caja secundaria:** documentar flags `secondary_caja_*` y filtro `created_by` en cliente.
+  - **Caja unificada:** no documentar ni depender de flags `secondary_caja_*` para alcance de cobro.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
 10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
-11. Si se toca caja secundaria, validar `isSecondaryCashier`, `PaymentDialogSecondary`, flags `secondary_caja_*`, `orderVisibleToSecondaryCashier`, cobro en pantalla pequena y que Extra no muestre mesa en subtítulo.
+11. Si se toca Caja/Recaudar, validar el filtro de alcance (todas / mías / por usuario) y que el cobro siga unificado.
 12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, RPC `create_extra_order`, flujo caja → `PAID` → despacho manual, `20260602120000`/`20260602130000`, visibilidad creador/cajero principal y aparicion en Despacho (Mesa/Todos).
 13. Si se toca productos frecuentes, validar migraciones `20260531130000` y `20260531140000`, contexto correcto y layout 1–2 filas en `FrequentProductCards`.
 14. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.

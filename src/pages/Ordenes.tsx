@@ -34,9 +34,7 @@ import ChangeTableDialog from "@/components/order/ChangeTableDialog";
 import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
 import PaymentDialog from "@/components/caja/PaymentDialog";
 import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
-import PaymentDialogSecondary from "@/components/caja/PaymentDialogSecondary";
-import { USE_PAYMENT_DIALOG_V2, canOpenPaymentUiOnDevice, shouldUseSecondaryPaymentDialog } from "@/lib/cajaPaymentUi";
-import { orderVisibleToSecondaryCashier } from "@/lib/secondaryCajaPayable";
+import { USE_PAYMENT_DIALOG_V2, canOpenPaymentUiOnDevice } from "@/lib/cajaPaymentUi";
 import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 import { useCaja, type PayableOrder } from "@/hooks/useCaja";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -540,7 +538,6 @@ const OrdenesContent = () => {
   const { user } = useAuth();
   const { activeBranchId, activeBranch, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
-  const useSecondaryPaymentUi = shouldUseSecondaryPaymentDialog(shiftGateQuery.data);
   const { isDesktop, isTablet10 } = useBreakpoint();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -867,7 +864,7 @@ const OrdenesContent = () => {
     getTransferProofReadiness 
   } = useCaja();
 
-  const paymentDenominations = useMemo(() => catalogToPaymentDenoms(denominations), [denominations]);
+  // Denominaciones del cliente se usan directamente en PaymentDialogV2 (independiente de plantilla).
 
   const payableOrder: PayableOrder | null = useMemo(() => {
     if (!order) return null;
@@ -1476,15 +1473,6 @@ const OrdenesContent = () => {
     isGlobalAdmin || 
     canManageOrders || 
     Boolean(shiftGateQuery.data?.canUseCaja);
-  const canPayCurrentOrderInSecondaryCaja = useMemo(() => {
-    if (!order || !shiftGateQuery.data?.isSecondaryCashier || !user?.id) return true;
-    return orderVisibleToSecondaryCashier(order, {
-      userId: user.id,
-      takeoutEnabled: Boolean(shiftGateQuery.data.secondaryCajaTakeoutEnabled),
-      expressEnabled: Boolean(shiftGateQuery.data.secondaryCajaExpressEnabled),
-    });
-  }, [order, shiftGateQuery.data, user?.id]);
-
   useEffect(() => {
     if (!order || !isTakeoutOrder) return;
     if (paymentDialogOpenForOrderId === order.id) return;
@@ -2823,10 +2811,6 @@ const OrdenesContent = () => {
                   return;
                 }
 
-                if (!canPayCurrentOrderInSecondaryCaja) {
-                  return;
-                }
-
                 if (canOpenPaymentUiOnDevice(shiftGateQuery.data, isTablet10)) {
                   setPaymentDialogOpenForOrderId(orderId);
                 } else {
@@ -3892,20 +3876,10 @@ const OrdenesContent = () => {
         }}
       />
 
-      {useSecondaryPaymentUi ? (
-        <PaymentDialogSecondary
-          order={payableOrder}
-          paymentDenominations={paymentDenominations}
-          drawerDenoms={shift?.denoms ?? []}
-          paymentMethods={paymentMethods}
-          paying={payOrder.isPending}
-          onPay={(params) => payOrder.mutateAsync(params)}
-          open={showPaymentDialog}
-          onClose={() => setPaymentDialogOpenForOrderId(null)}
-        />
-      ) : USE_PAYMENT_DIALOG_V2 ? (
+      {USE_PAYMENT_DIALOG_V2 ? (
         <PaymentDialogV2
           order={payableOrder}
+          denominations={denominations}
           shiftDenoms={shift?.denoms ?? []}
           paymentMethods={paymentMethods}
           paying={payOrder.isPending}

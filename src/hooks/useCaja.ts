@@ -13,9 +13,6 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 import { orderIsPayableInCaja } from "@/lib/orderFlow";
-import { canUserPayExtraOrder, extraOrderVisibleInCaja } from "@/lib/extraOrders";
-import { isExtraOrder } from "@/lib/orderFlow";
-import { orderVisibleToSecondaryCashier } from "@/lib/secondaryCajaPayable";
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -1435,10 +1432,6 @@ export function useCaja(params?: {
       activeBranchId,
       activeWorkflowMode,
       shiftGate?.shiftId ?? "_",
-      user?.id ?? "_",
-      shiftGate?.isSecondaryCashier ?? false,
-      shiftGate?.secondaryCajaTakeoutEnabled ?? false,
-      shiftGate?.secondaryCajaExpressEnabled ?? false,
     ],
     queryFn: async () => {
       if (!activeBranchId) return [];
@@ -1545,24 +1538,7 @@ export function useCaja(params?: {
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
       const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
-      const extraCajaScope = {
-        userId: user?.id ?? "",
-        primaryCashierId: shiftGate?.primaryCashierId ?? null,
-      };
-
-      const payableSourceOrders = activeOrders
-        .filter((o) => orderIsPayableInCaja(o))
-        .filter((o) => {
-          if (isExtraOrder(o)) {
-            return extraOrderVisibleInCaja(o, extraCajaScope);
-          }
-          if (!shiftGate?.isSecondaryCashier || !user?.id) return true;
-          return orderVisibleToSecondaryCashier(o, {
-            userId: user.id,
-            takeoutEnabled: Boolean(shiftGate.secondaryCajaTakeoutEnabled),
-            expressEnabled: Boolean(shiftGate.secondaryCajaExpressEnabled),
-          });
-        });
+      const payableSourceOrders = activeOrders.filter((o) => orderIsPayableInCaja(o));
 
       return payableSourceOrders
         .map((o) => {
@@ -2314,25 +2290,6 @@ export function useCaja(params?: {
       const effectiveCashChangeDenoms = Array.isArray(cashChangeDenoms) ? cashChangeDenoms : [];
 
       if (!orderData) throw new Error("Orden no encontrada");
-      const extraCajaScope = {
-        userId: user?.id ?? "",
-        primaryCashierId: shiftGate?.primaryCashierId ?? null,
-      };
-      if (isExtraOrder(orderData)) {
-        if (!canUserPayExtraOrder(orderData, extraCajaScope)) {
-          throw new Error("Solo el creador o el cajero principal del turno puede cobrar esta orden Extra");
-        }
-      } else if (
-        shiftGate?.isSecondaryCashier
-        && user?.id
-        && !orderVisibleToSecondaryCashier(orderData, {
-          userId: user.id,
-          takeoutEnabled: Boolean(shiftGate.secondaryCajaTakeoutEnabled),
-          expressEnabled: Boolean(shiftGate.secondaryCajaExpressEnabled),
-        })
-      ) {
-        throw new Error("No tienes permiso para cobrar esta orden en caja secundaria");
-      }
       if (orderData.status === "DRAFT") {
         throw new Error("Una orden borrador no puede cobrarse en caja.");
       }

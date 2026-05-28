@@ -7,11 +7,12 @@ export const USE_PAYMENT_DIALOG_V2 = true;
 
 import type { BranchShiftGate } from "@/hooks/useBranchShiftGate";
 
-/** Cajero secundario: siempre UI móvil de cobro, en teléfono o tablet. */
+/** @deprecated Cajas principal y secundaria usan la misma UI de cobro (V2). */
 export function shouldUseSecondaryPaymentDialog(
   shiftGate: BranchShiftGate | null | undefined,
 ): boolean {
-  return Boolean(shiftGate?.isSecondaryCashier);
+  void shiftGate;
+  return false;
 }
 
 /** Cobro permitido en cualquier dispositivo. */
