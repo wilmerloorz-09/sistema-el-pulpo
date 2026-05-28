@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { computeLineAmount, distributeProportionalAmounts, roundMoney } from "@/lib/paymentQuantity";
@@ -346,24 +345,18 @@ export function usePaymentChargeFlow({
       },
     };
 
-    flushSync(() => setPostPaySummary(summary));
-
     try {
       const payResult = onPay(params);
       if (payResult != null && typeof (payResult as { then?: unknown }).then === "function") {
         const p = payResult as Promise<unknown>;
         pendingPayPromiseRef.current = p;
-        p.catch((e) => {
-          suppressCloseOnceRef.current = true;
-          setPostPaySummary(null);
-          toast.error(getPayFailureMessage(e));
-        }).finally(() => {
-          if (pendingPayPromiseRef.current === p) pendingPayPromiseRef.current = null;
-        });
+        await p;
+        pendingPayPromiseRef.current = null;
       }
+      setPostPaySummary(summary);
     } catch (e) {
       suppressCloseOnceRef.current = true;
-      setPostPaySummary(null);
+      pendingPayPromiseRef.current = null;
       toast.error(getPayFailureMessage(e));
     }
   }, [

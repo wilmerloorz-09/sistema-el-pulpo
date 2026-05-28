@@ -341,11 +341,8 @@ export default function PaymentDialogSecondary({
                 type="button"
                 className="h-11 w-full rounded-xl"
                 onClick={() => {
-                  void (async () => {
-                    await settlePendingPay();
-                    setPostPaySummary(null);
-                    onClose();
-                  })();
+                  setPostPaySummary(null);
+                  onClose();
                 }}
               >
                 Listo
@@ -363,13 +360,13 @@ export default function PaymentDialogSecondary({
                     <Button
                       type="button"
                       className="h-11 flex-1 rounded-xl"
-                      disabled={!canPay}
+                      disabled={!canPay || paying}
                       onClick={() => void handleCobrar()}
                     >
                       {paying ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Cobrandoâ€¦
+                          Cobrando…
                         </>
                       ) : (
                         "Cobrar"

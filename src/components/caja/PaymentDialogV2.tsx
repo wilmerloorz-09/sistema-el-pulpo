@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -509,31 +508,19 @@ export default function PaymentDialogV2({
       receipt,
     };
 
-    flushSync(() => {
-      setPostPaySummary(summary);
-    });
-
     try {
       const payResult = onPay(params);
       if (payResult != null && typeof (payResult as { then?: unknown }).then === "function") {
         const p = payResult as Promise<unknown>;
         pendingPayPromiseRef.current = p;
-        p.catch((e) => {
-          console.error("Payment failed", e);
-          suppressCloseOnceRef.current = true;
-          setPostPaySummary(null);
-          toast.error(getPayFailureMessage(e));
-        }).finally(() => {
-          if (pendingPayPromiseRef.current === p) pendingPayPromiseRef.current = null;
-        });
-      } else {
+        await p;
         pendingPayPromiseRef.current = null;
       }
+      setPostPaySummary(summary);
     } catch (e) {
       console.error("Payment failed", e);
       suppressCloseOnceRef.current = true;
       pendingPayPromiseRef.current = null;
-      setPostPaySummary(null);
       toast.error(getPayFailureMessage(e));
     }
   }, [
@@ -1055,11 +1042,8 @@ export default function PaymentDialogV2({
                   hidePrintReceipt ? "sm:w-full" : "sm:flex-1",
                 )}
                 onClick={() => {
-                  void (async () => {
-                    await settlePendingPay();
-                    setPostPaySummary(null);
-                    onClose();
-                  })();
+                  setPostPaySummary(null);
+                  onClose();
                 }}
               >
                 Listo
@@ -1078,7 +1062,7 @@ export default function PaymentDialogV2({
                   <Button
                     type="button"
                     className="flex-1 rounded-xl sm:flex-none sm:min-w-[140px]"
-                    disabled={!canPay}
+                    disabled={!canPay || paying}
                     onClick={() => void handleCobrar()}
                   >
                     {paying ? (
