@@ -609,6 +609,92 @@ function isMissingRpcSignature(error: any, functionName: string) {
   return message.includes("schema cache") || message.includes(`Could not find the function public.${functionName}`);
 }
 
+type RegisterPaymentRpcRow = {
+  id: string;
+  order_id: string;
+  payment_method_id: string;
+  amount: number;
+  change_amount: number;
+  notes: string;
+  created_by: string;
+  created_at: string;
+};
+
+type RegisterPaymentItemRpcRow = {
+  id: string;
+  payment_id: string;
+  order_item_id: string;
+  quantity_paid: number;
+  unit_price: number;
+  total_amount: number;
+};
+
+type CashMovementBatchRpcRow = {
+  movement_type: "PAYMENT_IN" | "CHANGE_OUT";
+  qty_delta: number;
+  payment_id: string;
+  denomination_id: string;
+  created_at: string;
+};
+
+async function registerPaymentWithItemsCompat(
+  payments: RegisterPaymentRpcRow[],
+  items: RegisterPaymentItemRpcRow[],
+) {
+  const { error } = await supabase.rpc("register_payment_with_items" as any, {
+    p_payments: payments,
+    p_items: items,
+  });
+  if (!error) return;
+  if (!isMissingRpcSignature(error, "register_payment_with_items")) throw error;
+
+  for (const payment of payments) {
+    await dbInsert(
+      "payments",
+      {
+        id: payment.id,
+        order_id: payment.order_id,
+        payment_method_id: payment.payment_method_id,
+        amount: payment.amount,
+        change_amount: payment.change_amount,
+        notes: payment.notes,
+        created_by: payment.created_by,
+        created_at: payment.created_at,
+      },
+      { hotPath: true },
+    );
+  }
+  await dbInsertMany(
+    "payment_items",
+    items.map((item) => ({
+      id: item.id,
+      payment_id: item.payment_id,
+      order_item_id: item.order_item_id,
+      quantity_paid: item.quantity_paid,
+      unit_price: item.unit_price,
+      total_amount: item.total_amount,
+    })),
+    { hotPath: true },
+  );
+}
+
+async function registerCashMovementsBatchCompat(
+  shiftId: string,
+  movements: CashMovementBatchRpcRow[],
+  fallback: (movement: CashMovementBatchRpcRow) => Promise<void>,
+) {
+  if (movements.length === 0) return;
+
+  const { error } = await supabase.rpc("registrar_movimientos_caja_operativos_batch" as any, {
+    p_shift_id: shiftId,
+    p_movements: movements,
+  });
+  if (!error) return;
+  if (!isMissingRpcSignature(error, "registrar_movimientos_caja_operativos_batch")) throw error;
+
+  await Promise.all(movements.map((movement) => fallback(movement)));
+}
+
 function isRowLevelSecurityError(error: any) {
   const message = String(error?.message ?? "");
   return message.toLowerCase().includes("row-level security");
@@ -2188,6 +2274,7 @@ export function useCaja(params?: {
         allDbItems,
         paidRowsData,
         activePaymentsByOrder,
+        operationalMaps,
       ] = await Promise.all([
         dbSelect<any>("payment_methods", {
           select: "id, name",
@@ -2207,6 +2294,7 @@ export function useCaja(params?: {
         }),
         fetchActivePaymentItemsForOrderItems(itemIds, { skipLocalCache: true }),
         fetchActivePaymentsTotalByOrder([orderId], { skipLocalCache: true }),
+        fetchOperationalMapsForOrders([orderId]),
       ]);
 
       if (selectedMethods.length !== methodIds.length) {
@@ -2261,7 +2349,6 @@ export function useCaja(params?: {
       const dbItems = allDbItems.filter(item => itemIds.includes(item.id));
       const paidQtyMap = aggregatePaidQuantityByOrderItem(paidRowsData);
       const dbItemMap = Object.fromEntries(dbItems.map((item) => [item.id, item]));
-      const operationalMaps = await fetchOperationalMapsForOrders([orderId]);
 
       for (const itemSelection of itemSelections) {
         const dbItem = dbItemMap[itemSelection.itemId];
@@ -2476,85 +2563,91 @@ export function useCaja(params?: {
           );
         }
       } else {
+        const paymentRows: RegisterPaymentRpcRow[] = [];
+        const paymentItemRows: RegisterPaymentItemRpcRow[] = [];
+
         for (const [index, split] of paymentSplits.entries()) {
           const paymentId = generateUUID();
-          const isCash = isCashPaymentMethodName(selectedMethods.find(m => m.id === split.methodId)?.name);
+          const isCash = isCashPaymentMethodName(selectedMethods.find((m) => m.id === split.methodId)?.name);
           if (isCash) cashPaymentId = paymentId;
-
-          await dbInsert(
-            "payments",
-            {
-              id: paymentId,
-              order_id: orderId,
-              payment_method_id: split.methodId,
-              amount: split.amount,
-              change_amount: Math.max(0, Number(tenderedByMethod[split.methodId] ?? split.amount) - Number(split.amount)),
-              notes: buildPaymentNote({
-                paymentGroupId,
-                index,
-                tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
-                appliedAmount: Number(split.amount),
-                isSpecial: orderIsSpecial,
-                cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
-                cashChangeDenoms: effectiveCashChangeDenoms,
-              }),
-              created_by: user.id,
-              created_at: now,
-            },
-            { hotPath: true },
-          );
-
           if (index === 0) anchorPaymentId = paymentId;
 
-          await dbInsertMany(
-            "payment_items",
-            itemSelections.map((itemSelection) => ({
+          paymentRows.push({
+            id: paymentId,
+            order_id: orderId,
+            payment_method_id: split.methodId,
+            amount: split.amount,
+            change_amount: Math.max(0, Number(tenderedByMethod[split.methodId] ?? split.amount) - Number(split.amount)),
+            notes: buildPaymentNote({
+              paymentGroupId,
+              index,
+              tenderedAmount: tenderedByMethod[split.methodId] ?? split.amount,
+              appliedAmount: Number(split.amount),
+              isSpecial: orderIsSpecial,
+              cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
+              cashChangeDenoms: effectiveCashChangeDenoms,
+            }),
+            created_by: user.id,
+            created_at: now,
+          });
+
+          for (const itemSelection of itemSelections) {
+            paymentItemRows.push({
               id: generateUUID(),
               payment_id: paymentId,
               order_item_id: itemSelection.itemId,
               quantity_paid: itemSelection.quantity,
               unit_price: itemSelection.unitPrice,
               total_amount: itemSelection.amount,
-            })),
-            { hotPath: true },
-          );
+            });
+          }
         }
-      }
 
-      if (cashPaymentId && effectiveCashReceivedDenoms.length > 0) {
-        await Promise.all(
-          effectiveCashReceivedDenoms.map((denom) =>
-            insertCashMovementCompat({
-              shift_id: shift.id,
-              movement_type: "PAYMENT_IN",
-              qty_delta: denom.qty,
-              payment_id: cashPaymentId,
-              denomination_id: denom.denomination_id,
-              created_at: now,
-            }),
-          ),
-        );
+        await registerPaymentWithItemsCompat(paymentRows, paymentItemRows);
       }
 
       const paymentIdForChangeOut = cashPaymentId ?? anchorPaymentId;
-      if (paymentIdForChangeOut && effectiveCashChangeDenoms.length > 0) {
-        await Promise.all(
-          effectiveCashChangeDenoms.map((denom) =>
-            insertCashMovementCompat({
-              shift_id: shift.id,
-              movement_type: "CHANGE_OUT",
-              qty_delta: denom.qty,
-              payment_id: paymentIdForChangeOut,
-              denomination_id: denom.denomination_id,
-              created_at: now,
-            }),
-          ),
-        );
+      const cashMovementRows: CashMovementBatchRpcRow[] = [];
+
+      if (cashPaymentId && effectiveCashReceivedDenoms.length > 0) {
+        for (const denom of effectiveCashReceivedDenoms) {
+          cashMovementRows.push({
+            movement_type: "PAYMENT_IN",
+            qty_delta: denom.qty,
+            payment_id: cashPaymentId,
+            denomination_id: denom.denomination_id,
+            created_at: now,
+          });
+        }
       }
 
-      if (shouldMarkSpecialAsPaid) {
-        await dbUpdate("orders", orderId, { status: "PAID", paid_at: now });
+      if (paymentIdForChangeOut && effectiveCashChangeDenoms.length > 0) {
+        for (const denom of effectiveCashChangeDenoms) {
+          cashMovementRows.push({
+            movement_type: "CHANGE_OUT",
+            qty_delta: denom.qty,
+            payment_id: paymentIdForChangeOut,
+            denomination_id: denom.denomination_id,
+            created_at: now,
+          });
+        }
       }
+
+      await Promise.all([
+        registerCashMovementsBatchCompat(shift.id, cashMovementRows, async (movement) => {
+          await insertCashMovementCompat({
+            shift_id: shift.id,
+            movement_type: movement.movement_type,
+            qty_delta: movement.qty_delta,
+            payment_id: movement.payment_id,
+            denomination_id: movement.denomination_id,
+            created_at: movement.created_at,
+          });
+        }),
+        shouldMarkSpecialAsPaid
+          ? dbUpdate("orders", orderId, { status: "PAID", paid_at: now })
+          : Promise.resolve(),
+      ]);
 
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */
       void ensureTableSnapshot(orderId);
