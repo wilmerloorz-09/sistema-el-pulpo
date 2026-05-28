@@ -860,9 +860,9 @@ export default function PaymentDialogV2({
                   )}
                 </div>
               </div>
-              {/* Efectivo y detalle: dos cuadros hermanos (lado a lado en lg) */}
-              <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(240px,1fr)_minmax(240px,1fr)] lg:items-stretch lg:gap-5">
-                <div className="flex min-h-0 flex-col rounded-[22px] border border-amber-200 bg-gradient-to-br from-amber-50/95 via-white to-emerald-50/40 p-4 shadow-sm sm:p-5 lg:h-full transform-gpu">
+              {/* Efectivo y detalle: en tablet (8\"+) mostrar las 3 columnas en una fila */}
+              <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(240px,1fr)_minmax(240px,1fr)] md:items-stretch md:gap-5">
+                <div className="flex min-h-0 flex-col rounded-[22px] border border-amber-200 bg-gradient-to-br from-amber-50/95 via-white to-emerald-50/40 p-4 shadow-sm sm:p-5 md:h-full transform-gpu">
                   <div className="mb-4 flex items-start justify-between gap-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <div className="shrink-0 rounded-xl bg-amber-100 p-2 text-amber-700 hidden sm:block">
@@ -880,7 +880,7 @@ export default function PaymentDialogV2({
                     )}
                   </div>
 
-                  <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-x-hidden lg:overflow-y-auto">
+                  <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-x-hidden md:overflow-y-auto">
                     {!shiftDenoms || shiftDenoms.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
                         No hay denominaciones configuradas para este turno. Abre la caja correctamente.
@@ -908,7 +908,7 @@ export default function PaymentDialogV2({
                   </div>
                 </div>
 
-                <div className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[22px] border border-slate-200 bg-slate-50/90 p-4 shadow-sm sm:p-5 lg:h-full">
+                <div className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[22px] border border-slate-200 bg-slate-50/90 p-4 shadow-sm sm:p-5 md:h-full">
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                     <p className="mb-3 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Efectivo que recibe caja (cliente)
@@ -951,7 +951,7 @@ export default function PaymentDialogV2({
                   </div>
                 </div>
 
-                <div className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[22px] border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm sm:p-5 lg:h-full">
+                <div className="flex min-h-0 min-w-0 flex-col gap-4 rounded-[22px] border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm sm:p-5 md:h-full">
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                     <p className="mb-3 shrink-0 text-xs font-semibold uppercase tracking-wide text-emerald-900">
                       Cambio a entregar
