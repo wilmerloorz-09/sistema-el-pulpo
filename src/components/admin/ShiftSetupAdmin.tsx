@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -98,6 +98,7 @@ interface ShiftUserRow {
   is_supervisor: boolean;
   secondary_caja_takeout_enabled?: boolean;
   secondary_caja_express_enabled?: boolean;
+  secondary_caja_template_id?: string | null;
 }
 
 interface ZeroValueSpecialOrder {
@@ -256,6 +257,23 @@ function sameMembers(left: string[], right: string[]) {
   const leftSorted = [...left].sort();
   const rightSorted = [...right].sort();
   return leftSorted.every((value, index) => value === rightSorted[index]);
+}
+
+function shiftUserRolesSignature(rows: ShiftUserRow[]) {
+  return JSON.stringify(
+    rows
+      .map((user) => ({
+        user_id: user.user_id,
+        can_serve_tables: user.can_serve_tables,
+        can_access_orders: user.can_access_orders,
+        can_edit_orders: user.can_edit_orders,
+        can_dispatch_orders: user.can_dispatch_orders,
+        can_manage_products: user.can_manage_products,
+        can_authorize_order_cancel: user.can_authorize_order_cancel,
+        is_supervisor: user.is_supervisor,
+      }))
+      .sort((a, b) => a.user_id.localeCompare(b.user_id)),
+  );
 }
 
 function getCajaUserIds(rows: ShiftUserRow[]) {
@@ -458,6 +476,7 @@ const ShiftSetupAdmin = () => {
     BranchCancelPolicyDraftRow[]
   >([]);
   const [cancelPoliciesDirty, setCancelPoliciesDirty] = useState(false);
+  const [isShiftSetupDirty, setIsShiftSetupDirty] = useState(false);
 
   const [draftDispatchConfig, setDraftDispatchConfig] =
     useState<DispatchConfigModel | null>(null);
@@ -595,8 +614,8 @@ const ShiftSetupAdmin = () => {
       }
 
       const shiftUserSelectBase =
-        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor, secondary_caja_takeout_enabled, secondary_caja_express_enabled";
-      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled`;
+        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id";
+      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id`;
 
       let shiftUsersData: unknown[] | null = null;
       const extendedShiftUsersResult = await (supabase
@@ -635,6 +654,7 @@ const ShiftSetupAdmin = () => {
           is_supervisor: boolean;
           secondary_caja_takeout_enabled: boolean;
           secondary_caja_express_enabled: boolean;
+          secondary_caja_template_id: string | null;
         }
       >();
 
@@ -652,6 +672,7 @@ const ShiftSetupAdmin = () => {
         is_supervisor: boolean | null;
         secondary_caja_takeout_enabled: boolean | null;
         secondary_caja_express_enabled: boolean | null;
+        secondary_caja_template_id: string | null;
       }>) {
         shiftUsersMap.set(row.user_id, {
           is_enabled: Boolean(row.is_enabled),
@@ -674,6 +695,7 @@ const ShiftSetupAdmin = () => {
           secondary_caja_express_enabled: Boolean(
             row.secondary_caja_express_enabled,
           ),
+          secondary_caja_template_id: row.secondary_caja_template_id ?? null,
         });
       }
 
@@ -787,25 +809,25 @@ const ShiftSetupAdmin = () => {
   const persistedTablesCount = isOpen
     ? (shiftQuery.data?.active_tables_count ?? 0)
     : referenceCount;
-  const persistedEnabledUsersRawData = useMemo(
-    () => (shiftUsersQuery.data ?? []).filter((row) => row.is_enabled),
-    [shiftUsersQuery.data],
-  );
   const persistedEnabledUsersData = useMemo(
     () =>
       allBranchUsers
         .filter((row) => row.is_enabled)
         .map((row) => normalizeShiftUser(row, false)),
-    [allBranchUsers, isOpen],
+    [allBranchUsers],
   );
   const persistedEnabledUserIds = useMemo(
     () => persistedEnabledUsersData.map((row) => row.user_id),
     [persistedEnabledUsersData],
   );
-  const persistedCajaUserIds = useMemo(
-    () => getCajaUserIds(persistedEnabledUsersData),
-    [persistedEnabledUsersData],
-  );
+  const persistedCajaUserIds = useMemo(() => {
+    const ids = new Set(getCajaUserIds(persistedEnabledUsersData));
+    const primaryCashierId = shiftQuery.data?.primary_cashier_id;
+    if (primaryCashierId) {
+      ids.add(primaryCashierId);
+    }
+    return Array.from(ids).sort();
+  }, [persistedEnabledUsersData, shiftQuery.data?.primary_cashier_id]);
   const persistedCajaSetup = useMemo((): ShiftCajaSetupState => {
     if (!isOpen || !shiftQuery.data) return EMPTY_CAJA_SETUP;
 
@@ -825,7 +847,13 @@ const ShiftSetupAdmin = () => {
     persistedEnabledUsersData,
     shiftQuery.data,
   ]);
-  const persistedEnabledUserIdsKey = persistedEnabledUserIds.join("|");
+  const persistedEnabledUserIdsKey = useMemo(
+    () =>
+      [...persistedEnabledUserIds]
+        .sort((a, b) => a.localeCompare(b))
+        .join("|"),
+    [persistedEnabledUserIds],
+  );
   const persistedCajaSetupKey = cajaSetupSignature(persistedCajaSetup);
   const enabledUserIds = useMemo(
     () => shiftUsersState.map((userState) => userState.user_id),
@@ -908,17 +936,127 @@ const ShiftSetupAdmin = () => {
     [dispatchCapableUsers],
   );
 
+  const dispatchConfigHydrationKey = useMemo(
+    () =>
+      JSON.stringify({
+        branchId: activeBranchId ?? "",
+        configId: dispatchConfig?.id ?? "",
+        dispatch_mode: dispatchConfig?.dispatch_mode ?? "SINGLE",
+        table_enabled: dispatchConfig?.table_enabled ?? true,
+        takeout_enabled: dispatchConfig?.takeout_enabled ?? true,
+        express_enabled: dispatchConfig?.express_enabled ?? true,
+      }),
+    [activeBranchId, dispatchConfig],
+  );
+  const assignmentsHydrationKey = useMemo(
+    () =>
+      JSON.stringify(
+        [...(assignments ?? [])]
+          .map((item) => ({
+            user_id: item.user_id,
+            dispatch_type: item.dispatch_type,
+          }))
+          .sort((a, b) =>
+            `${a.user_id}-${a.dispatch_type}`.localeCompare(
+              `${b.user_id}-${b.dispatch_type}`,
+            ),
+          ),
+      ),
+    [assignments],
+  );
+  const cancelPolicyHydrationKey = useMemo(
+    () => JSON.stringify(comparableCancelPolicies.persisted),
+    [comparableCancelPolicies.persisted],
+  );
+
+  const persistedSnapshotKey = useMemo(
+    () =>
+      [
+        activeBranchId ?? "",
+        shiftQuery.data?.id ?? "closed",
+        String(persistedTablesCount),
+        persistedEnabledUserIdsKey,
+        shiftUserRolesSignature(persistedEnabledUsersData),
+        persistedCajaSetupKey,
+        dispatchConfigHydrationKey,
+        assignmentsHydrationKey,
+        cancelPolicyHydrationKey,
+      ].join("||"),
+    [
+      activeBranchId,
+      shiftQuery.data?.id,
+      persistedTablesCount,
+      persistedEnabledUserIdsKey,
+      persistedEnabledUsersData,
+      persistedCajaSetupKey,
+      dispatchConfigHydrationKey,
+      assignmentsHydrationKey,
+      cancelPolicyHydrationKey,
+    ],
+  );
+
+  const previousPersistedSnapshotKeyRef = useRef("");
+
+  const markShiftSetupDirty = () => {
+    setIsShiftSetupDirty(true);
+  };
+
+  const handleActiveTablesCountChange = (value: number) => {
+    markShiftSetupDirty();
+    setActiveTablesCount(value);
+  };
+
+  const handleShiftCajaSetupChange = (next: ShiftCajaSetupState) => {
+    markShiftSetupDirty();
+    setShiftCajaSetup(next);
+  };
+
   useEffect(() => {
+    if (previousPersistedSnapshotKeyRef.current === persistedSnapshotKey) {
+      return;
+    }
+
+    const previousKey = previousPersistedSnapshotKeyRef.current;
+    previousPersistedSnapshotKeyRef.current = persistedSnapshotKey;
+
+    const previousParts = previousKey.split("||");
+    const nextParts = persistedSnapshotKey.split("||");
+    const branchOrShiftChanged =
+      !previousKey ||
+      previousParts[0] !== nextParts[0] ||
+      previousParts[1] !== nextParts[1];
+
+    if (isShiftSetupDirty && !branchOrShiftChanged) {
+      setShiftCajaSetup((current) => {
+        if (countConfiguredShiftCashiers(current) > 0) {
+          return current;
+        }
+        if (countConfiguredShiftCashiers(persistedCajaSetup) === 0) {
+          return current;
+        }
+        return persistedCajaSetup;
+      });
+      return;
+    }
+
     setActiveTablesCount(persistedTablesCount);
-  }, [persistedTablesCount]);
-
-  useEffect(() => {
     setShiftUsersState(persistedEnabledUsersData);
-  }, [persistedEnabledUserIdsKey, persistedEnabledUsersData]);
-
-  useEffect(() => {
     setShiftCajaSetup(persistedCajaSetup);
-  }, [persistedCajaSetupKey, persistedCajaSetup]);
+    setDraftDispatchConfig(dispatchConfig ?? null);
+    setDraftAssignments(assignments ?? []);
+    setCancelPolicyState(persistedCancelPolicies);
+    setCancelPoliciesDirty(false);
+    setIsShiftSetupDirty(false);
+  }, [
+    persistedSnapshotKey,
+    isShiftSetupDirty,
+    persistedTablesCount,
+    persistedEnabledUsersData,
+    persistedCajaSetup,
+    dispatchConfig,
+    assignments,
+    persistedCancelPolicies,
+  ]);
 
   useEffect(() => {
     if (!selectedUserToAdd) return;
@@ -930,19 +1068,6 @@ const ShiftSetupAdmin = () => {
       setSelectedUserToAdd("");
     }
   }, [availableUsersToAdd, selectedUserToAdd]);
-
-  useEffect(() => {
-    setDraftDispatchConfig(dispatchConfig ?? null);
-  }, [dispatchConfig]);
-
-  useEffect(() => {
-    setDraftAssignments(assignments ?? []);
-  }, [assignments]);
-
-  useEffect(() => {
-    setCancelPolicyState(persistedCancelPolicies);
-    setCancelPoliciesDirty(false);
-  }, [persistedCancelPolicies]);
 
   const workingDispatchConfig = draftDispatchConfig ?? dispatchConfig;
   const workingAssignments = draftAssignments;
@@ -1079,39 +1204,20 @@ const ShiftSetupAdmin = () => {
   const cancelPoliciesChanged =
     JSON.stringify(comparableCancelPolicies.current) !==
     JSON.stringify(comparableCancelPolicies.persisted);
-  const hasLocalChanges =
+  const hasComputedLocalChanges =
     activeTablesCount !== persistedTablesCount ||
     cajaSetupSignature(shiftCajaSetup) !== persistedCajaSetupKey ||
     !sameMembers(
       shiftUsersState.map((u) => u.user_id),
       persistedEnabledUserIds,
     ) ||
-    JSON.stringify(
-      shiftUsersState.map((u) => ({
-        can_serve_tables: u.can_serve_tables,
-        can_access_orders: u.can_access_orders,
-        can_edit_orders: u.can_edit_orders,
-        can_dispatch_orders: u.can_dispatch_orders,
-        can_manage_products: u.can_manage_products,
-        can_authorize_order_cancel: u.can_authorize_order_cancel,
-        is_supervisor: u.is_supervisor,
-      })),
-    ) !==
-      JSON.stringify(
-        persistedEnabledUsersRawData.map((u) => ({
-          can_serve_tables: u.can_serve_tables,
-          can_access_orders: u.can_access_orders,
-          can_edit_orders: u.can_edit_orders,
-          can_dispatch_orders: u.can_dispatch_orders,
-          can_manage_products: u.can_manage_products,
-          can_authorize_order_cancel: u.can_authorize_order_cancel,
-          is_supervisor: u.is_supervisor,
-        })),
-      ) ||
+    shiftUserRolesSignature(shiftUsersState) !==
+      shiftUserRolesSignature(persistedEnabledUsersData) ||
     dispatchConfigChanged ||
     assignmentsChanged ||
     cancelPoliciesChanged ||
     cancelPoliciesDirty;
+  const hasLocalChanges = isShiftSetupDirty || hasComputedLocalChanges;
 
   const validateSetup = () => {
     if (setupIssues.length > 0) {
@@ -1190,6 +1296,7 @@ const ShiftSetupAdmin = () => {
   };
 
   const toggleUser = (userId: string, checked: boolean) => {
+    markShiftSetupDirty();
     setShiftUsersState((prev) => {
       if (checked) {
         const userRow = allBranchUsers.find(
@@ -1275,16 +1382,17 @@ const ShiftSetupAdmin = () => {
       return;
     }
 
-    setShiftUsersState((prev) => {
-      if (role === "can_use_caja" || role === "can_double_session") {
-        return prev;
-      }
+    if (role === "can_use_caja" || role === "can_double_session") {
+      return;
+    }
 
-      return prev.map((u) => {
+    markShiftSetupDirty();
+    setShiftUsersState((prev) =>
+      prev.map((u) => {
         if (u.user_id !== userId) return u;
         return normalizeShiftUser({ ...u, [role]: value }, false);
-      });
-    });
+      }),
+    );
   };
 
   const invalidateShiftState = () => {
@@ -1334,6 +1442,7 @@ const ShiftSetupAdmin = () => {
 
       if (changed) {
         setCancelPoliciesDirty(true);
+        setIsShiftSetupDirty(true);
       }
 
       return next;
@@ -1851,6 +1960,7 @@ const ShiftSetupAdmin = () => {
       if (cleanupError) throw cleanupError;
     },
     onSuccess: () => {
+      setIsShiftSetupDirty(false);
       invalidateShiftState();
       toast.success("Configuracion del turno guardada");
     },
@@ -2119,6 +2229,17 @@ const ShiftSetupAdmin = () => {
     );
   }
 
+  const saveShiftDisabledReason = isStale
+    ? "Turno expirado: cierra el turno antes de guardar cambios."
+    : hasSetupIssues
+      ? setupIssues[0]
+      : saveShiftMutation.isPending
+        ? "Guardando..."
+        : validatingCashierChangePassword
+          ? "Validando contrasena..."
+          : null;
+  const isSaveShiftDisabled = Boolean(saveShiftDisabledReason);
+
   const enabledViewLabels = enabledViews.map((view) => view.label);
   const shiftUsers = shiftUsersQuery.data ?? [];
   const latestShiftAudit = latestShiftAuditQuery.data;
@@ -2272,7 +2393,7 @@ const ShiftSetupAdmin = () => {
                 </label>
                 <NumericInput
                   value={activeTablesCount}
-                  onValueChange={setActiveTablesCount}
+                  onValueChange={handleActiveTablesCountChange}
                   min={0}
                   disabled={isStale}
                   className="h-11 rounded-2xl text-center text-lg font-black sm:h-12 sm:text-xl xl:h-14 xl:text-2xl"
@@ -2522,7 +2643,7 @@ const ShiftSetupAdmin = () => {
           enabledUsers={cajaSetupUserOptions}
           templates={cajaTemplatesQuery.data ?? []}
           value={shiftCajaSetup}
-          onChange={setShiftCajaSetup}
+          onChange={handleShiftCajaSetupChange}
           disabled={
             isStale ||
             openShiftMutation.isPending ||
@@ -2531,27 +2652,37 @@ const ShiftSetupAdmin = () => {
         />
 
         <section className="rounded-[22px] border border-orange-200 bg-gradient-to-r from-white via-orange-50 to-amber-50 p-4 shadow-sm sm:rounded-[26px]">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+          <div className="flex flex-col items-stretch gap-2 md:items-end">
             {isOpen ? (
-              <Button
-                variant="secondary"
-                onClick={handleSaveShiftClick}
-                disabled={
-                  isStale ||
-                  !hasLocalChanges ||
-                  hasSetupIssues ||
-                  saveShiftMutation.isPending ||
-                  validatingCashierChangePassword
-                }
-                className="h-12 w-full md:w-auto"
-              >
-                {saveShiftMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Guardar
-              </Button>
+              <>
+                <span
+                  title={saveShiftDisabledReason ?? undefined}
+                  className={`inline-flex w-full md:w-auto ${isSaveShiftDisabled ? "cursor-not-allowed" : ""}`}
+                >
+                  <Button
+                    variant="secondary"
+                    onClick={handleSaveShiftClick}
+                    disabled={isSaveShiftDisabled}
+                    className="h-12 w-full md:w-auto"
+                  >
+                    {saveShiftMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Guardar
+                  </Button>
+                </span>
+                {isSaveShiftDisabled && saveShiftDisabledReason ? (
+                  <p className="text-xs font-medium text-amber-900 md:text-right">
+                    {saveShiftDisabledReason}
+                  </p>
+                ) : hasLocalChanges ? (
+                  <p className="text-xs text-muted-foreground md:text-right">
+                    Hay cambios sin guardar.
+                  </p>
+                ) : null}
+              </>
             ) : (
               <Button
                 onClick={() => openShiftMutation.mutate()}

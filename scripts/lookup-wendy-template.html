@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lookup Wendy Template</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; max-width: 900px; }
+    pre { background: #f4f4f4; padding: 16px; overflow: auto; white-space: pre-wrap; }
+    .err { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>Plantilla de Wendy (solo lectura)</h1>
+  <pre id="out">Consultando...</pre>
+  <script type="module">
+    const URL = "https://apmsuigcveqtjzbpfihb.supabase.co";
+    const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwbXN1aWdjdmVxdGp6YnBmaWhiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjY1MzY4MSwiZXhwIjoyMDg4MjI5NjgxfQ.SQ3qbPP9-2k-apX4jxSRFDcRDCpTQEvRvmdNtOs1EAQ";
+
+    const out = document.getElementById("out");
+
+    async function rest(path) {
+      const res = await fetch(`${URL}/rest/v1/${path}`, {
+        headers: {
+          apikey: KEY,
+          Authorization: `Bearer ${KEY}`,
+        },
+      });
+      if (!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
+      return res.json();
+    }
+
+    function sig(rows) {
+      return JSON.stringify(
+        [...rows]
+          .sort((a, b) => a.denomination_id.localeCompare(b.denomination_id))
+          .map((r) => ({ d: r.denomination_id, q: Number(r.qty ?? r.qty_initial ?? r.qty_current ?? 0) })),
+      );
+    }
+
+    try {
+      const lines = [];
+
+      let wendyRows = await rest(
+        "profiles?select=id,full_name,username&or=(username.ilike.*Wendy*,full_name.ilike.*Wendy*)&limit=10",
+      );
+      if (!wendyRows.length) {
+        wendyRows = await rest(
+          "profiles?select=id,full_name,username&id=eq.92c5917e-d9a4-4db3-8adc-6288717f8120",
+        );
+      }
+      lines.push("=== Perfiles Wendy ===");
+      lines.push(JSON.stringify(wendyRows, null, 2));
+      if (!wendyRows.length) throw new Error("No se encontró perfil Wendy");
+
+      const wendyId = wendyRows[0].id;
+
+      const shifts = await rest(
+        "cash_shifts?status=eq.OPEN&select=id,branch_id,opened_at,primary_cashier_id,secondary_caja_template_id,caja_status,branches(name)&order=opened_at.desc",
+      );
+      const wendyShifts = shifts.filter((s) => s.primary_cashier_id === wendyId);
+
+      lines.push("\n=== Turnos OPEN (Wendy cajera principal) ===");
+      lines.push(JSON.stringify(wendyShifts, null, 2));
+
+      let targetShifts = wendyShifts;
+      if (!targetShifts.length) {
+        const csu = await rest(
+          `cash_shift_users?user_id=eq.${wendyId}&is_enabled=eq.true&select=shift_id,can_use_caja,secondary_caja_template_id,cash_shifts(id,status,opened_at,branch_id,primary_cashier_id,branches(name))`,
+        );
+        lines.push("\n=== Wendy en cash_shift_users ===");
+        lines.push(JSON.stringify(csu, null, 2));
+        const open = csu.filter((r) => r.cash_shifts?.status === "OPEN");
+        targetShifts = open.map((r) => ({
+          id: r.shift_id,
+          branch_id: r.cash_shifts.branch_id,
+          branches: r.cash_shifts.branches,
+          primary_cashier_id: r.cash_shifts.primary_cashier_id,
+        }));
+      }
+
+      for (const shift of targetShifts) {
+        lines.push(`\n--- Turno ${shift.id} (${shift.branches?.name ?? "?"}) ---`);
+
+        const csu = await rest(
+          `cash_shift_users?shift_id=eq.${shift.id}&user_id=eq.${wendyId}&select=user_id,is_enabled,can_use_caja,secondary_caja_template_id`,
+        );
+        lines.push("cash_shift_users:", JSON.stringify(csu, null, 2));
+
+        const tplId = csu[0]?.secondary_caja_template_id;
+        if (tplId) {
+          const tpl = await rest(`cash_register_templates?select=id,name,is_active&id=eq.${tplId}`);
+          lines.push("Plantilla en BD:", JSON.stringify(tpl, null, 2));
+        } else {
+          lines.push("Plantilla en cash_shift_users: NULL");
+        }
+
+        const openings = await rest(
+          `cash_register_openings?shift_id=eq.${shift.id}&cashier_id=eq.${wendyId}&select=id,status,opened_at,register_role,initial_total&order=opened_at.desc`,
+        );
+        lines.push("Aperturas:", JSON.stringify(openings, null, 2));
+
+        const activeOpening = openings.find((o) => o.status === "abierta") ?? openings[0];
+        if (!activeOpening) {
+          lines.push("Sin apertura de caja para Wendy.");
+          continue;
+        }
+
+        const denoms = await rest(
+          `cash_shift_denoms?shift_id=eq.${shift.id}&cashier_id=eq.${wendyId}&select=denomination_id,qty_initial,qty_current,opening_id`,
+        );
+        const openingDenoms = denoms.filter(
+          (r) => !activeOpening.id || r.opening_id === activeOpening.id || r.opening_id == null,
+        );
+        const denomSig = sig(
+          openingDenoms.map((r) => ({
+            denomination_id: r.denomination_id,
+            qty: r.qty_initial ?? r.qty_current ?? 0,
+          })),
+        );
+
+        const templates = await rest(
+          `cash_register_templates?branch_id=eq.${shift.branch_id}&is_active=eq.true&select=id,name,is_active,cash_register_template_denoms(denomination_id,qty)`,
+        );
+
+        const matches = [];
+        for (const tpl of templates) {
+          const rows = (tpl.cash_register_template_denoms ?? []).map((r) => ({
+            denomination_id: r.denomination_id,
+            qty: r.qty,
+          }));
+          if (sig(rows) === denomSig) matches.push({ id: tpl.id, name: tpl.name });
+        }
+
+        lines.push("Plantilla(s) que coinciden con arqueo:", JSON.stringify(matches, null, 2));
+
+        if (shift.secondary_caja_template_id) {
+          const shiftTpl = await rest(
+            `cash_register_templates?select=id,name&id=eq.${shift.secondary_caja_template_id}`,
+          );
+          lines.push("cash_shifts.secondary_caja_template_id:", JSON.stringify(shiftTpl, null, 2));
+        }
+      }
+
+      out.textContent = lines.join("\n");
+    } catch (e) {
+      out.innerHTML = `<span class="err">${e.stack || e.message || e}</span>`;
+    }
+  </script>
+</body>
+</html>

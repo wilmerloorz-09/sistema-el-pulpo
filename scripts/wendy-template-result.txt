@@ -1,0 +1,3 @@
+﻿WENDY: {"id":"cf9eb8d0-bb59-457a-b30f-37ba785eff1b","full_name":"Wendy Noreya Farinango","username":"Wendy"}
+SHIFTS: {"id":"24f1c12f-5bdd-4456-ac26-57399069cf27","branch_id":"3ea2076c-1cda-4583-913b-e23be6819201","opened_at":"2026-05-29T14:00:34.729662+00:00","primary_cashier_id":"cf9eb8d0-bb59-457a-b30f-37ba785eff1b","secondary_caja_template_id":null,"branches":{"name":"Local Principal (Chone)"}}
+CSU: {"secondary_caja_template_id":null,"can_use_caja":true}

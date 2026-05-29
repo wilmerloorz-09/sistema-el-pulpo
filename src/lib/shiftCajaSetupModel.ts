@@ -31,7 +31,7 @@ export function countConfiguredShiftCashiers(state: ShiftCajaSetupState): number
 
 export function buildSecondaryCajaConfig(state: ShiftCajaSetupState) {
   return state.cashiers
-    .filter((row) => row.user_id && !row.is_primary)
+    .filter((row) => row.user_id)
     .map((row) => ({
       user_id: row.user_id,
       takeout_enabled: false,
