@@ -12,6 +12,13 @@ import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
+
+export type DispatchOrdersModule = "dispatch" | "servir";
+
+export interface UseDispatchOrdersOptions {
+  module?: DispatchOrdersModule;
+}
 
 export interface DispatchOrderItem {
   id: string;
@@ -174,6 +181,7 @@ function applyOptimisticDispatchAll(orders: DispatchOrder[], orderId: string): D
 
 function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+  void qc.invalidateQueries({ queryKey: ["servir-orders"] });
   scheduleDeferredDispatchInvalidation(qc);
 }
 
@@ -251,6 +259,7 @@ function groupItemsIntoDispatchCards(
   modifiersMap: Record<string, any[]>,
   operationalMaps: any,
   clientPaidQtyByItemId: Record<string, number>,
+  platosProductIds?: Set<string>,
 ): DispatchOrder[] {
   const {
     readyMap,
@@ -268,6 +277,7 @@ function groupItemsIntoDispatchCards(
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
       if (item.order_id !== order.id) return false;
+      if (platosProductIds && !isPlatosOrderItem(item.product_id, platosProductIds)) return false;
       const st = String(item.status ?? "").toUpperCase();
       if (st === "DRAFT" || st === "CANCELLED") return false;
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
@@ -376,7 +386,18 @@ function groupItemsIntoDispatchCards(
   }];
 }
 
-export function useDispatchOrders(scope: DispatchView) {
+function buildPartialDispatchItems(order: DispatchOrder) {
+  return order.items
+    .filter((item) => item.quantity_dispatchable > 0)
+    .map((item) => ({
+      order_item_id: item.id,
+      quantity_dispatched: item.quantity_dispatchable,
+    }));
+}
+
+export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrdersOptions = {}) {
+  const moduleMode: DispatchOrdersModule = options.module ?? "dispatch";
+  const isServirModule = moduleMode === "servir";
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
@@ -384,7 +405,7 @@ export function useDispatchOrders(scope: DispatchView) {
   const { data: shiftGate } = useBranchShiftGate();
 
   const dispatchOrdersQueryKey = [
-    "dispatch-orders",
+    isServirModule ? "servir-orders" : "dispatch-orders",
     activeBranchId,
     config?.dispatch_mode,
     user?.id,
@@ -534,6 +555,10 @@ export function useDispatchOrders(scope: DispatchView) {
         skipLocalCache: true,
       });
 
+      const platosProductIds = isServirModule
+        ? await fetchPlatosProductIdsForBranch(activeBranchId)
+        : undefined;
+
       const allCards = allPermittedOrders.flatMap((order) => {
         const orderWithContext = {
           ...order,
@@ -541,7 +566,14 @@ export function useDispatchOrders(scope: DispatchView) {
           table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
         };
-        return groupItemsIntoDispatchCards(orderWithContext, items, modifiersMap, operationalMaps, clientPaidQtyByItemId);
+        return groupItemsIntoDispatchCards(
+          orderWithContext,
+          items,
+          modifiersMap,
+          operationalMaps,
+          clientPaidQtyByItemId,
+          platosProductIds,
+        );
       }).filter((card) => dispatchCardHasWork(card));
 
       const counts = {
@@ -690,12 +722,14 @@ export function useDispatchOrders(scope: DispatchView) {
         throw new Error("La orden no tiene cantidades pendientes de despacho");
       }
 
+      const partialItems = buildPartialDispatchItems(currentOrder);
+
       const { error } = await supabase.rpc("dispatch_order_quantities" as any, {
         p_order_id: orderId,
         p_dispatched_by: user.id,
-        p_items: [] as any,
-        p_operation_type: "total",
-        p_source_module: "dispatch",
+        p_items: (isServirModule ? partialItems : []) as any,
+        p_operation_type: isServirModule ? "partial" : "total",
+        p_source_module: isServirModule ? "servir" : "dispatch",
         p_notes: null,
       });
       if (error) throw error;

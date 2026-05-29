@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -116,6 +116,21 @@ const NAV_ITEMS: AppNavItem[] = [
       active: "from-rose-500 to-pink-400",
       idle: "hover:border-rose-200 hover:bg-rose-50/90 hover:text-rose-700",
       iconIdle: "bg-rose-50 text-rose-600",
+    },
+    visible: (permissions) =>
+      canView(permissions, "despacho_total")
+      || canView(permissions, "despacho_mesa")
+      || canView(permissions, "despacho_para_llevar"),
+  },
+  {
+    to: "/servir",
+    label: "Servir",
+    icon: <ConciergeBell className="h-5 w-5" />,
+    group: "OPERATIVO",
+    tone: {
+      active: "from-indigo-500 to-blue-400",
+      idle: "hover:border-indigo-200 hover:bg-indigo-50/90 hover:text-indigo-700",
+      iconIdle: "bg-indigo-50 text-indigo-600",
     },
     visible: (permissions) =>
       canView(permissions, "despacho_total")
@@ -273,7 +288,7 @@ export function useVisibleNavItems() {
         return canSeeCajaFinanceNav(sg);
       }
 
-      if (item.to === "/despacho") {
+      if (item.to === "/despacho" || item.to === "/servir") {
         if (!(hasSupervisorBypass || Boolean(sg?.canDispatchOrders))) return false;
         return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
       }
