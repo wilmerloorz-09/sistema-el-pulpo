@@ -601,7 +601,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
   if (itemIds.length > 0) {
     const [paymentItems, mods] = await Promise.all([
       dbSelect<any>("payment_items", {
-        select: "payment_id, order_item_id, quantity_paid",
+        select: "id, payment_id, order_item_id, quantity_paid",
         filters: [{ column: "order_item_id", op: "in", value: itemIds }],
       }),
       dbSelect<any>("order_item_modifiers", {

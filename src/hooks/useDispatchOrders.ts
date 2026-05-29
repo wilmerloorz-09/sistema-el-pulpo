@@ -534,7 +534,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const modifiersMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
         const modifierRows = await dbSelect<any>("order_item_modifiers", {
-          select: "order_item_id, modifiers(description)",
+          select: "id, order_item_id, modifiers(description)",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
 

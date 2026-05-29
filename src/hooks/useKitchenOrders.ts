@@ -145,7 +145,7 @@ export function useKitchenOrders() {
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
         const mods = await dbSelect<any>("order_item_modifiers", {
-          select: "order_item_id, modifiers(description)",
+          select: "id, order_item_id, modifiers(description)",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
         for (const modifier of mods ?? []) {

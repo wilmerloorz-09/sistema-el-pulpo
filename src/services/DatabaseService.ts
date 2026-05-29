@@ -82,23 +82,37 @@ export async function dbSelect<T = any>(
   const isOnline = navigator.onLine;
 
   if (isOnline) {
+    let result: T[];
     try {
-      const result = await fetchFromSupabase<T>(table, options);
-      if (!options.skipLocalCache) {
-        await cacheLocally(table, result as any[], options.branchId);
-      }
-      return result;
+      result = await fetchFromSupabase<T>(table, options);
     } catch (error) {
       console.warn(`[DatabaseService] Supabase fetch failed for ${table}, falling back to cache`, error);
       return fetchFromLocal<T>(table, options);
     }
+
+    if (!options.skipLocalCache) {
+      try {
+        await cacheLocally(table, result as any[], options.branchId);
+      } catch (cacheError) {
+        console.error(`[DatabaseService] Failed to cache table ${table} locally:`, cacheError);
+      }
+    }
+
+    return result;
   }
 
   return fetchFromLocal<T>(table, options);
 }
 
 async function fetchFromSupabase<T>(table: TableName, options: QueryOptions): Promise<T[]> {
-  let query = supabase.from(table as any).select(options.select ?? "*");
+  let selectClause = options.select ?? "*";
+
+  // Auto-inject id column to prevent caching failures if projection is specific
+  if (selectClause !== "*" && !selectClause.split(",").map((col) => col.trim()).includes("id")) {
+    selectClause = `id, ${selectClause}`;
+  }
+
+  let query = supabase.from(table as any).select(selectClause);
 
   if (options.branchId) {
     query = query.eq("branch_id", options.branchId);
@@ -145,12 +159,17 @@ async function cacheLocally(table: TableName, records: any[], branchId?: string 
   if (!dexieTable) return;
 
   const now = nowISO();
-  const enriched = records.map((r) => ({
-    ...r,
-    _sync_status: "synced" as const,
-    _synced_at: now,
-    _local_updated_at: now,
-  }));
+  const enriched = records.map((r) => {
+    if (import.meta.env.DEV && !r.id) {
+      throw new Error(`[DatabaseService] Intento de cachear registro en ${table} sin llave primaria (id). Asegúrate de incluir 'id' en tu select.`);
+    }
+    return {
+      ...r,
+      _sync_status: "synced" as const,
+      _synced_at: now,
+      _local_updated_at: now,
+    };
+  });
 
   // For catalog tables, replace all cached records for this branch
   if (CATALOG_TABLES.includes(table)) {

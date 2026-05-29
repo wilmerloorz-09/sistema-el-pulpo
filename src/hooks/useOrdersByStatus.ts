@@ -329,7 +329,7 @@ export function useOrdersByStatus(
 
       if (itemIds.length > 0) {
         const paymentItems = await dbSelect<any>("payment_items", {
-          select: "payment_id, order_item_id, quantity_paid",
+          select: "id, payment_id, order_item_id, quantity_paid",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
 
@@ -401,7 +401,7 @@ export function useOrdersByStatus(
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
         const mods = await dbSelect<any>("order_item_modifiers", {
-          select: "order_item_id, modifiers(description)",
+          select: "id, order_item_id, modifiers(description)",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
 
