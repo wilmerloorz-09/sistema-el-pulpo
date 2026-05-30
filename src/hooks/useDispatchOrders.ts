@@ -52,6 +52,7 @@ export interface DispatchOrder {
   order_type: "DINE_IN" | "TABLE" | "TAKEOUT" | "EXPRESS" | "EXTRA";
   is_special: boolean;
   is_tray_order?: boolean;
+  is_packer_order?: boolean;
   created_by: string | null;
   created_by_name: string | null;
   table_name: string | null;
@@ -367,6 +368,7 @@ function groupItemsIntoDispatchCards(
     order_type: order.order_type as DispatchOrder["order_type"],
     is_special: Boolean(order.is_special),
     is_tray_order: Boolean(order.is_tray_order),
+    is_packer_order: Boolean(order.is_packer_order),
     created_by: order.created_by ?? null,
     created_by_name: order.created_by_name ?? null,
     table_name: order.table_name ?? null,
@@ -486,6 +488,18 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         : [];
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
+      const packerUsers = creatorIds.length > 0
+        ? await dbSelect<any>("cash_shift_users", {
+            select: "user_id",
+            filters: [
+              { column: "shift_id", op: "eq", value: openShift.id },
+              { column: "user_id", op: "in", value: creatorIds },
+              { column: "can_pack_orders", op: "eq", value: true }
+            ]
+          })
+        : [];
+      const packerUserIds = new Set((packerUsers ?? []).map((u: any) => u.user_id));
+
       const dispatchMode = config?.dispatch_mode || "SINGLE";
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
       const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
@@ -565,6 +579,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
           table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
+          is_packer_order: order.created_by ? packerUserIds.has(order.created_by) : false,
         };
         return groupItemsIntoDispatchCards(
           orderWithContext,

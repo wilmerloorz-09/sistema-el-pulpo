@@ -96,6 +96,7 @@ interface ShiftUserRow {
   can_authorize_order_cancel: boolean;
   can_double_session: boolean;
   is_supervisor: boolean;
+  can_pack_orders: boolean;
   secondary_caja_takeout_enabled?: boolean;
   secondary_caja_express_enabled?: boolean;
   secondary_caja_template_id?: string | null;
@@ -121,6 +122,7 @@ const OPERATIVE_ROLE_KEYS: Array<
     | "can_manage_products"
     | "can_authorize_order_cancel"
     | "is_supervisor"
+    | "can_pack_orders"
   >
 > = [
   "can_serve_tables",
@@ -129,6 +131,7 @@ const OPERATIVE_ROLE_KEYS: Array<
   "can_manage_products",
   "can_authorize_order_cancel",
   "is_supervisor",
+  "can_pack_orders",
 ];
 
 function formatCajaSetupSummary(rows: ShiftUserRow[], setup: ShiftCajaSetupState) {
@@ -150,6 +153,7 @@ type ShiftUserRoleKey = keyof Pick<
   | "can_authorize_order_cancel"
   | "can_double_session"
   | "is_supervisor"
+  | "can_pack_orders"
 >;
 
 function hasOperationalCapability(user: ShiftUserRow) {
@@ -173,6 +177,7 @@ function normalizeShiftUser(
     can_authorize_order_cancel: user.can_authorize_order_cancel ?? false,
     can_double_session: user.can_double_session ?? false,
     is_supervisor: user.is_supervisor ?? false,
+    can_pack_orders: user.can_pack_orders ?? false,
     secondary_caja_takeout_enabled:
       user.secondary_caja_takeout_enabled ?? false,
     secondary_caja_express_enabled:
@@ -186,11 +191,8 @@ function normalizeShiftUser(
 
   if (normalized.can_serve_tables) {
     normalized.can_access_orders = true;
-  }
-
-  if (normalized.is_enabled) {
-    normalized.can_serve_tables = true;
-    normalized.can_access_orders = true;
+  } else {
+    normalized.can_access_orders = false;
   }
 
   if (normalized.can_dispatch_orders) {
@@ -216,12 +218,11 @@ function sanitizeShiftUserCapability<
     canAuthorizeOrderCancel: boolean;
     canDoubleSession: boolean;
     isSupervisor: boolean;
+    canPackOrders: boolean;
   },
 >(user: T): T {
   const normalizedUser = {
     ...user,
-    canServeTables: user.isEnabled ? true : user.canServeTables,
-    canAccessOrders: user.isEnabled ? true : user.canAccessOrders,
   };
   const hasOperationalRole =
     normalizedUser.canServeTables ||
@@ -231,7 +232,8 @@ function sanitizeShiftUserCapability<
     normalizedUser.canManageProducts ||
     normalizedUser.canUseCaja ||
     normalizedUser.canAuthorizeOrderCancel ||
-    normalizedUser.isSupervisor;
+    normalizedUser.isSupervisor ||
+    normalizedUser.canPackOrders;
 
   if (!normalizedUser.isEnabled || hasOperationalRole) {
     return normalizedUser;
@@ -249,6 +251,7 @@ function sanitizeShiftUserCapability<
     canAuthorizeOrderCancel: false,
     canDoubleSession: false,
     isSupervisor: false,
+    canPackOrders: false,
   };
 }
 
@@ -271,6 +274,7 @@ function shiftUserRolesSignature(rows: ShiftUserRow[]) {
         can_manage_products: user.can_manage_products,
         can_authorize_order_cancel: user.can_authorize_order_cancel,
         is_supervisor: user.is_supervisor,
+        can_pack_orders: user.can_pack_orders,
       }))
       .sort((a, b) => a.user_id.localeCompare(b.user_id)),
   );
@@ -614,8 +618,8 @@ const ShiftSetupAdmin = () => {
       }
 
       const shiftUserSelectBase =
-        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id";
-      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id`;
+        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor, can_pack_orders, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id";
+      const shiftUserSelectExtended = shiftUserSelectBase;
 
       let shiftUsersData: unknown[] | null = null;
       const extendedShiftUsersResult = await (supabase
@@ -652,6 +656,7 @@ const ShiftSetupAdmin = () => {
           can_authorize_order_cancel: boolean;
           can_double_session: boolean;
           is_supervisor: boolean;
+          can_pack_orders: boolean;
           secondary_caja_takeout_enabled: boolean;
           secondary_caja_express_enabled: boolean;
           secondary_caja_template_id: string | null;
@@ -670,6 +675,7 @@ const ShiftSetupAdmin = () => {
         can_authorize_order_cancel: boolean | null;
         can_double_session: boolean | null;
         is_supervisor: boolean | null;
+        can_pack_orders: boolean | null;
         secondary_caja_takeout_enabled: boolean | null;
         secondary_caja_express_enabled: boolean | null;
         secondary_caja_template_id: string | null;
@@ -689,6 +695,7 @@ const ShiftSetupAdmin = () => {
           can_authorize_order_cancel: Boolean(row.can_authorize_order_cancel),
           can_double_session: Boolean(row.can_double_session),
           is_supervisor: Boolean(row.is_supervisor),
+          can_pack_orders: Boolean(row.can_pack_orders),
           secondary_caja_takeout_enabled: Boolean(
             row.secondary_caja_takeout_enabled,
           ),
@@ -1378,12 +1385,17 @@ const ShiftSetupAdmin = () => {
     role: ShiftUserRoleKey,
     value: boolean,
   ) => {
-    if (role === "can_serve_tables" || role === "can_access_orders") {
-      return;
-    }
 
     if (role === "can_use_caja" || role === "can_double_session") {
       return;
+    }
+
+    if (role === "can_pack_orders" && value === true) {
+      const existingPacker = shiftUsersState.find((u) => u.can_pack_orders && u.user_id !== userId);
+      if (existingPacker) {
+        toast.error(`Solo puede haber un Empacador por turno. ${existingPacker.full_name || existingPacker.username} ya tiene este permiso.`);
+        return;
+      }
     }
 
     markShiftSetupDirty();
@@ -1583,6 +1595,7 @@ const ShiftSetupAdmin = () => {
     canAuthorizeOrderCancel: boolean;
     canDoubleSession: boolean;
     isSupervisor: boolean;
+    canPackOrders: boolean;
   }) => {
     const sanitizedParams = sanitizeShiftUserCapability(params);
 
@@ -1613,6 +1626,7 @@ const ShiftSetupAdmin = () => {
           can_authorize_order_cancel: sanitizedParams.canAuthorizeOrderCancel,
           can_double_session: false,
           is_supervisor: sanitizedParams.isSupervisor,
+          can_pack_orders: sanitizedParams.canPackOrders,
         } as any,
         {
           onConflict: "shift_id,user_id",
@@ -1637,6 +1651,7 @@ const ShiftSetupAdmin = () => {
       canAuthorizeOrderCancel: boolean;
       canDoubleSession: boolean;
       isSupervisor: boolean;
+      canPackOrders: boolean;
     }>,
   ) => {
     for (const entry of sanitizedEnabledUsers) {
@@ -1653,6 +1668,7 @@ const ShiftSetupAdmin = () => {
         canAuthorizeOrderCancel: entry.canAuthorizeOrderCancel,
         canDoubleSession: entry.canDoubleSession,
         isSupervisor: entry.isSupervisor,
+        canPackOrders: entry.canPackOrders,
       });
     }
   };
@@ -1817,6 +1833,7 @@ const ShiftSetupAdmin = () => {
           canAuthorizeOrderCancel: entry.canAuthorizeOrderCancel,
           canDoubleSession: entry.canDoubleSession,
           isSupervisor: entry.isSupervisor,
+          canPackOrders: entry.canPackOrders ?? false,
         })),
       );
       // persistShiftUsersForShift fuerza can_use_caja=false; reaplicar cajero principal/secundarios.
@@ -1862,6 +1879,7 @@ const ShiftSetupAdmin = () => {
             canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
             canDoubleSession: entry.can_double_session,
             isSupervisor: entry.is_supervisor,
+            canPackOrders: entry.can_pack_orders,
           }),
         )
         .filter((entry) => entry.isEnabled),
@@ -1924,6 +1942,7 @@ const ShiftSetupAdmin = () => {
             canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
             canDoubleSession: false,
             isSupervisor: entry.is_supervisor,
+            canPackOrders: entry.can_pack_orders,
           }),
         )
         .filter((entry) => entry.isEnabled);
@@ -2553,13 +2572,10 @@ const ShiftSetupAdmin = () => {
                       </div>
 
                       <div className="mt-1.5 grid grid-cols-2 gap-2 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm">
-                        <label
-                          className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
-                          title="Todo usuario agregado al turno debe tener Mesas habilitado"
-                        >
+                        <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                           <Checkbox
                             checked={userState?.can_serve_tables ?? false}
-                            disabled
+                            disabled={isStale}
                             onCheckedChange={(c) =>
                               updateUserRole(
                                 branchUser.user_id,
@@ -2569,28 +2585,10 @@ const ShiftSetupAdmin = () => {
                             }
                           />
                           <span className="min-w-0 text-muted-foreground">
-                            Mesero (Mesas)
+                            Venta
                           </span>
                         </label>
-                        <label
-                          className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight"
-                          title="Todo usuario agregado al turno debe tener Ordenes habilitado"
-                        >
-                          <Checkbox
-                            checked={userState?.can_access_orders ?? false}
-                            disabled
-                            onCheckedChange={(c) =>
-                              updateUserRole(
-                                branchUser.user_id,
-                                "can_access_orders",
-                                c === true,
-                              )
-                            }
-                          />
-                          <span className="min-w-0 text-muted-foreground">
-                            Ordenes
-                          </span>
-                        </label>
+
                         <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
                           <Checkbox
                             checked={userState?.can_dispatch_orders ?? false}
@@ -2628,6 +2626,22 @@ const ShiftSetupAdmin = () => {
                           />
                           <span className="min-w-0 text-muted-foreground">
                             Productos
+                          </span>
+                        </label>
+                        <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight" title="Permiso de Empacador (solo uno por turno)">
+                          <Checkbox
+                            checked={userState?.can_pack_orders ?? false}
+                            disabled={isStale}
+                            onCheckedChange={(c) =>
+                              updateUserRole(
+                                branchUser.user_id,
+                                "can_pack_orders",
+                                c === true,
+                              )
+                            }
+                          />
+                          <span className="min-w-0 text-muted-foreground">
+                            Empacador
                           </span>
                         </label>
                       </div>

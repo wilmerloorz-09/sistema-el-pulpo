@@ -75,6 +75,7 @@ const Extra = () => {
     || canOperate(permissions, "ordenes")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.canPackOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   const extraOrdersQuery = useQuery({

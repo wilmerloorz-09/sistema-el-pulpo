@@ -31,6 +31,8 @@ export function usePreferredHomePath() {
       preferredPath = canAccessAdmin ? "/admin" : (canAccessTurno ? "/turno" : null);
     } else if (gate?.isCaptureDeviceOnly) {
       preferredPath = "/caja";
+    } else if (!hasSupervisorBypass && gate?.canPackOrders) {
+      preferredPath = "/extra";
     } else if (hasSupervisorBypass || gate?.canServeTables) {
       preferredPath = "/mesas";
     } else if (hasSupervisorBypass || gate?.canAccessOrders) {

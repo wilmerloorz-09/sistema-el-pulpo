@@ -568,6 +568,7 @@ export type Database = {
           id: string
           is_enabled: boolean
           is_supervisor: boolean
+          can_pack_orders: boolean
           caja_session_slots: string[]
           last_session_id: string | null
           secondary_session_id: string | null
@@ -589,6 +590,7 @@ export type Database = {
           id?: string
           is_enabled?: boolean
           is_supervisor?: boolean
+          can_pack_orders?: boolean
           caja_session_slots?: string[]
           last_session_id?: string | null
           secondary_session_id?: string | null
@@ -610,6 +612,7 @@ export type Database = {
           id?: string
           is_enabled?: boolean
           is_supervisor?: boolean
+          can_pack_orders?: boolean
           caja_session_slots?: string[]
           last_session_id?: string | null
           secondary_session_id?: string | null

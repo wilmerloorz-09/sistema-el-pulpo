@@ -272,14 +272,17 @@ export function DispatchCardBase({
 
   return (
     <div className={cn(
-      "rounded-2xl border border-slate-200 shadow-sm transition-shadow hover:shadow-md overflow-hidden",
-      index % 2 === 0 ? "bg-white" : "bg-slate-100"
+      "rounded-2xl border shadow-sm transition-shadow hover:shadow-md overflow-hidden",
+      order.is_packer_order 
+        ? "border-red-600 bg-yellow-300 ring-4 ring-red-500" 
+        : cn("border-slate-200", index % 2 === 0 ? "bg-white" : "bg-slate-100")
     )}>
       <div
         onClick={onToggleExpand}
         className={cn(
           "group flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-4 py-4 lg:px-6 transition-colors",
-          "cursor-pointer hover:bg-slate-50",
+          "cursor-pointer",
+          order.is_packer_order ? "hover:bg-yellow-400" : "hover:bg-slate-50",
         )}
       >
         {/* Left Section: Chevron, Icon, Type, User, Order Ref */}

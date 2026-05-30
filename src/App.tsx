@@ -301,7 +301,7 @@ const App = () => (
                 <Route
                   path="/mesas-v2"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]} blockedShiftRoles={["canPackOrders"]}>
                       <MesasV2 />
                     </ProtectedRoute>
                   }
@@ -309,7 +309,7 @@ const App = () => (
                 <Route
                   path="/mesas"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]} blockedShiftRoles={["canPackOrders"]}>
                       <Mesas />
                     </ProtectedRoute>
                   }
@@ -317,7 +317,7 @@ const App = () => (
                 <Route
                   path="/para-llevar"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]} blockedShiftRoles={["canPackOrders"]}>
                       <ParaLlevar />
                     </ProtectedRoute>
                   }
@@ -325,7 +325,7 @@ const App = () => (
                 <Route
                   path="/express"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]} blockedShiftRoles={["canPackOrders"]}>
                       <Express />
                     </ProtectedRoute>
                   }
@@ -333,7 +333,7 @@ const App = () => (
                 <Route
                   path="/extra"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canPackOrders"]}>
                       <Extra />
                     </ProtectedRoute>
                   }
@@ -341,7 +341,7 @@ const App = () => (
                 <Route
                   path="/orden-especial"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]}>
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]} blockedShiftRoles={["canPackOrders"]}>
                       <OrdenEspecial />
                     </ProtectedRoute>
                   }
@@ -349,7 +349,7 @@ const App = () => (
                 <Route
                   path="/ordenes"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders"]}>
+                    <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders", "canPackOrders"]}>
                       <Ordenes />
                     </ProtectedRoute>
                   }

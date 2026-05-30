@@ -37,6 +37,7 @@ export interface BranchShiftGate {
   secondaryCajaTakeoutEnabled: boolean;
   /** Cajero secundario: puede cobrar sus EXPRESS propias. */
   secondaryCajaExpressEnabled: boolean;
+  canPackOrders: boolean;
   canAuthorizeOrderCancel: boolean;
   canDoubleSession: boolean;
   isSupervisor: boolean;
@@ -77,6 +78,7 @@ export function useBranchShiftGate() {
           isSecondaryCashier: false,
           secondaryCajaTakeoutEnabled: false,
           secondaryCajaExpressEnabled: false,
+          canPackOrders: false,
           canAuthorizeOrderCancel: false,
           canDoubleSession: false,
           isSupervisor: false,
@@ -119,6 +121,7 @@ export function useBranchShiftGate() {
           isSecondaryCashier: false,
           secondaryCajaTakeoutEnabled: false,
           secondaryCajaExpressEnabled: false,
+          canPackOrders: false,
           canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
           canDoubleSession: Boolean(row?.can_double_session),
           isSupervisor: Boolean(row?.is_supervisor),
@@ -144,7 +147,7 @@ export function useBranchShiftGate() {
         : false;
 
       const shiftUserSelectBase =
-        "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots";
+        "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_pack_orders, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots";
       const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled`;
 
       let shiftUserRow: Record<string, unknown> | null = null;
@@ -236,6 +239,7 @@ export function useBranchShiftGate() {
         secondaryCajaExpressEnabled: isSecondaryCashier
           ? Boolean(shiftUserRow?.secondary_caja_express_enabled)
           : false,
+        canPackOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_pack_orders) : false,
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         canDoubleSession: hasDirectShiftRow ? Boolean(shiftUserRow?.can_double_session) : Boolean(row?.can_double_session),
         isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),

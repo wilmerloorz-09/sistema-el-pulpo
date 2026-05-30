@@ -123,21 +123,6 @@ const NAV_ITEMS: AppNavItem[] = [
       || canView(permissions, "despacho_para_llevar"),
   },
   {
-    to: "/servir",
-    label: "Servir",
-    icon: <ConciergeBell className="h-5 w-5" />,
-    group: "OPERATIVO",
-    tone: {
-      active: "from-indigo-500 to-blue-400",
-      idle: "hover:border-indigo-200 hover:bg-indigo-50/90 hover:text-indigo-700",
-      iconIdle: "bg-indigo-50 text-indigo-600",
-    },
-    visible: (permissions) =>
-      canView(permissions, "despacho_total")
-      || canView(permissions, "despacho_mesa")
-      || canView(permissions, "despacho_para_llevar"),
-  },
-  {
     to: "/productos",
     label: "Productos",
     icon: <Package className="h-5 w-5" />,
@@ -267,10 +252,17 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
+        if (!hasSupervisorBypass && Boolean(sg?.canPackOrders)) {
+          return item.to === "/extra";
+        }
+        
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
-        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial") {
+        if (item.to === "/extra") {
+          return hasSupervisorBypass || Boolean(sg?.canServeTables) || Boolean(sg?.canPackOrders);
+        }
+        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
         return hasSupervisorBypass
@@ -288,7 +280,7 @@ export function useVisibleNavItems() {
         return canSeeCajaFinanceNav(sg);
       }
 
-      if (item.to === "/despacho" || item.to === "/servir") {
+      if (item.to === "/despacho") {
         if (!(hasSupervisorBypass || Boolean(sg?.canDispatchOrders))) return false;
         return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
       }
@@ -318,6 +310,7 @@ export function useVisibleNavItems() {
     shiftGateQuery.data?.canDispatchOrders,
     shiftGateQuery.data?.canManageProducts,
     shiftGateQuery.data?.canServeTables,
+    shiftGateQuery.data?.canPackOrders,
     shiftGateQuery.data?.canDoubleSession,
     shiftGateQuery.data?.canUseCaja,
     shiftGateQuery.data?.globalCajaSessionsUsed,

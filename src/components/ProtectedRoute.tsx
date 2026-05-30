@@ -15,7 +15,8 @@ interface Props {
     level: AccessLevel;
   };
   requiresOpenShift?: boolean;
-  requiredShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canEditOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja">;
+  requiredShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canEditOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja" | "canPackOrders">;
+  blockedShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canEditOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja" | "canPackOrders">;
 }
 
 const MODULE_FALLBACK_PATH: Record<string, string> = {
@@ -39,6 +40,7 @@ const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number]
   canDispatchOrders: "Despacho",
   canManageProducts: "Productos",
   canUseCaja: "Caja",
+  canPackOrders: "Empacador",
 };
 
 const ProtectedRoute = ({
@@ -47,6 +49,7 @@ const ProtectedRoute = ({
   requiredPermission,
   requiresOpenShift = false,
   requiredShiftRoles,
+  blockedShiftRoles,
 }: Props) => {
   const { user, loading, signOut } = useAuth();
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
@@ -83,10 +86,16 @@ const ProtectedRoute = ({
   const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
   const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
   const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
+  
+  const hasBlockedShiftRole = !hasSupervisorBypass && blockedShiftRoles && blockedShiftRoles.length > 0
+    ? blockedShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]))
+    : false;
+    
   const hasRequiredShiftRole = !requiredShiftRoles || requiredShiftRoles.length === 0
     ? true
     : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
-  const hasShiftAccess = requiresOpenShift && shiftOpen && userEnabled && (hasSupervisorBypass || hasRequiredShiftRole);
+    
+  const hasShiftAccess = requiresOpenShift && shiftOpen && userEnabled && (hasSupervisorBypass || (hasRequiredShiftRole && !hasBlockedShiftRole));
 
   const isStaleShift = Boolean(shiftGateQuery.data?.isStaleShift);
   const isAllowedModulePath = location.pathname === "/turno" || location.pathname === "/admin";
@@ -185,7 +194,7 @@ const ProtectedRoute = ({
       return <Navigate to="/caja" replace />;
     }
 
-    if (!hasSupervisorBypass && !hasRequiredShiftRole) {
+    if (!hasSupervisorBypass && (!hasRequiredShiftRole || hasBlockedShiftRole)) {
       const operationalFallback = preferredPath ?? firstVisiblePath ?? visibleItems[0]?.to ?? null;
       if (operationalFallback && operationalFallback !== location.pathname) {
         return <Navigate to={operationalFallback} replace />;
