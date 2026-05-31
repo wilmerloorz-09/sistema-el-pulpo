@@ -79,33 +79,34 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
           boxSizing: "border-box",
         }}
       >
-        <div style={{ textAlign: "center", marginBottom: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: "8px", gap: "10px" }}>
           <img
             src="/logo.png"
             alt="Logo"
             style={{
-              maxWidth: "120px",
+              width: "70px",
               height: "auto",
-              margin: "0 auto 6px auto",
               display: "block",
             }}
           />
-          <div style={{ fontSize: "12px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
-          {branchName && <div style={{ fontSize: "11px", marginTop: "2px" }}>{branchName}</div>}
-          <div style={{ fontSize: "11px", fontWeight: "bold", marginTop: "4px" }}>
-            ORDEN {orderNumber}
-          </div>
-          <div style={{ fontSize: "11px", marginTop: "2px" }}>
-            {isTrayOrder
-              ? "ORDEN BANDEJA"
-              : isSpecial
-                ? "ORDEN ESPECIAL"
-                : orderType === "TAKEOUT"
-                  ? "PARA LLEVAR"
-                  : tableName ?? "MESA"}
-          </div>
-          <div style={{ fontSize: "10px", marginTop: "2px" }}>
-            {dateStr} {timeStr}
+          <div style={{ flex: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: "1px" }}>
+            <div style={{ fontSize: "11px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
+            {branchName && <div style={{ fontSize: "10px" }}>{branchName}</div>}
+            <div style={{ fontSize: "11px", fontWeight: "bold" }}>
+              ORDEN {orderNumber}
+            </div>
+            <div style={{ fontSize: "10px" }}>
+              {isTrayOrder
+                ? "ORDEN BANDEJA"
+                : isSpecial
+                  ? "ORDEN ESPECIAL"
+                  : orderType === "TAKEOUT"
+                    ? "PARA LLEVAR"
+                    : tableName ?? "MESA"}
+            </div>
+            <div style={{ fontSize: "9px" }}>
+              {dateStr} {timeStr}
+            </div>
           </div>
         </div>
 
@@ -178,8 +179,6 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
 
         <div style={{ textAlign: "center", marginTop: "12px", fontSize: "11px" }}>
           ¡GRACIAS POR SU PREFERENCIA!
-          <br />
-          Sistema El Pulpo
         </div>
       </div>
     );

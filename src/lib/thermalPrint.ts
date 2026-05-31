@@ -3,7 +3,7 @@ import { buildOrderReceiptEscPos, type OrderReceiptEscPosInput } from "@/lib/esc
 import { DEFAULT_THERMAL_PRINT_BRIDGE_URL } from "@/lib/escpos/constants";
 import { Capacitor } from "@capacitor/core";
 import { TcpSocket } from "@deedarb/capacitor-tcp-socket";
-import { loadEscPosLogo } from "@/lib/escpos/encoder";
+import { loadEscPosLogo, buildCombinedHeaderRaster } from "@/lib/escpos/encoder";
 
 export type ThermalPrintMode = "escpos" | "html";
 
@@ -107,8 +107,28 @@ export function isThermalBridgeEnabled(): boolean {
 export async function printPaymentReceipt(input: PaymentReceiptEscPosInput): Promise<ThermalPrintResult> {
   if (isThermalBridgeEnabled()) {
     try {
-      const logoBytes = await loadEscPosLogo("/logo.png", 180).catch(() => null);
-      const bytes = buildPaymentReceiptEscPos({ ...input, logoBytes });
+      const date = new Date(input.createdAt);
+      const dateStr = date.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const timeStr = date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+
+      const resolveLabel = () => {
+        if (input.isTrayOrder) return "ORDEN BANDEJA";
+        if (input.isSpecial) return "ORDEN ESPECIAL";
+        if (input.orderType === "TAKEOUT") return "PARA LLEVAR";
+        if (input.orderType === "EXPRESS") return "EXPRESS";
+        if (input.orderType === "EXTRA") return "EXTRA";
+        return input.tableName ?? "MESA";
+      };
+
+      const headerLines = [
+        "COMPROBANTE DE PAGO",
+        input.branchName || "",
+        `ORDEN ${input.orderNumber}`,
+        `${resolveLabel()} - ${dateStr} ${timeStr}`
+      ].filter(Boolean);
+
+      const headerBytes = await buildCombinedHeaderRaster("/logo.png", headerLines).catch(() => null);
+      const bytes = buildPaymentReceiptEscPos({ ...input, headerBytes });
       await sendEscPosToBridge(bytes);
       return { mode: "escpos" };
     } catch (error: unknown) {

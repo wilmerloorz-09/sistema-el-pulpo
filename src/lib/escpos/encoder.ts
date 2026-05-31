@@ -256,3 +256,96 @@ export async function loadEscPosLogo(src: string = "/logo.png", targetWidth = 25
     img.src = src;
   });
 }
+
+/**
+ * Genera un encabezado dinámico dibujando el logo a la izquierda y las líneas de texto a la derecha,
+ * devolviendo los bytes del comando ESC/POS rasterizado para ahorrar papel físico.
+ */
+export async function buildCombinedHeaderRaster(
+  logoSrc = "/logo.png",
+  lines: string[],
+  targetWidth = 576
+): Promise<Uint8Array | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      // Calculamos dimensiones: el logo a la izquierda tendrá ~120px de ancho.
+      const logoWidth = 120;
+      const logoHeight = Math.floor(img.height * (logoWidth / img.width));
+      const lineSpacing = 28;
+      const textHeight = lines.length * lineSpacing + 10;
+      const targetHeight = Math.max(logoHeight, textHeight, 100);
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(null);
+
+      // Fondo blanco puro
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+      // Dibujamos logotipo a la izquierda, centrado verticalmente
+      const logoY = Math.floor((targetHeight - logoHeight) / 2);
+      ctx.drawImage(img, 0, logoY, logoWidth, logoHeight);
+
+      // Dibujamos líneas de texto a la derecha
+      ctx.fillStyle = "black";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+
+      const startX = logoWidth + 24; // Espacio después del logo
+      const totalTextHeight = lines.length * lineSpacing;
+      const startY = Math.floor((targetHeight - totalTextHeight) / 2) + Math.floor(lineSpacing / 2);
+
+      lines.forEach((line, idx) => {
+        // La línea 0 ("COMPROBANTE DE PAGO") y la 2 ("ORDEN XX") en negrita y un poco más grandes
+        const isHeaderLine = idx === 0 || line.startsWith("ORDEN ");
+        ctx.font = isHeaderLine ? "bold 24px monospace" : "20px monospace";
+        ctx.fillText(line, startX, startY + idx * lineSpacing);
+      });
+
+      const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+      const data = imgData.data;
+
+      // Conversión a monocromo ESC/POS
+      const bytesWidth = Math.ceil(targetWidth / 8);
+      const rasterBytes = new Uint8Array(bytesWidth * targetHeight);
+
+      for (let y = 0; y < targetHeight; y++) {
+        for (let x = 0; x < targetWidth; x++) {
+          const idx = (y * targetWidth + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const a = data[idx + 3];
+
+          const luminance = a < 128 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
+          if (luminance < 128) {
+            const byteIdx = (y * bytesWidth) + Math.floor(x / 8);
+            const bit = 7 - (x % 8);
+            rasterBytes[byteIdx] |= (1 << bit);
+          }
+        }
+      }
+
+      const header = new Uint8Array([
+        0x1d, 0x76, 0x30, 0x00,
+        bytesWidth & 0xff,
+        (bytesWidth >> 8) & 0xff,
+        targetHeight & 0xff,
+        (targetHeight >> 8) & 0xff
+      ]);
+
+      const out = new Uint8Array(header.length + rasterBytes.length);
+      out.set(header, 0);
+      out.set(rasterBytes, header.length);
+      resolve(out);
+    };
+    img.onerror = () => resolve(null);
+    img.src = logoSrc;
+  });
+}
+

@@ -17,7 +17,7 @@ export interface PaymentReceiptEscPosInput {
   branchName?: string;
   /** Abrir cajon antes del corte (nunca despues). */
   openDrawerBeforeCut?: boolean;
-  logoBytes?: Uint8Array | null;
+  headerBytes?: Uint8Array | null;
 }
 
 function formatMoney(amount: number) {
@@ -41,30 +41,30 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   const enc = new EscPosEncoder();
   enc.initialize().codePageLatin1();
 
-  // Imprimir logotipo si está disponible
-  if (input.logoBytes) {
+  if (input.headerBytes) {
+    // Si tenemos los bytes del encabezado combinado (logo + texto)
     enc.align("center");
-    enc.raw(input.logoBytes);
+    enc.raw(input.headerBytes);
+    enc.feed(1);
+  } else {
+    // Fallback: Encabezado de texto clásico si falla la renderización del lienzo
+    enc.align("center").bold(true).textSize(true);
+    enc.line("COMPROBANTE DE PAGO");
+    enc.bold(false);
+
+    if (input.branchName) {
+      for (const line of wrapWords(input.branchName, THERMAL_LINE_CHARS)) {
+        enc.line(line);
+      }
+    }
+
+    enc.bold(true);
+    enc.line(`ORDEN ${input.orderNumber}`);
+    enc.bold(false);
+    enc.line(resolveOrderLabel(input));
+    enc.line(`${dateStr} ${timeStr}`);
     enc.feed(1);
   }
-
-  // Encabezados con tamaño normal pero negrita
-  enc.align("center").bold(true).textSize(true);
-  enc.line("COMPROBANTE DE PAGO");
-  enc.bold(false);
-
-  if (input.branchName) {
-    for (const line of wrapWords(input.branchName, THERMAL_LINE_CHARS)) {
-      enc.line(line);
-    }
-  }
-
-  enc.bold(true);
-  enc.line(`ORDEN ${input.orderNumber}`);
-  enc.bold(false);
-  enc.line(resolveOrderLabel(input));
-  enc.line(`${dateStr} ${timeStr}`);
-  enc.feed(1);
 
   enc.align("left").separator();
 
@@ -106,7 +106,6 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
 
   enc.align("center");
   enc.line("GRACIAS POR SU PREFERENCIA");
-  enc.line("Sistema El Pulpo");
 
   enc.finalizeTicket({
     feedLines: 5,
