@@ -271,7 +271,7 @@ export async function buildCombinedHeaderRaster(
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      // Calculamos dimensiones: el logo a la izquierda tendrá ~120px de ancho.
+      // Restauramos las proporciones legibles del encabezado
       const logoWidth = 120;
       const logoHeight = Math.floor(img.height * (logoWidth / img.width));
       const lineSpacing = 28;
@@ -301,7 +301,6 @@ export async function buildCombinedHeaderRaster(
       const startY = Math.floor((targetHeight - totalTextHeight) / 2) + Math.floor(lineSpacing / 2);
 
       lines.forEach((line, idx) => {
-        // La línea 0 ("COMPROBANTE DE PAGO") y la 2 ("ORDEN XX") en negrita y un poco más grandes
         const isHeaderLine = idx === 0 || line.startsWith("ORDEN ");
         ctx.font = isHeaderLine ? "bold 24px monospace" : "20px monospace";
         ctx.fillText(line, startX, startY + idx * lineSpacing);

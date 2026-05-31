@@ -72,30 +72,30 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
           fontFamily: "monospace",
           fontSize: "11px",
           lineHeight: 1.25,
-          padding: "1mm 2mm",
+          padding: "0mm 2mm",
           margin: 0,
           color: "#000",
           background: "#fff",
           boxSizing: "border-box",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", marginBottom: "8px", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: "0px", gap: "10px" }}>
           <img
             src="/logo.png"
             alt="Logo"
             style={{
-              width: "70px",
+              width: "80px",
               height: "auto",
               display: "block",
             }}
           />
-          <div style={{ flex: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: "1px" }}>
-            <div style={{ fontSize: "11px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
-            {branchName && <div style={{ fontSize: "10px" }}>{branchName}</div>}
+          <div style={{ flex: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: "2px" }}>
+            <div style={{ fontSize: "12px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
+            {branchName && <div style={{ fontSize: "11px" }}>{branchName}</div>}
             <div style={{ fontSize: "11px", fontWeight: "bold" }}>
               ORDEN {orderNumber}
             </div>
-            <div style={{ fontSize: "10px" }}>
+            <div style={{ fontSize: "11px" }}>
               {isTrayOrder
                 ? "ORDEN BANDEJA"
                 : isSpecial
@@ -104,13 +104,13 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
                     ? "PARA LLEVAR"
                     : tableName ?? "MESA"}
             </div>
-            <div style={{ fontSize: "9px" }}>
+            <div style={{ fontSize: "10px" }}>
               {dateStr} {timeStr}
             </div>
           </div>
         </div>
 
-        <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+        <div style={{ borderTop: "1px dashed #000", margin: "2px 0" }} />
 
         {/* Detalle de Items Pagados */}
         {!isSpecial ? (

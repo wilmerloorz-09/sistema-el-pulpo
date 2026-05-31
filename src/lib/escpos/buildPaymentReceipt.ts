@@ -45,7 +45,6 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     // Si tenemos los bytes del encabezado combinado (logo + texto)
     enc.align("center");
     enc.raw(input.headerBytes);
-    enc.feed(1);
   } else {
     // Fallback: Encabezado de texto clásico si falla la renderización del lienzo
     enc.align("center").bold(true).textSize(true);
