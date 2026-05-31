@@ -1,6 +1,8 @@
 import { buildPaymentReceiptEscPos, type PaymentReceiptEscPosInput } from "@/lib/escpos/buildPaymentReceipt";
 import { buildOrderReceiptEscPos, type OrderReceiptEscPosInput } from "@/lib/escpos/buildOrderReceipt";
 import { DEFAULT_THERMAL_PRINT_BRIDGE_URL } from "@/lib/escpos/constants";
+import { Capacitor } from "@capacitor/core";
+import { TcpSocket } from "@deedarb/capacitor-tcp-socket";
 
 export type ThermalPrintMode = "escpos" | "html";
 
@@ -31,6 +33,10 @@ function uint8ToBase64(bytes: Uint8Array): string {
 
 /** Envía bytes ESC/POS al puente local (RAW). */
 export async function sendEscPosToBridge(bytes: Uint8Array): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    return sendEscPosNative(bytes);
+  }
+
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 8000);
 
@@ -57,6 +63,34 @@ export async function sendEscPosToBridge(bytes: Uint8Array): Promise<void> {
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function sendEscPosNative(bytes: Uint8Array): Promise<void> {
+  const ip = import.meta.env.VITE_THERMAL_PRINTER_IP || "192.168.1.100";
+  const port = Number(import.meta.env.VITE_THERMAL_PRINTER_PORT || 9100);
+  
+  return new Promise(async (resolve, reject) => {
+    let timeoutId = setTimeout(() => {
+      reject(new Error("Timeout al conectar con la impresora TCP"));
+    }, 5000);
+
+    try {
+      const connectResult = await TcpSocket.connect({ ipAddress: ip, port: port, timeout: 5 });
+      const client = connectResult.client;
+      
+      const b64Data = uint8ToBase64(bytes);
+      
+      await TcpSocket.send({ client: client, data: b64Data });
+      
+      await TcpSocket.disconnect({ client: client });
+      
+      clearTimeout(timeoutId);
+      resolve();
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      reject(new Error("Error al imprimir via TCP: " + e.message));
+    }
+  });
 }
 
 export function isThermalBridgeEnabled(): boolean {

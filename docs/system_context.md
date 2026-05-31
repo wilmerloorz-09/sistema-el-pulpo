@@ -98,6 +98,7 @@
   - `can_authorize_order_cancel`
   - `can_double_session`
   - `is_supervisor`
+  - `can_pack_orders` (Empacador: solo ve `/extra` y sus comandas, bloqueado de Mesas, Express, Para Llevar y Especial)
 - **Varios cajeros por turno (2026-05-21+):**
   - Puede haber **varios** usuarios con `can_use_caja = true` en el mismo turno, hasta el cupo `cash_shifts.max_caja_sessions` (terminales configuradas en `Admin > Turno`).
   - Ya no existe restriccion de un solo cajero habilitado por turno (`ux_cash_shift_users_one_enabled_cashier_per_shift` eliminado).

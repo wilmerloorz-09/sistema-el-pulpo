@@ -342,7 +342,16 @@ export default function PaymentDialogSecondary({
                 className="h-11 w-full rounded-xl"
                 onClick={() => {
                   setPostPaySummary(null);
-                  onClose();
+                  clearCash();
+                  setTransferInput("");
+                  const isFullyPaid = order 
+                    ? order.is_special 
+                      ? Number(order.special_pending_amount ?? 0) <= 0.005 
+                      : (order.items ?? []).every((i) => Number(i.quantity_pending ?? 0) <= 0)
+                    : true;
+                  if (isFullyPaid) {
+                    onClose();
+                  }
                 }}
               >
                 Listo

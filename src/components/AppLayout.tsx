@@ -77,22 +77,24 @@ const AppLayout = () => {
 
         <div className="flex min-h-dvh min-w-0 flex-col">
           {!isDesktop && (
-            <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-orange-200/80 bg-white px-2.5 dark:border-border dark:bg-card">
-              <div className="flex items-center gap-3">
-                <MobileMenuSheet onOpenAccount={() => setUserMenuOpen(true)} />
-                <div className="flex items-center gap-2">
-                  <img src="/logo.png" alt="Logo" className="h-8 w-8 rounded-full object-cover" />
-                  <span className="font-display text-sm font-black tracking-tight text-foreground sm:text-base">
-                    POS El pulpo
-                  </span>
+            <header className="sticky top-0 z-50 border-b border-orange-200/80 bg-white pt-[env(safe-area-inset-top,0px)] dark:border-border dark:bg-card">
+              <div className="flex h-14 items-center justify-between px-2.5">
+                <div className="flex items-center gap-3">
+                  <MobileMenuSheet onOpenAccount={() => setUserMenuOpen(true)} />
+                  <div className="flex items-center gap-2">
+                    <img src="/logo.png" alt="Logo" className="h-8 w-8 rounded-full object-cover" />
+                    <span className="font-display text-sm font-black tracking-tight text-foreground sm:text-base">
+                      POS El pulpo
+                    </span>
+                  </div>
                 </div>
+                {!isOnline && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
+                    <WifiOff className="h-3 w-3" />
+                    <span className="hidden xs:inline">Sin conexion</span>
+                  </span>
+                )}
               </div>
-              {!isOnline && (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
-                  <WifiOff className="h-3 w-3" />
-                  <span className="hidden xs:inline">Sin conexion</span>
-                </span>
-              )}
             </header>
           )}
           {isDesktop && !isOnline && (

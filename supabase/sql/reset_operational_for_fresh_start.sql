@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- RESET OPERATIVO DEL SISTEMA POS PARA PRUEBAS DESDE CERO
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -99,7 +99,7 @@
 --   - dispatch_config
 --   - dispatch_assignments
 -- - Reinicia la operacion diaria sin desmontar el sistema
---   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
+--   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja, autorizacion de anulacion y Empacador (can_pack_orders)
 --   - al borrar cash_shift_users se limpia tambien la habilitacion `can_double_session`; el reset ademas limpia las columnas de sesion secundaria en profiles
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago

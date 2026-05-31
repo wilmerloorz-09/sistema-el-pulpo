@@ -32,6 +32,7 @@
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa. (Utilizado tambien en `Monitoreo Global` para ver quien esta operando en linea y en caja).
 - `cash_shift_users.caja_session_slots` y `cash_shifts.max_caja_sessions` limitan terminales simultaneas; varios usuarios pueden tener `can_use_caja` en el mismo turno.
 - `cash_shift_users.can_double_session` permite una segunda sesion de app para el **mismo** usuario con Caja; se registra en `profiles.current_app_secondary_session_id`.
+- `cash_shift_users.can_pack_orders` permite el acceso exclusivamente a crear y cobrar Ordenes Extra, restringiendo visualmente Mesas, Para Llevar, Express y Especial.
 - Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
 - Por turno puede configurarse un **cajero principal opcional** (`primary_cashier_id`) solo para defaults de UI; operativamente las cajas son unificadas.
 - En `Recaudar` (Caja) existe un combo para filtrar qué órdenes ver (todas / mías / por usuario); el principal por defecto ve todas.

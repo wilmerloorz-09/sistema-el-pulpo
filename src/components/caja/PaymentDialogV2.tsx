@@ -1023,8 +1023,23 @@ export default function PaymentDialogV2({
                   variant="outline"
                   className="h-10 w-full gap-2 rounded-2xl border-2 text-sm font-semibold shadow-sm sm:flex-1"
                   onClick={() => {
+                    const handleSuccessDismiss = () => {
+                      setPostPaySummary(null);
+                      setReceivedByDenom({});
+                      setTransferInput("");
+                      const isFullyPaid = order 
+                        ? order.is_special 
+                          ? Number(order.special_pending_amount ?? 0) <= 0.005 
+                          : (order.items ?? []).every((i) => Number(i.quantity_pending ?? 0) <= 0)
+                        : true;
+                      if (isFullyPaid) {
+                        onClose();
+                      }
+                    };
+
                     if (!postPaySummary?.receipt) {
                       window.print();
+                      handleSuccessDismiss();
                       return;
                     }
                     void printPaymentReceipt(postPaySummary.receipt).then((result) => {
@@ -1033,6 +1048,7 @@ export default function PaymentDialogV2({
                           "Impresion HTML (puente ESC/POS no disponible). Ejecute: node scripts/thermal-print-bridge.mjs",
                         );
                       }
+                      handleSuccessDismiss();
                     });
                   }}
                 >
@@ -1048,7 +1064,16 @@ export default function PaymentDialogV2({
                 )}
                 onClick={() => {
                   setPostPaySummary(null);
-                  onClose();
+                  setReceivedByDenom({});
+                  setTransferInput("");
+                  const isFullyPaid = order 
+                    ? order.is_special 
+                      ? Number(order.special_pending_amount ?? 0) <= 0.005 
+                      : (order.items ?? []).every((i) => Number(i.quantity_pending ?? 0) <= 0)
+                    : true;
+                  if (isFullyPaid) {
+                    onClose();
+                  }
                 }}
               >
                 Listo

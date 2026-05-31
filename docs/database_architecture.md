@@ -35,7 +35,7 @@
 - `user_branch_roles`
 - `user_branch_modules`
 - `cash_shift_users`
-  - capacidades operativas por turno (`can_serve_tables`, `can_use_caja`, etc.)
+  - capacidades operativas por turno (`can_serve_tables`, `can_use_caja`, `can_pack_orders`, etc.)
   - Nota: ya no se modela alcance de cobro por flags `secondary_caja_*` (caja unificada).
 // Removed WebAuthn tables from active operation
 

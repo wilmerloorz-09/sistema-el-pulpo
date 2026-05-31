@@ -194,6 +194,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - `order_type = EXTRA`: menu mesa sin PLATOS, sin mesa, flujo caja → despacho manual (como mesa; no Express).
 - Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` (`20260602130000`).
 - Modulo `/extra`: solo el creador ve sus ordenes activas; sin pagos parciales; cajero secundario sin imprimir comprobante.
+- Usuarios con la capacidad **Empacador (`can_pack_orders`)** tienen acceso exclusivo al módulo `/extra` y a la pantalla de comandas de ese módulo, restringiendo todo acceso a Mesas, Express, Especial y Para Llevar.
 - En Caja: subtitulo **Extra**; visible para creador o cajero principal del turno; no mostrar nombre de mesa.
 - En Despacho: listar en pestañas **Mesa** y **Todos**; no exigir `sent_to_kitchen_at` en lineas Extra para armar tarjeta.
 
