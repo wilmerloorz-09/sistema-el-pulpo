@@ -3,6 +3,7 @@ import { buildOrderReceiptEscPos, type OrderReceiptEscPosInput } from "@/lib/esc
 import { DEFAULT_THERMAL_PRINT_BRIDGE_URL } from "@/lib/escpos/constants";
 import { Capacitor } from "@capacitor/core";
 import { TcpSocket } from "@deedarb/capacitor-tcp-socket";
+import { loadEscPosLogo } from "@/lib/escpos/encoder";
 
 export type ThermalPrintMode = "escpos" | "html";
 
@@ -82,6 +83,9 @@ async function sendEscPosNative(bytes: Uint8Array): Promise<void> {
       
       await TcpSocket.send({ client: client, data: b64Data });
       
+      // Dar tiempo al buffer de red del OS para que envíe los paquetes antes de cerrar el socket
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+      
       await TcpSocket.disconnect({ client: client });
       
       clearTimeout(timeoutId);
@@ -103,7 +107,8 @@ export function isThermalBridgeEnabled(): boolean {
 export async function printPaymentReceipt(input: PaymentReceiptEscPosInput): Promise<ThermalPrintResult> {
   if (isThermalBridgeEnabled()) {
     try {
-      const bytes = buildPaymentReceiptEscPos(input);
+      const logoBytes = await loadEscPosLogo("/logo.png", 180).catch(() => null);
+      const bytes = buildPaymentReceiptEscPos({ ...input, logoBytes });
       await sendEscPosToBridge(bytes);
       return { mode: "escpos" };
     } catch (error: unknown) {

@@ -51,6 +51,11 @@ export class EscPosEncoder {
     return this;
   }
 
+  /** Permite inyectar bytes crudos (ej. comandos raster de imagen) */
+  raw(bytes: Uint8Array | number[]) {
+    return this.pushRaw(bytes);
+  }
+
   /** ESC @ — reinicia impresora (solo al inicio del documento). */
   initialize() {
     return this.pushRaw([0x1b, 0x40]);
@@ -180,4 +185,74 @@ export function formatAmountLine(left: string, amount: string, width = THERMAL_L
   const leftPart = left.slice(0, Math.max(0, width - amount.length - 1)).trimEnd();
   const spaces = Math.max(1, width - leftPart.length - amount.length);
   return `${leftPart}${" ".repeat(spaces)}${amount}`;
+}
+
+/** 
+ * Carga una imagen de forma asincrona y genera los bytes raster ESC/POS.
+ * Ideal para imprimir logos en B/N mediante el comando GS v 0.
+ */
+export async function loadEscPosLogo(src: string = "/logo.png", targetWidth = 256): Promise<Uint8Array | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      // Mantenemos proporcion de aspecto
+      const scale = targetWidth / img.width;
+      const targetHeight = Math.floor(img.height * scale);
+      
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(null);
+      
+      // Fondo blanco puro para que los pixeles transparentes no salgan negros
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      
+      const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+      const data = imgData.data;
+      
+      // En ESC/POS (GS v 0), xL,xH es el ancho en BYTES.
+      const bytesWidth = Math.ceil(targetWidth / 8);
+      const rasterBytes = new Uint8Array(bytesWidth * targetHeight);
+      
+      for (let y = 0; y < targetHeight; y++) {
+        for (let x = 0; x < targetWidth; x++) {
+          const idx = (y * targetWidth + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const a = data[idx + 3];
+          
+          // Calculo simple de luminancia para blanco/negro
+          const luminance = a < 128 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
+          if (luminance < 128) {
+            const byteIdx = (y * bytesWidth) + Math.floor(x / 8);
+            // El bit 7 es el pixel mas a la izquierda del byte
+            const bit = 7 - (x % 8);
+            rasterBytes[byteIdx] |= (1 << bit);
+          }
+        }
+      }
+      
+      // Comando GS v 0 m xL xH yL yH d1...dk
+      // m=0 (Normal)
+      const header = new Uint8Array([
+        0x1d, 0x76, 0x30, 0x00,
+        bytesWidth & 0xff,
+        (bytesWidth >> 8) & 0xff,
+        targetHeight & 0xff,
+        (targetHeight >> 8) & 0xff
+      ]);
+      
+      const out = new Uint8Array(header.length + rasterBytes.length);
+      out.set(header, 0);
+      out.set(rasterBytes, header.length);
+      resolve(out);
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
 }

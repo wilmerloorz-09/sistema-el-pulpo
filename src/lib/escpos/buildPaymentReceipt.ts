@@ -17,6 +17,7 @@ export interface PaymentReceiptEscPosInput {
   branchName?: string;
   /** Abrir cajon antes del corte (nunca despues). */
   openDrawerBeforeCut?: boolean;
+  logoBytes?: Uint8Array | null;
 }
 
 function formatMoney(amount: number) {
@@ -40,9 +41,17 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   const enc = new EscPosEncoder();
   enc.initialize().codePageLatin1();
 
-  enc.align("center").bold(true).textSize(false);
+  // Imprimir logotipo si está disponible
+  if (input.logoBytes) {
+    enc.align("center");
+    enc.raw(input.logoBytes);
+    enc.feed(1);
+  }
+
+  // Encabezados con tamaño normal pero negrita
+  enc.align("center").bold(true).textSize(true);
   enc.line("COMPROBANTE DE PAGO");
-  enc.bold(false).textSize(true);
+  enc.bold(false);
 
   if (input.branchName) {
     for (const line of wrapWords(input.branchName, THERMAL_LINE_CHARS)) {
@@ -50,9 +59,9 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     }
   }
 
-  enc.bold(true).textSize(false);
+  enc.bold(true);
   enc.line(`ORDEN ${input.orderNumber}`);
-  enc.bold(false).textSize(true);
+  enc.bold(false);
   enc.line(resolveOrderLabel(input));
   enc.line(`${dateStr} ${timeStr}`);
   enc.feed(1);
@@ -99,9 +108,8 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   enc.line("GRACIAS POR SU PREFERENCIA");
   enc.line("Sistema El Pulpo");
 
-  // Ultimo paso del buffer: feed corto + corte. Nada despues.
   enc.finalizeTicket({
-    feedLines: 2,
+    feedLines: 5,
     openDrawer: input.openDrawerBeforeCut,
   });
 

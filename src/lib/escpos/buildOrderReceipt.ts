@@ -82,7 +82,7 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.align("center");
   enc.line("Gracias por su compra");
 
-  enc.finalizeTicket({ feedLines: 2 });
+  enc.finalizeTicket({ feedLines: 5 });
 
   return enc.build();
 }

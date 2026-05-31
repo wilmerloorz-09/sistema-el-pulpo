@@ -80,12 +80,22 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
         }}
       >
         <div style={{ textAlign: "center", marginBottom: "8px" }}>
-          <div style={{ fontSize: "16px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
-          {branchName && <div style={{ fontSize: "12px", marginTop: "2px" }}>{branchName}</div>}
-          <div style={{ fontSize: "14px", fontWeight: "bold", marginTop: "4px" }}>
+          <img
+            src="/logo.png"
+            alt="Logo"
+            style={{
+              maxWidth: "120px",
+              height: "auto",
+              margin: "0 auto 6px auto",
+              display: "block",
+            }}
+          />
+          <div style={{ fontSize: "12px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
+          {branchName && <div style={{ fontSize: "11px", marginTop: "2px" }}>{branchName}</div>}
+          <div style={{ fontSize: "11px", fontWeight: "bold", marginTop: "4px" }}>
             ORDEN {orderNumber}
           </div>
-          <div style={{ fontSize: "12px", marginTop: "2px" }}>
+          <div style={{ fontSize: "11px", marginTop: "2px" }}>
             {isTrayOrder
               ? "ORDEN BANDEJA"
               : isSpecial
@@ -94,7 +104,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
                   ? "PARA LLEVAR"
                   : tableName ?? "MESA"}
           </div>
-          <div style={{ fontSize: "11px", marginTop: "2px" }}>
+          <div style={{ fontSize: "10px", marginTop: "2px" }}>
             {dateStr} {timeStr}
           </div>
         </div>
