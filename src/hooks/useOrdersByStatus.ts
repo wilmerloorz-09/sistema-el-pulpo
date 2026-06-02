@@ -343,7 +343,7 @@ export function useOrdersByStatus(
 
         if (paymentIds.length > 0) {
           const payments = await dbSelect<any>("payments", {
-            select: "id, notes",
+            select: "id, notes, status",
             filters: [{ column: "id", op: "in", value: paymentIds }]
           });
 
@@ -351,7 +351,7 @@ export function useOrdersByStatus(
             (payments ?? [])
               .filter((payment) => {
                 const meta = parsePaymentNotes(payment.notes);
-                return meta.reversed || meta.voided || meta.transferProofPending;
+                return meta.reversed || meta.voided || meta.transferProofPending || payment.status === "voided" || payment.status === "reversed";
               })
               .map((payment) => payment.id),
           );
@@ -364,13 +364,13 @@ export function useOrdersByStatus(
       }
 
       const paymentsForOrders = await dbSelect<any>("payments", {
-        select: "order_id, amount, notes",
+        select: "order_id, amount, notes, status",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
       for (const payment of paymentsForOrders ?? []) {
         const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided || meta.transferProofPending) continue;
+        if (meta.reversed || meta.voided || payment.status === "voided" || payment.status === "reversed" || meta.transferProofPending) continue;
         const paymentOrderId = String(payment.order_id ?? "");
         if (!paymentOrderId) continue;
         activePaidAmountByOrder[paymentOrderId] = (activePaidAmountByOrder[paymentOrderId] ?? 0) + Number(payment.amount ?? 0);

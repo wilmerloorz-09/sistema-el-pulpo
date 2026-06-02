@@ -381,8 +381,18 @@ export default function CompletedPaymentsList({
     });
   }, [filters.cashierName, groupedPayments, payments]);
 
-  const visibleTotal = visiblePayments.length;
-  const visibleCollectedTotal = visiblePayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const visibleTotal = visiblePayments.filter((p) => {
+    const normalizedStatus = (p.status?.toString() || "").toUpperCase();
+    return normalizedStatus !== "VOIDED" && normalizedStatus !== "REVERSED";
+  }).length;
+
+  const visibleCollectedTotal = visiblePayments.reduce((sum, payment) => {
+    const normalizedStatus = (payment.status?.toString() || "").toUpperCase();
+    if (normalizedStatus === "VOIDED" || normalizedStatus === "REVERSED") {
+      return sum;
+    }
+    return sum + payment.amount;
+  }, 0);
 
   const openModalForPayment = (payment: PaymentGroup) => {
     const methodSet = new Set<string>(payment.items.map((item) => item.method_name));

@@ -1,77 +1,66 @@
 const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
-const path = require('path');
 
-// Leer variables de entorno desde .env manualmente
-const envContent = fs.readFileSync(path.join(__dirname, '../.env'), 'utf8');
-const env = {};
-envContent.split('\n').forEach(line => {
-  const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
-  if (match) {
-    let value = match[2] ? match[2].trim() : '';
-    if (value.startsWith('"') && value.endsWith('"')) {
-      value = value.substring(1, value.length - 1);
-    }
-    env[match[1]] = value;
-  }
-});
+const supabaseUrl = "https://apmsuigcveqtjzbpfihb.supabase.co";
+const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwbXN1aWdjdmVxdGp6YnBmaWhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NTM2ODEsImV4cCI6MjA4ODIyOTY4MX0.feEzXT_pJrlPdoXssK1kHRX9sJCzTrZ6Qg-6TRku_dc";
 
-const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
-const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error("Faltan variables de Supabase.");
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-async function checkRecentPayments() {
-  console.log("Consultando últimos 10 pagos en Supabase...");
-  const { data, error } = await supabase
-    .from('payments')
-    .select(`
-      id,
-      amount,
-      change_amount,
-      status,
-      created_at,
-      shift_id,
-      order:orders (
-        id,
-        order_code,
-        order_number,
-        branch_id,
-        status,
-        created_at
-      )
-    `)
-    .order('created_at', { ascending: false })
-    .limit(10);
-
-  if (error) {
-    console.error("Error consultando pagos:", error);
+async function check() {
+  // Find order
+  const { data: orders, error: oErr } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('order_code', 'SUC004260602-0003');
+    
+  if (oErr) {
+    console.error("Error fetching order:", oErr);
     return;
   }
-
-  console.log("=== ÚLTIMOS 10 PAGOS EN SUPABASE ===");
-  data.forEach((p, idx) => {
-    console.log(`\n[Pago #${idx + 1}]`);
-    console.log(`- ID: ${p.id}`);
-    console.log(`- Monto: ${p.amount} (Cambio: ${p.change_amount})`);
-    console.log(`- Status Pago: ${p.status}`);
-    console.log(`- Creado en: ${p.created_at}`);
-    console.log(`- Turno (shift_id): ${p.shift_id}`);
-    if (p.order) {
-      console.log(`- Orden ID: ${p.order.id}`);
-      console.log(`- Orden Nro: ${p.order.order_number} / Código: ${p.order.order_code}`);
-      console.log(`- Sucursal (branch_id): ${p.order.branch_id}`);
-      console.log(`- Status Orden: ${p.order.status}`);
-      console.log(`- Orden creada en: ${p.order.created_at}`);
-    } else {
-      console.log(`- SIN ORDEN ASOCIADA`);
-    }
+  
+  if (!orders || orders.length === 0) {
+    console.log("No order found for SUC004260602-0003");
+    return;
+  }
+  
+  const order = orders[0];
+  console.log("Order found:", {
+    id: order.id,
+    order_code: order.order_code,
+    status: order.status,
+    paid_at: order.paid_at,
+    notes: order.notes
   });
+  
+  // Find payments
+  const { data: payments, error: pErr } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('order_id', order.id);
+    
+  if (pErr) {
+    console.error("Error fetching payments:", pErr);
+    return;
+  }
+  
+  console.log(`Found ${payments.length} payments:`);
+  for (const p of payments) {
+    console.log(`- ID: ${p.id}, status: ${p.status}, amount: ${p.amount}, notes: ${p.notes}, created_at: ${p.created_at}`);
+    
+    // Find payment items
+    const { data: items, error: iErr } = await supabase
+      .from('payment_items')
+      .select('*')
+      .eq('payment_id', p.id);
+      
+    if (iErr) {
+      console.error("  Error fetching items:", iErr);
+    } else {
+      console.log(`  Items (${items.length}):`);
+      for (const item of items) {
+        console.log(`    * ItemID: ${item.id}, order_item_id: ${item.order_item_id}, qty: ${item.quantity_paid}, total: ${item.total_amount}`);
+      }
+    }
+  }
 }
 
-checkRecentPayments();
+check();

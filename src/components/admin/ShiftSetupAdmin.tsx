@@ -2006,6 +2006,7 @@ const ShiftSetupAdmin = () => {
         { methodName: string; amount: number; paymentCount: number }
       >();
       for (const payment of payments) {
+        if (payment.status === "voided" || payment.status === "reversed") continue;
         const current = methodSummaryMap.get(payment.method_name) ?? {
           methodName: payment.method_name,
           amount: 0,

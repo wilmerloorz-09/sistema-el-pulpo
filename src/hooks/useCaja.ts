@@ -198,7 +198,7 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
   const { data: orderIdsData, error: orderIdsError } = await supabase
     .from("orders")
     .select("id")
-    .eq("shift_id", shiftId);
+    .eq("cash_shift_id", shiftId);
   
   if (orderIdsError) throw orderIdsError;
   const branchOrderIds = (orderIdsData ?? []).map((o) => o.id);
@@ -802,7 +802,7 @@ async function fetchActivePaymentItemsForOrderItems(
   if (paymentIds.length === 0) return [];
 
   const payments = await dbSelect<any>("payments", {
-    select: "id, notes",
+    select: "id, notes, status",
     filters: [{ column: "id", op: "in", value: paymentIds }],
     skipLocalCache: readOpts?.skipLocalCache,
   });
@@ -811,7 +811,7 @@ async function fetchActivePaymentItemsForOrderItems(
     (payments ?? [])
       .filter((payment) => {
         const meta = parsePaymentNotes(payment.notes);
-        return meta.reversed || meta.voided || meta.transferProofPending;
+        return meta.reversed || meta.voided || meta.transferProofPending || payment.status === "voided" || payment.status === "reversed";
       })
       .map((payment) => payment.id)
   );
@@ -843,7 +843,7 @@ async function fetchActivePaymentsTotalByOrder(
   if (orderIds.length === 0) return {};
 
   const payments = await dbSelect<any>("payments", {
-    select: "order_id, amount, notes",
+    select: "order_id, amount, notes, status",
     filters: [{ column: "order_id", op: "in", value: orderIds }],
     skipLocalCache: readOpts?.skipLocalCache,
   });
@@ -851,7 +851,7 @@ async function fetchActivePaymentsTotalByOrder(
   const totals: Record<string, number> = {};
   for (const payment of payments ?? []) {
     const meta = parsePaymentNotes(payment.notes);
-    if (meta.reversed || meta.voided || meta.transferProofPending) continue;
+    if (meta.reversed || meta.voided || meta.transferProofPending || payment.status === "voided" || payment.status === "reversed") continue;
     totals[payment.order_id] = roundMoney((totals[payment.order_id] ?? 0) + Number(payment.amount ?? 0));
   }
 
@@ -1756,7 +1756,7 @@ export function useCaja(params?: {
       }
 
       const allPaymentsInRange = await dbSelect<any>("payments", {
-        select: "id, created_at, amount, notes, order_id, payment_method_id, created_by",
+        select: "id, created_at, amount, notes, order_id, payment_method_id, created_by, status",
         filters: paymentsFilters,
         orderBy: { column: "created_at", ascending: false }
       });
@@ -1796,7 +1796,7 @@ export function useCaja(params?: {
         }),
         dbSelect<any>("payment_methods", { select: "id, name", filters: [{ column: "id", op: "in", value: methodIds }] }),
         dbSelect<any>("profiles", { select: "id, first_name, full_name, username", filters: [{ column: "id", op: "in", value: createdByIds }] }),
-        dbSelect<any>("payments", { select: "order_id, amount, notes", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
+        dbSelect<any>("payments", { select: "order_id, amount, notes, status", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
         dbSelect<any>("order_items", { select: "id, order_id, total, status, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
       ]);
 
@@ -1963,10 +1963,10 @@ export function useCaja(params?: {
       
       for (const payment of allOrderPayments) {
         const meta = parsePaymentNotes(payment.notes);
-        if (meta.voided || meta.reversed) {
+        if (meta.voided || meta.reversed || payment.status === "voided" || payment.status === "reversed") {
           orderHasVoidedPaymentsMap[payment.order_id] = true;
         }
-        if (meta.reversed || meta.voided || meta.transferProofPending) continue;
+        if (meta.reversed || meta.voided || payment.status === "voided" || payment.status === "reversed" || meta.transferProofPending) continue;
         orderPaidMap[payment.order_id] = roundMoney((orderPaidMap[payment.order_id] || 0) + Number(payment.amount));
       }
       for (const item of allOrderItems) {
@@ -2016,9 +2016,9 @@ export function useCaja(params?: {
         const pendingAmount = Math.max(0, orderTotal - paidAmount);
 
         let status: CompletedPaymentStatus = "APPLIED";
-        if (meta.reversed) {
+        if (meta.reversed || payment.status === "reversed") {
           status = "REVERSED";
-        } else if (meta.voided) {
+        } else if (meta.voided || payment.status === "voided") {
           status = "VOIDED";
         }
 
@@ -2120,7 +2120,7 @@ export function useCaja(params?: {
       const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
       for (const payment of allPaymentsInRange) {
         const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided || meta.transferProofPending) continue;
+        if (meta.reversed || meta.voided || payment.status === "voided" || payment.status === "reversed" || meta.transferProofPending) continue;
         const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
         current.amount += Number(payment.amount);
         current.paymentCount += 1;
@@ -2612,6 +2612,7 @@ export function useCaja(params?: {
     onSuccess: (_data, variables) => {
       /** Deferir invalidaciones para que la UI pueda cerrar "Cobrando" y pintar el resultado antes de los refetch. */
       queueMicrotask(() => {
+        qc.invalidateQueries({ queryKey: ["orders"] });
         qc.invalidateQueries({ queryKey: ["current-shift"] });
         qc.invalidateQueries({ queryKey: ["payable-orders"] });
         qc.invalidateQueries({ queryKey: ["express-orders"] });
@@ -2723,6 +2724,7 @@ export function useCaja(params?: {
       }
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["completed-payments"] });

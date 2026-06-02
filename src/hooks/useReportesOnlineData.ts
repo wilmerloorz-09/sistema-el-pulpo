@@ -153,7 +153,7 @@ export function useReportesPagos(filters: ReportesFilters) {
             creator:profiles!orders_created_by_fkey (id, first_name, last_name, full_name, username)
           )
         `)
-        .eq('status', 'COMPLETED'); // Solo pagos válidos/pagados (excluyendo anulados que tienen otro status)
+        .in('status', ['COMPLETED', 'active']); // Solo pagos válidos/pagados (excluyendo anulados que tienen otro status)
 
       if (branchId !== 'ALL') {
         query = query.eq('order.branch_id', branchId);

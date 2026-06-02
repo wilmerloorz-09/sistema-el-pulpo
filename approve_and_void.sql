@@ -302,6 +302,16 @@ BEGIN
           now()
         );
       END IF;
+
+      -- Update or delete the original payment items to reflect only the voided items/quantities
+      IF v_selected_qty = 0 THEN
+        DELETE FROM public.payment_items WHERE id = v_item.id;
+      ELSIF v_selected_qty < v_item.quantity_paid THEN
+        UPDATE public.payment_items
+        SET quantity_paid = v_selected_qty,
+            total_amount = ROUND((v_selected_qty * v_item.unit_price)::numeric, 2)
+        WHERE id = v_item.id;
+      END IF;
     END LOOP;
   END IF;
 

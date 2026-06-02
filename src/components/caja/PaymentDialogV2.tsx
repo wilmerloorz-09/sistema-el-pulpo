@@ -122,6 +122,8 @@ export default function PaymentDialogV2({
 
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
   const [transferInput, setTransferInput] = useState("");
+  const [wasFullyPaid, setWasFullyPaid] = useState(false);
+  const wasFullyPaidRef = useRef(false);
   const [postPaySummary, setPostPaySummary] = useState<{
     changeAmount: number;
     lines: { denomination_id: string; qty: number; value: number; label: string; image_url?: string | null }[];
@@ -194,6 +196,8 @@ export default function PaymentDialogV2({
       suppressCloseOnceRef.current = false;
       itemSplitHasSignaledRef.current = false;
       setSplitItemsDialogOpen(false);
+      setWasFullyPaid(false);
+      wasFullyPaidRef.current = false;
       return;
     }
     if (!order) return;
@@ -204,6 +208,8 @@ export default function PaymentDialogV2({
     suppressCloseOnceRef.current = false;
     itemSplitHasSignaledRef.current = false;
     setSplitItemsDialogOpen(false);
+    setWasFullyPaid(false);
+    wasFullyPaidRef.current = false;
   }, [open, order?.id]);
 
   useEffect(() => {
@@ -507,6 +513,13 @@ export default function PaymentDialogV2({
       image_url: d.image_url ?? null,
     }));
 
+    const isFullyPaid = order.is_special
+      ? (chargeTotalRounded >= Number(order.special_pending_amount ?? 0) - 0.005)
+      : (order.items ?? []).every((item) => {
+          const selectedQty = payItemQtys[item.id] ?? 0;
+          return selectedQty >= (item.quantity_pending ?? 0);
+        });
+
     const summary = {
       changeAmount,
       lines: changeLinesSnapshot,
@@ -521,6 +534,8 @@ export default function PaymentDialogV2({
         await p;
         pendingPayPromiseRef.current = null;
       }
+      wasFullyPaidRef.current = isFullyPaid;
+      setWasFullyPaid(isFullyPaid);
       setPostPaySummary(summary);
     } catch (e) {
       console.error("Payment failed", e);
@@ -1027,12 +1042,12 @@ export default function PaymentDialogV2({
                       setPostPaySummary(null);
                       setReceivedByDenom({});
                       setTransferInput("");
-                      const isFullyPaid = order 
+                      const isFullyPaidVal = wasFullyPaidRef.current || wasFullyPaid || (order 
                         ? order.is_special 
                           ? Number(order.special_pending_amount ?? 0) <= 0.005 
                           : (order.items ?? []).every((i) => Number(i.quantity_pending ?? 0) <= 0)
-                        : true;
-                      if (isFullyPaid) {
+                        : true);
+                      if (isFullyPaidVal) {
                         onClose();
                       }
                     };
@@ -1066,12 +1081,12 @@ export default function PaymentDialogV2({
                   setPostPaySummary(null);
                   setReceivedByDenom({});
                   setTransferInput("");
-                  const isFullyPaid = order 
+                  const isFullyPaidVal = wasFullyPaidRef.current || wasFullyPaid || (order 
                     ? order.is_special 
                       ? Number(order.special_pending_amount ?? 0) <= 0.005 
                       : (order.items ?? []).every((i) => Number(i.quantity_pending ?? 0) <= 0)
-                    : true;
-                  if (isFullyPaid) {
+                    : true);
+                  if (isFullyPaidVal) {
                     onClose();
                   }
                 }}
