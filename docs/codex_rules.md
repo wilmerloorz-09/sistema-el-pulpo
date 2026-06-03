@@ -53,6 +53,16 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
 - En UI post-cobro (`PaymentDialogV2`, `PaymentReceipt`, detalle en `Ordenes.tsx`), no asumir `items` ni `payments` definidos: usar `?? []` y pasar al recibo el objeto `receipt` completo que devuelve el flujo de pago.
 
+### 2.3 Clientes, campañas y promociones (2026-06-11+)
+- **Clientes:** tabla `clientes`; cobro y promociones usan `PaymentClienteCard` + `usePaymentClienteSelection`. En caja el cliente es opcional; en promociones es obligatorio.
+- **Campañas:** varias pueden estar `activa = true`. Operativo usa `listarCampanasActivas` y selector en `/promociones`; no asumir una sola campaña (`limit 1`).
+- **Elegibles:** `paid_at IS NOT NULL`, turno vía `cash_shift_id` o `payments.shift_id`, consumo mínimo con `promocionesElegibilidad` (especial / total cabecera / pagos activos). Excluir solo predicciones de la **campaña seleccionada**.
+- **Unicidad:** `UNIQUE (orden_id, campana_id)` — migración obligatoria `20260611180000_predicciones_por_campana.sql` si la misma orden participa en más de una campaña.
+- **Admin campañas:** cartelera JSON; cierre por fila con `cerrar_oferta_campana`; no reintroducir cierre global único en UI si el producto exige cierre por oferta.
+- **Permisos:** registro operativo = `usuario_puede_registrar_promociones`; gestión campañas en BD = `puede_gestionar_campanas_promocionales`. Menú Campañas en nav: `isGlobalAdmin` o `MANAGE` en `admin_global`.
+- **Migraciones del módulo (orden):** `20260611120000`, `20260611140000`, `20260611150000`, `20260611160000`, `20260611161000`, `20260611170000`, `20260611180000`.
+- Al cobrar o registrar promoción, persistir `orders.cliente_id` cuando el operador asigna o cambia cliente.
+
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
 - Mantener soporte para `TABLE`, `TAKEOUT` y `BULK` (y `EXTRA` en BD si aplica arbol dedicado).
@@ -264,6 +274,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - **Flujo Global:** Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra). Express invierte el flujo (despacho antes de cobro). Extra: despacho manual tras `PAID`; cierre con `close_extra_order`.
    - **Despacho:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; migracion batch `20260602140000` recomendada.
    - **Productos frecuentes:** reset total borra `extra_frequent_products`; reset operativo los conserva.
+   - **Promociones / clientes:** reset total borra `predicciones_clientes`, `permisos_promociones_turnos`, `campanas_promocionales` y `clientes` (orden: predicciones antes de órdenes). Reset operativo borra solo `predicciones_clientes` y `permisos_promociones_turnos` (con `cash_shift_users`); conserva campañas y catálogo de comensales.
   - **Caja unificada:** no documentar ni depender de flags `secondary_caja_*` para alcance de cobro.
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
 10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
@@ -272,6 +283,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 13. Si se toca productos frecuentes, validar migraciones `20260531130000` y `20260531140000`, contexto correcto y layout 1–2 filas en `FrequentProductCards`.
 14. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
 15. Si se toca Despacho, validar pestaña unificada Para llevar/Express, Extra en Mesa/Todos, una tarjeta por `order_code`, **Despachar todo**, batch snapshots (`20260602140000`) y tablet 1280px.
+16. Si se toca Promociones, validar selector multi-campaña, filtro `campana_id` en predicciones existentes, `paid_at` para elegibles y migración `20260611180000`.
+17. Si se toca cliente en cobro/promoción, reutilizar `PaymentClienteCard`; no duplicar búsqueda solo por cédula.
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.

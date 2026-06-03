@@ -16,7 +16,7 @@ import type {
   PaymentVoidSelectionInput,
   ShiftDenom,
 } from "@/hooks/useCaja";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed } from "lucide-react";
@@ -348,7 +348,42 @@ export default function CompletedPaymentsList({
       });
     }
 
-    return Array.from(map.values());
+    const grouped = Array.from(map.values());
+
+    // Calculate the most recent activity timestamp for each order group (by order.id, code or number)
+    const latestActivityByOrder = new Map<string, number>();
+    for (const payment of grouped) {
+      const orderKey = payment.order.id || payment.order.code || String(payment.order.number);
+      const paymentTime = new Date(payment.created_at).getTime();
+      const currentMax = latestActivityByOrder.get(orderKey) ?? 0;
+      if (paymentTime > currentMax) {
+        latestActivityByOrder.set(orderKey, paymentTime);
+      }
+    }
+
+    return grouped.sort((a, b) => {
+      const orderKeyA = a.order.id || a.order.code || String(a.order.number);
+      const orderKeyB = b.order.id || b.order.code || String(b.order.number);
+
+      const maxTimeA = latestActivityByOrder.get(orderKeyA) ?? 0;
+      const maxTimeB = latestActivityByOrder.get(orderKeyB) ?? 0;
+
+      // 1. Group together by the order's most recent activity (latest activity order first)
+      if (maxTimeA !== maxTimeB) {
+        return maxTimeB - maxTimeA;
+      }
+
+      // 2. Within the same order, put active payments (APPLIED) first and voided/reversed next
+      const isVoidedA = a.status === "VOIDED" || a.status === "REVERSED";
+      const isVoidedB = b.status === "VOIDED" || b.status === "REVERSED";
+
+      if (isVoidedA !== isVoidedB) {
+        return isVoidedA ? 1 : -1;
+      }
+
+      // 3. Secondary fallback order by individual payment created_at descending
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
   }, [payments]);
 
   const cashAggregateByGroupId = useMemo(() => {
@@ -375,7 +410,6 @@ export default function CompletedPaymentsList({
   const visiblePayments = useMemo(() => {
     if (filters.cashierName === "ALL") return groupedPayments;
     return groupedPayments.filter((payment) => {
-      // Buscar el cashier_id en las filas originales de este pago
       const matchingRow = payments.find((r) => r.id === payment.paymentId);
       return matchingRow?.cashier_id === filters.cashierName;
     });
@@ -418,7 +452,7 @@ export default function CompletedPaymentsList({
       payment: {
         paymentId: payment.paymentId,
         orderId: payment.order.id,
-        orderCode: payment.order.code,
+        orderCode: getOrderRef(payment.order.code, payment.order.number),
         orderNumber: payment.order.number,
         tableLabel,
         createdAt: payment.created_at,
@@ -583,7 +617,7 @@ export default function CompletedPaymentsList({
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{label}</p>
                           <p className="font-mono text-sm font-bold tracking-[0.08em] text-slate-700">
-                            {payment.order.code ?? `#${payment.order.number}`}
+                            {getOrderRef(payment.order.code, payment.order.number)}
                           </p>
                           <PaymentStatusBadge status={payment.status} />
                           {payment.reversal_requested && !isVoidedOrReversed && (
@@ -950,7 +984,7 @@ export default function CompletedPaymentsList({
                   splitCode: preAuthorization.paymentGroup.order.split_code,
                   isSpecial: preAuthorization.paymentGroup.order.is_special,
                   isTrayOrder: (preAuthorization.paymentGroup.order as any).is_tray_order,
-                })} - ${preAuthorization.paymentGroup.order.code ?? `#${preAuthorization.paymentGroup.order.number}`}`
+                })} - ${getOrderRef(preAuthorization.paymentGroup.order.code, preAuthorization.paymentGroup.order.number)}`
               : "Pago"
           }
           amountLabel={
@@ -996,7 +1030,7 @@ export default function CompletedPaymentsList({
               payment: {
                 paymentId: payment.paymentId,
                 orderId: payment.order.id,
-                orderCode: payment.order.code,
+                orderCode: getOrderRef(payment.order.code, payment.order.number),
                 orderNumber: payment.order.number,
                 tableLabel,
                 createdAt: payment.created_at,

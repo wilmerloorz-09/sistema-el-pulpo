@@ -10,6 +10,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { cn } from "@/lib/utils";
+import { getOrderRef } from "@/lib/orderPresentation";
 import { canOperate } from "@/lib/permissions";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
@@ -325,7 +326,7 @@ const EditarOrden = () => {
               const id = order.id;
               const badge = (currentTableName || snapshotName) 
                 ? formatTableBadge(currentTableName || snapshotName!) 
-                : order.order_number || order.order_code?.slice(-4) || "?";
+                : getOrderRef(order.order_code, order.order_number);
               
               return (
                 <button

@@ -2,11 +2,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
-import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import { usePaymentChargeFlow } from "@/components/caja/usePaymentChargeFlow";
+import PaymentClienteCard from "@/components/caja/PaymentClienteCard";
+import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
 import { Banknote, CircleCheck, Coins, Loader2, UserRound, Wallet, CopyCheck } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
@@ -49,6 +51,8 @@ export default function PaymentDialogSecondary({
   onClose,
   readOnly = false,
 }: Props) {
+  const clienteSelection = usePaymentClienteSelection(order, open);
+
   const flow = usePaymentChargeFlow({
     order,
     paymentDenominations,
@@ -58,6 +62,7 @@ export default function PaymentDialogSecondary({
     paying,
     open,
     readOnly,
+    selectedCliente: clienteSelection.selectedCliente,
   });
 
   const {
@@ -157,7 +162,7 @@ export default function PaymentDialogSecondary({
                 "Consulta de cobro"
               ) : (
                 <>
-                  Cobrar {order?.order_code ?? (order ? `#${order.order_number}` : "")}
+                  Cobrar {order ? getOrderRef(order.order_code, order.order_number) : ""}
                   {order ? (
                     <span className="mt-0.5 block text-sm font-semibold text-muted-foreground">
                       {getCajaOrderOriginLabel({
@@ -205,24 +210,34 @@ export default function PaymentDialogSecondary({
               </div>
             ) : !order ? null : (
               <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-2">
+                <PaymentClienteCard
+                  order={order}
+                  readOnly={readOnly}
+                  compact
+                  selection={clienteSelection}
+                />
+
+                <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(7.75rem,0.72fr)] gap-2">
                   <div className="flex min-w-0 flex-col justify-center rounded-2xl border border-sky-200 bg-sky-50 px-2.5 py-2">
                     <p className="text-[9px] font-semibold uppercase tracking-wide text-sky-800">Total a cobrar</p>
                     <p className="font-display text-xl font-black leading-tight tabular-nums text-sky-950 sm:text-2xl">
                       {formatCurrency(orderChargeTotal)}
                     </p>
                   </div>
-                  <div className="flex min-w-0 flex-col justify-center rounded-2xl border border-violet-200 bg-violet-50/80 px-2.5 py-2">
-                    <div className="flex items-center justify-between">
-                      <label htmlFor="secondary-transfer" className="flex items-center gap-1 text-[9px] font-semibold uppercase text-violet-800">
-                        <Banknote className="h-3 w-3 shrink-0" />
-                        Transferencia
-                      </label>
+                  <div className="flex min-w-0 max-w-[7.75rem] flex-col justify-center gap-1 rounded-2xl border border-violet-200 bg-violet-50/80 px-2 py-2">
+                    <label
+                      htmlFor="secondary-transfer"
+                      className="flex items-center gap-1 text-[9px] font-semibold uppercase leading-tight text-violet-800"
+                    >
+                      <Banknote className="h-3 w-3 shrink-0" />
+                      Transferencia
+                    </label>
+                    <div className="flex justify-end">
                       <button
                         type="button"
                         disabled={readOnly}
                         onClick={() => setTransferInput(orderChargeTotal.toFixed(2))}
-                        className="flex items-center gap-1 rounded-md border border-violet-300 bg-white/60 px-2 py-0.5 text-[9px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
+                        className="flex shrink-0 items-center gap-0.5 rounded-md border border-violet-300 bg-white/60 px-1.5 py-0.5 text-[8px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
                         title="Usar monto total"
                       >
                         <CopyCheck className="h-3 w-3" />
@@ -237,7 +252,7 @@ export default function PaymentDialogSecondary({
                       value={transferInput}
                       onChange={(e) => setTransferInput(sanitizeDecimalInput(e.target.value))}
                       disabled={readOnly}
-                      className="mt-1 h-10 rounded-xl border-violet-200 bg-white px-2 text-base font-semibold tabular-nums"
+                      className="h-9 rounded-xl border-violet-200 bg-white px-1.5 text-sm font-semibold tabular-nums"
                     />
                   </div>
                 </div>

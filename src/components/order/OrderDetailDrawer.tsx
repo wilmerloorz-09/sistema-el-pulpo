@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { getOrderRef } from "@/lib/orderPresentation";
 import OrderDetailPanel from "./OrderDetailPanel";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 
@@ -24,7 +25,7 @@ export default function OrderDetailDrawer({
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
-            {order?.order_code ?? `#${order?.order_number}`}
+            {getOrderRef(order?.order_code, order?.order_number)}
           </DialogTitle>
         </DialogHeader>
         <div className="mt-4">

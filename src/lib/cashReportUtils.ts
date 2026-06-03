@@ -1,3 +1,4 @@
+import { getOrderRef } from "@/lib/orderPresentation";
 import { Database } from "@/integrations/supabase/types";
 
 export type CashShiftSnapshot = {
@@ -221,7 +222,7 @@ export const buildCashClosureReportHtml = (params: {
           cashier_name: payment.cashier_name,
           amount: payment.amount,
           method_name: payment.method_name,
-          order_ref: payment.order_code ?? String(payment.order_number ?? "").padStart(4, "0"),
+          order_ref: getOrderRef(payment.order_code, payment.order_number),
           table_name: payment.table_name,
           status: translatePaymentStatus(payment.status),
           notes: payment.notes,

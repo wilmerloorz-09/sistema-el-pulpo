@@ -6,6 +6,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { generateUUID } from "@/lib/uuid";
 import { dedupePaymentMethods, isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
 import { computeLineTotalWithContainer, roundMoney } from "@/lib/paymentQuantity";
+import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
@@ -13,6 +14,8 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 import { orderIsPayableInCaja } from "@/lib/orderFlow";
+import { cleanOrderCode } from "@/lib/orderPresentation";
+
 
 export const ensureTableSnapshot = async (orderId: string) => {
   try {
@@ -230,7 +233,7 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
     amount: Number(row.amount ?? 0),
     notes: row.notes,
     method_name: row.payment_methods?.name || "N/D",
-    order_code: row.orders?.order_code,
+    order_code: cleanOrderCode(row.orders?.order_code),
     order_number: row.orders?.order_number,
     table_name: row.orders?.table_name_snapshot,
     cashier_name: row.profiles?.full_name || "N/D",
@@ -297,6 +300,15 @@ export async function fetchShiftSnapshot(shiftId: string): Promise<CashShiftSnap
   };
 }
 
+import type { Cliente } from "@/types/cliente";
+
+export interface PayableOrderCliente {
+  id: string;
+  cedula: string;
+  nombres: string;
+  apellidos: string;
+}
+
 export interface PayableOrder {
   id: string;
   order_number: number | null;
@@ -307,6 +319,7 @@ export interface PayableOrder {
   locked_for_editing?: boolean;
   created_by: string | null;
   created_by_name: string | null;
+  cliente?: PayableOrderCliente | null;
   special_total_manual: number | null;
   special_real_total: number;
   special_paid_amount: number;
@@ -375,6 +388,8 @@ export interface PayOrderParams {
   cashReceivedDenoms: { denomination_id: string; qty: number }[];
   cashChangeDenoms: { denomination_id: string; qty: number }[];
   preparedTransferProofSession?: PreparedTransferProofSession | null;
+  /** Comensal a vincular con la orden al confirmar el cobro. */
+  clienteId?: string | null;
 }
 
 export interface PreparedTransferProofSession {
@@ -1192,7 +1207,7 @@ export function useCaja(params?: {
           amount: Number(payment?.amount ?? 0),
           order_id: payment?.order_id ?? "",
           order_number: order?.order_number ?? null,
-          order_code: order?.order_code ?? null,
+          order_code: cleanOrderCode(order?.order_code) ?? null,
           table_name: table?.name || order?.table_name_snapshot || null,
           payment_method_name: method?.name ?? "Transferencia",
         };
@@ -1441,7 +1456,7 @@ export function useCaja(params?: {
 
       const orders = (
         await dbSelect<any>("orders", {
-          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, table_name_snapshot, locked_for_editing, notes",
+          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, table_name_snapshot, locked_for_editing, notes, cliente_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] },
@@ -1488,6 +1503,19 @@ export function useCaja(params?: {
           })
         : [];
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+
+      const clienteIds = Array.from(
+        new Set(activeOrders.map((order) => order.cliente_id).filter(Boolean)),
+      ) as string[];
+      const clientesRows = clienteIds.length > 0
+        ? await dbSelect<PayableOrderCliente>("clientes", {
+            select: "id, cedula, nombres, apellidos",
+            filters: [{ column: "id", op: "in", value: clienteIds }],
+            skipLocalCache: true,
+          })
+        : [];
+      const clientesMap = Object.fromEntries(clientesRows.map((cliente) => [cliente.id, cliente]));
+
       const items = await dbSelect<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
         filters: [{ column: "order_id", op: "in", value: orderIds }]
@@ -1610,13 +1638,14 @@ export function useCaja(params?: {
           return {
             id: o.id,
             order_number: o.order_number,
-            order_code: (o as any).order_code ?? null,
+            order_code: cleanOrderCode((o as any).order_code) ?? null,
             order_type: o.order_type,
             is_special: isSpecial,
             is_tray_order: isTrayOrder,
             locked_for_editing: Boolean(o.locked_for_editing),
             created_by: o.created_by ?? null,
             created_by_name: o.created_by ? (creatorNameMap[o.created_by] ?? "Usuario") : null,
+            cliente: o.cliente_id ? (clientesMap[o.cliente_id] ?? null) : null,
             special_total_manual: specialManualTotal,
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
@@ -1747,8 +1776,15 @@ export function useCaja(params?: {
       const paymentsFilters: any[] = [
         { column: "order_id", op: "in", value: branchOrderIds },
         { column: "created_at", op: "gte", value: effectiveStartIso },
-        { column: "created_at", op: "lte", value: effectiveEndIso },
       ];
+
+      // Solo aplicar límite superior de fecha si el turno ya está cerrado.
+      // Si el turno está abierto, no filtramos por fecha de cierre para evitar
+      // excluir pagos de reemplazo creados por el trigger del servidor,
+      // cuyo created_at puede ser ligeramente posterior al timestamp del cliente.
+      if (shiftQuery.data?.closed_at) {
+        paymentsFilters.push({ column: "created_at", op: "lte", value: effectiveEndIso });
+      }
 
       const filterCashierId = completedPaymentsFilters?.cashierName ?? "ALL";
       if (filterCashierId !== "ALL") {
@@ -1764,6 +1800,7 @@ export function useCaja(params?: {
       if (!allPaymentsInRange || allPaymentsInRange.length === 0) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
+
 
       const orderIdSet = new Set<string>(allPaymentsInRange.map((p) => p.order_id));
       const orderIds = Array.from(orderIdSet);
@@ -2003,11 +2040,26 @@ export function useCaja(params?: {
         return matchedOpening?.status ?? null;
       };
 
+      // Mapa rápido de id→payment para resolver reemplazos
+      const paymentMapById: Record<string, any> = {};
+      for (const p of allPaymentsInRange) {
+        paymentMapById[p.id] = p;
+      }
+
       for (const payment of allPaymentsInRange) {
         const order = ordersMap[payment.order_id];
         if (!order) continue;
 
         const meta = parsePaymentNotes(payment.notes);
+
+        // Si este pago es un reemplazo (REPLACEMENT_FOR_VOID:...), usamos la info
+        // del pedido ORIGINAL para mostrarlo con el mismo código/mesa que el pago anulado.
+        const replacedPaymentId = String(payment.notes ?? "").match(/^REPLACEMENT_FOR_VOID:([a-f0-9-]+)/i)?.[1] ?? null;
+        const originalPayment = replacedPaymentId ? paymentMapById[replacedPaymentId] : null;
+        const originalOrder = originalPayment ? ordersMap[originalPayment.order_id] : null;
+        // displayOrder: para código/mesa usamos el pedido original; para totales usamos el sucesor
+        const displayOrder = originalOrder ?? order;
+
         const orderRealTotal = orderRealTotalMap[payment.order_id] ?? 0;
         const orderTotal = order.is_special && order.special_total_manual != null
           ? Number(order.special_total_manual)
@@ -2023,6 +2075,7 @@ export function useCaja(params?: {
         }
 
         const itemRows = paymentItemsByPayment[payment.id] ?? [];
+
         if (itemRows.length > 0) {
           for (const paymentItem of itemRows) {
             const item = itemsMap[paymentItem.order_item_id];
@@ -2035,22 +2088,22 @@ export function useCaja(params?: {
               cashier_name: profilesMap[payment.created_by] ?? "Usuario",
               amount: Number(payment.amount),
               method_name: methodsMap[payment.payment_method_id] ?? "Metodo",
-              order_id: order.id,
-              order_number: order.order_number,
-              order_code: (order as any).order_code ?? null,
-              order_type: order.order_type,
-              is_special: Boolean(order.is_special),
-              created_by: (order as any).created_by ?? null,
-              created_by_name: (order as any).created_by ? (orderCreatorNameMap[(order as any).created_by] ?? "Usuario") : null,
+              order_id: displayOrder.id,
+              order_number: displayOrder.order_number,
+              order_code: cleanOrderCode((displayOrder as any).order_code) ?? null,
+              order_type: displayOrder.order_type,
+              is_special: Boolean(displayOrder.is_special),
+              created_by: (displayOrder as any).created_by ?? null,
+              created_by_name: (displayOrder as any).created_by ? (orderCreatorNameMap[(displayOrder as any).created_by] ?? "Usuario") : null,
               table_name:
-                order.order_type === "DINE_IN" && order.table_id
-                  ? resolveTableName(order.table_id, (order as any).table_name_snapshot)
+                displayOrder.order_type === "DINE_IN"
+                  ? resolveTableName(displayOrder.table_id, (displayOrder as any).table_name_snapshot)
                   : null,
-              split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
+              split_code: displayOrder.split_id ? splitsMap[displayOrder.split_id] ?? null : null,
               order_total: orderTotal,
               order_paid_amount: paidAmount,
               order_pending_amount: pendingAmount,
-              order_status: order.status,
+              order_status: displayOrder.status,
               status,
               notes: payment.notes,
               tendered_amount: meta.tenderedAmount,
@@ -2081,22 +2134,22 @@ export function useCaja(params?: {
             cashier_name: profilesMap[payment.created_by] ?? "Usuario",
             amount: Number(payment.amount),
             method_name: methodsMap[payment.payment_method_id] ?? "Metodo",
-            order_id: order.id,
-            order_number: order.order_number,
-            order_code: (order as any).order_code ?? null,
-            order_type: order.order_type,
-            is_special: Boolean(order.is_special),
-            created_by: (order as any).created_by ?? null,
-            created_by_name: (order as any).created_by ? (orderCreatorNameMap[(order as any).created_by] ?? "Usuario") : null,
+            order_id: displayOrder.id,
+            order_number: displayOrder.order_number,
+            order_code: cleanOrderCode((displayOrder as any).order_code) ?? null,
+            order_type: displayOrder.order_type,
+            is_special: Boolean(displayOrder.is_special),
+            created_by: (displayOrder as any).created_by ?? null,
+            created_by_name: (displayOrder as any).created_by ? (orderCreatorNameMap[(displayOrder as any).created_by] ?? "Usuario") : null,
             table_name:
-              order.order_type === "DINE_IN" && order.table_id
-                ? resolveTableName(order.table_id, (order as any).table_name_snapshot)
+              displayOrder.order_type === "DINE_IN"
+                ? resolveTableName(displayOrder.table_id, (displayOrder as any).table_name_snapshot)
                 : null,
-            split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
+            split_code: displayOrder.split_id ? splitsMap[displayOrder.split_id] ?? null : null,
             order_total: orderTotal,
             order_paid_amount: paidAmount,
             order_pending_amount: pendingAmount,
-            order_status: order.status,
+            order_status: displayOrder.status,
             status,
             notes: payment.notes,
             tendered_amount: meta.tenderedAmount,
@@ -2117,24 +2170,7 @@ export function useCaja(params?: {
           });
         }
       }
-      const summaryMap = new Map<string, { amount: number; paymentCount: number }>();
-      for (const payment of allPaymentsInRange) {
-        const meta = parsePaymentNotes(payment.notes);
-        if (meta.reversed || meta.voided || payment.status === "voided" || payment.status === "reversed" || meta.transferProofPending) continue;
-        const current = summaryMap.get(payment.payment_method_id) ?? { amount: 0, paymentCount: 0 };
-        current.amount += Number(payment.amount);
-        current.paymentCount += 1;
-        summaryMap.set(payment.payment_method_id, current);
-      }
-
-      const methodSummary = Array.from(summaryMap.entries())
-        .map(([methodId, totals]) => ({
-          methodId,
-          methodName: methodsMap[methodId] ?? "Metodo",
-          amount: roundMoney(totals.amount),
-          paymentCount: totals.paymentCount,
-        }))
-        .sort((a, b) => b.amount - a.amount || a.methodName.localeCompare(b.methodName));
+      const methodSummary = buildMethodSummaryFromPayments(allPaymentsInRange, methodsMap);
 
       const collectedTotal = roundMoney(methodSummary.reduce((sum, row) => sum + row.amount, 0));
 
@@ -2211,7 +2247,7 @@ export function useCaja(params?: {
   });
 
   const payOrder = useMutation({
-    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession }: PayOrderParams) => {
+    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession, clienteId }: PayOrderParams) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
@@ -2604,6 +2640,9 @@ export function useCaja(params?: {
         shouldMarkSpecialAsPaid
           ? dbUpdate("orders", orderId, { status: "PAID", paid_at: now })
           : Promise.resolve(),
+        clienteId
+          ? dbUpdate("orders", orderId, { cliente_id: clienteId })
+          : Promise.resolve(),
       ]);
 
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */
@@ -2622,6 +2661,7 @@ export function useCaja(params?: {
         qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
         qc.invalidateQueries({ queryKey: ["tables-with-status"] });
         qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+        qc.invalidateQueries({ queryKey: ["promociones-ordenes-elegibles"] });
         qc.invalidateQueries({ queryKey: getOrderQueryKey(variables.orderId) });
         toast.success("Pago registrado");
       });

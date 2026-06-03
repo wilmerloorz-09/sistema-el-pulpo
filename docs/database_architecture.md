@@ -106,6 +106,40 @@
 - `payment_capture_requests`
 - `payment_proofs`
 
+### 7. Clientes, campañas y predicciones (2026-06-11+)
+- `clientes`
+  - Comensales; cédula única (`^[0-9]{10}$`); `sexo` ∈ `M`/`F`.
+  - No reemplaza `profiles`; usuarios internos siguen en Auth + `profiles`.
+- `orders.cliente_id`
+  - FK opcional a `clientes`; nullable; asignable en cobro o al registrar promoción.
+- `campanas_promocionales`
+  - `consumo_minimo`, `porcentaje_descuento`, `descuento_maximo`, `dias_vigencia_descuento`.
+  - `cartelera_ofertas` / `ofertas_cumplidas`: JSON arrays.
+  - `activa`: pueden coexistir varias campañas activas.
+- `predicciones_clientes`
+  - Participación: `campana_id`, `orden_id`, `cliente_id`, `oferta_seleccionada_id`, `estado_prediccion` (`PENDIENTE`|`GANADA`|`PERDIDA`).
+  - Cupón: `codigo_cupon` único, `fecha_caducidad_cupon`, `cupon_usado_el`.
+  - Unicidad: **`UNIQUE (orden_id, campana_id)`** (`predicciones_orden_campana_unica`, migración `20260611180000`). Reemplaza la regla antigua de una sola predicción por orden.
+- `permisos_promociones_turnos`
+  - Una fila por `cash_shift_users.id`; `puede_registrar_promociones` (default `true`).
+  - Trigger al insertar en `cash_shift_users` crea permiso automático.
+
+#### RPCs y permisos
+- `usuario_puede_registrar_promociones(user_id)`: turno abierto + usuario habilitado en `cash_shift_users` + flag en `permisos_promociones_turnos`.
+- `puede_gestionar_campanas_promocionales(user_id)`: admin global o rol con MANAGE en `admin_sucursal` / `admin_global`.
+- `cerrar_oferta_campana(campana_id, oferta_id, es_ganadora)`: califica predicciones de esa oferta; ganadoras reciben cupón (`generar_codigo_cupon_promocion`).
+- `cerrar_ofertas_campana(campana_id, ofertas_ganadoras jsonb)`: cierre batch legacy (admin).
+- `generar_codigo_cupon_promocion()`: prefijo `CPN-`.
+
+#### RLS (resumen)
+- `campanas_promocionales`: SELECT operativo en turno o global admin; escritura vía políticas de `20260611161000` (`puede_gestionar_campanas_promocionales`).
+- `predicciones_clientes`: SELECT/INSERT operativo con `usuario_puede_registrar_promociones`; UPDATE solo global admin (cupones/estados masivos).
+- `permisos_promociones_turnos`: admin global para mantenimiento; SELECT operativo en turno.
+
+#### Lectura de elegibles (cliente / app)
+- No asumir `orders.total` poblado: puede ser null; el consumo efectivo usa pagos del turno (`payments.shift_id`, montos activos).
+- Órdenes pagadas y despachadas: `paid_at IS NOT NULL` aunque `status = 'KITCHEN_DISPATCHED'`.
+
 ## Reglas vigentes por area
 
 ### Catalogo y venta
@@ -116,6 +150,7 @@
 - `BULK` puede operar con `price = NULL` y reglas de entrega en tablas auxiliares.
 
 ### Ordenes
+- `orders.cliente_id` vincula al comensal opcional; no confundir con `orders.created_by` (usuario interno que creó la orden).
 - `orders.created_by` es la fuente del usuario que genero la orden y debe acompañar las lecturas operativas visibles.
 - Para mostrar el nombre, resolver contra `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`, con fallback `Usuario`.
 - `orders.menu_scope` conserva el arbol visual usado por la orden.

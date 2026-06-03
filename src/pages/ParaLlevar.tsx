@@ -11,6 +11,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { canOperate } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { getOrderRef } from "@/lib/orderPresentation";
 import {
   compareSiblingOrderTabs,
   fetchOrderDetail,
@@ -53,8 +54,10 @@ const seedTakeoutOrderCache = (
 const getTakeoutDisplayNumber = (order: SiblingOrder, fallbackIndex: number) =>
   Number(order.table_order_position ?? 0) || Number(order.order_number ?? 0) || fallbackIndex + 1;
 
-const getTakeoutReference = (order: SiblingOrder, fallbackIndex: number) =>
-  order.order_code ?? (order.order_number ? `#${order.order_number}` : `Orden ${getTakeoutDisplayNumber(order, fallbackIndex)}`);
+const getTakeoutReference = (order: SiblingOrder, fallbackIndex: number) => {
+  const ref = getOrderRef(order.order_code, order.order_number);
+  return ref === "Borrador" ? `Orden ${getTakeoutDisplayNumber(order, fallbackIndex)}` : ref;
+};
 
 const ParaLlevar = () => {
   const navigate = useNavigate();

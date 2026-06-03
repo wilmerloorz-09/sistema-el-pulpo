@@ -237,7 +237,39 @@
   - OCR basico opcional con `tesseract`
 - `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo.
 
-### 13. Usuarios
+### 13. Clientes, campañas y promociones (2026-06-11+)
+
+#### Clientes (comensales)
+- Tabla `clientes` independiente de `profiles` / Auth.
+- Rutas admin: `/clientes` (CRUD con validación en `src/lib/clientesValidacion.ts`).
+- Vinculo transaccional: `orders.cliente_id` (nullable), asignado en cobro o al confirmar promoción.
+
+#### Cobro — selección de cliente
+- Hook compartido: `usePaymentClienteSelection` (`OrdenClienteVinculable`: `id` + `cliente` opcional).
+- UI compartida: `PaymentClienteCard` en `PaymentDialogV2` (opcional) y en `PrediccionOrdenDialog` (requerido).
+- Búsqueda en catálogo por cédula, nombre o correo; alta con `ClienteFormulario`.
+
+#### Campañas (administración)
+- Rutas: `/campanas`, `/campanas/:campanaId` (redirección legacy `/admin/campanas` → `/campanas`).
+- Servicios: `campanasPromocionalesDb.ts`; validación: `campanasValidacion.ts`.
+- Modelo: `campanas_promocionales` con `cartelera_ofertas` (JSON: `id_oferta`, `descripcion`, `bloqueo_at`, `cuota`, `resultado`) y `ofertas_cumplidas`.
+- Varias campañas pueden tener `activa = true` a la vez.
+- Cierre por oferta: RPC `cerrar_oferta_campana(campana_id, oferta_id, es_ganadora)`; permiso `puede_gestionar_campanas_promocionales` (admin global o admin sucursal con MANAGE en BD; menú Campañas: global admin o `admin_global` MANAGE).
+- Legacy global `cerrar_ofertas_campana(jsonb)` sigue en BD; la UI operativa usa cierre individual.
+
+#### Promociones (operativo)
+- Ruta: `/promociones` (`Promociones.tsx` + `PromocionesCrud`).
+- Gate: `useBranchShiftGate().puedeRegistrarPromociones` ← RPC `usuario_puede_registrar_promociones`.
+- Hook: `usePromociones` — `listarCampanasActivas`, campaña seleccionada, `listarOrdenesElegiblesPromociones`.
+- Elegibilidad (`prediccionesClientesDb.ts` + `promocionesElegibilidad.ts`):
+  - Turno: `cash_shift_id` o pagos con `payments.shift_id` del turno abierto.
+  - Cobro total: `orders.paid_at IS NOT NULL` (no solo `status = 'PAID'`).
+  - Consumo: `special_total_manual` → `orders.total` → suma pagos activos (excluye notas `VOIDED`/`REVERSED`/transfer pending).
+  - Sin fila en `predicciones_clientes` para esa `campana_id`.
+- Una orden puede participar en **cada** campaña activa como máximo una vez (`UNIQUE (orden_id, campana_id)` tras `20260611180000`).
+- Etiquetas de tipo de orden en tarjetas: `getOrderTypeLabel` (`DINE_IN` → Mesa, etc.).
+
+### 14. Usuarios
 - Crear/editar usuario incluye datos de contacto extendidos: nombres, apellidos, cedula, direccion, telefono.
 - `profiles.first_name` y `profiles.last_name` son los campos administrables para usuario.
 - `profiles.full_name` queda como compatibilidad legacy y debe reflejar `first_name` mediante `sync_profile_full_name()`.
@@ -292,10 +324,22 @@
 - Extra:
   - `src/pages/Extra.tsx`
   - `src/lib/extraOrders.ts`
+- Clientes y promociones:
+  - `src/services/clientesDb.ts`
+  - `src/services/campanasPromocionalesDb.ts`
+  - `src/services/prediccionesClientesDb.ts`
+  - `src/hooks/usePromociones.ts`
+  - `src/hooks/usePaymentClienteSelection.ts`
+  - `src/components/caja/PaymentClienteCard.tsx`
+  - `src/components/promociones/PromocionesCrud.tsx`
+  - `src/components/promociones/PrediccionOrdenDialog.tsx`
+  - `src/components/campanas/*`
+  - `src/lib/promocionesElegibilidad.ts`
 - Shell y gate:
   - `src/components/AppLayout.tsx`
   - `src/components/BottomNav.tsx`
   - `src/hooks/useBranchShiftGate.ts`
+  - `src/components/nav/useVisibleNavItems.tsx` (grupo PROMOCIONES)
 
 ## Principios vigentes
 1. Refactor incremental, no corte brusco del modelo legacy.
@@ -322,6 +366,9 @@
 22. **Extra:** Tras cobrar queda `PAID` y requiere despacho manual en Despacho (Mesa/Todos); cierre con `close_extra_order`. No reactivar auto-despacho en `sync_order_payment_state_internal` sin acuerdo de producto.
 23. **Despacho — pestañas:** Mantener pestaña unificada Para llevar/Express; Extra en Mesa y Todos; no reintroducir pestaña Express separada.
 24. **Productos frecuentes:** Cambios en admin deben respetar `context` y unique `(branch_id, context, display_order)`; UI en caja usa 1 fila si cabe, max 2 filas con scroll.
+25. **Promociones:** Mantener selector de campaña cuando hay varias activas; no volver a `obtenerCampanaActiva` con `limit 1` en operativo.
+26. **Cliente en promociones/cobro:** Reutilizar `PaymentClienteCard`; no duplicar flujo solo por cédula de 10 dígitos.
+27. **Elegibles:** Filtrar predicciones por `campana_id`; criterio de pago = `paid_at`, no solo cabecera `PAID`.
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.

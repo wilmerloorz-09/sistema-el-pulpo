@@ -10,6 +10,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { canOperate } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { getOrderRef } from "@/lib/orderPresentation";
 import {
   closeExtraOrder,
   extraOrderCanCloseFromHome,
@@ -56,8 +57,10 @@ const seedExtraOrderCache = (
   });
 };
 
-const getExtraReference = (order: SiblingOrder, fallbackIndex: number) =>
-  order.order_code ?? (order.order_number ? `#${order.order_number}` : `Orden ${fallbackIndex + 1}`);
+const getExtraReference = (order: SiblingOrder, fallbackIndex: number) => {
+  const ref = getOrderRef(order.order_code, order.order_number);
+  return ref === "Borrador" ? `Orden ${fallbackIndex + 1}` : ref;
+};
 
 const Extra = () => {
   const navigate = useNavigate();

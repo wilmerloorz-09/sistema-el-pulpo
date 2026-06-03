@@ -29,6 +29,27 @@ export function getOrderOriginLabel(params: {
   return tableName;
 }
 
+/** Etiqueta en español del tipo de orden (valor enum en BD). */
+export function getOrderTypeLabel(
+  orderType: string | null | undefined,
+  options?: { isSpecial?: boolean | null; isTrayOrder?: boolean | null },
+): string {
+  if (options?.isTrayOrder) return "Orden bandeja";
+  if (options?.isSpecial) return "Orden especial";
+  switch (orderType) {
+    case "DINE_IN":
+      return "Mesa";
+    case "TAKEOUT":
+      return "Para llevar";
+    case "EXPRESS":
+      return "Express";
+    case "EXTRA":
+      return "Extra";
+    default:
+      return orderType?.replace(/_/g, " ").trim() || "Orden";
+  }
+}
+
 export function getOrderKind(params: {
   orderType: string | null | undefined;
   isSpecial?: boolean | null | undefined;
@@ -42,11 +63,44 @@ export function getOrderKind(params: {
   return "table" as const;
 }
 
+export function cleanOrderCode(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return code.replace(/-V[a-f0-9]{4}$/i, "");
+}
+
 export function getOrderRef(
   orderCode: string | null | undefined,
   orderNumber: number | null | undefined,
 ): string {
-  if (orderCode && orderCode.trim()) return orderCode;
-  if (orderNumber && orderNumber > 0) return `#${orderNumber}`;
+  const n = Number(orderNumber ?? 0);
+  if (n > 0) {
+    return `#${String(n).padStart(4, "0").slice(-4)}`;
+  }
+
+  const clean = cleanOrderCode(orderCode);
+  if (clean && clean.trim()) return clean;
   return "Borrador";
 }
+
+/** Número corto para cabeceras/pestañas de mesa (p. ej. "0001"). */
+export function getOrderMesaHeaderNumber(params: {
+  orderCode?: string | null;
+  orderNumber?: number | null;
+  tableOrderPosition?: number | null;
+}): string {
+  const orderNumber = Number(params.orderNumber ?? 0);
+  if (orderNumber > 0) {
+    return String(orderNumber).padStart(4, "0").slice(-4);
+  }
+
+  const cleaned = cleanOrderCode(params.orderCode);
+  if (cleaned) {
+    const suffix = cleaned.split("-").pop()?.trim();
+    if (suffix && /^\d+$/.test(suffix)) {
+      return suffix.padStart(4, "0").slice(-4);
+    }
+  }
+
+  return String(Number(params.tableOrderPosition ?? 1));
+}
+

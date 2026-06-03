@@ -3,7 +3,7 @@ import { OrderItemSummary, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, UtensilsCrossed, ShoppingBag, DollarSign, Package, Eye, Ban, UserRound } from "lucide-react";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 const CARD_SUMMARY_LIMITS = {
@@ -189,7 +189,7 @@ export function OrderCardBase({
             })}
           </span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">
-            {order.order_code ?? String(order.order_number)}
+            {getOrderRef(order.order_code, order.order_number)}
           </span>
         </div>
         <div className="flex items-center gap-2">

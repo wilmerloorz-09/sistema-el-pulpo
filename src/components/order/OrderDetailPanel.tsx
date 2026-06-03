@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { Clock, UtensilsCrossed, ShoppingBag, Package, DollarSign, X, Ban, UserRound } from "lucide-react";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 
 interface OrderItem {
@@ -122,7 +122,7 @@ export default function OrderDetailPanel({
           )}
           <span className="min-w-fit shrink-0 font-display text-sm font-bold">{label}</span>
           <span className="shrink-0 font-display text-xs text-muted-foreground">
-            {order.order_code ?? String(order.order_number ?? "")}
+            {getOrderRef(order.order_code, order.order_number)}
           </span>
         </div>
         {"created_by_name" in order && order.created_by_name && (

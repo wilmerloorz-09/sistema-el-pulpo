@@ -1,32 +1,8 @@
 import { forwardRef } from "react";
 import { roundMoney } from "@/lib/paymentQuantity";
+import type { PaymentReceiptData } from "@/lib/paymentReceiptData";
 
-interface ReceiptItem {
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  amount: number;
-}
-
-interface PaymentMethodDetail {
-  methodName: string;
-  appliedAmount: number;
-}
-
-interface PaymentReceiptProps {
-  orderNumber: string | number;
-  tableName?: string;
-  orderType?: string;
-  isSpecial?: boolean;
-  isTrayOrder?: boolean;
-  items: ReceiptItem[];
-  payments: PaymentMethodDetail[];
-  totalAmount: number;
-  totalReceived: number;
-  changeAmount: number;
-  createdAt: string;
-  branchName?: string;
-}
+interface PaymentReceiptProps extends PaymentReceiptData {}
 
 const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
   (
@@ -43,6 +19,8 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
       changeAmount,
       createdAt,
       branchName,
+      clienteCedula,
+      clienteNombre,
     },
     ref,
   ) => {
@@ -107,6 +85,12 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
             <div style={{ fontSize: "10px" }}>
               {dateStr} {timeStr}
             </div>
+            {clienteNombre ? (
+              <div style={{ fontSize: "10px", marginTop: "2px" }}>
+                <div>Cliente: {clienteNombre}</div>
+                {clienteCedula ? <div>Cédula: {clienteCedula}</div> : null}
+              </div>
+            ) : null}
           </div>
         </div>
 

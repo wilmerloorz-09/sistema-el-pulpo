@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from "@/components/ui/button";
 import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getOrderRef } from "@/lib/orderPresentation";
 
 type TabType = "sent" | "draft" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
 
@@ -337,7 +338,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
             <AlertDialogTitle>Autorizar anulacion</AlertDialogTitle>
             <AlertDialogDescription>
               {approvalTarget
-                ? `Vas a autorizar la solicitud de anulacion de ${approvalTarget.order_code ?? `#${approvalTarget.order_number}`}.`
+                ? `Vas a autorizar la solicitud de anulacion de ${getOrderRef(approvalTarget.order_code, approvalTarget.order_number)}.`
                 : "Confirma si deseas autorizar esta solicitud de anulacion."}
             </AlertDialogDescription>
           </AlertDialogHeader>

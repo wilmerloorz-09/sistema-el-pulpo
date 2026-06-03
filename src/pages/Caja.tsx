@@ -54,6 +54,7 @@ import {
 } from "@/lib/cashReportUtils";
 import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
+import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   scope: "ALL",
@@ -165,7 +166,7 @@ const Caja = () => {
 
       const [payments, methods] = await Promise.all([
         dbSelect<any>("payments", {
-          select: "id, amount, payment_method_id, created_at, created_by, notes",
+          select: "id, amount, payment_method_id, created_at, created_by, notes, status",
           filters: [
             { column: "created_by", op: "eq", value: user.id },
             { column: "created_at", op: "gte", value: shift.opened_at },
@@ -179,26 +180,7 @@ const Caja = () => {
       ]);
 
       const methodNameById = Object.fromEntries((methods ?? []).map((m: any) => [m.id, m.name]));
-      const byMethod = new Map<string, { amount: number; paymentCount: number }>();
-      for (const p of (payments ?? []) as any[]) {
-        // Nota: si hay marcadores de reverso/anulación en notes, el resumen debería excluirlos;
-        // el comportamiento actual de ShiftSummary es mostrar lo "cobrado" por este cajero.
-        const methodId = String(p.payment_method_id ?? "");
-        if (!methodId) continue;
-        const curr = byMethod.get(methodId) ?? { amount: 0, paymentCount: 0 };
-        curr.amount += Number(p.amount ?? 0);
-        curr.paymentCount += 1;
-        byMethod.set(methodId, curr);
-      }
-
-      return Array.from(byMethod.entries())
-        .map(([methodId, totals]) => ({
-          methodId,
-          methodName: methodNameById[methodId] ?? "Metodo",
-          amount: Number(totals.amount.toFixed(2)),
-          paymentCount: totals.paymentCount,
-        }))
-        .sort((a, b) => b.amount - a.amount || a.methodName.localeCompare(b.methodName));
+      return buildMethodSummaryFromPayments(payments ?? [], methodNameById);
     },
     refetchInterval: 10000,
   });

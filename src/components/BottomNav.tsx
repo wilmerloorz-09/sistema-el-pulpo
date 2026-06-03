@@ -48,6 +48,12 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
   const fromExpress = location.pathname === "/ordenes" && searchParams.get("origin") === "express";
   const fromExtra = location.pathname === "/ordenes" && searchParams.get("origin") === "extra";
   const fromOrdenEspecial = location.pathname === "/ordenes" && searchParams.get("origin") === "orden-especial";
+  const fromClientes =
+    location.pathname === "/clientes" || searchParams.get("origin") === "clientes";
+  const fromPromociones =
+    location.pathname === "/promociones" || searchParams.get("origin") === "promociones";
+  const fromCampanas =
+    location.pathname.startsWith("/campanas") || searchParams.get("origin") === "campanas";
 
   if (visibleItems.length === 0) {
     return null;
@@ -68,7 +74,17 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
         {bottomNavItems.map((item) => {
           const isCaja = isCajaFinanceNavPath(item.to);
 
-          let isItemActive = location.pathname === item.to;
+          let isItemActive = item.to.startsWith("/clientes")
+            ? location.pathname === "/clientes"
+            : item.to.startsWith("/promociones")
+              ? location.pathname === "/promociones"
+            : item.to.startsWith("/campanas")
+              ? location.pathname.startsWith("/campanas")
+            : item.to.includes("?")
+              ? location.pathname + location.search === item.to
+              : item.end
+                ? location.pathname === item.to && location.search === ""
+                : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
           if (fromMesas) {
             if (item.to === "/mesas") isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
@@ -91,6 +107,18 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
           }
           if (fromOrdenEspecial) {
             if (item.to === "/orden-especial") isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
+          if (fromClientes) {
+            if (item.to.startsWith("/clientes")) isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
+          if (fromPromociones) {
+            if (item.to.startsWith("/promociones")) isItemActive = true;
+            if (item.to === "/ordenes") isItemActive = false;
+          }
+          if (fromCampanas) {
+            if (item.to.startsWith("/campanas")) isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
           }
 

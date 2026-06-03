@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- RESET TOTAL DEL SISTEMA POS PARA PRUEBAS DESDE CERO (MODO DESTRUCTIVO)
 -- Archivo pensado para ejecutarse manualmente en Supabase SQL Editor.
 --
@@ -16,6 +16,9 @@
 --   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestaÃ±a unificada Para llevar / Express)
 --   - caja unificada: el alcance “todas/mías/por usuario” es UI (no flags `secondary_caja_*`)
 --   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
+--   - incluye comensales (`clientes`), vinculo opcional `orders.cliente_id` y participaciones en campañas (`predicciones_clientes`)
+--   - incluye campañas promocionales activas/inactivas, cartelera JSON, cierre de ofertas y cupones generados
+--   - incluye permisos por turno para registrar promociones (`permisos_promociones_turnos`, auto-creado al habilitar usuario en turno)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
 --   - incluye bloqueos de edicion `orders.locked_for_editing` y cualquier sesion buffered de `Editar Orden` operando de manera In-Situ
@@ -27,7 +30,7 @@
 --   - incluye payloads serializados en `order_cancellations.notes` con prefijo `[PENDING_REQUEST]`
 --   - incluye solicitudes de anulacion de pago, anulaciones parciales, pagos de reemplazo y registro histÃ³rico en `order_cancellations` y `orders.notes`
 --   - incluye ordenes historicas por pago anulado marcadas con `VOID_SUCCESSOR_ORDER`, que deben quedar `CANCELLED` y no `PAID`
---   - incluye ordenes sucesoras creadas por anulacion de pago con `SUCCESSOR_OF_VOIDED_ORDER` y nuevo `order_code` / `order_number`
+--   - incluye ordenes sucesoras creadas por anulacion de pago con `SUCCESSOR_OF_VOIDED_ORDER` que conservan el `order_code` / `order_number` original
 --   - incluye la gestiÃ³n simplificada de mesas con pagos anulados (eliminaciÃ³n del banner central de Pagos Anulados)
 --   - incluye movimientos entre Ã³rdenes de mesa (anteriormente Unir/Dividir divisiones)
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
@@ -37,9 +40,9 @@
 --   - incluye configuración de caja por turno con principal opcional (`primary_cashier_id`) y plantilla por cajero
 --   - incluye cobro con catalogo global de denominaciones (UI) vs plantilla de arqueo (apertura); tras reset solo queda el catalogo en `denominations`
 --   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
---   - incluye `cash_shifts.max_caja_sessions` y slots de sesion Caja en cash_shift_users (caja_session_slots)
+--   - incluye `cash_shifts.max_caja_sessions` and slots de sesion Caja en cash_shift_users (caja_session_slots)
 --   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
---   - incluye templates persistentes de apertura de caja y su composicion por denominacion
+--   - incluye templates de apertura de caja y su composicion por denominacion
 --   - deja sin base transaccional los reportes de caja por apertura y el consolidado por turno
 --   - incluye auditoria de cierre de turno (closed_by, closed_from_device, closed_from_user_agent)
 -- - Elimina catalogos operativos: arbol menu, categorias, subcategorias, productos, modificadores
@@ -120,7 +123,7 @@
 --   - la plantilla de apertura (`cash_register_template_denoms`) es independiente del catalogo `denominations` usado en cobro
 --   - AnulaciÃ³n de pagos requiere supervisor solo si hay Ã­tems despachados; de lo contrario, es directa.
 --   - Toda anulaciÃ³n de pago deja un rastro de auditorÃ­a en `order_cancellations` y una nota histÃ³rica en el pedido.
---   - Si la anulacion conserva una cuenta activa, la orden original queda historica `CANCELLED` con su numero original y la sucesora recibe un numero nuevo.
+--   - Si la anulacion conserva una cuenta activa, la orden sucesora hereda/conserva el numero y codigo original, mientras la orden original queda historica `CANCELLED` con su codigo original modificado por un sufijo.
 --   - `Pagos del turno` debe reconstruirse desde `cash_shifts.opened_at`, no desde medianoche, para soportar turnos que cruzan de dia.
 --   - `branches.workflow_mode` queda como compatibilidad interna con default `CASH_THEN_DISPATCH`
 --   - el reporte por apertura sigue dependiendo de `cash_register_openings`, `payments`, `cash_movements` y `cash_shift_denoms`, pero aqui esos datos quedan vacios
@@ -160,6 +163,12 @@ DECLARE
     'public.order_ready_events',
     'public.order_item_cancellations',
     'public.order_cancellations',
+
+    -- Promociones / comensales
+    'public.predicciones_clientes',
+    'public.permisos_promociones_turnos',
+    'public.campanas_promocionales',
+    'public.clientes',
 
     -- Pagos / caja
     'public.payment_void_requests',
@@ -434,6 +443,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 productos frecuentes configurados (`extra_frequent_products` por contexto)
+-- - 0 comensales en `clientes`, 0 campañas en `campanas_promocionales`, 0 predicciones ni permisos de promociones por turno
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre Ã³rdenes y alertas de listo)
 -- - 0 aperturas multi-cajero ni cash_shift_denoms por cashier_id
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo

@@ -15,8 +15,26 @@ interface Props {
     level: AccessLevel;
   };
   requiresOpenShift?: boolean;
-  requiredShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canEditOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja" | "canPackOrders">;
-  blockedShiftRoles?: Array<"canServeTables" | "canAccessOrders" | "canEditOrders" | "canDispatchOrders" | "canManageProducts" | "canUseCaja" | "canPackOrders">;
+  requiredShiftRoles?: Array<
+    | "canServeTables"
+    | "canAccessOrders"
+    | "canEditOrders"
+    | "canDispatchOrders"
+    | "canManageProducts"
+    | "canUseCaja"
+    | "canPackOrders"
+    | "puedeRegistrarPromociones"
+  >;
+  blockedShiftRoles?: Array<
+    | "canServeTables"
+    | "canAccessOrders"
+    | "canEditOrders"
+    | "canDispatchOrders"
+    | "canManageProducts"
+    | "canUseCaja"
+    | "canPackOrders"
+    | "puedeRegistrarPromociones"
+  >;
 }
 
 const MODULE_FALLBACK_PATH: Record<string, string> = {
@@ -41,6 +59,7 @@ const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number]
   canManageProducts: "Productos",
   canUseCaja: "Caja",
   canPackOrders: "Empacador",
+  puedeRegistrarPromociones: "Promociones",
 };
 
 const ProtectedRoute = ({

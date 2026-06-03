@@ -11,7 +11,7 @@ import {
 import { computeLineAmount, distributeProportionalAmounts, roundMoney } from "@/lib/paymentQuantity";
 import { isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
 import { isExtraOrder } from "@/lib/orderFlow";
-import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import type { Denomination, PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import DenominationVisual from "@/components/caja/DenominationVisual";
@@ -21,6 +21,9 @@ import { Banknote, CircleCheck, Coins, CreditCard, Loader2, Printer, UserRound, 
 import { toast } from "sonner";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
 import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
+import PaymentClienteCard from "@/components/caja/PaymentClienteCard";
+import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
+import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -117,6 +120,7 @@ export default function PaymentDialogV2({
   readOnly = false,
 }: Props) {
   const hidePrintReceipt = false;
+  const clienteSelection = usePaymentClienteSelection(order, open);
   const pendingPayPromiseRef = useRef<Promise<unknown> | null>(null);
   const suppressCloseOnceRef = useRef(false);
 
@@ -127,19 +131,7 @@ export default function PaymentDialogV2({
   const [postPaySummary, setPostPaySummary] = useState<{
     changeAmount: number;
     lines: { denomination_id: string; qty: number; value: number; label: string; image_url?: string | null }[];
-    receipt: {
-      orderNumber: string | number;
-      tableName?: string;
-      orderType?: string;
-      isSpecial: boolean;
-      isTrayOrder: boolean;
-      items: { description: string; quantity: number; unitPrice: number; amount: number }[];
-      payments: { methodName: string; appliedAmount: number }[];
-      totalAmount: number;
-      totalReceived: number;
-      changeAmount: number;
-      createdAt: string;
-    };
+    receipt: PaymentReceiptData;
   } | null>(null);
 
   const [payItemQtys, setPayItemQtys] = useState<Record<string, number>>({});
@@ -478,7 +470,7 @@ export default function PaymentDialogV2({
       appliedAmount: sp.amount,
     }));
     const receipt = {
-      orderNumber: order.order_code ?? order.order_number ?? "",
+      orderNumber: getOrderRef(order.order_code, order.order_number),
       tableName: order.table_name ?? undefined,
       orderType: order.order_type,
       isSpecial: order.is_special,
@@ -489,6 +481,7 @@ export default function PaymentDialogV2({
       totalReceived: receivedTotal,
       changeAmount,
       createdAt: new Date().toISOString(),
+      ...datosClienteEnRecibo(clienteSelection.selectedCliente),
     };
 
     const params: PayOrderParams = {
@@ -503,6 +496,7 @@ export default function PaymentDialogV2({
       cashReceivedDenoms,
       cashChangeDenoms,
       preparedTransferProofSession: null,
+      clienteId: clienteSelection.selectedCliente?.id ?? null,
     };
 
     const changeLinesSnapshot = changeDenomBreakdown.map((d) => ({
@@ -562,6 +556,7 @@ export default function PaymentDialogV2({
     paymentMethods,
     onPay,
     payItemQtys,
+    clienteSelection.selectedCliente,
   ]);
 
   const addDenom = (denominationId: string) => {
@@ -683,7 +678,7 @@ export default function PaymentDialogV2({
               ) : readOnly ? (
                 "Consulta de cobro"
               ) : (
-                <>Cobrar {order?.order_code ?? (order ? `#${order.order_number}` : "")}</>
+                <>Cobrar {order ? getOrderRef(order.order_code, order.order_number) : ""}</>
               )}
             </span>
             {order && !postPaySummary && (
@@ -708,7 +703,7 @@ export default function PaymentDialogV2({
 
           {postPaySummary && order && (
             <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-              Orden {order.order_code ?? `#${order.order_number}`}
+              Orden {getOrderRef(order.order_code, order.order_number)}
               {order.table_name ? ` · ${order.table_name}` : ""}
             </p>
           )}
@@ -769,7 +764,14 @@ export default function PaymentDialogV2({
           ) : !order ? null : (
             <div className="flex flex-col gap-3 xl:gap-4">
               {/* Fila superior: total, transferencia y resumen en horizontal desde md */}
-              <div className="grid gap-3 md:grid-cols-3 md:items-stretch lg:gap-4">
+              <div className="grid gap-3 md:grid-cols-2 md:items-stretch xl:grid-cols-[minmax(0,1.42fr)_minmax(0,1fr)_9.25rem_minmax(0,1.08fr)] lg:gap-4">
+                <PaymentClienteCard
+                  order={order}
+                  readOnly={readOnly}
+                  selection={clienteSelection}
+                  className="md:col-span-2 xl:col-span-1"
+                />
+
                 <div className="flex min-h-[100px] flex-col justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm sm:flex-row sm:items-stretch">
                   <div className="flex min-w-0 flex-1 items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
@@ -809,12 +811,15 @@ export default function PaymentDialogV2({
                   </p>
                 </div>
 
-                <div className="flex min-h-[100px] flex-col justify-center rounded-2xl border border-violet-200 bg-violet-50/60 px-4 py-3 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="payment-v2-transfer" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-800">
-                      <Banknote className="h-3.5 w-3.5" />
-                      Transferencia
-                    </label>
+                <div className="flex min-h-[100px] min-w-0 flex-col justify-center gap-1.5 rounded-2xl border border-violet-200 bg-violet-50/60 px-2.5 py-2.5 shadow-sm xl:max-w-[9.25rem]">
+                  <label
+                    htmlFor="payment-v2-transfer"
+                    className="flex items-center gap-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-violet-800"
+                  >
+                    <Banknote className="h-3 w-3 shrink-0" />
+                    Transferencia
+                  </label>
+                  <div className="flex justify-end">
                     <button
                       type="button"
                       disabled={readOnly}
@@ -826,10 +831,10 @@ export default function PaymentDialogV2({
                           setTransferInput(orderChargeTotal.toFixed(2));
                         }
                       }}
-                      className="flex items-center gap-1 rounded-md border border-violet-300 bg-white/60 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
+                      className="flex shrink-0 items-center gap-0.5 rounded-md border border-violet-300 bg-white/60 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
                       title={Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005 ? "Limpiar monto" : "Usar monto total"}
                     >
-                      <CopyCheck className="h-3 w-3" />
+                      <CopyCheck className="h-2.5 w-2.5" />
                       {Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005 ? "Limpiar" : "Exacto"}
                     </button>
                   </div>
@@ -841,7 +846,7 @@ export default function PaymentDialogV2({
                     value={transferInput}
                     onChange={(e) => setTransferInput(sanitizeDecimalInput(e.target.value))}
                     disabled={readOnly}
-                    className="mt-2 h-11 rounded-xl border-violet-200 bg-white text-lg font-semibold tabular-nums"
+                    className="h-10 rounded-xl border-violet-200 bg-white px-2 text-base font-semibold tabular-nums"
                   />
                 </div>
 

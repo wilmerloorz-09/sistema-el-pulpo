@@ -1,24 +1,13 @@
 import { roundMoney } from "@/lib/paymentQuantity";
 import { EscPosEncoder, formatAmountLine, wrapWords } from "./encoder";
 import { THERMAL_LINE_CHARS } from "./constants";
+import type { PaymentReceiptData } from "@/lib/paymentReceiptData";
 
-export interface PaymentReceiptEscPosInput {
-  orderNumber: string | number;
-  tableName?: string;
-  orderType?: string;
-  isSpecial?: boolean;
-  isTrayOrder?: boolean;
-  items: Array<{ description: string; quantity: number; unitPrice: number; amount: number }>;
-  payments: Array<{ methodName: string; appliedAmount: number }>;
-  totalAmount: number;
-  totalReceived: number;
-  changeAmount: number;
-  createdAt: string;
-  branchName?: string;
+export type PaymentReceiptEscPosInput = PaymentReceiptData & {
   /** Abrir cajon antes del corte (nunca despues). */
   openDrawerBeforeCut?: boolean;
   headerBytes?: Uint8Array | null;
-}
+};
 
 function formatMoney(amount: number) {
   return `$${roundMoney(amount).toFixed(2)}`;
@@ -62,6 +51,12 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.bold(false);
     enc.line(resolveOrderLabel(input));
     enc.line(`${dateStr} ${timeStr}`);
+    if (input.clienteNombre) {
+      enc.line(`Cliente: ${input.clienteNombre}`);
+    }
+    if (input.clienteCedula) {
+      enc.line(`Cedula: ${input.clienteCedula}`);
+    }
     enc.feed(1);
   }
 

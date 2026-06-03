@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
+import { getOrderRef } from "@/lib/orderPresentation";
 import { computeLineAmount, distributeProportionalAmounts, roundMoney } from "@/lib/paymentQuantity";
 import { isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
+import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
 import { getOrderTotalToCharge } from "@/components/caja/PaymentDialogV2";
 
 function getPayFailureMessage(e: unknown): string {
@@ -22,6 +24,7 @@ export interface PaymentChargeFlowOptions {
   paying: boolean;
   open: boolean;
   readOnly?: boolean;
+  selectedCliente?: import("@/types/cliente").Cliente | null;
 }
 
 export function usePaymentChargeFlow({
@@ -33,6 +36,7 @@ export function usePaymentChargeFlow({
   paying,
   open,
   readOnly = false,
+  selectedCliente = null,
 }: PaymentChargeFlowOptions) {
   const pendingPayPromiseRef = useRef<Promise<unknown> | null>(null);
   const suppressCloseOnceRef = useRef(false);
@@ -43,19 +47,7 @@ export function usePaymentChargeFlow({
   const [postPaySummary, setPostPaySummary] = useState<{
     changeAmount: number;
     lines: { denomination_id: string; qty: number; value: number; label: string; image_url?: string | null }[];
-    receipt: {
-      orderNumber: string | number;
-      tableName?: string;
-      orderType?: string;
-      isSpecial: boolean;
-      isTrayOrder: boolean;
-      items: { description: string; quantity: number; unitPrice: number; amount: number }[];
-      payments: { methodName: string; appliedAmount: number }[];
-      totalAmount: number;
-      totalReceived: number;
-      changeAmount: number;
-      createdAt: string;
-    };
+    receipt: PaymentReceiptData;
   } | null>(null);
 
   const orderUnpaidSignature = useMemo(
@@ -316,6 +308,7 @@ export function usePaymentChargeFlow({
       cashReceivedDenoms,
       cashChangeDenoms,
       preparedTransferProofSession: null,
+      clienteId: selectedCliente?.id ?? null,
     };
 
     const summary = {
@@ -328,7 +321,7 @@ export function usePaymentChargeFlow({
         image_url: d.image_url ?? null,
       })),
       receipt: {
-        orderNumber: order.order_code ?? order.order_number ?? "",
+        orderNumber: getOrderRef(order.order_code, order.order_number),
         tableName: order.table_name ?? undefined,
         orderType: order.order_type,
         isSpecial: order.is_special,
@@ -342,6 +335,7 @@ export function usePaymentChargeFlow({
         totalReceived: totalDelivered,
         changeAmount,
         createdAt: new Date().toISOString(),
+        ...datosClienteEnRecibo(selectedCliente),
       },
     };
 
@@ -378,6 +372,7 @@ export function usePaymentChargeFlow({
     paymentMethods,
     onPay,
     payItemQtys,
+    selectedCliente,
   ]);
 
   const addDenom = (denominationId: string) => {

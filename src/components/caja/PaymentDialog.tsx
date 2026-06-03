@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { MetricCard } from "@/components/ui/metric-card";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
-import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { computeLineAmount, distributeProportionalAmounts, roundMoney } from "@/lib/paymentQuantity";
 import {
@@ -824,7 +824,7 @@ export default function PaymentDialog({
         }));
 
       const receiptData = {
-        orderNumber: order.order_code ?? order.order_number,
+        orderNumber: getOrderRef(order.order_code, order.order_number),
         tableName: order.table_name,
         orderType: order.order_type,
         isSpecial: isSpecialOrder,
@@ -1528,7 +1528,7 @@ export default function PaymentDialog({
             <DialogHeader className="shrink-0 border-b border-border bg-white px-4 py-3 sm:px-6">
           <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-lg sm:text-xl">
             <span className="min-w-0">
-              {readOnly ? "Consulta de cobro" : "Cobrar"} {order?.order_code ?? `#${order?.order_number}`}
+              {readOnly ? "Consulta de cobro" : "Cobrar"} {order ? getOrderRef(order.order_code, order.order_number) : ""}
             </span>
             {order && (
               <span className="text-base font-semibold text-muted-foreground sm:text-lg">

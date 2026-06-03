@@ -115,7 +115,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
       </div>
 
       <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
-        {(["VENTA", "OPERATIVO", "FINANZAS", "ADMINISTRACIÓN"] as const).map(group => {
+        {(["VENTA", "OPERATIVO", "FINANZAS", "PROMOCIONES", "ADMINISTRACIÓN"] as const).map(group => {
           const items = visibleItems.filter(item => item.group === group);
           if (items.length === 0) return null;
 
@@ -132,6 +132,9 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                   const isOriginExpress = searchParams.get("origin") === "express";
                   const isOriginExtra = searchParams.get("origin") === "extra";
                   const isOriginOrdenEspecial = searchParams.get("origin") === "orden-especial";
+                  const isOriginClientes = searchParams.get("origin") === "clientes";
+                  const isOriginPromociones = searchParams.get("origin") === "promociones";
+                  const isOriginCampanas = searchParams.get("origin") === "campanas";
                   const hasSubItems = (item.subItems?.length ?? 0) > 0;
                   const isItemActive = item.to === "/mesas"
                     ? (location.pathname === "/mesas" || location.pathname === "/mesas-v2" || (location.pathname === "/ordenes" && isOriginMesasList))
@@ -143,8 +146,14 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                         ? (location.pathname === "/extra" || (location.pathname === "/ordenes" && isOriginExtra))
                       : item.to === "/orden-especial"
                         ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
+                      : item.to.startsWith("/clientes")
+                        ? (location.pathname === "/clientes" || isOriginClientes)
+                      : item.to.startsWith("/promociones")
+                        ? (location.pathname === "/promociones" || isOriginPromociones)
+                      : item.to.startsWith("/campanas")
+                        ? (location.pathname.startsWith("/campanas") || isOriginCampanas)
                     : item.to === "/ordenes"
-                      ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginExtra && !isOriginOrdenEspecial)
+                      ? (location.pathname === "/ordenes" && !isOriginMesasList && !isOriginParaLlevar && !isOriginExpress && !isOriginExtra && !isOriginOrdenEspecial && !isOriginClientes && !isOriginPromociones && !isOriginCampanas)
                       : item.to.includes("?") 
                         ? (location.pathname + location.search === item.to)
                         : item.end

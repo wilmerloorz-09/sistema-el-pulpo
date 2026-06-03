@@ -22,6 +22,10 @@ import ParaLlevar from "./pages/ParaLlevar";
 import Express from "./pages/Express";
 import Extra from "./pages/Extra";
 import OrdenEspecial from "./pages/OrdenEspecial";
+import Clientes from "./pages/Clientes";
+import Promociones from "./pages/Promociones";
+import Campanas from "./pages/Campanas";
+import CampanaDetalle from "./pages/CampanaDetalle";
 import Despacho from "./pages/Despacho";
 import Servir from "./pages/Servir";
 import Productos from "./pages/Productos";
@@ -347,6 +351,22 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/clientes"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables"]} blockedShiftRoles={["canPackOrders"]}>
+                      <Clientes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/promociones"
+                  element={
+                    <ProtectedRoute requiresOpenShift requiredShiftRoles={["puedeRegistrarPromociones"]}>
+                      <Promociones />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/ordenes"
                   element={
                     <ProtectedRoute requiredPermission={{ module: "ordenes", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canAccessOrders", "canPackOrders"]}>
@@ -418,6 +438,23 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/campanas"
+                  element={
+                    <ProtectedRoute allowedModules={["admin_global"]}>
+                      <Campanas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/campanas/:campanaId"
+                  element={
+                    <ProtectedRoute allowedModules={["admin_global"]}>
+                      <CampanaDetalle />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/admin/campanas" element={<Navigate to="/campanas?origin=campanas" replace />} />
                 <Route
                   path="/monitoreo-global"
                   element={

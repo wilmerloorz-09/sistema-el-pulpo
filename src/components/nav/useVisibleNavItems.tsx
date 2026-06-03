@@ -1,10 +1,10 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, ClipboardPen, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
-import { canView } from "@/lib/permissions";
+import { canManage, canView } from "@/lib/permissions";
 
 export interface NavSubItem {
   to: string;
@@ -15,7 +15,7 @@ export interface NavSubItem {
   disabledReason?: string;
 }
 
-export type NavGroupType = "VENTA" | "OPERATIVO" | "FINANZAS" | "ADMINISTRACIÓN";
+export type NavGroupType = "VENTA" | "OPERATIVO" | "FINANZAS" | "PROMOCIONES" | "ADMINISTRACIÓN";
 
 export interface AppNavItem {
   to: string;
@@ -96,6 +96,18 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "mesas"),
   },
   {
+    to: "/clientes?origin=clientes",
+    label: "Clientes",
+    icon: <Users className="h-5 w-5" />,
+    group: "VENTA",
+    tone: {
+      active: "from-sky-500 to-cyan-400",
+      idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
+      iconIdle: "bg-sky-50 text-sky-600",
+    },
+    visible: (permissions) => canView(permissions, "mesas"),
+  },
+  {
     to: "/ordenes",
     label: "Comandas",
     icon: <UtensilsCrossed className="h-5 w-5" />,
@@ -149,6 +161,30 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-emerald-50 text-emerald-600",
     },
     visible: (permissions) => canView(permissions, "caja"),
+  },
+  {
+    to: "/promociones?origin=promociones",
+    label: "Promociones",
+    icon: <Gift className="h-5 w-5" />,
+    group: "PROMOCIONES",
+    tone: {
+      active: "from-fuchsia-500 to-violet-400",
+      idle: "hover:border-fuchsia-200 hover:bg-fuchsia-50/90 hover:text-fuchsia-700",
+      iconIdle: "bg-fuchsia-50 text-fuchsia-600",
+    },
+    visible: () => false,
+  },
+  {
+    to: "/campanas?origin=campanas",
+    label: "Campañas",
+    icon: <Megaphone className="h-5 w-5" />,
+    group: "PROMOCIONES",
+    tone: {
+      active: "from-violet-500 to-purple-400",
+      idle: "hover:border-violet-200 hover:bg-violet-50/90 hover:text-violet-700",
+      iconIdle: "bg-violet-50 text-violet-600",
+    },
+    visible: () => false,
   },
   {
     to: "/reportes",
@@ -232,6 +268,8 @@ export function useVisibleNavItems() {
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
     const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
+    const puedeGestionarCampanas = isGlobalAdmin || canManage(permissions, "admin_global");
+    const puedeRegistrarPromociones = Boolean(sg?.puedeRegistrarPromociones);
     const hasOperationalShift = Boolean(sg?.shiftOpen) && Boolean(sg?.userEnabled);
     const hasSupervisorBypass = Boolean(sg?.isSupervisor);
     const visibleItems = navItemsResolved.filter((item) => {
@@ -240,7 +278,14 @@ export function useVisibleNavItems() {
       }
 
       if (!hasOperationalShift) {
-        return (item.to === "/admin" && canAccessAdmin) || (item.to === "/turno" && canAccessTurno) || (item.to === "/reportes" && canAccessAdmin) || (item.to === "/monitoreo-global" && isGlobalAdmin);
+        return (
+          (item.to === "/admin" && canAccessAdmin)
+          || (item.to.startsWith("/campanas") && puedeGestionarCampanas)
+          || (item.to.startsWith("/promociones") && puedeRegistrarPromociones)
+          || (item.to === "/turno" && canAccessTurno)
+          || (item.to === "/reportes" && canAccessAdmin)
+          || (item.to === "/monitoreo-global" && isGlobalAdmin)
+        );
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {
@@ -249,6 +294,14 @@ export function useVisibleNavItems() {
 
       if (item.to === "/reportes") {
         return canAccessAdmin || hasSupervisorBypass || Boolean(sg?.isSupervisor) || Boolean(sg?.canAuthorizeOrderCancel);
+      }
+
+      if (item.to.startsWith("/campanas")) {
+        return puedeGestionarCampanas;
+      }
+
+      if (item.to.startsWith("/promociones")) {
+        return puedeRegistrarPromociones;
       }
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
@@ -321,5 +374,6 @@ export function useVisibleNavItems() {
     shiftGateQuery.data?.shiftOpen,
     shiftGateQuery.data?.userEnabled,
     shiftGateQuery.data?.cajaStatus,
+    shiftGateQuery.data?.puedeRegistrarPromociones,
   ]);
 }

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { getOrderRef } from '@/lib/orderPresentation';
 
 export interface ReportesFilters {
   branchId: string;
@@ -359,8 +360,10 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
         return {
           id: v.id,
           orderId: v.order?.id,
-          orderCode: v.order?.order_code,
-          orderNumber: v.order?.order_number,
+          orderCode: succInfo
+            ? getOrderRef(succInfo.code, succInfo.number)
+            : getOrderRef(v.order?.order_code, v.order?.order_number),
+          orderNumber: succInfo?.number ?? v.order?.order_number,
           successorId: succId || null,
           successorCode: succInfo?.code || null,
           successorNumber: succInfo?.number || null,

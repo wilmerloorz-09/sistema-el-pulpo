@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
+import { usuarioPuedeRegistrarPromociones } from "@/services/prediccionesClientesDb";
 
 export const TAB_SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36);
 
@@ -44,6 +45,7 @@ export interface BranchShiftGate {
   isCaptureDeviceOnly: boolean;
   legacyFallbackApplied: boolean;
   isStaleShift: boolean;
+  puedeRegistrarPromociones: boolean;
 }
 
 export function useBranchShiftGate() {
@@ -85,6 +87,7 @@ export function useBranchShiftGate() {
           isCaptureDeviceOnly: false,
           legacyFallbackApplied: false,
           isStaleShift: false,
+          puedeRegistrarPromociones: false,
         };
       }
 
@@ -128,6 +131,7 @@ export function useBranchShiftGate() {
           isCaptureDeviceOnly: false,
           legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
           isStaleShift: false,
+          puedeRegistrarPromociones: false,
         };
       }
 
@@ -207,6 +211,13 @@ export function useBranchShiftGate() {
               (s): s is string => Boolean(s && String(s).trim()),
             );
 
+      let puedeRegistrarPromociones = false;
+      try {
+        puedeRegistrarPromociones = await usuarioPuedeRegistrarPromociones();
+      } catch {
+        puedeRegistrarPromociones = false;
+      }
+
       return {
         shiftId,
         shiftOpen: Boolean(row?.shift_open),
@@ -246,6 +257,7 @@ export function useBranchShiftGate() {
         isCaptureDeviceOnly: false,
         legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
         isStaleShift,
+        puedeRegistrarPromociones,
       };
     },
     enabled: !!activeBranchId && !!user?.id,

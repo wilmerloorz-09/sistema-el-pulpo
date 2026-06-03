@@ -228,7 +228,7 @@ export default function PaymentReversalModal({
     setSelectedQuantities(Object.fromEntries((payment?.items ?? []).map((item) => [item.paymentEntryId, item.quantity])));
   };
 
-  const canOpenConfirm = Boolean(payment) && selectedUnits > 0 && reason.trim().length > 0 && (requiresSupervisor ? refundMatches : true) && !loading;
+  const canOpenConfirm = Boolean(payment) && selectedUnits > 0 && (requiresSupervisor ? refundMatches : true) && !loading;
 
   const handleSubmit = async () => {
     if (!payment || !canOpenConfirm || confirmSubmitting) return;
@@ -247,7 +247,7 @@ export default function PaymentReversalModal({
     try {
       await onSubmit({
         paymentId: payment.paymentId,
-        reason: reason.trim(),
+        reason: reason.trim() || "Sin motivo especificado",
         paymentSelections,
         cashRefundDenoms,
         refundAmount: selectedTotal,
@@ -547,7 +547,7 @@ export default function PaymentReversalModal({
                         <ReceiptText className="h-4 w-4" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-slate-950">Motivo de anulacion</p>
+                        <p className="text-sm font-semibold text-slate-950">Motivo de anulación <span className="text-xs font-normal text-slate-500">(Opcional)</span></p>
                         <p className="text-xs text-slate-500">Quedara guardado en la solicitud y en la auditoria.</p>
                       </div>
                     </div>

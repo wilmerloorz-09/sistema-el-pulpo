@@ -3,7 +3,7 @@ import type { KitchenOrder } from "@/hooks/useKitchenOrders";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Clock, UtensilsCrossed, ShoppingBag, Lock, UserRound } from "lucide-react";
-import { getOrderKind, getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -93,7 +93,7 @@ export default function KitchenCard({ order, onOpenReadyDialog }: Props) {
           )}
           <span className="truncate font-display text-sm font-bold">{label}</span>
           <Badge variant="secondary" className="shrink-0 text-[10px]">
-            {order.order_code ?? String(order.order_number)}
+            {getOrderRef(order.order_code, order.order_number)}
           </Badge>
           {order.is_tray_order && (
             <Badge className="shrink-0 border-amber-200 bg-amber-100 text-[10px] font-bold text-amber-800 hover:bg-amber-100">

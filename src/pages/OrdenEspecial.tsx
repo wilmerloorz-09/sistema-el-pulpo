@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
+import { getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 
 type SpecialOrderCard = {
@@ -114,8 +115,10 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
     }));
 };
 
-const getSpecialReference = (order: SpecialOrderCard, fallbackIndex: number) =>
-  order.order_code ?? (order.order_number ? `#${order.order_number}` : `Orden ${fallbackIndex + 1}`);
+const getSpecialReference = (order: SpecialOrderCard, fallbackIndex: number) => {
+  const ref = getOrderRef(order.order_code, order.order_number);
+  return ref === "Borrador" ? `Orden ${fallbackIndex + 1}` : ref;
+};
 
 const OrdenEspecial = () => {
   const navigate = useNavigate();

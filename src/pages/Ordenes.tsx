@@ -55,7 +55,7 @@ import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
-import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { getOrderMesaHeaderNumber, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { getOrderStatusLabel, isExtraOrder as orderIsExtra } from "@/lib/orderFlow";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
@@ -1714,16 +1714,12 @@ const OrdenesContent = () => {
     return sum + Math.max(0, Number(i.quantity ?? 0));
   }, 0);
   const getTableOrderButtonLabel = (tableOrder: { order_code?: string | null; order_number: number | null; table_order_position: number | null }) => {
-    const codeSuffix = String(tableOrder.order_code ?? "").trim().split("-").pop();
-    if (codeSuffix) {
-      return codeSuffix;
-    }
-
-    const orderNumber = Number(tableOrder.order_number ?? 0);
-    if (orderNumber > 0) {
-      return String(orderNumber).padStart(4, "0").slice(-4);
-    }
-    return `Orden ${Number(tableOrder.table_order_position ?? 1)}`;
+    const label = getOrderMesaHeaderNumber({
+      orderCode: tableOrder.order_code,
+      orderNumber: tableOrder.order_number,
+      tableOrderPosition: tableOrder.table_order_position,
+    });
+    return label.match(/^\d+$/) ? label : `Orden ${label}`;
   };
 
   const total = itemsToUse.reduce((s, i) => s + i.total, 0);
@@ -1768,13 +1764,12 @@ const OrdenesContent = () => {
     order_code?: string | null;
     order_number: number | null;
     table_order_position: number | null;
-  }) => {
-    const codeSuffix = String(o.order_code ?? "").trim().split("-").pop();
-    if (codeSuffix) return codeSuffix;
-    const n = Number(o.order_number ?? 0);
-    if (n > 0) return String(n).padStart(4, "0").slice(-4);
-    return String(Number(o.table_order_position ?? 1));
-  };
+  }) =>
+    getOrderMesaHeaderNumber({
+      orderCode: o.order_code,
+      orderNumber: o.order_number,
+      tableOrderPosition: o.table_order_position,
+    });
 
   /** "Orden #…" solo al ver la orden (no en la rejilla de selección de órdenes de la mesa). */
   const renderMesaChromeHeaderTitle = (o: typeof order, withOrdenLabel: boolean) => (

@@ -37,7 +37,11 @@ type TableName =
   | "cash_register_template_denoms"
   | "menu_node_modifiers"
   | "profiles"
-  | "branches";
+  | "branches"
+  | "clientes"
+  | "campanas_promocionales"
+  | "predicciones_clientes"
+  | "permisos_promociones_turnos";
 
 const CATALOG_TABLES: TableName[] = [
   "categories",

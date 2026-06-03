@@ -67,6 +67,18 @@
   - Boton **Despachar todo** por orden en `DispatchCardBase` / `Despacho.tsx`.
   - Lecturas: RPC batch `get_batch_order_operational_snapshots(...)` (`20260602140000`) con fallback a `get_order_operational_snapshot` por orden.
   - Tras despachar: actualizacion optimista en cliente e invalidacion diferida de queries secundarias (~2,5 s).
+- **Clientes (comensales) y cobro (2026-06-11+):**
+  - Tabla `clientes` (cédula única, sexo, contacto); no son usuarios de `auth`.
+  - `orders.cliente_id` opcional: se asigna al cobrar (`PaymentDialogV2` + `usePaymentClienteSelection`) o al registrar promoción.
+  - UI de cobro: `PaymentClienteCard` (búsqueda por cédula/nombre, alta con `ClienteFormulario`, cliente opcional).
+- **Campañas promocionales y Promociones operativas (2026-06-11+):**
+  - **Admin / Campañas** (`/campanas`, detalle `/campanas/:id`): CRUD de campaña, cartelera de ofertas (cuota, fecha de bloqueo, resultado `PENDIENTE`|`GANADA`|`PERDIDA`), cierre por fila con `cerrar_oferta_campana` (migración `20260611170000`).
+  - Pueden coexistir **varias campañas con `activa = true`**; en `/promociones` el operador elige campaña en un selector antes de listar órdenes y ofertas.
+  - **Promociones** (`/promociones`): requiere turno abierto y `usuario_puede_registrar_promociones()` (fila en `permisos_promociones_turnos`, creada al habilitar usuario en turno).
+  - Elegibles: órdenes del turno con `paid_at` no nulo (incluye `PAID` y `KITCHEN_DISPATCHED` pagadas), consumo mínimo por campaña (usa `special_total_manual`, `orders.total` o suma de pagos activos del turno), sin predicción previa **en esa campaña** (`UNIQUE (orden_id, campana_id)` — migración `20260611180000`).
+  - Registro: misma UX de cliente que caja (`PaymentClienteCard`, requerido en promociones); ofertas con `bloqueo_at` futuro; persiste `predicciones_clientes` y actualiza `orders.cliente_id` si cambió.
+  - Menú lateral: categoría **PROMOCIONES** (Promociones operativo; Campañas solo admin global o `MANAGE` en `admin_global` en nav).
+  - Migraciones: `20260611120000` … `20260611180000` (clientes, `orders.cliente_id`, campañas, admin, cierre oferta, unicidad por campaña).
 - **Productos frecuentes ("Mas frecuentes"):**
   - Tabla `extra_frequent_products` con columna `context` ∈ `MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA` (sin limite de cantidad; migraciones `20260531130000`, `20260531140000`).
   - Admin: pestaña **Mas frecuentes** en `/admin` (`FrequentProductsAdmin`) — selector de contexto, menu segun contexto, lista con agregar/eliminar/reordenar.
@@ -445,6 +457,12 @@
   - Pestaña unificada **Para llevar / Express**; Extra en Mesa/Todos; **Despachar todo**; snapshots batch y cache optimista.
 - Migraciones pendientes de aplicar manualmente en Supabase: `20260602120000`, `20260602130000`, `20260602140000`.
 
+### 2026-06-11
+- **Clientes:** módulo `/clientes` (admin) y catálogo `clientes` para cobro y promociones.
+- **Campañas / Promociones:** varias campañas activas; selector en operativo; elegibilidad por `paid_at` y consumo efectivo; participación una vez por orden y campaña.
+- **Cierre de ofertas:** RPC `cerrar_oferta_campana` por oferta (ganadora/perdedora); cupones vía `generar_codigo_cupon_promocion` al marcar ganadoras.
+- Migraciones pendientes de aplicar en Supabase si faltan: `20260611120000` … `20260611180000`.
+
 ### 2026-05-25 / 2026-06-06
 - Turno / caja:
   - Cajas unificadas: todos los cajeros pueden cobrar cualquier orden (sin flags `secondary_caja_*` para alcance de cobro).
@@ -494,6 +512,9 @@
 16. Turno nuevo / mesas: aplicar `20260603120000_scope_table_busy_check_to_open_shift.sql`; `create_dine_in_order` solo bloquea órdenes activas del **turno abierto**, no PAID de turnos cerrados.
 14. Despacho: pestaña unificada Para llevar/Express; Extra en Mesa; una tarjeta por orden; migracion `20260602140000` para snapshots batch.
 15. Productos frecuentes: verificar migraciones `20260531130000` y `20260531140000`; reordenar usa `display_order` con staging positivo (no valores negativos).
+17. Promociones: aplicar `20260611180000` si debe permitirse la misma orden en dos campañas; sin ella falla el segundo registro por `predicciones_orden_unica`.
+18. Listado de elegibles: no filtrar solo `status = 'PAID'`; usar `paid_at IS NOT NULL` y consumo desde pagos del turno si `orders.total` es nulo.
+19. Campañas: `listarCampanasActivas` en operativo; no asumir una sola campaña activa (`limit 1`).
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
