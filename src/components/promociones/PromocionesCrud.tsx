@@ -37,6 +37,8 @@ const PromocionesCrud = () => {
 
   const [ordenSeleccionada, setOrdenSeleccionada] = useState<OrdenElegiblePromocion | null>(null);
 
+  console.log("Campaña seleccionada actualmente:", campanaSeleccionada?.titulo, campanaSeleccionada?.cartelera_ofertas);
+
   if (campanasCargando || ordenesCargando) {
     return (
       <div className="flex justify-center py-20">

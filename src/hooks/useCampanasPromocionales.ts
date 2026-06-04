@@ -43,6 +43,7 @@ export function useCampanasPromocionales() {
       actualizarCampanaPromocional(id, datos),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [CAMPANAS_QUERY_KEY] });
+      void qc.invalidateQueries({ queryKey: ["campanas-promocionales-activas"] });
       toast.success("Campaña actualizada.");
     },
     onError: (e) => toast.error(mensajeError(e)),

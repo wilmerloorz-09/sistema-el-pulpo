@@ -4,8 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 export type ClientWinningOffer = {
   prediccion_id: string;
   campana_id: string;
-  porcentaje_descuento: number;
-  descuento_maximo: number;
+  monto_descuento_ganado: number;
   consumo_minimo: number;
 };
 
@@ -17,16 +16,16 @@ export function useClientWinningOffer(clienteId: string | null | undefined) {
 
       const now = new Date().toISOString();
 
-      const { data, error } = await supabase
+      const result = await supabase
         .from("predicciones_clientes")
         .select(`
           id,
           campana_id,
+          monto_descuento_ganado,
           campanas_promocionales!inner (
-            porcentaje_descuento,
-            descuento_maximo,
             consumo_minimo,
-            activa
+            activa,
+            porcentaje_descuento
           )
         `)
         .eq("cliente_id", clienteId)
@@ -35,6 +34,12 @@ export function useClientWinningOffer(clienteId: string | null | undefined) {
         .or(`fecha_caducidad_cupon.gte.${now},fecha_caducidad_cupon.is.null`)
         .limit(1)
         .maybeSingle();
+
+      console.log("=== useClientWinningOffer QUERY RESULT ===");
+      console.log("Cliente ID:", clienteId);
+      console.log("Result:", result);
+
+      const { data, error } = result;
 
       if (error) {
         console.error("Error fetching client winning offer:", error);
@@ -53,12 +58,11 @@ export function useClientWinningOffer(clienteId: string | null | undefined) {
       return {
         prediccion_id: data.id,
         campana_id: data.campana_id,
-        // @ts-ignore
-        porcentaje_descuento: Number(campana.porcentaje_descuento || 0),
-        // @ts-ignore
-        descuento_maximo: Number(campana.descuento_maximo || 0),
+        monto_descuento_ganado: Number(data.monto_descuento_ganado || 0),
         // @ts-ignore
         consumo_minimo: Number(campana.consumo_minimo || 0),
+        // @ts-ignore
+        porcentaje_descuento: Number(campana.porcentaje_descuento || 0),
       };
     },
     enabled: Boolean(clienteId),

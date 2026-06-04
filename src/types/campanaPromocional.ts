@@ -10,6 +10,7 @@ export const RESULTADO_OFERTA_OPCIONES: { value: ResultadoOferta; label: string 
 export interface OfertaCartelera {
   id_oferta: string;
   descripcion: string;
+  inicio_at?: string;
   bloqueo_at: string;
   cuota: number;
   resultado?: ResultadoOferta;
@@ -57,6 +58,7 @@ export interface PrediccionCliente {
   cliente_id: string;
   oferta_seleccionada_id: string;
   estado_prediccion: EstadoPrediccion;
+  monto_descuento_ganado: number | null;
   codigo_cupon: string | null;
   cupon_usado_el: string | null;
   fecha_caducidad_cupon: string | null;
