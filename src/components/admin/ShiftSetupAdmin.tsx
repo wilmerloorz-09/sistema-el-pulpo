@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { Button } from "@/components/ui/button";
@@ -529,12 +529,15 @@ const ShiftSetupAdmin = () => {
       if (!activeBranchId) return [] as Array<{ id: string; name: string }>;
       const { data, error } = await supabase
         .from("cash_register_templates" as any)
-        .select("id, name")
+        .select("id, name, is_active")
         .eq("branch_id", activeBranchId)
-        .eq("is_active", true)
         .order("name", { ascending: true });
+        
       if (error) throw error;
-      return (data ?? []) as Array<{ id: string; name: string }>;
+      
+      return ((data ?? []) as any[])
+        .filter((row) => Boolean(row.is_active))
+        .map((row) => ({ id: row.id, name: row.name }));
     },
     enabled: !!activeBranchId,
   });
@@ -2259,6 +2262,7 @@ const ShiftSetupAdmin = () => {
     shiftUsersQuery.isLoading ||
     shiftQuery.isLoading ||
     dispatchLoading ||
+    cajaTemplatesQuery.isLoading ||
     (SHOW_SHIFT_CANCEL_POLICY_UI && cancelPolicyQuery.isLoading);
 
   if (loading) {

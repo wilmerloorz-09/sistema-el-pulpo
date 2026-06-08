@@ -118,6 +118,12 @@ export default function ShiftCajaSetupSection({
           </p>
         ) : null}
 
+        {templates.length === 0 && enabledUsers.length > 0 ? (
+          <p className="text-xs font-medium text-red-600">
+            No hay plantillas de caja activas para esta sucursal. Crea una plantilla de arqueo en el módulo Caja antes de asignar cajeros.
+          </p>
+        ) : null}
+
         <div className="space-y-2">
           {value.cashiers.map((row) => {
             const userOptions = availableForNewRow(row.user_id);
@@ -154,7 +160,7 @@ export default function ShiftCajaSetupSection({
                     disabled={disabled || templates.length === 0}
                   >
                     <SelectTrigger className="h-10 w-full rounded-xl">
-                      <SelectValue placeholder="Plantilla..." />
+                      <SelectValue placeholder={templates.length === 0 ? "Sin plantillas..." : "Plantilla..."} />
                     </SelectTrigger>
                     <SelectContent>
                       {templates.map((template) => (

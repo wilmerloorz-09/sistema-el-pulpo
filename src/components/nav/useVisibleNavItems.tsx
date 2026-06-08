@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -190,6 +190,18 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: () => false,
   },
   {
+    to: "/promociones/consulta",
+    label: "Consulta",
+    icon: <Search className="h-5 w-5" />,
+    group: "PROMOCIONES",
+    tone: {
+      active: "from-fuchsia-600 to-pink-500",
+      idle: "hover:border-fuchsia-200 hover:bg-fuchsia-50/90 hover:text-fuchsia-700",
+      iconIdle: "bg-fuchsia-50 text-fuchsia-600",
+    },
+    visible: () => false,
+  },
+  {
     to: "/campanas?origin=campanas",
     label: "Campañas",
     icon: <Megaphone className="h-5 w-5" />,
@@ -296,6 +308,7 @@ export function useVisibleNavItems() {
         return (
           (item.to === "/admin" && canAccessAdmin)
           || (item.to.startsWith("/campanas") && puedeGestionarCampanas)
+          || (item.to.startsWith("/promociones/consulta") && (puedeRegistrarPromociones || puedeGestionarCampanas))
           || (item.to.startsWith("/promociones") && puedeRegistrarPromociones)
           || (item.to === "/turno" && canAccessTurno)
           || (item.to === "/reportes" && canAccessAdmin)
@@ -313,6 +326,10 @@ export function useVisibleNavItems() {
 
       if (item.to.startsWith("/campanas")) {
         return puedeGestionarCampanas;
+      }
+
+      if (item.to.startsWith("/promociones/consulta")) {
+        return puedeRegistrarPromociones || puedeGestionarCampanas;
       }
 
       if (item.to.startsWith("/promociones")) {

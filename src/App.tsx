@@ -24,6 +24,7 @@ import Extra from "./pages/Extra";
 import OrdenEspecial from "./pages/OrdenEspecial";
 import Clientes from "./pages/Clientes";
 import Promociones from "./pages/Promociones";
+import PromocionesConsulta from "./pages/PromocionesConsulta";
 import Campanas from "./pages/Campanas";
 import CampanaDetalle from "./pages/CampanaDetalle";
 import Despacho from "./pages/Despacho";
@@ -363,6 +364,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiresOpenShift requiredShiftRoles={["puedeRegistrarPromociones"]}>
                       <Promociones />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/promociones/consulta"
+                  element={
+                    <ProtectedRoute>
+                      <PromocionesConsulta />
                     </ProtectedRoute>
                   }
                 />

@@ -767,7 +767,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         p_dispatched_by: user.id,
         p_items: (isServirModule ? partialItems : []) as any,
         p_operation_type: isServirModule ? "partial" : "total",
-        p_source_module: isServirModule ? "servir" : "dispatch",
+        p_source_module: "dispatch",
         p_notes: null,
       });
       if (error) throw error;
