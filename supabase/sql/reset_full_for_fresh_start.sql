@@ -41,7 +41,7 @@
 --   - incluye cobro con catalogo global de denominaciones (UI) vs plantilla de arqueo (apertura); tras reset solo queda el catalogo en `denominations`
 --   - incluye el turno operativo `cash_shifts.opened_at` que la UI muestra como fecha/hora de apertura en `Admin > Turno`
 --   - incluye `cash_shifts.max_caja_sessions` and slots de sesion Caja en cash_shift_users (caja_session_slots)
---   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja y autorizacion de anulacion
+--   - incluye permisos operativos por turno para Mesas, Ordenes, Despacho, Productos, Caja, autorizacion de anulacion, Empacador y Servir
 --   - incluye templates de apertura de caja y su composicion por denominacion
 --   - deja sin base transaccional los reportes de caja por apertura y el consolidado por turno
 --   - incluye auditoria de cierre de turno (closed_by, closed_from_device, closed_from_user_agent)

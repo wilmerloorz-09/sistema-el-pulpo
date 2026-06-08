@@ -393,7 +393,7 @@ const App = () => (
                 <Route
                   path="/servir"
                   element={
-                    <ProtectedRoute requiresOpenShift requiredShiftRoles={["canDispatchOrders"]}>
+                    <ProtectedRoute requiresOpenShift requiredShiftRoles={["canServePlates"]}>
                       <Servir />
                     </ProtectedRoute>
                   }

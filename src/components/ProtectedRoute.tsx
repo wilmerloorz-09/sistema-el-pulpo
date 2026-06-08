@@ -24,6 +24,7 @@ interface Props {
     | "canUseCaja"
     | "canPackOrders"
     | "puedeRegistrarPromociones"
+    | "canServePlates"
   >;
   blockedShiftRoles?: Array<
     | "canServeTables"
@@ -34,6 +35,7 @@ interface Props {
     | "canUseCaja"
     | "canPackOrders"
     | "puedeRegistrarPromociones"
+    | "canServePlates"
   >;
 }
 
@@ -60,6 +62,7 @@ const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number]
   canUseCaja: "Caja",
   canPackOrders: "Empacador",
   puedeRegistrarPromociones: "Promociones",
+  canServePlates: "Servir",
 };
 
 const ProtectedRoute = ({

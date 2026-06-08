@@ -261,6 +261,7 @@ function groupItemsIntoDispatchCards(
   operationalMaps: any,
   clientPaidQtyByItemId: Record<string, number>,
   platosProductIds?: Set<string>,
+  filterOutPlatos?: boolean,
 ): DispatchOrder[] {
   const {
     readyMap,
@@ -278,7 +279,11 @@ function groupItemsIntoDispatchCards(
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
       if (item.order_id !== order.id) return false;
-      if (platosProductIds && !isPlatosOrderItem(item.product_id, platosProductIds)) return false;
+      if (platosProductIds) {
+        const isPlato = isPlatosOrderItem(item.product_id, platosProductIds);
+        if (filterOutPlatos && isPlato) return false;
+        if (!filterOutPlatos && !isPlato) return false;
+      }
       const st = String(item.status ?? "").toUpperCase();
       if (st === "DRAFT" || st === "CANCELLED") return false;
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
@@ -569,9 +574,26 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         skipLocalCache: true,
       });
 
-      const platosProductIds = isServirModule
-        ? await fetchPlatosProductIdsForBranch(activeBranchId)
-        : undefined;
+      let platosProductIds: Set<string> | undefined;
+      let filterOutPlatos = false;
+
+      if (isServirModule) {
+        platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
+      } else if (moduleMode === "dispatch") {
+        const serverUsers = await dbSelect<any>("cash_shift_users", {
+          select: "user_id",
+          filters: [
+            { column: "shift_id", op: "eq", value: openShift.id },
+            { column: "is_enabled", op: "eq", value: true },
+            { column: "can_serve_plates", op: "eq", value: true }
+          ]
+        });
+        const hasAnyServer = (serverUsers ?? []).length > 0;
+        if (hasAnyServer) {
+          platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
+          filterOutPlatos = true;
+        }
+      }
 
       const allCards = allPermittedOrders.flatMap((order) => {
         const orderWithContext = {
@@ -588,6 +610,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           operationalMaps,
           clientPaidQtyByItemId,
           platosProductIds,
+          filterOutPlatos,
         );
       }).filter((card) => dispatchCardHasWork(card));
 

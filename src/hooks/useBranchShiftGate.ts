@@ -38,6 +38,7 @@ export interface BranchShiftGate {
   secondaryCajaTakeoutEnabled: boolean;
   /** Cajero secundario: puede cobrar sus EXPRESS propias. */
   secondaryCajaExpressEnabled: boolean;
+  canServePlates: boolean;
   canPackOrders: boolean;
   canAuthorizeOrderCancel: boolean;
   canDoubleSession: boolean;
@@ -80,6 +81,7 @@ export function useBranchShiftGate() {
           isSecondaryCashier: false,
           secondaryCajaTakeoutEnabled: false,
           secondaryCajaExpressEnabled: false,
+          canServePlates: false,
           canPackOrders: false,
           canAuthorizeOrderCancel: false,
           canDoubleSession: false,
@@ -124,6 +126,7 @@ export function useBranchShiftGate() {
           isSecondaryCashier: false,
           secondaryCajaTakeoutEnabled: false,
           secondaryCajaExpressEnabled: false,
+          canServePlates: false,
           canPackOrders: false,
           canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
           canDoubleSession: Boolean(row?.can_double_session),
@@ -152,7 +155,7 @@ export function useBranchShiftGate() {
 
       const shiftUserSelectBase =
         "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_pack_orders, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots";
-      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled`;
+      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled, can_serve_plates`;
 
       let shiftUserRow: Record<string, unknown> | null = null;
       const extendedShiftUserResult = await (supabase
@@ -250,6 +253,7 @@ export function useBranchShiftGate() {
         secondaryCajaExpressEnabled: isSecondaryCashier
           ? Boolean(shiftUserRow?.secondary_caja_express_enabled)
           : false,
+        canServePlates: hasDirectShiftRow ? Boolean(shiftUserRow?.can_serve_plates) : false,
         canPackOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_pack_orders) : false,
         canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
         canDoubleSession: hasDirectShiftRow ? Boolean(shiftUserRow?.can_double_session) : Boolean(row?.can_double_session),

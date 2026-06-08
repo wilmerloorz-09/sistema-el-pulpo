@@ -67,6 +67,11 @@
   - Boton **Despachar todo** por orden en `DispatchCardBase` / `Despacho.tsx`.
   - Lecturas: RPC batch `get_batch_order_operational_snapshots(...)` (`20260602140000`) con fallback a `get_order_operational_snapshot` por orden.
   - Tras despachar: actualizacion optimista en cliente e invalidacion diferida de queries secundarias (~2,5 s).
+- **Servir (Platos) y Despacho:**
+  - Si un turno tiene al menos un usuario habilitado con el permiso `can_serve_plates` (Servir):
+    - El módulo **Despacho** filtra y oculta todos los productos de la categoría raíz PLATOS.
+    - El módulo **Servir** (`/servir`) muestra *exclusivamente* los productos de la categoría raíz PLATOS.
+  - Si ningún usuario en el turno tiene el permiso `can_serve_plates`, el módulo **Despacho** vuelve a mostrar todos los productos (comportamiento tradicional).
 - **Clientes (comensales) y cobro (2026-06-11+):**
   - Tabla `clientes` (cédula única, sexo, contacto); no son usuarios de `auth`.
   - `orders.cliente_id` opcional: se asigna al cobrar (`PaymentDialogV2` + `usePaymentClienteSelection`) o al registrar promoción.
@@ -111,6 +116,7 @@
   - `can_double_session`
   - `is_supervisor`
   - `can_pack_orders` (Empacador: solo ve `/extra` y sus comandas, bloqueado de Mesas, Express, Para Llevar y Especial)
+  - `can_serve_plates` (Servir: módulo independiente para despachar productos de categoría PLATOS)
 - **Varios cajeros por turno (2026-05-21+):**
   - Puede haber **varios** usuarios con `can_use_caja = true` en el mismo turno, hasta el cupo `cash_shifts.max_caja_sessions` (terminales configuradas en `Admin > Turno`).
   - Ya no existe restriccion de un solo cajero habilitado por turno (`ux_cash_shift_users_one_enabled_cashier_per_shift` eliminado).

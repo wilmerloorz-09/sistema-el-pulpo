@@ -120,6 +120,21 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "ordenes") || canView(permissions, "mesas"),
   },
   {
+    to: "/servir",
+    label: "Servir",
+    icon: <ConciergeBell className="h-5 w-5" />,
+    group: "OPERATIVO",
+    tone: {
+      active: "from-indigo-500 to-blue-400",
+      idle: "hover:border-indigo-200 hover:bg-indigo-50/90 hover:text-indigo-700",
+      iconIdle: "bg-indigo-50 text-indigo-600",
+    },
+    visible: (permissions) =>
+      canView(permissions, "despacho_total")
+      || canView(permissions, "despacho_mesa")
+      || canView(permissions, "despacho_para_llevar"),
+  },
+  {
     to: "/despacho",
     label: "Despacho",
     icon: <ChefHat className="h-5 w-5" />,
@@ -331,6 +346,10 @@ export function useVisibleNavItems() {
 
       if (isCajaFinanceNavPath(item.to)) {
         return canSeeCajaFinanceNav(sg);
+      }
+
+      if (item.to === "/servir") {
+        return hasSupervisorBypass || Boolean(sg?.canServePlates);
       }
 
       if (item.to === "/despacho") {

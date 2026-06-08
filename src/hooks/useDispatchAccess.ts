@@ -22,7 +22,8 @@ export function useDispatchAccess() {
 
   const access = useMemo(() => {
     const hasDispatchShiftAccess = Boolean(shiftGateQuery.data?.isSupervisor)
-      || Boolean(shiftGateQuery.data?.canDispatchOrders);
+      || Boolean(shiftGateQuery.data?.canDispatchOrders)
+      || Boolean(shiftGateQuery.data?.canServePlates);
     const hasBaseViewTable = canView(permissions, "despacho_total") || canView(permissions, "despacho_mesa");
     const hasBaseViewTakeout = canView(permissions, "despacho_total") || canView(permissions, "despacho_para_llevar");
     const hasBaseOperateTable = canOperate(permissions, "despacho_total") || canOperate(permissions, "despacho_mesa");
@@ -89,6 +90,7 @@ export function useDispatchAccess() {
     isGlobalAdmin,
     permissions,
     shiftGateQuery.data?.canDispatchOrders,
+    shiftGateQuery.data?.canServePlates,
     shiftGateQuery.data?.isSupervisor,
     user?.id,
   ]);

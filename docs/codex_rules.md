@@ -210,6 +210,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 12.2 Despacho
 - Pestañas: `Todos`, `Mesa` (incluye `EXTRA`), `Para llevar / Express` (unifica `TAKEOUT`+`EXPRESS`), `Orden especial`.
+- Si el turno habilita `can_serve_plates`, los productos de la categoría raíz PLATOS se despachan en el módulo independiente **Servir** y Despacho los oculta.
 - No reintroducir pestaña Express separada; normalizar `localStorage` `EXPRESS` → `TAKEOUT`.
 - Modo SPLIT: asignacion `TAKEOUT` o `EXPRESS` habilita la pestaña unificada; `EXTRA` se evalua como `TABLE`.
 - Conservar una tarjeta por `order_code`; usar `get_batch_order_operational_snapshots` si existe (`20260602140000`).
