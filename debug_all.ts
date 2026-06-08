@@ -12,25 +12,33 @@ for (const line of envContent.split("\n")) {
 }
 
 const supabaseUrl = envVars.VITE_SUPABASE_URL;
+// Use service role if available, otherwise fallback to publishable
 const supabaseKey = envVars.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function main() {
+  // Use a JWT token to impersonate an authenticated user if needed
+  // For now, let's just use RPC to bypass RLS or check if RLS blocks us
+  
   const { data, error } = await supabase
     .from("campanas_promocionales")
-    .select("id, titulo, cartelera_ofertas, activa");
+    .select("id, titulo, activa, cartelera_ofertas");
 
   if (error) {
     console.error("Error fetching:", error);
     process.exit(1);
   }
 
+  console.log(`Found ${data.length} campaigns.`);
   for (const campana of data) {
-    console.log(`\nCampana: "${campana.titulo}" (ID: ${campana.id}) - Activa: ${campana.activa}`);
+    console.log(`\n=== CAMPAÑA: ${campana.titulo} ===`);
+    console.log(`ID: ${campana.id}`);
+    console.log(`ACTIVA: ${campana.activa}`);
     const cartelera = campana.cartelera_ofertas || [];
+    console.log(`OFERTAS (${cartelera.length}):`);
     for (const oferta of cartelera) {
-      console.log(`  - Oferta: ${oferta.descripcion} (${oferta.id_oferta})`);
+      console.log(`  - ${oferta.descripcion} (ID: ${oferta.id_oferta})`);
       console.log(`    inicio_at: ${oferta.inicio_at}`);
       console.log(`    bloqueo_at: ${oferta.bloqueo_at}`);
       console.log(`    resultado: ${oferta.resultado}`);

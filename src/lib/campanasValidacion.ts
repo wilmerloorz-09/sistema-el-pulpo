@@ -21,6 +21,7 @@ export function nuevaOfertaCartelera(idOferta?: string): OfertaCartelera {
   return {
     id_oferta: idOferta ?? nuevaIdOferta(),
     descripcion: "",
+    inicio_at: "",
     bloqueo_at: "",
     cuota: 0,
     resultado: "PENDIENTE",
@@ -66,6 +67,7 @@ export function prepararOfertaParaGuardar(oferta: OfertaCartelera): OfertaCartel
   return {
     id_oferta: oferta.id_oferta.trim(),
     descripcion: oferta.descripcion.trim(),
+    inicio_at: oferta.inicio_at || "",
     bloqueo_at: oferta.bloqueo_at,
     cuota: Number(oferta.cuota),
     resultado: normalizarResultadoOferta(oferta.resultado),
@@ -109,6 +111,15 @@ export function validarCampanaDatosBasicos(valores: CampanaDatosBasicosFormulari
   return errores;
 }
 
+/** Convierte YYYY-MM-DD del input a ISO (inicio del día local). */
+export function inicioAtDesdeInputFecha(fecha: string): string {
+  if (!fecha.trim()) return "";
+  const partes = fecha.split("-").map(Number);
+  if (partes.length !== 3 || partes.some((n) => !Number.isFinite(n))) return "";
+  const [anio, mes, dia] = partes;
+  return new Date(anio, mes - 1, dia, 0, 0, 0, 0).toISOString();
+}
+
 /** Convierte YYYY-MM-DD del input a ISO (fin del día local). */
 export function bloqueoAtDesdeInputFecha(fecha: string): string {
   if (!fecha.trim()) return "";
@@ -118,10 +129,18 @@ export function bloqueoAtDesdeInputFecha(fecha: string): string {
   return new Date(anio, mes - 1, dia, 23, 59, 59, 999).toISOString();
 }
 
-/** Valor para input type="date" desde ISO guardado. */
 export function bloqueoAtParaInputFecha(iso: string): string {
   if (!iso.trim()) return "";
-  return iso.slice(0, 10);
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso.slice(0, 10);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    return iso.slice(0, 10);
+  }
 }
 
 export function formatFechaBloqueo(iso: string): string {
@@ -139,6 +158,7 @@ export function formatFechaBloqueo(iso: string): string {
 
 export function validarOfertaCartelera(oferta: OfertaCartelera): string | null {
   if (!oferta.descripcion.trim()) return "La descripción es obligatoria.";
+  if (!oferta.inicio_at) return "Indica la fecha de inicio.";
   if (!oferta.bloqueo_at) return "Indica la fecha límite de bloqueo.";
   if (!Number.isFinite(Number(oferta.cuota))) return "La cuota debe ser un número válido.";
   return null;
@@ -153,7 +173,7 @@ export function validarCampanaFormulario(valores: CampanaPromocionalFormulario):
     const invalida = valores.cartelera_ofertas.find(
       (o) => validarOfertaCartelera(o) !== null || !o.id_oferta.trim(),
     );
-    if (invalida) errores.cartelera = "Cada oferta requiere descripción, fecha de bloqueo y cuota.";
+    if (invalida) errores.cartelera = "Cada oferta requiere descripción, fecha de inicio, fecha de bloqueo y cuota.";
   }
 
   return errores;

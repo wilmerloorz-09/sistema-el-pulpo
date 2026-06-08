@@ -24,6 +24,7 @@ import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
 import PaymentClienteCard from "@/components/caja/PaymentClienteCard";
 import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
 import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
+import { useClientWinningOffer } from "@/hooks/useClientWinningOffer";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -147,7 +148,7 @@ export default function PaymentDialogV2({
     [order?.items],
   );
 
-  const orderChargeTotal = useMemo(() => {
+  const baseChargeTotal = useMemo(() => {
     if (!order) return 0;
     if (order.is_special) return roundMoney(Math.max(0, Number(order.special_pending_amount ?? 0)));
     const lines = (order.items ?? []).filter((i) => Number(i.quantity_pending ?? 0) > 0);
@@ -161,6 +162,16 @@ export default function PaymentDialogV2({
       }, 0),
     );
   }, [order, payItemQtys]);
+
+  const { data: winningOffer } = useClientWinningOffer(clienteSelection.selectedCliente?.id);
+
+  const discountAmount = useMemo(() => {
+    if (!winningOffer) return 0;
+    if (baseChargeTotal < winningOffer.consumo_minimo) return 0;
+    return roundMoney(winningOffer.monto_descuento_ganado);
+  }, [winningOffer, baseChargeTotal]);
+
+  const orderChargeTotal = roundMoney(Math.max(0, baseChargeTotal - discountAmount));
 
   const unpaidPayableLines = useMemo(
     () => (order?.items ?? []).filter((i) => Number(i.quantity_pending ?? 0) > 0),
@@ -497,6 +508,7 @@ export default function PaymentDialogV2({
       cashChangeDenoms,
       preparedTransferProofSession: null,
       clienteId: clienteSelection.selectedCliente?.id ?? null,
+      prediccionIdAUsar: discountAmount > 0 && winningOffer ? winningOffer.prediccion_id : undefined,
     };
 
     const changeLinesSnapshot = changeDenomBreakdown.map((d) => ({
@@ -764,7 +776,7 @@ export default function PaymentDialogV2({
           ) : !order ? null : (
             <div className="flex flex-col gap-3 xl:gap-4">
               {/* Fila superior: total, transferencia y resumen en horizontal desde md */}
-              <div className="grid gap-3 md:grid-cols-2 md:items-stretch xl:grid-cols-[minmax(0,1.42fr)_minmax(0,1fr)_9.25rem_minmax(0,1.08fr)] lg:gap-4">
+              <div className="grid gap-3 md:grid-cols-2 md:items-stretch xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1.14fr)_9.25rem_minmax(0,1.08fr)] lg:gap-4">
                 <PaymentClienteCard
                   order={order}
                   readOnly={readOnly}
@@ -772,25 +784,29 @@ export default function PaymentDialogV2({
                   className="md:col-span-2 xl:col-span-1"
                 />
 
-                <div className="flex min-h-[100px] flex-col justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 shadow-sm sm:flex-row sm:items-stretch">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                      <CreditCard className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">Total de la orden</p>
-                      <p className="truncate text-xs text-sky-700/90">
-                        {order.is_special ? "Saldo precio especial" : "Pendiente por cobrar"}
-                      </p>
+                <div className="flex min-h-[100px] flex-col rounded-2xl border border-sky-200 bg-sky-50 shadow-sm">
+                  <div className="flex flex-1 flex-col justify-between gap-3 px-4 pt-3 pb-2 sm:flex-row sm:items-start">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                        <CreditCard className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 whitespace-nowrap">Total de la orden</p>
+                        <p className="truncate text-[11px] text-sky-700/90 mt-0.5">
+                          {order.is_special ? "Saldo precio especial" : "Pendiente por cobrar"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center justify-end gap-6 self-start sm:self-start">
                       {canOfferItemSplit && !readOnly ? (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="mt-2 h-8 border-sky-300 bg-white/90 text-xs font-semibold text-sky-900 hover:bg-sky-100"
+                          className="h-8 border-sky-300 bg-white/90 text-xs font-semibold text-sky-900 hover:bg-sky-100"
                           onClick={() => handleSplitItemsDialogOpenChange(true)}
                         >
-                          Dividir pago
+                          Dividir
                         </Button>
                       ) : showDisabledItemSplit && !readOnly ? (
                         <Button
@@ -799,16 +815,36 @@ export default function PaymentDialogV2({
                           size="sm"
                           disabled
                           title="Express y Extra solo permiten cobro total de la orden"
-                          className="mt-2 h-8 cursor-not-allowed border-sky-200 bg-white/60 text-xs font-semibold text-sky-700/60"
+                          className="h-8 cursor-not-allowed border-sky-200 bg-white/60 text-xs font-semibold text-sky-700/60"
                         >
-                          Dividir pago
+                          Dividir
                         </Button>
                       ) : null}
+                      <p className="font-display text-sm font-black tabular-nums tracking-tight text-sky-950">
+                        {formatCurrency(baseChargeTotal)}
+                      </p>
                     </div>
                   </div>
-                  <p className="shrink-0 self-center font-display text-2xl font-black tabular-nums tracking-tight text-sky-950 sm:text-right">
-                    {formatCurrency(orderChargeTotal)}
-                  </p>
+                  
+                  <div className="flex flex-col gap-1.5 px-4 pb-3 text-[11px] font-medium text-sky-800/75">
+                    <div className="flex items-center justify-between">
+                      <span>Descuento Normal</span>
+                      <span>{formatCurrency(0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Descuento por Oferta</span>
+                      <span className={discountAmount > 0 ? "text-emerald-600 font-bold tabular-nums" : "tabular-nums"}>
+                        {discountAmount > 0 ? `-${formatCurrency(discountAmount)}` : formatCurrency(0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-b-[15px] border-t border-sky-200/60 bg-sky-100/40 px-4 py-2.5">
+                    <span className="font-bold tracking-wider text-sky-950 text-xs">TOTAL</span>
+                    <p className="font-display text-sm font-black tabular-nums tracking-tight text-sky-950">
+                      {formatCurrency(orderChargeTotal)}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex min-h-[100px] min-w-0 flex-col justify-center gap-1.5 rounded-2xl border border-violet-200 bg-violet-50/60 px-2.5 py-2.5 shadow-sm xl:max-w-[9.25rem]">

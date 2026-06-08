@@ -179,7 +179,7 @@ const NAV_ITEMS: AppNavItem[] = [
   },
   {
     to: "/promociones?origin=promociones",
-    label: "Promociones",
+    label: "Registrar participante",
     icon: <Gift className="h-5 w-5" />,
     group: "PROMOCIONES",
     tone: {

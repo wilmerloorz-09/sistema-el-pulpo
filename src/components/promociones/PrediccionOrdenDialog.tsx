@@ -15,8 +15,34 @@ import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
 import type { CampanaPromocional, OfertaCartelera, OrdenElegiblePromocion } from "@/types/campanaPromocional";
 
 function ofertaDisponible(oferta: OfertaCartelera): boolean {
-  if (!oferta.bloqueo_at) return false;
-  return new Date(oferta.bloqueo_at).getTime() > Date.now();
+  console.log("Evaluando oferta:", oferta.descripcion, oferta.id_oferta);
+  if (oferta.resultado === "GANADA" || oferta.resultado === "PERDIDA") {
+    console.log(" - Filtrada por resultado:", oferta.resultado);
+    return false;
+  }
+
+  if (!oferta.bloqueo_at) {
+    console.log(" - Filtrada por falta de bloqueo_at");
+    return false;
+  }
+  const ahora = Date.now();
+  const bloqueoTime = new Date(oferta.bloqueo_at).getTime();
+  
+  if (ahora > bloqueoTime) {
+    console.log(" - Filtrada por bloqueo expirado. ahora:", ahora, "bloqueoTime:", bloqueoTime);
+    return false;
+  }
+
+  if (oferta.inicio_at) {
+    const inicioTime = new Date(oferta.inicio_at).getTime();
+    if (ahora < inicioTime) {
+      console.log(" - Filtrada por inicio en el futuro. ahora:", ahora, "inicioTime:", inicioTime);
+      return false;
+    }
+  }
+
+  console.log(" - Oferta disponible!");
+  return true;
 }
 
 interface PrediccionOrdenDialogProps {

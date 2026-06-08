@@ -14,7 +14,7 @@ import { roundMoney } from "@/lib/paymentQuantity";
 const TABLA_PREDICCIONES = "predicciones_clientes" as const;
 
 const COLUMNAS_PREDICCION =
-  "id, campana_id, orden_id, cliente_id, oferta_seleccionada_id, estado_prediccion, codigo_cupon, cupon_usado_el, fecha_caducidad_cupon, registrado_por, creado_el";
+  "id, campana_id, orden_id, cliente_id, oferta_seleccionada_id, estado_prediccion, monto_descuento_ganado, codigo_cupon, cupon_usado_el, fecha_caducidad_cupon, registrado_por, creado_el";
 
 function agregarPagoActivo(
   mapa: Record<string, number>,
@@ -130,6 +130,7 @@ export async function registrarPrediccionCliente(payload: RegistrarPrediccionPay
       id,
       ...payload,
       estado_prediccion: "PENDIENTE",
+      monto_descuento_ganado: null,
       codigo_cupon: null,
       cupon_usado_el: null,
       fecha_caducidad_cupon: null,
@@ -141,6 +142,7 @@ export async function registrarPrediccionCliente(payload: RegistrarPrediccionPay
     id,
     ...payload,
     estado_prediccion: "PENDIENTE",
+    monto_descuento_ganado: null,
     codigo_cupon: null,
     cupon_usado_el: null,
     fecha_caducidad_cupon: null,

@@ -214,6 +214,9 @@ const CampanaOfertasCrud = ({
                 Cuota
               </div>
               <div className="w-36 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Inicio
+              </div>
+              <div className="w-36 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                 Bloqueo
               </div>
               <div className="w-24 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -272,6 +275,10 @@ const CampanaOfertasCrud = ({
                         </div>
 
                         <div className="hidden w-36 shrink-0 text-xs text-slate-600 sm:block">
+                          {oferta.inicio_at ? formatFechaBloqueo(oferta.inicio_at) : "N/A"}
+                        </div>
+
+                        <div className="hidden w-36 shrink-0 text-xs text-slate-600 sm:block">
                           {formatFechaBloqueo(oferta.bloqueo_at)}
                         </div>
 
@@ -321,6 +328,7 @@ const CampanaOfertasCrud = ({
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 px-5 pb-3 text-xs text-slate-600 sm:hidden">
                         <span className="font-mono font-semibold">Cuota {Number(oferta.cuota).toFixed(2)}</span>
+                        {oferta.inicio_at ? <span>{formatFechaBloqueo(oferta.inicio_at)} - </span> : null}
                         <span>{formatFechaBloqueo(oferta.bloqueo_at)}</span>
                         <BadgeResultado resultado={resultado} />
                         {estaPendiente ? (

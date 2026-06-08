@@ -14,6 +14,7 @@ import {
 import type { OfertaCartelera } from "@/types/campanaPromocional";
 import {
   bloqueoAtDesdeInputFecha,
+  inicioAtDesdeInputFecha,
   bloqueoAtParaInputFecha,
   nuevaOfertaCartelera,
   prepararOfertaParaGuardar,
@@ -48,7 +49,13 @@ export default function OfertaCarteleraFormulario({
     setIntentoEnvio(false);
     setErrorGeneral(null);
     if (modo === "editar" && ofertaInicial) {
-      setValores({ ...ofertaInicial });
+      setValores({
+        ...ofertaInicial,
+        inicio_at: ofertaInicial.inicio_at
+          ? inicioAtDesdeInputFecha(bloqueoAtParaInputFecha(ofertaInicial.inicio_at))
+          : "",
+        bloqueo_at: bloqueoAtDesdeInputFecha(bloqueoAtParaInputFecha(ofertaInicial.bloqueo_at)),
+      });
     } else {
       setValores(nuevaOfertaCartelera(idNuevaOferta));
     }
@@ -103,7 +110,7 @@ export default function OfertaCarteleraFormulario({
             />
           </div>
 
-          <div className="grid max-w-md grid-cols-2 gap-x-3 gap-y-3">
+          <div className="grid max-w-md grid-cols-3 gap-x-3 gap-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="oferta-cuota" className="text-xs font-medium text-muted-foreground">
                 Cuota *
@@ -117,6 +124,24 @@ export default function OfertaCarteleraFormulario({
                 value={valores.cuota}
                 disabled={guardando}
                 onChange={(e) => setValores((p) => ({ ...p, cuota: Number(e.target.value) }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="oferta-inicio" className="text-xs font-medium text-muted-foreground">
+                Fecha inicio *
+              </Label>
+              <Input
+                id="oferta-inicio"
+                className="h-9"
+                type="date"
+                value={bloqueoAtParaInputFecha(valores.inicio_at || "")}
+                disabled={guardando}
+                onChange={(e) =>
+                  setValores((p) => ({
+                    ...p,
+                    inicio_at: inicioAtDesdeInputFecha(e.target.value),
+                  }))
+                }
               />
             </div>
             <div className="space-y-1.5">

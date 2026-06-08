@@ -390,6 +390,8 @@ export interface PayOrderParams {
   preparedTransferProofSession?: PreparedTransferProofSession | null;
   /** Comensal a vincular con la orden al confirmar el cobro. */
   clienteId?: string | null;
+  /** ID de la predicción (oferta ganadora) a marcar como consumida tras el cobro. */
+  prediccionIdAUsar?: string;
 }
 
 export interface PreparedTransferProofSession {
@@ -2247,7 +2249,7 @@ export function useCaja(params?: {
   });
 
   const payOrder = useMutation({
-    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession, clienteId }: PayOrderParams) => {
+    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession, clienteId, prediccionIdAUsar }: PayOrderParams) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
@@ -2642,6 +2644,9 @@ export function useCaja(params?: {
           : Promise.resolve(),
         clienteId
           ? dbUpdate("orders", orderId, { cliente_id: clienteId })
+          : Promise.resolve(),
+        prediccionIdAUsar
+          ? dbUpdate("predicciones_clientes", prediccionIdAUsar, { cupon_usado_el: now })
           : Promise.resolve(),
       ]);
 
