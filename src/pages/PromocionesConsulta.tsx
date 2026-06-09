@@ -57,6 +57,7 @@ export default function PromocionesConsulta() {
   const [desde, setDesde] = useState<string>(format(startOfToday, "yyyy-MM-dd'T'HH:mm"));
   const [hasta, setHasta] = useState<string>(format(endOfToday, "yyyy-MM-dd'T'HH:mm"));
   const [campanaId, setCampanaId] = useState<string>('ALL');
+  const [ofertaId, setOfertaId] = useState<string>('ALL');
   const [shiftId, setShiftId] = useState<string>('ALL');
   const [estadoPrediccion, setEstadoPrediccion] = useState<string>('ALL');
   const [estadoCupon, setEstadoCupon] = useState<string>('ALL');
@@ -156,6 +157,7 @@ export default function PromocionesConsulta() {
   const [activeFilters, setActiveFilters] = useState<PromocionesConsultaFilters>({
     branchId: localBranchId,
     campanaId: 'ALL',
+    ofertaId: 'ALL',
     estadoPrediccion: 'ALL',
     estadoCupon: 'ALL',
     desde: startOfToday.toISOString(),
@@ -173,6 +175,7 @@ export default function PromocionesConsulta() {
     setActiveFilters({
       branchId: localBranchId,
       campanaId,
+      ofertaId,
       estadoPrediccion,
       estadoCupon,
       desde: desdeISO,
@@ -188,6 +191,7 @@ export default function PromocionesConsulta() {
     setLocalBranchId(activeBranchId || 'ALL');
     setRangeType('HOY');
     setCampanaId('ALL');
+    setOfertaId('ALL');
     setShiftId('ALL');
     setEstadoPrediccion('ALL');
     setEstadoCupon('ALL');
@@ -205,6 +209,7 @@ export default function PromocionesConsulta() {
     setActiveFilters({
       branchId: activeBranchId || 'ALL',
       campanaId: 'ALL',
+      ofertaId: 'ALL',
       estadoPrediccion: 'ALL',
       estadoCupon: 'ALL',
       desde: startToday.toISOString(),
@@ -227,6 +232,8 @@ export default function PromocionesConsulta() {
     perdidasCount: 0,
     totalMontoDescuento: 0,
     cuponesUsadosCount: 0,
+    totalOrdenesAmount: 0,
+    totalCreditoPorObtener: 0,
   };
 
   // Validaciones de Acceso
@@ -277,6 +284,8 @@ export default function PromocionesConsulta() {
       'Orden Code',
       'Orden Nro',
       'Referencia Orden',
+      'Monto de la Orden ($)',
+      'Crédito por Obtener ($)',
       'Cliente Cedula',
       'Cliente Nombre',
       'Campaña',
@@ -299,6 +308,16 @@ export default function PromocionesConsulta() {
       const oferta = getOfertaDescripcion(r.campana, r.oferta_seleccionada_id);
       const estado = r.estado_prediccion;
       const cupon = r.codigo_cupon || '';
+      
+      const pagos = r.orden?.payments || [];
+      const sumaPagos = pagos.reduce((acc: number, p: any) => acc + Number(p.amount || 0), 0);
+      const totalOrden = sumaPagos > 0 ? sumaPagos : Number(r.orden?.total || 0);
+      const porcentaje = Number(r.campana?.porcentaje_descuento || 0) / 100;
+      const descMax = r.campana?.descuento_maximo ? Number(r.campana.descuento_maximo) : Infinity;
+      const creditoPotencial = Math.min(totalOrden * porcentaje, descMax);
+      
+      const totalOrdenStr = totalOrden.toFixed(2);
+      const creditoStr = creditoPotencial.toFixed(2);
       
       let estCupon = 'Ninguno';
       const nowTime = new Date().getTime();
@@ -325,6 +344,8 @@ export default function PromocionesConsulta() {
         r.orden?.order_code || '',
         r.orden?.order_number || '',
         ref,
+        totalOrdenStr,
+        creditoStr,
         cedula,
         nombre,
         campana,
@@ -483,7 +504,13 @@ export default function PromocionesConsulta() {
           {/* Campaña */}
           <div className="space-y-1.5">
             <Label className="text-xs font-bold text-muted-foreground">Campaña</Label>
-            <Select value={campanaId} onValueChange={setCampanaId}>
+            <Select 
+              value={campanaId} 
+              onValueChange={(val) => {
+                setCampanaId(val);
+                setOfertaId('ALL'); // Resetear oferta al cambiar campaña
+              }}
+            >
               <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
                 <SelectValue placeholder="Todas las campañas" />
               </SelectTrigger>
@@ -494,6 +521,26 @@ export default function PromocionesConsulta() {
                     {c.titulo} {!c.activa && '(Inactiva)'}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Oferta */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-muted-foreground">Oferta</Label>
+            <Select value={ofertaId} onValueChange={setOfertaId} disabled={campanaId === 'ALL'}>
+              <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs disabled:opacity-50">
+                <SelectValue placeholder={campanaId === 'ALL' ? "Selecciona una campaña primero" : "Todas las ofertas"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todas las ofertas</SelectItem>
+                {campanaId !== 'ALL' && (catalogos?.campaigns || [])
+                  .find((c: any) => c.id === campanaId)
+                  ?.cartelera_ofertas?.map((o: any) => (
+                    <SelectItem key={o.id_oferta || o.id} value={o.id_oferta || o.id} className="text-xs">
+                      {o.descripcion}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
@@ -621,7 +668,7 @@ export default function PromocionesConsulta() {
       </div>
 
       {/* KPIs Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 print:grid-cols-6">
         {/* Total Participaciones */}
         <Card className="overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-indigo-500/10 to-violet-500/5 shadow-none">
           <CardContent className="p-5">
@@ -701,6 +748,46 @@ export default function PromocionesConsulta() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Total de las Ordenes */}
+        <Card className="overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-amber-500/10 to-orange-500/5 shadow-none">
+          <CardContent className="p-5">
+            <div className="flex justify-between items-start">
+              <div className="rounded-2xl bg-amber-500/15 p-2.5 text-amber-600 dark:text-amber-400">
+                <Receipt className="h-5 w-5" />
+              </div>
+              <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 rounded-full px-2 py-0.5">
+                Órdenes
+              </span>
+            </div>
+            <div className="mt-4">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Consumo Recibido</span>
+              <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
+                {formatCurrency(kpis.totalOrdenesAmount)}
+              </h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Crédito por Obtener */}
+        <Card className="overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-sky-500/10 to-cyan-500/5 shadow-none">
+          <CardContent className="p-5">
+            <div className="flex justify-between items-start">
+              <div className="rounded-2xl bg-sky-500/15 p-2.5 text-sky-600 dark:text-sky-400">
+                <Tag className="h-5 w-5" />
+              </div>
+              <span className="text-[10px] font-bold text-sky-600 bg-sky-500/10 rounded-full px-2 py-0.5">
+                Crédito
+              </span>
+            </div>
+            <div className="mt-4">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Crédito Potencial</span>
+              <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
+                {formatCurrency(kpis.totalCreditoPorObtener)}
+              </h3>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Resultados y Tabla */}
@@ -757,12 +844,14 @@ export default function PromocionesConsulta() {
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="font-bold text-foreground py-3 text-xs">Fecha y Hora</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Orden</TableHead>
+                  <TableHead className="font-bold text-foreground py-3 text-xs text-right">Monto Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Cliente</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Campaña</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Predicción Elegida</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs text-center">Estado</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs text-center">Cupón / Estado</TableHead>
-                  <TableHead className="font-bold text-foreground py-3 text-xs text-right">Monto Descuento</TableHead>
+                  <TableHead className="font-bold text-foreground py-3 text-xs text-right whitespace-nowrap">Crédito Obtener</TableHead>
+                  <TableHead className="font-bold text-foreground py-3 text-xs text-right whitespace-nowrap">Monto Descuento</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Registrado Por</TableHead>
                 </TableRow>
               </TableHeader>
@@ -770,6 +859,13 @@ export default function PromocionesConsulta() {
                 {records.map((r: any) => {
                   const ref = getOrderRef(r.orden?.order_code, r.orden?.order_number);
                   const isCurrentTime = new Date().getTime();
+                  
+                  const pagos = r.orden?.payments || [];
+                  const sumaPagos = pagos.reduce((acc: number, p: any) => acc + Number(p.amount || 0), 0);
+                  const totalOrden = sumaPagos > 0 ? sumaPagos : Number(r.orden?.total || 0);
+                  const porcentaje = Number(r.campana?.porcentaje_descuento || 0) / 100;
+                  const descMax = r.campana?.descuento_maximo ? Number(r.campana.descuento_maximo) : Infinity;
+                  const creditoPotencial = Math.min(totalOrden * porcentaje, descMax);
 
                   // Determinar estado de cupón para mostrar en badge
                   let couponBadge = null;
@@ -818,12 +914,10 @@ export default function PromocionesConsulta() {
                         {format(new Date(r.creado_el), 'dd/MM/yyyy HH:mm')}
                       </TableCell>
                       <TableCell className="font-mono font-bold text-xs">
-                        <div className="flex flex-col">
-                          <span>{ref}</span>
-                          <span className="text-[10px] font-medium text-muted-foreground">
-                            Total: {formatCurrency(r.orden?.total || 0)}
-                          </span>
-                        </div>
+                        {ref}
+                      </TableCell>
+                      <TableCell className="text-xs text-right font-medium">
+                        {formatCurrency(totalOrden)}
                       </TableCell>
                       <TableCell className="text-xs">
                         {r.cliente ? (
@@ -869,6 +963,9 @@ export default function PromocionesConsulta() {
                         ) : (
                           <span className="text-muted-foreground/60 text-xs">-</span>
                         )}
+                      </TableCell>
+                      <TableCell className="text-xs text-right font-medium text-sky-700 dark:text-sky-400">
+                        {formatCurrency(creditoPotencial)}
                       </TableCell>
                       <TableCell className="text-xs text-right font-bold text-foreground">
                         {r.estado_prediccion === 'GANADA' && r.monto_descuento_ganado

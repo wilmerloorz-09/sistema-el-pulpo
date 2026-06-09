@@ -9,7 +9,7 @@ docs/codex_rules.md
 
 y analiza el sistema antes de continuar.
 
-Adicionalmente, si se requiere crear nuevas tablas o campos, necesito que los nombres de estas tablas o campos, sean en español
+Adicionalmente, si se requiere crear nuevas tablas o campos, necesito que los nombres de estas tablas y campos, sean en español
 
 *************************************************************
 

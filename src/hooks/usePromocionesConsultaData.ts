@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface PromocionesConsultaFilters {
   branchId: string;
   campanaId: string | 'ALL';
+  ofertaId: string | 'ALL';
   estadoPrediccion: string | 'ALL';
   estadoCupon: string | 'ALL';
   desde: string | null; // ISOString
@@ -64,6 +65,7 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
   const {
     branchId,
     campanaId,
+    ofertaId,
     estadoPrediccion,
     estadoCupon,
     desde,
@@ -79,6 +81,7 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
       'promociones-consulta-data',
       branchId,
       campanaId,
+      ofertaId,
       estadoPrediccion,
       estadoCupon,
       desde,
@@ -99,6 +102,8 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
             perdidasCount: 0,
             totalMontoDescuento: 0,
             cuponesUsadosCount: 0,
+            totalOrdenesAmount: 0,
+            totalCreditoPorObtener: 0,
           },
         };
       }
@@ -119,18 +124,9 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
           fecha_caducidad_cupon,
           registrado_por,
           creado_el,
-          campana:campanas_promocionales (id, titulo, consumo_minimo, porcentaje_descuento, activa, cartelera_ofertas),
-          orden:orders!inner (
-            id,
-            order_code,
-            order_number,
-            order_type,
-            total,
-            status,
-            branch_id,
-            cash_shift_id
-          ),
-          cliente:clientes (id, cedula, nombres, apellidos),
+          orden:orders!inner (id, order_code, order_number, branch_id, cash_shift_id, total, payments(amount)),
+          cliente:clientes!inner (id, nombres, apellidos, cedula),
+          campana:campanas_promocionales!inner (id, titulo, activa, cartelera_ofertas, porcentaje_descuento, descuento_maximo),
           registrador:profiles!predicciones_clientes_registrado_por_fkey (id, first_name, last_name, full_name, username)
         `);
 
@@ -142,6 +138,11 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
       // Filtrar por campaña
       if (campanaId && campanaId !== 'ALL') {
         query = query.eq('campana_id', campanaId);
+      }
+
+      // Filtrar por oferta
+      if (ofertaId && ofertaId !== 'ALL') {
+        query = query.eq('oferta_seleccionada_id', ofertaId);
       }
 
       // Filtrar por estado de la predicción
@@ -231,6 +232,22 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
 
       const cuponesUsadosCount = records.filter((r: any) => r.cupon_usado_el).length;
 
+      let totalOrdenesAmount = 0;
+      let totalCreditoPorObtener = 0;
+
+      records.forEach((r: any) => {
+        const pagos = r.orden?.payments || [];
+        const sumaPagos = pagos.reduce((acc: number, p: any) => acc + Number(p.amount || 0), 0);
+        const totalOrden = sumaPagos > 0 ? sumaPagos : Number(r.orden?.total || 0);
+        
+        const porcentaje = Number(r.campana?.porcentaje_descuento || 0) / 100;
+        const descMax = r.campana?.descuento_maximo ? Number(r.campana.descuento_maximo) : Infinity;
+        const creditoPotencial = Math.min(totalOrden * porcentaje, descMax);
+
+        totalOrdenesAmount += totalOrden;
+        totalCreditoPorObtener += creditoPotencial;
+      });
+
       return {
         records,
         kpis: {
@@ -240,6 +257,8 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
           perdidasCount,
           totalMontoDescuento,
           cuponesUsadosCount,
+          totalOrdenesAmount,
+          totalCreditoPorObtener,
         },
       };
     },

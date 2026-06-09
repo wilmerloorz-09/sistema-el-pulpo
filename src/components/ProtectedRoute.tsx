@@ -91,7 +91,7 @@ const ProtectedRoute = ({
   if (!user) return <Navigate to="/login" replace />;
 
   /** Solo turno: no esperar `usePreferredHomePath` (incluye config despacho) para montar la pantalla. */
-  if (requiresOpenShift && shiftGateQuery.isLoading) {
+  if (requiresOpenShift && !isGlobalAdmin && shiftGateQuery.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -168,7 +168,7 @@ const ProtectedRoute = ({
     );
   }
 
-  if (requiresOpenShift) {
+  if (requiresOpenShift && !isGlobalAdmin) {
     if (!shiftOpen || !userEnabled) {
       if (canAccessTurno) {
         return <Navigate to={canAccessAdmin ? "/admin" : "/turno"} replace />;

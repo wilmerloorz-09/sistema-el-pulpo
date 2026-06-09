@@ -309,7 +309,9 @@ export function useVisibleNavItems() {
           (item.to === "/admin" && canAccessAdmin)
           || (item.to.startsWith("/campanas") && puedeGestionarCampanas)
           || (item.to.startsWith("/promociones/consulta") && (puedeRegistrarPromociones || puedeGestionarCampanas))
-          || (item.to.startsWith("/promociones") && puedeRegistrarPromociones)
+          || (item.to.startsWith("/promociones") && (puedeRegistrarPromociones || isGlobalAdmin))
+          || (item.to.startsWith("/clientes") && isGlobalAdmin)
+          || (item.to === "/ordenes" && isGlobalAdmin)
           || (item.to === "/turno" && canAccessTurno)
           || (item.to === "/reportes" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
@@ -333,7 +335,7 @@ export function useVisibleNavItems() {
       }
 
       if (item.to.startsWith("/promociones")) {
-        return puedeRegistrarPromociones;
+        return puedeRegistrarPromociones || isGlobalAdmin;
       }
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
@@ -348,9 +350,10 @@ export function useVisibleNavItems() {
           return hasSupervisorBypass || Boolean(sg?.canServeTables) || Boolean(sg?.canPackOrders);
         }
         if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
-          return hasSupervisorBypass || Boolean(sg?.canServeTables);
+          return hasSupervisorBypass || isGlobalAdmin || Boolean(sg?.canServeTables);
         }
         return hasSupervisorBypass
+          || isGlobalAdmin
           || Boolean(sg?.canServeTables)
           || Boolean(sg?.canAccessOrders);
       }

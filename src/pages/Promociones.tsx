@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import PromocionesCrud from "@/components/promociones/PromocionesCrud";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useBranch } from "@/contexts/BranchContext";
 
 const ORIGEN_PROMOCIONES = "promociones";
 
@@ -10,6 +11,7 @@ const Promociones = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const gate = useBranchShiftGate();
+  const { isGlobalAdmin } = useBranch();
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -27,7 +29,7 @@ const Promociones = () => {
     );
   }
 
-  if (!gate.data?.puedeRegistrarPromociones) {
+  if (!gate.data?.puedeRegistrarPromociones && !isGlobalAdmin) {
     return (
       <div className="px-4 py-16 text-center">
         <p className="font-medium text-foreground">Sin acceso a promociones</p>
