@@ -1,5 +1,5 @@
 AL INICIAR
-
+*************************************************************************
 En el contexto del sistema POS que estoy desarrollando, lee primero los archivos:
 
 docs/system_context.md
@@ -8,6 +8,10 @@ docs/database_architecture.md
 docs/codex_rules.md
 
 y analiza el sistema antes de continuar.
+
+Adicionalmente, si se requiere crear nuevas tablas o campos, necesito que los nombres de estas tablas o campos, sean en español
+
+*************************************************************
 
 
 AL CULMINAR

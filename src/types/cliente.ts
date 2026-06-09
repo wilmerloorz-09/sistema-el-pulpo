@@ -23,6 +23,7 @@ export interface Cliente {
   creado_por: string | null;
   creado_el: string;
   actualizado_el: string;
+  saldo_promocional: number;
 }
 
 /** Valores editables del formulario (crear / editar). */
@@ -34,6 +35,7 @@ export interface ClienteFormularioValores {
   celular: string;
   correo: string;
   direccion: string;
+  saldo_promocional?: number;
 }
 
 export const CLIENTE_FORMULARIO_VACIO: ClienteFormularioValores = {
@@ -44,4 +46,5 @@ export const CLIENTE_FORMULARIO_VACIO: ClienteFormularioValores = {
   celular: "",
   correo: "",
   direccion: "",
+  saldo_promocional: 0,
 };

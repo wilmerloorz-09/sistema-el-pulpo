@@ -281,15 +281,15 @@
 - Enum `order_type` incluye `EXTRA` (migracion `20260527120000_add_extra_order_type.sql`).
 - Sin `table_id`; `menu_scope = TABLE` sin categoria PLATOS.
 - Flujo: borrador -> envio a caja -> pago (`PAID`) -> despacho manual -> cierre.
-- Tras pago total, `sync_order_payment_state_internal` **no** invoca `auto_finalize_extra_order_after_payment` (`20260602120000_extra_flow_like_table_orders.sql`). La funcion legacy puede existir en BD pero queda fuera del sync de pagos.
-- Despacho: ordenes `EXTRA` en `PAID` aparecen en pestañas Mesa/Todos del modulo Despacho; asignacion SPLIT las trata como `TABLE`.
+- Tras pago total, `sync_order_payment_state_internal` **no** invoca `auto_finalize_extra_order_after_payment` (`20260602120000_extra_flow_like_table_orders.sql`). 
+- Despacho: ordenes `EXTRA` en `PAID` aparecen en pestañas Mesa/Todos del modulo Despacho; asignacion SPLIT las trata como `TABLE`. Al despacharse, las órdenes desaparecen automáticamente del módulo Extra.
 - Cierre operativo desde UI Extra: `close_extra_order(p_order_id)` (`20260602130000_close_extra_order.sql`) cuando la orden esta despachada y sin `closed_at`.
-
-### Monitoreo Global
-- `profiles.current_app_session_id`, `cash_shifts`, `cash_shift_users`, y `orders` son monitoreados vía subscripción en tiempo real (`supabase_realtime`) por el modulo `/admin/monitoreo-global`.
-- El Administrador general tiene vista global de turnos sin importar la sucursal, requiriendo que la publicación de Supabase incluya estas tablas.
-- Caja: cobro total obligatorio (sin parcial); visibilidad creador o cajero principal del turno.
-- RPC `create_extra_order(...)`; en listados de caja, `table_name` solo para `DINE_IN` con `table_id`.
+- Restriccion RLS en `orders`: el RLS insert para operarios protege la creacion manual en clientes.
+- Exclusividad en BD: sin validacion transaccional adicional mas alla de caja/pagos.
+- Resolucion de Snapshot: `ensure_order_table_snapshot()` en Supabase sincroniza snapshot de mesa en trigger; frontend puede leer `table_name_snapshot` (`20260424120000_...sql`).
+- Cierre extra se expone en backend como RPC publico para RLS.
+- Cancelacion: flujos base de caja (request / authorize / void) y de orden_items aplican sobre ordenes `EXTRA`.
+- RPC `create_extra_order(...)`; requiere obligatoriamente una mesa seleccionada (`table_id`). En listados de caja, se muestra el `table_name_snapshot` correspondiente a la mesa de la orden Extra.
 
 ### Para llevar (TAKEOUT) y Orden especial como tarjetas dinamicas
 - El listado principal de tarjetas `Para llevar` se filtra por:
@@ -459,7 +459,7 @@
 14. Si se toca Para llevar u Orden especial, preservar tarjetas dinamicas con `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez y salida por despacho aplicado/cancelacion.
 15. Si se modifican triggers de `payment_items` que llaman a `sync_order_payment_state_internal`, mantener sincronización **por sentencia** (como en `20260509180000`) o equivalente que evite invocar la función una vez por cada fila insertada en el mismo lote.
 16. **Plantilla vs cobro:** `cash_register_template_denoms` define arqueo inicial; el cobro en UI usa `denominations` activas; `registrar_movimiento_caja_operativo` debe permitir `PAYMENT_IN` aunque la denominacion no estuviera en la plantilla.
-17. **Extra:** no asignar `table_name` desde snapshot para `order_type` distinto de `DINE_IN` con `table_id`; post-pago queda `PAID` hasta despacho manual; cierre con `close_extra_order`, no auto-finalize en sync de pagos.
+17. **Extra:** Asignar `table_name` desde snapshot para órdenes `EXTRA`, requiriendo `table_id` al crearlas; post-pago queda `PAID` hasta despacho manual; cierre con `close_extra_order` o se auto-ocultan al estar `KITCHEN_DISPATCHED`.
 18. **Despacho UI:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; preferir `get_batch_order_operational_snapshots` cuando exista la migracion.
 19. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
 20. **Mesas KITCHEN_DISPATCHED:** `get_branch_tables_overview` no incluye `KITCHEN_DISPATCHED` en el filtro de ordenes activas. En el frontend (`useTablesWithStatus`) existe la guardia `isDispatchedComplete` que fuerza `status = 'free'` si `active_order_status = 'KITCHEN_DISPATCHED'` y `total_due <= 0`, como defensa adicional. Migracion: `20260526120000_fix_dispatched_tables_show_as_free.sql`.

@@ -61,6 +61,7 @@ export interface SiblingOrder {
   created_at?: string | null;
   item_count: number;
   total?: number;
+  table_name_snapshot?: string | null;
   /** Lineas para vista previa en tarjetas de seleccion de orden (cantidad + descripcion). */
   item_preview_lines?: Array<{ quantity: number; description: string }>;
 }
@@ -486,7 +487,7 @@ export async function fetchExtraSiblingOrders(
 
   const extraOrders = (
     await dbSelect<any>("orders", {
-      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, closed_at, order_items(id, total)",
+      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, closed_at, table_name_snapshot, table_id, order_items(id, total)",
       filters: [
         { column: "branch_id", op: "eq", value: branchId },
         { column: "order_type", op: "eq", value: "EXTRA" },
@@ -511,6 +512,12 @@ export async function fetchExtraSiblingOrders(
     : [];
   const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
+  const tableIds = Array.from(new Set(extraOrders.map((o: any) => o.table_id).filter(Boolean))) as string[];
+  const tables = tableIds.length > 0
+    ? await dbSelect<any>("restaurant_tables", { filters: [{ column: "id", op: "in", value: tableIds }] })
+    : [];
+  const tablesMap = Object.fromEntries(tables.map((t: any) => [t.id, t.name]));
+
   return extraOrders
     .filter((sibling: any) => !sibling.closed_at)
     .map((sibling) => ({
@@ -521,6 +528,7 @@ export async function fetchExtraSiblingOrders(
       closed_at: sibling.closed_at ?? null,
       created_by_name: sibling.created_by ? (creatorNameMap[sibling.created_by] ?? "Usuario") : null,
       split_code: null,
+      table_name_snapshot: sibling.table_name_snapshot || (sibling.table_id ? tablesMap[sibling.table_id] : null) || null,
       table_order_position: Number(sibling.table_order_position ?? 0) || null,
       created_at: sibling.created_at ?? null,
       item_count: Array.isArray(sibling.order_items) ? sibling.order_items.length : 0,

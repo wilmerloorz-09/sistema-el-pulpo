@@ -201,11 +201,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - La limpieza de metadata SQL y la limpieza del bucket `payment-proofs` son procesos separados.
 
 ### 12.1 Extra
-- `order_type = EXTRA`: menu mesa sin PLATOS, sin mesa, flujo caja → despacho manual (como mesa; no Express).
-- Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` (`20260602130000`).
+- `order_type = EXTRA`: menu mesa sin PLATOS, requiere mesa obligatoria (`table_id`), flujo caja → despacho manual.
+- Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` o desaparece automáticamente al despacharse.
 - Modulo `/extra`: solo el creador ve sus ordenes activas; sin pagos parciales; cajero secundario sin imprimir comprobante.
 - Usuarios con la capacidad **Empacador (`can_pack_orders`)** tienen acceso exclusivo al módulo `/extra` y a la pantalla de comandas de ese módulo, restringiendo todo acceso a Mesas, Express, Especial y Para Llevar.
-- En Caja: subtitulo **Extra**; visible para creador o cajero principal del turno; no mostrar nombre de mesa.
+- En Caja: subtitulo **Extra • Nombre Mesa**; visible para creador o cajero principal del turno.
 - En Despacho: listar en pestañas **Mesa** y **Todos**; no exigir `sent_to_kitchen_at` en lineas Extra para armar tarjeta.
 
 ### 12.2 Despacho
@@ -280,7 +280,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
 10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
 11. Si se toca Caja/Recaudar, validar el filtro de alcance (todas / mías / por usuario) y que el cobro siga unificado.
-12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, RPC `create_extra_order`, flujo caja → `PAID` → despacho manual, `20260602120000`/`20260602130000`, visibilidad creador/cajero principal y aparicion en Despacho (Mesa/Todos).
+12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, mesa obligatoria (`table_id`), RPC `create_extra_order`, flujo caja → `PAID` → despacho manual, visibilidad creador/cajero principal y aparicion en Despacho (Mesa/Todos).
 13. Si se toca productos frecuentes, validar migraciones `20260531130000` y `20260531140000`, contexto correcto y layout 1–2 filas en `FrequentProductCards`.
 14. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
 15. Si se toca Despacho, validar pestaña unificada Para llevar/Express, Extra en Mesa/Todos, una tarjeta por `order_code`, **Despachar todo**, batch snapshots (`20260602140000`) y tablet 1280px.

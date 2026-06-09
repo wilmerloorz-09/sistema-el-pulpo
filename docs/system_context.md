@@ -50,14 +50,14 @@
   - `dispatch_config.takeout_enabled` o `express_enabled` habilitan la pestaña unificada en Despacho (si cualquiera esta activo).
 - **Extra (`order_type = EXTRA`):**
   - Modulo propio en navegacion (`/extra`) con grilla de tarjetas similar a Para llevar / Express.
-  - Solo el **creador** ve sus ordenes Extra activas en `/extra`; al entrar sin ordenes propias se auto-abre/crea una; con ordenes existentes muestra tarjetas + boton **+**.
-  - Sin mesa (`table_id` null); usa menu **Mesas** (`menu_scope = TABLE`) sin categoria raiz PLATOS ni pestañas Con envase / A granel.
-  - Flujo operativo: **envio a caja → pago → despacho manual** (como mesa; no como Express).
-  - Tras cobro total queda `PAID`; **no** hay auto-despacho ni cierre automatico al pagar (`20260602120000_extra_flow_like_table_orders.sql` retira `auto_finalize_extra_order_after_payment` del sync de pagos).
-  - En `Despacho`, las ordenes Extra pagadas aparecen en pestañas **Mesa** y **Todos** (no requieren `sent_to_kitchen_at` en items para listarse).
-  - Cierre desde `/extra`: boton **X** en ordenes despachadas ejecuta `close_extra_order(...)` (`20260602130000_close_extra_order.sql`); las ordenes cerradas no se muestran en Extra.
+  - Solo el **creador** ve sus ordenes Extra activas en `/extra`; al entrar sin ordenes propias muestra tarjetas + boton **+** (sin auto-creación).
+  - Mesa obligatoria (`table_id` requerido); usa menu **Mesas** (`menu_scope = TABLE`) sin categoria raiz PLATOS ni pestañas Con envase / A granel.
+  - Flujo operativo: **envio a caja → pago → despacho manual**.
+  - Tras cobro total queda `PAID`; **no** hay auto-despacho ni cierre automatico al pagar.
+  - En `Despacho`, las ordenes Extra pagadas aparecen en pestañas **Mesa** y **Todos** con el formato `Extra • Nombre Mesa`.
+  - Cierre desde `/extra`: boton **X** ejecuta `close_extra_order(...)`; adicionalmente las órdenes Extra desaparecen automáticamente del módulo Extra al ser despachadas (estado `KITCHEN_DISPATCHED`).
   - Caja: sin restricción por “principal/secundario” (caja unificada). Mantener la regla de negocio de Extra (sin pagos parciales).
-  - RPC `create_extra_order(...)`; en Caja el subtitulo debe mostrar **Extra**, no nombre de mesa.
+  - RPC `create_extra_order(...)`; en Caja el subtitulo debe mostrar **Extra • Nombre Mesa**.
   - Productos frecuentes operativos: contexto `EXTRA` en `extra_frequent_products`.
   - Migraciones: `20260527120000_add_extra_order_type.sql`, `20260602120000`, `20260602130000`.
 - **Despacho (pestanas y rendimiento):**

@@ -14,7 +14,7 @@ export function extraOrderShowsOnExtraHome(order: ExtraOrderCardRow): boolean {
   const status = String(order.status ?? "");
   if (status === "CANCELLED") return false;
   if (status === "DRAFT") return Number(order.item_count ?? 0) > 0;
-  return ["SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"].includes(status);
+  return ["SENT_TO_KITCHEN", "READY", "PAID"].includes(status);
 }
 
 export function extraOrderCanCloseFromHome(status: string | null | undefined): boolean {

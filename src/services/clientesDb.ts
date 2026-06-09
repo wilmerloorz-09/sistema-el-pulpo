@@ -6,7 +6,7 @@ import type { Cliente, ClienteSexo } from "@/types/cliente";
 const TABLA = "clientes" as const;
 
 const COLUMNAS_LISTADO =
-  "id, cedula, sexo, nombres, apellidos, celular, correo, direccion, creado_por, creado_el, actualizado_el";
+  "id, cedula, sexo, nombres, apellidos, celular, correo, direccion, creado_por, creado_el, actualizado_el, saldo_promocional";
 
 export type ClienteInsertPayload = {
   id: string;

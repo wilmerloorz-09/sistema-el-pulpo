@@ -765,8 +765,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const { error } = await supabase.rpc("dispatch_order_quantities" as any, {
         p_order_id: orderId,
         p_dispatched_by: user.id,
-        p_items: (isServirModule ? partialItems : []) as any,
-        p_operation_type: isServirModule ? "partial" : "total",
+        p_items: partialItems as any,
+        p_operation_type: "partial",
         p_source_module: "dispatch",
         p_notes: null,
       });

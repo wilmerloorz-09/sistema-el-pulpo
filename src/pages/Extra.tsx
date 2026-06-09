@@ -25,6 +25,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
+import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
 
 const seedExtraOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -69,9 +70,8 @@ const Extra = () => {
   const { activeBranchId, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const [creating, setCreating] = useState(false);
-  const [autoLaunchFailed, setAutoLaunchFailed] = useState(false);
-  const [autoLaunchAttempted, setAutoLaunchAttempted] = useState(false);
   const [closingOrderId, setClosingOrderId] = useState<string | null>(null);
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
 
   const canOperateExtra =
     canOperate(permissions, "mesas")
@@ -97,7 +97,7 @@ const Extra = () => {
     [extraOrdersQuery.data],
   );
 
-  const showOrderPicker = homeOrders.length > 0;
+
 
   useEffect(() => {
     for (const order of homeOrders) {
@@ -166,13 +166,22 @@ const Extra = () => {
     }
     if (creating) return false;
 
+    // Pequeño delay para evitar que el evento de click (navegación) cierre el modal automáticamente
+    setTimeout(() => {
+      setIsTableModalOpen(true);
+    }, 100);
+    return true;
+  };
+
+  const handleCreateOrderWithTable = async (tableId: string | null) => {
+    setIsTableModalOpen(false);
     setCreating(true);
-    setAutoLaunchFailed(false);
     try {
       const now = new Date().toISOString();
       const { data, error } = await supabase.rpc("create_extra_order" as any, {
         p_branch_id: activeBranchId,
         p_created_by: user.id,
+        p_table_id: tableId,
       } as any);
 
       if (error) throw error;
@@ -191,7 +200,6 @@ const Extra = () => {
       });
       return true;
     } catch (err: any) {
-      setAutoLaunchFailed(true);
       toast.error(err?.message || "Error al abrir orden Extra");
       return false;
     } finally {
@@ -199,34 +207,7 @@ const Extra = () => {
     }
   };
 
-  useEffect(() => {
-    if (!canOperateExtra || !user?.id || !activeBranchId) return;
-    if (extraOrdersQuery.isLoading) return;
-    if (showOrderPicker) return;
-    if (autoLaunchAttempted) return;
 
-    setAutoLaunchAttempted(true);
-
-    const emptyDraft = (extraOrdersQuery.data ?? []).find(
-      (o) => o.status === "DRAFT" && Number(o.item_count ?? 0) === 0,
-    );
-
-    if (emptyDraft) {
-      warmExtraOrder(emptyDraft.id);
-      navigate(`/ordenes?order=${emptyDraft.id}&origin=extra`, { replace: true });
-    } else {
-      void handleCreateOrder();
-    }
-  }, [
-    activeBranchId,
-    autoLaunchAttempted,
-    canOperateExtra,
-    extraOrdersQuery.data,
-    extraOrdersQuery.isLoading,
-    navigate,
-    showOrderPicker,
-    user?.id,
-  ]);
 
   if (extraOrdersQuery.isError) {
     return (
@@ -253,39 +234,7 @@ const Extra = () => {
     );
   }
 
-  if (!showOrderPicker && canOperateExtra && (creating || (!autoLaunchFailed && !autoLaunchAttempted))) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
-        <p className="text-sm text-muted-foreground">Abriendo orden Extra...</p>
-      </div>
-    );
-  }
 
-  if (!showOrderPicker && canOperateExtra && autoLaunchFailed) {
-    return (
-      <motion.div className="p-4">
-        <div className="rounded-[24px] border border-teal-200 bg-white/80 p-5 text-center text-sm text-muted-foreground shadow-sm">
-          <p className="font-semibold text-foreground">No se pudo abrir la orden Extra</p>
-          <p className="mt-2">Revisa el turno y tus permisos, luego intenta de nuevo.</p>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4 rounded-2xl"
-            disabled={creating}
-            onClick={() => {
-              setAutoLaunchAttempted(false);
-              setAutoLaunchFailed(false);
-              void handleCreateOrder();
-            }}
-          >
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Reintentar
-          </Button>
-        </div>
-      </motion.div>
-    );
-  }
 
   return (
     <div className="pb-8">
@@ -347,7 +296,7 @@ const Extra = () => {
                   </button>
                 ) : (
                   <span className="absolute right-2 top-2 z-10 inline-flex min-h-[2.45rem] min-w-[2.45rem] items-center justify-center rounded-full border border-teal-300 bg-teal-100 px-2 text-[1.15rem] font-black leading-none text-teal-700 shadow-sm sm:right-3 sm:top-3 sm:min-h-[2.9rem] sm:min-w-[2.9rem] sm:text-[1.45rem] dark:border-teal-500/40 dark:bg-teal-950/80 dark:text-teal-300">
-                    {index + 1}
+                    {order.table_name_snapshot ? (order.table_name_snapshot.replace(/[^\d]/g, '') || order.table_name_snapshot.substring(0, 3).toUpperCase()) : (index + 1)}
                   </span>
                 )}
                 <button
@@ -406,6 +355,13 @@ const Extra = () => {
           </motion.button>
         </div>
       </div>
+
+      <ExtraTableSelectorModal
+        open={isTableModalOpen}
+        onOpenChange={setIsTableModalOpen}
+        onSelectTable={handleCreateOrderWithTable}
+        isCreating={creating}
+      />
     </div>
   );
 };

@@ -11,9 +11,9 @@
 --   - incluye ordenes especiales con valor manual `$0` que el cierre de turno puede autopagar con confirmacion explicita
 --   - incluye ordenes especiales `PAID` aunque su detalle de cobro no exista por cantidad en `payment_items`
 --   - incluye ordenes Express (`order_type = EXPRESS`) y su flujo despacho antes de cobro
---   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja -> PAID -> despacho manual (sin mesa)
---   - incluye cierre Extra desde /extra via `close_extra_order` (sin auto-despacho al cobrar; ver `20260602120000`)
---   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestaÃ±a unificada Para llevar / Express)
+--   - incluye ordenes Extra (`order_type = EXTRA`) y su flujo caja -> PAID -> despacho manual, ahora requiriendo seleccion obligatoria de mesa
+--   - incluye cierre Extra desde /extra via `close_extra_order` (las ordenes Extra despachadas desaparecen automaticamente del modulo Extra)
+--   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestañas unificadas)
 --   - caja unificada: el alcance “todas/mías/por usuario” es UI (no flags `secondary_caja_*`)
 --   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
 --   - incluye comensales (`clientes`), vinculo opcional `orders.cliente_id` y participaciones en campañas (`predicciones_clientes`)

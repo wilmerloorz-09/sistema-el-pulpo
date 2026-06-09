@@ -46,7 +46,7 @@
   - `TAKEOUT`
   - `BULK`
 - Ordenes `EXPRESS` usan el mismo arbol de menu que para llevar pero con flujo **despacho -> cobro** (ver `src/lib/orderFlow.ts`).
-- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, sin mesa fisica, flujo **caja -> despacho manual** (como mesa). Tras cobrar quedan `PAID` hasta despacho en modulo Despacho (pestañas Mesa/Todos); cierre con `close_extra_order` desde `/extra`.
+- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, requieren mesa fisica (`table_id` obligatorio), flujo **caja -> despacho manual** (como mesa). Tras cobrar quedan `PAID` hasta despacho en modulo Despacho (pestañas Mesa/Todos); cierre con `close_extra_order`. Las órdenes desaparecen automáticamente del módulo Extra al ser despachadas.
 - **Productos frecuentes:** configuracion en `extra_frequent_products` por `context` (`MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA`); UI operativa `FrequentProductCards`, admin `FrequentProductsAdmin`; menú compuesto Para llevar/Express via `buildCompositeMenuNodes` (`src/lib/compositeMenuTree.ts`).
 - Fuente transaccional legacy que sigue viva:
   - `categories`
@@ -364,7 +364,7 @@
 19. **`Ordenes.tsx`:** Usar lista de ítems defensiva (`order?.items ?? []`) en el contenido del detalle para tolerar órdenes parciales en caché.
 20. **Plantilla vs cobro:** No usar solo `shift.denoms` para botones de monedas/billetes en cobro; usar catálogo `denominations`. No mezclar arqueo de plantilla con lo que puede pagar el cliente.
 21. **Caja unificada:** No reintroducir UI/flags de “caja secundaria” ni filtros de alcance por `secondary_caja_*`.
-22. **Extra:** Tras cobrar queda `PAID` y requiere despacho manual en Despacho (Mesa/Todos); cierre con `close_extra_order`. No reactivar auto-despacho en `sync_order_payment_state_internal` sin acuerdo de producto.
+22. **Extra:** Requiere mesa obligatoria al crear. Tras cobrar queda `PAID` y requiere despacho manual en Despacho (Mesa/Todos); cierre con `close_extra_order` o desaparece automáticamente al despacharse. No reactivar auto-despacho en `sync_order_payment_state_internal` sin acuerdo de producto.
 23. **Despacho — pestañas:** Mantener pestaña unificada Para llevar/Express; Extra en Mesa y Todos; no reintroducir pestaña Express separada.
 24. **Productos frecuentes:** Cambios en admin deben respetar `context` y unique `(branch_id, context, display_order)`; UI en caja usa 1 fila si cabe, max 2 filas con scroll.
 25. **Promociones:** Mantener selector de campaña cuando hay varias activas; no volver a `obtenerCampanaActiva` con `limit 1` en operativo.

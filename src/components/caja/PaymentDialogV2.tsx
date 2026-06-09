@@ -127,6 +127,7 @@ export default function PaymentDialogV2({
 
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
   const [transferInput, setTransferInput] = useState("");
+  const [useSaldo, setUseSaldo] = useState(true);
   const [wasFullyPaid, setWasFullyPaid] = useState(false);
   const wasFullyPaidRef = useRef(false);
   const [postPaySummary, setPostPaySummary] = useState<{
@@ -156,7 +157,7 @@ export default function PaymentDialogV2({
     if (!qtyMapReady) return getOrderTotalToCharge(order);
     return roundMoney(
       lines.reduce((sum, item) => {
-        const q = Math.max(0, Math.floor(Number(payItemQtys[item.id] ?? 0)));
+        const q = Math.max(0, Number(payItemQtys[item.id] ?? 0));
         if (q <= 0) return sum;
         return sum + computeLineAmount(q, item.unit_price) + (q > 0 ? Number(item.tray_container_cost ?? 0) : 0);
       }, 0),
@@ -173,12 +174,16 @@ export default function PaymentDialogV2({
 
   const orderChargeTotal = roundMoney(Math.max(0, baseChargeTotal - discountAmount));
 
+  const clientSaldo = clienteSelection.selectedCliente?.saldo_promocional ?? 0;
+  const appliedSaldo = useSaldo ? roundMoney(Math.min(clientSaldo, orderChargeTotal)) : 0;
+  const netChargeTotal = roundMoney(Math.max(0, orderChargeTotal - appliedSaldo));
+
   const unpaidPayableLines = useMemo(
     () => (order?.items ?? []).filter((i) => Number(i.quantity_pending ?? 0) > 0),
     [order?.items],
   );
   const totalPendingUnits = useMemo(
-    () => unpaidPayableLines.reduce((s, i) => s + Math.floor(Number(i.quantity_pending ?? 0)), 0),
+    () => unpaidPayableLines.reduce((s, i) => s + Number(i.quantity_pending ?? 0), 0),
     [unpaidPayableLines],
   );
   const wouldOfferItemSplit = Boolean(
@@ -289,11 +294,15 @@ export default function PaymentDialogV2({
     () => paymentMethods.find((m) => isTransferPaymentMethodName(m.name)),
     [paymentMethods],
   );
+  const saldoMethod = useMemo(
+    () => paymentMethods.find((m) => m.name === "Saldo Promocional"),
+    [paymentMethods],
+  );
 
-  const appliedTransfer = roundMoney(Math.min(transferAmount, orderChargeTotal));
-  const appliedCash = roundMoney(orderChargeTotal - appliedTransfer);
+  const appliedTransfer = roundMoney(Math.min(transferAmount, netChargeTotal));
+  const appliedCash = roundMoney(netChargeTotal - appliedTransfer);
 
-  const changeAmount = roundMoney(Math.max(0, totalDelivered - orderChargeTotal));
+  const changeAmount = roundMoney(Math.max(0, totalDelivered - netChargeTotal));
 
   const changeDenomBreakdown = useMemo(() => {
     if (changeAmount <= 0.001) return [];
@@ -334,9 +343,10 @@ export default function PaymentDialogV2({
     if (!order || readOnly || paying) return null;
     if (orderChargeTotal <= 0) return null;
     if (paymentMethods.length === 0) return "No hay metodos de pago activos configurados";
-    if (totalDelivered + 0.005 < orderChargeTotal) return "El total entregado es menor al total a cobrar";
+    if (netChargeTotal > 0 && totalDelivered + 0.005 < netChargeTotal) return "El total entregado es menor al total a cobrar";
     if (appliedTransfer > 0.005 && !transferMethod) return "No hay metodo de transferencia activo";
     if (appliedCash > 0.005 && !cashMethod) return "No hay metodo de efectivo activo";
+    if (appliedSaldo > 0.005 && !saldoMethod) return "No hay metodo de Saldo Promocional activo";
     if (appliedCash > 0.005 && !hasReceivedDenoms) return "Efectivo requiere registrar el monto recibido por denominaciones";
     if (appliedCash > 0.005 && cashTotal + 0.005 < appliedCash) {
       return "El monto recibido en efectivo es menor al valor aplicado en efectivo";
@@ -352,8 +362,10 @@ export default function PaymentDialogV2({
     totalDelivered,
     appliedTransfer,
     appliedCash,
+    appliedSaldo,
     transferMethod,
     cashMethod,
+    saldoMethod,
     hasReceivedDenoms,
     cashTotal,
     cannotMakeChange,
@@ -406,6 +418,13 @@ export default function PaymentDialogV2({
     }));
 
     const paymentSplits: PayOrderParams["paymentSplits"] = [];
+    if (appliedSaldo > 0.005) {
+      if (!saldoMethod) {
+        toast.error("No hay metodo de Saldo Promocional activo");
+        return;
+      }
+      paymentSplits.push({ methodId: saldoMethod.id, amount: appliedSaldo });
+    }
     if (appliedTransfer > 0.005) {
       if (!transferMethod) {
         toast.error("No hay metodo de transferencia activo");
@@ -422,6 +441,13 @@ export default function PaymentDialogV2({
     }
 
     const tenderedSplits: PayOrderParams["tenderedSplits"] = [];
+    if (appliedSaldo > 0.005) {
+      if (!saldoMethod) {
+        toast.error("No hay metodo de Saldo Promocional activo");
+        return;
+      }
+      tenderedSplits.push({ methodId: saldoMethod.id, amount: appliedSaldo });
+    }
     if (transferAmount > 0.005) {
       if (!transferMethod) {
         toast.error("No hay metodo de transferencia activo");
@@ -442,7 +468,7 @@ export default function PaymentDialogV2({
       return;
     }
     if (tenderedSplits.length === 0) {
-      toast.error("Debes registrar el monto entregado (transferencia o efectivo)");
+      toast.error("Debes registrar el monto entregado (saldo, transferencia o efectivo)");
       return;
     }
 
@@ -831,18 +857,37 @@ export default function PaymentDialogV2({
                       <span>Descuento Normal</span>
                       <span>{formatCurrency(0)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Descuento por Oferta</span>
-                      <span className={discountAmount > 0 ? "text-emerald-600 font-bold tabular-nums" : "tabular-nums"}>
-                        {discountAmount > 0 ? `-${formatCurrency(discountAmount)}` : formatCurrency(0)}
-                      </span>
-                    </div>
+                    {discountAmount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span>Descuento por Oferta Pasada</span>
+                        <span className="text-emerald-600 font-bold tabular-nums">
+                          -{formatCurrency(discountAmount)}
+                        </span>
+                      </div>
+                    )}
+                    {clientSaldo > 0 && (
+                      <div className="flex items-center justify-between mt-1 pt-1 border-t border-sky-200/50">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={useSaldo} 
+                            onChange={(e) => setUseSaldo(e.target.checked)}
+                            disabled={readOnly}
+                            className="rounded border-sky-300 text-sky-600 focus:ring-sky-500"
+                          />
+                          <span>Usar Saldo a Favor ({formatCurrency(clientSaldo)})</span>
+                        </label>
+                        <span className={appliedSaldo > 0 ? "text-emerald-600 font-bold tabular-nums" : "tabular-nums"}>
+                          {appliedSaldo > 0 ? `-${formatCurrency(appliedSaldo)}` : formatCurrency(0)}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between rounded-b-[15px] border-t border-sky-200/60 bg-sky-100/40 px-4 py-2.5">
-                    <span className="font-bold tracking-wider text-sky-950 text-xs">TOTAL</span>
+                    <span className="font-bold tracking-wider text-sky-950 text-xs">TOTAL A PAGAR</span>
                     <p className="font-display text-sm font-black tabular-nums tracking-tight text-sky-950">
-                      {formatCurrency(orderChargeTotal)}
+                      {formatCurrency(netChargeTotal)}
                     </p>
                   </div>
                 </div>
@@ -860,18 +905,18 @@ export default function PaymentDialogV2({
                       type="button"
                       disabled={readOnly}
                       onClick={() => {
-                        const isExact = Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005;
+                        const isExact = Math.abs(Number(transferInput || 0) - netChargeTotal) < 0.005;
                         if (isExact) {
                           setTransferInput("");
                         } else {
-                          setTransferInput(orderChargeTotal.toFixed(2));
+                          setTransferInput(netChargeTotal.toFixed(2));
                         }
                       }}
                       className="flex shrink-0 items-center gap-0.5 rounded-md border border-violet-300 bg-white/60 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
-                      title={Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005 ? "Limpiar monto" : "Usar monto total"}
+                      title={Math.abs(Number(transferInput || 0) - netChargeTotal) < 0.005 ? "Limpiar monto" : "Usar monto total"}
                     >
                       <CopyCheck className="h-2.5 w-2.5" />
-                      {Math.abs(Number(transferInput || 0) - orderChargeTotal) < 0.005 ? "Limpiar" : "Exacto"}
+                      {Math.abs(Number(transferInput || 0) - netChargeTotal) < 0.005 ? "Limpiar" : "Exacto"}
                     </button>
                   </div>
                   <Input

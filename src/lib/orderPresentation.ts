@@ -18,6 +18,10 @@ export function getOrderOriginLabel(params: {
   }
 
   if (params.orderType === "EXTRA") {
+    const tableName = params.tableName?.trim();
+    if (tableName) {
+      return `Extra • ${tableName}`;
+    }
     return "Extra";
   }
 

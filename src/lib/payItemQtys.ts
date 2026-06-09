@@ -4,7 +4,7 @@ import type { PayableOrder } from "@/hooks/useCaja";
 export function buildPayItemQtysAllPending(order: PayableOrder): Record<string, number> {
   const next: Record<string, number> = {};
   for (const item of order.items ?? []) {
-    const pending = Math.floor(Number(item.quantity_pending ?? 0));
+    const pending = Number(item.quantity_pending ?? 0);
     if (pending > 0) next[item.id] = pending;
   }
   return next;
@@ -14,7 +14,7 @@ export function buildPayItemQtysAllPending(order: PayableOrder): Record<string, 
 export function buildPayItemQtysNoneSelected(order: PayableOrder): Record<string, number> {
   const next: Record<string, number> = {};
   for (const item of order.items ?? []) {
-    const pending = Math.floor(Number(item.quantity_pending ?? 0));
+    const pending = Number(item.quantity_pending ?? 0);
     if (pending > 0) next[item.id] = 0;
   }
   return next;
