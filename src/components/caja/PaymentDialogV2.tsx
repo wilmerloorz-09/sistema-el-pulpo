@@ -703,7 +703,7 @@ export default function PaymentDialogV2({
         <DialogHeader
           className={cn(
             "shrink-0 bg-white px-3 sm:px-4 mt-2 sm:mt-0",
-            postPaySummary ? "pt-[env(safe-area-inset-top,0px)] pb-1 sm:pt-0 sm:pb-2" : "pt-[env(safe-area-inset-top,0px)] pb-0 sm:pt-0",
+            postPaySummary ? "pt-safe pb-1 sm:pt-0 sm:pb-2" : "pt-safe pb-0 sm:pt-0",
           )}
         >
           <DialogTitle className="flex flex-wrap items-center gap-2 font-display text-lg leading-none sm:text-xl">
@@ -1107,7 +1107,7 @@ export default function PaymentDialogV2({
         <div
           className={cn(
             "flex shrink-0 flex-col gap-2 bg-white px-3 sm:flex-row sm:items-end sm:justify-end sm:gap-3 sm:px-4",
-            postPaySummary ? "pt-2 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] sm:py-2" : "pt-2 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] sm:pb-0",
+            postPaySummary ? "pt-2 pb-safe-min sm:py-2" : "pt-2 pb-safe-min sm:pb-0",
             postPaySummary && "no-print",
           )}
         >

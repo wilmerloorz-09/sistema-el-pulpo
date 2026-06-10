@@ -77,7 +77,7 @@ const AppLayout = () => {
 
         <div className="flex min-h-dvh min-w-0 flex-col">
           {!isDesktop && (
-            <header className="sticky top-0 z-50 border-b border-orange-200/80 bg-white pt-[env(safe-area-inset-top,0px)] dark:border-border dark:bg-card">
+            <header className="sticky top-0 z-50 border-b border-orange-200/80 bg-white pt-safe dark:border-border dark:bg-card">
               <div className="flex h-14 items-center justify-between px-2.5">
                 <div className="flex items-center gap-3">
                   <MobileMenuSheet onOpenAccount={() => setUserMenuOpen(true)} />
@@ -105,7 +105,7 @@ const AppLayout = () => {
 
           <main
             key={mainOutletKey}
-            className="mb-safe min-h-0 flex-1 pb-[calc(60px+env(safe-area-inset-bottom,0px)+0.75rem)] md:pb-0"
+            className="mb-safe min-h-0 flex-1 main-content-padding"
           >
             <Outlet />
           </main>

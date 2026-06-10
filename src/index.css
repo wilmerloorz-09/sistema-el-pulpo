@@ -175,11 +175,28 @@
   }
 
   .safe-bottom {
-    @apply pb-[env(safe-area-inset-bottom,0px)];
+    padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
   }
 
   .mb-safe {
-    margin-bottom: env(safe-area-inset-bottom, 0px);
+    margin-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  }
+
+  .pt-safe {
+    padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  }
+
+  .pb-safe-min {
+    padding-bottom: max(0.5rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  }
+
+  .main-content-padding {
+    padding-bottom: calc(60px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 0.75rem);
+  }
+  @media (min-width: 768px) {
+    .main-content-padding {
+      padding-bottom: 0;
+    }
   }
 
   /** Oculta barras de scroll (horizontal y vertical) manteniendo el desplazamiento táctil/rueda */
@@ -197,7 +214,7 @@
   /* Asegurar que la barra inferior esté siempre visible en móviles */
   @supports (padding: max(0px)) {
     .safe-bottom {
-      padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+      padding-bottom: max(0.5rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     }
   }
 
