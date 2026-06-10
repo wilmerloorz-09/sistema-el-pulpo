@@ -55,6 +55,7 @@ export default function PromocionRegistro() {
   
   // Statuses
   const [isValidatingToken, setIsValidatingToken] = useState(false);
+  const [isAutoValidating, setIsAutoValidating] = useState(false);
   const [tokenValidatedData, setTokenValidatedData] = useState<ValidacionTokenResult | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
 
@@ -105,7 +106,10 @@ export default function PromocionRegistro() {
   useEffect(() => {
     const t = searchParams.get("t");
     if (t) {
-      handleValidarToken(t);
+      setIsAutoValidating(true);
+      handleValidarToken(t).finally(() => {
+        setIsAutoValidating(false);
+      });
     }
   }, [searchParams]);
 
@@ -139,33 +143,32 @@ export default function PromocionRegistro() {
 
     try {
       const { data, error } = await supabase.rpc("validar_token_promocion_cliente", {
-        p_token: tokenClean
+        p_token_promocion: tokenClean
       });
 
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        const result = data[0] as ValidacionTokenResult;
+      if (data) {
+        const result = data as any;
         if (result.valido) {
-          setTokenValidatedData(result);
-          // Pre-populate if client exists
-          if (result.cedula_cliente) {
-            setCedula(result.cedula_cliente);
-            // Fetch remaining client info from database if available
-            try {
-              const { data: clientData } = await supabase
-                .from("clientes")
-                .select("celular, nombres, apellidos")
-                .eq("id", result.id_cliente)
-                .single();
-              if (clientData) {
-                setCelular(clientData.celular || "");
-                setNombres(clientData.nombres || "");
-                setApellidos(clientData.apellidos || "");
-              }
-            } catch (err) {
-              console.error("No se pudo obtener información adicional del cliente:", err);
-            }
+          const clientObj = result.cliente_datos;
+          const mappedData: ValidacionTokenResult = {
+            valido: true,
+            mensaje: result.mensaje || "Token válido.",
+            consumo_minimo: result.consumo_minimo || null,
+            monto_orden: result.orden_total || null,
+            id_orden: result.orden_id || null,
+            id_cliente: result.cliente_id || null,
+            cedula_cliente: clientObj?.cedula || null,
+            nombre_cliente: clientObj ? `${clientObj.nombres} ${clientObj.apellidos}`.trim() : null
+          };
+          setTokenValidatedData(mappedData);
+          
+          if (clientObj) {
+            setCedula(clientObj.cedula || "");
+            setCelular(clientObj.celular || "");
+            setNombres(clientObj.nombres || "");
+            setApellidos(clientObj.apellidos || "");
           }
         } else {
           setTokenError(result.mensaje || "El código ingresado no es válido o ya fue utilizado.");
@@ -208,21 +211,23 @@ export default function PromocionRegistro() {
     const tokenClean = tokenInput.trim().toUpperCase();
 
     try {
-      const { data, error } = await supabase.rpc("registrar_prediccion_promocional", {
-        p_token: tokenClean,
+      const { data, error } = await supabase.rpc("validar_token_promocion_cliente", {
+        p_token_promocion: tokenClean,
         p_campana_id: selectedCampana!.id,
-        p_oferta_id: selectedOfertaId!,
-        p_cedula: cedula,
-        p_celular: celular,
-        p_nombres: nombres.trim(),
-        p_apellidos: apellidos.trim()
+        p_cliente_cedula: cedula,
+        p_cliente_sexo: "M",
+        p_cliente_nombres: nombres.trim(),
+        p_cliente_apellidos: apellidos.trim(),
+        p_cliente_celular: celular,
+        p_oferta_seleccionada_id: selectedOfertaId!,
+        p_registrar_prediccion: true
       });
 
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        const result = data[0] as { exito: boolean; mensaje: string };
-        if (result.exito) {
+      if (data) {
+        const result = data as any;
+        if (result.valido) {
           const selectedOferta = selectedCampana!.cartelera_ofertas.find(
             (o) => o.id_oferta === selectedOfertaId
           );
@@ -328,6 +333,12 @@ export default function PromocionRegistro() {
                 Registrar otro ticket
               </Button>
             </div>
+          </div>
+        ) : isAutoValidating ? (
+          <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-8 text-center shadow-2xl backdrop-blur-xl flex flex-col items-center justify-center min-h-[260px] animate-pulse">
+            <Loader2 className="h-10 w-10 animate-spin text-amber-400 mb-4" />
+            <h3 className="text-xl font-bold text-slate-100">Validando código</h3>
+            <p className="mt-1 text-sm text-slate-400">Por favor, espera un momento...</p>
           </div>
         ) : (
           /* FORM STATE */

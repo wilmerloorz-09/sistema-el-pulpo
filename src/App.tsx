@@ -185,6 +185,10 @@ const InstallPrompt = () => {
   const [showIosHint, setShowIosHint] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
+  if (window.location.pathname.startsWith("/promociones/registro")) {
+    return null;
+  }
+
   useEffect(() => {
     if (!import.meta.env.PROD) return;
 
