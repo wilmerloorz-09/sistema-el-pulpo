@@ -115,21 +115,23 @@ export default function PromocionRegistro() {
 
   // Automatically search client when cédula reaches 10 digits
   useEffect(() => {
-    if (cedula.length === 10) {
+    if (cedula.length === 10 && tokenInput) {
       async function buscarCliente() {
         try {
-          const { data, error } = await supabase
-            .from("clientes")
-            .select("celular, nombres, apellidos")
-            .eq("cedula", cedula)
-            .maybeSingle();
+          const { data, error } = await supabase.rpc("validar_token_promocion_cliente", {
+            p_token_promocion: tokenInput.trim().toUpperCase(),
+            p_cliente_cedula: cedula
+          });
           
           if (error) throw error;
           
           if (data) {
-            setCelular(data.celular || "");
-            setNombres(data.nombres || "");
-            setApellidos(data.apellidos || "");
+            const result = data as any;
+            if (result.valido && result.cliente_datos) {
+              setCelular(result.cliente_datos.celular || "");
+              setNombres(result.cliente_datos.nombres || "");
+              setApellidos(result.cliente_datos.apellidos || "");
+            }
           }
         } catch (err) {
           console.error("Error al buscar cliente por cédula:", err);
@@ -137,7 +139,7 @@ export default function PromocionRegistro() {
       }
       buscarCliente();
     }
-  }, [cedula]);
+  }, [cedula, tokenInput]);
 
   // Clean inputs
   const handleCedulaChange = (val: string) => {
