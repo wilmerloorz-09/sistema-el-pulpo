@@ -442,7 +442,7 @@ export default function PromocionRegistro() {
                       </p>
                       <h3 className="text-base font-black text-slate-100">{selectedCampana.titulo}</h3>
                       <p className="mt-1 text-xs text-slate-400">
-                        Si ganas obtienes <span className="font-bold text-violet-300">{selectedCampana.porcentaje_descuento}% de descuento</span> en tu próximo consumo.
+                        Si aciertas, obtienes el <span className="font-bold text-violet-300">{selectedCampana.porcentaje_descuento}% del valor de esta compra</span> como saldo de regalo para tu próximo consumo.
                       </p>
                     </div>
                   )}
@@ -523,24 +523,21 @@ export default function PromocionRegistro() {
                     ) : ofertasVisibles.length === 0 ? (
                       <p className="text-xs text-slate-500 italic">No hay predicciones disponibles para esta campaña en este momento.</p>
                     ) : (
-                      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                      <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
                         {ofertasVisibles.map((oferta) => (
                           <button
                             key={oferta.id_oferta}
                             type="button"
                             onClick={() => setSelectedOfertaId(oferta.id_oferta)}
                             className={cn(
-                              "rounded-xl border p-3 text-left transition-all relative flex flex-col justify-between h-20",
+                              "rounded-xl border p-3.5 text-left transition-all relative flex flex-col gap-1 min-h-[52px]",
                               selectedOfertaId === oferta.id_oferta
                                 ? "border-amber-400 bg-amber-500/10 ring-1 ring-amber-400"
                                 : "border-slate-800 bg-slate-900/40 hover:border-slate-700"
                             )}
                           >
-                            <p className="text-xs font-bold text-slate-200 line-clamp-2 leading-snug">
+                            <p className="text-xs font-bold text-slate-200 leading-relaxed break-words">
                               {oferta.descripcion}
-                            </p>
-                            <p className="text-[10px] font-mono text-amber-400 mt-1">
-                              Cuota: {Number(oferta.cuota).toFixed(2)}
                             </p>
                           </button>
                         ))}
