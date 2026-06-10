@@ -113,6 +113,32 @@ export default function PromocionRegistro() {
     }
   }, [searchParams]);
 
+  // Automatically search client when cédula reaches 10 digits
+  useEffect(() => {
+    if (cedula.length === 10) {
+      async function buscarCliente() {
+        try {
+          const { data, error } = await supabase
+            .from("clientes")
+            .select("celular, nombres, apellidos")
+            .eq("cedula", cedula)
+            .maybeSingle();
+          
+          if (error) throw error;
+          
+          if (data) {
+            setCelular(data.celular || "");
+            setNombres(data.nombres || "");
+            setApellidos(data.apellidos || "");
+          }
+        } catch (err) {
+          console.error("Error al buscar cliente por cédula:", err);
+        }
+      }
+      buscarCliente();
+    }
+  }, [cedula]);
+
   // Clean inputs
   const handleCedulaChange = (val: string) => {
     setCedula(normalizarCedulaCelular(val));
@@ -403,17 +429,6 @@ export default function PromocionRegistro() {
                     <p className="text-[10px] uppercase font-bold text-slate-500">Código Validado</p>
                     <p className="font-mono text-sm font-bold text-amber-300">{tokenInput}</p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setTokenValidatedData(null);
-                      setSelectedOfertaId(null);
-                    }}
-                    className="h-7 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg"
-                  >
-                    Cambiar
-                  </Button>
                 </div>
 
                 <div className="space-y-4">
