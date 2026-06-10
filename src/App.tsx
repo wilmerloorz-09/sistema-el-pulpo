@@ -25,6 +25,7 @@ import OrdenEspecial from "./pages/OrdenEspecial";
 import Clientes from "./pages/Clientes";
 import Promociones from "./pages/Promociones";
 import PromocionesConsulta from "./pages/PromocionesConsulta";
+import PromocionRegistro from "./pages/PromocionRegistro";
 import Campanas from "./pages/Campanas";
 import CampanaDetalle from "./pages/CampanaDetalle";
 import Despacho from "./pages/Despacho";
@@ -294,6 +295,7 @@ const App = () => (
           <AuthProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/promociones/registro" element={<PromocionRegistro />} />
               <Route
                 element={
                   <AuthGate>

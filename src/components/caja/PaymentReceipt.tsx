@@ -21,6 +21,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
       branchName,
       clienteCedula,
       clienteNombre,
+      token_promocion,
     },
     ref,
   ) => {
@@ -160,6 +161,23 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
         </div>
 
         <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+
+        {token_promocion ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", margin: "10px 0" }}>
+            <div style={{ borderTop: "1px dashed #000", width: "100%", margin: "4px 0" }} />
+            <div style={{ fontWeight: "bold", fontSize: "11px", color: "#000" }}>¡OFERTA MUNDIALISTA!</div>
+            <div style={{ fontSize: "9px", color: "#333", textAlign: "center" }}>Escanea el QR para registrar tu predicción</div>
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+                `https://sistema-el-pulpo.vercel.app/promociones/registro?t=${token_promocion}`
+              )}`}
+              alt="QR Promoción"
+              style={{ width: "120px", height: "120px", display: "block", margin: "4px 0" }}
+            />
+            <div style={{ fontWeight: "bold", fontSize: "11px", fontFamily: "monospace" }}>CÓDIGO: {token_promocion}</div>
+            <div style={{ borderTop: "1px dashed #000", width: "100%", margin: "4px 0" }} />
+          </div>
+        ) : null}
 
         <div style={{ textAlign: "center", marginTop: "12px", fontSize: "11px" }}>
           ¡GRACIAS POR SU PREFERENCIA!

@@ -117,6 +117,41 @@ export class EscPosEncoder {
   }
 
   /**
+   * GS ( k — Genera e imprime un código QR utilizando la secuencia nativa.
+   * @param data Datos a codificar en el QR.
+   * @param moduleSize Tamaño del módulo del código QR (1-16). Por defecto 4.
+   */
+  qrcode(data: string, moduleSize = 4) {
+    if (!data) return this;
+    const dataBytes = textToLatin1Bytes(data);
+    const len = dataBytes.length;
+
+    // 1. Seleccionar modelo de QR (Modelo 2)
+    this.pushRaw([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+
+    // 2. Definir tamaño del módulo
+    const size = Math.max(1, Math.min(16, moduleSize));
+    this.pushRaw([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size]);
+
+    // 3. Nivel de corrección de errores (M = 49)
+    this.pushRaw([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 49]);
+
+    // 4. Almacenar datos en el buffer de la impresora
+    const pL = (len + 3) & 0xff;
+    const pH = ((len + 3) >> 8) & 0xff;
+    const storeHeader = new Uint8Array([0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30]);
+    const storePayload = new Uint8Array(storeHeader.length + dataBytes.length);
+    storePayload.set(storeHeader, 0);
+    storePayload.set(dataBytes, storeHeader.length);
+    this.pushRaw(storePayload);
+
+    // 5. Imprimir el código QR almacenado
+    this.pushRaw([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 48]);
+
+    return this;
+  }
+
+  /**
    * Cierra el ticket: opcional cajon → feed → corte total.
    * GS V 0 (0x1D 0x56 0x00): corte sin la secuencia GS V 66 que avanza mucho papel extra.
    * Tras esto el encoder queda sellado: ningun byte mas se envia.

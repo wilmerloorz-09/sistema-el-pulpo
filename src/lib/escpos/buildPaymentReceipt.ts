@@ -101,6 +101,22 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   enc.align("center");
   enc.line("GRACIAS POR SU PREFERENCIA");
 
+  if (input.token_promocion) {
+    enc.feed(1);
+    enc.separator("=");
+    enc.bold(true).line("¡OFERTA MUNDIALISTA!");
+    enc.bold(false);
+    enc.line("Escanea el QR para registrar");
+    enc.line("tu prediccion y ganar.");
+    enc.bold(true).line(`CODIGO: ${input.token_promocion}`);
+    enc.bold(false);
+    enc.feed(1);
+    const url = `https://sistema-el-pulpo.vercel.app/promociones/registro?t=${input.token_promocion}`;
+    enc.qrcode(url, 4);
+    enc.feed(1);
+    enc.separator("=");
+  }
+
   enc.finalizeTicket({
     feedLines: 5,
     openDrawer: input.openDrawerBeforeCut,

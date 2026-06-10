@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Tarjeta de Promoción Mundialista - Formato Compacto</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Arial', sans-serif; width: 90mm; height: 55mm; background-color: #ffffff; }
+        
+        /* FRENTE DE LA TARJETA */
+        .frente {
+            width: 90mm; height: 55mm;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #ffffff; padding: 6mm 8mm;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .tag { font-size: 7pt; font-weight: bold; text-transform: uppercase; color: #f59e0b; letter-spacing: 1px; }
+        .titulo { font-size: 16pt; font-weight: 800; text-transform: uppercase; line-height: 1.1; margin-top: 1mm; }
+        .titulo span { color: #f59e0b; }
+        .desc { font-size: 8pt; color: #e2e8f0; line-height: 1.3; margin-top: 2mm; border-left: 2px solid #f59e0b; padding-left: 6px; }
+        .footer-frente { font-size: 6.5pt; color: #94a3b8; font-style: italic; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5mm; }
+
+        /* REVERSO DE LA TARJETA */
+        .reverso {
+            width: 90mm; height: 55mm; padding: 5mm 6mm;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .titulo-reverso { font-size: 8.5pt; font-weight: bold; color: #0f172a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 1mm; }
+        .paso { display: flex; align-items: flex-start; margin-top: 1.5mm; }
+        .numero { font-size: 7.5pt; font-weight: bold; background-color: #0f172a; color: #ffffff; width: 4.5mm; height: 4.5mm; border-radius: 50%; text-align: center; line-height: 4.5mm; flex-shrink: 0; }
+        .texto-paso { font-size: 7.5pt; line-height: 1.25; padding-left: 2mm; color: #334155; }
+        .legal { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 1.5mm 2.5mm; font-size: 6pt; color: #64748b; line-height: 1.3; }
+    </style>
+</head>
+<body>
+    <div class="frente">
+        <div>
+            <div class="tag">Campaña Especial</div>
+            <div class="titulo">Oferta<br><span>Mundialista</span></div>
+            <div class="desc">Si tu predicción resulta ganadora, obtén un <strong>crédito del 50% de tu consumo de hoy</strong> para tu próxima compra.</div>
+        </div>
+        <div class="footer-frente">Instrucciones al reverso para registrar tu participación.</div>
+    </div>
+
+    <div class="reverso">
+        <div>
+            <div class="titulo-reverso">¿Cómo participar?</div>
+            <div class="paso">
+                <div class="numero">1</div>
+                <div class="texto-paso"><strong>Paga tu cuenta</strong> y recibe tu ticket físico impreso de venta.</div>
+            </div>
+            <div class="paso">
+                <div class="numero">2</div>
+                <div class="texto-paso"><strong>Escanea el código QR</strong> único que verás al final de tu ticket.</div>
+            </div>
+            <div class="paso">
+                <div class="numero">3</div>
+                <div class="texto-paso"><strong>Registra tu cédula</strong> y elige tu predicción oficial.</div>
+            </div>
+        </div>
+        <div class="legal">
+            <strong>Términos:</strong> Crédito aplicable como descuento directo en tu siguiente consumo (no efectivo/no vuelto). Sujeto a fecha estricta de caducidad disponible en el sistema al cerrar la campaña.
+        </div>
+    </div>
+</body>
+</html>

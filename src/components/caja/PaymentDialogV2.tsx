@@ -25,6 +25,7 @@ import PaymentClienteCard from "@/components/caja/PaymentClienteCard";
 import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
 import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
 import { useClientWinningOffer } from "@/hooks/useClientWinningOffer";
+import { supabase } from "@/integrations/supabase/client";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -552,12 +553,6 @@ export default function PaymentDialogV2({
           return selectedQty >= (item.quantity_pending ?? 0);
         });
 
-    const summary = {
-      changeAmount,
-      lines: changeLinesSnapshot,
-      receipt,
-    };
-
     try {
       const payResult = onPay(params);
       if (payResult != null && typeof (payResult as { then?: unknown }).then === "function") {
@@ -566,6 +561,32 @@ export default function PaymentDialogV2({
         await p;
         pendingPayPromiseRef.current = null;
       }
+
+      let token_promocion: string | null = null;
+      if (isFullyPaid) {
+        try {
+          const { data: orderData } = await supabase
+            .from("orders")
+            .select("token_promocion")
+            .eq("id", order.id)
+            .single();
+          if (orderData?.token_promocion) {
+            token_promocion = orderData.token_promocion;
+          }
+        } catch (err) {
+          console.error("Error fetching token_promocion:", err);
+        }
+      }
+
+      const summary = {
+        changeAmount,
+        lines: changeLinesSnapshot,
+        receipt: {
+          ...receipt,
+          token_promocion,
+        },
+      };
+
       wasFullyPaidRef.current = isFullyPaid;
       setWasFullyPaid(isFullyPaid);
       setPostPaySummary(summary);
