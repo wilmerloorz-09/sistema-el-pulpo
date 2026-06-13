@@ -44,8 +44,8 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.line(`${dateStr} ${timeStr}`);
   enc.feed(1);
 
-  // Usar Font B y menor interlineado para ahorrar papel en el cuerpo de la comanda
-  enc.font("B").lineSpacing(28);
+  // Usar Font B y espaciado normal para ahorrar papel sin juntar las líneas
+  enc.font("B").lineSpacing(null);
 
   enc.align("left").separator();
 
@@ -82,11 +82,11 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.line(formatAmountLine("TOTAL", `$${Number(input.total).toFixed(2)}`));
   enc.bold(false);
 
-  // Restablecer fuente A e interlineado por defecto para la finalización (evita corte del final)
-  enc.font("A").lineSpacing(null);
-
   enc.align("center");
   enc.line("Gracias por su compra");
+
+  // Restablecer fuente A e interlineado por defecto para la finalización (evita corte del final)
+  enc.font("A").lineSpacing(null);
 
   enc.finalizeTicket({ feedLines: 5 });
 

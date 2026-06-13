@@ -59,8 +59,8 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.feed(1);
   }
 
-  // Usar Font B y menor interlineado para ahorrar papel en el cuerpo del ticket
-  enc.font("B").lineSpacing(28);
+  // Usar Font B y espaciado normal para ahorrar papel sin juntar las líneas
+  enc.font("B").lineSpacing(null);
 
   enc.align("left").separator();
 
@@ -100,9 +100,6 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   enc.line(formatAmountLine("CAMBIO", formatMoney(input.changeAmount)));
   enc.bold(false);
 
-  // Restablecer fuente A e interlineado por defecto para el pie de página y la finalización (evita corte de QR)
-  enc.font("A").lineSpacing(null);
-
   enc.align("center");
   enc.line("GRACIAS POR SU PREFERENCIA");
 
@@ -121,6 +118,9 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.feed(1);
     enc.separator("=");
   }
+
+  // Restablecer a Font A e interlineado por defecto para el avance final (evita corte de QR)
+  enc.font("A").lineSpacing(null);
 
   enc.finalizeTicket({
     feedLines: 5,
