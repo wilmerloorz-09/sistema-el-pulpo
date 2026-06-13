@@ -44,38 +44,44 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.line(`${dateStr} ${timeStr}`);
   enc.feed(1);
 
-  // Usar Font B y espaciado de 32 para ahorrar papel sin juntar las líneas
-  enc.font("B").lineSpacing(32);
+  // Usar Font B y espaciado de 40 para que las líneas estén bien separadas
+  enc.font("B").lineSpacing(40);
 
   enc.align("left").separator();
 
-  for (const item of input.items ?? []) {
-    const isBulk = item.tray_item_type === "C";
-    const amount = `$${Number(item.total).toFixed(2)}`;
-    const left = isBulk ? item.description_snapshot : `${item.quantity}x ${item.description_snapshot}`;
-    const lines = wrapWords(left, THERMAL_LINE_CHARS);
-    lines.forEach((line, idx) => {
-      if (idx === lines.length - 1) {
-        enc.line(formatAmountLine(line, amount));
-      } else {
-        enc.line(line);
+    let isFirst = true;
+    for (const item of input.items ?? []) {
+      if (!isFirst) {
+        enc.feed(1);
       }
-    });
+      isFirst = false;
 
-    for (const mod of item.modifiers ?? []) {
-      const desc = String(mod.description ?? "").trim();
-      if (!desc) continue;
-      enc.line(`  - ${desc}`);
-    }
+      const isBulk = item.tray_item_type === "C";
+      const amount = `$${Number(item.total).toFixed(2)}`;
+      const left = isBulk ? item.description_snapshot : `${item.quantity}x ${item.description_snapshot}`;
+      const lines = wrapWords(left, THERMAL_LINE_CHARS);
+      lines.forEach((line, idx) => {
+        if (idx === lines.length - 1) {
+          enc.line(formatAmountLine(line, amount));
+        } else {
+          enc.line(line);
+        }
+      });
 
-    const note = String(item.item_note ?? "").trim();
-    if (note) {
-      const prefix = note.toLowerCase().startsWith("entregar:") ? "" : "Nota: ";
-      for (const line of wrapWords(`${prefix}${note}`, THERMAL_LINE_CHARS - 2)) {
-        enc.line(`  ${line}`);
+      for (const mod of item.modifiers ?? []) {
+        const desc = String(mod.description ?? "").trim();
+        if (!desc) continue;
+        enc.line(`  - ${desc}`);
+      }
+
+      const note = String(item.item_note ?? "").trim();
+      if (note) {
+        const prefix = note.toLowerCase().startsWith("entregar:") ? "" : "Nota: ";
+        for (const line of wrapWords(`${prefix}${note}`, THERMAL_LINE_CHARS - 2)) {
+          enc.line(`  ${line}`);
+        }
       }
     }
-  }
 
   enc.separator();
   enc.bold(true);
@@ -83,7 +89,9 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.bold(false);
 
   enc.align("center");
+  enc.feed(1);
   enc.line("Gracias por su compra");
+  enc.feed(1);
 
   // Restablecer fuente A e interlineado por defecto para la finalización (evita corte del final)
   enc.font("A").lineSpacing(null);

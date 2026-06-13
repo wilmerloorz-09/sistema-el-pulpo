@@ -59,15 +59,21 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.feed(1);
   }
 
-  // Usar Font B y espaciado de 32 para ahorrar papel sin juntar las líneas
-  enc.font("B").lineSpacing(32);
+  // Usar Font B y espaciado de 40 para que las líneas estén bien separadas
+  enc.font("B").lineSpacing(40);
 
   enc.align("left").separator();
 
   if (!input.isSpecial) {
     enc.bold(true).line("PRODUCTOS:");
     enc.bold(false);
+    let isFirst = true;
     for (const item of input.items ?? []) {
+      if (!isFirst) {
+        enc.feed(1);
+      }
+      isFirst = false;
+
       const amount = formatMoney(item.amount);
       const header = `${item.quantity}x ${item.description}`;
       const lines = wrapWords(header, THERMAL_LINE_CHARS);
@@ -101,7 +107,9 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   enc.bold(false);
 
   enc.align("center");
+  enc.feed(1);
   enc.line("GRACIAS POR SU PREFERENCIA");
+  enc.feed(1);
 
   if (input.token_promocion) {
     enc.feed(1);
