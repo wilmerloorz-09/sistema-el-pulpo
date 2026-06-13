@@ -175,29 +175,34 @@ export default function PrediccionOrdenDialog({
             {ofertaObjSeleccionada?.tipo_oferta === "MARCADOR" ? (
               <div className="space-y-2 rounded-xl bg-slate-50 p-4 border border-slate-100">
                 <Label className="text-xs font-semibold uppercase text-muted-foreground">Tu predicción de marcador</Label>
-                <div className="flex items-center space-x-4">
-                  <span className="text-sm font-bold text-slate-800 flex-1">{ofertaObjSeleccionada?.descripcion}</span>
-                  <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center gap-6 mt-6">
+                  <div className="flex flex-col items-center gap-1.5 w-24">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase truncate w-full text-center" title={ofertaObjSeleccionada?.equipo_local || "LOCAL"}>
+                      {ofertaObjSeleccionada?.equipo_local || "LOCAL"}
+                    </Label>
                     <Input
                       type="number"
                       min="0"
-                      step="1"
-                      placeholder="0"
+                      max="99"
                       value={marcadorLocal}
                       disabled={guardando}
                       onChange={(e) => setMarcadorLocal(e.target.value)}
-                      className="w-16 text-center font-bold h-9 bg-white"
+                      className="h-16 text-center text-3xl font-black bg-white border-slate-200 shadow-inner rounded-xl focus-visible:ring-primary/20"
                     />
-                    <span className="font-bold text-slate-400">-</span>
+                  </div>
+                  <span className="text-3xl font-black text-slate-300">-</span>
+                  <div className="flex flex-col items-center gap-1.5 w-24">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase truncate w-full text-center" title={ofertaObjSeleccionada?.equipo_visitante || "VISITANTE"}>
+                      {ofertaObjSeleccionada?.equipo_visitante || "VISITANTE"}
+                    </Label>
                     <Input
                       type="number"
                       min="0"
-                      step="1"
-                      placeholder="0"
+                      max="99"
                       value={marcadorVisitante}
                       disabled={guardando}
                       onChange={(e) => setMarcadorVisitante(e.target.value)}
-                      className="w-16 text-center font-bold h-9 bg-white"
+                      className="h-16 text-center text-3xl font-black bg-white border-slate-200 shadow-inner rounded-xl focus-visible:ring-primary/20"
                     />
                   </div>
                 </div>

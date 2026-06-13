@@ -17,6 +17,8 @@ export interface OfertaCartelera {
   tipo_oferta?: "RESULTADO" | "MARCADOR";
   marcador_final_local?: number | null;
   marcador_final_visitante?: number | null;
+  equipo_local?: string;
+  equipo_visitante?: string;
 }
 
 export type EstadoPrediccion = "PENDIENTE" | "GANADA" | "PERDIDA";

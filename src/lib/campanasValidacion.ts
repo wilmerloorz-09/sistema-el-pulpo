@@ -75,6 +75,8 @@ export function prepararOfertaParaGuardar(oferta: OfertaCartelera): OfertaCartel
     tipo_oferta: oferta.tipo_oferta ?? "RESULTADO",
     marcador_final_local: oferta.marcador_final_local ?? null,
     marcador_final_visitante: oferta.marcador_final_visitante ?? null,
+    equipo_local: oferta.tipo_oferta === "MARCADOR" ? oferta.equipo_local?.trim() : undefined,
+    equipo_visitante: oferta.tipo_oferta === "MARCADOR" ? oferta.equipo_visitante?.trim() : undefined,
   };
 }
 
@@ -162,6 +164,10 @@ export function formatFechaBloqueo(iso: string): string {
 
 export function validarOfertaCartelera(oferta: OfertaCartelera): string | null {
   if (!oferta.descripcion.trim()) return "La descripción es obligatoria.";
+  if (oferta.tipo_oferta === "MARCADOR") {
+    if (!oferta.equipo_local?.trim()) return "El equipo local es obligatorio para ofertas de tipo marcador.";
+    if (!oferta.equipo_visitante?.trim()) return "El equipo visitante es obligatorio para ofertas de tipo marcador.";
+  }
   if (!oferta.inicio_at) return "Indica la fecha de inicio.";
   if (!oferta.bloqueo_at) return "Indica la fecha límite de bloqueo.";
   if (!Number.isFinite(Number(oferta.cuota))) return "La cuota debe ser un número válido.";

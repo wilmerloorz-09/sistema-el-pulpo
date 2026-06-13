@@ -580,7 +580,9 @@ export default function PromocionRegistro() {
                         </p>
                         <div className="flex items-center justify-center gap-6 w-full">
                           <div className="flex flex-col items-center gap-1.5 w-24">
-                            <Label className="text-[10px] font-bold text-slate-300 uppercase">LOCAL (L)</Label>
+                            <Label className="text-[10px] font-bold text-slate-300 uppercase truncate w-full text-center" title={selectedOfertaObj?.equipo_local || "LOCAL"}>
+                              {selectedOfertaObj?.equipo_local || "LOCAL (L)"}
+                            </Label>
                             <Input
                               type="number"
                               min="0"
@@ -592,7 +594,9 @@ export default function PromocionRegistro() {
                           </div>
                           <span className="text-3xl font-black text-slate-500/50">-</span>
                           <div className="flex flex-col items-center gap-1.5 w-24">
-                            <Label className="text-[10px] font-bold text-slate-300 uppercase">VISITANTE (V)</Label>
+                            <Label className="text-[10px] font-bold text-slate-300 uppercase truncate w-full text-center" title={selectedOfertaObj?.equipo_visitante || "VISITANTE"}>
+                              {selectedOfertaObj?.equipo_visitante || "VISITANTE (V)"}
+                            </Label>
                             <Input
                               type="number"
                               min="0"

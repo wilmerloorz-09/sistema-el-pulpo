@@ -98,24 +98,80 @@ export default function OfertaCarteleraFormulario({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="oferta-descripcion" className="text-xs font-medium text-muted-foreground">
-              Descripción *
-            </Label>
-            <Input
-              id="oferta-descripcion"
-              className="h-9 max-w-md"
-              value={valores.descripcion}
-              disabled={guardando}
-              onChange={(e) => setValores((p) => ({ ...p, descripcion: e.target.value }))}
-            />
-          </div>
+          {valores.tipo_oferta !== "MARCADOR" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="oferta-descripcion" className="text-xs font-medium text-muted-foreground">
+                Descripción *
+              </Label>
+              <Input
+                id="oferta-descripcion"
+                className="h-9 max-w-md"
+                value={valores.descripcion}
+                disabled={guardando}
+                onChange={(e) => setValores((p) => ({ ...p, descripcion: e.target.value }))}
+              />
+            </div>
+          )}
+
+          {valores.tipo_oferta === "MARCADOR" && (
+            <div className="grid max-w-md grid-cols-2 gap-x-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="oferta-equipo-local" className="text-xs font-medium text-muted-foreground">
+                  Equipo Local *
+                </Label>
+                <Input
+                  id="oferta-equipo-local"
+                  className="h-9"
+                  placeholder="Ej: Ecuador"
+                  value={valores.equipo_local || ""}
+                  disabled={guardando}
+                  onChange={(e) => {
+                    const local = e.target.value;
+                    setValores((p) => ({ 
+                      ...p, 
+                      equipo_local: local,
+                      descripcion: `${local || "Local"} vs ${p.equipo_visitante || "Visitante"}`
+                    }));
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="oferta-equipo-visitante" className="text-xs font-medium text-muted-foreground">
+                  Equipo Visitante *
+                </Label>
+                <Input
+                  id="oferta-equipo-visitante"
+                  className="h-9"
+                  placeholder="Ej: Colombia"
+                  value={valores.equipo_visitante || ""}
+                  disabled={guardando}
+                  onChange={(e) => {
+                    const visitante = e.target.value;
+                    setValores((p) => ({ 
+                      ...p, 
+                      equipo_visitante: visitante,
+                      descripcion: `${p.equipo_local || "Local"} vs ${visitante || "Visitante"}`
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs font-medium text-muted-foreground">Tipo de oferta *</Label>
             <RadioGroup
               value={valores.tipo_oferta ?? "RESULTADO"}
-              onValueChange={(val) => setValores((p) => ({ ...p, tipo_oferta: val as "RESULTADO" | "MARCADOR" }))}
+              onValueChange={(val) => {
+                const isMarcador = val === "MARCADOR";
+                setValores((p) => ({ 
+                  ...p, 
+                  tipo_oferta: val as "RESULTADO" | "MARCADOR",
+                  descripcion: isMarcador 
+                    ? `${p.equipo_local || "Local"} vs ${p.equipo_visitante || "Visitante"}`
+                    : p.descripcion
+                }));
+              }}
               className="flex space-x-4 pt-1"
               disabled={guardando}
             >

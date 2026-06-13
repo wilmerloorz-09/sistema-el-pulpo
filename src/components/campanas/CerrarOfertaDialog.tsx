@@ -91,6 +91,10 @@ export default function CerrarOfertaDialog({
             <div className="flex items-center space-x-4 mt-1 bg-slate-50 border border-slate-100 p-3 rounded-xl">
               <span className="text-sm font-bold text-slate-800 flex-1">{oferta?.descripcion}</span>
               <div className="flex items-center space-x-3">
+              <div className="flex flex-col items-center gap-1 w-16">
+                <Label className="text-[10px] font-bold text-slate-400 uppercase truncate w-full text-center" title={oferta?.equipo_local || "LOCAL"}>
+                  {oferta?.equipo_local || "L"}
+                </Label>
                 <Input
                   type="number"
                   min="0"
@@ -104,7 +108,12 @@ export default function CerrarOfertaDialog({
                   }}
                   className="w-16 text-center font-bold"
                 />
-                <span className="text-slate-400 font-bold">-</span>
+              </div>
+              <span className="text-slate-400 font-bold mt-4">-</span>
+              <div className="flex flex-col items-center gap-1 w-16">
+                <Label className="text-[10px] font-bold text-slate-400 uppercase truncate w-full text-center" title={oferta?.equipo_visitante || "VISITANTE"}>
+                  {oferta?.equipo_visitante || "V"}
+                </Label>
                 <Input
                   type="number"
                   min="0"
@@ -118,6 +127,7 @@ export default function CerrarOfertaDialog({
                   }}
                   className="w-16 text-center font-bold"
                 />
+              </div>
               </div>
             </div>
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
