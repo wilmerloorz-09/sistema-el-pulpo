@@ -62,43 +62,45 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   // Usar Font B y espaciado de 40 para que las líneas estén bien separadas
   enc.font("B").lineSpacing(40);
 
-  enc.align("left").separator();
+  const bodyIndent = "    "; // 4 spaces left margin
+  const bodyWidth = THERMAL_LINE_CHARS - bodyIndent.length; // 44 characters
+
+  enc.align("left").line(bodyIndent + "-".repeat(bodyWidth));
 
   if (!input.isSpecial) {
-    enc.bold(true).line("PRODUCTOS:");
+    enc.bold(true).line(bodyIndent + "PRODUCTOS:");
     enc.bold(false);
-    const indent = "  "; // 2 spaces left margin
     for (const item of input.items ?? []) {
       const amount = formatMoney(item.amount);
       const header = `${item.quantity}x ${item.description}`;
-      const lines = wrapWords(header, THERMAL_LINE_CHARS - indent.length);
+      const lines = wrapWords(header, bodyWidth);
       lines.forEach((line, idx) => {
         if (idx === lines.length - 1) {
-          enc.line(indent + formatAmountLine(line, amount, THERMAL_LINE_CHARS - indent.length));
+          enc.line(bodyIndent + formatAmountLine(line, amount, bodyWidth));
         } else {
-          enc.line(indent + line);
+          enc.line(bodyIndent + line);
         }
       });
-      enc.line(`${indent}  P.U. ${formatMoney(item.unitPrice)}`);
+      enc.line(`${bodyIndent}  P.U. ${formatMoney(item.unitPrice)}`);
     }
   } else {
-    enc.line(formatAmountLine("CARGO ESPECIAL", formatMoney(input.totalAmount)));
+    enc.line(bodyIndent + formatAmountLine("CARGO ESPECIAL", formatMoney(input.totalAmount), bodyWidth));
   }
 
-  enc.separator();
+  enc.line(bodyIndent + "-".repeat(bodyWidth));
 
   enc.bold(true);
-  enc.line(formatAmountLine("TOTAL A PAGAR", formatMoney(input.totalAmount)));
+  enc.line(bodyIndent + formatAmountLine("TOTAL A PAGAR", formatMoney(input.totalAmount), bodyWidth));
   enc.bold(false);
 
   for (const payment of input.payments ?? []) {
-    enc.line(formatAmountLine(payment.methodName, formatMoney(payment.appliedAmount)));
+    enc.line(bodyIndent + formatAmountLine(payment.methodName, formatMoney(payment.appliedAmount), bodyWidth));
   }
 
-  enc.line("-".repeat(THERMAL_LINE_CHARS));
-  enc.line(formatAmountLine("RECIBIDO", formatMoney(input.totalReceived)));
+  enc.line(bodyIndent + "-".repeat(bodyWidth));
+  enc.line(bodyIndent + formatAmountLine("RECIBIDO", formatMoney(input.totalReceived), bodyWidth));
   enc.bold(true);
-  enc.line(formatAmountLine("CAMBIO", formatMoney(input.changeAmount)));
+  enc.line(bodyIndent + formatAmountLine("CAMBIO", formatMoney(input.changeAmount), bodyWidth));
   enc.bold(false);
 
   enc.align("center");

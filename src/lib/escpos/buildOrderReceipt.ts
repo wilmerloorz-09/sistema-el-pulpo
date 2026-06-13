@@ -47,40 +47,42 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   // Usar Font B y espaciado de 40 para que las líneas estén bien separadas
   enc.font("B").lineSpacing(40);
 
-  enc.align("left").separator();
+  const bodyIndent = "    "; // 4 spaces left margin
+  const bodyWidth = THERMAL_LINE_CHARS - bodyIndent.length; // 44 characters
 
-    const indent = "  "; // 2 spaces left margin
-    for (const item of input.items ?? []) {
-      const isBulk = item.tray_item_type === "C";
-      const amount = `$${Number(item.total).toFixed(2)}`;
-      const left = isBulk ? item.description_snapshot : `${item.quantity}x ${item.description_snapshot}`;
-      const lines = wrapWords(left, THERMAL_LINE_CHARS - indent.length);
-      lines.forEach((line, idx) => {
-        if (idx === lines.length - 1) {
-          enc.line(indent + formatAmountLine(line, amount, THERMAL_LINE_CHARS - indent.length));
-        } else {
-          enc.line(indent + line);
-        }
-      });
+  enc.align("left").line(bodyIndent + "-".repeat(bodyWidth));
 
-      for (const mod of item.modifiers ?? []) {
-        const desc = String(mod.description ?? "").trim();
-        if (!desc) continue;
-        enc.line(`${indent}  - ${desc}`);
+  for (const item of input.items ?? []) {
+    const isBulk = item.tray_item_type === "C";
+    const amount = `$${Number(item.total).toFixed(2)}`;
+    const left = isBulk ? item.description_snapshot : `${item.quantity}x ${item.description_snapshot}`;
+    const lines = wrapWords(left, bodyWidth);
+    lines.forEach((line, idx) => {
+      if (idx === lines.length - 1) {
+        enc.line(bodyIndent + formatAmountLine(line, amount, bodyWidth));
+      } else {
+        enc.line(bodyIndent + line);
       }
+    });
 
-      const note = String(item.item_note ?? "").trim();
-      if (note) {
-        const prefix = note.toLowerCase().startsWith("entregar:") ? "" : "Nota: ";
-        for (const line of wrapWords(`${prefix}${note}`, THERMAL_LINE_CHARS - indent.length - 2)) {
-          enc.line(`${indent}  ${line}`);
-        }
-      }
+    for (const mod of item.modifiers ?? []) {
+      const desc = String(mod.description ?? "").trim();
+      if (!desc) continue;
+      enc.line(`${bodyIndent}  - ${desc}`);
     }
 
-  enc.separator();
+    const note = String(item.item_note ?? "").trim();
+    if (note) {
+      const prefix = note.toLowerCase().startsWith("entregar:") ? "" : "Nota: ";
+      for (const line of wrapWords(`${prefix}${note}`, bodyWidth - 2)) {
+        enc.line(`${bodyIndent}  ${line}`);
+      }
+    }
+  }
+
+  enc.line(bodyIndent + "-".repeat(bodyWidth));
   enc.bold(true);
-  enc.line(formatAmountLine("TOTAL", `$${Number(input.total).toFixed(2)}`));
+  enc.line(bodyIndent + formatAmountLine("TOTAL", `$${Number(input.total).toFixed(2)}`, bodyWidth));
   enc.bold(false);
 
   enc.align("center");
