@@ -47,8 +47,8 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   // Usar Font B y espaciado de 40 para que las líneas estén bien separadas
   enc.font("B").lineSpacing(40);
 
-  const bodyIndent = "    "; // 4 spaces left margin
-  const bodyWidth = THERMAL_LINE_CHARS - bodyIndent.length; // 44 characters
+  const bodyIndent = "        "; // 8 spaces left margin
+  const bodyWidth = THERMAL_LINE_CHARS - bodyIndent.length; // 40 characters
 
   enc.align("left").line(bodyIndent + "-".repeat(bodyWidth));
 
