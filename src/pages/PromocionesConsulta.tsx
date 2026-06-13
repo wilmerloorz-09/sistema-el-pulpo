@@ -39,6 +39,7 @@ import { getOrderRef } from '@/lib/orderPresentation';
 import {
   usePromocionesFiltrosCatalogos,
   usePromocionesConsultaData,
+  useMarcadoresDeOferta,
   type PromocionesConsultaFilters,
 } from '@/hooks/usePromocionesConsultaData';
 
@@ -58,6 +59,7 @@ export default function PromocionesConsulta() {
   const [hasta, setHasta] = useState<string>(format(endOfToday, "yyyy-MM-dd'T'HH:mm"));
   const [campanaId, setCampanaId] = useState<string>('ALL');
   const [ofertaId, setOfertaId] = useState<string>('ALL');
+  const [filtroMarcador, setFiltroMarcador] = useState<string>('ALL');
   const [shiftId, setShiftId] = useState<string>('ALL');
   const [estadoPrediccion, setEstadoPrediccion] = useState<string>('ALL');
   const [estadoCupon, setEstadoCupon] = useState<string>('ALL');
@@ -74,6 +76,14 @@ export default function PromocionesConsulta() {
 
   // Cargar Catálogos para los filtros
   const { data: catalogos, isLoading: catalogosLoading } = usePromocionesFiltrosCatalogos(localBranchId);
+
+  // Cargar marcadores de la oferta seleccionada
+  const { data: opcionesMarcador, isLoading: cargandoMarcadores } = useMarcadoresDeOferta(ofertaId);
+
+  const esOfertaMarcador = campanaId !== 'ALL' && ofertaId !== 'ALL' && 
+    (catalogos?.campaigns || [])
+      .find((c: any) => c.id === campanaId)
+      ?.cartelera_ofertas?.find((o: any) => (o.id_oferta || o.id) === ofertaId)?.tipo_oferta === 'MARCADOR';
 
   // Manejar el rango rápido de tiempo
   useEffect(() => {
@@ -166,6 +176,7 @@ export default function PromocionesConsulta() {
     creatorId: null,
     busquedaCliente: '',
     busquedaOrden: '',
+    filtroMarcador: 'ALL',
   });
 
   const handleApplyFilters = () => {
@@ -184,6 +195,7 @@ export default function PromocionesConsulta() {
       creatorId: creatorId === 'ALL' ? null : creatorId,
       busquedaCliente,
       busquedaOrden,
+      filtroMarcador: esOfertaMarcador ? filtroMarcador : 'ALL',
     });
   };
 
@@ -192,6 +204,7 @@ export default function PromocionesConsulta() {
     setRangeType('HOY');
     setCampanaId('ALL');
     setOfertaId('ALL');
+    setFiltroMarcador('ALL');
     setShiftId('ALL');
     setEstadoPrediccion('ALL');
     setEstadoCupon('ALL');
@@ -218,6 +231,7 @@ export default function PromocionesConsulta() {
       creatorId: null,
       busquedaCliente: '',
       busquedaOrden: '',
+      filtroMarcador: 'ALL',
     });
   };
 
@@ -290,6 +304,7 @@ export default function PromocionesConsulta() {
       'Cliente Nombre',
       'Campaña',
       'Oferta Seleccionada',
+      'Marcador',
       'Estado Predicción',
       'Código Cupón',
       'Estado Cupón',
@@ -306,6 +321,9 @@ export default function PromocionesConsulta() {
       const nombre = r.cliente ? `${r.cliente.nombres} ${r.cliente.apellidos}` : '';
       const campana = r.campana?.titulo || '';
       const oferta = getOfertaDescripcion(r.campana, r.oferta_seleccionada_id);
+      const marcador = r.prediccion_marcador_local != null && r.prediccion_marcador_visitante != null 
+        ? `${r.prediccion_marcador_local} - ${r.prediccion_marcador_visitante}` 
+        : '';
       const estado = r.estado_prediccion;
       const cupon = r.codigo_cupon || '';
       
@@ -350,6 +368,7 @@ export default function PromocionesConsulta() {
         nombre,
         campana,
         oferta,
+        marcador,
         estado,
         cupon,
         estCupon,
@@ -528,7 +547,14 @@ export default function PromocionesConsulta() {
           {/* Oferta */}
           <div className="space-y-1.5">
             <Label className="text-xs font-bold text-muted-foreground">Oferta</Label>
-            <Select value={ofertaId} onValueChange={setOfertaId} disabled={campanaId === 'ALL'}>
+            <Select 
+              value={ofertaId} 
+              onValueChange={(val) => {
+                setOfertaId(val);
+                setFiltroMarcador('ALL');
+              }} 
+              disabled={campanaId === 'ALL'}
+            >
               <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs disabled:opacity-50">
                 <SelectValue placeholder={campanaId === 'ALL' ? "Selecciona una campaña primero" : "Todas las ofertas"} />
               </SelectTrigger>
@@ -541,6 +567,24 @@ export default function PromocionesConsulta() {
                       {o.descripcion}
                     </SelectItem>
                   ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Marcador */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-muted-foreground">Marcador</Label>
+            <Select value={filtroMarcador} onValueChange={setFiltroMarcador} disabled={!esOfertaMarcador || cargandoMarcadores}>
+              <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs disabled:opacity-50">
+                <SelectValue placeholder={!esOfertaMarcador ? "Aplica a ofertas tipo Marcador" : "Todos los marcadores"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todos los marcadores</SelectItem>
+                {(opcionesMarcador || []).map((m: string) => (
+                  <SelectItem key={m} value={m} className="text-xs">
+                    {m}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -848,6 +892,7 @@ export default function PromocionesConsulta() {
                   <TableHead className="font-bold text-foreground py-3 text-xs">Cliente</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Campaña</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs">Predicción Elegida</TableHead>
+                  <TableHead className="font-bold text-foreground py-3 text-xs text-center">Marcador</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs text-center">Estado</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs text-center">Cupón / Estado</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-xs text-right whitespace-nowrap">Crédito Obtener</TableHead>
@@ -938,6 +983,15 @@ export default function PromocionesConsulta() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate" title={getOfertaDescripcion(r.campana, r.oferta_seleccionada_id)}>
                         {getOfertaDescripcion(r.campana, r.oferta_seleccionada_id)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {r.prediccion_marcador_local != null && r.prediccion_marcador_visitante != null ? (
+                          <span className="font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
+                            {r.prediccion_marcador_local} - {r.prediccion_marcador_visitante}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground italic text-xs">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge

@@ -13,6 +13,7 @@ export interface PromocionesConsultaFilters {
   creatorId: string | null;
   busquedaCliente: string;
   busquedaOrden: string;
+  filtroMarcador: string | 'ALL';
 }
 
 export function usePromocionesFiltrosCatalogos(branchId: string) {
@@ -61,6 +62,31 @@ export function usePromocionesFiltrosCatalogos(branchId: string) {
   });
 }
 
+export function useMarcadoresDeOferta(ofertaId: string | 'ALL') {
+  return useQuery({
+    queryKey: ['marcadores-oferta', ofertaId],
+    queryFn: async () => {
+      if (!ofertaId || ofertaId === 'ALL') return [];
+      const { data, error } = await supabase
+        .from('predicciones_clientes')
+        .select('prediccion_marcador_local, prediccion_marcador_visitante')
+        .eq('oferta_seleccionada_id', ofertaId)
+        .not('prediccion_marcador_local', 'is', null)
+        .not('prediccion_marcador_visitante', 'is', null);
+
+      if (error) throw error;
+      
+      const unique = new Set<string>();
+      data.forEach(row => {
+        unique.add(`${row.prediccion_marcador_local} - ${row.prediccion_marcador_visitante}`);
+      });
+      
+      return Array.from(unique).sort();
+    },
+    enabled: ofertaId !== 'ALL'
+  });
+}
+
 export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) {
   const {
     branchId,
@@ -74,6 +100,7 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
     creatorId,
     busquedaCliente,
     busquedaOrden,
+    filtroMarcador,
   } = filters;
 
   return useQuery({
@@ -90,6 +117,7 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
       creatorId,
       busquedaCliente,
       busquedaOrden,
+      filtroMarcador,
     ],
     queryFn: async () => {
       if (!branchId) {
@@ -124,6 +152,8 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
           fecha_caducidad_cupon,
           registrado_por,
           creado_el,
+          prediccion_marcador_local,
+          prediccion_marcador_visitante,
           orden:orders!inner (id, order_code, order_number, branch_id, cash_shift_id, total, payments(amount)),
           cliente:clientes!inner (id, nombres, apellidos, cedula),
           campana:campanas_promocionales!inner (id, titulo, activa, cartelera_ofertas, porcentaje_descuento, descuento_maximo),
@@ -143,6 +173,16 @@ export function usePromocionesConsultaData(filters: PromocionesConsultaFilters) 
       // Filtrar por oferta
       if (ofertaId && ofertaId !== 'ALL') {
         query = query.eq('oferta_seleccionada_id', ofertaId);
+      }
+
+      // Filtrar por marcador
+      if (filtroMarcador && filtroMarcador !== 'ALL') {
+        const parts = filtroMarcador.split(' - ');
+        if (parts.length === 2) {
+          const local = parseInt(parts[0], 10);
+          const visitante = parseInt(parts[1], 10);
+          query = query.eq('prediccion_marcador_local', local).eq('prediccion_marcador_visitante', visitante);
+        }
       }
 
       // Filtrar por estado de la predicción

@@ -63,11 +63,15 @@ export function useCampanasPromocionales() {
       campanaId,
       ofertaId,
       esGanadora,
+      marcadorFinalLocal,
+      marcadorFinalVisitante,
     }: {
       campanaId: string;
       ofertaId: string;
       esGanadora: boolean;
-    }) => cerrarOfertaCampana(campanaId, ofertaId, esGanadora),
+      marcadorFinalLocal?: number;
+      marcadorFinalVisitante?: number;
+    }) => cerrarOfertaCampana(campanaId, ofertaId, esGanadora, marcadorFinalLocal, marcadorFinalVisitante),
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: [CAMPANAS_QUERY_KEY] });
       const msg =

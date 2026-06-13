@@ -70,6 +70,8 @@ export default function PromocionRegistro() {
   const [isLoadingCampanas, setIsLoadingCampanas] = useState(false);
   const [selectedCampana, setSelectedCampana] = useState<CampanaActiva | null>(null);
   const [selectedOfertaId, setSelectedOfertaId] = useState<string | null>(null);
+  const [marcadorLocal, setMarcadorLocal] = useState<string>("");
+  const [marcadorVisitante, setMarcadorVisitante] = useState<string>("");
 
   // Submit and General
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -218,6 +220,13 @@ export default function PromocionRegistro() {
     return (selectedCampana.cartelera_ofertas ?? []).filter(ofertaDisponible);
   }, [selectedCampana]);
 
+  const selectedOfertaObj = useMemo(() => {
+    if (!selectedCampana || !selectedOfertaId) return null;
+    return selectedCampana.cartelera_ofertas.find(o => (o.id_oferta || o.id) === selectedOfertaId) || null;
+  }, [selectedCampana, selectedOfertaId]);
+
+  const esMarcador = selectedOfertaObj?.tipo_oferta === 'MARCADOR';
+
   // Form validations
   const isFormValid = useMemo(() => {
     if (!tokenValidatedData?.valido) return false;
@@ -226,8 +235,15 @@ export default function PromocionRegistro() {
     if (!nombres.trim() || !apellidos.trim()) return false;
     if (!selectedCampana) return false;
     if (!selectedOfertaId) return false;
+    
+    if (esMarcador) {
+      if (marcadorLocal === "" || marcadorVisitante === "") return false;
+      if (isNaN(Number(marcadorLocal)) || isNaN(Number(marcadorVisitante))) return false;
+      if (Number(marcadorLocal) < 0 || Number(marcadorVisitante) < 0) return false;
+    }
+    
     return true;
-  }, [tokenValidatedData, cedula, celular, nombres, apellidos, selectedCampana, selectedOfertaId]);
+  }, [tokenValidatedData, cedula, celular, nombres, apellidos, selectedCampana, selectedOfertaId, esMarcador, marcadorLocal, marcadorVisitante]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,7 +255,7 @@ export default function PromocionRegistro() {
     const tokenClean = tokenInput.trim().toUpperCase();
 
     try {
-      const { data, error } = await supabase.rpc("validar_token_promocion_cliente", {
+      const payload: any = {
         p_token_promocion: tokenClean,
         p_campana_id: selectedCampana!.id,
         p_cliente_cedula: cedula,
@@ -249,7 +265,14 @@ export default function PromocionRegistro() {
         p_cliente_celular: celular,
         p_oferta_seleccionada_id: selectedOfertaId!,
         p_registrar_prediccion: true
-      });
+      };
+
+      if (esMarcador) {
+        payload.p_prediccion_marcador_local = parseInt(marcadorLocal, 10);
+        payload.p_prediccion_marcador_visitante = parseInt(marcadorVisitante, 10);
+      }
+
+      const { data, error } = await supabase.rpc("validar_token_promocion_cliente", payload);
 
       if (error) throw error;
 
@@ -355,6 +378,8 @@ export default function PromocionRegistro() {
                   setNombres("");
                   setApellidos("");
                   setSelectedOfertaId(null);
+                  setMarcadorLocal("");
+                  setMarcadorVisitante("");
                 }}
                 className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white font-bold h-11"
               >
@@ -526,12 +551,16 @@ export default function PromocionRegistro() {
                       <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
                         {ofertasVisibles.map((oferta) => (
                           <button
-                            key={oferta.id_oferta}
+                            key={oferta.id_oferta || oferta.id}
                             type="button"
-                            onClick={() => setSelectedOfertaId(oferta.id_oferta)}
+                            onClick={() => {
+                              setSelectedOfertaId(oferta.id_oferta || oferta.id);
+                              setMarcadorLocal("");
+                              setMarcadorVisitante("");
+                            }}
                             className={cn(
                               "rounded-xl border p-3.5 text-left transition-all relative flex flex-col gap-1 min-h-[52px]",
-                              selectedOfertaId === oferta.id_oferta
+                              selectedOfertaId === (oferta.id_oferta || oferta.id)
                                 ? "border-amber-400 bg-amber-500/10 ring-1 ring-amber-400"
                                 : "border-slate-800 bg-slate-900/40 hover:border-slate-700"
                             )}
@@ -541,6 +570,39 @@ export default function PromocionRegistro() {
                             </p>
                           </button>
                         ))}
+                      </div>
+                    )}
+                    
+                    {esMarcador && (
+                      <div className="mt-4 p-5 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 animate-in fade-in slide-in-from-top-4 flex flex-col items-center">
+                        <p className="text-[11px] font-black text-indigo-300 mb-4 uppercase tracking-widest text-center flex items-center gap-2">
+                          <Trophy className="h-3.5 w-3.5" /> Ingresa tu Marcador Exacto
+                        </p>
+                        <div className="flex items-center justify-center gap-6 w-full">
+                          <div className="flex flex-col items-center gap-1.5 w-24">
+                            <Label className="text-[10px] font-bold text-slate-300 uppercase">LOCAL (L)</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="99"
+                              value={marcadorLocal}
+                              onChange={(e) => setMarcadorLocal(e.target.value)}
+                              className="h-16 text-center text-3xl font-black bg-slate-900 border-indigo-500/50 focus:border-indigo-400 focus:ring-indigo-400/20 shadow-inner rounded-xl"
+                            />
+                          </div>
+                          <span className="text-3xl font-black text-slate-500/50">-</span>
+                          <div className="flex flex-col items-center gap-1.5 w-24">
+                            <Label className="text-[10px] font-bold text-slate-300 uppercase">VISITANTE (V)</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="99"
+                              value={marcadorVisitante}
+                              onChange={(e) => setMarcadorVisitante(e.target.value)}
+                              className="h-16 text-center text-3xl font-black bg-slate-900 border-indigo-500/50 focus:border-indigo-400 focus:ring-indigo-400/20 shadow-inner rounded-xl"
+                            />
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

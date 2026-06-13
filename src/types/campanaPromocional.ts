@@ -14,6 +14,9 @@ export interface OfertaCartelera {
   bloqueo_at: string;
   cuota: number;
   resultado?: ResultadoOferta;
+  tipo_oferta?: "RESULTADO" | "MARCADOR";
+  marcador_final_local?: number | null;
+  marcador_final_visitante?: number | null;
 }
 
 export type EstadoPrediccion = "PENDIENTE" | "GANADA" | "PERDIDA";
@@ -58,6 +61,8 @@ export interface PrediccionCliente {
   cliente_id: string;
   oferta_seleccionada_id: string;
   estado_prediccion: EstadoPrediccion;
+  prediccion_marcador_local: number | null;
+  prediccion_marcador_visitante: number | null;
   monto_descuento_ganado: number | null;
   codigo_cupon: string | null;
   cupon_usado_el: string | null;

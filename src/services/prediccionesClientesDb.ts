@@ -120,6 +120,8 @@ export type RegistrarPrediccionPayload = {
   cliente_id: string;
   oferta_seleccionada_id: string;
   registrado_por: string;
+  prediccion_marcador_local?: number | null;
+  prediccion_marcador_visitante?: number | null;
 };
 
 export async function registrarPrediccionCliente(payload: RegistrarPrediccionPayload): Promise<PrediccionCliente> {
@@ -129,6 +131,8 @@ export async function registrarPrediccionCliente(payload: RegistrarPrediccionPay
     {
       id,
       ...payload,
+      prediccion_marcador_local: payload.prediccion_marcador_local ?? null,
+      prediccion_marcador_visitante: payload.prediccion_marcador_visitante ?? null,
       estado_prediccion: "PENDIENTE",
       monto_descuento_ganado: null,
       codigo_cupon: null,
@@ -141,6 +145,8 @@ export async function registrarPrediccionCliente(payload: RegistrarPrediccionPay
   return {
     id,
     ...payload,
+    prediccion_marcador_local: payload.prediccion_marcador_local ?? null,
+    prediccion_marcador_visitante: payload.prediccion_marcador_visitante ?? null,
     estado_prediccion: "PENDIENTE",
     monto_descuento_ganado: null,
     codigo_cupon: null,

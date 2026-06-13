@@ -142,17 +142,19 @@ const PromocionesCrud = () => {
         campana={campanaSeleccionada}
         guardando={isRegistrando}
         onCerrar={() => !isRegistrando && setOrdenSeleccionada(null)}
-        onConfirmar={async ({ clienteId, ofertaId }) => {
+        onConfirmar={async (payload) => {
           if (!ordenSeleccionada || !user?.id) return;
           await registrarPrediccion({
             campana_id: campanaSeleccionada.id,
             orden_id: ordenSeleccionada.id,
-            cliente_id: clienteId,
-            oferta_seleccionada_id: ofertaId,
+            cliente_id: payload.clienteId,
+            oferta_seleccionada_id: payload.ofertaId,
             registrado_por: user.id,
+            prediccion_marcador_local: payload.prediccion_marcador_local,
+            prediccion_marcador_visitante: payload.prediccion_marcador_visitante,
           });
-          if (ordenSeleccionada.cliente_id !== clienteId) {
-            await dbUpdate("orders", ordenSeleccionada.id, { cliente_id: clienteId });
+          if (ordenSeleccionada.cliente_id !== payload.clienteId) {
+            await dbUpdate("orders", ordenSeleccionada.id, { cliente_id: payload.clienteId });
           }
           setOrdenSeleccionada(null);
         }}

@@ -97,6 +97,8 @@ export async function cerrarOfertaCampana(
   campanaId: string,
   ofertaId: string,
   esGanadora: boolean,
+  marcadorFinalLocal?: number,
+  marcadorFinalVisitante?: number,
 ): Promise<{
   campana_id: string;
   oferta_id: string;
@@ -107,6 +109,8 @@ export async function cerrarOfertaCampana(
     p_campana_id: campanaId,
     p_oferta_id: ofertaId,
     p_es_ganadora: esGanadora,
+    p_marcador_final_local: marcadorFinalLocal,
+    p_marcador_final_visitante: marcadorFinalVisitante,
   });
   if (error) throw error;
   return data as {

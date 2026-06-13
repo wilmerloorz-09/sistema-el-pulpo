@@ -9,6 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import PaymentClienteCard from "@/components/caja/PaymentClienteCard";
 import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
@@ -54,6 +56,8 @@ interface PrediccionOrdenDialogProps {
   onConfirmar: (payload: {
     clienteId: string;
     ofertaId: string;
+    prediccion_marcador_local?: number | null;
+    prediccion_marcador_visitante?: number | null;
   }) => Promise<void>;
 }
 
@@ -66,6 +70,8 @@ export default function PrediccionOrdenDialog({
   onConfirmar,
 }: PrediccionOrdenDialogProps) {
   const [ofertaSeleccionada, setOfertaSeleccionada] = useState<string | null>(null);
+  const [marcadorLocal, setMarcadorLocal] = useState("0");
+  const [marcadorVisitante, setMarcadorVisitante] = useState("0");
 
   const ordenParaCliente = useMemo(
     () => (orden ? { id: orden.id, cliente: orden.cliente ?? null } : null),
@@ -77,6 +83,8 @@ export default function PrediccionOrdenDialog({
   useEffect(() => {
     if (!abierto) return;
     setOfertaSeleccionada(null);
+    setMarcadorLocal("0");
+    setMarcadorVisitante("0");
   }, [abierto, orden?.id]);
 
   const ofertasVisibles = useMemo(
@@ -84,12 +92,36 @@ export default function PrediccionOrdenDialog({
     [campana?.cartelera_ofertas],
   );
 
-  const puedeConfirmar = Boolean(clienteSelection.selectedCliente && ofertaSeleccionada && !guardando);
+  const ofertaObjSeleccionada = useMemo(
+    () => ofertasVisibles.find((o) => o.id_oferta === ofertaSeleccionada) ?? null,
+    [ofertasVisibles, ofertaSeleccionada],
+  );
+
+  const puedeConfirmar = Boolean(
+    clienteSelection.selectedCliente &&
+    ofertaSeleccionada &&
+    !guardando &&
+    (ofertaObjSeleccionada?.tipo_oferta === "MARCADOR" ? marcadorLocal !== "" && marcadorVisitante !== "" : true)
+  );
 
   const handleConfirmar = async () => {
     const cliente = clienteSelection.selectedCliente;
     if (!cliente || !ofertaSeleccionada) return;
-    await onConfirmar({ clienteId: cliente.id, ofertaId: ofertaSeleccionada });
+
+    let ml = null;
+    let mv = null;
+    if (ofertaObjSeleccionada?.tipo_oferta === "MARCADOR") {
+      ml = parseInt(marcadorLocal, 10);
+      mv = parseInt(marcadorVisitante, 10);
+      if (isNaN(ml) || isNaN(mv) || ml < 0 || mv < 0) return;
+    }
+
+    await onConfirmar({ 
+      clienteId: cliente.id, 
+      ofertaId: ofertaSeleccionada,
+      prediccion_marcador_local: ml,
+      prediccion_marcador_visitante: mv
+    });
   };
 
   return (
@@ -139,6 +171,38 @@ export default function PrediccionOrdenDialog({
                 </div>
               )}
             </div>
+
+            {ofertaObjSeleccionada?.tipo_oferta === "MARCADOR" ? (
+              <div className="space-y-2 rounded-xl bg-slate-50 p-4 border border-slate-100">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Tu predicción de marcador</Label>
+                <div className="flex items-center space-x-4">
+                  <span className="text-sm font-bold text-slate-800 flex-1">{ofertaObjSeleccionada?.descripcion}</span>
+                  <div className="flex items-center space-x-3">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={marcadorLocal}
+                      disabled={guardando}
+                      onChange={(e) => setMarcadorLocal(e.target.value)}
+                      className="w-16 text-center font-bold h-9 bg-white"
+                    />
+                    <span className="font-bold text-slate-400">-</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={marcadorVisitante}
+                      disabled={guardando}
+                      onChange={(e) => setMarcadorVisitante(e.target.value)}
+                      className="w-16 text-center font-bold h-9 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
 

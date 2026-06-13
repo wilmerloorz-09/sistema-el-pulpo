@@ -84,11 +84,16 @@ const CampanaDetalle = () => {
     void qc.invalidateQueries({ queryKey: [CAMPANAS_QUERY_KEY, campana.id] });
   };
 
-  const cerrarOfertaIndividual = async (ofertaId: string, resultado: "GANADA" | "PERDIDA") => {
+  const cerrarOfertaIndividual = async (ofertaId: string, resultado: "GANADA" | "PERDIDA", marcadorFinalLocal?: number, marcadorFinalVisitante?: number) => {
     if (!campana) return;
     const carteleraActualizada = ofertasLista.map((o) =>
       o.id_oferta === ofertaId
-        ? { ...prepararOfertaParaGuardar(o), resultado }
+        ? {
+            ...prepararOfertaParaGuardar(o),
+            resultado,
+            marcador_final_local: marcadorFinalLocal,
+            marcador_final_visitante: marcadorFinalVisitante,
+          }
         : prepararOfertaParaGuardar(o),
     );
     await persistirCartelera(carteleraActualizada);
@@ -96,6 +101,8 @@ const CampanaDetalle = () => {
       campanaId: campana.id,
       ofertaId,
       esGanadora: resultado === "GANADA",
+      marcadorFinalLocal,
+      marcadorFinalVisitante,
     });
     void campanaQuery.refetch();
   };

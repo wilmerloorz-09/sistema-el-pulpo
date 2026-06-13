@@ -25,6 +25,7 @@ export function nuevaOfertaCartelera(idOferta?: string): OfertaCartelera {
     bloqueo_at: "",
     cuota: 0,
     resultado: "PENDIENTE",
+    tipo_oferta: "RESULTADO",
   };
 }
 
@@ -71,6 +72,9 @@ export function prepararOfertaParaGuardar(oferta: OfertaCartelera): OfertaCartel
     bloqueo_at: oferta.bloqueo_at,
     cuota: Number(oferta.cuota),
     resultado: normalizarResultadoOferta(oferta.resultado),
+    tipo_oferta: oferta.tipo_oferta ?? "RESULTADO",
+    marcador_final_local: oferta.marcador_final_local ?? null,
+    marcador_final_visitante: oferta.marcador_final_visitante ?? null,
   };
 }
 

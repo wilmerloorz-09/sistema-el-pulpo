@@ -56,6 +56,8 @@ CREATE TRIGGER trg_orden_promocion_token_seguro
   FOR EACH ROW
   EXECUTE FUNCTION public.orden_promocion_token_trigger();
 
+DROP FUNCTION IF EXISTS public.validar_token_promocion_cliente(text, uuid, varchar, char, varchar, varchar, varchar, varchar, text, varchar, boolean);
+
 -- 4. Función de validación de token y registro de predicción / cliente de forma atómica
 CREATE OR REPLACE FUNCTION public.validar_token_promocion_cliente(
   p_token_promocion text,
@@ -68,7 +70,9 @@ CREATE OR REPLACE FUNCTION public.validar_token_promocion_cliente(
   p_cliente_correo varchar DEFAULT NULL,
   p_cliente_direccion text DEFAULT NULL,
   p_oferta_seleccionada_id varchar DEFAULT NULL,
-  p_registrar_prediccion boolean DEFAULT false
+  p_registrar_prediccion boolean DEFAULT false,
+  p_prediccion_marcador_local integer DEFAULT NULL,
+  p_prediccion_marcador_visitante integer DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -222,9 +226,9 @@ BEGIN
 
   -- Registrar predicción
   INSERT INTO public.predicciones_clientes (
-    id, campana_id, orden_id, cliente_id, oferta_seleccionada_id, estado_prediccion, creado_el
+    id, campana_id, orden_id, cliente_id, oferta_seleccionada_id, estado_prediccion, creado_el, prediccion_marcador_local, prediccion_marcador_visitante
   ) VALUES (
-    gen_random_uuid(), p_campana_id, v_orden.id, v_cliente_id, p_oferta_seleccionada_id, 'PENDIENTE', now()
+    gen_random_uuid(), p_campana_id, v_orden.id, v_cliente_id, p_oferta_seleccionada_id, 'PENDIENTE', now(), p_prediccion_marcador_local, p_prediccion_marcador_visitante
   )
   RETURNING id INTO v_prediccion_id;
 
@@ -266,8 +270,8 @@ AS $$
 $$;
 
 -- 6. Configurar permisos
-REVOKE ALL ON FUNCTION public.validar_token_promocion_cliente(text, uuid, varchar, char, varchar, varchar, varchar, varchar, text, varchar, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.validar_token_promocion_cliente(text, uuid, varchar, char, varchar, varchar, varchar, varchar, text, varchar, boolean) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.validar_token_promocion_cliente(text, uuid, varchar, char, varchar, varchar, varchar, varchar, text, varchar, boolean, integer, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.validar_token_promocion_cliente(text, uuid, varchar, char, varchar, varchar, varchar, varchar, text, varchar, boolean, integer, integer) TO anon, authenticated;
 
 REVOKE ALL ON FUNCTION public.listar_campanas_activas() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.listar_campanas_activas() TO anon, authenticated;

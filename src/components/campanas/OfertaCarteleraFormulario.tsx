@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { OfertaCartelera } from "@/types/campanaPromocional";
 import {
   bloqueoAtDesdeInputFecha,
@@ -108,6 +109,25 @@ export default function OfertaCarteleraFormulario({
               disabled={guardando}
               onChange={(e) => setValores((p) => ({ ...p, descripcion: e.target.value }))}
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Tipo de oferta *</Label>
+            <RadioGroup
+              value={valores.tipo_oferta ?? "RESULTADO"}
+              onValueChange={(val) => setValores((p) => ({ ...p, tipo_oferta: val as "RESULTADO" | "MARCADOR" }))}
+              className="flex space-x-4 pt-1"
+              disabled={guardando}
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="RESULTADO" id="tipo-resultado" />
+                <Label htmlFor="tipo-resultado" className="font-normal cursor-pointer">Resultado</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="MARCADOR" id="tipo-marcador" />
+                <Label htmlFor="tipo-marcador" className="font-normal cursor-pointer">Marcador</Label>
+              </div>
+            </RadioGroup>
           </div>
 
           <div className="grid max-w-md grid-cols-3 gap-x-3 gap-y-3">

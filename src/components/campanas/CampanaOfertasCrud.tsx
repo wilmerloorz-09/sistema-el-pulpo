@@ -60,7 +60,7 @@ interface CampanaOfertasCrudProps {
   guardando?: boolean;
   cerrando?: boolean;
   onPersistirCartelera: (cartelera: OfertaCartelera[]) => Promise<void>;
-  onCerrarOferta: (ofertaId: string, resultado: "GANADA" | "PERDIDA") => Promise<void>;
+  onCerrarOferta: (ofertaId: string, resultado: "GANADA" | "PERDIDA", marcadorFinalLocal?: number, marcadorFinalVisitante?: number) => Promise<void>;
 }
 
 const CampanaOfertasCrud = ({
@@ -147,9 +147,14 @@ const CampanaOfertasCrud = ({
   }, [ofertaAEliminar, ofertaEditando?.id_oferta, guardando, ofertas, onPersistirCartelera]);
 
   const confirmarCerrarOferta = useCallback(
-    async (resultado: "GANADA" | "PERDIDA") => {
+    async (payload: { resultado?: "GANADA" | "PERDIDA"; marcadorFinalLocal?: number; marcadorFinalVisitante?: number }) => {
       if (!ofertaACerrar) return;
-      await onCerrarOferta(ofertaACerrar.id_oferta, resultado);
+      await onCerrarOferta(
+        ofertaACerrar.id_oferta,
+        payload.resultado ?? "GANADA",
+        payload.marcadorFinalLocal,
+        payload.marcadorFinalVisitante
+      );
       setOfertaACerrar(null);
     },
     [ofertaACerrar, onCerrarOferta],
@@ -211,6 +216,9 @@ const CampanaOfertasCrud = ({
                 Oferta
               </div>
               <div className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Tipo
+              </div>
+              <div className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                 Cuota
               </div>
               <div className="w-36 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -270,6 +278,10 @@ const CampanaOfertasCrud = ({
                           <p className="truncate font-mono text-[10px] text-muted-foreground">{oferta.id_oferta}</p>
                         </button>
 
+                        <div className="hidden w-20 shrink-0 text-xs font-semibold text-slate-600 sm:block">
+                          {oferta.tipo_oferta === "MARCADOR" ? "Marcador" : "Resultado"}
+                        </div>
+
                         <div className="hidden w-20 shrink-0 font-mono text-xs font-semibold text-slate-700 sm:block">
                           {Number(oferta.cuota).toFixed(2)}
                         </div>
@@ -327,6 +339,7 @@ const CampanaOfertasCrud = ({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 px-5 pb-3 text-xs text-slate-600 sm:hidden">
+                        <span className="font-semibold text-slate-700">{oferta.tipo_oferta === "MARCADOR" ? "Marcador" : "Resultado"}</span>
                         <span className="font-mono font-semibold">Cuota {Number(oferta.cuota).toFixed(2)}</span>
                         {oferta.inicio_at ? <span>{formatFechaBloqueo(oferta.inicio_at)} - </span> : null}
                         <span>{formatFechaBloqueo(oferta.bloqueo_at)}</span>
