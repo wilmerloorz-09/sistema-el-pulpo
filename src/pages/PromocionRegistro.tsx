@@ -79,6 +79,13 @@ export default function PromocionRegistro() {
     tituloCampana: string;
     descripcionPrediccion: string;
     nombreCliente: string;
+    esMarcador?: boolean;
+    marcadorDetalle?: {
+      equipoLocal: string;
+      marcadorLocal: string;
+      equipoVisitante: string;
+      marcadorVisitante: string;
+    };
   } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -283,17 +290,26 @@ export default function PromocionRegistro() {
             (o) => o.id_oferta === selectedOfertaId
           );
           let descFinal = selectedOferta?.descripcion || "Predicción";
+          let marcadorDetalle = undefined;
           
           if (esMarcador) {
             const elocal = selectedOferta?.equipo_local || "Local";
             const evisitante = selectedOferta?.equipo_visitante || "Visitante";
-            descFinal = `${elocal} ${marcadorLocal} - ${marcadorVisitante} ${evisitante}`;
+            descFinal = `${elocal} vs ${evisitante}`;
+            marcadorDetalle = {
+              equipoLocal: elocal,
+              marcadorLocal,
+              equipoVisitante: evisitante,
+              marcadorVisitante
+            };
           }
 
           setSuccessData({
             tituloCampana: selectedCampana!.titulo,
             descripcionPrediccion: descFinal,
-            nombreCliente: `${nombres.trim()} ${apellidos.trim()}`
+            nombreCliente: `${nombres.trim()} ${apellidos.trim()}`,
+            esMarcador,
+            marcadorDetalle
           });
         } else {
           setSubmitError(result.mensaje || "No se pudo registrar la predicción.");
@@ -363,11 +379,28 @@ export default function PromocionRegistro() {
                 <p className="font-semibold text-slate-200">{successData.tituloCampana}</p>
               </div>
               <div className="border-t border-slate-800/60 pt-3">
-                <p className="text-[10px] uppercase font-bold text-slate-500">Predicción Registrada</p>
-                <p className="font-semibold text-amber-300 flex items-center gap-1.5">
-                  <Trophy className="h-4 w-4 text-amber-400" />
-                  {successData.descripcionPrediccion}
-                </p>
+                <p className="text-[10px] uppercase font-bold text-slate-500 mb-2">Predicción Registrada</p>
+                {successData.esMarcador && successData.marcadorDetalle ? (
+                  <div className="space-y-2 mt-1">
+                    <div className="flex items-center justify-between bg-slate-900/60 rounded-xl p-2.5 border border-slate-800/80 shadow-inner">
+                      <span className="font-bold text-slate-200 uppercase text-sm truncate pr-4">{successData.marcadorDetalle.equipoLocal}</span>
+                      <div className="flex items-center justify-center bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-black rounded-lg min-w-[40px] h-10 text-xl px-2 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+                        {successData.marcadorDetalle.marcadorLocal}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between bg-slate-900/60 rounded-xl p-2.5 border border-slate-800/80 shadow-inner">
+                      <span className="font-bold text-slate-200 uppercase text-sm truncate pr-4">{successData.marcadorDetalle.equipoVisitante}</span>
+                      <div className="flex items-center justify-center bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-black rounded-lg min-w-[40px] h-10 text-xl px-2 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+                        {successData.marcadorDetalle.marcadorVisitante}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-semibold text-amber-300 flex items-center gap-1.5 mt-1">
+                    <Trophy className="h-4 w-4 text-amber-400" />
+                    {successData.descripcionPrediccion}
+                  </p>
+                )}
               </div>
             </div>
 
