@@ -59,6 +59,9 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.feed(1);
   }
 
+  // Usar Font B y menor interlineado para ahorrar papel en el cuerpo del ticket
+  enc.font("B").lineSpacing(24);
+
   enc.align("left").separator();
 
   if (!input.isSpecial) {

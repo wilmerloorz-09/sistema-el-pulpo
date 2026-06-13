@@ -44,6 +44,9 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.line(`${dateStr} ${timeStr}`);
   enc.feed(1);
 
+  // Usar Font B y menor interlineado para ahorrar papel en el cuerpo de la comanda
+  enc.font("B").lineSpacing(24);
+
   enc.align("left").separator();
 
   for (const item of input.items ?? []) {

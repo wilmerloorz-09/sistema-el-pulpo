@@ -80,6 +80,20 @@ export class EscPosEncoder {
     return this.pushRaw([0x1d, 0x21, normal ? 0x00 : 0x11]);
   }
 
+  /** ESC M n — selecciona fuente (0 = Font A, 1 = Font B, 2 = Font C). */
+  font(mode: "A" | "B" | "C" = "A") {
+    const n = mode === "B" ? 1 : mode === "C" ? 2 : 0;
+    return this.pushRaw([0x1b, 0x4d, n]);
+  }
+
+  /** ESC 3 n — ajusta interlineado en dots. Pasa null para restablecer al default (ESC 2). */
+  lineSpacing(n: number | null = null) {
+    if (n === null) {
+      return this.pushRaw([0x1b, 0x32]);
+    }
+    return this.pushRaw([0x1b, 0x33, n]);
+  }
+
   text(value: string) {
     if (!value) return this;
     return this.pushRaw(textToLatin1Bytes(value));
