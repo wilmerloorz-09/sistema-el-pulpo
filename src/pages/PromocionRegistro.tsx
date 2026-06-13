@@ -282,9 +282,17 @@ export default function PromocionRegistro() {
           const selectedOferta = selectedCampana!.cartelera_ofertas.find(
             (o) => o.id_oferta === selectedOfertaId
           );
+          let descFinal = selectedOferta?.descripcion || "Predicción";
+          
+          if (esMarcador) {
+            const elocal = selectedOferta?.equipo_local || "Local";
+            const evisitante = selectedOferta?.equipo_visitante || "Visitante";
+            descFinal = `${elocal} ${marcadorLocal} - ${marcadorVisitante} ${evisitante}`;
+          }
+
           setSuccessData({
             tituloCampana: selectedCampana!.titulo,
-            descripcionPrediccion: selectedOferta?.descripcion || "Predicción",
+            descripcionPrediccion: descFinal,
             nombreCliente: `${nombres.trim()} ${apellidos.trim()}`
           });
         } else {
@@ -367,24 +375,6 @@ export default function PromocionRegistro() {
               <p className="text-xs text-slate-400">
                 Si tu predicción resulta correcta, recibirás automáticamente el descuento correspondiente en tu próxima orden con nosotros.
               </p>
-              <Button
-                type="button"
-                onClick={() => {
-                  setSuccessData(null);
-                  setTokenValidatedData(null);
-                  setTokenInput("");
-                  setCedula("");
-                  setCelular("");
-                  setNombres("");
-                  setApellidos("");
-                  setSelectedOfertaId(null);
-                  setMarcadorLocal("");
-                  setMarcadorVisitante("");
-                }}
-                className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white font-bold h-11"
-              >
-                Registrar otro ticket
-              </Button>
             </div>
           </div>
         ) : isAutoValidating ? (
