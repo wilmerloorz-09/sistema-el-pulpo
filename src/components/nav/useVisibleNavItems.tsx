@@ -188,6 +188,7 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-fuchsia-50 text-fuchsia-600",
     },
     visible: () => false,
+    end: true,
   },
   {
     to: "/promociones/consulta",

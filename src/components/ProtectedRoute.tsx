@@ -120,10 +120,17 @@ const ProtectedRoute = ({
   const hasShiftAccess = requiresOpenShift && shiftOpen && userEnabled && (hasSupervisorBypass || (hasRequiredShiftRole && !hasBlockedShiftRole));
 
   const isStaleShift = Boolean(shiftGateQuery.data?.isStaleShift);
-  const isAllowedModulePath = location.pathname === "/turno" || location.pathname === "/admin";
+  const isAllowedModulePath = 
+    location.pathname.startsWith("/turno") || 
+    location.pathname.startsWith("/admin") ||
+    location.pathname.startsWith("/reportes") ||
+    location.pathname.startsWith("/monitoreo-global") ||
+    location.pathname.startsWith("/promociones") ||
+    location.pathname.startsWith("/campanas") ||
+    location.pathname.startsWith("/clientes");
 
   const fallback = (() => {
-    if (isStaleShift && canAccessTurno) return canAccessAdmin ? "/admin" : "/turno";
+    if (isStaleShift && canAccessTurno) return "/turno";
     if (preferredPath) return preferredPath;
     if (firstVisiblePath) return firstVisiblePath;
     const firstVisibleItem = visibleItems[0]?.to;
@@ -138,7 +145,7 @@ const ProtectedRoute = ({
 
   if (isStaleShift && !isAllowedModulePath) {
     if (canAccessTurno) {
-      return <Navigate to={canAccessAdmin ? "/admin" : "/turno"} replace />;
+      return <Navigate to="/turno" replace />;
     }
 
     return (

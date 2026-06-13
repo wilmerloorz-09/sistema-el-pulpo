@@ -69,11 +69,9 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
             }}
           />
           <div style={{ flex: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: "2px" }}>
-            <div style={{ fontSize: "12px", fontWeight: "bold" }}>COMPROBANTE DE PAGO</div>
             {branchName && <div style={{ fontSize: "11px" }}>{branchName}</div>}
-            <div style={{ fontSize: "11px", fontWeight: "bold" }}>
-              ORDEN {orderNumber}
-            </div>
+            <div style={{ fontSize: "14px", fontWeight: "bold" }}>ORDEN</div>
+            <div style={{ fontSize: "14px", fontWeight: "bold" }}>{orderNumber}</div>
             <div style={{ fontSize: "11px" }}>
               {isTrayOrder
                 ? "ORDEN BANDEJA"
@@ -100,7 +98,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
         {/* Detalle de Items Pagados */}
         {!isSpecial ? (
           <>
-            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>PRODUCTOS PAGADOS:</div>
+            <div style={{ fontWeight: "bold", marginBottom: "4px" }}>PRODUCTOS:</div>
             {receiptItems.map((item, idx) => (
               <div key={idx} style={{ marginBottom: "4px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>

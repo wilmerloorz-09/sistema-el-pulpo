@@ -148,6 +148,8 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                         ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
                       : item.to.startsWith("/clientes")
                         ? (location.pathname === "/clientes" || isOriginClientes)
+                      : item.to === "/promociones/consulta"
+                        ? (location.pathname === "/promociones/consulta")
                       : item.to.startsWith("/promociones")
                         ? (location.pathname === "/promociones" || isOriginPromociones)
                       : item.to.startsWith("/campanas")

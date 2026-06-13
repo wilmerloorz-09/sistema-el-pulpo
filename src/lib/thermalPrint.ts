@@ -39,7 +39,8 @@ export async function sendEscPosToBridge(bytes: Uint8Array): Promise<void> {
   }
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  // Reduce timeout to 1.5s so it falls back to window.print() quickly if the bridge isn't running
+  const timeout = window.setTimeout(() => controller.abort(), 1500);
 
   try {
     const response = await fetch(getBridgeUrl(), {
@@ -121,9 +122,9 @@ export async function printPaymentReceipt(input: PaymentReceiptEscPosInput): Pro
       };
 
       const headerLines = [
-        "COMPROBANTE DE PAGO",
         input.branchName || "",
-        `ORDEN ${input.orderNumber}`,
+        "ORDEN",
+        `${input.orderNumber}`,
         `${resolveLabel()} - ${dateStr} ${timeStr}`
       ].filter(Boolean);
 

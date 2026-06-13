@@ -19,7 +19,10 @@ import type {
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
-import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed } from "lucide-react";
+import { printPaymentReceipt } from "@/lib/thermalPrint";
+import type { PaymentReceiptData } from "@/lib/paymentReceiptData";
+import PaymentReceipt from "@/components/caja/PaymentReceipt";
+import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed, Printer, ScanSearch, Undo2 } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -291,6 +294,7 @@ export default function CompletedPaymentsList({
     refundLines: [],
     undocumentedChange: 0,
   });
+  const [reprintData, setReprintData] = useState<PaymentReceiptData | null>(null);
 
   const permissionFlags = getPermissionFlags(permissions, canVoidPayments);
 
@@ -480,6 +484,86 @@ export default function CompletedPaymentsList({
     });
   };
 
+  const handleReprint = async (payment: PaymentGroup) => {
+    let token_promocion: string | null = null;
+    let clienteCedula: string | undefined = undefined;
+    let clienteNombre: string | undefined = undefined;
+
+    try {
+      const { data: orderData } = await supabase
+        .from("orders")
+        .select(`
+          token_promocion,
+          cliente_id,
+          clientes ( cedula, nombres, apellidos )
+        `)
+        .eq("id", payment.order.id)
+        .single();
+
+      if (orderData?.token_promocion) {
+        token_promocion = orderData.token_promocion;
+      }
+
+      // @ts-ignore - The join works but types might not be perfectly inferred
+      const cliente = orderData?.clientes;
+      if (cliente && !Array.isArray(cliente)) {
+        clienteCedula = cliente.cedula;
+        clienteNombre = `${cliente.nombres} ${cliente.apellidos ?? ""}`.trim() || undefined;
+      }
+    } catch (err) {
+      console.error("Error fetching order extra details:", err);
+    }
+
+    const receiptItemsMap = new Map<string, { description: string; quantity: number; unitPrice: number; amount: number }>();
+    for (const item of payment.items) {
+      const unitPrice = item.quantity > 0 ? item.amount / item.quantity : 0;
+      const key = `${item.product_name}_${unitPrice}`;
+      const existing = receiptItemsMap.get(key);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.amount += item.amount;
+      } else {
+        receiptItemsMap.set(key, {
+          description: item.product_name,
+          quantity: item.quantity,
+          unitPrice,
+          amount: item.amount,
+        });
+      }
+    }
+
+    const methodMap = new Map<string, number>();
+    for (const item of payment.items) {
+      methodMap.set(item.method_name, (methodMap.get(item.method_name) || 0) + item.amount);
+    }
+    const paymentsArr = Array.from(methodMap.entries()).map(([methodName, appliedAmount]) => ({
+      methodName,
+      appliedAmount,
+    }));
+
+    const receipt: PaymentReceiptData = {
+      orderNumber: getOrderRef(payment.order.code, payment.order.number),
+      tableName: payment.order.table_name ?? undefined,
+      orderType: payment.order.type,
+      isSpecial: payment.order.is_special,
+      isTrayOrder: (payment.order as any).is_tray_order,
+      items: Array.from(receiptItemsMap.values()),
+      payments: paymentsArr,
+      totalAmount: payment.amount,
+      totalReceived: payment.tendered_amount ?? payment.amount,
+      changeAmount: Math.max(0, (payment.tendered_amount ?? payment.amount) - payment.amount),
+      createdAt: payment.created_at,
+      token_promocion,
+      clienteCedula,
+      clienteNombre,
+    };
+
+    setReprintData(receipt);
+    setTimeout(() => {
+      printPaymentReceipt(receipt).catch((e) => toast.error("Error al reimprimir: " + e.message));
+    }, 100);
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-[26px] border border-orange-200 bg-gradient-to-r from-white via-orange-50/50 to-white p-4 shadow-[0_20px_45px_-40px_rgba(249,115,22,0.55)]">
@@ -643,6 +727,10 @@ export default function CompletedPaymentsList({
                     {/* Middle Section: Amount and Detail Button */}
                     <div className="flex flex-row items-center justify-between lg:justify-end gap-4 shrink-0 pl-11 lg:pl-0 mt-2 lg:mt-0">
                       <p className="text-[1.45rem] font-semibold tracking-[-0.03em] text-slate-950">${payment.amount.toFixed(2)}</p>
+                    </div>
+
+                    {/* Right Section: Actions */}
+                    <div className="flex items-center justify-start lg:justify-end gap-3 pl-11 lg:pl-0 shrink-0 mt-2 lg:mt-0">
                       {hasCashTrace && (
                         <button
                           type="button"
@@ -659,15 +747,23 @@ export default function CompletedPaymentsList({
                               undocumentedChange: groupCash.undocumentedChange,
                             });
                           }}
-                          className="h-8 rounded-full border border-orange-200 bg-orange-50 px-3 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                          className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 text-white shadow-[0_4px_14px_0_rgba(6,182,212,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(6,182,212,0.23)] active:scale-95"
+                          title="Ver detalle de efectivo"
                         >
-                          Ver Detalle
+                          <ScanSearch className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
                         </button>
                       )}
-                    </div>
-
-                    {/* Right Section: Actions */}
-                    <div className="flex items-center justify-start lg:justify-end gap-2 pl-11 lg:pl-0 shrink-0 mt-2 lg:mt-0">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleReprint(payment);
+                        }}
+                        className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 text-white shadow-[0_4px_14px_0_rgba(16,185,129,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(16,185,129,0.23)] active:scale-95"
+                        title="Reimprimir ticket"
+                      >
+                        <Printer className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
+                      </button>
                       {!blockedByState && permissionFlags.canStartVoid && (
                         <button
                           type="button"
@@ -675,10 +771,10 @@ export default function CompletedPaymentsList({
                             event.stopPropagation();
                             openModalForPayment(payment);
                           }}
-                          className="flex h-9 items-center gap-2 rounded-full border border-red-300 bg-red-50 px-4 text-sm font-semibold text-red-700 shadow-none hover:bg-red-100"
+                          className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-rose-600 to-orange-400 text-white shadow-[0_4px_14px_0_rgba(225,29,72,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(225,29,72,0.23)] active:scale-95"
+                          title="Anular pago"
                         >
-                          <RotateCcw className="h-4 w-4" />
-                          Anular
+                          <Undo2 className="h-5 w-5 transition-transform group-hover/btn:-rotate-45" />
                         </button>
                       )}
                     </div>
@@ -1131,9 +1227,11 @@ export default function CompletedPaymentsList({
               draft: null,
               autoOpenConfirm: false,
             });
-        }}
+          }}
         />
       ) : null}
+
+      {reprintData ? <PaymentReceipt {...reprintData} /> : null}
     </div>
   );
 }

@@ -76,13 +76,16 @@ export function getOrderRef(
   orderCode: string | null | undefined,
   orderNumber: number | null | undefined,
 ): string {
-  const n = Number(orderNumber ?? 0);
-  if (n > 0) {
-    return `#${String(n).padStart(4, "0").slice(-4)}`;
+  const clean = cleanOrderCode(orderCode);
+  if (clean && clean.trim()) {
+    return clean.trim();
   }
 
-  const clean = cleanOrderCode(orderCode);
-  if (clean && clean.trim()) return clean;
+  const n = Number(orderNumber ?? 0);
+  if (n > 0) {
+    return `#${String(n).padStart(4, "0")}`;
+  }
+
   return "Borrador";
 }
 
@@ -94,14 +97,14 @@ export function getOrderMesaHeaderNumber(params: {
 }): string {
   const orderNumber = Number(params.orderNumber ?? 0);
   if (orderNumber > 0) {
-    return String(orderNumber).padStart(4, "0").slice(-4);
+    return String(orderNumber).padStart(4, "0");
   }
 
   const cleaned = cleanOrderCode(params.orderCode);
   if (cleaned) {
     const suffix = cleaned.split("-").pop()?.trim();
     if (suffix && /^\d+$/.test(suffix)) {
-      return suffix.padStart(4, "0").slice(-4);
+      return suffix.padStart(4, "0");
     }
   }
 

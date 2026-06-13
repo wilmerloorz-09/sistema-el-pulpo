@@ -36,9 +36,7 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.raw(input.headerBytes);
   } else {
     // Fallback: Encabezado de texto clásico si falla la renderización del lienzo
-    enc.align("center").bold(true).textSize(true);
-    enc.line("COMPROBANTE DE PAGO");
-    enc.bold(false);
+    enc.align("center");
 
     if (input.branchName) {
       for (const line of wrapWords(input.branchName, THERMAL_LINE_CHARS)) {
@@ -46,9 +44,10 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
       }
     }
 
-    enc.bold(true);
-    enc.line(`ORDEN ${input.orderNumber}`);
-    enc.bold(false);
+    enc.bold(true).textSize(true);
+    enc.line("ORDEN");
+    enc.line(`${input.orderNumber}`);
+    enc.bold(false).textSize(false);
     enc.line(resolveOrderLabel(input));
     enc.line(`${dateStr} ${timeStr}`);
     if (input.clienteNombre) {
@@ -63,7 +62,7 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   enc.align("left").separator();
 
   if (!input.isSpecial) {
-    enc.bold(true).line("PRODUCTOS PAGADOS:");
+    enc.bold(true).line("PRODUCTOS:");
     enc.bold(false);
     for (const item of input.items ?? []) {
       const amount = formatMoney(item.amount);
