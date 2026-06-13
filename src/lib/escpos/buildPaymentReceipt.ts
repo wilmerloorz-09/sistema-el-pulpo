@@ -59,8 +59,8 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.feed(1);
   }
 
-  // Usar Font B y espaciado normal para ahorrar papel sin juntar las líneas
-  enc.font("B").lineSpacing(null);
+  // Usar Font B y espaciado de 32 para ahorrar papel sin juntar las líneas
+  enc.font("B").lineSpacing(32);
 
   enc.align("left").separator();
 

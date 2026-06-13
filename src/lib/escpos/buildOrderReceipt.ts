@@ -44,8 +44,8 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
   enc.line(`${dateStr} ${timeStr}`);
   enc.feed(1);
 
-  // Usar Font B y espaciado normal para ahorrar papel sin juntar las líneas
-  enc.font("B").lineSpacing(null);
+  // Usar Font B y espaciado de 32 para ahorrar papel sin juntar las líneas
+  enc.font("B").lineSpacing(32);
 
   enc.align("left").separator();
 
