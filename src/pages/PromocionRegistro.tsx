@@ -111,6 +111,20 @@ export default function PromocionRegistro() {
     loadCampanas();
   }, []);
 
+  // Auto-select offer if only 1 is available
+  useEffect(() => {
+    if (selectedCampana) {
+      const disponibles = selectedCampana.cartelera_ofertas?.filter(ofertaDisponible) || [];
+      if (disponibles.length === 1) {
+        setSelectedOfertaId(disponibles[0].id_oferta);
+      } else {
+        setSelectedOfertaId(null);
+      }
+    } else {
+      setSelectedOfertaId(null);
+    }
+  }, [selectedCampana]);
+
   // Auto-validate token if present in URL
   useEffect(() => {
     const t = searchParams.get("t");
@@ -152,7 +166,13 @@ export default function PromocionRegistro() {
 
   // Clean inputs
   const handleCedulaChange = (val: string) => {
-    setCedula(normalizarCedulaCelular(val));
+    const newVal = normalizarCedulaCelular(val);
+    if (newVal !== cedula) {
+      setCedula(newVal);
+      setCelular("");
+      setNombres("");
+      setApellidos("");
+    }
   };
 
   const handleCelularChange = (val: string) => {

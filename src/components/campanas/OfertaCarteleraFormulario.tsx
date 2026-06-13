@@ -98,6 +98,33 @@ export default function OfertaCarteleraFormulario({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Tipo de oferta *</Label>
+            <RadioGroup
+              value={valores.tipo_oferta ?? "RESULTADO"}
+              onValueChange={(val) => {
+                const isMarcador = val === "MARCADOR";
+                setValores((p) => ({ 
+                  ...p, 
+                  tipo_oferta: val as "RESULTADO" | "MARCADOR",
+                  descripcion: isMarcador 
+                    ? `${p.equipo_local || "Local"} vs ${p.equipo_visitante || "Visitante"}`
+                    : p.descripcion
+                }));
+              }}
+              className="flex space-x-4 pt-1"
+              disabled={guardando}
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="RESULTADO" id="tipo-resultado" />
+                <Label htmlFor="tipo-resultado" className="font-normal cursor-pointer">Resultado</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="MARCADOR" id="tipo-marcador" />
+                <Label htmlFor="tipo-marcador" className="font-normal cursor-pointer">Marcador</Label>
+              </div>
+            </RadioGroup>
+          </div>
           {valores.tipo_oferta !== "MARCADOR" && (
             <div className="space-y-1.5">
               <Label htmlFor="oferta-descripcion" className="text-xs font-medium text-muted-foreground">
@@ -157,34 +184,6 @@ export default function OfertaCarteleraFormulario({
               </div>
             </div>
           )}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-muted-foreground">Tipo de oferta *</Label>
-            <RadioGroup
-              value={valores.tipo_oferta ?? "RESULTADO"}
-              onValueChange={(val) => {
-                const isMarcador = val === "MARCADOR";
-                setValores((p) => ({ 
-                  ...p, 
-                  tipo_oferta: val as "RESULTADO" | "MARCADOR",
-                  descripcion: isMarcador 
-                    ? `${p.equipo_local || "Local"} vs ${p.equipo_visitante || "Visitante"}`
-                    : p.descripcion
-                }));
-              }}
-              className="flex space-x-4 pt-1"
-              disabled={guardando}
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="RESULTADO" id="tipo-resultado" />
-                <Label htmlFor="tipo-resultado" className="font-normal cursor-pointer">Resultado</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="MARCADOR" id="tipo-marcador" />
-                <Label htmlFor="tipo-marcador" className="font-normal cursor-pointer">Marcador</Label>
-              </div>
-            </RadioGroup>
-          </div>
 
           <div className="grid max-w-md grid-cols-3 gap-x-3 gap-y-3">
             <div className="space-y-1.5">

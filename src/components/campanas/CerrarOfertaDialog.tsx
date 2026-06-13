@@ -55,8 +55,8 @@ export default function CerrarOfertaDialog({
 
   const handleConfirmar = async () => {
     if (oferta?.tipo_oferta === "MARCADOR") {
-      const ml = parseInt(marcadorLocal, 10);
-      const mv = parseInt(marcadorVisitante, 10);
+      const ml = parseInt(marcadorLocal || "0", 10);
+      const mv = parseInt(marcadorVisitante || "0", 10);
       if (isNaN(ml) || isNaN(mv) || ml < 0 || mv < 0) {
         setError("Ingresa un marcador válido.");
         return;
@@ -88,46 +88,47 @@ export default function CerrarOfertaDialog({
         {oferta?.tipo_oferta === "MARCADOR" ? (
           <div className="space-y-2 py-2">
             <Label className="text-xs font-medium text-muted-foreground">Marcador Final *</Label>
-            <div className="flex items-center space-x-4 mt-1 bg-slate-50 border border-slate-100 p-3 rounded-xl">
-              <span className="text-sm font-bold text-slate-800 flex-1">{oferta?.descripcion}</span>
-              <div className="flex items-center space-x-3">
-              <div className="flex flex-col items-center gap-1 w-16">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase truncate w-full text-center" title={oferta?.equipo_local || "LOCAL"}>
-                  {oferta?.equipo_local || "L"}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-2 bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200/60 p-5 rounded-2xl shadow-sm">
+              <div className="flex flex-col items-center gap-3 w-full sm:w-32 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                <Label className="text-[13px] font-black text-slate-800 tracking-wide uppercase truncate w-full text-center" title={oferta?.equipo_local || "LOCAL"}>
+                  {oferta?.equipo_local || "LOCAL"}
                 </Label>
                 <Input
-                  type="number"
-                  min="0"
-                  step="1"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="0"
                   value={marcadorLocal}
                   disabled={procesando}
                   onChange={(e) => {
-                    setMarcadorLocal(e.target.value);
+                    const value = e.target.value.replace(/[^0-9]/g, "");
+                    setMarcadorLocal(value);
                     setError(null);
                   }}
-                  className="w-16 text-center font-bold"
+                  className="w-24 h-14 text-2xl text-center font-black bg-slate-50 border-slate-200 focus-visible:ring-emerald-500 rounded-lg [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
-              <span className="text-slate-400 font-bold mt-4">-</span>
-              <div className="flex flex-col items-center gap-1 w-16">
-                <Label className="text-[10px] font-bold text-slate-400 uppercase truncate w-full text-center" title={oferta?.equipo_visitante || "VISITANTE"}>
-                  {oferta?.equipo_visitante || "V"}
+              
+              <div className="flex flex-col items-center justify-center h-10 w-10 shrink-0 bg-slate-200/50 rounded-full">
+                <span className="text-slate-400 font-bold text-lg">VS</span>
+              </div>
+              
+              <div className="flex flex-col items-center gap-3 w-full sm:w-32 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                <Label className="text-[13px] font-black text-slate-800 tracking-wide uppercase truncate w-full text-center" title={oferta?.equipo_visitante || "VISITANTE"}>
+                  {oferta?.equipo_visitante || "VISITANTE"}
                 </Label>
                 <Input
-                  type="number"
-                  min="0"
-                  step="1"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="0"
                   value={marcadorVisitante}
                   disabled={procesando}
                   onChange={(e) => {
-                    setMarcadorVisitante(e.target.value);
+                    const value = e.target.value.replace(/[^0-9]/g, "");
+                    setMarcadorVisitante(value);
                     setError(null);
                   }}
-                  className="w-16 text-center font-bold"
+                  className="w-24 h-14 text-2xl text-center font-black bg-slate-50 border-slate-200 focus-visible:ring-emerald-500 rounded-lg [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-              </div>
               </div>
             </div>
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
@@ -163,7 +164,7 @@ export default function CerrarOfertaDialog({
           </Button>
           <Button
             type="button"
-            disabled={procesando || (oferta?.tipo_oferta === "MARCADOR" ? (!marcadorLocal || !marcadorVisitante) : !resultado)}
+            disabled={procesando || (oferta?.tipo_oferta !== "MARCADOR" && !resultado)}
             onClick={() => void handleConfirmar()}
           >
             {procesando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
