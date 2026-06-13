@@ -67,24 +67,19 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   if (!input.isSpecial) {
     enc.bold(true).line("PRODUCTOS:");
     enc.bold(false);
-    let isFirst = true;
+    const indent = "  "; // 2 spaces left margin
     for (const item of input.items ?? []) {
-      if (!isFirst) {
-        enc.feed(1);
-      }
-      isFirst = false;
-
       const amount = formatMoney(item.amount);
       const header = `${item.quantity}x ${item.description}`;
-      const lines = wrapWords(header, THERMAL_LINE_CHARS);
+      const lines = wrapWords(header, THERMAL_LINE_CHARS - indent.length);
       lines.forEach((line, idx) => {
         if (idx === lines.length - 1) {
-          enc.line(formatAmountLine(line, amount));
+          enc.line(indent + formatAmountLine(line, amount, THERMAL_LINE_CHARS - indent.length));
         } else {
-          enc.line(line);
+          enc.line(indent + line);
         }
       });
-      enc.line(`  P.U. ${formatMoney(item.unitPrice)}`);
+      enc.line(`${indent}  P.U. ${formatMoney(item.unitPrice)}`);
     }
   } else {
     enc.line(formatAmountLine("CARGO ESPECIAL", formatMoney(input.totalAmount)));
@@ -109,10 +104,8 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
   enc.align("center");
   enc.feed(1);
   enc.line("GRACIAS POR SU PREFERENCIA");
-  enc.feed(1);
 
   if (input.token_promocion) {
-    enc.feed(1);
     enc.separator("=");
     enc.bold(true).line("¡OFERTA MUNDIALISTA!");
     enc.bold(false);
