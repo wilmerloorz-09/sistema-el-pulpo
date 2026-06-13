@@ -119,6 +119,8 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          printer_ip: string | null
+          printer_port: number | null
           reference_table_count: number
           updated_at: string
           workflow_mode: string
@@ -131,6 +133,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          printer_ip?: string | null
+          printer_port?: number | null
           reference_table_count?: number
           updated_at?: string
           workflow_mode?: string
@@ -143,6 +147,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          printer_ip?: string | null
+          printer_port?: number | null
           reference_table_count?: number
           updated_at?: string
           workflow_mode?: string

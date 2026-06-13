@@ -68,33 +68,39 @@ export async function sendEscPosToBridge(bytes: Uint8Array): Promise<void> {
 }
 
 async function sendEscPosNative(bytes: Uint8Array): Promise<void> {
-  const ip = import.meta.env.VITE_THERMAL_PRINTER_IP || "192.168.1.100";
-  const port = Number(import.meta.env.VITE_THERMAL_PRINTER_PORT || 9100);
+  const storedIp = localStorage.getItem("activePrinterIp");
+  const storedPort = localStorage.getItem("activePrinterPort");
+
+  const ip = storedIp || import.meta.env.VITE_THERMAL_PRINTER_IP || "192.168.1.100";
+  const port = storedPort ? Number(storedPort) : Number(import.meta.env.VITE_THERMAL_PRINTER_PORT || 9100);
   
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let timeoutId = setTimeout(() => {
       reject(new Error("Timeout al conectar con la impresora TCP"));
     }, 5000);
 
-    try {
-      const connectResult = await TcpSocket.connect({ ipAddress: ip, port: port, timeout: 5 });
-      const client = connectResult.client;
-      
-      const b64Data = uint8ToBase64(bytes);
-      
-      await TcpSocket.send({ client: client, data: b64Data });
-      
-      // Dar tiempo al buffer de red del OS para que envíe los paquetes antes de cerrar el socket
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
-      
-      await TcpSocket.disconnect({ client: client });
-      
-      clearTimeout(timeoutId);
-      resolve();
-    } catch (e: any) {
-      clearTimeout(timeoutId);
-      reject(new Error("Error al imprimir via TCP: " + e.message));
-    }
+    const execute = async () => {
+      try {
+        const connectResult = await TcpSocket.connect({ ipAddress: ip, port: port, timeout: 5 });
+        const client = connectResult.client;
+        
+        const b64Data = uint8ToBase64(bytes);
+        
+        await TcpSocket.send({ client: client, data: b64Data });
+        
+        // Dar tiempo al buffer de red del OS para que envíe los paquetes antes de cerrar el socket
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+        
+        await TcpSocket.disconnect({ client: client });
+        
+        clearTimeout(timeoutId);
+        resolve();
+      } catch (e: any) {
+        clearTimeout(timeoutId);
+        reject(new Error("Error al imprimir via TCP: " + e.message));
+      }
+    };
+    void execute();
   });
 }
 

@@ -1,6 +1,7 @@
 import { useCrud } from "@/hooks/useCrud";
 import { useEditState } from "@/hooks/useEditState";
 import { AdminTable, ColumnDef } from "./AdminTable";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface Branch {
   id: string;
@@ -10,10 +11,19 @@ interface Branch {
   reference_table_count: number;
   workflow_mode: 'CASH_THEN_DISPATCH' | 'DISPATCH_THEN_CASH';
   is_active: boolean;
+  printer_ip: string | null;
+  printer_port: number | null;
 }
 
 const BranchesCrud = () => {
-  const crud = useCrud<Branch>({ table: "branches" as any, queryKey: "admin-branches", orderBy: { column: "name" } });
+  const { refreshAccess } = useBranch();
+  const crud = useCrud<Branch>({ 
+    table: "branches" as any, 
+    queryKey: "admin-branches", 
+    orderBy: { column: "name" },
+    onAfterSave: refreshAccess
+  });
+
   const edit = useEditState<Branch>({
     name: "",
     branch_code: "",
@@ -21,13 +31,17 @@ const BranchesCrud = () => {
     reference_table_count: 0,
     workflow_mode: 'DISPATCH_THEN_CASH',
     is_active: true,
+    printer_ip: "192.168.1.100",
+    printer_port: 9100,
   } as any);
 
   const columns: ColumnDef<Branch>[] = [
-    { key: "name", header: "Nombre", width: "1fr", type: "text" },
+    { key: "name", header: "Nombre", width: "1.2fr", type: "text" },
     { key: "branch_code", header: "Codigo", width: "5rem", type: "text" },
-    { key: "address", header: "Direccion", width: "1fr", type: "text" },
+    { key: "address", header: "Direccion", width: "1.2fr", type: "text" },
     { key: "reference_table_count", header: "Mesas ref.", width: "6rem", type: "number" },
+    { key: "printer_ip", header: "IP Impresora", width: "1fr", type: "text" },
+    { key: "printer_port", header: "Puerto", width: "5rem", type: "number" },
     { key: "is_active", header: "Activa", width: "4rem", type: "switch" },
   ];
 

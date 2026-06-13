@@ -10,6 +10,8 @@ interface Branch {
   address: string | null;
   is_active: boolean;
   workflow_mode?: 'CASH_THEN_DISPATCH' | 'DISPATCH_THEN_CASH';
+  printer_ip?: string | null;
+  printer_port?: number | null;
 }
 
 interface AccessContextPayload {
@@ -124,6 +126,24 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const activeBranch = access.branches.find((branch) => branch.id === access.active_branch_id) ?? null;
+
+  useEffect(() => {
+    if (activeBranch) {
+      if (activeBranch.printer_ip) {
+        localStorage.setItem("activePrinterIp", activeBranch.printer_ip);
+      } else {
+        localStorage.removeItem("activePrinterIp");
+      }
+      if (activeBranch.printer_port) {
+        localStorage.setItem("activePrinterPort", String(activeBranch.printer_port));
+      } else {
+        localStorage.removeItem("activePrinterPort");
+      }
+    } else {
+      localStorage.removeItem("activePrinterIp");
+      localStorage.removeItem("activePrinterPort");
+    }
+  }, [activeBranch]);
 
   return (
     <BranchContext.Provider
