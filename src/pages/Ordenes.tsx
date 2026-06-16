@@ -1320,9 +1320,18 @@ const OrdenesContent = () => {
 
 
   useEffect(() => {
-    if (fromEditar && order && order.status !== "SENT_TO_KITCHEN") {
-      const origin = searchParams.get("origin") || "editar";
-      navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
+    const isEditableStatus =
+      order?.status === "SENT_TO_KITCHEN" ||
+      order?.status === "READY" ||
+      order?.status === "KITCHEN_DISPATCHED";
+
+    if (fromEditar && order && !isEditableStatus) {
+      const origin = searchParams.get("origin");
+      if (!origin || origin === "editar") {
+        navigate("/editar-orden", { replace: true });
+      } else {
+        navigate(`/ordenes?order=${orderId}&from=${origin}`, { replace: true });
+      }
     }
   }, [fromEditar, order?.status, navigate]);
 
@@ -1340,9 +1349,8 @@ const OrdenesContent = () => {
     if (isMesasListOrigin(searchParams.get("origin")) && searchParams.get("openTable")) return;
 
     const originValue = searchParams.get("origin");
-    const fallbackPath = fromEditar
-      ? "/editar-orden"
-      : originValue === "para-llevar"
+    const fallbackPath =
+      originValue === "para-llevar"
         ? "/para-llevar"
         : originValue === "express"
           ? "/express"
@@ -1352,7 +1360,9 @@ const OrdenesContent = () => {
           ? "/orden-especial"
           : isMesasListOrigin(originValue)
             ? mesasListPathForOrigin(originValue)
-            : "/mesas";
+            : fromEditar
+              ? "/editar-orden"
+              : "/mesas";
 
     navigate(fallbackPath, { replace: true });
   }, [
@@ -1797,7 +1807,11 @@ const OrdenesContent = () => {
   const orderGroupLabel = isExpressOrder ? "Express" : isExtraOrder ? "Extra" : isTakeoutOrder ? "Para Llevar" : "mesa";
 
   const isEditableInCaja = order.status === "SENT_TO_KITCHEN";
-  const isLockedFromEditar = fromEditar && !isEditableInCaja;
+  const isEditableInEditar =
+    order.status === "SENT_TO_KITCHEN" ||
+    order.status === "READY" ||
+    order.status === "KITCHEN_DISPATCHED";
+  const isLockedFromEditar = fromEditar && !isEditableInEditar;
 
   const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
   const hasVoidableItemsInEditar = itemsToUse.some((item) => {
@@ -1900,10 +1914,13 @@ const OrdenesContent = () => {
     isEditableInCaja &&
     !hasPendingCancellationItems;
   const canEditItems =
-    (canOperateOrders || canUseEditarOrden || fromEditar) &&
-    (canEditDraftOrder || (fromEditar && isEditableInCaja)) &&
-    !hasPendingCancellationItems &&
-    !isLockedFromEditar;
+    (fromEditar && isEditableInEditar) ||
+    (
+      (canOperateOrders || canUseEditarOrden) &&
+      (canEditDraftOrder || isEditableInCaja) &&
+      !hasPendingCancellationItems &&
+      !isLockedFromEditar
+    );
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
       toast.error("Esta orden no admite agregar productos.");
@@ -1913,7 +1930,7 @@ const OrdenesContent = () => {
       toast.error("No hay sucursal activa. Selecciona una sucursal e intenta de nuevo.");
       return;
     }
-    if (hasPendingCancellationItems) {
+    if (hasPendingCancellationItems && !fromEditar) {
       toast.error("No puedes agregar items mientras exista al menos un item con anulacion pendiente.");
       return;
     }
@@ -2389,13 +2406,14 @@ const OrdenesContent = () => {
         .filter((item): item is NonNullable<typeof item> => item !== null);
 
       if (cancellationSelections.length > 0 && user) {
-        const isTotalCancellation = stagedItems.every((item) => item.quantity === 0);
-
+        // Always use "partial" cancellation when accepting edit changes.
+        // Even if all items are removed, we do NOT auto-cancel the order so
+        // the user stays on the order page and can add new products.
         await cancelOrderMutation.mutateAsync({
           orderId,
           items: cancellationSelections,
           userId: user.id,
-          cancellationType: isTotalCancellation ? "total" : "partial",
+          cancellationType: "partial",
           requiresAuthorization: false,
           cancellationData: {
             reason: stagedCancellationData?.reason ?? "otro",
@@ -2420,7 +2438,9 @@ const OrdenesContent = () => {
           ? "Cambios aceptados. Los nuevos items quedaron cerrados para cobro."
           : "Cambios aceptados. Los nuevos items quedaron despachados.",
       );
-      const origin = searchParams.get("origin") || "editar";
+      // Always navigate back to the order page after accepting changes.
+      // This keeps the user on the order (with menu enabled) even when all
+      // items were removed, so they can add new products without leaving.
       const originValue = searchParams.get("origin") || "editar";
       navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
     } catch (error: any) {
