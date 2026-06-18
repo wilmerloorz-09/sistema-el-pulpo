@@ -1757,26 +1757,7 @@ export function useCaja(params?: {
           : new Date().toISOString()
         : new Date().toISOString();
 
-      const branchOrders = await dbSelect<any>("orders", {
-        select: "id, order_type, is_special",
-        filters: [{ column: "branch_id", op: "eq", value: activeBranchId }]
-      });
-
-      const filteredBranchOrders = (branchOrders ?? []).filter((order) => {
-        if (scope === "ALL") return true;
-        if (scope === "SPECIAL") return Boolean(order.is_special);
-        if (scope === "TABLE") return !order.is_special && order.order_type === "DINE_IN";
-        if (scope === "TAKEOUT") return !order.is_special && order.order_type === "TAKEOUT";
-        return true;
-      });
-
-      const branchOrderIds = filteredBranchOrders.map((order) => order.id);
-      if (branchOrderIds.length === 0) {
-        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
-      }
-
       const paymentsFilters: any[] = [
-        { column: "order_id", op: "in", value: branchOrderIds },
         { column: "created_at", op: "gte", value: effectiveStartIso },
       ];
 
@@ -1793,16 +1774,51 @@ export function useCaja(params?: {
         paymentsFilters.push({ column: "created_by", op: "eq", value: filterCashierId });
       }
 
-      const allPaymentsInRange = await dbSelect<any>("payments", {
+      const allPaymentsInRangeRaw = await dbSelect<any>("payments", {
         select: "id, created_at, amount, notes, order_id, payment_method_id, created_by, status",
         filters: paymentsFilters,
         orderBy: { column: "created_at", ascending: false }
       });
 
-      if (!allPaymentsInRange || allPaymentsInRange.length === 0) {
+      if (!allPaymentsInRangeRaw || allPaymentsInRangeRaw.length === 0) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
+      // Fetch ONLY the orders corresponding to the payments in range
+      const paymentOrderIds = Array.from(new Set(allPaymentsInRangeRaw.map((p) => p.order_id).filter(Boolean)));
+      if (paymentOrderIds.length === 0) {
+        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
+      }
+
+      const ordersInRange = await dbSelect<any>("orders", {
+        select: "id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, created_by, table_name_snapshot",
+        filters: [
+          { column: "id", op: "in", value: paymentOrderIds },
+          { column: "branch_id", op: "eq", value: activeBranchId }
+        ]
+      });
+
+      // Filter by scope on the retrieved orders
+      const validOrdersMap = new Map<string, any>();
+      for (const order of (ordersInRange ?? [])) {
+        let matchesScope = true;
+        if (scope === "SPECIAL") {
+          matchesScope = Boolean(order.is_special);
+        } else if (scope === "TABLE") {
+          matchesScope = !order.is_special && order.order_type === "DINE_IN";
+        } else if (scope === "TAKEOUT") {
+          matchesScope = !order.is_special && order.order_type === "TAKEOUT";
+        }
+        if (matchesScope) {
+          validOrdersMap.set(order.id, order);
+        }
+      }
+
+      // Filter the payments to keep only those belonging to valid orders
+      const allPaymentsInRange = allPaymentsInRangeRaw.filter((p) => validOrdersMap.has(p.order_id));
+      if (allPaymentsInRange.length === 0) {
+        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
+      }
 
       const orderIdSet = new Set<string>(allPaymentsInRange.map((p) => p.order_id));
       const orderIds = Array.from(orderIdSet);
@@ -1825,19 +1841,15 @@ export function useCaja(params?: {
       ]);
       const itemIds = Array.from(itemIdsSet);
 
-      const [orders, methods, profiles, allOrderPayments, allOrderItems] = await Promise.all([
-        dbSelect<any>("orders", {
-          select: "id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, created_by, table_name_snapshot",
-          filters: [
-            { column: "id", op: "in", value: orderIds },
-            { column: "branch_id", op: "eq", value: activeBranchId }
-          ]
-        }),
+      const [methods, profiles, allOrderPayments, allOrderItems] = await Promise.all([
         dbSelect<any>("payment_methods", { select: "id, name", filters: [{ column: "id", op: "in", value: methodIds }] }),
         dbSelect<any>("profiles", { select: "id, first_name, full_name, username", filters: [{ column: "id", op: "in", value: createdByIds }] }),
         dbSelect<any>("payments", { select: "order_id, amount, notes, status", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
         dbSelect<any>("order_items", { select: "id, order_id, total, status, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
       ]);
+
+      const orders = ordersInRange.filter((o) => validOrdersMap.has(o.id));
+
 
       const tableIdSet = new Set<string>(orders.map((o) => o.table_id).filter(Boolean));
       const tableIds = Array.from(tableIdSet);

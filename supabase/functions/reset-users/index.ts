@@ -23,6 +23,39 @@ Deno.serve(async (req) => {
       return toJson({ error: "Configuracion incompleta para reset" }, 500);
     }
 
+    // ── CAPA 1: Verificar autenticación con Bearer token ──────────────────────
+    // Doble protección: aunque la master_key se filtre, el atacante también
+    // necesita un token JWT válido de un Administrador Global del sistema.
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return toJson({ error: "No autorizado. Se requiere autenticacion de Administrador Global." }, 401);
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+    const {
+      data: { user: caller },
+      error: callerError,
+    } = await adminClient.auth.getUser(bearerToken);
+
+    if (callerError || !caller) {
+      return toJson({ error: "Token de autenticacion invalido o expirado" }, 401);
+    }
+
+    const { data: isGlobalAdmin } = await adminClient.rpc("is_global_admin", {
+      _user_id: caller.id,
+    });
+
+    if (!isGlobalAdmin) {
+      return toJson(
+        { error: "Acceso denegado. Solo Administradores Globales pueden ejecutar reset-users." },
+        403
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const body = await req.json();
     const {
       master_key,
       new_superadmin_email,
@@ -30,8 +63,9 @@ Deno.serve(async (req) => {
       new_superadmin_full_name,
       new_superadmin_username,
       reason,
-    } = await req.json();
+    } = body;
 
+    // ── CAPA 2: Verificar la master key ───────────────────────────────────────
     if (master_key !== resetMasterKey) {
       return toJson({ error: "Clave maestra invalida" }, 403);
     }
@@ -39,8 +73,6 @@ Deno.serve(async (req) => {
     if (!new_superadmin_email || !new_superadmin_password || !new_superadmin_full_name || !new_superadmin_username) {
       return toJson({ error: "Faltan datos del nuevo superadmin" }, 400);
     }
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     // Delete all auth users (cascades to profiles and related data through existing FKs)
     const allUsers: string[] = [];

@@ -1,0 +1,11 @@
+¿Quieres que implemente el flujo de MFA en el sistema?
+Lo que haría:
+
+Pantalla de configuración de MFA — El admin ve un código QR, lo escanea con Google Authenticator / Authy, y confirma con el código de 6 dígitos
+Verificación en el login — Después de ingresar usuario y contraseña, el sistema pide el código del teléfono
+Solo para usuarios admin — Los empleados normales (meseros, cajeros) no lo necesitan
+IMPORTANT
+
+Con esto implementado: aunque alguien tenga la contraseña de admin1, sin el teléfono del administrador no puede entrar. El incidente de esta madrugada sería imposible.
+
+¿Implemento el flujo de MFA ahora?

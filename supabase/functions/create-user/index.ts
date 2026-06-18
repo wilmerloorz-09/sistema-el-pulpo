@@ -76,6 +76,23 @@ Deno.serve(async (req) => {
       return toJson({ error: "Ingresa un correo valido" }, 400);
     }
 
+    // Bloquear dominios falsos/desechables usados en ataques
+    const BLOCKED_DOMAINS = [
+      "example.com", "example.org", "example.net",
+      "test.com", "fake.com", "mailinator.com",
+      "tempmail.com", "guerrillamail.com", "throwam.com",
+      "yopmail.com", "sharklasers.com", "trashmail.com",
+    ];
+    const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
+    if (BLOCKED_DOMAINS.includes(emailDomain)) {
+      return toJson({ error: "No se permiten correos de dominios de prueba o desechables" }, 400);
+    }
+
+    // Bloquear patrones de username sospechosos (automatizaciones)
+    if (/^(wf|workflow|cua|grader|tester|bot|test|demo|seed)\d*/i.test(username)) {
+      return toJson({ error: "El nombre de usuario no es valido" }, 400);
+    }
+
     if (!identity_number || !/^\d{10}$/.test(identity_number)) {
       return toJson({ error: "La cedula debe tener exactamente 10 numeros" }, 400);
     }
@@ -88,8 +105,14 @@ Deno.serve(async (req) => {
       return toJson({ error: "El telefono debe tener exactamente 10 numeros" }, 400);
     }
 
-    if (password.length < 6) {
-      return toJson({ error: "La contrasena debe tener minimo 6 caracteres" }, 400);
+    // Contraseña mínimo 10 caracteres en producción
+    if (password.length < 10) {
+      return toJson({ error: "La contrasena debe tener minimo 10 caracteres" }, 400);
+    }
+
+    // Contraseña no puede ser solo números o solo letras (requiere mezcla básica)
+    if (/^\d+$/.test(password) || /^[a-zA-Z]+$/.test(password)) {
+      return toJson({ error: "La contrasena debe combinar letras y numeros" }, 400);
     }
 
     const { data: existingUsername, error: existingUsernameError } = await adminClient

@@ -8,35 +8,28 @@ const env = envStr.split('\n').reduce((acc, line) => {
   return acc;
 }, {});
 
-// Use the service role key to access auth schema
-const supabase = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+const s = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
 async function run() {
-  console.log("Checking profiles table...");
-  const { data: profiles, error: pError } = await supabase
+  console.log("Checking latest profiles:");
+  const { data: profiles, error: err1 } = await s
     .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select('id, email, username, full_name, created_at')
+    .order('created_at', { ascending: false })
+    .limit(10);
+  
+  if (err1) console.error("Error fetching profiles:", err1);
+  else console.log(profiles);
 
-  if (pError) {
-    console.error("Error fetching profiles:", pError.message);
-  } else {
-    console.log(`Found ${profiles.length} profiles:`);
-    profiles.forEach(p => {
-      console.log(`- Profile Name: ${p.name || p.full_name || p.username || 'No name'}, ID: ${p.id}, Email: ${p.email || 'N/A'}, Created At: ${p.created_at}`);
-    });
-  }
+  console.log("\nChecking latest clientes:");
+  const { data: clientes, error: err2 } = await s
+    .from('clientes')
+    .select('id, cedula, nombres, apellidos, correo, creado_el')
+    .order('creado_el', { ascending: false })
+    .limit(10);
 
-  console.log("\nChecking auth.users...");
-  const { data: { users }, error: uError } = await supabase.auth.admin.listUsers();
-  if (uError) {
-    console.error("Error listing auth users:", uError.message);
-  } else {
-    console.log(`Found ${users.length} auth users:`);
-    users.forEach(u => {
-      console.log(`- User: ${u.email}, ID: ${u.id}, Created At: ${u.created_at}, User Metadata:`, JSON.stringify(u.user_metadata));
-    });
-  }
+  if (err2) console.error("Error fetching clientes:", err2);
+  else console.log(clientes);
 }
 
 run();
