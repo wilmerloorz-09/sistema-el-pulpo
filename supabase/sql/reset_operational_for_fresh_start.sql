@@ -33,7 +33,7 @@
 --   - incluye movimientos entre Ã³rdenes de mesa (anteriormente Unir/Dividir divisiones), junto con su redistribucion de historial READY/DISPATCHED
 --   - incluye solicitudes y metadatos de comprobantes de transferencia
 --   - incluye tambien resultados OCR/analisis persistidos en `payment_proofs`
---   - incluye participaciones en campañas (`predicciones_clientes`) y el vinculo `orders.cliente_id` del turno
+--   - incluye participaciones en campañas (`predicciones_clientes`), créditos promocionales (`creditos_promocionales_clientes`), movimientos de créditos (`movimientos_creditos_clientes`) y el vinculo `orders.cliente_id` del turno
 --   - conserva catalogo de comensales (`clientes`) y definicion de campañas (`campanas_promocionales`)
 --   - conserva permisos estructurales de promociones por turno; al borrar `cash_shift_users` se eliminan filas de `permisos_promociones_turnos` asociadas
 -- - Conserva usuarios, sucursales, permisos, referencia de mesas, capacidad interna de mesas y catalogos
@@ -166,6 +166,8 @@ DECLARE
 
     -- Promociones (transaccional; conserva campañas y clientes)
     'public.predicciones_clientes',
+    'public.movimientos_creditos_clientes',
+    'public.creditos_promocionales_clientes',
 
     -- Pagos / caja
     'public.payment_void_requests',
@@ -343,7 +345,7 @@ COMMIT;
 --   - recomendado: `node .\scripts\empty-payment-proofs-bucket.mjs`
 -- - Catalogo intacto (incluye arbol menu mesa, arbol menu para llevar, arbol a granel, imagenes de producto, precios manuales por categoria, productos incluidos para a granel, asignaciones por nodo y productos frecuentes por contexto)
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, aperturas multi-cajero y principal/secundaria con flags takeout/express, modificaciones transaccionales In-Situ, bloqueos de edicion, solicitudes/anulaciones de pago, movimientos entre Ã³rdenes, Ã³rdenes reabiertas por anulacion y alertas de listo)
--- - 0 predicciones del turno (`predicciones_clientes`); catálogo de `clientes` y definición de `campanas_promocionales` intactos
+-- - 0 predicciones del turno (`predicciones_clientes`), créditos promocionales (`creditos_promocionales_clientes`) y movimientos de créditos (`movimientos_creditos_clientes`); catálogo de `clientes` y definición de `campanas_promocionales` intactos
 -- - 0 aperturas de caja por cajero (cash_register_openings) ni denominaciones particionadas (cash_shift_denoms.cashier_id / opening_id)
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo
 -- - 0 base operativa para reimprimir reportes de caja por apertura o consolidado del turno previo

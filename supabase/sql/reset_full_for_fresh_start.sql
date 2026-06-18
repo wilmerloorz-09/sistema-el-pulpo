@@ -16,8 +16,8 @@
 --   - incluye listado Extra en Despacho (pestanas Mesa y Todos; pestañas unificadas)
 --   - caja unificada: el alcance “todas/mías/por usuario” es UI (no flags `secondary_caja_*`)
 --   - incluye productos frecuentes configurados (`extra_frequent_products` por contexto MESA/TAKEOUT/EXPRESS/EXTRA)
---   - incluye comensales (`clientes`), vinculo opcional `orders.cliente_id` y participaciones en campañas (`predicciones_clientes`)
---   - incluye campañas promocionales activas/inactivas, cartelera JSON, cierre de ofertas y cupones generados
+--   - incluye comensales (`clientes`), vinculo opcional `orders.cliente_id`, participaciones en campañas (`predicciones_clientes`), créditos promocionales (`creditos_promocionales_clientes`) y movimientos de créditos (`movimientos_creditos_clientes`)
+--   - incluye campañas promocionales activas/inactivas, cartelera JSON, cierre de ofertas, cupones generados y saldos de clientes
 --   - incluye permisos por turno para registrar promociones (`permisos_promociones_turnos`, auto-creado al habilitar usuario en turno)
 --   - incluye la numeracion/orden visible de cuentas de mesa basada en `orders.table_order_position` (reemplaza a divisiones)
 --   - incluye snapshots visuales de mesa en `orders.table_name_snapshot`
@@ -165,6 +165,8 @@ DECLARE
     'public.order_cancellations',
 
     -- Promociones / comensales
+    'public.movimientos_creditos_clientes',
+    'public.creditos_promocionales_clientes',
     'public.predicciones_clientes',
     'public.permisos_promociones_turnos',
     'public.campanas_promocionales',
@@ -443,7 +445,7 @@ COMMIT;
 -- - 0 arbol menu mesa / 0 arbol menu para llevar / 0 arbol a granel
 -- - 0 configuraciones de productos incluidos para a granel ni reglas de entrega por monto
 -- - 0 productos frecuentes configurados (`extra_frequent_products` por contexto)
--- - 0 comensales en `clientes`, 0 campañas en `campanas_promocionales`, 0 predicciones ni permisos de promociones por turno
+-- - 0 comensales en `clientes`, 0 campañas en `campanas_promocionales`, 0 predicciones, 0 créditos promocionales (`creditos_promocionales_clientes`), 0 movimientos de créditos (`movimientos_creditos_clientes`) ni permisos de promociones por turno
 -- - 0 ordenes/pagos/caja/aperturas/movimientos/notificaciones/eventos (incluye orden especial, Express, Extra con flujo caja-despacho manual y cierre `close_extra_order`, caja principal/secundaria con flags takeout/express, bloqueos de edicion In-Situ, solicitudes/anulaciones pendientes por item/orden, payloads `[PENDING_REQUEST]`, anulaciones de pago, movimientos entre Ã³rdenes y alertas de listo)
 -- - 0 aperturas multi-cajero ni cash_shift_denoms por cashier_id
 -- - 0 tarjetas operativas de Para Llevar / Orden Especial derivadas de ordenes reales; solo queda la tarjeta `+` UI-only al entrar al modulo

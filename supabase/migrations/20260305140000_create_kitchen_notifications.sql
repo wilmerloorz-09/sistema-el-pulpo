@@ -7,13 +7,13 @@ CREATE TABLE IF NOT EXISTS public.kitchen_notifications (
   order_item_id uuid REFERENCES public.order_items(id) ON DELETE SET NULL,
   message text NOT NULL,
   branch_id uuid NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  
-  -- Indexes for performance
-  INDEX idx_order_id (order_id),
-  INDEX idx_branch_id (branch_id),
-  INDEX idx_created_at (created_at)
+  created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_kitchen_notifications_order_id ON public.kitchen_notifications (order_id);
+CREATE INDEX IF NOT EXISTS idx_kitchen_notifications_branch_id ON public.kitchen_notifications (branch_id);
+CREATE INDEX IF NOT EXISTS idx_kitchen_notifications_created_at ON public.kitchen_notifications (created_at);
 
 -- Enable RLS (Row Level Security)
 ALTER TABLE public.kitchen_notifications ENABLE ROW LEVEL SECURITY;
@@ -44,14 +44,14 @@ CREATE TABLE IF NOT EXISTS public.operational_losses (
   reason text NOT NULL,
   cancelled_by uuid NOT NULL REFERENCES public.profiles(id) ON DELETE SET NULL,
   branch_id uuid NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  
-  -- Indexes for performance and analytics
-  INDEX idx_order_id (order_id),
-  INDEX idx_branch_id (branch_id),
-  INDEX idx_created_at (created_at),
-  INDEX idx_reason (reason)
+  created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Indexes for performance and analytics
+CREATE INDEX IF NOT EXISTS idx_operational_losses_order_id ON public.operational_losses (order_id);
+CREATE INDEX IF NOT EXISTS idx_operational_losses_branch_id ON public.operational_losses (branch_id);
+CREATE INDEX IF NOT EXISTS idx_operational_losses_created_at ON public.operational_losses (created_at);
+CREATE INDEX IF NOT EXISTS idx_operational_losses_reason ON public.operational_losses (reason);
 
 -- Enable RLS for operational_losses
 ALTER TABLE public.operational_losses ENABLE ROW LEVEL SECURITY;
@@ -62,6 +62,7 @@ CREATE POLICY "Allow read all from authenticated users on operational losses"
   FOR SELECT
   TO authenticated
   USING (true);
+
 
 CREATE POLICY "Allow insert for authenticated users on operational losses"
   ON public.operational_losses

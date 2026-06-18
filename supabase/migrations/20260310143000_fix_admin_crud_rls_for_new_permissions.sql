@@ -1,4 +1,4 @@
-﻿-- Align admin CRUD RLS with the new branch-based permission model
+-- Align admin CRUD RLS with the new branch-based permission model
 
 CREATE OR REPLACE FUNCTION public.can_manage_branch_admin(p_user_id uuid, p_branch_id uuid)
 RETURNS boolean

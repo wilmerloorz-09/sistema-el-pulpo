@@ -3,7 +3,7 @@ ADD COLUMN IF NOT EXISTS denomination_type text;
 
 UPDATE public.denominations
 SET denomination_type = CASE
-  WHEN lower(coalesce(label, "")) LIKE 'billete%' THEN 'bill'
+  WHEN lower(coalesce(label, '')) LIKE 'billete%' THEN 'bill'
   ELSE 'coin'
 END
 WHERE denomination_type IS NULL;

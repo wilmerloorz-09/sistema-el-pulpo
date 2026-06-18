@@ -234,8 +234,8 @@ SELECT x.user_id, x.branch_id, r.id, true, NULL
 FROM ranked_legacy_roles x
 JOIN public.roles r ON r.code = x.role_code
 WHERE x.role_code IS NOT NULL
-ON CONFLICT (user_id, branch_id)
-DO UPDATE SET role_id = EXCLUDED.role_id, is_active = true, updated_at = now();
+ON CONFLICT (user_id, branch_id, role_id)
+DO UPDATE SET is_active = EXCLUDED.is_active, updated_at = now();
 
 CREATE OR REPLACE VIEW public.v_user_effective_permissions AS
 WITH raw_permissions AS (

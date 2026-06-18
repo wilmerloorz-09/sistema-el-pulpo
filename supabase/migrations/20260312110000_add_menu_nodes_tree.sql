@@ -1,4 +1,4 @@
-﻿-- Recursive menu tree for drill-down navigation
+-- Recursive menu tree for drill-down navigation
 
 CREATE TABLE IF NOT EXISTS public.menu_nodes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

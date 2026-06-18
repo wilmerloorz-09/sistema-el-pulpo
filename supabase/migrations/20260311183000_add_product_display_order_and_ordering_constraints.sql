@@ -1,4 +1,4 @@
-﻿-- Agrega orden visual a productos y normaliza el orden de categorias, subcategorias y productos.
+-- Agrega orden visual a productos y normaliza el orden de categorias, subcategorias y productos.
 -- Regla final:
 -- - categorias: orden unico por sucursal
 -- - subcategorias: orden unico por categoria

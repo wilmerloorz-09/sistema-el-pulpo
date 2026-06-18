@@ -1,4 +1,4 @@
-﻿-- Harden cash RLS by fully replacing legacy policies and tying shifts to the acting user
+-- Harden cash RLS by fully replacing legacy policies and tying shifts to the acting user
 
 DROP POLICY IF EXISTS "Authenticated can view shifts" ON public.cash_shifts;
 DROP POLICY IF EXISTS "Users can insert cash shifts by permission" ON public.cash_shifts;

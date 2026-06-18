@@ -1,8 +1,8 @@
 -- Access control by modules + active branch + history
 -- Safe migration: additive, backward compatible
 
--- 0) Extend app_role for branch supervisor semantics
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'supervisor';
+-- 0) Extend app_role for branch supervisor semantics (Now handled in 20260309115900_add_supervisor_enum.sql)
+-- ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'supervisor';
 
 -- 1) Active branch in profiles
 ALTER TABLE public.profiles

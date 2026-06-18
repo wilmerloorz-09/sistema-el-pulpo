@@ -302,3 +302,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Consulta de Promociones:** Implementacion del modulo /promociones/consulta para auditar participaciones en campanas.
 - **Auditoria Financiera de Promociones:** Se corrigio el origen de datos financieros, calculando el "Total de las Ordenes" sumando directamente los registros de payments en lugar de la columna desactualizada orders.total.
 - **Nuevos KPIs y Exportacion:** Se integraron metricas dinamicas de "Total Consumo Recibido" y "Credito Potencial" en la UI (disposicion de 6 tarjetas en fila) y exportacion CSV granular (incluyendo filtrado combinado por campana y oferta).
+
+### Actualizacion Jun 13, 2026
+- **Configuración Dinámica de Impresoras:** Se migró la configuración de IP y puerto de la impresora de variables `.env` estáticas a campos editables en la tabla `public.branches` (`printer_ip`, `printer_port`). El frontend recupera esta información en el contexto global (`BranchContext.tsx`), la guarda en `localStorage` (`activePrinterIp`, `activePrinterPort`) y la consume dinámicamente en el helper de impresión nativa `thermalPrint.ts`, manteniendo el `.env` como fallback.
+- **Formato de Ticket ESC/POS de Alto Rendimiento:** 
+  - **Estructuración con Font B:** El cuerpo del ticket, detalle de productos, totales y promociones utilizan la fuente compacta Font B (activada combinando `ESC ! 0x01` y `ESC M 1` para soporte universal de impresoras genéricas de 80mm). Se implementó un espaciado vertical de 40 puntos para optimizar la legibilidad.
+  - **Margen de Detalle e Indentación:** Todo el detalle de los productos y montos se desplaza a la derecha aplicando un margen izquierdo estático de 8 caracteres, limitando el ancho neto de impresión de productos a exactamente 40 caracteres.
+  - **Prevención de Pérdida de QR y Atascamiento:** Para evitar cortes abruptos de imágenes de códigos QR y asegurar que el cortador actúe exactamente al terminar el ticket, el flujo cambia temporalmente la fuente a Font A y restaura el espaciado de línea por defecto (`lineSpacing(null)`) antes de emitir los comandos de avance (`feed`) y corte (`cut`).

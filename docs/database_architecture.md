@@ -24,6 +24,8 @@
 
 ### 0. Sucursales
 - `branches`
+  - `printer_ip` (text, nullable): Dirección IP de la impresora térmica en la red local.
+  - `printer_port` (integer, default 9100): Puerto TCP de escucha de la impresora.
 - `branches.workflow_mode`: compatibilidad interna forzada a `CASH_THEN_DISPATCH`; el CRUD de sucursales no expone flujo.
 
 ### 1. Identidad y acceso
@@ -123,6 +125,14 @@
 - `permisos_promociones_turnos`
   - Una fila por `cash_shift_users.id`; `puede_registrar_promociones` (default `true`).
   - Trigger al insertar en `cash_shift_users` crea permiso automático.
+- `creditos_promocionales_clientes`
+  - "Bolsillos" de crédito ganados por clientes.
+  - Campos: `id`, `cliente_id` (FK a `clientes`), `monto_inicial`, `monto_disponible`, `fecha_caducidad`, `estado` (`ACTIVO`|`AGOTADO`|`CADUCADO`), `orden_origen_id` (FK a `orders`), `campana_origen_id` (FK a `campanas_promocionales`).
+- `movimientos_creditos_clientes`
+  - Trazabilidad y kardex de transacciones de uso/devolución de crédito promocional.
+  - Campos: `id`, `credito_id` (FK a `creditos_promocionales_clientes`), `monto_usado`, `orden_pago_id` (FK a `orders`), `tipo_movimiento` (`CONSUMO`|`DEVOLUCION`).
+- Función calculada `public.saldo_promocional(clientes)`:
+  - Retorna la sumatoria de saldo disponible (`monto_disponible`) en créditos `ACTIVO` que no hayan superado su `fecha_caducidad`.
 
 #### RPCs y permisos
 - `usuario_puede_registrar_promociones(user_id)`: turno abierto + usuario habilitado en `cash_shift_users` + flag en `permisos_promociones_turnos`.
@@ -480,3 +490,7 @@
 - **Consulta de Promociones:** Implementacion del modulo /promociones/consulta para auditar participaciones en campanas.
 - **Auditoria Financiera de Promociones:** Se corrigio el origen de datos financieros, calculando el "Total de las Ordenes" sumando directamente los registros de payments en lugar de la columna desactualizada orders.total.
 - **Nuevos KPIs y Exportacion:** Se integraron metricas dinamicas de "Total Consumo Recibido" y "Credito Potencial" en la UI (disposicion de 6 tarjetas en fila) y exportacion CSV granular (incluyendo filtrado combinado por campana y oferta).
+
+### Actualizacion Jun 13, 2026
+- **Configuración Dinámica de Impresoras:** Añadidas las columnas `printer_ip` y `printer_port` en `public.branches` para evitar la dependencia rígida de variables de entorno `.env` en producción.
+- **Soporte de Monedero Promocional (FIFO con Caducidad):** Creadas las tablas `public.creditos_promocionales_clientes` y `public.movimientos_creditos_clientes`, junto con la función calculada `public.saldo_promocional(...)` y el método de pago automático "Saldo Promocional" por sucursal.

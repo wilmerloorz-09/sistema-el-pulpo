@@ -1,4 +1,4 @@
-﻿-- Normaliza y blinda los ordenes visuales restantes del admin.
+-- Normaliza y blinda los ordenes visuales restantes del admin.
 -- - restaurant_tables.visual_order por sucursal
 -- - denominations.display_order por sucursal
 -- - subcategory_modifiers.display_order por subcategoria

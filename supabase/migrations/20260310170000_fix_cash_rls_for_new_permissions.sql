@@ -1,4 +1,4 @@
-﻿-- Align cash module RLS with the new permission model
+-- Align cash module RLS with the new permission model
 
 CREATE OR REPLACE FUNCTION public.can_operate_cash_branch(p_user_id uuid, p_branch_id uuid)
 RETURNS boolean

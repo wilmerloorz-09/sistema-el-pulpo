@@ -1,4 +1,4 @@
-﻿-- Evita numeros de orden duplicados en categorias dentro de la misma sucursal.
+-- Evita numeros de orden duplicados en categorias dentro de la misma sucursal.
 -- Si ya existen duplicados, los reordena al final antes de crear la restriccion.
 
 WITH ranked_duplicates AS (
