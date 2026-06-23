@@ -523,7 +523,7 @@
 17. Promociones: aplicar `20260611180000` si debe permitirse la misma orden en dos campañas; sin ella falla el segundo registro por `predicciones_orden_unica`.
 18. Listado de elegibles para promoción: no filtrar solo `status = 'PAID'`; usar `paid_at IS NOT NULL` y consumo desde pagos del turno. Desde `20260623190000`, `orders.total` es confiable para órdenes nuevas; para históricas anteriores a esa fecha, preferir suma de pagos activos.
 19. Campañas: `listarCampanasActivas` en operativo; no asumir una sola campaña activa (`limit 1`).
-20. Token de promoción: se genera solo cuando `status = 'PAID'`. Si la orden no llega a `PAID` (p.ej. `total = 0` o despacho tardío antes de `20260623190000`/`20260623200000`), el token es `NULL` y el QR no es válido.
+20. Token de promoción: se genera al cobrar (`paid_at` no nulo) y **no se borra** al despachar (`KITCHEN_DISPATCHED`). Migración `20260623210000`. Recibos impresos antes de ese fix con token ya borrado requieren reimpresión (backfill asigna token nuevo distinto al del papel).
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.

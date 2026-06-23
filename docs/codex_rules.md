@@ -62,6 +62,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Permisos:** registro operativo = `usuario_puede_registrar_promociones`; gestión campañas en BD = `puede_gestionar_campanas_promocionales`. Menú Campañas en nav: `isGlobalAdmin` o `MANAGE` en `admin_global`.
 - **Migraciones del módulo (orden):** `20260611120000`, `20260611140000`, `20260611150000`, `20260611160000`, `20260611161000`, `20260611170000`, `20260611180000`.
 - Al cobrar o registrar promoción, persistir `orders.cliente_id` cuando el operador asigna o cambia cliente.
+- **Token QR en recibo:** `token_promocion` se ata a `paid_at`, no a `status = 'PAID'`. No borrarlo al pasar a `KITCHEN_DISPATCHED`; migración `20260623210000`.
 
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.

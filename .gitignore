@@ -24,6 +24,9 @@ public/app-version.json
 *.sln
 *.sw?
 
+# Scripts locales de diagnóstico (pueden contener lógica sensible; credenciales van en .env)
+scratch/
+
 # Environment files
 .env
 .env.*

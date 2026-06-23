@@ -153,7 +153,7 @@
 - No asumir `orders.total` preexistente correcto en registros históricos anteriores a junio 2026: el consumo efectivo usa pagos del turno (`payments.shift_id`, montos activos).
 - A partir de la migración `20260623190000`, `orders.total` se mantiene sincronizado automáticamente vía trigger `trg_sync_order_total`.
 - Órdenes pagadas y despachadas: `paid_at IS NOT NULL` aunque `status = 'KITCHEN_DISPATCHED'`.
-- Token de promoción (`orders.token_promocion`): se genera solo cuando la orden alcanza `status = 'PAID'`. Si la orden queda en `KITCHEN_DISPATCHED` sin llegar a `PAID`, el token es `NULL` y el QR del recibo no es válido.
+- Token de promoción (`orders.token_promocion`): se genera cuando la orden queda con `paid_at` (al alcanzar `PAID` en cobro). **Persiste** aunque la cabecera pase a `KITCHEN_DISPATCHED` tras despacho; solo se anula si `paid_at` pasa a `NULL` o la orden se cancela (`20260623210000`). `validar_token_promocion_cliente` acepta órdenes con `paid_at` en `PAID` o `KITCHEN_DISPATCHED`.
 
 ## Reglas vigentes por area
 
@@ -500,7 +500,9 @@
 - **Configuración Dinámica de Impresoras:** Añadidas las columnas `printer_ip` y `printer_port` en `public.branches` para evitar la dependencia rígida de variables de entorno `.env` en producción.
 - **Soporte de Monedero Promocional (FIFO con Caducidad):** Creadas las tablas `public.creditos_promocionales_clientes` y `public.movimientos_creditos_clientes`, junto con la función calculada `public.saldo_promocional(...)` y el método de pago automático "Saldo Promocional" por sucursal.
 
-### Actualizacion Jun 23, 2026
+### Actualizacion Jun 23, 2026 (token promoción)
+- **Fix: token persiste tras despacho (`20260623210000`):** `orden_promocion_token_trigger` ya no borra `token_promocion` al pasar a `KITCHEN_DISPATCHED`. Backfill de órdenes pagadas sin token. `validar_token_promocion_cliente` acepta `paid_at` con `PAID` o `KITCHEN_DISPATCHED`.
+
 - **Fix: `orders.total` siempre sincronizado (`20260623190000`):** Se identificó que `orders.total` solo se actualizaba al cancelar items, quedando en `0` cuando se agregaban items sin cancelaciones previas. Se añadió recalculación automática en `sync_order_payment_state_internal` y el trigger `trg_sync_order_total` en `order_items` para mantener el campo sincronizado en tiempo real. La migración también corrigió 22 órdenes históricas con total desincronizado.
 - **Fix: TAKEOUT/EXPRESS siempre alcanzan `PAID` al cobrar (`20260623190000`):** En el flujo donde el cajero cobra antes de que la cocina despache, `sync_order_payment_state_internal` dejaba la orden en `READY` o `KITCHEN_DISPATCHED` en lugar de `PAID`, impidiendo la generación del token de promoción. Ahora cualquier orden con pago completo pasa a `PAID` independientemente de su estado operativo de despacho.
 - **Fix: `PAID` y `CANCELLED` son estados terminales (`20260623200000`):** `sync_order_payment_state_internal` ahora retorna inmediatamente si la orden ya está `PAID` o `CANCELLED`, impidiendo que operaciones posteriores (despacho por cocina, recomputo operativo) pisen accidentalmente el estado de pago.
