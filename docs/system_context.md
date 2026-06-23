@@ -15,7 +15,7 @@
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
 - Una orden pasa a Borrador cuando tiene al menos un item agregado y todavia no se envio a Caja.
 - Al enviar a Caja se genera `order_code` / `order_number` y la orden queda en `SENT_TO_KITCHEN`; ese estado significa `En Caja`, no despacho.
-- Al cobrar en Caja, si la orden queda cubierta, `sync_order_payment_state_internal(...)` debe dejarla en `PAID`.
+- Al cobrar en Caja, si la orden queda cubierta, `sync_order_payment_state_internal(...)` debe dejarla en `PAID`. **`PAID` es un estado terminal**: ninguna operación posterior puede revertirlo excepto una anulación explícita de pago.
 - El modulo `Despacho` solo debe listar y permitir despachar ordenes `PAID` con cantidades activas pendientes de despacho.
 - En `Despacho`, una orden pagada debe representarse como una sola tarjeta/fila por `orders.id` / `order_code`; si sus items fueron enviados en momentos distintos, se agregan dentro de esa misma orden y no se generan tarjetas duplicadas con el mismo numero.
 - Al despachar, la orden pasa a `KITCHEN_DISPATCHED` cuando ya no quedan cantidades activas pendientes de despacho.
@@ -183,6 +183,8 @@
   - La validación previa al insert en `payOrder` evita el RPC `get_order_operational_snapshot` cuando el flujo efectivo es `CASH_THEN_DISPATCH`, usando cancelaciones aplicadas por ítem y cantidades de `order_items`.
   - Tras persistir pagos, `ensureTableSnapshot` no bloquea el cierre del flujo de cobro (se dispara en segundo plano).
   - **Migración obligatoria para rendimiento en BD:** `20260509180000_payment_items_sync_once_per_statement.sql` reemplaza el trigger `FOR EACH ROW` en `payment_items` por triggers **a nivel de sentencia**, de modo que `sync_order_payment_state_internal` corre **una vez por lote** de ítems de pago, no una vez por fila. Sin esta migración aplicada, el cobro sigue lento aunque el frontend esté optimizado.
+  - **Guard de estado terminal (`20260623200000`):** `sync_order_payment_state_internal` retorna inmediatamente si la orden ya es `PAID` o `CANCELLED`. Impide que despacho o recomputación operativa pisen el estado de pago.
+  - **`orders.total` siempre sincronizado (`20260623190000`):** El trigger `trg_sync_order_total` en `order_items` recalcula `orders.total` en tiempo real. `sync_order_payment_state_internal` también recalcula `total` antes de evaluar si la orden está pagada. Antes de esta migración, `total` solo se actualizaba en cancelaciones.
 - `Caja` trabaja con:
   - `PayableOrdersList`
   - `CompletedPaymentsList`
@@ -519,8 +521,9 @@
 14. Despacho: pestaña unificada Para llevar/Express; Extra en Mesa; una tarjeta por orden; migracion `20260602140000` para snapshots batch.
 15. Productos frecuentes: verificar migraciones `20260531130000` y `20260531140000`; reordenar usa `display_order` con staging positivo (no valores negativos).
 17. Promociones: aplicar `20260611180000` si debe permitirse la misma orden en dos campañas; sin ella falla el segundo registro por `predicciones_orden_unica`.
-18. Listado de elegibles: no filtrar solo `status = 'PAID'`; usar `paid_at IS NOT NULL` y consumo desde pagos del turno si `orders.total` es nulo.
+18. Listado de elegibles para promoción: no filtrar solo `status = 'PAID'`; usar `paid_at IS NOT NULL` y consumo desde pagos del turno. Desde `20260623190000`, `orders.total` es confiable para órdenes nuevas; para históricas anteriores a esa fecha, preferir suma de pagos activos.
 19. Campañas: `listarCampanasActivas` en operativo; no asumir una sola campaña activa (`limit 1`).
+20. Token de promoción: se genera solo cuando `status = 'PAID'`. Si la orden no llega a `PAID` (p.ej. `total = 0` o despacho tardío antes de `20260623190000`/`20260623200000`), el token es `NULL` y el QR no es válido.
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
@@ -561,3 +564,9 @@
   - **Uso de Font B y Espaciado:** El detalle de productos, los totales y la sección de pie de página se formatean usando la fuente compacta Font B (activada mediante `ESC ! 0x01` y `ESC M 1` para máxima compatibilidad con impresoras genéricas). El espaciado de línea se fijó en 40 puntos para mejorar la legibilidad y evitar amontonamiento de texto.
   - **Margen y Alineación de Productos:** Para alinear visualmente la lista de productos y centrar/mover el contenido hacia la derecha, se estableció un margen izquierdo de 8 caracteres. El sistema envuelve automáticamente la descripción de productos para que se ajuste exactamente a la longitud neta disponible (40 caracteres por línea).
   - **Evitar Corte del Código QR:** Para solucionar que el cortador físico cortara el código QR antes de tiempo, se añadió una restauración explícita a Font A y espaciado de línea por defecto (`lineSpacing(null)`) inmediatamente antes de enviar el comando de avance final y corte físico (`feedAndCut`).
+
+### Actualizacion Jun 23, 2026
+- **Fix: `orders.total` siempre sincronizado:** El campo `orders.total` solo se actualizaba al cancelar items. Si no había cancelaciones, quedaba en `0` aunque los items tuvieran valor, lo que impedía que `sync_order_payment_state_internal` reconociera la orden como pagada. Trigger `trg_sync_order_total` y recalculo en `sync_order_payment_state_internal` resuelven esto.
+- **Fix: `PAID` terminal e inmutable:** `sync_order_payment_state_internal` ahora retorna inmediatamente si la orden ya es `PAID` o `CANCELLED`. Antes, si la cocina despachaba después del cobro, la recomputación operativa podía revertir el estado `PAID` a `KITCHEN_DISPATCHED`, borrando el token de promoción.
+- **Fix: TAKEOUT/EXPRESS siempre pasan a `PAID`:** La lógica anterior dejaba órdenes TAKEOUT/EXPRESS en `READY` o `KITCHEN_DISPATCHED` cuando el cajero cobraba antes del despacho. Ahora cualquier orden con pago completo pasa directamente a `PAID`.
+- **Purga de órdenes fantasma:** Triggers que cancelan automáticamente órdenes activas sin items. Funciones `purge_empty_order` / `purge_empty_orders_for_branch`. Filtro `item_count > 0` en UI de ParaLlevar y Express.

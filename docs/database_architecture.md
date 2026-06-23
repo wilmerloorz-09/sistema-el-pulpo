@@ -10,7 +10,7 @@
 ## Regla canonica de estados operativos
 - `DRAFT`: borrador con al menos un item agregado y no enviado a Caja.
 - `SENT_TO_KITCHEN`: En Caja; `submit_order_draft_items(...)` genera `order_code` / `order_number` y deja la orden cobrable.
-- `PAID`: Pagada; `sync_order_payment_state_internal(...)` debe usar este estado cuando Caja cubre la orden completa.
+- `PAID`: Pagada; `sync_order_payment_state_internal(...)` debe usar este estado cuando Caja cubre la orden completa. **`PAID` es un estado terminal e inmutable**: ninguna operación posterior (despacho, recomputación operativa, etc.) puede revertirlo. Solo una anulación explícita de pago (`void`) puede cambiarlo.
 - `KITCHEN_DISPATCHED`: Despachada; `dispatch_order_quantities(...)` solo puede ejecutarse sobre ordenes `PAID`.
 - `CANCELLED`: anulada o historica. Las historicas por anulacion de pago con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
 - `PAID` y `KITCHEN_DISPATCHED` son estados finales visibles mutuamente excluyentes para clasificacion; una orden no debe aparecer en ambas pestanas.
@@ -101,6 +101,9 @@
 #### Sincronización de estado de orden tras pagos (`payment_items`)
 - `sync_order_payment_state_internal(order_id)` recalcula cabecera y pagos de la orden.
 - Los triggers `trg_sync_order_payment_state_on_payments` (por fila en `payments`) y los de `payment_items` deben invocar esa lógica cuando cambian cobros.
+- **Guard de estado terminal (migración `20260623200000`):** `sync_order_payment_state_internal` retorna inmediatamente si la orden ya es `PAID` o `CANCELLED`. Esto impide que operaciones posteriores (despacho desde cocina, recomputación operativa) pisen accidentalmente el estado de pago.
+- **Sincronización de `orders.total` (migración `20260623190000`):** `sync_order_payment_state_internal` recalcula y persiste `orders.total` desde los `order_items` activos antes de evaluar si la orden está pagada. Adicionalmente, el trigger `trg_sync_order_total` en `order_items` mantiene `orders.total` sincronizado en tiempo real ante INSERT/UPDATE/DELETE de items (solo para órdenes no `PAID`/`CANCELLED`).
+- **No asumir `orders.total` preexistente:** antes de la migración `20260623190000`, el campo solo se actualizaba al cancelar items; si no hubo cancelaciones, podía quedar en `0` aunque existieran items con valor real.
 - **Migración `20260509180000_payment_items_sync_once_per_statement.sql`:** los triggers sobre `payment_items` pasan a ser **AFTER INSERT/UPDATE/DELETE … FOR EACH STATEMENT** con tablas de transición (`REFERENCING NEW TABLE` / `OLD TABLE`), de modo que un **único** `INSERT` por lotes de muchas filas dispara **una** pasada de sincronización por `order_id` afectado, en lugar de N pasadas (una por fila). Esto es crítico para latencia de cobro en POS.
 - El cliente **no** debe depender de llamar `sync_order_payment_state(...)` inmediatamente después de cada cobro si los triggers ya cubren el caso; evita trabajo duplicado.
 
@@ -147,8 +150,10 @@
 - `permisos_promociones_turnos`: admin global para mantenimiento; SELECT operativo en turno.
 
 #### Lectura de elegibles (cliente / app)
-- No asumir `orders.total` poblado: puede ser null; el consumo efectivo usa pagos del turno (`payments.shift_id`, montos activos).
+- No asumir `orders.total` preexistente correcto en registros históricos anteriores a junio 2026: el consumo efectivo usa pagos del turno (`payments.shift_id`, montos activos).
+- A partir de la migración `20260623190000`, `orders.total` se mantiene sincronizado automáticamente vía trigger `trg_sync_order_total`.
 - Órdenes pagadas y despachadas: `paid_at IS NOT NULL` aunque `status = 'KITCHEN_DISPATCHED'`.
+- Token de promoción (`orders.token_promocion`): se genera solo cuando la orden alcanza `status = 'PAID'`. Si la orden queda en `KITCHEN_DISPATCHED` sin llegar a `PAID`, el token es `NULL` y el QR del recibo no es válido.
 
 ## Reglas vigentes por area
 
@@ -494,3 +499,9 @@
 ### Actualizacion Jun 13, 2026
 - **Configuración Dinámica de Impresoras:** Añadidas las columnas `printer_ip` y `printer_port` en `public.branches` para evitar la dependencia rígida de variables de entorno `.env` en producción.
 - **Soporte de Monedero Promocional (FIFO con Caducidad):** Creadas las tablas `public.creditos_promocionales_clientes` y `public.movimientos_creditos_clientes`, junto con la función calculada `public.saldo_promocional(...)` y el método de pago automático "Saldo Promocional" por sucursal.
+
+### Actualizacion Jun 23, 2026
+- **Fix: `orders.total` siempre sincronizado (`20260623190000`):** Se identificó que `orders.total` solo se actualizaba al cancelar items, quedando en `0` cuando se agregaban items sin cancelaciones previas. Se añadió recalculación automática en `sync_order_payment_state_internal` y el trigger `trg_sync_order_total` en `order_items` para mantener el campo sincronizado en tiempo real. La migración también corrigió 22 órdenes históricas con total desincronizado.
+- **Fix: TAKEOUT/EXPRESS siempre alcanzan `PAID` al cobrar (`20260623190000`):** En el flujo donde el cajero cobra antes de que la cocina despache, `sync_order_payment_state_internal` dejaba la orden en `READY` o `KITCHEN_DISPATCHED` en lugar de `PAID`, impidiendo la generación del token de promoción. Ahora cualquier orden con pago completo pasa a `PAID` independientemente de su estado operativo de despacho.
+- **Fix: `PAID` y `CANCELLED` son estados terminales (`20260623200000`):** `sync_order_payment_state_internal` ahora retorna inmediatamente si la orden ya está `PAID` o `CANCELLED`, impidiendo que operaciones posteriores (despacho por cocina, recomputo operativo) pisen accidentalmente el estado de pago.
+- **Purga de órdenes fantasma (`20260623170000`):** Triggers actualizados para cancelar automáticamente órdenes activas TAKEOUT/EXPRESS que queden sin items. Funciones `purge_empty_order` y `purge_empty_orders_for_branch` para limpieza manual. Filtro estricto `item_count > 0` en UI de ParaLlevar y Express.

@@ -85,7 +85,7 @@ const Express = () => {
   const orders = (expressOrdersQuery.data ?? []).filter((order) => {
     const status = String(order.status ?? "");
     if (["KITCHEN_DISPATCHED", "PAID", "CANCELLED"].includes(status)) return false;
-    return status !== "DRAFT" || Number(order.item_count ?? 0) > 0;
+    return Number(order.item_count ?? 0) > 0;
   });
 
   useEffect(() => {

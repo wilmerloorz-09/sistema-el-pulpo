@@ -11,12 +11,12 @@ const env = envStr.split('\n').reduce((acc, line) => {
 const s = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
 async function test() {
-  const email = 'admin1@elpulpo.com';
-  const password = 'ElPulpo2026!'; // Test password
+  const email = 'ivonne@hotmail.com'; // We'll test with identifier first
+  const password = '12345678'; // Test password
   
   console.log("=== Testing Direct Auth ===");
   const { data: directData, error: directError } = await s.auth.signInWithPassword({
-    email,
+    email: 'ivonne@hotmail.com',
     password
   });
   if (directError) {
@@ -28,7 +28,7 @@ async function test() {
   console.log("\n=== Testing Edge Function ===");
   const { data: edgeData, error: edgeError } = await s.functions.invoke('login-with-identifier', {
     body: {
-      identifier: 'admin1',
+      identifier: 'super3',
       password
     }
   });

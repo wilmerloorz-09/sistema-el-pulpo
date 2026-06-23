@@ -86,7 +86,7 @@ const ParaLlevar = () => {
   });
 
   const orders = (takeoutOrdersQuery.data ?? []).filter((order) =>
-    order.status !== "DRAFT" || Number(order.item_count ?? 0) > 0
+    Number(order.item_count ?? 0) > 0
   );
 
   useEffect(() => {
