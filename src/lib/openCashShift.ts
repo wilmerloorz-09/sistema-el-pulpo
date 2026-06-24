@@ -32,6 +32,8 @@ export function orderBelongsToOpenCashShift(
   openShift: OpenCashShift,
 ): boolean {
   if (order.cash_shift_id && order.cash_shift_id !== openShift.id) return false;
+  // Etiqueta explícita del turno abierto: confiar en cash_shift_id (misma regla que mesas / cierre).
+  if (order.cash_shift_id && order.cash_shift_id === openShift.id) return true;
   const anchor = order.sent_to_kitchen_at ?? order.created_at;
   if (!anchor || !openShift.opened_at) return false;
   return new Date(anchor).getTime() >= new Date(openShift.opened_at).getTime();

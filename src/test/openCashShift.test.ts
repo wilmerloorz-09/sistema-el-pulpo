@@ -28,6 +28,19 @@ describe("orderBelongsToOpenCashShift", () => {
     ).toBe(true);
   });
 
+  it("confía en cash_shift_id del turno abierto aunque el ancla sea anterior a opened_at", () => {
+    expect(
+      orderBelongsToOpenCashShift(
+        {
+          cash_shift_id: "shift-new",
+          created_at: "2026-05-18T09:00:00.000Z",
+          sent_to_kitchen_at: "2026-05-18T09:00:00.000Z",
+        },
+        openShift,
+      ),
+    ).toBe(true);
+  });
+
   it("usa sent_to_kitchen_at como ancla si existe", () => {
     expect(
       orderBelongsToOpenCashShift(

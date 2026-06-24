@@ -7,16 +7,29 @@ export function sortMenuNodes(nodes: MenuNode[]) {
   });
 }
 
-/** Mezcla arbol TAKEOUT con categorias raiz adicionales de TABLE (como en ordenes Para llevar / Express). */
+function normalizeRootCategoryName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+/** Mezcla arbol TAKEOUT/BULK con categorias raiz adicionales de TABLE (sin PLATOS de mesa). */
 export function buildCompositeMenuNodes(scopeNodes: MenuNode[], tableNodes: MenuNode[]) {
   const scopeRootNodes = sortMenuNodes(
     scopeNodes.filter((node) => node.parent_id === null && node.node_type === "category"),
   );
+  const scopeRootNames = new Set(scopeRootNodes.map((node) => normalizeRootCategoryName(node.name)));
+
   const tableRootNodes = sortMenuNodes(
     tableNodes.filter((node) => node.parent_id === null && node.node_type === "category"),
   );
 
-  const tableRootsToAppend = tableRootNodes.slice(1);
+  const tableRootsToAppend = tableRootNodes
+    .slice(1)
+    .filter((node) => !scopeRootNames.has(normalizeRootCategoryName(node.name)));
+
   if (tableRootsToAppend.length === 0) {
     return scopeNodes;
   }

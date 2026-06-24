@@ -241,17 +241,20 @@ function dispatchCardHasWork(card: DispatchOrder): boolean {
   return card.items.some((it) => it.quantity_paid > 0 && it.quantity_dispatched < it.quantity_paid);
 }
 
-/** Misma regla que `useOrder` / caja: solo cantidad cubierta por `payment_items` activos (o `paid_at` de línea). */
+/** Misma regla que `useOrder` / caja: `payment_items` activos, `paid_at` de línea, o cobro total de orden PAID. */
 function resolveDispatchLinePaidQty(
   item: { id: string; quantity?: number | null; paid_at?: string | null },
   clientPaidQtyByItemId: Record<string, number>,
+  order?: { paid_at?: string | null; status?: string | null },
 ): number {
   const orderedQty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
   const fromPayments = Math.max(0, clientPaidQtyByItemId[item.id] ?? 0);
-  return Math.min(
-    orderedQty,
-    fromPayments > 0 ? fromPayments : item.paid_at ? orderedQty : 0,
-  );
+  if (fromPayments > 0) return Math.min(orderedQty, fromPayments);
+  if (item.paid_at) return orderedQty;
+  if (order?.paid_at && String(order.status ?? "").toUpperCase() === "PAID") {
+    return orderedQty;
+  }
+  return 0;
 }
 
 function groupItemsIntoDispatchCards(
@@ -289,12 +292,12 @@ function groupItemsIntoDispatchCards(
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
       if (isExpressOrder) return Math.max(0, Math.floor(Number(item.quantity ?? 0))) > 0;
-      return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId) > 0;
+      return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order) > 0;
     })
     .map((item) => {
       const quantityPaid = isExpressOrder
         ? Math.max(0, Math.floor(Number(item.quantity ?? 0)))
-        : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId);
+        : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
       const quantities = computeOperationalQuantities({
         quantityOrdered: quantityPaid,
         quantityReadyTotal: readyMap[item.id] ?? 0,
@@ -475,7 +478,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         const hasActivePay = ordersWithActivePayment.has(o.id);
         const hasPaidLine = ordersWithPaidLine.has(o.id);
         if (o.status === "PAID") {
-          return !hasAnyPay || hasActivePay;
+          return !!o.paid_at || !hasAnyPay || hasActivePay;
         }
         if (o.status === "READY" || o.status === "SENT_TO_KITCHEN") {
           return hasActivePay || !!o.paid_at || hasPaidLine;
