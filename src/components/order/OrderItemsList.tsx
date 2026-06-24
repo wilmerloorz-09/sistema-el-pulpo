@@ -256,7 +256,10 @@ const OrderItemsList = ({
         const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || alwaysShowControls);
         const draftDisabled = isPending && disableDraftEditing;
         const controlsDisabled = alwaysShowControls ? false : draftDisabled;
-        const displayQuantity = item.quantity;
+        const displayQuantity =
+          item.status === "DRAFT"
+            ? Math.max(item.quantity, Number(item.quantity_ordered ?? 0))
+            : item.quantity;
         const trimmedItemNote = String(item.item_note ?? "").trim();
         const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
         const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
