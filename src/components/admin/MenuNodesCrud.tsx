@@ -602,15 +602,45 @@ const MenuNodesCrud = ({
           }
 
           if (!legacySubcategoryId) {
-            legacySubcategoryId = isTableScope || isBulkScope
-              ? await ensureLegacyCategoryMirror(
+            if (isTableScope || isBulkScope) {
+              legacySubcategoryId = await ensureLegacyCategoryMirror(
+                ancestorCategory.id,
+                ancestorCategory.name,
+                ancestorCategory.parent_id,
+                Number(ancestorCategory.display_order ?? 1) || 1,
+                true,
+              );
+            } else {
+              try {
+                legacySubcategoryId = await resolveTableLegacySubcategoryId(ancestorCategory.id);
+              } catch {
+                legacySubcategoryId = await ensureLegacyCategoryMirror(
                   ancestorCategory.id,
                   ancestorCategory.name,
                   ancestorCategory.parent_id,
                   Number(ancestorCategory.display_order ?? 1) || 1,
                   true,
-                )
-              : await resolveTableLegacySubcategoryId(ancestorCategory.id);
+                );
+              }
+            }
+          }
+
+          if (!isTableScope && !isBulkScope && legacySubcategoryId) {
+            const { data: tableCategoryNode, error: tableCategoryNodeError } = await supabase
+              .from("menu_nodes" as any)
+              .select("id, name, parent_id, display_order, is_active")
+              .eq("id", legacySubcategoryId)
+              .maybeSingle();
+            if (tableCategoryNodeError) throw tableCategoryNodeError;
+            if (tableCategoryNode) {
+              legacySubcategoryId = await ensureLegacyCategoryMirror(
+                tableCategoryNode.id,
+                tableCategoryNode.name,
+                tableCategoryNode.parent_id,
+                Number(tableCategoryNode.display_order ?? 1) || 1,
+                tableCategoryNode.is_active ?? true,
+              );
+            }
           }
 
           const { data: siblingProducts, error: siblingProductsError } = await supabase
@@ -649,6 +679,8 @@ const MenuNodesCrud = ({
             .update({ legacy_product_id: legacyProductId } as any)
             .eq("id", id);
           if (syncLegacyRefError) throw syncLegacyRefError;
+
+          savedMenuNode.legacy_product_id = legacyProductId;
         }
 
         const nextManagedImagePath = uploadedImagePath ?? extractManagedImagePath(imageUrlToPersist);
@@ -690,6 +722,8 @@ const MenuNodesCrud = ({
       }
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
@@ -736,6 +770,8 @@ const MenuNodesCrud = ({
       toast.success(node.is_active ? "Nodo desactivado" : "Nodo activado");
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
@@ -807,6 +843,8 @@ const MenuNodesCrud = ({
       toast.success("Nodo eliminado permanentemente");
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
@@ -838,6 +876,8 @@ const MenuNodesCrud = ({
       toast.success("Arbol Para Llevar copiado desde Arbol Menu Mesa");
       queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });

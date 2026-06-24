@@ -306,12 +306,24 @@ async function fetchMenuProductLookup(params: {
   /** Si viene, los modificadores se resuelven en memoria (sin 3.er round-trip) */
   catalog?: BranchModifiersCatalog | null;
 }): Promise<MenuProductLookupResult> {
+  const { data: freshNode, error: freshNodeError } = await supabase
+    .from("menu_nodes" as any)
+    .select("legacy_product_id")
+    .eq("id", params.node.id)
+    .maybeSingle();
+  if (freshNodeError) throw freshNodeError;
+
+  const resolvedLegacyProductId =
+    typeof freshNode?.legacy_product_id === "string" && freshNode.legacy_product_id.trim().length > 0
+      ? freshNode.legacy_product_id
+      : params.node.legacy_product_id;
+
   const candidateProductIds = Array.from(
     new Set(
       (
         params.node.menu_scope === "TABLE"
-          ? [params.node.id, params.node.legacy_product_id]
-          : [params.node.legacy_product_id, params.node.id]
+          ? [params.node.id, resolvedLegacyProductId]
+          : [resolvedLegacyProductId, params.node.id]
       ).filter((value): value is string => typeof value === "string" && value.trim().length > 0),
     ),
   );
@@ -1969,6 +1981,7 @@ const OrdenesContent = () => {
 
       setSelectedProduct(lookup.product);
       setSelectedProductModifiers(lookup.modifiers);
+      setProductLoadingShell(null);
     } catch (error: any) {
       toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
       setSelectedProduct(null);
@@ -1976,7 +1989,6 @@ const OrdenesContent = () => {
       setProductLoadingShell(null);
     } finally {
       setSelectingProductId(null);
-      setProductLoadingShell(null);
     }
   };
   const canShowConvertToSpecial =
