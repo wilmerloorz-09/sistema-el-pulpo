@@ -360,13 +360,11 @@ export async function buildCombinedHeaderRaster(
         if (isBranchName) {
           ctx.font = "bold 22px monospace";
         } else if (isOrdenLabel) {
-          ctx.font = "bold 24px monospace";
-        } else if (isOrderNumber) {
-          ctx.font = "bold 32px monospace"; // Large order number
-        } else if (isDetailsLine) {
-          ctx.font = "bold 15px monospace"; // Smaller but bold details to ensure sharp print
+          ctx.font = "bold 22px monospace";
+        } else if (isOrderNumber || isDetailsLine) {
+          ctx.font = "bold 20px monospace"; // Both lines after ORDEN print in same size
         } else {
-          ctx.font = "bold 15px monospace";
+          ctx.font = "bold 20px monospace";
         }
         ctx.fillText(line, startX, startY + idx * lineSpacing);
       });
