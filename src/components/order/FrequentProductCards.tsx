@@ -113,7 +113,7 @@ export default function FrequentProductCards({ context, onSelectProduct, disable
                       <ImageIcon className="h-4 w-4 text-muted-foreground/60 sm:h-5 sm:w-5" />
                     )}
                   </div>
-                  <span className="line-clamp-2 w-full text-[9px] font-semibold leading-tight text-foreground sm:text-[10px] sm:leading-snug">
+                  <span className="line-clamp-2 w-full text-[7px] font-semibold leading-[1.1] text-foreground sm:text-[8px] sm:leading-tight">
                     {node.name}
                   </span>
                 </button>
