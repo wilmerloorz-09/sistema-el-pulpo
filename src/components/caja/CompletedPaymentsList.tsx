@@ -487,6 +487,14 @@ export default function CompletedPaymentsList({
 
   const handleDiagnostics = async (payment: PaymentGroup) => {
     try {
+      // Call sync_order_payment_state_internal manually to see if it fixes the state
+      const { error: syncError } = await supabase
+        .rpc("sync_order_payment_state_internal" as any, { p_order_id: payment.order.id });
+        
+      if (syncError) {
+        console.error("Sync error:", syncError);
+      }
+
       const { data: order } = await supabase
         .from("orders")
         .select("id, status, paid_at, order_type, total")
