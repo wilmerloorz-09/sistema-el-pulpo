@@ -2831,9 +2831,7 @@ const OrdenesContent = () => {
               if (!isExpressOrder && canUseCaja && (order?.id || orderId)) {
                 if (
                   !shiftGateQuery.data?.shiftOpen
-                  || shiftGateQuery.data?.cajaStatus !== "OPEN"
-                  || !shift?.denoms
-                  || shift.denoms.length === 0
+                  || shiftGateQuery.data?.cajaStatus === "CLOSED"
                 ) {
                   setShowCajaUnopenedAlert(true);
                   return;
@@ -3935,10 +3933,10 @@ const OrdenesContent = () => {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
               <AlertTriangle className="h-6 w-6 text-amber-500" />
-              Caja no disponible
+              Caja cerrada
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base text-slate-600">
-              La caja no ha sido abierta. Por favor, abre la caja en el módulo de Caja primero.
+              La caja fue cerrada en este turno. Por favor, reabre la caja en el módulo de Caja antes de continuar cobrando.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
