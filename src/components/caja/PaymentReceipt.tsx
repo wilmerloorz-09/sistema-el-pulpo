@@ -22,6 +22,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
       clienteCedula,
       clienteNombre,
       token_promocion,
+      qrCodeDataUrl,
     },
     ref,
   ) => {
@@ -166,7 +167,7 @@ const PaymentReceipt = forwardRef<HTMLDivElement, PaymentReceiptProps>(
             <div style={{ fontWeight: "bold", fontSize: "11px", color: "#000" }}>¡OFERTA MUNDIALISTA!</div>
             <div style={{ fontSize: "9px", color: "#333", textAlign: "center" }}>Escanea el QR para registrar tu predicción</div>
             <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+              src={qrCodeDataUrl || `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
                 `https://sistema-el-pulpo.vercel.app/promociones/registro?t=${token_promocion}`
               )}`}
               alt="QR Promoción"

@@ -6,7 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     url: 'https://sistema-el-pulpo.vercel.app',
-    cleartext: true
+    cleartext: true,
+    errorPath: '/error.html'
   },
   android: {
     adjustMarginsForEdgeToEdge: 'auto'

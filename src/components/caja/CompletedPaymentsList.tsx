@@ -7,6 +7,7 @@ import SupervisorAuthorizationDialog from "@/components/caja/SupervisorAuthoriza
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import QRCode from "qrcode";
 import type {
   CashRefundDenomInput,
   CashShiftCaptureCandidate,
@@ -486,32 +487,52 @@ export default function CompletedPaymentsList({
 
   const handleReprint = async (payment: PaymentGroup) => {
     let token_promocion: string | null = null;
+    let qrCodeDataUrl: string | null = null;
     let clienteCedula: string | undefined = undefined;
     let clienteNombre: string | undefined = undefined;
 
-    try {
-      const { data: orderData } = await supabase
-        .from("orders")
-        .select(`
-          token_promocion,
-          cliente_id,
-          clientes ( cedula, nombres, apellidos )
-        `)
-        .eq("id", payment.order.id)
-        .single();
+    let attempts = 0;
+    while (attempts < 5) {
+      attempts++;
+      try {
+        const { data: orderData } = await supabase
+          .from("orders")
+          .select(`
+            token_promocion,
+            cliente_id,
+            clientes ( cedula, nombres, apellidos )
+          `)
+          .eq("id", payment.order.id)
+          .single();
 
-      if (orderData?.token_promocion) {
-        token_promocion = orderData.token_promocion;
-      }
+        if (orderData) {
+          if (orderData.token_promocion) {
+            token_promocion = orderData.token_promocion;
+          }
 
-      // @ts-ignore - The join works but types might not be perfectly inferred
-      const cliente = orderData?.clientes;
-      if (cliente && !Array.isArray(cliente)) {
-        clienteCedula = cliente.cedula;
-        clienteNombre = `${cliente.nombres} ${cliente.apellidos ?? ""}`.trim() || undefined;
+          // @ts-ignore - The join works but types might not be perfectly inferred
+          const cliente = orderData.clientes;
+          if (cliente && !Array.isArray(cliente)) {
+            clienteCedula = cliente.cedula;
+            clienteNombre = `${cliente.nombres} ${cliente.apellidos ?? ""}`.trim() || undefined;
+          }
+          break;
+        }
+      } catch (err) {
+        console.error(`Reprint attempt ${attempts} failed to fetch order extra details:`, err);
       }
-    } catch (err) {
-      console.error("Error fetching order extra details:", err);
+      if (attempts < 5) {
+        await new Promise((resolveTimeout) => setTimeout(resolveTimeout, 300));
+      }
+    }
+
+    if (token_promocion) {
+      try {
+        const url = `https://sistema-el-pulpo.vercel.app/promociones/registro?t=${token_promocion}`;
+        qrCodeDataUrl = await QRCode.toDataURL(url, { width: 120, margin: 1 });
+      } catch (qrErr) {
+        console.error("Error generating QR code for reprint:", qrErr);
+      }
     }
 
     const receiptItemsMap = new Map<string, { description: string; quantity: number; unitPrice: number; amount: number }>();
@@ -554,6 +575,7 @@ export default function CompletedPaymentsList({
       changeAmount: Math.max(0, (payment.tendered_amount ?? payment.amount) - payment.amount),
       createdAt: payment.created_at,
       token_promocion,
+      qrCodeDataUrl,
       clienteCedula,
       clienteNombre,
     };

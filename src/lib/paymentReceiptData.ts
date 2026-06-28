@@ -15,6 +15,7 @@ export interface PaymentReceiptData {
   clienteCedula?: string;
   clienteNombre?: string;
   token_promocion?: string | null;
+  qrCodeDataUrl?: string | null;
 }
 
 export function datosClienteEnRecibo(cliente: { cedula: string; nombres: string; apellidos: string } | null | undefined): {
