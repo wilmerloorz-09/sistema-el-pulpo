@@ -168,11 +168,7 @@ export default function PaymentDialogV2({
 
   const { data: winningOffer } = useClientWinningOffer(clienteSelection.selectedCliente?.id);
 
-  const discountAmount = useMemo(() => {
-    if (!winningOffer) return 0;
-    if (baseChargeTotal < winningOffer.consumo_minimo) return 0;
-    return roundMoney(winningOffer.monto_descuento_ganado);
-  }, [winningOffer, baseChargeTotal]);
+  const discountAmount = 0;
 
   const orderChargeTotal = roundMoney(Math.max(0, baseChargeTotal - discountAmount));
 
