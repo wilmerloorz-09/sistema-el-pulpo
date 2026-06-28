@@ -99,21 +99,21 @@ export default function FrequentProductCards({ context, onSelectProduct, disable
                     onSelectProduct(node);
                   }}
                   className={cn(
-                    "flex h-[4.35rem] w-[4.65rem] flex-col items-center justify-center gap-1 rounded-xl border border-teal-300/80 bg-white px-1 py-1.5 text-center shadow-sm transition sm:h-[4.75rem] sm:w-[5rem] sm:gap-1.5 sm:rounded-[1rem] sm:px-1.5 sm:py-2",
+                    "flex h-[4.35rem] w-[4.65rem] flex-col items-center justify-center gap-0.5 rounded-xl border border-teal-300/80 bg-white px-0.5 py-1 text-center shadow-sm transition sm:h-[4.75rem] sm:w-[5rem] sm:gap-1 sm:rounded-[1rem] sm:px-1 sm:py-1.5",
                     !disabled && "hover:border-teal-400 hover:bg-teal-50/50 active:scale-[0.98]",
                     disabled && "cursor-not-allowed opacity-60",
                   )}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-teal-50 ring-1 ring-teal-200/70 sm:h-9 sm:w-9 sm:rounded-xl">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-teal-50 ring-1 ring-teal-200/70 sm:h-8 sm:w-8 sm:rounded-xl">
                     {node.image_url ? (
                       <img src={node.image_url} alt={node.name} className="h-full w-full object-cover" />
                     ) : node.icon ? (
-                      <span className="text-base leading-none sm:text-lg">{node.icon}</span>
+                      <span className="text-sm leading-none sm:text-base">{node.icon}</span>
                     ) : (
-                      <ImageIcon className="h-4 w-4 text-muted-foreground/60 sm:h-5 sm:w-5" />
+                      <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/60 sm:h-4 sm:w-4" />
                     )}
                   </div>
-                  <span className="line-clamp-2 w-full text-[7px] font-semibold leading-[1.1] text-foreground sm:text-[8px] sm:leading-tight">
+                  <span className="line-clamp-3 w-full text-[6px] font-medium leading-[1.05] text-foreground sm:text-[7px] sm:leading-[1.1]">
                     {node.name}
                   </span>
                 </button>
