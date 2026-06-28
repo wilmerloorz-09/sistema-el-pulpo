@@ -581,7 +581,7 @@ export default function CompletedPaymentsList({
     };
 
     setReprintData(receipt);
-    toast.info(`DEBUG: token = ${token_promocion}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
+    alert(`DEBUG REPRINT: token = ${token_promocion}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
     setTimeout(() => {
       printPaymentReceipt(receipt).catch((e) => toast.error("Error al reimprimir: " + e.message));
     }, 100);
