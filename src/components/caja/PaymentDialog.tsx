@@ -895,6 +895,7 @@ export default function PaymentDialog({
           qrCodeDataUrl,
         };
 
+        toast.info(`DEBUG: token = ${token_promocion}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
         setPreparedTransferProofSession(null);
         setTransferProofReady(false);
         setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
