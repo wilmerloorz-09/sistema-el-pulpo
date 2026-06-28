@@ -1870,6 +1870,7 @@ const OrdenesContent = () => {
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
+    !order.paid_at &&
     !isLockedFromEditar &&
     hasSentItems;
   const sentItems = itemsToUse.filter((item) => item.status !== "DRAFT");
@@ -2929,7 +2930,7 @@ const OrdenesContent = () => {
                 </Button>
               )}
 
-              {!fromEditar && hasSentItems && canUseEditarOrden && isEditableInCaja && (
+              {!fromEditar && hasSentItems && canUseEditarOrden && isEditableInCaja && !order.paid_at && (
                 <Button
                   variant="outline"
                   className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100"
