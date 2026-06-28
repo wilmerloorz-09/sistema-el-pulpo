@@ -325,8 +325,8 @@ export async function buildCombinedHeaderRaster(
       // Restauramos las proporciones legibles del encabezado
       const logoWidth = 120;
       const logoHeight = Math.floor(img.height * (logoWidth / img.width));
-      const lineSpacing = 32;
-      const textHeight = lines.length * lineSpacing + 12;
+      const lineSpacing = 30;
+      const textHeight = lines.length * lineSpacing + 10;
       const targetHeight = Math.max(logoHeight, textHeight, 110);
 
       canvas.width = targetWidth;
@@ -353,13 +353,13 @@ export async function buildCombinedHeaderRaster(
 
       lines.forEach((line, idx) => {
         if (idx === 0) {
-          ctx.font = "bold 24px monospace";
+          ctx.font = "bold 22px monospace";
         } else if (line === "ORDEN") {
-          ctx.font = "bold 26px monospace";
+          ctx.font = "bold 24px monospace";
         } else if (idx === 2) {
           ctx.font = "bold 32px monospace"; // Large order number
         } else {
-          ctx.font = "bold 20px monospace"; // Bold details to prevent anti-aliasing fade
+          ctx.font = "bold 15px monospace"; // Smaller but bold details to ensure sharp print
         }
         ctx.fillText(line, startX, startY + idx * lineSpacing);
       });
