@@ -352,14 +352,21 @@ export async function buildCombinedHeaderRaster(
       const startY = Math.floor((targetHeight - totalTextHeight) / 2) + Math.floor(lineSpacing / 2);
 
       lines.forEach((line, idx) => {
-        if (idx === 0) {
+        const isBranchName = idx === 0 && line !== "ORDEN";
+        const isOrdenLabel = line === "ORDEN";
+        const isOrderNumber = idx > 0 && lines[idx - 1] === "ORDEN";
+        const isDetailsLine = idx > 1 && lines[idx - 2] === "ORDEN";
+
+        if (isBranchName) {
           ctx.font = "bold 22px monospace";
-        } else if (line === "ORDEN") {
+        } else if (isOrdenLabel) {
           ctx.font = "bold 24px monospace";
-        } else if (idx === 2) {
+        } else if (isOrderNumber) {
           ctx.font = "bold 32px monospace"; // Large order number
-        } else {
+        } else if (isDetailsLine) {
           ctx.font = "bold 15px monospace"; // Smaller but bold details to ensure sharp print
+        } else {
+          ctx.font = "bold 15px monospace";
         }
         ctx.fillText(line, startX, startY + idx * lineSpacing);
       });
