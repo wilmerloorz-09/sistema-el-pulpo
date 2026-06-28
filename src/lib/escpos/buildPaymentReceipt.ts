@@ -47,9 +47,10 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
     enc.bold(true).textSize(false);
     enc.line("ORDEN");
     enc.line(`${input.orderNumber}`);
-    enc.bold(false).textSize(true);
+    enc.textSize(true);
     enc.line(resolveOrderLabel(input));
     enc.line(`${dateStr} ${timeStr}`);
+    enc.bold(false);
     if (input.clienteNombre) {
       enc.line(`Cliente: ${input.clienteNombre}`);
     }

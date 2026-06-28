@@ -39,9 +39,10 @@ export function buildOrderReceiptEscPos(input: OrderReceiptEscPosInput): Uint8Ar
 
   enc.align("center").bold(true).textSize(false);
   enc.line(`ORDEN ${input.orderNumber}`);
-  enc.bold(false).textSize(true);
+  enc.textSize(true);
   enc.line(resolveOrderLabel(input));
   enc.line(`${dateStr} ${timeStr}`);
+  enc.bold(false);
   enc.feed(1);
 
   // Usar Font B y espaciado de 40 para que las líneas estén bien separadas
