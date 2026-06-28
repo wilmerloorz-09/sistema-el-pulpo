@@ -44,10 +44,10 @@ export function buildPaymentReceiptEscPos(input: PaymentReceiptEscPosInput): Uin
       }
     }
 
-    enc.bold(true).textSize(true);
+    enc.bold(true).textSize(false);
     enc.line("ORDEN");
     enc.line(`${input.orderNumber}`);
-    enc.bold(false).textSize(false);
+    enc.bold(false).textSize(true);
     enc.line(resolveOrderLabel(input));
     enc.line(`${dateStr} ${timeStr}`);
     if (input.clienteNombre) {
