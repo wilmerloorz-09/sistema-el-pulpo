@@ -23,7 +23,7 @@ import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
 import type { PaymentReceiptData } from "@/lib/paymentReceiptData";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
-import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed, Printer, ScanSearch, Undo2, Info } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed, Printer, ScanSearch, Undo2 } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -485,60 +485,6 @@ export default function CompletedPaymentsList({
     });
   };
 
-  const handleDiagnostics = async (payment: PaymentGroup) => {
-    try {
-      // Call sync_order_payment_state_internal manually to see if it fixes the state
-      const { error: syncError } = await supabase
-        .rpc("sync_order_payment_state_internal" as any, { p_order_id: payment.order.id });
-        
-      if (syncError) {
-        console.error("Sync error:", syncError);
-      }
-
-      const { data: order } = await supabase
-        .from("orders")
-        .select("id, status, paid_at, order_type, total")
-        .eq("id", payment.order.id)
-        .single();
-
-      const { data: items } = await supabase
-        .from("order_items")
-        .select("id, description_snapshot, quantity, paid_at, status")
-        .eq("order_id", payment.order.id);
-
-      const { data: payments } = await supabase
-        .from("payments")
-        .select("id, amount, notes, created_at")
-        .eq("order_id", payment.order.id);
-
-      const paymentIds = (payments ?? []).map(p => p.id);
-      let paymentItems: any[] = [];
-      if (paymentIds.length > 0) {
-        const { data: pi } = await supabase
-          .from("payment_items")
-          .select("id, payment_id, order_item_id, quantity_paid, total_amount")
-          .in("payment_id", paymentIds);
-        paymentItems = pi ?? [];
-      }
-
-      const { data: snapshot } = await supabase
-        .rpc("get_order_operational_snapshot" as any, { p_order_id: payment.order.id });
-
-      const report = {
-        order,
-        items,
-        payments,
-        paymentItems,
-        snapshot
-      };
-
-      console.log("DIAGNOSTICS REPORT:", report);
-      alert(JSON.stringify(report, null, 2));
-    } catch (e: any) {
-      alert("Error en diagnóstico: " + e.message);
-    }
-  };
-
   const handleReprint = async (payment: PaymentGroup) => {
     let token_promocion: string | null = null;
     let qrCodeDataUrl: string | null = null;
@@ -639,7 +585,6 @@ export default function CompletedPaymentsList({
     };
 
     setReprintData(receipt);
-    alert(`DEBUG REPRINT: token = ${token_promocion}, status = ${dbOrder?.status}, paid_at = ${dbOrder?.paid_at}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
     setTimeout(() => {
       printPaymentReceipt(receipt).catch((e) => toast.error("Error al reimprimir: " + e.message));
     }, 100);
@@ -844,17 +789,6 @@ export default function CompletedPaymentsList({
                         title="Reimprimir ticket"
                       >
                         <Printer className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleDiagnostics(payment);
-                        }}
-                        className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-400 text-white shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(37,99,235,0.23)] active:scale-95"
-                        title="Ver diagnóstico de base de datos"
-                      >
-                        <Info className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
                       </button>
                       {!blockedByState && permissionFlags.canStartVoid && (
                         <button

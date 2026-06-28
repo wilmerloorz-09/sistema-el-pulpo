@@ -608,7 +608,6 @@ export default function PaymentDialogV2({
       wasFullyPaidRef.current = isFullyPaid;
       setWasFullyPaid(isFullyPaid);
       setPostPaySummary(summary);
-      alert(`DEBUG PAY: token = ${token_promocion}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
     } catch (e) {
       console.error("Payment failed", e);
       suppressCloseOnceRef.current = true;

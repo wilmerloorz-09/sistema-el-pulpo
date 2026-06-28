@@ -895,7 +895,6 @@ export default function PaymentDialog({
           qrCodeDataUrl,
         };
 
-        alert(`DEBUG PAY LEGACY: token = ${token_promocion}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
         setPreparedTransferProofSession(null);
         setTransferProofReady(false);
         setTransferProofProgress({ uploadedCount: 0, totalCount: 0 });
