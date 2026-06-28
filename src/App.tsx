@@ -8,8 +8,10 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { BranchProvider, useBranch } from "@/contexts/BranchContext";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { NetworkProvider } from "@/contexts/NetworkContext";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { initSyncListeners } from "@/services/SyncService";
+import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useCaja } from "@/hooks/useCaja";
 import { Download, Share2, X, AlertTriangle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
@@ -90,6 +92,36 @@ const LoadingScreen = () => (
   </div>
 );
 
+const CajaAutoOpener = () => {
+  const { data: shiftGate } = useBranchShiftGate();
+  const { openCashRegister } = useCaja();
+  const openingRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      shiftGate?.shiftOpen &&
+      shiftGate?.userEnabled &&
+      shiftGate?.canUseCaja &&
+      shiftGate?.cajaStatus === "UNOPENED" &&
+      !openingRef.current
+    ) {
+      openingRef.current = true;
+      openCashRegister.mutateAsync({ counts: [] })
+        .then(() => {
+          console.log("[CajaAutoOpener] Caja abierta automáticamente.");
+        })
+        .catch((err) => {
+          console.error("[CajaAutoOpener] Error al abrir la caja automáticamente:", err);
+        })
+        .finally(() => {
+          openingRef.current = false;
+        });
+    }
+  }, [shiftGate, openCashRegister]);
+
+  return null;
+};
+
 const AuthGate = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
 
@@ -159,7 +191,12 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <CajaAutoOpener />
+      {children}
+    </>
+  );
 };
 
 const HomeRedirect = () => {

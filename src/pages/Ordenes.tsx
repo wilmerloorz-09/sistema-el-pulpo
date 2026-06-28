@@ -873,7 +873,8 @@ const OrdenesContent = () => {
     payOrder, 
     prepareTransferProof, 
     discardPreparedTransferProof, 
-    getTransferProofReadiness 
+    getTransferProofReadiness,
+    openCashRegister
   } = useCaja();
 
   // Denominaciones del cliente se usan directamente en PaymentDialogV2 (independiente de plantilla).
