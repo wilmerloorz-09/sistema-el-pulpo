@@ -491,6 +491,7 @@ export default function CompletedPaymentsList({
     let clienteCedula: string | undefined = undefined;
     let clienteNombre: string | undefined = undefined;
 
+    let dbOrder: any = null;
     let attempts = 0;
     while (attempts < 5) {
       attempts++;
@@ -499,6 +500,8 @@ export default function CompletedPaymentsList({
           .from("orders")
           .select(`
             token_promocion,
+            status,
+            paid_at,
             cliente_id,
             clientes ( cedula, nombres, apellidos )
           `)
@@ -506,6 +509,7 @@ export default function CompletedPaymentsList({
           .single();
 
         if (orderData) {
+          dbOrder = orderData;
           if (orderData.token_promocion) {
             token_promocion = orderData.token_promocion;
           }
@@ -581,7 +585,7 @@ export default function CompletedPaymentsList({
     };
 
     setReprintData(receipt);
-    alert(`DEBUG REPRINT: token = ${token_promocion}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
+    alert(`DEBUG REPRINT: token = ${token_promocion}, status = ${dbOrder?.status}, paid_at = ${dbOrder?.paid_at}, qr = ${qrCodeDataUrl ? "OK" : "null"}`);
     setTimeout(() => {
       printPaymentReceipt(receipt).catch((e) => toast.error("Error al reimprimir: " + e.message));
     }, 100);
