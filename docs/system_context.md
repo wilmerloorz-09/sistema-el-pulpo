@@ -263,8 +263,9 @@
 - Una misma orden no debe aparecer simultaneamente en `Pagada` y `Despachada`; si la cabecera esta `KITCHEN_DISPATCHED`, pertenece a `Despachada`.
 - La pestana `Pagadas` debe mostrar ordenes especiales `PAID` aunque no tengan cantidades cobradas visibles por `payment_items`; en ese caso usa los items reales como detalle visual y `special_total_manual` como valor presentado de la orden.
 - En toda superficie donde se visualicen ordenes, debe mostrarse el usuario que genero la orden a partir de `orders.created_by`.
-- El nombre visible del generador se resuelve desde `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`; si no hay datos disponibles, usar `Usuario`.
-- Esta visibilidad aplica a Ordenes, detalle de orden, Cocina, Despacho, Caja, pagos completados, Mesas/Editar Orden y Reportes.
+- El identificador visible del usuario en operación es **`profiles.alias`** (sin `@`), resuelto vía `src/lib/userDisplay.ts` (`getUserDisplayName`, `getUserAlias`, `buildUserDisplayMap`). No usar `first_name` / `full_name` en reportes, caja, turnos, despacho ni listados operativos.
+- El nombre real (`getUserRealName`: nombres + apellidos) solo se muestra en administración de usuarios y como subtítulo bajo el alias en menú/cuenta.
+- Esta visibilidad aplica a Ordenes, detalle de orden, Cocina, Despacho, Caja, pagos completados, Mesas/Editar Orden, Reportes (Cajero, Creador orden, CSV) y Monitoreo Global.
 - `CancelOrderDialog` sigue el modelo de doble lista.
 - La solicitud de anulacion pendiente ya es parte base del flujo operativo:
   - `create_pending_order_cancellation_request(...)`
@@ -326,7 +327,8 @@
 
 ### 9. Usuarios
 - Crear/editar usuario incluye datos de contacto extendidos:
-  - nombre de usuario
+  - nombre de usuario (`username`, login interno)
+  - **alias** (identificador operativo unico, solo letras y numeros, visible en todo el sistema)
   - cedula
   - nombres
   - apellidos
@@ -338,18 +340,23 @@
   - sucursal
 - Validaciones vigentes:
   - nombre de usuario: solo letras y numeros
+  - **alias:** solo letras y numeros; unico sin distinguir mayusculas (`idx_profiles_alias_unique_ci`)
   - cedula: solo numeros, exactamente 10 digitos
   - nombres: solo letras y espacios
   - apellidos: solo letras y espacios
   - correo: formato valido
   - telefono: solo numeros, exactamente 10 digitos
   - contrasena: minimo 6 caracteres
+- **Login:** el usuario puede autenticarse con **correo**, **nombre de usuario** o **alias** (Edge Function `login-with-identifier`).
+- `username` y `alias` conviven: `username` sigue siendo credencial de login; `alias` es el nombre publico en operacion.
+- Usuarios existentes: migracion inicial `alias = username`.
 - El combo de sucursal permite `Sin sucursal` para usuarios operativos.
 - La sucursal solo es obligatoria para usuarios con rol supervisor.
-- `profiles.first_name` es el nombre visible principal del sistema.
-- `profiles.last_name` conserva apellidos para administracion, busqueda y edicion.
-- `profiles.full_name` se mantiene como compatibilidad legacy, pero `sync_profile_full_name()` lo sincroniza para reflejar `first_name`.
-- En listados compactos de usuario se muestra `Nombres` y nombre de usuario; no se debe agregar cedula/telefono salvo que la pantalla sea de administracion o detalle.
+- `profiles.first_name` y `profiles.last_name` son datos legales/administrativos.
+- `profiles.full_name` se mantiene como compatibilidad legacy; `sync_profile_full_name()` refleja `first_name`.
+- **Tabla de usuarios (admin):** columnas separadas **Usuario** (nombre real) y **Alias** (identificador operativo).
+- **Menu / cuenta:** alias arriba, nombre real abajo (`AppLayout`, `SidebarNav`).
+- En listados operativos compactos mostrar **alias**; cedula/telefono/nombre real solo en administracion o detalle.
 
 ## Cambios recientes que ya deben considerarse base
 
@@ -572,5 +579,6 @@
 - **Purga de órdenes fantasma:** Triggers que cancelan automáticamente órdenes activas sin items. Funciones `purge_empty_order` / `purge_empty_orders_for_branch`. Filtro `item_count > 0` en UI de ParaLlevar y Express.
 
 ### Actualizacion Jun 28, 2026
+- **Alias de usuario (identificador operativo):** Nueva columna `profiles.alias` (NOT NULL, unico case-insensitive, alfanumerico). Backfill `alias = username`. Migracion `20260628120000_add_profile_alias.sql`. RPCs actualizadas: `handle_new_user`, `admin_list_users_access`, `list_shift_users_for_branch`. Edge Functions: `login-with-identifier`, `create-user`, `void-payment` aceptan correo/usuario/alias. Frontend: `src/lib/userDisplay.ts` centraliza `getUserAlias`, `getUserDisplayName` (alias en operacion), `getUserRealName` (nombre legal). Reportes, caja, turnos y ordenes muestran alias; admin muestra nombre real + alias; menu muestra alias arriba y nombre abajo.
 - **Unificación del Canal de Descuentos Promocionales en Checkout**: Se desactivó la reducción automática de totales por "Descuento por Oferta Pasada" (`discountAmount`) en [PaymentDialogV2.tsx](file:///c:/sistema-el-pulpo/src/components/caja/PaymentDialogV2.tsx) para evitar que los pronósticos ganados se apliquen por partida doble al estar también en el Monedero Promocional (Saldo a Favor). Ahora, los cobros se gestionan limpiamente a través de la casilla de saldo a favor del monedero del cliente.
 - **Sincronización de Base de Datos para Pronósticos Ganados**: Se actualizó la función trigger `procesar_pago_saldo_fifo()` para que cuando un cliente pague usando su saldo promocional, el cupón de la predicción correspondiente se marque automáticamente como usado (`cupon_usado_el = now()`), previniendo fugas y manteniendo la consistencia de auditoría. Se corrigió además la función `cerrar_oferta_campana` que estaba omitiendo la asignación de montos ganados y la creación de saldos en el monedero al calificar partidos.

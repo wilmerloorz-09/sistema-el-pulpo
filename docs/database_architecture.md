@@ -30,9 +30,12 @@
 
 ### 1. Identidad y acceso
 - `profiles`
-  - `first_name`: nombres, campo visible principal del sistema.
+  - `username`: credencial de login (alfanumerico).
+  - `alias`: identificador operativo unico visible en todo el sistema (alfanumerico, sin `@`). Indice unico case-insensitive `idx_profiles_alias_unique_ci`.
+  - `first_name`: nombres, campo administrativo/legal.
   - `last_name`: apellidos, usado en administracion/busqueda.
   - `full_name`: compatibilidad legacy; debe reflejar `first_name` por `sync_profile_full_name()`.
+- Login: correo, `username` o `alias` (Edge Function `login-with-identifier`).
 - `user_branches`
 - `user_branch_roles`
 - `user_branch_modules`
@@ -167,7 +170,8 @@
 ### Ordenes
 - `orders.cliente_id` vincula al comensal opcional; no confundir con `orders.created_by` (usuario interno que creó la orden).
 - `orders.created_by` es la fuente del usuario que genero la orden y debe acompañar las lecturas operativas visibles.
-- Para mostrar el nombre, resolver contra `profiles.first_name`, luego `profiles.full_name`, luego `profiles.username`, luego `profiles.email`, con fallback `Usuario`.
+- Para mostrar el usuario en operacion, resolver **`profiles.alias`** via `getUserDisplayName()` / `getProfileLabel()` en `src/lib/userDisplay.ts` y `useReportesOnlineData.ts`. Fallback a `username` si falta alias. No usar `first_name` / `full_name` en UI operativa ni reportes.
+- `getUserRealName()` devuelve nombre legal (nombres + apellidos) solo para admin y subtitulo de cuenta.
 - `orders.menu_scope` conserva el arbol visual usado por la orden.
 - `orders.is_special` y `orders.special_total_manual` modelan `Orden Especial`.
 - En `Orden Especial`, `special_total_manual` es el valor manual visible/cobrable. No asumir que coincide con `orders.total` ni con `sum(order_items.total)`.
@@ -457,6 +461,12 @@
 - `20260502103000_profile_full_name_reflects_first_name.sql`
 - `20260502104500_reload_postgrest_schema.sql`
 
+### Perfiles y alias (2026-06-28)
+- `20260628120000_add_profile_alias.sql`
+  - Columna `profiles.alias` (NOT NULL, unico case-insensitive, check alfanumerico).
+  - Backfill `alias = username` (sufijo numerico si colision por mayusculas).
+  - Actualiza `handle_new_user`, `admin_list_users_access`, `list_shift_users_for_branch`.
+
 ## Reglas de integridad
 1. No asumir que `menu_nodes` ya reemplazo la FK de `order_items.product_id`.
 2. No confundir cierre de caja con cierre de turno.
@@ -467,7 +477,7 @@
 7. Los resets operativos deben limpiar session locks en `profiles`, incluidas columnas de sesion secundaria, para evitar bloqueos heredados.
 8. Si se cambia envio, cobro o despacho de ordenes, respetar el flujo global Caja - Despacho; no basar la regla en sucursal ni solo en `orders.order_type`.
 10. La eliminacion completa de orden no puede saltarse la regla de estados: todos los items deben estar en borrador o en caja, con validacion inmediata antes de ejecutar.
-11. Los cambios de perfil deben preservar `first_name`, `last_name` y la compatibilidad legacy de `full_name`.
+11. Los cambios de perfil deben preservar `first_name`, `last_name`, `alias`, `username` y la compatibilidad legacy de `full_name`.
 9. Los cambios en `Editar Orden` o navegación desde Mesas deben preservar el contexto original del Sidebar y BottomNav mediante el parámetro `origin`.
 12. El sistema de resaltado usa `forceActive` y `suppressActive` para garantizar que la sección de origen (Mesas u Ordenes) permanezca marcada correctamente.
 13. Si se toca `Despacho`, preservar una sola tarjeta/fila por orden pagada; no partir la misma orden por tiempos de envio de items.
@@ -509,5 +519,6 @@
 - **Purga de órdenes fantasma (`20260623170000`):** Triggers actualizados para cancelar automáticamente órdenes activas TAKEOUT/EXPRESS que queden sin items. Funciones `purge_empty_order` y `purge_empty_orders_for_branch` para limpieza manual. Filtro estricto `item_count > 0` en UI de ParaLlevar y Express.
 
 ### Actualizacion Jun 28, 2026
+- **Alias de usuario:** `profiles.alias` como identificador operativo unico. Login con correo/usuario/alias. Reportes y operacion muestran alias; admin conserva nombre real + alias. Ver migracion `20260628120000_add_profile_alias.sql` y `src/lib/userDisplay.ts`.
 - **Sincronización de Estado de Cupón en Monedero Promocional**: Se modificó la función trigger del monedero `procesar_pago_saldo_fifo()` para que cuando se consuma un crédito promocional de un cliente mediante el pago, se marque automáticamente el registro de la predicción correspondiente como usado (`cupon_usado_el = now()`). También se maneja el caso de devolución o anulación de pago regresando el cupón a estado no usado (`cupon_usado_el = NULL`).
 - **Función de Cierre de Campaña Corregida**: Se corrigió la función `cerrar_oferta_campana` en Supabase para asegurar que al calificar predicciones como ganadoras, se calcule el `monto_descuento_ganado` y se cree la fila de crédito promocional en la tabla `creditos_promocionales_clientes`, resolviendo la omisión introducida accidentalmente en la actualización de marcadores.

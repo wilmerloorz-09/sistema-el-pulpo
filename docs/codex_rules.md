@@ -180,7 +180,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Excepción documentada:** `payOrder` puede validar cantidad cobrable en modo `CASH_THEN_DISPATCH` sin ese RPC, usando `order_items` y cancelaciones aplicadas; no copiar ese atajo a Despacho/Cocina sin revisión.
 - No reconstruir cantidades criticas con formulas ad hoc en modulos que ya dependen del snapshot comun.
 - Toda pantalla que visualiza ordenes debe mostrar el usuario creador desde `orders.created_by`.
-- Resolver nombres de usuario con el helper central (`first_name`, `full_name`, `username`, `email`, `Usuario`) y no duplicar fallbacks distintos por pantalla.
+- Resolver el identificador visible del usuario con `src/lib/userDisplay.ts` (`getUserDisplayName` / `getUserAlias` → `profiles.alias`; fallback a `username`). No duplicar fallbacks distintos por pantalla ni usar `first_name` / `full_name` en operacion o reportes. `getUserRealName()` solo para admin y subtitulo de cuenta.
 - El modulo `Ordenes` debe mantener las pestanas visibles en este orden exacto: `Borrador`, `En Caja`, `Pagada`, `Despachada`, `Anulada`.
 - `Pendiente de anulacion` no debe reintroducirse como pestana principal; es un estado/marca operativa que bloquea acciones y se muestra en el detalle.
 - `Borrador` debe listar ordenes con al menos un item activo agregado y no enviado a Caja; si una orden aun no tiene `order_code` / `order_number`, debe permanecer en `Borrador` mientras sus items no esten pagados ni anulados.
@@ -229,8 +229,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### Frontend
 - **Manejo de Feedback:** Usar `sonner` toasts para todas las notificaciones operativas y errores de validación, garantizando una experiencia de usuario consistente y no intrusiva.
-- En usuarios, no reintroducir `Nombre completo` como campo principal; usar `Nombres` (`profiles.first_name`) y `Apellidos` (`profiles.last_name`).
-- En listados compactos de usuarios, mostrar `Nombres` y nombre de usuario; no agregar cedula/telefono fuera de administracion o detalle.
+- En usuarios, no reintroducir `Nombre completo` como campo principal; usar `Nombres` (`profiles.first_name`), `Apellidos` (`profiles.last_name`) y **Alias** (`profiles.alias`, obligatorio, alfanumerico, unico).
+- En listados compactos operativos mostrar **alias** (sin `@`); nombre real, cedula y telefono solo en administracion o detalle. En admin de usuarios: columnas separadas nombre real + alias.
+- Login acepta correo, `username` o `alias` (`login-with-identifier`).
 - Si tocas catalogo, validar `Ordenes`, `Despacho`, `Caja`, ticket y vistas derivadas.
 - Si tocas anulacion de pagos, validar `CompletedPaymentsList`, `PaymentReversalModal`, `useCaja`, `Mesas`, `order_cancellations`, orden historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` y orden sucesora activa con `SUCCESSOR_OF_VOIDED_ORDER`.
 - Si tocas `Unir/Dividir`, validar `MergeSplitOrdersDialog`, `Ordenes`, `Mesas` y cantidades movibles vs cantidades pagadas.
@@ -253,7 +254,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si cambias una RPC critica, revisar firmas legacy si el frontend todavia tiene compatibilidad temporal.
 - Toda tabla nueva o cambio de acceso requiere revisar RLS/policies.
 - Si agregas columnas de sesion/perfil operativo, actualiza los resets para limpiar valores efimeros.
-- Si cambias columnas de perfil, preservar `profiles.first_name`, `profiles.last_name` y la compatibilidad legacy de `profiles.full_name`.
+- Si cambias columnas de perfil, preservar `profiles.first_name`, `profiles.last_name`, `profiles.alias`, `profiles.username` y la compatibilidad legacy de `profiles.full_name`.
 
 ## Checklist minimo antes de cerrar una tarea
 1. Si hubo cambio de codigo, correr verificacion tecnica adecuada.
@@ -287,6 +288,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 15. Si se toca Despacho, validar pestaña unificada Para llevar/Express, Extra en Mesa/Todos, una tarjeta por `order_code`, **Despachar todo**, batch snapshots (`20260602140000`) y tablet 1280px.
 16. Si se toca Promociones, validar selector multi-campaña, filtro `campana_id` en predicciones existentes, `paid_at` para elegibles y migración `20260611180000`.
 17. Si se toca cliente en cobro/promoción, reutilizar `PaymentClienteCard`; no duplicar búsqueda solo por cédula.
+18. Si se toca identidad de usuario, validar `profiles.alias` (unico case-insensitive), login con correo/usuario/alias, `src/lib/userDisplay.ts` en reportes/caja/turnos y nombre real solo en admin.
+
+### Actualizacion Jun 28, 2026
+- **Alias de usuario:** `profiles.alias` como identificador operativo unico. Migracion `20260628120000_add_profile_alias.sql`. Helper central `src/lib/userDisplay.ts`. No mostrar `first_name`/`full_name` en UI operativa ni reportes.
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.

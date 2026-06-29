@@ -64,7 +64,7 @@
 ### 5. Ordenes
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
 - Las lecturas de orden deben incluir `orders.created_by` cuando la pantalla visualiza ordenes.
-- El nombre del creador se resuelve con `src/lib/userDisplay.ts` desde `profiles.first_name`, `full_name`, `username`, `email` o `Usuario`.
+- El identificador del creador se resuelve con `src/lib/userDisplay.ts`: **`profiles.alias`** en operacion (sin `@`); fallback a `username`. No usar `first_name` / `full_name` en tarjetas, caja ni reportes.
 - El envio de borradores usa `submit_order_draft_items(...)`; mesa, para llevar y orden especial quedan primero cobrables en Caja.
 - Despacho recibe la orden despues del pago.
 - Despacho no debe dividir una misma orden por marcas de tiempo de `order_items.sent_to_kitchen_at`; la unidad visible es la orden completa con cantidades pendientes agregadas.
@@ -271,10 +271,13 @@
 - Etiquetas de tipo de orden en tarjetas: `getOrderTypeLabel` (`DINE_IN` → Mesa, etc.).
 
 ### 14. Usuarios
-- Crear/editar usuario incluye datos de contacto extendidos: nombres, apellidos, cedula, direccion, telefono.
-- `profiles.first_name` y `profiles.last_name` son los campos administrables para usuario.
+- Crear/editar usuario incluye datos de contacto extendidos: nombres, apellidos, **alias**, cedula, direccion, telefono.
+- `profiles.alias`: identificador operativo unico (solo letras y numeros, sin `@`), visible en todo el sistema operativo.
+- `profiles.username`: credencial de login interna; convive con `alias`.
+- `profiles.first_name` y `profiles.last_name` son datos legales/administrativos.
 - `profiles.full_name` queda como compatibilidad legacy y debe reflejar `first_name` mediante `sync_profile_full_name()`.
-- En vistas compactas se muestra `Nombres` y nombre de usuario; cedula/telefono quedan para administracion o detalle.
+- Login: correo, `username` o `alias` (Edge Function `login-with-identifier`).
+- En operacion y reportes mostrar **alias** (`getUserDisplayName`); en admin nombre real + alias; en menu/cuenta alias arriba y nombre real abajo.
 - La sucursal es opcional para operativos (Sin sucursal es valido) y obligatoria para supervisores.
 - El acceso se deriva del turno habilitado para operativos sin sucursal fija.
 
@@ -341,6 +344,10 @@
   - `src/components/BottomNav.tsx`
   - `src/hooks/useBranchShiftGate.ts`
   - `src/components/nav/useVisibleNavItems.tsx` (grupo PROMOCIONES)
+- Usuarios e identidad:
+  - `src/lib/userDisplay.ts` (`getUserAlias`, `getUserDisplayName`, `getUserRealName`, `buildUserDisplayMap`)
+  - `src/components/admin/UsersCrud.tsx`, `AddUserDialog.tsx`, `EditUserDialog.tsx`
+  - `supabase/functions/login-with-identifier`, `create-user`, `void-payment`
 
 ## Principios vigentes
 1. Refactor incremental, no corte brusco del modelo legacy.
@@ -351,7 +358,7 @@
 6. Si se toca `Unir/Dividir`, preservar pagos, historial y numeracion operativa.
 7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final (Aceptar cambios).
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
-9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` usando la resolucion central de perfil.
+9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` resolviendo **`profiles.alias`** via `src/lib/userDisplay.ts` (no nombre real).
 10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
@@ -370,6 +377,10 @@
 25. **Promociones:** Mantener selector de campaña cuando hay varias activas; no volver a `obtenerCampanaActiva` con `limit 1` en operativo.
 26. **Cliente en promociones/cobro:** Reutilizar `PaymentClienteCard`; no duplicar flujo solo por cédula de 10 dígitos.
 27. **Elegibles:** Filtrar predicciones por `campana_id`; criterio de pago = `paid_at`, no solo cabecera `PAID`.
+28. **Alias de usuario:** En operacion y reportes usar `profiles.alias` via `userDisplay.ts`; no reintroducir nombre real ni prefijo `@` en listados operativos.
+
+### Actualizacion Jun 28, 2026
+- **Alias de usuario:** Columna `profiles.alias`, migracion `20260628120000_add_profile_alias.sql`, helper `src/lib/userDisplay.ts`, login con correo/usuario/alias, reportes y caja muestran alias.
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.
