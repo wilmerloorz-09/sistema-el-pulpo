@@ -391,7 +391,7 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
   const creatorIds = Array.from(new Set(takeoutOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
   const creatorProfiles = creatorIds.length > 0
     ? await dbSelect<any>("profiles", {
-        select: "id, first_name, full_name, username, email",
+        select: "id, first_name, full_name, username, alias, email",
         filters: [{ column: "id", op: "in", value: creatorIds }],
       })
     : [];
@@ -452,7 +452,7 @@ export async function fetchExpressSiblingOrders(branchId: string): Promise<Sibli
   const creatorIds = Array.from(new Set(expressOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
   const creatorProfiles = creatorIds.length > 0
     ? await dbSelect<any>("profiles", {
-        select: "id, first_name, full_name, username, email",
+        select: "id, first_name, full_name, username, alias, email",
         filters: [{ column: "id", op: "in", value: creatorIds }],
       })
     : [];
@@ -506,7 +506,7 @@ export async function fetchExtraSiblingOrders(
   const creatorIds = Array.from(new Set(extraOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
   const creatorProfiles = creatorIds.length > 0
     ? await dbSelect<any>("profiles", {
-        select: "id, first_name, full_name, username, email",
+        select: "id, first_name, full_name, username, alias, email",
         filters: [{ column: "id", op: "in", value: creatorIds }],
       })
     : [];
@@ -582,7 +582,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     }),
     order.created_by
       ? dbSelect<any>("profiles", {
-          select: "id, first_name, full_name, username, email",
+          select: "id, first_name, full_name, username, alias, email",
           filters: [{ column: "id", op: "eq", value: order.created_by }],
         })
       : Promise.resolve([]),

@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { useAppVersion } from "@/hooks/useAppVersion";
-import { getUserDisplayName } from "@/lib/userDisplay";
+import { getUserDisplayName, getUserRealName } from "@/lib/userDisplay";
 import { isMesasListOrigin } from "@/lib/mesasFlow";
 
 interface SidebarNavProps {
@@ -46,8 +46,9 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
-  const accountLabel = getUserDisplayName(profile);
-  const initials = getInitials(accountLabel);
+  const accountAlias = getUserDisplayName(profile);
+  const accountRealName = getUserRealName(profile);
+  const initials = getInitials(accountAlias);
   const location = useLocation();
   const navigate = useNavigate();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
@@ -317,7 +318,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                   {profile?.avatar_url ? (
                     <img
                       src={profile.avatar_url}
-                      alt={accountLabel}
+                      alt={accountAlias}
                       className="h-full w-full object-cover"
                     />
                   ) : initials ? (
@@ -326,11 +327,19 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
                     <UserRound className="h-4 w-4" />
                   )}
                 </span>
-                <span className="truncate text-xs font-bold text-slate-200">{accountLabel}</span>
+                <div className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-xs font-bold text-slate-200">{accountAlias}</span>
+                  {accountRealName ? (
+                    <span className="block truncate text-[10px] font-medium text-slate-500">{accountRealName}</span>
+                  ) : null}
+                </div>
                 <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500">Rol: {profile?.role_name ?? "Usuario"}</span>
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{accountLabel}</TooltipContent>
+            <TooltipContent side="right">
+              {accountAlias}
+              {accountRealName ? ` · ${accountRealName}` : ""}
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>

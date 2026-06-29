@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { DispatchType } from "@/types/cancellation";
+import { getUserAlias } from "@/lib/userDisplay";
 
 interface DispatchConfigProps {
   enabledUserIds?: string[];
@@ -37,7 +38,7 @@ export default function DispatchConfig({
 }: DispatchConfigProps) {
   const { activeBranchId } = useBranch();
   const { config, assignments, isLoading, updateConfig, updateAssignment, removeAssignment } = useDispatchConfig();
-  const [dispatchUsers, setDispatchUsers] = useState<Array<{ id: string; username: string; full_name: string }>>([]);
+  const [dispatchUsers, setDispatchUsers] = useState<Array<{ id: string; username: string; alias: string; full_name: string }>>([]);
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [selectedType, setSelectedType] = useState<DispatchType>("TABLE");
   const isControlled = Boolean(configOverride && onConfigChange && onAssignmentsChange);
@@ -54,7 +55,7 @@ export default function DispatchConfig({
       try {
         const { data: branchUsers } = await supabase
           .from("user_branches")
-          .select("user_id, profiles!inner(id, full_name, username)")
+          .select("user_id, profiles!inner(id, full_name, username, alias)")
           .eq("branch_id", activeBranchId);
 
         if (branchUsers) {
@@ -62,7 +63,8 @@ export default function DispatchConfig({
             .map((bu: any) => ({
               id: bu.user_id,
               username: bu.profiles?.username || "",
-              full_name: bu.profiles?.full_name || bu.profiles?.username || "Usuario",
+              alias: bu.profiles?.alias || bu.profiles?.username || "",
+              full_name: bu.profiles?.full_name || getUserAlias(bu.profiles) || "Usuario",
             }))
             .filter((u, idx, arr) => arr.findIndex((x) => x.id === u.id) === idx);
 
@@ -225,7 +227,7 @@ export default function DispatchConfig({
                 <option value="">Selecciona despachador...</option>
                 {availableDispatchUsers.map((user) => (
                   <option key={user.id} value={user.id}>
-                    {user.full_name}{user.username ? ` (@${user.username})` : ""}
+                    {getUserAlias(user)}
                   </option>
                 ))}
               </select>

@@ -67,6 +67,7 @@ import {
   mapPersistedCajaSetup,
   removeCashierFromSetup,
 } from "@/lib/shiftCajaSetupModel";
+import { getUserAlias } from "@/lib/userDisplay";
 import {
   useDispatchConfig,
   type DispatchAssignment,
@@ -85,6 +86,7 @@ interface ShiftUserRow {
   user_id: string;
   full_name: string;
   username: string;
+  alias?: string;
   is_profile_active: boolean;
   is_enabled: boolean;
   can_serve_tables: boolean;
@@ -140,7 +142,7 @@ const OPERATIVE_ROLE_KEYS: Array<
 function formatCajaSetupSummary(rows: ShiftUserRow[], setup: ShiftCajaSetupState) {
   const labelFor = (userId: string) => {
     const row = rows.find((item) => item.user_id === userId);
-    return row?.full_name || row?.username || "Usuario";
+    return row?.full_name || getUserAlias(row) || "Usuario";
   };
   return formatCajaSetupSummaryText(labelFor, setup);
 }
@@ -908,6 +910,7 @@ const ShiftSetupAdmin = () => {
         user_id: row.user_id,
         full_name: row.full_name,
         username: row.username,
+        alias: row.alias ?? row.username,
       })),
     [shiftUsersState],
   );
@@ -1143,7 +1146,7 @@ const ShiftSetupAdmin = () => {
     const usersWithoutOperationalRole = shiftUsersState
       .filter((userState) => !hasOperationalCapability(userState))
       .map(
-        (userState) => userState.full_name || userState.username || "Usuario",
+        (userState) => userState.full_name || getUserAlias(userState) || "Usuario",
       );
 
     if (usersWithoutOperationalRole.length > 0) {
@@ -1249,7 +1252,7 @@ const ShiftSetupAdmin = () => {
   const verifyCurrentUserPassword = async (password: string) => {
     if (!user) throw new Error("No hay usuario autenticado");
 
-    const identifier = profile?.username || profile?.email || user.email;
+    const identifier = profile?.alias || profile?.username || profile?.email || user.email;
     if (!identifier) {
       throw new Error(
         "No se pudo identificar al usuario actual para validar la contrasena.",
@@ -1359,7 +1362,7 @@ const ShiftSetupAdmin = () => {
       (branchUser) => branchUser.user_id === selectedUserToAdd,
     );
     const selectedUserName =
-      selectedUser?.full_name || selectedUser?.username || "El usuario";
+      selectedUser?.full_name || getUserAlias(selectedUser) || "El usuario";
 
     setCheckingUserToAdd(true);
     try {
@@ -1407,7 +1410,7 @@ const ShiftSetupAdmin = () => {
     if (role === "can_pack_orders" && value === true) {
       const existingPacker = shiftUsersState.find((u) => u.can_pack_orders && u.user_id !== userId);
       if (existingPacker) {
-        toast.error(`Solo puede haber un Empacador por turno. ${existingPacker.full_name || existingPacker.username} ya tiene este permiso.`);
+        toast.error(`Solo puede haber un Empacador por turno. ${existingPacker.full_name || getUserAlias(existingPacker)} ya tiene este permiso.`);
         return;
       }
     }
@@ -1791,8 +1794,9 @@ const ShiftSetupAdmin = () => {
         const label =
           shiftUsersState.find((row) => row.user_id === entry.user_id)
             ?.full_name ||
-          shiftUsersState.find((row) => row.user_id === entry.user_id)
-            ?.username ||
+          getUserAlias(
+            shiftUsersState.find((row) => row.user_id === entry.user_id),
+          ) ||
           "Usuario";
         shiftUserConflicts.push(
           `${label} (turno abierto en ${conflict.branch_name ?? "otra sucursal"})`,
@@ -2504,10 +2508,7 @@ const ShiftSetupAdmin = () => {
                         key={branchUser.user_id}
                         value={branchUser.user_id}
                       >
-                        {branchUser.full_name ||
-                          branchUser.username ||
-                          "Usuario"}{" "}
-                        {branchUser.username ? `(@${branchUser.username})` : ""}
+                        {getUserAlias(branchUser) || "Usuario"}
                       </option>
                     ))}
                   </select>
@@ -2562,9 +2563,7 @@ const ShiftSetupAdmin = () => {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="truncate text-[13px] font-bold text-foreground">
-                              {branchUser.full_name ||
-                                branchUser.username ||
-                                "Usuario"}
+                              {getUserAlias(branchUser) || "Usuario"}
                             </p>
                             {userState?.is_supervisor && (
                               <Badge
@@ -2575,9 +2574,6 @@ const ShiftSetupAdmin = () => {
                               </Badge>
                             )}
                           </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            @{branchUser.username}
-                          </p>
                         </div>
                         <Button
                           type="button"

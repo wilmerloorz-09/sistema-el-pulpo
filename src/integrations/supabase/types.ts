@@ -2334,6 +2334,7 @@ export type Database = {
       profiles: {
         Row: {
           active_branch_id: string | null
+          alias: string
           avatar_url: string | null
           branch_id: string | null
           created_at: string
@@ -2358,6 +2359,7 @@ export type Database = {
         }
         Insert: {
           active_branch_id?: string | null
+          alias: string
           avatar_url?: string | null
           branch_id?: string | null
           created_at?: string
@@ -2382,6 +2384,7 @@ export type Database = {
         }
         Update: {
           active_branch_id?: string | null
+          alias?: string
           avatar_url?: string | null
           branch_id?: string | null
           created_at?: string
@@ -3740,6 +3743,7 @@ export type Database = {
           is_supervisor: boolean
           user_id: string
           username: string
+          alias: string
         }[]
       }
       mark_order_quantities_ready: {

@@ -38,22 +38,42 @@ Deno.serve(async (req) => {
     let resolvedEmail = normalized;
 
     if (!normalized.includes("@")) {
-      const { data: profile, error: profileError } = await adminClient
+      const lookupIdentifier = rawIdentifier.trim();
+      let profileEmail: string | null = null;
+
+      const { data: byUsername, error: usernameError } = await adminClient
         .from("profiles")
         .select("email")
-        .ilike("username", rawIdentifier)
+        .ilike("username", lookupIdentifier)
         .limit(1)
         .maybeSingle();
 
-      if (profileError) {
+      if (usernameError) {
         return toJson({ error: "Error validando identificador" }, 500);
       }
 
-      if (!profile?.email) {
+      profileEmail = byUsername?.email ? String(byUsername.email) : null;
+
+      if (!profileEmail) {
+        const { data: byAlias, error: aliasError } = await adminClient
+          .from("profiles")
+          .select("email")
+          .ilike("alias", lookupIdentifier)
+          .limit(1)
+          .maybeSingle();
+
+        if (aliasError) {
+          return toJson({ error: "Error validando identificador" }, 500);
+        }
+
+        profileEmail = byAlias?.email ? String(byAlias.email) : null;
+      }
+
+      if (!profileEmail) {
         return toJson({ error: "Credenciales invalidas" }, 401);
       }
 
-      resolvedEmail = String(profile.email).toLowerCase();
+      resolvedEmail = profileEmail.toLowerCase();
     }
 
     const { data: signInData, error: signInError } = await anonClient.auth.signInWithPassword({

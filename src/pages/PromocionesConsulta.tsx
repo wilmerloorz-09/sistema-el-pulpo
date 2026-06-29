@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useBranch } from '@/contexts/BranchContext';
 import { useBranchShiftGate } from '@/hooks/useBranchShiftGate';
-import { hasPermission } from '@/lib/permissions';
+import { getUserDisplayName } from '@/lib/userDisplay';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -354,7 +354,7 @@ export default function PromocionesConsulta() {
       const uso = r.cupon_usado_el ? format(new Date(r.cupon_usado_el), 'dd/MM/yyyy HH:mm:ss') : '';
       
       const registradorName = r.registrador
-        ? (r.registrador.first_name || r.registrador.full_name || r.registrador.username)
+        ? getUserDisplayName(r.registrador)
         : 'Sistema';
 
       return [
@@ -655,7 +655,7 @@ export default function PromocionesConsulta() {
                 <SelectItem value="ALL">Todos los usuarios</SelectItem>
                 {(catalogos?.profiles || []).map((p: any) => (
                   <SelectItem key={p.id} value={p.id} className="text-xs">
-                    {p.first_name || p.username} {p.last_name || ''}
+                    {getUserDisplayName(p)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1030,7 +1030,7 @@ export default function PromocionesConsulta() {
                         {r.registrador ? (
                           <div className="flex flex-col">
                             <span className="font-medium text-foreground">
-                              {r.registrador.first_name || r.registrador.username}
+                              {getUserDisplayName(r.registrador)}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               {r.registrador.last_name || ''}

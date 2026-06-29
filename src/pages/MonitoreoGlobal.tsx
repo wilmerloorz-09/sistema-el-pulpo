@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useBranch } from "@/contexts/BranchContext";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
 import {
   MonitorCheck,
@@ -492,7 +492,7 @@ function useGlobalMonitor(branches: Branch[]) {
     // 2. Shift users — join profiles inline using select syntax
     const { data: shiftUserRows, error: usersErr } = await supabase
       .from("cash_shift_users" as any)
-      .select("id,shift_id,user_id,is_enabled,can_use_caja,can_dispatch_orders,can_serve_tables,is_supervisor,last_session_id,secondary_session_id,profiles(id,first_name,last_name,full_name,current_app_session_id)")
+      .select("id,shift_id,user_id,is_enabled,can_use_caja,can_dispatch_orders,can_serve_tables,is_supervisor,last_session_id,secondary_session_id,profiles(id,alias,username,current_app_session_id)")
       .eq("shift_id", shift.id);
 
     if (usersErr) {
@@ -503,9 +503,7 @@ function useGlobalMonitor(branches: Branch[]) {
       .filter((u: any) => u.is_enabled === true || u.is_enabled === 1 || u.is_enabled === "true" || u.is_enabled === "t")
       .map((u: any) => {
       const profile = Array.isArray(u.profiles) ? u.profiles[0] : u.profiles;
-      const name = profile?.first_name 
-        || profile?.full_name?.split(" ")[0] 
-        || "Usuario";
+      const name = getUserDisplayName(profile);
       return {
         id: u.id,
         shift_id: u.shift_id,
@@ -530,14 +528,12 @@ function useGlobalMonitor(branches: Branch[]) {
     if (!primaryCashierName && shift.primary_cashier_id) {
       const { data: cashierRows } = await supabase
         .from("profiles" as any)
-        .select("id, first_name, last_name, full_name")
+        .select("id, alias, username")
         .eq("id", shift.primary_cashier_id)
         .limit(1);
       const cashier = (cashierRows as any[])?.[0];
       if (cashier) {
-        primaryCashierName = cashier.first_name 
-          || cashier.full_name?.split(" ")[0] 
-          || "Usuario";
+        primaryCashierName = getUserDisplayName(cashier);
       }
     }
 

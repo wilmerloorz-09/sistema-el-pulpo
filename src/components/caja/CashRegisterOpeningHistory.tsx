@@ -106,7 +106,7 @@ export default function CashRegisterOpeningHistory({
                 </p>
                 <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                   <UserRound className="h-3.5 w-3.5" />
-                  Cajero: {entry.cashier_name || entry.cashier_username || "Sin nombre"}
+                  Cajero: {entry.cashier_username || entry.cashier_name || "Sin nombre"}
                 </p>
               </div>
 

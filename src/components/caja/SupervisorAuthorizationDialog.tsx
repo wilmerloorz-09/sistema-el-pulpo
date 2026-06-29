@@ -103,12 +103,12 @@ export default function SupervisorAuthorizationDialog({
 
           <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4">
             <div className="space-y-2">
-              <Label htmlFor="void-supervisor-identifier">Usuario o correo del autorizador</Label>
+              <Label htmlFor="void-supervisor-identifier">Correo, usuario o alias del autorizador</Label>
               <Input
                 id="void-supervisor-identifier"
                 value={identifier}
                 onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="Ej: supervisor1 o tu usuario admin"
+                placeholder="Ej: supervisor1, alias o correo"
                 autoComplete="username"
                 disabled={loading}
               />

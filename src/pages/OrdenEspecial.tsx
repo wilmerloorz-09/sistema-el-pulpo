@@ -91,7 +91,7 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
   const creatorIds = Array.from(new Set(specialOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
   const creatorProfiles = creatorIds.length > 0
     ? await dbSelect<any>("profiles", {
-        select: "id, first_name, full_name, username, email",
+        select: "id, first_name, full_name, username, alias, email",
         filters: [{ column: "id", op: "in", value: creatorIds }],
       })
     : [];

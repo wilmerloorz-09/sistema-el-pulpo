@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, Trash2, X, Building2, Check, KeyRound, Shield, ChevronDown, ChevronUp, Search, Users, UserCheck, UserX } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getUserAlias, getUserRealName } from "@/lib/userDisplay";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import EditUserDialog from "./EditUserDialog";
 import AddUserDialog from "./AddUserDialog";
@@ -33,6 +34,7 @@ interface UserRow {
   first_name?: string | null;
   last_name?: string | null;
   username: string;
+  alias?: string;
   email?: string | null;
   identity_number?: string | null;
   home_address?: string | null;
@@ -237,6 +239,7 @@ const UsersCrud = () => {
       (u.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (u.identity_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (u.phone ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (u.alias ?? "").toLowerCase().includes(search.toLowerCase()) ||
       u.username.toLowerCase().includes(search.toLowerCase());
     const isAdmin = u.global_roles.some((r) => r.code === "administrador");
     const isSupervisor = !isAdmin && u.branch_assignments.some((a) => a.role_code === "supervisor");
@@ -313,7 +316,7 @@ const UsersCrud = () => {
           <div className="relative min-w-[180px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Buscar nombres, email, cedula..."
+              placeholder="Buscar nombres, alias, email, cedula..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="h-9 rounded-xl border-slate-200 pl-9 text-sm"
@@ -364,11 +367,12 @@ const UsersCrud = () => {
 
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_15px_45px_-30px_rgba(15,23,42,0.25)]">
         <div className="overflow-x-auto">
-          <div className="min-w-[940px]">
+          <div className="min-w-[1020px]">
         {/* Encabezado de columnas */}
         <div className="hidden items-center gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 sm:flex sm:px-6">
           <div className="w-10 shrink-0" />{/* Avatar */}
-          <div className="w-72 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-96">Usuario</div>
+          <div className="w-56 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-64">Usuario</div>
+          <div className="w-28 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-32">Alias</div>
           <div className="w-32 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-36">Tipo de usuario</div>
           <div className="w-44 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:w-52">Sucursal</div>
           <div className="w-24 shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:flex-1">Último acceso</div>
@@ -402,7 +406,7 @@ const UsersCrud = () => {
             : isSupervisor
             ? "border-blue-200 bg-blue-50 text-blue-700"
             : "border-slate-200 bg-slate-50 text-slate-600";
-          const displayName = user.first_name || user.full_name || user.username;
+          const displayName = getUserRealName(user) || user.first_name || user.full_name || getUserAlias(user);
 
             return (
               <div key={user.id} className={cn("transition-colors", idx % 2 === 0 ? "bg-white" : "bg-slate-50/40")}>
@@ -432,15 +436,20 @@ const UsersCrud = () => {
                   {/* Nombres + usuario */}
                   <button
                     type="button"
-                    className="flex w-72 shrink-0 min-w-0 flex-col justify-center rounded-lg text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30 lg:w-96"
+                    className="flex w-56 shrink-0 min-w-0 flex-col justify-center rounded-lg text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30 lg:w-64"
                     onClick={() => setEditingUserId(user.id)}
                     title="Editar usuario"
                   >
                     <p className={cn("truncate text-sm font-semibold", user.is_active ? "text-slate-900" : "text-slate-400 line-through")}>
                       {displayName}
                     </p>
-                    <p className="truncate text-[11px] text-muted-foreground">@{user.username}</p>
                   </button>
+
+                  <div className="flex w-28 shrink-0 min-w-0 items-center lg:w-32">
+                    <p className="truncate text-[11px] font-medium text-muted-foreground">
+                      {getUserAlias(user)}
+                    </p>
+                  </div>
 
                   {/* Tipo de usuario */}
                   <div className="hidden w-32 shrink-0 sm:block lg:w-36">

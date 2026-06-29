@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ShiftCajaSetupState, ShiftCashierRow } from "@/lib/shiftCajaSetupModel";
+import { getUserAlias } from "@/lib/userDisplay";
 
 export type { ShiftCajaSetupState, ShiftCashierRow };
 
@@ -16,6 +17,7 @@ export interface ShiftCajaSetupUserOption {
   user_id: string;
   full_name: string;
   username: string;
+  alias: string;
 }
 
 export interface CashRegisterTemplateOption {
@@ -146,7 +148,7 @@ export default function ShiftCajaSetupSection({
                     <SelectContent>
                       {userOptions.map((user) => (
                         <SelectItem key={user.user_id} value={user.user_id}>
-                          {user.full_name || user.username} (@{user.username})
+                          {getUserAlias(user)}
                         </SelectItem>
                       ))}
                     </SelectContent>

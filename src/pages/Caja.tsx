@@ -39,6 +39,7 @@ import { cn, formatElapsedSince } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
 import { prepareProofImage } from "@/lib/prepareProofImage";
 import { getOrderRef } from "@/lib/orderPresentation";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import { 
   buildCashClosureReportHtml, 
   openCashClosureReportWindow, 
@@ -736,7 +737,7 @@ const Caja = () => {
                 shiftHasConfiguredCashiers={captureCandidates.length > 0}
                 cashierUserLabel={
                   currentUserCashierCandidate
-                    ? `${currentUserCashierCandidate.full_name} @${currentUserCashierCandidate.username}`
+                    ? getUserDisplayName(currentUserCashierCandidate)
                     : null
                 }
                 onOpen={({ counts }) => openCashRegister.mutate({ counts })}

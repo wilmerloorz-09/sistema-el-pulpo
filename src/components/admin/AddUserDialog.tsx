@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Building2, Camera, Check, Loader2, Shield, UserPlus } from "lucide-react";
+import { getUserAlias } from "@/lib/userDisplay";
 import { resolveRoleCodeFromCatalog } from "./userRoleUtils";
 
 interface AccessCatalog {
@@ -20,7 +21,7 @@ interface AddUserDialogProps {
   onClose: () => void;
   onRefresh: () => void;
   catalog: AccessCatalog | undefined;
-  existingUsers: { email?: string | null; username: string }[];
+  existingUsers: { email?: string | null; username: string; alias?: string }[];
 }
 
 const extractEdgeFunctionError = async (err: any) => {
@@ -57,6 +58,7 @@ const defaultForm = {
   first_name: "",
   last_name: "",
   username: "",
+  alias: "",
   identity_number: "",
   home_address: "",
   phone: "",
@@ -83,6 +85,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const isAdmin = form.user_type === "administrador";
   const isSupervisor = form.user_type === "supervisor";
   const usernameValid = USERNAME_PATTERN.test(form.username);
+  const aliasValid = USERNAME_PATTERN.test(form.alias);
   const firstNameValid = NAME_PATTERN.test(form.first_name.trim());
   const lastNameValid = NAME_PATTERN.test(form.last_name.trim());
   const identityNumberValid = TEN_DIGIT_PATTERN.test(form.identity_number);
@@ -142,13 +145,14 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
             const existingUserId = existingSupRows[0].user_id;
             const { data: supProfile } = await (supabase
               .from("profiles" as any)
-              .select("first_name, last_name, username")
+              .select("first_name, last_name, username, alias")
               .eq("id", existingUserId)
               .maybeSingle() as any);
             const p = supProfile as any;
+            const handle = getUserAlias(p) || "otro usuario";
             const name = p?.first_name
-              ? `${p.first_name}${p.last_name ? " " + p.last_name : ""} (@${p.username})`
-              : `@${p?.username ?? "otro usuario"}`;
+              ? `${p.first_name}${p.last_name ? " " + p.last_name : ""} (${handle})`
+              : handle;
             throw new Error(
               `Esta sucursal ya tiene un supervisor asignado: ${name}. Solo puede haber un supervisor por sucursal.`
             );
@@ -158,6 +162,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
 
       const normalizedEmail = form.email.trim().toLowerCase();
       const normalizedUsername = form.username.trim().toLowerCase();
+      const normalizedAlias = form.alias.trim().toLowerCase();
       const firstName = form.first_name.trim();
       const lastName = form.last_name.trim();
 
@@ -165,6 +170,11 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
         (u) => u.username.trim().toLowerCase() === normalizedUsername,
       );
       if (existingUsername) throw new Error("El nombre de usuario ya existe. Usa otro diferente.");
+
+      const existingAlias = existingUsers.find(
+        (u) => (u.alias ?? u.username).trim().toLowerCase() === normalizedAlias,
+      );
+      if (existingAlias) throw new Error("El alias ya existe. Usa otro diferente.");
 
       const existingEmail = existingUsers.find(
         (u) => (u.email ?? "").trim().toLowerCase() === normalizedEmail,
@@ -183,6 +193,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
         last_name: lastName,
         full_name: `${firstName} ${lastName}`.trim(),
         username: form.username.trim(),
+        alias: form.alias.trim(),
         identity_number: form.identity_number.trim() || null,
         home_address: form.home_address.trim() || null,
         phone: form.phone.trim() || null,
@@ -279,6 +290,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const passwordsMatch = form.password === form.confirmPassword;
   const canSubmit =
     usernameValid &&
+    aliasValid &&
     firstNameValid &&
     lastNameValid &&
     identityNumberValid &&
@@ -344,6 +356,21 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras y numeros</p>
                 )}
               </div>
+              <div className="space-y-1.5">
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Alias</label>
+                <Input
+                  placeholder="Ej: JuanP"
+                  value={form.alias}
+                  onChange={(e) => setForm({ ...form, alias: e.target.value.replace(/[^A-Za-z0-9]/g, "") })}
+                  className="h-10 rounded-xl border-slate-200"
+                />
+                {form.alias && !aliasValid && (
+                  <p className="ml-1 text-[11px] font-medium text-destructive">Solo letras y numeros</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:max-w-xs">
               <div className="space-y-1.5">
                 <label className="ml-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">No. de cedula</label>
                 <Input

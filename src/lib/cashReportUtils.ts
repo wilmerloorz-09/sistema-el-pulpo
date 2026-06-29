@@ -356,7 +356,7 @@ export const buildCashClosureReportHtml = (params: {
           <p>Apertura: ${escapeHtml(formatDateTime(currentOpening.opened_at))}</p>
           <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
           <p>Estado: ${escapeHtml(currentOpening.status)}</p>
-          <p>Cajero: ${escapeHtml(currentOpening.cashier_name || currentOpening.cashier_username || "Sin nombre")}</p>
+          <p>Cajero: ${escapeHtml(currentOpening.cashier_username || currentOpening.cashier_name || "Sin nombre")}</p>
           <p>Monto inicial: ${escapeHtml(formatMoney(currentOpening.initial_total))}</p>
         ` : `
           <p>Turno abierto: ${escapeHtml(formatDateTime(params.shift.opened_at))}</p>
@@ -436,7 +436,7 @@ export const buildCashClosureReportHtml = (params: {
           ${currentOpening ? `
             <p>Apertura: ${escapeHtml(formatDateTime(currentOpening.opened_at))}</p>
             <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
-            <p>Cajero: ${escapeHtml(currentOpening.cashier_name || currentOpening.cashier_username || "Sin nombre")}</p>
+            <p>Cajero: ${escapeHtml(currentOpening.cashier_username || currentOpening.cashier_name || "Sin nombre")}</p>
           ` : ""}
         </div>
         <div>

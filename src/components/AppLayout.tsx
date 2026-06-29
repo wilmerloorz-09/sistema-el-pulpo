@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MobileMenuSheet } from "./MobileMenuSheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getUserDisplayName } from "@/lib/userDisplay";
+import { getUserDisplayName, getUserRealName } from "@/lib/userDisplay";
 
 const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -68,7 +68,8 @@ const AppLayout = () => {
   const { isOnline } = useNetwork();
   const { isDesktop } = useBreakpoint();
   const { isDark, toggle } = useTheme();
-  const accountName = getUserDisplayName(profile);
+  const accountAlias = getUserDisplayName(profile);
+  const accountRealName = getUserRealName(profile);
 
   return (
     <>
@@ -130,18 +131,20 @@ const AppLayout = () => {
                 {profile?.avatar_url ? (
                   <img
                     src={profile.avatar_url}
-                    alt={accountName}
+                    alt={accountAlias}
                     className="h-full w-full object-cover"
                   />
                 ) : (
                   <span className="text-sm font-black tracking-wide text-primary">
-                    {accountName ? accountName[0].toUpperCase() : <UserRound className="h-6 w-6" />}
+                    {accountAlias ? accountAlias[0].toUpperCase() : <UserRound className="h-6 w-6" />}
                   </span>
                 )}
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-bold text-foreground">{accountName}</div>
-                {profile?.username ? <div className="truncate text-xs font-medium text-muted-foreground">@{profile.username}</div> : null}
+                <div className="truncate text-sm font-bold text-foreground">{accountAlias}</div>
+                {accountRealName ? (
+                  <div className="truncate text-xs font-medium text-muted-foreground">{accountRealName}</div>
+                ) : null}
               </div>
             </div>
 

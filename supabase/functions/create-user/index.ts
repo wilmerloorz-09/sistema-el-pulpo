@@ -50,18 +50,23 @@ Deno.serve(async (req) => {
     const last_name = String(payload?.last_name ?? "").trim();
     const full_name = String(payload?.full_name ?? `${first_name} ${last_name}`).trim();
     const username = String(payload?.username ?? "").trim();
+    const alias = String(payload?.alias ?? payload?.username ?? "").trim();
     const identity_number = String(payload?.identity_number ?? "").trim() || null;
     const home_address = String(payload?.home_address ?? "").trim() || null;
     const phone = String(payload?.phone ?? "").trim() || null;
     const branch_roles = payload?.branch_roles;
     const global_roles = payload?.global_roles;
 
-    if (!email || !password || !first_name || !last_name || !username) {
+    if (!email || !password || !first_name || !last_name || !username || !alias) {
       return toJson({ error: "Faltan campos requeridos" }, 400);
     }
 
     if (!/^[A-Za-z0-9]+$/.test(username)) {
       return toJson({ error: "El nombre de usuario solo puede tener letras y numeros" }, 400);
+    }
+
+    if (!/^[A-Za-z0-9]+$/.test(alias)) {
+      return toJson({ error: "El alias solo puede tener letras y numeros" }, 400);
     }
 
     if (!/^[\p{L}\s]+$/u.test(first_name)) {
@@ -130,6 +135,21 @@ Deno.serve(async (req) => {
       return toJson({ error: "El nombre de usuario ya existe. Usa otro diferente." }, 400);
     }
 
+    const { data: existingAlias, error: existingAliasError } = await adminClient
+      .from("profiles")
+      .select("id")
+      .ilike("alias", alias)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingAliasError) {
+      return toJson({ error: "No se pudo validar el alias" }, 500);
+    }
+
+    if (existingAlias?.id) {
+      return toJson({ error: "El alias ya existe. Usa otro diferente." }, 400);
+    }
+
     const { data: existingEmail, error: existingEmailError } = await adminClient
       .from("profiles")
       .select("id")
@@ -183,7 +203,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { first_name, last_name, full_name, username },
+      user_metadata: { first_name, last_name, full_name, username, alias },
     });
 
     if (authError || !authData?.user?.id) {
@@ -203,6 +223,7 @@ Deno.serve(async (req) => {
           first_name,
           last_name,
           full_name,
+          alias,
           identity_number,
           home_address,
           phone,

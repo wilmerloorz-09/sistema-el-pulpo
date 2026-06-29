@@ -139,16 +139,33 @@ Deno.serve(async (req) => {
       let resolvedEmail = supervisorIdentifier.toLowerCase();
 
       if (!resolvedEmail.includes("@")) {
-        const { data: profile, error: profileError } = await adminClient
+        const lookupIdentifier = supervisorIdentifier.trim();
+        let profileEmail: string | null = null;
+
+        const { data: byUsername, error: usernameError } = await adminClient
           .from("profiles")
           .select("email")
-          .ilike("username", supervisorIdentifier)
+          .ilike("username", lookupIdentifier)
           .limit(1)
           .maybeSingle();
 
-        if (profileError) return toJson({ error: "Error validando el supervisor" }, 500);
-        if (!profile?.email) return toJson({ error: "Supervisor no autorizado" }, 401);
-        resolvedEmail = String(profile.email).toLowerCase();
+        if (usernameError) return toJson({ error: "Error validando el supervisor" }, 500);
+        profileEmail = byUsername?.email ? String(byUsername.email) : null;
+
+        if (!profileEmail) {
+          const { data: byAlias, error: aliasError } = await adminClient
+            .from("profiles")
+            .select("email")
+            .ilike("alias", lookupIdentifier)
+            .limit(1)
+            .maybeSingle();
+
+          if (aliasError) return toJson({ error: "Error validando el supervisor" }, 500);
+          profileEmail = byAlias?.email ? String(byAlias.email) : null;
+        }
+
+        if (!profileEmail) return toJson({ error: "Supervisor no autorizado" }, 401);
+        resolvedEmail = profileEmail.toLowerCase();
       }
 
       const { data: supervisorSession, error: supervisorAuthError } = await anonClient.auth.signInWithPassword({

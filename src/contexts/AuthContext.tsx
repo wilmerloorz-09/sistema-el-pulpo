@@ -10,6 +10,7 @@ interface Profile {
   first_name?: string | null;
   last_name?: string | null;
   username: string;
+  alias?: string;
   email?: string | null;
   is_active: boolean;
   active_branch_id?: string | null;

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getOrderRef } from '@/lib/orderPresentation';
+import { getUserDisplayName } from '@/lib/userDisplay';
 
 export interface ReportesFilters {
   branchId: string;
@@ -19,16 +20,9 @@ export function round2(num: number): number {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 }
 
-// Resolver nombres de usuarios creadores
+// Resolver identificador operativo (alias) de perfiles en reportes
 export function getProfileLabel(profile: any): string {
-  if (!profile) return 'Usuario';
-  return (
-    profile.first_name ||
-    profile.full_name ||
-    profile.username ||
-    (profile.last_name ? `${profile.first_name} ${profile.last_name}` : '') ||
-    'Usuario'
-  ).trim();
+  return getUserDisplayName(profile);
 }
 
 /**
@@ -58,7 +52,7 @@ export function useReportesFiltros(branchId: string) {
       // 2. Cargar perfiles asociados a la sucursal (o globales)
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, full_name, username')
+        .select('id, alias, username, first_name, last_name, full_name')
         .eq('is_active', true);
 
       if (profilesError) throw profilesError;
@@ -142,7 +136,7 @@ export function useReportesPagos(filters: ReportesFilters) {
           shift_id,
           notes,
           payment_methods!inner (id, name, branch_id),
-          cashier:profiles!payments_created_by_fkey (id, first_name, last_name, full_name, username),
+          cashier:profiles!payments_created_by_fkey (id, alias, username),
           order:orders!inner (
             id,
             order_code,
@@ -151,7 +145,7 @@ export function useReportesPagos(filters: ReportesFilters) {
             order_type,
             is_special,
             branch_id,
-            creator:profiles!orders_created_by_fkey (id, first_name, last_name, full_name, username)
+            creator:profiles!orders_created_by_fkey (id, alias, username)
           )
         `)
         .in('status', ['COMPLETED', 'active']); // Solo pagos válidos/pagados (excluyendo anulados que tienen otro status)
@@ -284,8 +278,8 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
           requested_by_user_id,
           approved_by_supervisor_id,
           shift_id,
-          cashier:profiles!payment_void_requests_requested_by_user_id_fkey (id, first_name, last_name, full_name, username),
-          supervisor:profiles!payment_void_requests_approved_by_supervisor_id_fkey (id, first_name, last_name, full_name, username),
+          cashier:profiles!payment_void_requests_requested_by_user_id_fkey (id, alias, username),
+          supervisor:profiles!payment_void_requests_approved_by_supervisor_id_fkey (id, alias, username),
           order:orders!inner (
             id,
             order_code,

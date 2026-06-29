@@ -30,11 +30,11 @@ const getLoginErrorMessage = (rawMessage?: string) => {
     normalized.includes("invalid login") ||
     normalized.includes("invalid credentials")
   ) {
-    return "No se puede ingresar porque el correo/usuario o la contrasena son incorrectos. Revisa los datos e intenta nuevamente.";
+    return "No se puede ingresar porque el correo/usuario/alias o la contrasena son incorrectos. Revisa los datos e intenta nuevamente.";
   }
 
   if (normalized.includes("identificador") && normalized.includes("contrasena")) {
-    return "No se puede ingresar porque falta el correo/usuario o la contrasena.";
+    return "No se puede ingresar porque falta el correo/usuario/alias o la contrasena.";
   }
 
   return message;
@@ -98,14 +98,14 @@ const Login = () => {
 
           <div className="space-y-2">
             <Label htmlFor="identifier" className="text-sm font-medium">
-              Correo o usuario
+              Correo, usuario o alias
             </Label>
             <Input
               id="identifier"
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="usuario@elpulpo.com o admin"
+              placeholder="usuario@elpulpo.com, admin o JuanP"
               required
               autoComplete="username"
               className="h-12 text-base"

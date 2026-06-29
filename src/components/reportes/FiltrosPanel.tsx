@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Calendar, Filter, Search, X, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
+import { getUserDisplayName } from '@/lib/userDisplay';
 
 interface FiltrosPanelProps {
   branchId: string;
@@ -376,7 +377,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
               <SelectItem value="ALL">Todos los cajeros</SelectItem>
               {(filtersData?.profiles || []).map((p) => (
                 <SelectItem key={p.id} value={p.id} className="text-xs">
-                  {p.first_name || p.username} {p.last_name || ''}
+                  {getUserDisplayName(p)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -394,7 +395,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
               <SelectItem value="ALL">Todos los creadores</SelectItem>
               {(filtersData?.profiles || []).map((p) => (
                 <SelectItem key={p.id} value={p.id} className="text-xs">
-                  {p.first_name || p.username} {p.last_name || ''}
+                  {getUserDisplayName(p)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -413,7 +414,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
                 <SelectItem value="ALL">Todos los supervisores</SelectItem>
                 {(filtersData?.profiles || []).map((p) => (
                   <SelectItem key={p.id} value={p.id} className="text-xs">
-                    {p.first_name || p.username} {p.last_name || ''}
+                    {getUserDisplayName(p)}
                   </SelectItem>
                 ))}
               </SelectContent>

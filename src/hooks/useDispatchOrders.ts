@@ -490,7 +490,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
         ? await dbSelect<any>("profiles", {
-            select: "id, first_name, full_name, username, email",
+            select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
         : [];

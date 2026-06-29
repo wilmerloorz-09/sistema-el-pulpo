@@ -17,7 +17,7 @@ import type {
   PaymentVoidSelectionInput,
   ShiftDenom,
 } from "@/hooks/useCaja";
-import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
@@ -621,7 +621,7 @@ export default function CompletedPaymentsList({
                 .filter((u) => u.id !== currentUserId)
                 .map((cashier) => (
                 <option key={cashier.id} value={cashier.id}>
-                  {cashier.full_name} @{cashier.username}
+                  {getUserDisplayName(cashier)}
                 </option>
               ))}
             </select>

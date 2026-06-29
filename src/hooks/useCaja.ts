@@ -9,7 +9,7 @@ import { computeLineTotalWithContainer, roundMoney } from "@/lib/paymentQuantity
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
-import { buildUserDisplayMap } from "@/lib/userDisplay";
+import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
@@ -99,6 +99,7 @@ export interface CashShiftCaptureCandidate {
   id: string;
   full_name: string;
   username: string;
+  alias: string;
 }
 
 export interface CashRegisterOpeningHistoryEntry {
@@ -220,7 +221,7 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
       created_by,
       payment_methods ( name ),
       orders ( order_code, order_number, table_name_snapshot ),
-      profiles:created_by ( full_name )
+      profiles:created_by ( alias, username )
     `)
     .in("order_id", branchOrderIds)
     .order("created_at", { ascending: false });
@@ -236,7 +237,7 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
     order_code: cleanOrderCode(row.orders?.order_code),
     order_number: row.orders?.order_number,
     table_name: row.orders?.table_name_snapshot,
-    cashier_name: row.profiles?.full_name || "N/D",
+    cashier_name: getUserDisplayName(row.profiles) || "N/D",
     status: row.status || "APPLIED"
   })) as any[];
 }
@@ -299,8 +300,6 @@ export async function fetchShiftSnapshot(shiftId: string): Promise<CashShiftSnap
     openingHistory,
   };
 }
-
-import type { Cliente } from "@/types/cliente";
 
 export interface PayableOrderCliente {
   id: string;
@@ -1087,7 +1086,7 @@ export function useCaja(params?: {
       if (userIds.length === 0) return [];
 
       const profiles = await dbSelect<any>("profiles", {
-        select: "id, first_name, full_name, username, is_active",
+        select: "id, first_name, full_name, username, alias, is_active",
         filters: [{ column: "id", op: "in", value: userIds }]
       });
 
@@ -1097,10 +1096,11 @@ export function useCaja(params?: {
           id: p.id,
           full_name: p.first_name ?? p.full_name ?? "Usuario",
           username: p.username ?? "",
+          alias: p.alias ?? p.username ?? "",
         }))
         .sort((a, b) =>
           a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" })
-          || a.username.localeCompare(b.username, "es", { sensitivity: "base" }),
+          || a.alias.localeCompare(b.alias, "es", { sensitivity: "base" }),
         );
     },
     enabled: !!shiftQuery.data?.id,
@@ -1126,7 +1126,7 @@ export function useCaja(params?: {
       if (userIds.length === 0) return [];
 
       const profiles = await dbSelect<any>("profiles", {
-        select: "id, first_name, full_name, username, is_active",
+        select: "id, first_name, full_name, username, alias, is_active",
         filters: [{ column: "id", op: "in", value: userIds }]
       });
 
@@ -1136,10 +1136,11 @@ export function useCaja(params?: {
           id: profile.id,
           full_name: profile.first_name ?? profile.full_name ?? "Usuario",
           username: profile.username ?? "",
+          alias: profile.alias ?? profile.username ?? "",
         }))
         .sort((a, b) =>
           a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" })
-          || a.username.localeCompare(b.username, "es", { sensitivity: "base" }),
+          || a.alias.localeCompare(b.alias, "es", { sensitivity: "base" }),
         );
     },
     enabled: !!shiftQuery.data?.id,
@@ -1500,7 +1501,7 @@ export function useCaja(params?: {
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
         ? await dbSelect<any>("profiles", {
-            select: "id, first_name, full_name, username, email",
+            select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
         : [];
@@ -1843,7 +1844,7 @@ export function useCaja(params?: {
 
       const [methods, profiles, allOrderPayments, allOrderItems] = await Promise.all([
         dbSelect<any>("payment_methods", { select: "id, name", filters: [{ column: "id", op: "in", value: methodIds }] }),
-        dbSelect<any>("profiles", { select: "id, first_name, full_name, username", filters: [{ column: "id", op: "in", value: createdByIds }] }),
+        dbSelect<any>("profiles", { select: "id, first_name, full_name, username, alias", filters: [{ column: "id", op: "in", value: createdByIds }] }),
         dbSelect<any>("payments", { select: "order_id, amount, notes, status", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
         dbSelect<any>("order_items", { select: "id, order_id, total, status, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
       ]);
@@ -1867,11 +1868,11 @@ export function useCaja(params?: {
 
       const ordersMap = Object.fromEntries(orders.map((o) => [o.id, o]));
       const methodsMap = Object.fromEntries(methods.map((m) => [m.id, m.name]));
-      const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, p.first_name || p.full_name || p.username || "Usuario"]));
+      const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, getUserDisplayName(p)]));
       const orderCreatorIds = Array.from(new Set((orders ?? []).map((order: any) => order.created_by).filter(Boolean))) as string[];
       const orderCreatorProfiles = orderCreatorIds.length > 0
         ? await dbSelect<any>("profiles", {
-            select: "id, first_name, full_name, username, email",
+            select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: orderCreatorIds }],
           })
         : [];
