@@ -131,8 +131,11 @@ const OrdenEspecial = () => {
   const canOperateSpecial =
     canOperate(permissions, "mesas")
     || canOperate(permissions, "ordenes")
+    || canOperate(permissions, "caja")
     || Boolean(shiftGateQuery.data?.canServeTables)
     || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.canUseCaja)
+    || Boolean(shiftGateQuery.data?.canPackOrders)
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   const specialOrdersQuery = useQuery({

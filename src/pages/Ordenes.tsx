@@ -996,10 +996,13 @@ const OrdenesContent = () => {
   };
 
   useEffect(() => {
-    if (order && !stagedDirty) {
+    if (!fromEditar) {
+      setStagedDirty(false);
+      setStagedItems(orderItems);
+    } else if (order && !stagedDirty) {
       setStagedItems(orderItems);
     }
-  }, [order?.items, stagedDirty]);
+  }, [fromEditar, order?.items, orderItems, stagedDirty]);
 
   const tableOrdersQuery = useQuery({
     queryKey: isExpressOrder
@@ -2384,6 +2387,7 @@ const OrdenesContent = () => {
         const original = originalOrderItems.find((item) => item.id === staged.id);
         const originalQuantity = Number(original?.quantity ?? 0);
         const stagedQuantity = Number(staged.quantity ?? 0);
+        const priceChanged = original && Number(staged.unit_price) !== Number(original.unit_price);
         const canPersistQuantityChange =
           original &&
           original.quantity !== staged.quantity &&
@@ -2392,7 +2396,7 @@ const OrdenesContent = () => {
             stagedQuantity > originalQuantity
           );
 
-        if (canPersistQuantityChange) {
+        if (canPersistQuantityChange || priceChanged) {
           await updateQuantity.mutateAsync({
             itemId: staged.id,
             quantity: staged.quantity,
@@ -2443,10 +2447,6 @@ const OrdenesContent = () => {
         });
       }
 
-      if (newAddedIds.length > 0) {
-        await sendToKitchen.mutateAsync();
-      }
-
       await unlockOrder.mutateAsync();
       setStagedDirty(false);
       toast.success(
@@ -2457,7 +2457,7 @@ const OrdenesContent = () => {
       // Always navigate back to the order page after accepting changes.
       // This keeps the user on the order (with menu enabled) even when all
       // items were removed, so they can add new products without leaving.
-      const originValue = searchParams.get("origin") || "editar";
+      const originValue = searchParams.get("origin") || "consulta";
       navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
     } catch (error: any) {
       toast.error(error.message);
@@ -2775,16 +2775,18 @@ const OrdenesContent = () => {
                 </Button>
               </div>
             ) : (
-              <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
+          <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
                 Solo consulta: el total especial se administra desde una sesion con permisos operativos.
               </div>
             )}
           </div>
         )}
 
+
         <OrderItemsList
           items={fromEditar ? stagedItems : orderItems}
           orderType={order.order_type}
+          isSpecialOrder={Boolean(order?.is_special)}
           alwaysShowControls={fromEditar}
           hideItemControls={false}
           editableItemIds={[]}
@@ -2809,7 +2811,7 @@ const OrdenesContent = () => {
               setStagedDirty(true);
               setStagedItems((prev) =>
                 prev.map((i) =>
-                  i.id === id ? { ...i, quantity: qty, total: qty * price } : i
+                  i.id === id ? { ...i, quantity: qty, unit_price: price, total: qty * price } : i
                 )
               );
             } else {
@@ -2891,7 +2893,7 @@ const OrdenesContent = () => {
                 variant="outline"
                 className="h-12 w-full gap-2 rounded-xl border-slate-200 font-display text-base font-semibold text-slate-600 hover:bg-slate-50"
                 onClick={() => {
-                  const originValue = searchParams.get("origin") || "editar";
+                  const originValue = searchParams.get("origin") || "consulta";
                   navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
                 }}
               >
@@ -2912,24 +2914,7 @@ const OrdenesContent = () => {
             </>
           ) : (
             <>
-              {canShowCloseOrder && (
-                <Button
-                  variant="outline"
-                  className="h-12 w-full gap-2 rounded-xl border-emerald-300 bg-emerald-50 font-display text-base font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
-                  onClick={() => setShowCloseOrderConfirm(true)}
-                  disabled={closeOrder.isPending || !canCloseOrder}
-                  title={
-                    hasPendingCancellationItems
-                      ? "No puedes cerrar la orden mientras exista al menos un item con anulacion pendiente"
-                      : !canCloseOrder
-                        ? "Solo puedes cerrar la orden cuando no haya items nuevos en borrador y todos los items enviados esten completamente despachados"
-                        : "Cerrar orden"
-                  }
-                >
-                  {closeOrder.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <CircleDollarSign className="h-5 w-5" />}
-                  Cerrar orden
-                </Button>
-              )}
+
 
               {!fromEditar && hasSentItems && canUseEditarOrden && isEditableInCaja && !order.paid_at && (
                 <Button
@@ -3543,8 +3528,8 @@ const OrdenesContent = () => {
           setSelectedProductModifiers([]);
           setProductLoadingShell(null);
         }}
-        priceModeOverride={isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
-        manualPriceLabel={isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
+        priceModeOverride={order.is_special ? "MANUAL" : isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
+        manualPriceLabel={order.is_special ? "Precio unitario" : isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
         confirmLabel="Agregar"
         hideQuantity={shouldCalculateBulkIncludedByAmount}
         extraContent={({ unitPrice, quantity }) => {
@@ -3760,29 +3745,7 @@ const OrdenesContent = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={showCloseOrderConfirm} onOpenChange={setShowCloseOrderConfirm}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cerrar orden</AlertDialogTitle>
-            <AlertDialogDescription>
-              La orden se desvinculara de la mesa. Si la mesa tiene otras ordenes activas, esas ordenes seguiran ocupandola.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={closeOrder.isPending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                handleCloseOrder();
-              }}
-              disabled={closeOrder.isPending}
-            >
-              {closeOrder.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Confirmar cierre
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+
 
       <ChangeTableDialog
         open={showChangeTableDialog}

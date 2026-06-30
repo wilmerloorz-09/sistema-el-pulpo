@@ -95,10 +95,10 @@ const AddItemDialog = ({
     if (dialogOpen) {
       setQuantity(1);
       setQuantityInput("1");
-      setManualPrice("");
+      setManualPrice(displayProduct?.unit_price != null ? String(displayProduct.unit_price) : "");
       setSelectedMods([]);
     }
-  }, [dialogOpen, product?.id]);
+  }, [dialogOpen, product?.id, displayProduct]);
 
   const sortedModifiers = useMemo(
     () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),

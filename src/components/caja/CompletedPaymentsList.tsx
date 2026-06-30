@@ -18,6 +18,7 @@ import type {
   ShiftDenom,
 } from "@/hooks/useCaja";
 import { getUserDisplayName } from "@/lib/userDisplay";
+import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { printPaymentReceipt } from "@/lib/thermalPrint";

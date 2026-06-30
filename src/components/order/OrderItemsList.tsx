@@ -48,6 +48,7 @@ interface Props {
   specialOrderCatalogTotal?: number | null;
   /** TAKEOUT / EXPRESS / DINE_IN: etiqueta de linea enviada ("En caja" vs "En despacho"). */
   orderType?: string | null;
+  isSpecialOrder?: boolean;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
@@ -188,6 +189,7 @@ const OrderItemsList = ({
   specialOrderChargeTotal = null,
   specialOrderCatalogTotal = null,
   orderType = null,
+  isSpecialOrder = false,
 }: Props) => {
   const total = items.reduce((sum, i) => sum + i.total, 0);
 
@@ -199,293 +201,401 @@ const OrderItemsList = ({
       </div>
     );
   }
+  const renderList = (subItems: typeof items, isPaidGroup: boolean) => {
+    const listHideControls = isPaidGroup ? true : hideItemControls;
+    const listAlwaysShowControls = isPaidGroup ? false : alwaysShowControls;
 
-  return (
-    <div className="flex flex-col gap-3">
+    const groups: Record<string, OrderItem & { groupItemIds: string[]; modifierQuantities: Array<{ mod: any; qty: number }> }> = {};
+    for (const item of subItems) {
+      const modKey = (item.modifiers || [])
+        .map((m) => m.description.trim().toLowerCase())
+        .sort()
+        .join("|");
+      const isDraft = item.status === "DRAFT";
+      const key = `${item.description_snapshot}_${item.unit_price}_${isDraft ? "draft" : "non-draft"}_${modKey}`;
+      const itemQty = item.quantity || item.quantity_ordered || 0;
+      if (!groups[key]) {
+        groups[key] = {
+          ...item,
+          groupItemIds: [item.id],
+          modifierQuantities: item.modifiers.map((m) => ({ mod: m, qty: itemQty })),
+        };
+      } else {
+        groups[key].quantity += item.quantity;
+        groups[key].total += item.total;
+        groups[key].groupItemIds.push(item.id);
+        groups[key].modifierQuantities.push(...item.modifiers.map((m) => ({ mod: m, qty: itemQty })));
+      }
+    }
 
-
-      {(() => {
-        const groups: Record<string, OrderItem & { groupItemIds: string[]; modifierQuantities: Array<{ mod: any; qty: number }> }> = {};
-        for (const item of items) {
-          const modKey = (item.modifiers || [])
-            .map((m) => m.description.trim().toLowerCase())
-            .sort()
-            .join("|");
-          const key = `${item.description_snapshot}_${item.unit_price}_${modKey}`;
-          const itemQty = item.quantity || item.quantity_ordered || 0;
-          if (!groups[key]) {
-            groups[key] = {
-              ...item,
-              groupItemIds: [item.id],
-              modifierQuantities: item.modifiers.map((m) => ({ mod: m, qty: itemQty })),
-            };
-          } else {
-            groups[key].quantity += item.quantity;
-            groups[key].total += item.total;
-            groups[key].groupItemIds.push(item.id);
-            groups[key].modifierQuantities.push(...item.modifiers.map((m) => ({ mod: m, qty: itemQty })));
-          }
+    const consolidatedGroups = Object.values(groups).map((group) => {
+      const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
+      for (const mq of group.modifierQuantities) {
+        const desc = mq.mod.description.trim();
+        if (!desc) continue;
+        const mk = desc.toLowerCase();
+        if (!modCounts[mk]) {
+          modCounts[mk] = { description: desc, count: mq.qty, firstId: mq.mod.id };
+        } else {
+          modCounts[mk].count += mq.qty;
         }
+      }
 
-        const consolidatedGroups = Object.values(groups).map((group) => {
-          const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
-          for (const mq of group.modifierQuantities) {
-            const desc = mq.mod.description.trim();
-            if (!desc) continue;
-            const mk = desc.toLowerCase();
-            if (!modCounts[mk]) {
-              modCounts[mk] = { description: desc, count: mq.qty, firstId: mq.mod.id };
-            } else {
-              modCounts[mk].count += mq.qty;
-            }
-          }
+      const consolidatedModifiers = Object.values(modCounts).map((mc) => ({
+        id: mc.firstId,
+        description: mc.count > 1 ? `${mc.description} (${mc.count})` : mc.description,
+      }));
 
-          const consolidatedModifiers = Object.values(modCounts).map((mc) => ({
-            id: mc.firstId,
-            description: mc.count > 1 ? `${mc.description} (${mc.count})` : mc.description,
-          }));
+      return { ...group, modifiers: consolidatedModifiers };
+    });
 
-          return { ...group, modifiers: consolidatedModifiers };
-        });
+    return consolidatedGroups.map((item) => {
+      const isPending = item.status === "DRAFT";
+      const isTemporaryItem = isTemporaryOrderItemId(item.id);
+      const canShowControlsForItem = !listHideControls || editableItemIds.some((id) => item.groupItemIds.includes(id));
+      const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || listAlwaysShowControls);
+      const draftDisabled = isPending && disableDraftEditing;
+      const controlsDisabled = listAlwaysShowControls ? false : draftDisabled;
+      const displayQuantity =
+        item.status === "DRAFT"
+          ? Math.max(item.quantity, Number(item.quantity_ordered ?? 0))
+          : item.quantity;
+      const trimmedItemNote = String(item.item_note ?? "").trim();
+      const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
+      const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
+      const itemStage = getOrderItemStage(item);
+      const itemStageStyles = getOrderItemStageStyles(itemStage);
 
-        return consolidatedGroups;
-      })().map((item) => {
-        const isPending = item.status === "DRAFT";
-        const isTemporaryItem = isTemporaryOrderItemId(item.id);
-        const canShowControlsForItem = !hideItemControls || editableItemIds.some((id) => item.groupItemIds.includes(id));
-        const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || alwaysShowControls);
-        const draftDisabled = isPending && disableDraftEditing;
-        const controlsDisabled = alwaysShowControls ? false : draftDisabled;
-        const displayQuantity =
-          item.status === "DRAFT"
-            ? Math.max(item.quantity, Number(item.quantity_ordered ?? 0))
-            : item.quantity;
-        const trimmedItemNote = String(item.item_note ?? "").trim();
-        const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
-        const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
-        const itemStage = getOrderItemStage(item);
-        const itemStageStyles = getOrderItemStageStyles(itemStage);
-        const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
-        const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
+      return (
+        <div
+          key={item.id}
+          className={cn(
+            "rounded-2xl border py-3 pl-1.5 pr-2.5 transition-all sm:px-3",
+            isPending
+              ? "shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)]"
+              : (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") ? "opacity-50 border-red-200 bg-red-50/50" : "",
+            displayQuantity > 0 ? itemStageStyles.card : "",
+          )}
+        >
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 sm:gap-3">
+            <div
+              className={cn(
+                "min-w-0 flex-1 grid gap-y-1",
+                isBulkItem
+                  ? "grid-cols-[minmax(0,1fr)_auto]"
+                  : "grid-cols-[auto_minmax(0,1fr)_auto] gap-x-1.5 sm:gap-x-3",
+              )}
+            >
+              {!isBulkItem ? (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    "col-start-1 row-start-1 flex h-7 w-11 self-center justify-center rounded-lg bg-none px-0 py-0 text-sm font-black leading-none shadow-none hover:brightness-100",
+                    itemStageStyles.badge,
+                    (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50 !border-red-300 !bg-red-100 !text-red-900"
+                  )}
+                >
+                  {(displayQuantity || item.quantity_ordered) ?? 0}
+                </Badge>
+              ) : null}
 
-        return (
-          <div
-            key={item.id}
-            className={cn(
-              "rounded-2xl border py-3 pl-1.5 pr-2.5 transition-all sm:px-3",
-              isPending
-                ? "shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)]"
-                : (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") ? "opacity-50 border-red-200 bg-red-50/50" : "",
-              displayQuantity > 0 ? itemStageStyles.card : "",
-            )}
-          >
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 sm:gap-3">
-              <div
-                className={cn(
-                  "min-w-0 flex-1 grid gap-y-1",
-                  isBulkItem
-                    ? "grid-cols-[minmax(0,1fr)_auto]"
-                    : "grid-cols-[auto_minmax(0,1fr)_auto] gap-x-1.5 sm:gap-x-3",
-                )}
-              >
-                {!isBulkItem ? (
-                  <Badge
-                    variant="secondary"
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
                     className={cn(
-                      "col-start-1 row-start-1 flex h-7 w-11 self-center justify-center rounded-lg bg-none px-0 py-0 text-sm font-black leading-none shadow-none hover:brightness-100",
-                      itemStageStyles.badge,
-                      (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50 !border-red-300 !bg-red-100 !text-red-900"
+                      "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:pr-0 sm:text-sm",
+                      isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1"
                     )}
                   >
-                    {(displayQuantity || item.quantity_ordered) ?? 0}
-                  </Badge>
-                ) : null}
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={cn(
-                        "min-w-0 self-center truncate whitespace-nowrap pr-1 text-left text-[13px] font-medium text-foreground sm:pr-0 sm:text-sm",
-                        isBulkItem ? "col-start-1 row-start-1" : "col-start-2 row-start-1"
-                      )}
-                    >
-                      {item.description_snapshot}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" side="top" className="w-auto max-w-[18rem] break-words px-3 py-2 text-xs sm:text-sm">
                     {item.description_snapshot}
-                  </PopoverContent>
-                </Popover>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" side="top" className="w-auto max-w-[18rem] break-words px-3 py-2 text-xs sm:text-sm">
+                  {item.description_snapshot}
+                </PopoverContent>
+              </Popover>
 
-                {itemStage !== "draft" && !showControls ? (
-                  itemStage === "partial" ? (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className={cn(
-                            "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:text-[11px]",
-                            isBulkItem && "col-start-2",
-                            getOrderItemStageLegendClass(itemStage),
-                            (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
-                          )}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-slate-500 sm:h-2 sm:w-2" />
-                          {getOrderItemStageLabel(itemStage, orderType)}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" side="top" className="w-auto px-3 py-2 text-xs font-medium sm:text-sm">
-                        <div className="flex items-center gap-3 whitespace-nowrap">
-                          <span>Despachado: {dispatchedQty}</span>
-                          <span>Falta: {remainingQty}</span>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  ) : (
+              {itemStage !== "draft" && !showControls ? (
+                itemStage === "partial" ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:text-[11px]",
+                          isBulkItem && "col-start-2",
+                          getOrderItemStageLegendClass(itemStage),
+                          (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
+                        )}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-500 sm:h-2 sm:w-2" />
+                        {getOrderItemStageLabel(itemStage, orderType)}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" side="top" className="w-auto px-3 py-2 text-xs font-medium sm:text-sm">
+                      <div className="flex items-center gap-3 whitespace-nowrap">
+                        <span>Despachado: {Math.max(0, Number(item.quantity_dispatched ?? 0))}</span>
+                        <span>Falta: {Math.max(0, Number(item.quantity_remaining ?? 0))}</span>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <span
+                    className={cn(
+                      "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:text-[11px]",
+                      isBulkItem && "col-start-2",
+                      getOrderItemStageLegendClass(itemStage),
+                      (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
+                    )}
+                  >
                     <span
                       className={cn(
-                        "col-start-3 row-start-1 inline-flex shrink-0 self-center items-center justify-self-end gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap sm:gap-1.5 sm:text-[11px]",
-                        isBulkItem && "col-start-2",
-                        getOrderItemStageLegendClass(itemStage),
-                        (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50"
+                        "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
+                        getOrderItemStageDotClass(itemStage),
                       )}
-                    >
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
-                          getOrderItemStageDotClass(itemStage),
-                        )}
-                      />
-                      {getOrderItemStageLabel(itemStage, orderType)}
-                    </span>
-                  )
-                ) : null}
+                    />
+                    {getOrderItemStageLabel(itemStage, orderType)}
+                  </span>
+                )
+              ) : null}
 
-                {(item.tray_item_type || (item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0)) ? (
-                  <div
-                    className={cn(
-                      "mt-0.5 flex flex-wrap items-center gap-1.5 sm:gap-2",
-                      isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
-                    )}
-                  >
-                    {item.tray_item_type ? (
-                      <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
-                    ) : null}
-                    {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
-                      <span className="text-[11px] font-semibold text-orange-600">
-                        + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {trimmedItemNote && (
-                  <p
-                    className={cn(
-                      "mt-0.5 break-words whitespace-normal",
-                      isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
-                      isDeliveryInstruction
-                        ? "w-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800 sm:text-[13px]"
-                        : "text-xs italic text-muted-foreground",
-                    )}
-                  >
-                    {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
-                  </p>
-                )}
-
-                <p className={cn("-mt-1 text-[11px] font-medium text-slate-500 sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
-                  {isBulkItem ? (
-                    <span className="font-bold text-slate-900">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
-                  ) : (
-                    <>
-                      <span>${item.unit_price.toFixed(2)}</span>
-                      <span className="px-1 text-slate-400">x</span>
-                      <span>{displayQuantity || item.quantity_ordered}</span>
-                      <span className="px-1 text-slate-400">=</span>
-                      <span className="font-bold text-slate-900">${formatLineTotal(item.unit_price, displayQuantity || item.quantity_ordered)}</span>
-                    </>
+              {(item.tray_item_type || (item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0)) ? (
+                <div
+                  className={cn(
+                    "mt-0.5 flex flex-wrap items-center gap-1.5 sm:gap-2",
+                    isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
                   )}
+                >
+                  {item.tray_item_type ? (
+                    <TrayItemChip type={item.tray_item_type as TrayItemType} size="xs" />
+                  ) : null}
+                  {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                    <span className="text-[11px] font-semibold text-orange-600">
+                      + ${Number(item.tray_container_cost ?? 0).toFixed(2)} tarrina
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {trimmedItemNote && (
+                <p
+                  className={cn(
+                    "mt-0.5 break-words whitespace-normal",
+                    isBulkItem ? "col-span-2" : "col-start-2 col-span-2",
+                    isDeliveryInstruction
+                      ? "w-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800 sm:text-[13px]"
+                      : "text-xs italic text-muted-foreground",
+                  )}
+                >
+                  {isDeliveryInstruction ? trimmedItemNote : `Nota: ${trimmedItemNote}`}
                 </p>
+              )}
 
-                {item.modifiers.length > 0 && (
-                  <div className={cn("mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
-                    {item.modifiers
-                      .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
-                      .map((modifier) => (
-                        <p key={modifier.id} className="break-words whitespace-normal">
-                          - {modifier.description}
-                        </p>
-                      ))}
-                  </div>
-                )}
-
-              </div>
-              
-              {showControls && (
-                <div className="flex shrink-0 flex-col items-end gap-1.5 self-start sm:gap-2">
-                  <div className="flex items-center justify-end gap-0.5 sm:gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                      disabled={controlsDisabled}
-                      onClick={() => onRemove(item.id)}
-                      title="Eliminar item"
-                    >
-                      <Trash2 />
-                    </Button>
-
-                    {showControls && !isBulkItem ? (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                          disabled={controlsDisabled || displayQuantity === 0}
-                          onClick={() => {
-                            if (item.quantity > 0) {
-                              onUpdateQty(item.id, item.quantity - 1, item.unit_price);
+              <p className={cn("-mt-1 text-[11px] font-medium text-slate-500 sm:text-xs", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
+                {isBulkItem ? (
+                  <span className="font-bold text-slate-900">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
+                ) : (
+                  <>
+                    {isSpecialOrder && showControls ? (
+                      <div className="inline-flex items-center gap-1">
+                        <span className="text-slate-400">$</span>
+                        <input
+                          key={`${item.id}-${item.unit_price}`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          defaultValue={item.unit_price}
+                          onBlur={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val) && val >= 0 && val !== item.unit_price) {
+                              onUpdateQty(item.id, displayQuantity || item.quantity_ordered, val);
                             }
                           }}
-                        >
-                          <Minus />
-                        </Button>
-
-                        <QuantityInput
-                          key={`${item.id}-draft-${displayQuantity}`}
-                          initialQuantity={displayQuantity}
-                          min={0}
-                          max={alwaysShowControls ? 9999 : Math.max(1, item.quantity)}
-                          disabled={controlsDisabled}
-                          updateOnChange={false}
-                          onUpdate={(newQty) => {
-                            if (newQty < 0) {
-                              onUpdateQty(item.id, 0, item.unit_price);
-                            } else if (newQty !== item.quantity) {
-                              onUpdateQty(item.id, newQty, item.unit_price);
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.currentTarget.blur();
                             }
                           }}
+                          className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                         />
+                      </div>
+                    ) : (
+                      <span>${item.unit_price.toFixed(2)}</span>
+                    )}
+                    <span className="px-1 text-slate-400">x</span>
+                    <span>{displayQuantity || item.quantity_ordered}</span>
+                    <span className="px-1 text-slate-400">=</span>
+                    <span className="font-bold text-slate-900">${formatLineTotal(item.unit_price, displayQuantity || item.quantity_ordered)}</span>
+                  </>
+                )}
+              </p>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                          disabled={controlsDisabled}
-                          onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
-                        >
-                          <Plus />
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
+              {item.modifiers.length > 0 && (
+                <div className={cn("mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600", isBulkItem ? "col-span-2" : "col-start-2 col-span-2")}>
+                  {item.modifiers
+                    .filter((modifier) => String(modifier.description ?? "").trim().length > 0)
+                    .map((modifier) => (
+                      <p key={modifier.id} className="break-words whitespace-normal">
+                        - {modifier.description}
+                      </p>
+                    ))}
                 </div>
               )}
             </div>
+
+            {showControls && (
+              <div className="flex shrink-0 flex-col items-end gap-1.5 self-start sm:gap-2">
+                <div className="flex items-center justify-end gap-0.5 sm:gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
+                    disabled={controlsDisabled}
+                    onClick={() => onRemove(item.id)}
+                    title="Eliminar item"
+                  >
+                    <Trash2 />
+                  </Button>
+
+                  {showControls && !isBulkItem ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
+                        disabled={controlsDisabled || displayQuantity === 0}
+                        onClick={() => {
+                          if (item.quantity > 0) {
+                            onUpdateQty(item.id, item.quantity - 1, item.unit_price);
+                          }
+                        }}
+                      >
+                        <Minus />
+                      </Button>
+
+                      <QuantityInput
+                        key={`${item.id}-draft-${displayQuantity}`}
+                        initialQuantity={displayQuantity}
+                        min={0}
+                        max={listAlwaysShowControls ? 9999 : Math.max(1, item.quantity)}
+                        disabled={controlsDisabled}
+                        updateOnChange={false}
+                        onUpdate={(newQty) => {
+                          if (newQty < 0) {
+                            onUpdateQty(item.id, 0, item.unit_price);
+                          } else if (newQty !== item.quantity) {
+                            onUpdateQty(item.id, newQty, item.unit_price);
+                          }
+                        }}
+                      />
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
+                        disabled={controlsDisabled}
+                        onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
+                      >
+                        <Plus />
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            )}
           </div>
-        );
-      })}
+        </div>
+      );
+    });
+  };
+
+  const hasPaidItems = items.some((item) => (item.quantity_paid ?? 0) > 0);
+
+  if (hasPaidItems) {
+    const pendingItems = items
+      .map((item) => {
+        const pendingQty = item.quantity;
+        const containerCost = Number(item.tray_container_cost ?? 0);
+        const pendingTotal = pendingQty > 0 ? pendingQty * item.unit_price + containerCost : 0;
+        return {
+          ...item,
+          quantity: pendingQty,
+          quantity_ordered: pendingQty,
+          original_quantity: pendingQty,
+          total: pendingTotal,
+        };
+      })
+      .filter((item) => item.quantity > 0);
+
+    const paidItems = items
+      .map((item) => {
+        const paidQty = item.quantity_paid ?? 0;
+        const containerCost = Number(item.tray_container_cost ?? 0);
+        const paidTotal = paidQty > 0 ? paidQty * item.unit_price + containerCost : 0;
+        return {
+          ...item,
+          status: "PAID",
+          quantity: paidQty,
+          quantity_ordered: paidQty,
+          original_quantity: paidQty,
+          quantity_paid: paidQty,
+          total: paidTotal,
+        };
+      })
+      .filter((item) => item.quantity > 0);
+
+    const pendingSubtotal = pendingItems.reduce((sum, i) => sum + i.total, 0);
+    const paidSubtotal = paidItems.reduce((sum, i) => sum + i.total, 0);
+    const orderTotal = pendingSubtotal + paidSubtotal;
+
+    return (
+      <div className="flex flex-col gap-4">
+        {pendingItems.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/20 px-3 py-1 rounded-lg w-fit">
+              Productos Pendientes
+            </h3>
+            <div className="flex flex-col gap-3">
+              {renderList(pendingItems, false)}
+            </div>
+          </div>
+        )}
+
+        {paidItems.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1 rounded-lg w-fit">
+              Productos Pagados
+            </h3>
+            <div className="flex flex-col gap-3">
+              {renderList(paidItems, true)}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-2 space-y-1.5 border-t border-border pt-2.5">
+          <div className="flex items-center justify-between text-xs sm:text-sm">
+            <span className="text-muted-foreground">Subtotal Pendiente</span>
+            <span className="font-semibold text-foreground">${pendingSubtotal.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs sm:text-sm">
+            <span className="text-muted-foreground">Subtotal Pagado</span>
+            <span className="font-semibold text-emerald-600 dark:text-emerald-500">${paidSubtotal.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between border-t border-dashed border-border pt-1.5">
+            <span className="text-sm font-bold text-foreground">Total de la Orden</span>
+            <span className="font-display text-xl font-black text-foreground">
+              ${orderTotal.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {renderList(items, false)}
 
       <div className="mt-1 space-y-1 border-t border-border pt-2">
         <div className="flex items-center justify-between">
