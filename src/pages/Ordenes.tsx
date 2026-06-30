@@ -913,7 +913,9 @@ const OrdenesContent = () => {
         paid_at: item.paid_at ?? null,
         quantity_paid: item.quantity_paid ?? 0,
         quantity_pending: item.quantity,
-        pending_total: item.total,
+        pending_total: item.quantity > 0
+          ? (item.quantity * item.unit_price + Number(item.tray_container_cost ?? 0))
+          : 0,
       }))
     };
   }, [order]);
