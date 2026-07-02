@@ -182,7 +182,7 @@ const AddItemDialog = ({
                   Precio unitario
                 </span>
                 <span className="font-display text-lg font-black text-foreground">
-                  {isManual ? "$0.00" : `$${(displayProduct.unit_price ?? 0).toFixed(2)}`}
+                  {`$${price.toFixed(2)}`}
                 </span>
               </div>
             </div>

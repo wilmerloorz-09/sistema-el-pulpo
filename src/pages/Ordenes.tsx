@@ -881,6 +881,7 @@ const OrdenesContent = () => {
 
   const payableOrder: PayableOrder | null = useMemo(() => {
     if (!order) return null;
+    const realTotal = orderItems.reduce((sum, item) => sum + item.total, 0);
     return {
       id: order.id,
       order_number: order.order_number,
@@ -891,13 +892,15 @@ const OrdenesContent = () => {
       created_by: order.created_by,
       created_by_name: order.created_by_name,
       special_total_manual: order.special_total_manual,
-      special_real_total: order.special_total_manual ?? 0,
+      special_real_total: realTotal,
       special_paid_amount: 0,
-      special_pending_amount: order.special_total_manual ?? 0,
+      special_pending_amount: order.is_special
+        ? (order.special_total_manual ?? realTotal)
+        : realTotal,
       table_name: order.table_name,
       table_name_snapshot: order.table_name,
       split_code: order.split_code,
-      total: orderItems.reduce((sum, item) => sum + item.total, 0),
+      total: realTotal,
       items: orderItems.map(item => ({
         id: item.id,
         product_id: item.product_id,
@@ -918,7 +921,7 @@ const OrdenesContent = () => {
           : 0,
       }))
     };
-  }, [order]);
+  }, [order, orderItems]);
 
   const isBulkScopeSelection = currentMenuScope === "BULK";
   const shouldCalculateBulkIncludedByAmount = isBulkScopeSelection && isPlatosRootCategory(selectedProductRootName);
@@ -931,12 +934,16 @@ const OrdenesContent = () => {
           icon: <ShoppingBag className="h-4 w-4 shrink-0" />,
           className: "min-h-11 min-w-[6.4rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.5rem] sm:gap-2 sm:px-3 sm:text-sm",
         },
-        {
-          value: "BULK",
-          label: "A granel",
-          icon: <Scale className="h-4 w-4 shrink-0" />,
-          className: "min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm",
-        },
+        ...(!order?.is_special
+          ? [
+              {
+                value: "BULK" as MenuScope,
+                label: "A granel",
+                icon: <Scale className="h-4 w-4 shrink-0" />,
+                className: "min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm",
+              },
+            ]
+          : []),
       ]
     : [
         {
@@ -951,12 +958,16 @@ const OrdenesContent = () => {
           icon: <ShoppingBag className="h-4 w-4 shrink-0" />,
           className: "min-h-11 min-w-[6.4rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[8.5rem] sm:gap-2 sm:px-3 sm:text-sm",
         },
-        {
-          value: "BULK",
-          label: "A granel",
-          icon: <Scale className="h-4 w-4 shrink-0" />,
-          className: "min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm",
-        },
+        ...(!order?.is_special
+          ? [
+              {
+                value: "BULK" as MenuScope,
+                label: "A granel",
+                icon: <Scale className="h-4 w-4 shrink-0" />,
+                className: "min-h-11 min-w-[5.9rem] gap-1.5 rounded-[18px] px-2.5 text-[11px] sm:min-w-[7.75rem] sm:gap-2 sm:px-3 sm:text-sm",
+              },
+            ]
+          : []),
       ];
 
   /** Misma normalización que fetchSiblingOrders para que el orden de pestañas no salte al fusionar/refetch. */
@@ -1756,6 +1767,9 @@ const OrdenesContent = () => {
     .reduce((sum, item) => sum + item.total, 0);
   const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
   const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
+  const finalButtonTotal = order.is_special
+    ? (specialTotalManual ?? draftItemsTotal)
+    : draftItemsTotal;
   const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
   const hasTemporaryDraftItems = itemsToUse.some((i) => i.status === "DRAFT" && isTemporaryOrderItemId(i.id));
   const hasPendingCancellationItems = itemsToUse.some((item) =>
@@ -2861,12 +2875,12 @@ const OrdenesContent = () => {
           ) : isExpressOrder ? (
             <>
               <Truck className="h-5 w-5" />
-              Enviar a despacho - ${draftItemsTotal.toFixed(2)}
+              Enviar a despacho - ${finalButtonTotal.toFixed(2)}
             </>
           ) : (
             <>
               <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja - ${draftItemsTotal.toFixed(2)}
+              Enviar a caja - ${finalButtonTotal.toFixed(2)}
             </>
           )}
         </Button>
@@ -3250,7 +3264,7 @@ const OrdenesContent = () => {
       )}
 
       {isMesasChromeUi && (
-        <div className="rounded-t-2xl border border-b-0 border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50/90 to-amber-100/70 px-3 py-2.5 shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:rounded-t-3xl sm:px-4 sm:py-3">
+        <div className="sticky top-[56px] md:top-0 z-20 rounded-t-2xl border border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 px-3 py-2.5 shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:rounded-t-3xl sm:px-4 sm:py-3">
           <div className="flex w-full min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {hasSiblings ? (
@@ -3504,14 +3518,7 @@ const OrdenesContent = () => {
         </>
       )}
 
-      {!showCart && hasOrderItems && !showMesasV2CardPicker && (
-        <button onClick={() => setShowCart(true)} className="fixed bottom-24 left-3 right-3 z-30 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden">
-          <ShoppingBag className="h-5 w-5" />
-          <span className="font-display text-sm font-bold">
-            {`${mobileOrderBadgeCount > 0 ? `${mobileOrderBadgeCount} items · ` : "Ver orden · "}$${(order.is_special && specialTotalManual != null ? specialTotalManual : total).toFixed(2)}`}
-          </span>
-        </button>
-      )}
+
 
       <AddItemDialog
         product={selectedProduct}

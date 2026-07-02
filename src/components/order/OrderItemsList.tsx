@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { isTemporaryOrderItemId } from "@/hooks/useOrder";
@@ -55,6 +55,58 @@ type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCanc
 
 function formatLineTotal(unitPrice: number, quantity: number) {
   return (Number(unitPrice ?? 0) * Number(quantity ?? 0)).toFixed(2);
+}
+
+function PriceInput({
+  itemId,
+  initialPrice,
+  quantity,
+  onUpdateQty,
+}: {
+  itemId: string;
+  initialPrice: number;
+  quantity: number;
+  onUpdateQty: (id: string, qty: number, price: number) => void;
+}) {
+  const [value, setValue] = useState(String(initialPrice));
+
+  // Sync with prop when prop changes
+  useEffect(() => {
+    setValue(String(initialPrice));
+  }, [initialPrice]);
+
+  // Debounced callback to update parent state/optimistic cache on input changes
+  useEffect(() => {
+    const val = parseFloat(value);
+    if (!isNaN(val) && val >= 0 && val !== initialPrice) {
+      const timer = setTimeout(() => {
+        onUpdateQty(itemId, quantity, val);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [value, itemId, quantity, initialPrice, onUpdateQty]);
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      min="0"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => {
+        const val = parseFloat(value);
+        if (!isNaN(val) && val >= 0 && val !== initialPrice) {
+          onUpdateQty(itemId, quantity, val);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+    />
+  );
 }
 
 function getOrderItemStage(item: OrderItem): OrderItemStage {
@@ -400,24 +452,11 @@ const OrderItemsList = ({
                     {isSpecialOrder && showControls ? (
                       <div className="inline-flex items-center gap-1">
                         <span className="text-slate-400">$</span>
-                        <input
-                          key={`${item.id}-${item.unit_price}`}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          defaultValue={item.unit_price}
-                          onBlur={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (!isNaN(val) && val >= 0 && val !== item.unit_price) {
-                              onUpdateQty(item.id, displayQuantity || item.quantity_ordered, val);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.currentTarget.blur();
-                            }
-                          }}
-                          className="w-16 rounded border border-border bg-background px-1.5 py-0.5 text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        <PriceInput
+                          itemId={item.id}
+                          initialPrice={item.unit_price}
+                          quantity={displayQuantity || item.quantity_ordered}
+                          onUpdateQty={onUpdateQty}
                         />
                       </div>
                     ) : (

@@ -469,12 +469,7 @@ export function DispatchCardBase({
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-1 flex flex-nowrap gap-x-2 overflow-hidden text-muted-foreground text-sm">
-                      {!isBulkItem ? <span className="shrink-0">Env: {activeQuantity}</span> : null}
-                      <span className="shrink-0">Desp: {dispatchedQuantity}</span>
-                      <span className="shrink-0">Falt: {remainingToDispatch}</span>
-                      <span className="shrink-0">Canc: {item.quantity_cancelled}</span>
-                    </div>
+
                     <div className="mt-1 text-sm font-semibold text-slate-800">
                       {isBulkItem ? (
                         <span>{formatMoney(item.total)}</span>

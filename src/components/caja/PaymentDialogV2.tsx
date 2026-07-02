@@ -387,7 +387,8 @@ export default function PaymentDialogV2({
   }, []);
 
   const handleCobrar = useCallback(async () => {
-    if (!order || readOnly || paying || !canPay) return;
+    if (!order) return;
+    if (readOnly || paying || !canPay) return;
 
     const unpaidItems = (order.items ?? []).filter((item) => (payItemQtys[item.id] ?? 0) > 0);
     if (unpaidItems.length === 0) {

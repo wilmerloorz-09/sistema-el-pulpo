@@ -1633,8 +1633,10 @@ export function useCaja(params?: {
                 : Number((o as { special_total_manual?: number | null }).special_total_manual))
             : null;
           const specialPaidAmount = isSpecial ? roundMoney(activePaymentsTotalByOrder[o.id] ?? 0) : 0;
-          const specialPendingAmount = isSpecial && specialManualTotal != null
-            ? roundMoney(Math.max(0, specialManualTotal - specialPaidAmount))
+          const specialPendingAmount = isSpecial
+            ? (specialManualTotal != null
+                ? roundMoney(Math.max(0, specialManualTotal - specialPaidAmount))
+                : roundMoney(Math.max(0, specialRealTotal - specialPaidAmount)))
             : 0;
           const displayTotal = isSpecial && specialManualTotal != null ? specialManualTotal : specialRealTotal;
 
@@ -1667,7 +1669,7 @@ export function useCaja(params?: {
         })
         .filter((order) =>
           order.is_special
-            ? (order.special_total_manual != null && order.special_pending_amount > 0)
+            ? (order.special_pending_amount > 0)
             : order.items.some((item) => item.quantity_pending > 0),
         );
     },
@@ -2345,6 +2347,12 @@ export function useCaja(params?: {
         throw new Error("Una orden borrador no puede cobrarse en caja.");
       }
 
+      const orderRealTotal = roundMoney(
+        (allDbItems ?? [])
+          .filter((item: any) => item.status !== "DRAFT")
+          .reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0)
+      );
+
       const orderIsSpecial = Boolean(orderData.is_special);
       if (Boolean(isSpecial) !== orderIsSpecial) {
         throw new Error("El tipo de cobro no coincide con la orden");
@@ -2442,11 +2450,8 @@ export function useCaja(params?: {
 
       if (orderIsSpecial) {
         const configuredSpecialTotal = orderData.special_total_manual;
-        if (configuredSpecialTotal == null) {
-          throw new Error("La orden especial aun no tiene un total manual configurado");
-        }
-
-        const specialPendingAmount = roundMoney(Math.max(0, Number(configuredSpecialTotal) - Number(activePaymentsByOrder[orderId] ?? 0)));
+        const effectiveSpecialTotal = configuredSpecialTotal != null ? Number(configuredSpecialTotal) : orderRealTotal;
+        const specialPendingAmount = roundMoney(Math.max(0, effectiveSpecialTotal - Number(activePaymentsByOrder[orderId] ?? 0)));
         if (roundMoney(Number(specialAmount ?? totalAmount)) > specialPendingAmount + 0.01) {
           throw new Error("No puedes cobrar mas de lo pendiente en la orden especial");
         }
@@ -2455,8 +2460,7 @@ export function useCaja(params?: {
       const now = new Date().toISOString();
       const shouldMarkSpecialAsPaid =
         orderIsSpecial
-        && orderData.special_total_manual != null
-        && roundMoney(Number(activePaymentsByOrder[orderId] ?? 0) + appliedTotal) >= roundMoney(Number(orderData.special_total_manual));
+        && roundMoney(Number(activePaymentsByOrder[orderId] ?? 0) + appliedTotal) >= roundMoney(Number(orderData.special_total_manual ?? orderRealTotal));
       const paymentGroupId = preparedTransferProofSession?.paymentGroupId ?? generateUUID();
       const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
       let anchorPaymentId: string | null = null;
