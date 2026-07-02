@@ -3266,6 +3266,44 @@ const OrdenesContent = () => {
       </div>
       )}
 
+      {isExtraOrder && (
+        <div className="flex flex-wrap items-start gap-1 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
+          <div className="flex w-full min-w-0 items-center justify-between gap-1">
+            <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
+              <button
+                type="button"
+                onClick={handleMobileBackToMesas}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Volver"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
+                <Truck className="h-4 w-4" />
+                Extra
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "relative h-9 min-w-[42px] shrink-0 overflow-visible rounded-xl px-2 md:hidden",
+                showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
+              )}
+              onClick={() => setShowCart((current) => !current)}
+              aria-label={showCart ? "Volver al menu" : "Ver orden"}
+            >
+              {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+              {!showCart && mobileOrderBadgeCount > 0 && (
+                <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
+                  {mobileOrderBadgeCount}
+                </span>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isMesasChromeUi && (
         <div className="sticky top-[56px] md:top-0 z-20 rounded-t-2xl border border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 px-3 py-2.5 shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:rounded-t-3xl sm:px-4 sm:py-3">
           <div className="flex w-full min-w-0 items-center gap-2">
