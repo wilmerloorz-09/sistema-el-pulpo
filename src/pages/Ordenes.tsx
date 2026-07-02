@@ -3005,8 +3005,27 @@ const OrdenesContent = () => {
                 )}
             </div>
 
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "relative h-9 min-w-[42px] shrink-0 overflow-visible rounded-xl px-2 md:hidden",
+                  showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
+                )}
+                onClick={() => setShowCart((current) => !current)}
+                aria-label={showCart ? "Volver al menu" : "Ver orden"}
+              >
+                {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                {!showCart && mobileOrderBadgeCount > 0 && (
+                  <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
+                    {mobileOrderBadgeCount}
+                  </span>
+                )}
+              </Button>
+
             {order.table_id && (
-              <div className="ml-auto flex shrink-0 items-center gap-1">
+              <>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -3089,8 +3108,9 @@ const OrdenesContent = () => {
                     {removingSplit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
                   </Button>
                 )}
-              </div>
+              </>
             )}
+            </div>
           </div>
 
           {order.table_id && (
@@ -3197,23 +3217,6 @@ const OrdenesContent = () => {
                   </button>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "relative h-10 min-w-[46px] shrink-0 overflow-visible rounded-xl px-2 md:hidden",
-                  showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
-                )}
-                onClick={() => setShowCart((current) => !current)}
-                aria-label={showCart ? "Volver al menu" : "Ver orden"}
-              >
-                {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-                {!showCart && mobileOrderBadgeCount > 0 && (
-                  <span className="absolute right-1 top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
-                    {mobileOrderBadgeCount}
-                  </span>
-                )}
-              </Button>
             </div>
           )}
 
