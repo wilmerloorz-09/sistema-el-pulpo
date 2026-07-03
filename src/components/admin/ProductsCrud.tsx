@@ -19,6 +19,7 @@ interface Product {
   unit_price: number | null;
   price_mode: "FIXED" | "MANUAL";
   is_active: boolean;
+  force_servir_module?: boolean;
 }
 
 interface Category {
@@ -89,6 +90,7 @@ const ProductsCrud = () => {
     unit_price: 0,
     price_mode: "FIXED",
     is_active: true,
+    force_servir_module: false,
   } as any);
 
   const getNextDisplayOrder = (subcategoryId: string) => {
@@ -179,6 +181,7 @@ const ProductsCrud = () => {
       ),
     },
     { key: "is_active", header: "Activo", width: "4rem", type: "switch" },
+    { key: "force_servir_module", header: "Servir", width: "4.5rem", type: "switch" },
     { key: "display_order", header: "Orden", width: "5rem", render: (item) => <span>{item.display_order}</span>, editRender: (value) => <span className="text-sm text-muted-foreground">{value}</span> },
   ];
 
@@ -218,6 +221,7 @@ const ProductsCrud = () => {
       subcategory_id: subcategoryId,
       display_order: displayOrder,
       unit_price: unitPrice,
+      force_servir_module: Boolean(edit.editValues.force_servir_module),
     } as any);
   };
 
@@ -264,7 +268,7 @@ const ProductsCrud = () => {
       onDelete={crud.remove}
       onAdd={() => {
         const subcategoryId = subs[0]?.id ?? "";
-        edit.startAdd({ subcategory_id: subcategoryId, display_order: subcategoryId ? getNextDisplayOrder(subcategoryId) : 1, unit_price: 0, price_mode: "FIXED", is_active: true });
+        edit.startAdd({ subcategory_id: subcategoryId, display_order: subcategoryId ? getNextDisplayOrder(subcategoryId) : 1, unit_price: 0, price_mode: "FIXED", is_active: true, force_servir_module: false });
       }}
       onFieldChange={edit.setField}
       saving={crud.saving}

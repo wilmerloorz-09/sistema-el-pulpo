@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, Minus, Plus, ShoppingBag } from "lucide-react";
+import { ImageIcon, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
 import { parseDecimalInput, parseIntegerInput, sanitizeDecimalInput, sanitizeIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +49,7 @@ interface Props {
   adding?: boolean;
   priceModeOverride?: "FIXED" | "MANUAL";
   manualPriceLabel?: string;
+  isSpecial?: boolean;
   confirmLabel?: string;
   hideQuantity?: boolean;
   extraContent?: ReactNode | ((context: { unitPrice: number; quantity: number; isManual: boolean }) => ReactNode);
@@ -69,6 +70,7 @@ const AddItemDialog = ({
   hideQuantity = false,
   extraContent,
   buildItemNote,
+  isSpecial = false,
 }: Props) => {
   const isResolving = Boolean(resolvingShell && !product);
   const displayProduct: Product | null =
@@ -95,10 +97,16 @@ const AddItemDialog = ({
     if (dialogOpen) {
       setQuantity(1);
       setQuantityInput("1");
-      setManualPrice(displayProduct?.unit_price != null ? String(displayProduct.unit_price) : "");
+      setManualPrice(
+        isSpecial
+          ? "0"
+          : displayProduct?.unit_price != null
+          ? String(displayProduct.unit_price)
+          : ""
+      );
       setSelectedMods([]);
     }
-  }, [dialogOpen, product?.id, displayProduct]);
+  }, [dialogOpen, product?.id, displayProduct, isSpecial]);
 
   const sortedModifiers = useMemo(
     () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),
@@ -182,7 +190,7 @@ const AddItemDialog = ({
                   Precio unitario
                 </span>
                 <span className="font-display text-lg font-black text-foreground">
-                  {`$${price.toFixed(2)}`}
+                  {`$${(displayProduct.unit_price ?? 0).toFixed(2)}`}
                 </span>
               </div>
             </div>
@@ -304,8 +312,12 @@ const AddItemDialog = ({
               disabled={adding || !canAdd || isResolving}
               className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
             >
-              <ShoppingBag className="h-4 w-4" />
-              {confirmLabel}
+              {adding ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ShoppingBag className="h-4 w-4" />
+              )}
+              {adding ? "Agregando..." : confirmLabel}
             </Button>
           </div>
         </div>

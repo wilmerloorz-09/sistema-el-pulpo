@@ -1609,6 +1609,7 @@ export type Database = {
           special_origin_split_id: string | null
           special_origin_table_id: string | null
           special_total_manual: number | null
+          special_reason: string | null
           split_id: string | null
           status: Database["public"]["Enums"]["order_status"]
           table_id: string | null
@@ -1646,6 +1647,7 @@ export type Database = {
           special_origin_split_id?: string | null
           special_origin_table_id?: string | null
           special_total_manual?: number | null
+          special_reason?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           table_id?: string | null
@@ -1683,6 +1685,7 @@ export type Database = {
           special_origin_split_id?: string | null
           special_origin_table_id?: string | null
           special_total_manual?: number | null
+          special_reason?: string | null
           split_id?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           table_id?: string | null
@@ -2298,6 +2301,7 @@ export type Database = {
           subcategory_id: string
           unit_price: number | null
           updated_at: string
+          force_servir_module: boolean
         }
         Insert: {
           created_at?: string
@@ -2309,6 +2313,7 @@ export type Database = {
           subcategory_id: string
           unit_price?: number | null
           updated_at?: string
+          force_servir_module?: boolean
         }
         Update: {
           created_at?: string
@@ -2320,6 +2325,7 @@ export type Database = {
           subcategory_id?: string
           unit_price?: number | null
           updated_at?: string
+          force_servir_module?: boolean
         }
         Relationships: [
           {

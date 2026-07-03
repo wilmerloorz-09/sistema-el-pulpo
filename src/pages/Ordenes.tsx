@@ -572,6 +572,7 @@ const OrdenesContent = () => {
     deleteTableOrder,
     updateMenuScope,
     updateSpecialTotal,
+    updateSpecialReason,
     convertToSpecial,
     closeOrder,
     lockOrder,
@@ -849,6 +850,9 @@ const OrdenesContent = () => {
   const [inlineCancelQtyByItem, setInlineCancelQtyByItem] = useState<Record<string, number>>({});
   const [inlineCancellationType, setInlineCancellationType] = useState<"partial" | "total">("partial");
   const [specialTotalInput, setSpecialTotalInput] = useState("");
+  const specialTotalDebounceTimeoutRef = useRef<any>(null);
+  const [specialReasonInput, setSpecialReasonInput] = useState("");
+  const specialReasonDebounceTimeoutRef = useRef<any>(null);
   const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
   const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
   const [takeoutCajaPreview, setTakeoutCajaPreview] = useState<TakeoutCajaPreview | null>(null);
@@ -1447,7 +1451,8 @@ const OrdenesContent = () => {
     setSpecialTotalInput(
       order.special_total_manual == null ? "" : Number(order.special_total_manual).toFixed(2),
     );
-  }, [order?.id, order?.is_special, order?.special_total_manual]);
+    setSpecialReasonInput(order.special_reason ?? "");
+  }, [order?.id, order?.is_special, order?.special_total_manual, order?.special_reason]);
 
   useEffect(() => {
     if (!isTrayOrder) {
@@ -2491,7 +2496,38 @@ const OrdenesContent = () => {
     });
   };
 
+  const saveSpecialTotalSilently = (value: string) => {
+    const rawValue = value.trim().replace(",", ".");
+    if (!rawValue) {
+      updateSpecialTotal.mutate(null);
+      return;
+    }
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return;
+    }
+
+    updateSpecialTotal.mutate(Math.round(parsed * 100) / 100);
+  };
+
+  const handleSpecialTotalInputChange = (val: string) => {
+    setSpecialTotalInput(val);
+
+    if (specialTotalDebounceTimeoutRef.current) {
+      clearTimeout(specialTotalDebounceTimeoutRef.current);
+    }
+
+    specialTotalDebounceTimeoutRef.current = setTimeout(() => {
+      saveSpecialTotalSilently(val);
+    }, 400);
+  };
+
   const handleSaveSpecialTotal = () => {
+    if (specialTotalDebounceTimeoutRef.current) {
+      clearTimeout(specialTotalDebounceTimeoutRef.current);
+    }
+
     const rawValue = specialTotalInput.trim().replace(",", ".");
     if (!rawValue) {
       updateSpecialTotal.mutate(null, {
@@ -2508,6 +2544,31 @@ const OrdenesContent = () => {
 
     updateSpecialTotal.mutate(Math.round(parsed * 100) / 100, {
       onSuccess: () => toast.success("Total especial actualizado"),
+    });
+  };
+
+  const saveSpecialReasonSilently = (value: string) => {
+    updateSpecialReason.mutate(value.trim() || null);
+  };
+
+  const handleSpecialReasonInputChange = (val: string) => {
+    setSpecialReasonInput(val);
+
+    if (specialReasonDebounceTimeoutRef.current) {
+      clearTimeout(specialReasonDebounceTimeoutRef.current);
+    }
+
+    specialReasonDebounceTimeoutRef.current = setTimeout(() => {
+      saveSpecialReasonSilently(val);
+    }, 500);
+  };
+
+  const handleSaveSpecialReason = () => {
+    if (specialReasonDebounceTimeoutRef.current) {
+      clearTimeout(specialReasonDebounceTimeoutRef.current);
+    }
+    updateSpecialReason.mutate(specialReasonInput.trim() || null, {
+      onSuccess: () => toast.success("Motivo de orden especial actualizado"),
     });
   };
 
@@ -2742,54 +2803,53 @@ const OrdenesContent = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-display text-base font-black text-foreground">Orden Especial</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  El total manual manda en caja, pero el total real de los items sigue visible como referencia.
-                </p>
               </div>
               <Badge variant="outline" className="border-orange-300 bg-white/90 text-orange-800">
                 Cobro manual
               </Badge>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Total real</p>
-                <p className="mt-1 font-display text-2xl font-black text-sky-900">${total.toFixed(2)}</p>
-              </div>
-              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">Total especial</p>
-                <p className="mt-1 font-display text-2xl font-black text-orange-900">
-                  {specialTotalManual == null ? "--" : `$${specialTotalManual.toFixed(2)}`}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Diferencia</p>
-                <p className="mt-1 font-display text-2xl font-black text-amber-900">
-                  {specialDifference == null ? "--" : `$${specialDifference.toFixed(2)}`}
-                </p>
-              </div>
-            </div>
+
 
             {canEditItems ? (
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <Input
-                  inputMode="decimal"
-                  value={specialTotalInput}
-                  onChange={(event) => setSpecialTotalInput(sanitizeDecimalInput(event.target.value))}
-                  placeholder="Ingresa el total manual"
-                  className="h-11 rounded-xl"
-                />
-                <Button
-                  type="button"
-                  className="h-11 rounded-xl"
-                  disabled={updateSpecialTotal.isPending}
-                  onClick={handleSaveSpecialTotal}
-                >
-                  {updateSpecialTotal.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar total especial"}
-                </Button>
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Total Manual</label>
+                  <Input
+                    inputMode="decimal"
+                    value={specialTotalInput}
+                    onChange={(event) => handleSpecialTotalInputChange(sanitizeDecimalInput(event.target.value))}
+                    onBlur={handleSaveSpecialTotal}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSaveSpecialTotal();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    placeholder="Ingresa el total manual"
+                    className="h-11 rounded-xl mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Motivo</label>
+                  <Input
+                    type="text"
+                    value={specialReasonInput}
+                    onChange={(event) => handleSpecialReasonInputChange(event.target.value)}
+                    onBlur={handleSaveSpecialReason}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSaveSpecialReason();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    placeholder="Ingresa el motivo"
+                    className="h-11 rounded-xl mt-1"
+                  />
+                </div>
               </div>
             ) : (
-          <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
+              <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
                 Solo consulta: el total especial se administra desde una sesion con permisos operativos.
               </div>
             )}
@@ -3578,6 +3638,7 @@ const OrdenesContent = () => {
         }}
         priceModeOverride={order.is_special ? "MANUAL" : isTrayOrder ? (effectiveTrayType === "C" ? "MANUAL" : "FIXED") : undefined}
         manualPriceLabel={order.is_special ? "Precio unitario" : isTrayOrder && effectiveTrayType === "C" ? "Precio manual" : "Precio"}
+        isSpecial={order.is_special}
         confirmLabel="Agregar"
         hideQuantity={shouldCalculateBulkIncludedByAmount}
         extraContent={({ unitPrice, quantity }) => {
@@ -3656,6 +3717,12 @@ const OrdenesContent = () => {
             return;
           }
 
+          // Cierre optimista para que la interfaz móvil responda instantáneamente
+          setSelectedProduct(null);
+          setSelectedProductRootName(null);
+          setSelectedProductModifiers([]);
+          setProductLoadingShell(null);
+
           addItem.mutate({
             ...data,
             menu_node_id: selectedProduct?.menu_node_id ?? null,
@@ -3663,11 +3730,6 @@ const OrdenesContent = () => {
             modifier_snapshots: selectedModifierSnapshots,
             tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : undefined,
             tray_container_cost: 0,
-          }, {
-            onSuccess: () => {
-              setSelectedProduct(null);
-              setSelectedProductRootName(null);
-            },
           });
         }}
         adding={addItem.isPending}

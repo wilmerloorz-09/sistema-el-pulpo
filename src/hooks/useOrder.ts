@@ -128,6 +128,7 @@ export interface Order {
   is_special: boolean;
   is_tray_order?: boolean;
   special_total_manual: number | null;
+  special_reason?: string | null;
   special_marked_at?: string | null;
   branch_id: string;
   table_id: string | null;
@@ -554,7 +555,7 @@ async function fetchOrderTableName(tableId: string | null): Promise<string | nul
 
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   
@@ -1169,6 +1170,24 @@ export function useOrder(orderId: string | null) {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const updateSpecialReason = useMutation({
+    mutationFn: async (specialReason: string | null) => {
+      await dbUpdate("orders", orderId!, {
+        special_reason: specialReason,
+        updated_at: new Date().toISOString(),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["completed-payments"] });
+      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   const convertToSpecial = useMutation({
     mutationFn: async (specialTotalManual: number | null) => {
       if (!orderId) {
@@ -1330,6 +1349,7 @@ export function useOrder(orderId: string | null) {
     deleteTableOrder,
     updateMenuScope,
     updateSpecialTotal,
+    updateSpecialReason,
     convertToSpecial,
     closeOrder,
     lockOrder,

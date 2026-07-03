@@ -449,19 +449,7 @@ const OrderItemsList = ({
                   <span className="font-bold text-slate-900">${Number(item.total ?? item.unit_price ?? 0).toFixed(2)}</span>
                 ) : (
                   <>
-                    {isSpecialOrder && showControls ? (
-                      <div className="inline-flex items-center gap-1">
-                        <span className="text-slate-400">$</span>
-                        <PriceInput
-                          itemId={item.id}
-                          initialPrice={item.unit_price}
-                          quantity={displayQuantity || item.quantity_ordered}
-                          onUpdateQty={onUpdateQty}
-                        />
-                      </div>
-                    ) : (
-                      <span>${item.unit_price.toFixed(2)}</span>
-                    )}
+                    <span>${item.unit_price.toFixed(2)}</span>
                     <span className="px-1 text-slate-400">x</span>
                     <span>{displayQuantity || item.quantity_ordered}</span>
                     <span className="px-1 text-slate-400">=</span>
@@ -588,6 +576,23 @@ const OrderItemsList = ({
     const paidSubtotal = paidItems.reduce((sum, i) => sum + i.total, 0);
     const orderTotal = pendingSubtotal + paidSubtotal;
 
+    const catalogTotal = pendingSubtotal + paidSubtotal;
+    const isSpecial = isSpecialOrder && specialOrderChargeTotal != null;
+
+    const displayPendingSubtotal = isSpecial
+      ? catalogTotal > 0
+        ? specialOrderChargeTotal * (pendingSubtotal / catalogTotal)
+        : 0
+      : pendingSubtotal;
+
+    const displayPaidSubtotal = isSpecial
+      ? catalogTotal > 0
+        ? specialOrderChargeTotal * (paidSubtotal / catalogTotal)
+        : 0
+      : paidSubtotal;
+
+    const displayOrderTotal = isSpecial ? specialOrderChargeTotal : orderTotal;
+
     return (
       <div className="flex flex-col gap-4">
         {pendingItems.length > 0 && (
@@ -615,16 +620,16 @@ const OrderItemsList = ({
         <div className="mt-2 space-y-1.5 border-t border-border pt-2.5">
           <div className="flex items-center justify-between text-xs sm:text-sm">
             <span className="text-muted-foreground">Subtotal Pendiente</span>
-            <span className="font-semibold text-foreground">${pendingSubtotal.toFixed(2)}</span>
+            <span className="font-semibold text-foreground">${displayPendingSubtotal.toFixed(2)}</span>
           </div>
           <div className="flex items-center justify-between text-xs sm:text-sm">
             <span className="text-muted-foreground">Subtotal Pagado</span>
-            <span className="font-semibold text-emerald-600 dark:text-emerald-500">${paidSubtotal.toFixed(2)}</span>
+            <span className="font-semibold text-emerald-600 dark:text-emerald-500">${displayPaidSubtotal.toFixed(2)}</span>
           </div>
           <div className="flex items-center justify-between border-t border-dashed border-border pt-1.5">
             <span className="text-sm font-bold text-foreground">Total de la Orden</span>
             <span className="font-display text-xl font-black text-foreground">
-              ${orderTotal.toFixed(2)}
+              ${displayOrderTotal.toFixed(2)}
             </span>
           </div>
         </div>

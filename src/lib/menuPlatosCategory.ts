@@ -1,4 +1,5 @@
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
+import { supabase } from "@/integrations/supabase/client";
 
 export function normalizeMenuCategoryLabel(value?: string | null) {
   return String(value ?? "")
@@ -55,7 +56,22 @@ export async function fetchPlatosProductIdsForBranch(branchId: string) {
       fetchMenuTreeNodes({ branchId, menuScope, includeInactive: false }),
     ),
   );
-  return buildPlatosProductIdSet(scopeNodes.flat());
+  
+  const productIds = buildPlatosProductIdSet(scopeNodes.flat());
+
+  // Consultar productos no pertenecientes a la categoría platos pero forzados a Módulo Servir
+  const { data: forcedProducts } = await supabase
+    .from("products")
+    .select("id")
+    .eq("force_servir_module", true);
+
+  if (forcedProducts) {
+    for (const p of forcedProducts) {
+      productIds.add(p.id);
+    }
+  }
+
+  return productIds;
 }
 
 export function isPlatosOrderItem(

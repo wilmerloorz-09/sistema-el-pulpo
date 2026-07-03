@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { parseDecimalInput, sanitizeDecimalInput, sanitizeIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
@@ -47,6 +48,7 @@ interface FormState {
   description: string;
   image_url: string;
   is_active: boolean;
+  force_servir_module: boolean;
 }
 
 const MENU_NODE_IMAGE_BUCKET = "menu-node-images";
@@ -65,6 +67,7 @@ const emptyForm = (parentId: string | null = null, displayOrder: string = "1"): 
   description: "",
   image_url: "",
   is_active: true,
+  force_servir_module: false,
 });
 
 const sortedNumbers = (values: number[]) => values.filter((value) => value > 0).sort((a, b) => a - b);
@@ -346,6 +349,7 @@ const MenuNodesCrud = ({
     setSelectedId(node.id);
     setSelectedImageFile(null);
     setRemoveImage(false);
+
     setForm({
       id: node.id,
       name: node.name,
@@ -357,7 +361,30 @@ const MenuNodesCrud = ({
       description: node.description ?? "",
       image_url: node.image_url ?? "",
       is_active: node.is_active,
+      force_servir_module: false,
     });
+
+    if (node.node_type === "product" && node.legacy_product_id) {
+      supabase
+        .from("products")
+        .select("force_servir_module")
+        .eq("id", node.legacy_product_id)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("Error loading product:", error);
+            return;
+          }
+          if (data) {
+            setForm((prev) => {
+              if (prev.id === node.id) {
+                return { ...prev, force_servir_module: Boolean(data.force_servir_module) };
+              }
+              return prev;
+            });
+          }
+        });
+    }
   };
 
   const ensureLegacyCategoryMirror = async (
@@ -366,8 +393,22 @@ const MenuNodesCrud = ({
     parentId: string | null,
     preferredDisplayOrder: number,
     isActive: boolean,
-  ) => {
+  ): Promise<string> => {
     if (!activeBranchId) throw new Error("No se pudo resolver la categoria operativa legacy.");
+
+    // Recursively ensure parent category is mirrored first
+    if (parentId) {
+      const parentNode = nodesById.get(parentId);
+      if (parentNode) {
+        await ensureLegacyCategoryMirror(
+          parentNode.id,
+          parentNode.name,
+          parentNode.parent_id,
+          Number(parentNode.display_order ?? 1) || 1,
+          parentNode.is_active ?? true,
+        );
+      }
+    }
 
     const rootCategoryId = parentId ? getRootCategoryId(parentId) : categoryNodeId;
     const isRootCategory = parentId === null;
@@ -490,41 +531,40 @@ const MenuNodesCrud = ({
       "El producto para llevar no tiene categoria equivalente en Arbol Menu Mesa. Copia el arbol desde Mesa o crea primero esa categoria en Mesa.",
     );
   };
-
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (formData: FormState) => {
       if (!activeBranchId) throw new Error("No hay sucursal activa");
 
-      const id = form.id ?? generateUUID();
-      const previousImageUrl = normalizeImageUrl(form.id ? nodesById.get(form.id)?.image_url : "");
+      const id = formData.id ?? generateUUID();
+      const previousImageUrl = normalizeImageUrl(formData.id ? nodesById.get(formData.id)?.image_url : "");
       const previousManagedImagePath = extractManagedImagePath(previousImageUrl);
       let uploadedImagePath: string | null = null;
 
       try {
-        const name = form.name.trim();
+        const name = formData.name.trim();
         if (!name) throw new Error("El nombre es obligatorio");
 
-        const displayOrder = Number.parseInt(form.display_order, 10);
+        const displayOrder = Number.parseInt(formData.display_order, 10);
         if (Number.isNaN(displayOrder)) throw new Error("El orden debe ser numerico");
 
-        if (form.parent_id) {
-          const parent = nodesById.get(form.parent_id);
+        if (formData.parent_id) {
+          const parent = nodesById.get(formData.parent_id);
           if (!parent) throw new Error("El nodo padre ya no existe");
           if (parent.node_type !== "category") throw new Error("Solo una categoria puede tener hijos");
         }
 
         let price: number | null = null;
-        if (form.node_type === "product") {
-          if (!form.parent_id) throw new Error("El producto debe crearse desde el nivel 2 en adelante.");
+        if (formData.node_type === "product") {
+          if (!formData.parent_id) throw new Error("El producto debe crearse desde el nivel 2 en adelante.");
           if (!isBulkScope) {
-            price = parseDecimalInput(form.price);
+            price = parseDecimalInput(formData.price);
             if (!Number.isFinite(price) || price < 0) throw new Error("El producto requiere un precio valido");
           }
         }
 
-        if (form.id) {
-          const children = getChildren(form.id);
-          if (form.node_type === "product" && children.length > 0) {
+        if (formData.id) {
+          const children = getChildren(formData.id);
+          if (formData.node_type === "product" && children.length > 0) {
             throw new Error("No puedes convertir en producto un nodo que ya tiene hijos");
           }
         }
@@ -547,8 +587,8 @@ const MenuNodesCrud = ({
         }
 
         const currentLegacyProductId =
-          form.node_type === "product" && form.id
-            ? (nodesById.get(form.id)?.legacy_product_id ?? (isTableScope ? form.id : null))
+          formData.node_type === "product" && formData.id
+            ? (nodesById.get(formData.id)?.legacy_product_id ?? (isTableScope ? formData.id : null))
             : null;
 
         const { data: savedMenuNode, error: menuNodeError } = await supabase
@@ -557,18 +597,18 @@ const MenuNodesCrud = ({
             id,
             branch_id: activeBranchId,
             menu_scope: menuScope,
-            parent_id: form.parent_id,
+            parent_id: formData.parent_id,
             name,
-            node_type: form.node_type,
+            node_type: formData.node_type,
             display_order: displayOrder,
-            is_active: form.is_active,
+            is_active: formData.is_active,
             icon: null,
             price,
-            description: form.description.trim() || null,
+            description: formData.description.trim() || null,
             image_url: imageUrlToPersist || null,
-            manual_price_enabled: form.node_type === "category" ? form.manual_price_enabled : false,
+            manual_price_enabled: formData.node_type === "category" ? formData.manual_price_enabled : false,
             legacy_product_id:
-              form.node_type === "product"
+              formData.node_type === "product"
                 ? currentLegacyProductId
                 : null,
           } as any)
@@ -576,19 +616,19 @@ const MenuNodesCrud = ({
           .single();
         if (menuNodeError) throw menuNodeError;
 
-        if (form.node_type === "category") {
+        if (formData.node_type === "category") {
           if (isTableScope || isBulkScope) {
-            await ensureLegacyCategoryMirror(id, name, form.parent_id, displayOrder > 0 ? displayOrder : 1, form.is_active);
+            await ensureLegacyCategoryMirror(id, name, formData.parent_id, displayOrder > 0 ? displayOrder : 1, formData.is_active);
           }
         } else {
-          const nearestCategoryAncestorId = findNearestCategoryAncestorId(form.parent_id);
+          const nearestCategoryAncestorId = findNearestCategoryAncestorId(formData.parent_id);
           if (!nearestCategoryAncestorId) throw new Error("El producto debe colgar de una categoria valida.");
 
           const ancestorCategory = nodesById.get(nearestCategoryAncestorId);
           if (!ancestorCategory) throw new Error("No se pudo resolver la categoria ancestro del producto.");
 
           const existingLegacyProductId =
-            !isTableScope && form.id ? currentLegacyProductId : null;
+            !isTableScope && formData.id ? currentLegacyProductId : null;
 
           let legacySubcategoryId: string | null = null;
           if (!isTableScope && existingLegacyProductId) {
@@ -663,14 +703,15 @@ const MenuNodesCrud = ({
             ? nextAvailableOrder(usedOrders, Number(existingProduct.display_order) || displayOrder)
             : nextAvailableOrder(usedOrders, displayOrder > 0 ? displayOrder : 1);
 
-          const { error: productError } = await supabase.from("products").upsert({
+           const { error: productError } = await supabase.from("products").upsert({
             id: legacyProductId,
             subcategory_id: legacySubcategoryId,
             description: name,
             unit_price: price,
             price_mode: isBulkScope ? "MANUAL" : "FIXED",
             display_order: productDisplayOrder,
-            is_active: form.is_active,
+            is_active: formData.is_active,
+            force_servir_module: formData.force_servir_module,
           });
           if (productError) throw productError;
 
@@ -729,7 +770,9 @@ const MenuNodesCrud = ({
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
       resetForm();
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
   });
 
   const toggleActiveMutation = useMutation({
@@ -1181,6 +1224,24 @@ const MenuNodesCrud = ({
                 )}
               </div>
 
+              {form.node_type === "product" && (
+                <div className="flex items-center gap-2 rounded-xl border border-orange-100 bg-orange-50/20 p-3">
+                  <input
+                    type="checkbox"
+                    id="force_servir_module"
+                    checked={form.force_servir_module}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setForm((prev) => ({ ...prev, force_servir_module: val }));
+                    }}
+                    className="h-4 w-4 rounded border-orange-200 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                  />
+                  <Label htmlFor="force_servir_module" className="cursor-pointer font-semibold text-slate-800">
+                    Despachar este producto por el Módulo Servir (e.g. platos/mesa)
+                  </Label>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <Label>Descripcion</Label>
                 <Textarea value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} className="min-h-28 rounded-2xl" />
@@ -1270,7 +1331,13 @@ const MenuNodesCrud = ({
           ) : null}
 
           <div className="flex gap-2">
-            <Button className="flex-1 rounded-xl" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+            <Button
+              className="flex-1 rounded-xl"
+              onClick={() => {
+                saveMutation.mutate(form);
+              }}
+              disabled={saveMutation.isPending}
+            >
               <Save className="mr-1.5 h-4 w-4" />
               Guardar nodo
             </Button>
