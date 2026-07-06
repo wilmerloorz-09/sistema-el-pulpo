@@ -21,7 +21,7 @@
 - Auth: Supabase Auth.
 - Perfil operativo: `profiles`.
 - Sucursal activa: `profiles.active_branch_id`.
-- Flujo operativo global: todas las sucursales cobran primero en Caja y luego pasan a Despacho.
+- Modos de flujo operativo: configurables por sucursal (`branches.workflow_mode`): Primero a caja (`CASH_THEN_DISPATCH`) o Primero a despacho (`DISPATCH_THEN_CASH`).
 - El frontend no debe asumir permisos solo por layout; la validacion final vive en BD/RPCs.
 
 ### 2. Permisos y gate operativo
@@ -363,7 +363,7 @@
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
 13. **Agrupamiento Visual:** Toda modificación en la lógica de listado de ítems debe preservar la consolidación por descripción y precio para mantener la limpieza visual de la orden.
-14. **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` no despachadas.
+14. **Flujo Operativo Configurable:** Se define por sucursal (`branches.workflow_mode`): Primero a caja (`CASH_THEN_DISPATCH`), donde se debe pagar para despachar, o Primero a despacho (`DISPATCH_THEN_CASH`), donde se despacha antes de cobrar. La anulacion de pago solo aplica sobre ordenes no despachadas.
 15. **Permisos Operativos:** El botón "Editar orden" y la barra de búsqueda de órdenes deben ser accesibles para usuarios con capacidad `canOperateOrders` para permitir flexibilidad en la gestión de mesas.
 16. **Despacho sin duplicados:** Toda modificacion de `useDispatchOrders` debe conservar una sola tarjeta/fila por orden pagada; no separar la misma orden por tiempos de envio de items.
 17. **Tarjetas Para llevar / Especial:** Toda modificacion de `ParaLlevar`, `OrdenEspecial` o `useOrder` debe preservar `+` permanente, borradores vacios ocultos, orden visual consecutivo, codigo completo una sola vez, usuario creador y formato compatible con Mesa.

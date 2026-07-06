@@ -26,7 +26,7 @@
 - `branches`
   - `printer_ip` (text, nullable): Dirección IP de la impresora térmica en la red local.
   - `printer_port` (integer, default 9100): Puerto TCP de escucha de la impresora.
-- `branches.workflow_mode`: compatibilidad interna forzada a `CASH_THEN_DISPATCH`; el CRUD de sucursales no expone flujo.
+- `branches.workflow_mode`: Define el método de flujo operativo de la sucursal. Los valores permitidos son `CASH_THEN_DISPATCH` (Caja primero) y `DISPATCH_THEN_CASH` (Despacho primero). El CRUD de sucursales expone esta configuración.
 
 ### 1. Identidad y acceso
 - `profiles`
@@ -179,11 +179,10 @@
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas en pantallas que clasifican despachos y listos (Cocina, Despacho, listados complejos).
-- En el **cobro en caja** (`useCaja.payOrder`), con flujo global `CASH_THEN_DISPATCH`, la validación de cantidad cobrable puede basarse en `order_items` + cancelaciones aplicadas (`order_item_cancellations` / `order_cancellations`) **sin** llamar a `get_order_operational_snapshot` por orden, reduciendo latencia; no extrapolar esa simplificación a otros módulos sin revisar reglas de despacho.
+- En el **cobro en caja** (`useCaja.payOrder`), con flujo `CASH_THEN_DISPATCH`, la validación de cantidad cobrable puede basarse en `order_items` + cancelaciones aplicadas (`order_item_cancellations` / `order_cancellations`) **sin** llamar a `get_order_operational_snapshot` por orden, reduciendo latencia.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`. Impide el cobro en Caja mientras la orden está siendo modificada.
-- `submit_order_draft_items(...)` debe dejar cualquier orden enviada en estado cobrable por Caja antes de Despacho.
-- `sync_order_payment_state_internal(...)` debe considerar toda orden como cobrable por cantidad ordenada activa antes de despacho.
-- Los nuevos ítems añadidos durante una edición de una orden "En caja" se marcan para seguir el flujo de cobro correcto.
+- `submit_order_draft_items(...)` y `sync_order_payment_state_internal(...)` operan la secuencia de la orden en base a la propiedad `branches.workflow_mode` configurada en la sucursal activa.
+- Los nuevos ítems añadidos durante una edición de una orden se marcan para seguir el flujo operativo correspondiente.
 - La clasificacion visible del modulo `Ordenes` debe derivarse de `orders`, `order_items`, pagos activos y snapshot/eventos operativos:
   - `Borrador`: items activos agregados y no enviados a Caja. Las ordenes sin `order_code` / `order_number` deben permanecer en esta clasificacion mientras tengan items activos no pagados ni anulados.
   - `En Caja`: `orders.status IN ('SENT_TO_KITCHEN', 'READY')`, con `order_code` / `order_number`, items no `DRAFT` y saldo/cantidad pendiente de cobro. Excluir ordenes pagadas completas.

@@ -106,7 +106,6 @@ AS $$
         base.quantity_ordered
         - GREATEST(base.quantity_ready_total, base.quantity_dispatched_total)
         - base.quantity_cancelled_pending
-        - base.quantity_dispatched_from_pending
       )::int AS quantity_pending_prepare,
       GREATEST(
         0,

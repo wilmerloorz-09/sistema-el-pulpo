@@ -79,6 +79,16 @@ interface QueryOptions {
  * Online → fetch from Supabase, cache locally, return.
  * Offline → return from IndexedDB cache.
  */
+/** Envuelve una promesa con un timeout; rechaza si supera el límite. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`[DatabaseService] Timeout (${ms}ms) en ${label}`)), ms)
+    ),
+  ]);
+}
+
 export async function dbSelect<T = any>(
   table: TableName,
   options: QueryOptions = {}
@@ -86,35 +96,29 @@ export async function dbSelect<T = any>(
   const isOnline = navigator.onLine;
 
   if (isOnline) {
-    let result: T[];
     try {
-      result = await fetchFromSupabase<T>(table, options);
+      return await withTimeout(fetchFromSupabase<T>(table, options), 12_000, `fetchFromSupabase(${table})`);
     } catch (error) {
-      console.warn(`[DatabaseService] Supabase fetch failed for ${table}, falling back to cache`, error);
-      return fetchFromLocal<T>(table, options);
-    }
-
-    if (!options.skipLocalCache) {
+      console.warn(`[DatabaseService] Supabase fetch failed for ${table}, falling back to cache:`, error);
       try {
-        await cacheLocally(table, result as any[], options.branchId);
-      } catch (cacheError) {
-        console.error(`[DatabaseService] Failed to cache table ${table} locally:`, cacheError);
+        return await withTimeout(fetchFromLocal<T>(table, options), 3_000, `fetchFromLocal(${table}) fallback`);
+      } catch (localError) {
+        console.error(`[DatabaseService] Local fallback also failed for ${table}:`, localError);
+        return [];
       }
     }
-
-    return result;
   }
 
-  return fetchFromLocal<T>(table, options);
+  try {
+    return await withTimeout(fetchFromLocal<T>(table, options), 3_000, `fetchFromLocal(${table}) offline`);
+  } catch (err) {
+    console.error(`[DatabaseService] Offline local fetch failed for ${table}:`, err);
+    return [];
+  }
 }
 
 async function fetchFromSupabase<T>(table: TableName, options: QueryOptions): Promise<T[]> {
   let selectClause = options.select ?? "*";
-
-  // Auto-inject id column to prevent caching failures if projection is specific
-  if (selectClause !== "*" && !selectClause.split(",").map((col) => col.trim()).includes("id")) {
-    selectClause = `id, ${selectClause}`;
-  }
 
   let query = supabase.from(table as any).select(selectClause);
 

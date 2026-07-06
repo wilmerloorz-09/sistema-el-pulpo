@@ -270,7 +270,7 @@ export async function purgeEmptyDineInTableDraftsForTable(qc: QueryClient, table
   return Number.isFinite(n) ? n : 0;
 }
 
-const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise<T> =>
+const withOrderDetailTimeout = <T,>(promise: Promise<T>, timeoutMs = 6_000): Promise<T> =>
   new Promise((resolve, reject) => {
     const timeoutId = globalThis.setTimeout(() => {
       reject(new Error("La orden tardo demasiado en cargar. Intenta abrir la mesa nuevamente."));
@@ -553,41 +553,48 @@ async function fetchOrderTableName(tableId: string | null): Promise<string | nul
   return String(data?.name ?? "").trim() || null;
 }
 
+const withCallTimeout = <T,>(promise: Promise<T>, ms = 4000, label = "consulta"): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Tiempo de espera agotado en ${label}`)), ms)
+    ),
+  ]);
+
 async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> {
+  const startTotal = Date.now();
+  
+  const startOrders = Date.now();
   const orders = await dbSelect<any>("orders", {
     select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
+  console.log(`[PERF] Consultar orders tomo: ${Date.now() - startOrders}ms`);
   
   const order = orders[0];
   if (!order) return null;
 
+  const startMain = Date.now();
   const [
     tableResult,
     splitResult,
     items,
     snapshotResult,
-    creatorProfiles,
   ] = await Promise.all([
-    fetchOrderTableName(order.table_id),
+    withCallTimeout(fetchOrderTableName(order.table_id), 4000, "nombre de mesa"),
     order.split_id
-      ? dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] })
+      ? withCallTimeout(dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] }), 4000, "divisiones de mesa")
       : Promise.resolve([]),
-    dbSelect<any>("order_items", {
+    withCallTimeout(dbSelect<any>("order_items", {
       select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
       filters: [{ column: "order_id", op: "eq", value: orderId }],
       orderBy: { column: "created_at" },
-    }),
-    supabase.rpc("get_order_operational_snapshot" as any, {
+    }), 4000, "items de orden"),
+    withCallTimeout(supabase.rpc("get_order_operational_snapshot" as any, {
       p_order_id: orderId,
-    }),
-    order.created_by
-      ? dbSelect<any>("profiles", {
-          select: "id, first_name, full_name, username, alias, email",
-          filters: [{ column: "id", op: "eq", value: order.created_by }],
-        })
-      : Promise.resolve([]),
+    }), 4000, "estado operacional"),
   ]);
+  console.log(`[PERF] Promise.all principal tomo: ${Date.now() - startMain}ms`);
 
   /** La pantalla de ordenes ya carga hermanos con `table-orders`; evitar segunda llamada aqui. */
   const siblings: SiblingOrder[] = [];
@@ -608,6 +615,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
   let modifiersData: any[] = [];
 
   if (itemIds.length > 0) {
+    const startItemsDetails = Date.now();
     const [paymentItems, mods] = await Promise.all([
       dbSelect<any>("payment_items", {
         select: "id, payment_id, order_item_id, quantity_paid",
@@ -640,10 +648,12 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       if (blockedPaymentIds.has(row.payment_id)) continue;
       paidQuantityByItem[row.order_item_id] = (paidQuantityByItem[row.order_item_id] ?? 0) + Number(row.quantity_paid ?? 0);
     }
+    console.log(`[PERF] Consultar modificadores/pagos tomo: ${Date.now() - startItemsDetails}ms`);
   }
 
   const pendingRequestQtyByItem: Record<string, number> = {};
   if (order.cancel_requested_at) {
+    const startCancels = Date.now();
     const cancellations = await dbSelect<any>("order_cancellations", {
       select: "notes",
       filters: [
@@ -653,6 +663,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       ],
       orderBy: { column: "created_at", ascending: false }
     });
+    console.log(`[PERF] Consultar cancelaciones tomo: ${Date.now() - startCancels}ms`);
 
     const pendingCancellationHeader = cancellations.find(c => String(c.notes ?? "").startsWith("[PENDING_REQUEST]"));
 
@@ -767,12 +778,15 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       (item.original_quantity > 0 && item.status !== "CANCELLED")
     );
 
+  const totalDuration = Date.now() - startTotal;
+  console.log(`[PERF] TOTAL fetchOrderDetailInternal tomo: ${totalDuration}ms`);
+
   return {
     ...order,
     split_code: splitCode,
     table_name: tableName,
     created_by: order.created_by ?? null,
-    created_by_name: order.created_by ? getUserDisplayName(creatorProfiles?.[0] ?? null) : null,
+    created_by_name: null,
     items: enrichedItems,
     siblings,
   } as Order;
@@ -832,6 +846,7 @@ export function useOrder(orderId: string | null) {
       orderId ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) : undefined,
     staleTime: 15_000,
     gcTime: 10 * 60_000,
+    retry: false,
   });
 
   const addItem = useMutation({
@@ -1337,8 +1352,9 @@ export function useOrder(orderId: string | null) {
   return {
     order: query.data,
     isLoading: query.isLoading,
-    /** Evita redirección prematura mientras refetch/invalidación aún no repone datos en caché. */
     isFetching: query.isFetching,
+    isError: query.isError,
+    error: query.error,
     addItem,
     removeItem,
     updateQuantity,

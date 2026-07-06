@@ -544,6 +544,8 @@ function OrdenesListShell() {
   );
 }
 
+const EMPTY_ITEMS: any[] = [];
+
 const OrdenesContent = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -562,6 +564,8 @@ const OrdenesContent = () => {
     order,
     isLoading,
     isFetching,
+    isError,
+    error,
     addItem,
     removeItem,
     updateQuantity,
@@ -578,7 +582,7 @@ const OrdenesContent = () => {
     lockOrder,
     unlockOrder,
   } = useOrder(orderId);
-  const orderItems = order?.items ?? [];
+  const orderItems = order?.items ?? EMPTY_ITEMS;
   const { cancelOrderMutation } = useCancellation();
 
   // Permisos y estados base moved up to avoid TDZ
@@ -620,6 +624,8 @@ const OrdenesContent = () => {
   const isTakeoutOrder = order?.order_type === "TAKEOUT" && !order?.is_tray_order && !order?.is_special;
   const isExpressOrder = order?.order_type === "EXPRESS" && !order?.is_tray_order && !order?.is_special;
   const isExtraOrder = orderIsExtra(order);
+  const activeWorkflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
+  const isDispatchFirstFlow = isExpressOrder || (activeWorkflowMode === "DISPATCH_THEN_CASH" && !isTakeoutOrder);
   const isTakeoutMenuOrder = isTakeoutOrder || isExpressOrder;
   const isBranchSiblingOrder = isTakeoutOrder || isExpressOrder || isExtraOrder;
   const frequentProductContext = useMemo((): FrequentProductContext | null => {
@@ -1397,11 +1403,16 @@ const OrdenesContent = () => {
               ? "/editar-orden"
               : "/mesas";
 
+    if (isError && error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
     navigate(fallbackPath, { replace: true });
   }, [
     fromEditar,
     isFetching,
     isLoading,
+    isError,
+    error,
     navigate,
     order,
     orderId,
@@ -1843,7 +1854,12 @@ const OrdenesContent = () => {
     ((!isTakeoutOrder && !isExtraOrder) && (canManageOrders || isGlobalAdmin));
   const orderGroupLabel = isExpressOrder ? "Express" : isExtraOrder ? "Extra" : isTakeoutOrder ? "Para Llevar" : "mesa";
 
-  const isEditableInCaja = order.status === "SENT_TO_KITCHEN";
+  const isEditableInCaja =
+    order.status === "SENT_TO_KITCHEN" ||
+    (activeWorkflowMode === "DISPATCH_THEN_CASH" &&
+      (order.order_type === "DINE_IN" || order.order_type === "EXTRA" || order.is_special) &&
+      order.status !== "PAID" &&
+      order.status !== "CANCELLED");
   const isEditableInEditar =
     order.status === "SENT_TO_KITCHEN" ||
     order.status === "READY" ||
@@ -2404,23 +2420,43 @@ const OrdenesContent = () => {
         if (!originalIds.has(staged.id)) continue;
 
         const original = originalOrderItems.find((item) => item.id === staged.id);
-        const originalQuantity = Number(original?.quantity ?? 0);
-        const stagedQuantity = Number(staged.quantity ?? 0);
-        const priceChanged = original && Number(staged.unit_price) !== Number(original.unit_price);
-        const canPersistQuantityChange =
-          original &&
-          original.quantity !== staged.quantity &&
-          (
-            original.status === "DRAFT" ||
-            stagedQuantity > originalQuantity
-          );
+        if (!original) continue;
 
-        if (canPersistQuantityChange || priceChanged) {
-          await updateQuantity.mutateAsync({
-            itemId: staged.id,
-            quantity: staged.quantity,
-            unit_price: staged.unit_price,
-          });
+        const originalQuantity = Number(original.quantity ?? 0);
+        const stagedQuantity = Number(staged.quantity ?? 0);
+        const priceChanged = Number(staged.unit_price) !== Number(original.unit_price);
+
+        if (original.status === "DRAFT") {
+          if (originalQuantity !== stagedQuantity || priceChanged) {
+            await updateQuantity.mutateAsync({
+              itemId: staged.id,
+              quantity: stagedQuantity,
+              unit_price: staged.unit_price,
+            });
+          }
+        } else {
+          if (stagedQuantity > originalQuantity) {
+            const diffQty = stagedQuantity - originalQuantity;
+            const resolvedMenuNodeId = await resolveMissingMenuNodeId(staged as any);
+            await addItem.mutateAsync({
+              product_id: staged.product_id,
+              menu_node_id: resolvedMenuNodeId,
+              description_snapshot: staged.description_snapshot,
+              item_note: staged.item_note ?? null,
+              unit_price: staged.unit_price,
+              quantity: diffQty,
+              modifier_ids: staged.modifiers.map((modifier) => modifier.modifier_id).filter(Boolean) as string[],
+              tray_item_type: staged.tray_item_type as "A" | "B" | "C" | undefined,
+              tray_container_cost: staged.tray_container_cost ?? 0,
+            });
+          }
+          if (priceChanged) {
+            await updateQuantity.mutateAsync({
+              itemId: staged.id,
+              quantity: originalQuantity,
+              unit_price: staged.unit_price,
+            });
+          }
         }
       }
 
@@ -2470,8 +2506,8 @@ const OrdenesContent = () => {
       setStagedDirty(false);
       toast.success(
         isClosedForPayment
-          ? "Cambios aceptados. Los nuevos items quedaron cerrados para cobro."
-          : "Cambios aceptados. Los nuevos items quedaron despachados.",
+          ? "Cambios aceptados."
+          : "Cambios aceptados.",
       );
       // Always navigate back to the order page after accepting changes.
       // This keeps the user on the order (with menu enabled) even when all
@@ -2907,7 +2943,7 @@ const OrdenesContent = () => {
               } else {
                 await sendToKitchen.mutateAsync();
               }
-              if (!isExpressOrder && canUseCaja && (order?.id || orderId)) {
+              if (!isDispatchFirstFlow && canUseCaja && (order?.id || orderId)) {
                 if (
                   !shiftGateQuery.data?.shiftOpen
                   || shiftGateQuery.data?.cajaStatus === "CLOSED"
@@ -2921,6 +2957,8 @@ const OrdenesContent = () => {
                 } else {
                   toast.error("El dispositivo es demasiado pequeño para operar caja.");
                 }
+              } else {
+                handleExit();
               }
             } catch {
               // error handled by hook
@@ -2936,6 +2974,11 @@ const OrdenesContent = () => {
             <>
               <Truck className="h-5 w-5" />
               Enviar a despacho - ${finalButtonTotal.toFixed(2)}
+            </>
+          ) : isDispatchFirstFlow ? (
+            <>
+              <ChefHat className="h-5 w-5" />
+              Enviar a cocina - ${finalButtonTotal.toFixed(2)}
             </>
           ) : (
             <>
@@ -3002,6 +3045,8 @@ const OrdenesContent = () => {
                   Editar orden
                 </Button>
               )}
+
+
 
               {canCancelOrderFromCaja && (
                 <Button

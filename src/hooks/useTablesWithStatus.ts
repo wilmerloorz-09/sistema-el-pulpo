@@ -130,12 +130,13 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
   const activeOrdersMap = Object.fromEntries((activeOrders ?? []).map((order: any) => [order.id, order]));
   const activeCreatorNameMap = buildUserDisplayMap(activeCreatorProfiles);
   
-  // We check for voided payments to set the visual flag on tables, but we don't return them as a separate list anymore
-  const { data: voidedPayments } = await (supabase
-    .from("payments" as any)
-    .select("order_id, orders!inner(branch_id)")
-    .eq("orders.branch_id", branchId)
-    .ilike("notes", "%VOIDED%") as any);
+  const { data: voidedPayments } = activeOrderIds.length > 0
+    ? await (supabase
+        .from("payments" as any)
+        .select("order_id")
+        .in("order_id", activeOrderIds)
+        .ilike("notes", "%VOIDED%") as any)
+    : { data: [] };
   
   const voidedOrderIdSet = new Set<string>((voidedPayments ?? []).map((p: any) => String(p.order_id)));
 

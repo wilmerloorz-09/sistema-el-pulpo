@@ -241,7 +241,7 @@ export default function ShiftSummary({
                         }`}>Cuadre de caja</p>
                         <p className={`mt-1 text-[26px] font-bold leading-none ${
                           Math.abs(cashBalance) < 0.01 ? "text-emerald-900" : "text-red-900"
-                        }`}>${cashBalance >= 0 ? "+" : "-"}${Math.abs(cashBalance).toFixed(2)}</p>
+                        }`}>{cashBalance > 0 ? "+" : cashBalance < 0 ? "-" : ""}${Math.abs(cashBalance).toFixed(2)}</p>
                       </div>
                       <div className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-sm ${
                         Math.abs(cashBalance) < 0.01

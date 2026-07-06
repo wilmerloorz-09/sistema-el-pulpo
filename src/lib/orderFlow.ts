@@ -36,8 +36,10 @@ export function expressOrderAwaitingPayment(order: {
   return isExpressOrder(order) && String(order?.status ?? "") === "KITCHEN_DISPATCHED";
 }
 
-export function getSentItemStageLabel(orderType?: string | null): string {
-  return orderType === "EXPRESS" ? "En despacho" : "En caja";
+export function getSentItemStageLabel(orderType?: string | null, workflowMode?: string | null): string {
+  const isExpress = orderType === "EXPRESS";
+  const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && orderType !== "TAKEOUT");
+  return isDispatchFirst ? "En despacho" : "En caja";
 }
 
 export function getOrderStatusLabel(

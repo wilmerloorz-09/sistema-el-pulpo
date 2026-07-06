@@ -184,6 +184,15 @@ const MesasV2 = () => {
   };
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
+    try {
+      await handleTableClickInner(table);
+    } catch (err: any) {
+      console.error("[MesasV2] handleTableClick error:", err);
+      toast.error(err?.message ?? "Error al abrir la mesa");
+    }
+  };
+
+  const handleTableClickInner = async (table: NonNullable<typeof tables>[number]) => {
     const orderBelongsToCurrentShift = async (orderId: string) => {
       if (!activeBranchId) return false;
       return orderIdBelongsToOpenBranchShift(activeBranchId, orderId, fetchOrderShiftGateFields);
@@ -284,45 +293,13 @@ const MesasV2 = () => {
       return;
     }
 
+    // Mesa ocupada: tiene activeOrderId ya filtrado por turno en useTablesWithStatus.
     if (table.activeOrderId) {
-      const belongs = await orderBelongsToCurrentShift(table.activeOrderId);
-      if (!belongs) {
-        if (!user || !activeBranchId) return;
-        toast.success(`Entrando a ${table.name}...`);
-        const optimisticOrderId = crypto.randomUUID();
-        const now = new Date().toISOString();
-        seedDineInDraftOrderCache(qc, optimisticOrderId, {
-          branchId: activeBranchId,
-          tableId: table.id,
-          tableName: table.name,
-          createdAt: now,
-          tableOrderPosition: 1,
-          siblings: [
-            {
-              id: optimisticOrderId,
-              order_number: null,
-              order_code: null,
-              split_code: null,
-              table_order_position: 1,
-              item_count: 0,
-              created_at: now,
-            },
-          ],
-        });
-        const sp = new URLSearchParams();
-        sp.set("order", optimisticOrderId);
-        sp.set("openTable", table.id);
-        sp.set("tableName", table.name);
-        sp.set("origin", MESAS_ORIGIN_V2);
-        navigate(`/ordenes?${sp.toString()}`, { replace: true });
-        return;
-      }
-
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);
       if (activeBranchId) {
-        // Vista no libre: `useTablesWithStatus` ya excluyó órdenes de otro turno; navegar al instante.
+        // Navegar al instante; hermanos/mesaCards en segundo plano.
         navigate(`/ordenes?${mesasV2OrdenesSearch({ order: orderId })}`, { replace: true });
         void qc
           .ensureQueryData({
@@ -348,7 +325,11 @@ const MesasV2 = () => {
         return;
       }
       await openWithCardsIfNeeded(orderId, tableId);
+      return;
     }
+
+    // Mesa ocupada pero sin activeOrderId en caché: aviso al usuario.
+    toast.error(`No se encontró la orden de ${table.name}. Recarga las mesas.`);
   };
 
   if (tablesQuery.isError) {

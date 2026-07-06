@@ -284,45 +284,13 @@ const Mesas = () => {
       return;
     }
 
+    // Mesa ocupada: activeOrderId ya filtrado por turno en useTablesWithStatus.
     if (table.activeOrderId) {
-      const belongs = await orderBelongsToCurrentShift(table.activeOrderId);
-      if (!belongs) {
-        toast.success(`Entrando a ${table.name}...`);
-        const optimisticOrderId = crypto.randomUUID();
-        const now = new Date().toISOString();
-        seedDineInDraftOrderCache(qc, optimisticOrderId, {
-          branchId: activeBranchId!,
-          tableId: table.id,
-          tableName: table.name,
-          createdAt: now,
-          tableOrderPosition: 1,
-          siblings: [
-            {
-              id: optimisticOrderId,
-              order_number: null,
-              order_code: null,
-              split_code: null,
-              table_order_position: 1,
-              item_count: 0,
-              created_at: now,
-            },
-          ],
-        });
-        const sp = new URLSearchParams();
-        sp.set("order", optimisticOrderId);
-        sp.set("openTable", table.id);
-        sp.set("tableName", table.name);
-        sp.set("origin", MESAS_ORIGIN_LEGACY);
-        navigate(`/ordenes?${sp.toString()}`, { replace: true });
-        return;
-      }
-
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);
       if (activeBranchId) {
-        // Vista de mesas no libre: `useTablesWithStatus` ya marcó órdenes de otro turno como libres.
-        // Navegar al instante como en mesa libre optimista; hermanos/mesaCards en segundo plano.
+        // Navegar al instante; hermanos/mesaCards en segundo plano.
         goOrdenesMesas(orderId);
         void qc
           .ensureQueryData({

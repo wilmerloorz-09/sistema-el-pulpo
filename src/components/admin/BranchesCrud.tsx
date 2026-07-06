@@ -42,6 +42,22 @@ const BranchesCrud = () => {
     { key: "reference_table_count", header: "Mesas ref.", width: "6rem", type: "number" },
     { key: "printer_ip", header: "IP Impresora", width: "1fr", type: "text" },
     { key: "printer_port", header: "Puerto", width: "5rem", type: "number" },
+    { 
+      key: "workflow_mode", 
+      header: "Flujo operativo", 
+      width: "1.4fr",
+      render: (item) => item.workflow_mode === 'CASH_THEN_DISPATCH' ? 'Método A (Caja primero)' : 'Método B (Despacho primero)',
+      editRender: (value, onChange) => (
+        <select 
+          value={value ?? 'CASH_THEN_DISPATCH'} 
+          onChange={(e) => onChange(e.target.value)} 
+          className="h-10 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="CASH_THEN_DISPATCH">Método A: Caja primero</option>
+          <option value="DISPATCH_THEN_CASH">Método B: Despacho primero</option>
+        </select>
+      )
+    },
     { key: "is_active", header: "Activa", width: "4rem", type: "switch" },
   ];
 

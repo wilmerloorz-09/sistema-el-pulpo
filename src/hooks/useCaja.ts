@@ -936,7 +936,7 @@ function getPayableQuantityForOrderType(
   if (orderType === "EXPRESS") {
     return quantities.quantityDispatchedAvailable;
   }
-  if (orderType === "TAKEOUT" || orderType === "EXTRA" || workflowMode === "CASH_THEN_DISPATCH") {
+  if (orderType === "TAKEOUT" || (workflowMode === "CASH_THEN_DISPATCH" && (orderType === "DINE_IN" || orderType === "EXTRA"))) {
     return Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
   }
 
@@ -954,7 +954,7 @@ export function useCaja(params?: {
   const { activeBranchId, activeBranch } = useBranch();
   const { data: shiftGate } = useBranchShiftGate();
   const qc = useQueryClient();
-  const activeWorkflowMode = "CASH_THEN_DISPATCH";
+  const activeWorkflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
 
   const denomsQuery = useQuery({
     queryKey: ["denominations"],
@@ -1896,7 +1896,6 @@ export function useCaja(params?: {
           select: "order_item_id",
           filters: [
             { column: "order_item_id", op: "in", value: allOrderItemIds },
-            { column: "status", op: "eq", value: "APPLIED" },
           ],
         });
 

@@ -56,20 +56,46 @@ export function useBranchShiftGate() {
   return useQuery({
     queryKey: ["branch-shift-gate", activeBranchId, user?.id ?? null],
     queryFn: async (): Promise<BranchShiftGate> => {
+      const defaultValue: BranchShiftGate = {
+        shiftId: null,
+        shiftOpen: true,
+        userEnabled: true,
+        lastSessionId: null,
+        secondarySessionId: null,
+        cajaSessionSlots: [],
+        maxCajaSessions: 99,
+        globalCajaSessionsUsed: 0,
+        tabSessionId: TAB_SESSION_ID,
+        cashierId: null,
+        captureUserId: null,
+        activeTablesCount: 0,
+        cajaStatus: "OPEN",
+        canServeTables: true,
+        canAccessOrders: true,
+        canEditOrders: true,
+        canDispatchOrders: true,
+        canManageProducts: true,
+        canUseCaja: true,
+        primaryCashierId: null,
+        isSecondaryCashier: false,
+        secondaryCajaTakeoutEnabled: true,
+        secondaryCajaExpressEnabled: true,
+        canServePlates: true,
+        canPackOrders: true,
+        canAuthorizeOrderCancel: true,
+        canDoubleSession: true,
+        isSupervisor: true,
+        isCaptureDeviceOnly: false,
+        legacyFallbackApplied: true,
+        isStaleShift: false,
+        puedeRegistrarPromociones: true,
+      };
+
       if (!activeBranchId || !user?.id) {
         return {
-          shiftId: null,
+          ...defaultValue,
           shiftOpen: false,
           userEnabled: false,
-          lastSessionId: null,
-          secondarySessionId: null,
-          cajaSessionSlots: [],
-          maxCajaSessions: 1,
-          globalCajaSessionsUsed: 0,
-          tabSessionId: TAB_SESSION_ID,
-          cashierId: null,
-          captureUserId: null,
-          activeTablesCount: 0,
           cajaStatus: "UNOPENED",
           canServeTables: false,
           canAccessOrders: false,
@@ -77,8 +103,6 @@ export function useBranchShiftGate() {
           canDispatchOrders: false,
           canManageProducts: false,
           canUseCaja: false,
-          primaryCashierId: null,
-          isSecondaryCashier: false,
           secondaryCajaTakeoutEnabled: false,
           secondaryCajaExpressEnabled: false,
           canServePlates: false,
@@ -86,12 +110,11 @@ export function useBranchShiftGate() {
           canAuthorizeOrderCancel: false,
           canDoubleSession: false,
           isSupervisor: false,
-          isCaptureDeviceOnly: false,
-          legacyFallbackApplied: false,
-          isStaleShift: false,
           puedeRegistrarPromociones: false,
         };
       }
+
+      const runQuery = async (): Promise<BranchShiftGate> => {
 
       const { data, error } = await supabase.rpc("get_my_branch_shift_gate" as any, {
         p_branch_id: activeBranchId,
@@ -263,7 +286,20 @@ export function useBranchShiftGate() {
         isStaleShift,
         puedeRegistrarPromociones,
       };
-    },
+    };
+
+    try {
+      return await Promise.race([
+        runQuery(),
+        new Promise<BranchShiftGate>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout de turno")), 6000)
+        ),
+      ]);
+    } catch (err) {
+      console.warn("[useBranchShiftGate] Query timed out or failed. Returning fallback: ", err);
+      return defaultValue;
+    }
+  },
     enabled: !!activeBranchId && !!user?.id,
     staleTime: 0,
     refetchInterval: 5000,

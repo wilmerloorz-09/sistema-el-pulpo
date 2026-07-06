@@ -39,6 +39,11 @@ AS $$
     ORDER BY cs.opened_at DESC
     LIMIT 1
   ),
+  workflow_mode AS (
+    SELECT COALESCE(workflow_mode, 'CASH_THEN_DISPATCH') AS mode
+    FROM public.branches
+    WHERE id = p_branch_id
+  ),
   visible_tables AS (
     SELECT
       rt.id,
@@ -62,14 +67,17 @@ AS $$
     FROM public.orders o
     JOIN visible_tables vt
       ON vt.id = o.table_id
+    CROSS JOIN workflow_mode wm
     LEFT JOIN public.order_items oi
       ON oi.order_id = o.id
     WHERE o.branch_id = p_branch_id
       AND o.table_id IS NOT NULL
       AND o.order_type = 'DINE_IN'
-      -- KITCHEN_DISPATCHED se excluye: una orden despachada ya no ocupa la mesa.
-      -- PAID sí se incluye: la mesa permanece ocupada hasta que la orden sea despachada.
-      AND o.status IN ('DRAFT', 'SENT_TO_KITCHEN', 'READY', 'PAID')
+      AND (
+        (wm.mode = 'CASH_THEN_DISPATCH' AND o.status IN ('DRAFT', 'SENT_TO_KITCHEN', 'READY', 'PAID'))
+        OR
+        (wm.mode = 'DISPATCH_THEN_CASH' AND o.status IN ('DRAFT', 'SENT_TO_KITCHEN', 'READY', 'KITCHEN_DISPATCHED'))
+      )
       AND COALESCE(o.notes, '') NOT ILIKE '%VOID_SUCCESSOR_ORDER:%'
       AND EXISTS (
         SELECT 1

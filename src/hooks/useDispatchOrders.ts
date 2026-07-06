@@ -265,6 +265,7 @@ function groupItemsIntoDispatchCards(
   clientPaidQtyByItemId: Record<string, number>,
   platosProductIds?: Set<string>,
   filterOutPlatos?: boolean,
+  workflowMode?: string,
 ): DispatchOrder[] {
   const {
     readyMap,
@@ -278,6 +279,7 @@ function groupItemsIntoDispatchCards(
 
   const isExpressOrder = order.order_type === "EXPRESS";
   const isExtraOrder = order.order_type === "EXTRA";
+  const isDispatchFirst = isExpressOrder || (workflowMode === "DISPATCH_THEN_CASH" && order.order_type !== "TAKEOUT");
 
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
@@ -291,11 +293,11 @@ function groupItemsIntoDispatchCards(
       if (st === "DRAFT" || st === "CANCELLED") return false;
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
-      if (isExpressOrder) return Math.max(0, Math.floor(Number(item.quantity ?? 0))) > 0;
+      if (isDispatchFirst) return Math.max(0, Math.floor(Number(item.quantity ?? 0))) > 0;
       return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order) > 0;
     })
     .map((item) => {
-      const quantityPaid = isExpressOrder
+      const quantityPaid = isDispatchFirst
         ? Math.max(0, Math.floor(Number(item.quantity ?? 0)))
         : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
       const quantities = computeOperationalQuantities({
@@ -409,10 +411,11 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   const moduleMode: DispatchOrdersModule = options.module ?? "dispatch";
   const isServirModule = moduleMode === "servir";
   const qc = useQueryClient();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, activeBranch } = useBranch();
   const { user } = useAuth();
   const { config, assignments, isLoading: configLoading } = useDispatchConfig();
   const { data: shiftGate } = useBranchShiftGate();
+  const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
 
   const dispatchOrdersQueryKey = [
     isServirModule ? "servir-orders" : "dispatch-orders",
@@ -471,7 +474,11 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const activeOrders = ordersMerged.filter((o) => {
         if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
-        if (o.order_type === "EXPRESS") {
+        
+        const isExpress = o.order_type === "EXPRESS";
+        const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && o.order_type !== "TAKEOUT");
+
+        if (isDispatchFirst) {
           return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";
         }
         const hasAnyPay = ordersWithAnyPayment.has(o.id);
@@ -614,6 +621,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           clientPaidQtyByItemId,
           platosProductIds,
           filterOutPlatos,
+          workflowMode,
         );
       }).filter((card) => dispatchCardHasWork(card));
 

@@ -9,6 +9,7 @@ import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { isTemporaryOrderItemId } from "@/hooks/useOrder";
 import { getSentItemStageLabel } from "@/lib/orderFlow";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface OrderItem {
   id: string;
@@ -177,12 +178,12 @@ function getOrderItemStageStyles(stage: OrderItemStage) {
   }
 }
 
-function getOrderItemStageLabel(stage: OrderItemStage, orderType?: string | null) {
+function getOrderItemStageLabel(stage: OrderItemStage, orderType?: string | null, workflowMode?: string | null) {
   switch (stage) {
     case "draft":
       return "No enviado";
     case "sent":
-      return getSentItemStageLabel(orderType);
+      return getSentItemStageLabel(orderType, workflowMode);
     case "partial":
       return "Despacho parcial";
     case "dispatched":
@@ -243,6 +244,8 @@ const OrderItemsList = ({
   orderType = null,
   isSpecialOrder = false,
 }: Props) => {
+  const { activeBranch } = useBranch();
+  const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
   const total = items.reduce((sum, i) => sum + i.total, 0);
 
   if (items.length === 0) {
@@ -382,7 +385,7 @@ const OrderItemsList = ({
                         )}
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-slate-500 sm:h-2 sm:w-2" />
-                        {getOrderItemStageLabel(itemStage, orderType)}
+                        {getOrderItemStageLabel(itemStage, orderType, workflowMode)}
                       </button>
                     </PopoverTrigger>
                     <PopoverContent align="end" side="top" className="w-auto px-3 py-2 text-xs font-medium sm:text-sm">
@@ -407,7 +410,7 @@ const OrderItemsList = ({
                         getOrderItemStageDotClass(itemStage),
                       )}
                     />
-                    {getOrderItemStageLabel(itemStage, orderType)}
+                    {getOrderItemStageLabel(itemStage, orderType, workflowMode)}
                   </span>
                 )
               ) : null}

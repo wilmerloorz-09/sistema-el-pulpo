@@ -25,11 +25,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Las reglas de flujo global deben vivir en BD/RPC y no solo en texto/botones del frontend.
 - Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session`.
 
-### 2.1 Flujo global Caja - Despacho
-- Todas las sucursales trabajan con el mismo flujo: cobro primero y despacho despues, **excepto Express** (`order_type = EXPRESS`): despacho primero, cobro total despues en Caja cuando la orden esta `KITCHEN_DISPATCHED`.
-- El CRUD de sucursales no debe mostrar un campo de flujo ni un check `Mesero-Cajero`.
-- `branches.workflow_mode` queda como compatibilidad interna y debe estar forzado a `CASH_THEN_DISPATCH`.
-- Mesa, para llevar y orden especial pasan primero a Caja; una vez pagadas pasan a Despacho.
+### 2.1 Modos de Flujo Operativo en Sucursales (Caja primero vs Despacho primero)
+- Cada sucursal se puede configurar desde administración a través de su propiedad `branches.workflow_mode` con dos métodos de flujo operativo:
+  1. **`CASH_THEN_DISPATCH` (Caja primero / Primero a caja)**: Las órdenes (Mesa, Para Llevar, Especial, Extra) pasan primero a Caja para ser cobradas; una vez pagadas (estado `PAID`), se habilitan en el módulo de Despacho.
+  2. **`DISPATCH_THEN_CASH` (Despacho primero / Primero a despacho)**: Las órdenes van directamente al módulo de Despacho para ser preparadas y servidas antes de pasar a Caja para el cobro final.
+- Las órdenes de tipo **Express** (`order_type = EXPRESS`) mantienen su flujo nativo (despacho primero, cobro después) independientemente del modo de flujo configurado.
+- El CRUD de administración de sucursales expone y permite la edición del campo `workflow_mode` para elegir entre ambos flujos.
 - Una orden `PAID` de mesa permanece visible en la mesa hasta ser despachada; pagarla no libera la mesa ni debe ocultarla del detalle.
 - **Para llevar (UI):** una orden `TAKEOUT` puede permanecer visible dentro de `Para llevar` aunque ya esté `PAID`; solo debe salir del grupo cuando el despacho haya sido aplicado.
 - **Para llevar / Orden especial (UI):** sus modulos principales son grillas de tarjetas dinamicas, no redirecciones automaticas ni pestanas internas de orden. La tarjeta `+` siempre existe. Los borradores vacios no se muestran; los borradores con items y las ordenes activas posteriores se muestran hasta que exista despacho aplicado.
@@ -274,12 +275,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
    - `docs/database_architecture.md`
    - `docs/codex_rules.md`
 8. Si se tocan resets, actualizar tambien sus comentarios para reflejar las reglas base vigentes y asegurar que:
-   - **Flujo Global:** Caja antes de Despacho (Mesa, Para Llevar, Especial, Extra). Express invierte el flujo (despacho antes de cobro). Extra: despacho manual tras `PAID`; cierre con `close_extra_order`.
-   - **Despacho:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; migracion batch `20260602140000` recomendada.
-   - **Productos frecuentes:** reset total borra `extra_frequent_products`; reset operativo los conserva.
-   - **Promociones / clientes:** reset total borra `predicciones_clientes`, `permisos_promociones_turnos`, `campanas_promocionales` y `clientes` (orden: predicciones antes de órdenes). Reset operativo borra solo `predicciones_clientes` y `permisos_promociones_turnos` (con `cash_shift_users`); conserva campañas y catálogo de comensales.
+    - **Flujo Operativo configurable:** Se define a nivel de sucursal con `CASH_THEN_DISPATCH` (Caja antes de Despacho) o `DISPATCH_THEN_CASH` (Despacho antes de Caja). Express invierte el flujo de cobro nativo (despacho antes de cobro). Extra: despacho manual tras `PAID` (en Caja primero) o despacho directo; cierre con `close_extra_order`.
+    - **Despacho:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; migracion batch `20260602140000` recomendada.
+    - **Productos frecuentes:** reset total borra `extra_frequent_products`; reset operativo los conserva.
+    - **Promociones / clientes:** reset total borra `predicciones_clientes`, `permisos_promociones_turnos`, `campanas_promocionales` y `clientes` (orden: predicciones antes de órdenes). Reset operativo borra solo `predicciones_clientes` y `permisos_promociones_turnos` (con `cash_shift_users`); conserva campañas y catálogo de comensales.
   - **Caja unificada:** no documentar ni depender de flags `secondary_caja_*` para alcance de cobro.
-9. Si se toco flujo de ordenes, validar que mesa, para llevar y orden especial pasen primero por Caja y luego a Despacho.
+9. Si se toco flujo de ordenes, validar el comportamiento en base al `workflow_mode` configurado en la sucursal activa.
 10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
 11. Si se toca Caja/Recaudar, validar el filtro de alcance (todas / mías / por usuario) y que el cobro siga unificado.
 12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, mesa obligatoria (`table_id`), RPC `create_extra_order`, flujo caja → `PAID` → despacho manual, visibilidad creador/cajero principal y aparicion en Despacho (Mesa/Todos).

@@ -150,9 +150,10 @@
 - La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
-- **Flujo Global:** El sistema impone un flujo estricto de Caja antes de Despacho. Las ordenes (Mesa, Para Llevar, Especial) deben pagarse para ser elegibles para despacho. La anulacion de pago solo aplica sobre ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`; al anular, se conserva historial y se crea una sucesora `SENT_TO_KITCHEN` con numero nuevo.
-- El CRUD de sucursales no expone campo de flujo ni check `Mesero-Cajero`.
-- `branches.workflow_mode` se conserva solo como compatibilidad interna y queda forzado a `CASH_THEN_DISPATCH`.
+- **Flujos Operativos Configurable:** Las sucursales pueden configurarse mediante `branches.workflow_mode` en uno de dos flujos operativos:
+  - **`CASH_THEN_DISPATCH` (Caja primero)**: Las órdenes (Mesa, Para Llevar, Especial, Extra) se cobran primero en Caja y luego pasan a Despacho. La anulación de pago solo aplica sobre órdenes `PAID` que aún no estén despachadas.
+  - **`DISPATCH_THEN_CASH` (Despacho primero)**: Las órdenes pasan primero al módulo de Despacho para ser servidas/preparadas y luego pasan a Caja para su cobro final.
+- El CRUD de administración de sucursales expone y permite modificar el campo de flujo `workflow_mode`.
 - Al cerrar turno, el sistema limpia borradores no enviados que no tengan cobros ni items operativos; esto evita que una entrada abandonada en `Para llevar`, mesa u orden especial bloquee el cierre.
 - Una orden `DRAFT` solo debe bloquear cierre si tiene pagos o items no `DRAFT`.
 - Al cerrar turno, si existen ordenes especiales pendientes con valor operativo `$0`, el sistema debe mostrar una confirmacion:
@@ -180,7 +181,7 @@
 - **Rendimiento del cobro (cliente + BD):**
   - Inserciones calientes usan `dbInsert` / `dbInsertMany` con `hotPath` (insert sin `select` y sin escribir Dexie en ese momento) para `payments`, `payment_items` y fallback de `cash_movements`.
   - Lecturas previas al cobro en `payOrder` pueden usar `skipLocalCache` en `dbSelect` para no bloquear el hilo con `bulkPut` en IndexedDB.
-  - La validación previa al insert en `payOrder` evita el RPC `get_order_operational_snapshot` cuando el flujo efectivo es `CASH_THEN_DISPATCH`, usando cancelaciones aplicadas por ítem y cantidades de `order_items`.
+  - La validación previa al insert en `payOrder` evita el RPC `get_order_operational_snapshot` cuando el flujo configurado es `CASH_THEN_DISPATCH`, usando cancelaciones aplicadas por ítem y cantidades de `order_items`.
   - Tras persistir pagos, `ensureTableSnapshot` no bloquea el cierre del flujo de cobro (se dispara en segundo plano).
   - **Migración obligatoria para rendimiento en BD:** `20260509180000_payment_items_sync_once_per_statement.sql` reemplaza el trigger `FOR EACH ROW` en `payment_items` por triggers **a nivel de sentencia**, de modo que `sync_order_payment_state_internal` corre **una vez por lote** de ítems de pago, no una vez por fila. Sin esta migración aplicada, el cobro sigue lento aunque el frontend esté optimizado.
   - **Guard de estado terminal (`20260623200000`):** `sync_order_payment_state_internal` retorna inmediatamente si la orden ya es `PAID` o `CANCELLED`. Impide que despacho o recomputación operativa pisen el estado de pago.
@@ -417,9 +418,8 @@
 
 ### 2026-05-01
 - Sucursales:
-  - El flujo ya no se configura por sucursal.
-  - `branches.workflow_mode` queda forzado a `CASH_THEN_DISPATCH` por compatibilidad interna.
-  - El CRUD no muestra campo de flujo ni check `Mesero-Cajero`.
+  - El flujo se configura por sucursal (`branches.workflow_mode`), permitiendo `CASH_THEN_DISPATCH` (Caja primero) o `DISPATCH_THEN_CASH` (Despacho primero).
+  - El CRUD de administración de sucursales expone esta configuración para que el administrador pueda seleccionar el modo de flujo.
 - Ordenes / Caja:
   - `submit_order_draft_items(...)` deja toda orden enviada primero en Caja.
   - `sync_order_payment_state_internal(...)` y `useCaja` calculan cantidades cobrables completas antes de despacho.
