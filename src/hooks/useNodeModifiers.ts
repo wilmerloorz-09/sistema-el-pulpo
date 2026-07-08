@@ -170,6 +170,8 @@ export function useNodeModifiers(nodeId: string) {
       queryClient.invalidateQueries({ queryKey: ["node-modifiers", activeBranchId, nodeId] }),
       queryClient.invalidateQueries({ queryKey: ["admin-modifiers", activeBranchId] }),
       queryClient.invalidateQueries({ queryKey: ["menu-modifiers", activeBranchId] }),
+      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog", activeBranchId] }),
+      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] }),
     ]);
   };
 

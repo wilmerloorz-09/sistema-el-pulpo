@@ -765,6 +765,7 @@ const MenuNodesCrud = ({
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
@@ -815,6 +816,7 @@ const MenuNodesCrud = ({
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
@@ -888,6 +890,7 @@ const MenuNodesCrud = ({
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
@@ -921,6 +924,7 @@ const MenuNodesCrud = ({
       queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
       queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
       queryClient.invalidateQueries({ queryKey: ["menu-products"] });
       queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
       queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });

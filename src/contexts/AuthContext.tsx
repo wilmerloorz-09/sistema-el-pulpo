@@ -3,6 +3,7 @@ import { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { dbSelect } from "@/services/DatabaseService";
+import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 
 interface Profile {
   id: string;
@@ -325,6 +326,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!activeSessionIds.includes(ownedSession.sessionId)) {
           await forceSignOutDueToConcurrentSession();
         }
+      } catch (error) {
+        logBackgroundTaskError("AuthContext.validateSingleSession", error);
       } finally {
         validatingSingleSessionRef.current = false;
       }
@@ -375,15 +378,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const checkSessionAge = async () => {
-      const activity = readStoredSessionActivity();
+      try {
+        const activity = readStoredSessionActivity();
 
-      if (!activity || activity.userId !== userId) {
-        touchSessionActivity(userId);
-        return;
-      }
+        if (!activity || activity.userId !== userId) {
+          touchSessionActivity(userId);
+          return;
+        }
 
-      if (Date.now() - activity.lastActivityAt >= SESSION_TIMEOUT_MS) {
-        await expireSession();
+        if (Date.now() - activity.lastActivityAt >= SESSION_TIMEOUT_MS) {
+          await expireSession();
+        }
+      } catch (error) {
+        logBackgroundTaskError("AuthContext.checkSessionAge", error);
       }
     };
 

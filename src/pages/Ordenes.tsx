@@ -128,51 +128,99 @@ interface MenuProductLookupResult {
   modifiers: ProductModifierOption[];
 }
 
+const SUPABASE_IN_CHUNK_SIZE = 200;
+
+async function fetchRowsInChunks<T>(
+  ids: string[],
+  fetchChunk: (chunkIds: string[]) => Promise<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+
+  const rows: T[] = [];
+  for (let index = 0; index < ids.length; index += SUPABASE_IN_CHUNK_SIZE) {
+    const chunkIds = ids.slice(index, index + SUPABASE_IN_CHUNK_SIZE);
+    const { data, error } = await fetchChunk(chunkIds);
+    if (error) throw error;
+    rows.push(...((data ?? []) as T[]));
+  }
+  return rows;
+}
+
 /** En memoria: enlaces nodo↔modificador + textos, para armar la lista sin esperar al lookup del producto */
 interface BranchModifiersCatalog {
   links: Array<{ node_id: string; modifier_id: string; display_order: number | null }>;
   modifiersById: Map<string, { id: string; description: string }>;
+  parentByNodeId: Map<string, string | null>;
 }
 
 async function fetchBranchModifiersCatalog(branchId: string): Promise<BranchModifiersCatalog> {
-  const { data: nodeRows, error: nErr } = await supabase.from("menu_nodes" as any).select("id").eq("branch_id", branchId);
+  const { data: nodeRows, error: nErr } = await supabase
+    .from("menu_nodes" as any)
+    .select("id, parent_id")
+    .eq("branch_id", branchId);
   if (nErr) throw nErr;
-  const nodeIds = ((nodeRows ?? []) as Array<{ id: string }>).map((r) => r.id).filter(Boolean);
+
+  const typedNodeRows = (nodeRows ?? []) as Array<{ id: string; parent_id: string | null }>;
+  const parentByNodeId = new Map(typedNodeRows.map((row) => [row.id, row.parent_id ?? null]));
+  const nodeIds = typedNodeRows.map((row) => row.id).filter(Boolean);
   if (nodeIds.length === 0) {
-    return { links: [], modifiersById: new Map() };
+    return { links: [], modifiersById: new Map(), parentByNodeId };
   }
 
-  const { data: linkRows, error: lErr } = await supabase
-    .from("menu_node_modifiers" as any)
-    .select("node_id, modifier_id, display_order")
-    .in("node_id", nodeIds)
-    .eq("is_active", true)
-    .order("display_order", { ascending: true });
-  if (lErr) throw lErr;
+  const linkRows = await fetchRowsInChunks<{ node_id: string; modifier_id: string; display_order: number | null }>(
+    nodeIds,
+    async (chunkIds) =>
+      supabase
+        .from("menu_node_modifiers" as any)
+        .select("node_id, modifier_id, display_order")
+        .in("node_id", chunkIds)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true }),
+  );
 
-  const links = (linkRows ?? []) as Array<{ node_id: string; modifier_id: string; display_order: number | null }>;
+  const links = linkRows.sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0));
   const modifierIds = [...new Set(links.map((l) => l.modifier_id).filter(Boolean))];
   if (modifierIds.length === 0) {
-    return { links, modifiersById: new Map() };
+    return { links, modifiersById: new Map(), parentByNodeId };
   }
 
-  const { data: modRows, error: mErr } = await supabase
-    .from("modifiers" as any)
-    .select("id, description")
-    .eq("branch_id", branchId)
-    .eq("is_active", true)
-    .in("id", modifierIds);
-  if (mErr) throw mErr;
-
-  const modifiersById = new Map(
-    ((modRows ?? []) as Array<{ id: string; description: string }>).map((m) => [m.id, m]),
+  const modRows = await fetchRowsInChunks<{ id: string; description: string }>(
+    modifierIds,
+    async (chunkIds) =>
+      supabase
+        .from("modifiers" as any)
+        .select("id, description")
+        .eq("branch_id", branchId)
+        .eq("is_active", true)
+        .in("id", chunkIds),
   );
-  return { links, modifiersById };
+
+  const modifiersById = new Map(modRows.map((modifier) => [modifier.id, modifier]));
+  return { links, modifiersById, parentByNodeId };
+}
+
+/** Producto primero, luego ancestros (padre → abuelo). Usa parent_id del catalogo si el nodo no trae ancestor_ids. */
+function resolveModifierNodeIds(node: MenuNode, catalog: BranchModifiersCatalog): string[] {
+  if (node.ancestor_ids && node.ancestor_ids.length > 0) {
+    return [node.id, ...node.ancestor_ids];
+  }
+
+  const ancestors: string[] = [];
+  const visited = new Set<string>();
+  let currentParentId = node.parent_id ?? catalog.parentByNodeId.get(node.id) ?? null;
+
+  while (currentParentId && !visited.has(currentParentId)) {
+    visited.add(currentParentId);
+    ancestors.push(currentParentId);
+    currentParentId = catalog.parentByNodeId.get(currentParentId) ?? null;
+  }
+
+  return [node.id, ...ancestors];
 }
 
 /** Misma prioridad que en `fetchMenuProductLookup` (ancestro → producto, sin duplicar ids) */
 function buildModifiersForProductNode(node: MenuNode, catalog: BranchModifiersCatalog): ProductModifierOption[] {
-  const modifierNodeIds = [node.id, ...(node.ancestor_ids ?? [])];
+  const modifierNodeIds = resolveModifierNodeIds(node, catalog);
   const modifierLinks = catalog.links
     .filter((link) => modifierNodeIds.includes(link.node_id))
     .sort((a, b) => Number(a.display_order ?? 0) - Number(b.display_order ?? 0));
@@ -332,7 +380,9 @@ async function fetchMenuProductLookup(params: {
     throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
   }
 
-  const modifierNodeIds = [params.node.id, ...(params.node.ancestor_ids ?? [])];
+  const modifierNodeIds = params.catalog
+    ? resolveModifierNodeIds(params.node, params.catalog)
+    : [params.node.id, ...(params.node.ancestor_ids ?? [])];
 
   let modifiers: ProductModifierOption[];
   let productRows: unknown[] | null;
@@ -865,6 +915,8 @@ const OrdenesContent = () => {
   const receiptRef = useRef<HTMLDivElement>(null);
   /** Evita volver a forzar el panel de orden en movil si el usuario ya paso al menu (misma orden). Se limpia al cambiar `orderId`. */
   const mobileOrderDetailBootstrappedForIdRef = useRef<string | null>(null);
+  /** Ignora respuestas async de selecciones de producto anteriores (doble toque / red lenta en movil). */
+  const productSelectSeqRef = useRef(0);
   const syncedOrderBranchRef = useRef<string | null>(null);
   const tableOrdersTabsRef = useRef<HTMLDivElement>(null);
   const [tableOrdersTabsOverflow, setTableOrdersTabsOverflow] = useState({
@@ -1989,48 +2041,47 @@ const OrdenesContent = () => {
       return;
     }
 
+    const selectSeq = ++productSelectSeqRef.current;
     setSelectingProductId(node.id);
     try {
-      let catalog = qc.getQueryData<BranchModifiersCatalog>(["branch-modifiers-catalog", activeBranchId]);
-      if (!catalog) {
-        catalog = await qc.ensureQueryData({
-          queryKey: ["branch-modifiers-catalog", activeBranchId],
-          queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
-          staleTime: 5 * 60_000,
-          gcTime: 30 * 60_000,
-        });
-      }
+      const catalog = await qc.fetchQuery({
+        queryKey: ["branch-modifiers-catalog", activeBranchId],
+        queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
+        staleTime: 5 * 60_000,
+        gcTime: 30 * 60_000,
+      });
       const initialModifiers = buildModifiersForProductNode(node, catalog);
+
+      if (selectSeq !== productSelectSeqRef.current) return;
 
       setSelectedProduct(null);
       setSelectedProductModifiers(initialModifiers);
       setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
       setProductLoadingShell(buildProductLoadingShell(node, isTrayOrder, effectiveTrayType));
 
-      const lookup = await qc.fetchQuery({
-        queryKey: ["menu-product-lookup", activeBranchId, currentMenuScope, node.id, isTrayOrder ? effectiveTrayType : "STANDARD"],
-        queryFn: () =>
-          fetchMenuProductLookup({
-            branchId: activeBranchId,
-            node,
-            isTrayOrder,
-            trayType: effectiveTrayType,
-            catalog,
-          }),
-        staleTime: 60_000,
-        gcTime: 10 * 60_000,
+      const lookup = await fetchMenuProductLookup({
+        branchId: activeBranchId,
+        node,
+        isTrayOrder,
+        trayType: effectiveTrayType,
+        catalog,
       });
+
+      if (selectSeq !== productSelectSeqRef.current) return;
 
       setSelectedProduct(lookup.product);
       setSelectedProductModifiers(lookup.modifiers);
       setProductLoadingShell(null);
     } catch (error: any) {
+      if (selectSeq !== productSelectSeqRef.current) return;
       toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
       setSelectedProduct(null);
       setSelectedProductRootName(null);
       setProductLoadingShell(null);
     } finally {
-      setSelectingProductId(null);
+      if (selectSeq === productSelectSeqRef.current) {
+        setSelectingProductId(null);
+      }
     }
   };
   const canShowConvertToSpecial =

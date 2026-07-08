@@ -1,37 +1,13 @@
-window.addEventListener("error", (event) => {
-  const div = document.createElement("div");
-  div.style.position = "fixed";
-  div.style.top = "10px";
-  div.style.left = "10px";
-  div.style.right = "10px";
-  div.style.backgroundColor = "red";
-  div.style.color = "white";
-  div.style.padding = "15px";
-  div.style.zIndex = "99999";
-  div.style.borderRadius = "8px";
-  div.style.fontFamily = "monospace";
-  div.style.fontSize = "12px";
-  div.style.whiteSpace = "pre-wrap";
-  div.innerText = `ERROR GLOBAL: ${event.message}\nEn: ${event.filename}:${event.lineno}:${event.colno}\nStack: ${event.error?.stack || "No stack"}`;
-  document.body.appendChild(div);
-});
+import { isBenignAuthLockAbort } from "@/lib/benignAsyncErrors";
 
 window.addEventListener("unhandledrejection", (event) => {
-  const div = document.createElement("div");
-  div.style.position = "fixed";
-  div.style.top = "10px";
-  div.style.left = "10px";
-  div.style.right = "10px";
-  div.style.backgroundColor = "darkorange";
-  div.style.color = "white";
-  div.style.padding = "15px";
-  div.style.zIndex = "99999";
-  div.style.borderRadius = "8px";
-  div.style.fontFamily = "monospace";
-  div.style.fontSize = "12px";
-  div.style.whiteSpace = "pre-wrap";
-  div.innerText = `PROCESO EN RECHAZO (REJECTION): ${event.reason?.message || event.reason}\nStack: ${event.reason?.stack || "No stack"}`;
-  document.body.appendChild(div);
+  if (isBenignAuthLockAbort(event.reason)) {
+    event.preventDefault();
+    return;
+  }
+  if (import.meta.env.DEV) {
+    console.error("[unhandledrejection]", event.reason);
+  }
 });
 
 import { createRoot } from "react-dom/client";
