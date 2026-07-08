@@ -42,10 +42,6 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-export const showSystemAlert = (title: string, message: string) => {
-  window.dispatchEvent(new CustomEvent("global-alert", { detail: { title, message } }));
-};
-
 const GlobalSystemAlert = () => {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");

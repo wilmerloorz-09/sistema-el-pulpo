@@ -166,6 +166,83 @@ export function getOrderQueryKey(orderId: string | null) {
   return ["order", orderId] as const;
 }
 
+export async function persistOrderItemLineQuantity(
+  itemId: string,
+  quantity: number,
+  unitPrice?: number | null,
+  currentQuantity?: number,
+  itemStatus?: string | null,
+) {
+  const isSent = String(itemStatus ?? "") !== "DRAFT";
+  const currentQty = Math.max(0, Number(currentQuantity ?? 0));
+  const increasing = quantity > currentQty;
+
+  if (isSent && increasing) {
+    const { error } = await supabase.rpc("set_draft_order_item_quantity" as any, {
+      p_item_id: itemId,
+      p_quantity: quantity,
+      p_unit_price: unitPrice ?? null,
+    });
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase.rpc("remove_order_item_line" as any, {
+    p_item_id: itemId,
+    p_target_quantity: quantity,
+  });
+  if (!error) return;
+
+  const { error: legacyError } = await supabase.rpc("set_draft_order_item_quantity" as any, {
+    p_item_id: itemId,
+    p_quantity: quantity,
+    p_unit_price: unitPrice ?? null,
+  });
+  if (legacyError) throw error;
+}
+
+type KitchenPendingServerItem = {
+  id: string;
+  quantity: number;
+  unit_price: number;
+  status: string;
+};
+
+type KitchenPendingTargetItem = {
+  id: string;
+  quantity: number;
+  unit_price: number;
+};
+
+/** Aplica en BD las diferencias entre el estado del servidor y la vista pendiente de cocina. */
+export async function applyKitchenPendingItemChanges(
+  serverItems: KitchenPendingServerItem[],
+  pendingItems: KitchenPendingTargetItem[],
+): Promise<void> {
+  const pendingById = new Map(pendingItems.map((item) => [item.id, item]));
+
+  for (const server of serverItems) {
+    const pending = pendingById.get(server.id);
+    const pendingQty = pending ? Math.max(0, Number(pending.quantity ?? 0)) : 0;
+    const serverQty = Math.max(0, Number(server.quantity ?? 0));
+
+    if (!pending && server.status === "DRAFT") {
+      await persistOrderItemLineQuantity(server.id, 0);
+      continue;
+    }
+
+    if (pendingQty === serverQty) continue;
+
+    await persistOrderItemLineQuantity(
+      server.id,
+      pendingQty,
+      pending?.unit_price ?? server.unit_price,
+      serverQty,
+      server.status,
+    );
+  }
+}
+
 /** Cache de borrador de mesa (optimista o recien creado) para mostrar UI sin esperar al servidor. */
 export function seedDineInDraftOrderCache(
   qc: QueryClient,
@@ -771,12 +848,14 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
           })),
       };
     })
-    .filter((item) =>
-      item.quantity > 0 ||
-      item.status === "PAID" ||
-      (item.status === "DRAFT" && Number(item.original_quantity ?? 0) > 0) ||
-      (item.original_quantity > 0 && item.status !== "CANCELLED")
-    );
+    .filter((item) => {
+      if (item.status === "CANCELLED") return false;
+      return (
+        item.quantity > 0 ||
+        item.status === "PAID" ||
+        (item.status === "DRAFT" && Number(item.original_quantity ?? 0) > 0)
+      );
+    });
 
   const totalDuration = Date.now() - startTotal;
   console.log(`[PERF] TOTAL fetchOrderDetailInternal tomo: ${totalDuration}ms`);
@@ -960,22 +1039,16 @@ export function useOrder(orderId: string | null) {
       if (isTemporaryOrderItemId(itemId)) {
         throw new Error("El item aun se esta guardando. Espera un momento e intenta de nuevo.");
       }
-
-      const { error } = await supabase.rpc("set_draft_order_item_quantity" as any, {
-        p_item_id: itemId,
-        p_quantity: 0,
-        p_unit_price: null,
-      });
-      if (error) throw error;
+      await persistOrderItemLineQuantity(itemId, 0);
     },
     onMutate: async (itemId) => {
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
       const previousOrder = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
-      
+
       if (previousOrder) {
         qc.setQueryData(getOrderQueryKey(orderId), {
           ...previousOrder,
-          items: previousOrder.items.filter(item => item.id !== itemId),
+          items: previousOrder.items.filter((row) => row.id !== itemId),
         });
       }
       return { previousOrder };
@@ -989,6 +1062,9 @@ export function useOrder(orderId: string | null) {
     onSettled: () => {
       const branchId = query.data?.branch_id;
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["servir-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
       if (branchId) {
         qc.invalidateQueries({ queryKey: ["takeout-orders", branchId] });
@@ -1003,37 +1079,32 @@ export function useOrder(orderId: string | null) {
         throw new Error("El item aun se esta guardando. Espera un momento e intenta de nuevo.");
       }
 
-      const { error } = await supabase.rpc("set_draft_order_item_quantity" as any, {
-        p_item_id: itemId,
-        p_quantity: quantity,
-        p_unit_price: unit_price,
-      });
-      if (error) throw error;
+      const order = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
+      const item = order?.items.find((row) => row.id === itemId);
+      await persistOrderItemLineQuantity(
+        itemId,
+        quantity,
+        unit_price,
+        item?.quantity,
+        item?.status,
+      );
     },
     onMutate: async ({ itemId, quantity, unit_price }) => {
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
       const previousOrder = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
-      
+
       if (previousOrder) {
         qc.setQueryData(getOrderQueryKey(orderId), {
           ...previousOrder,
-          items: previousOrder.items.flatMap(item => {
-            if (item.id === itemId) {
-              if (quantity <= 0) return [];
-
-              const prevTotalCancelled = item.cancelled_quantity ?? 0;
-              const newQuantityOrdered = quantity + prevTotalCancelled;
-              return [{
-                ...item,
-                quantity: quantity,
-                quantity_ordered: newQuantityOrdered,
-                original_quantity: newQuantityOrdered,
-                total: quantity * unit_price + (quantity > 0 ? (item.tray_container_cost ?? 0) : 0),
-                quantity_remaining: item.status === "DRAFT" ? quantity : item.quantity_remaining,
-              }];
-            }
-            return [item];
-          })
+          items: previousOrder.items.flatMap((item) => {
+            if (item.id !== itemId) return [item];
+            if (quantity <= 0) return [];
+            return [{
+              ...item,
+              quantity,
+              total: quantity * unit_price + (quantity > 0 ? (item.tray_container_cost ?? 0) : 0),
+            }];
+          }),
         });
       }
       return { previousOrder };
@@ -1047,6 +1118,9 @@ export function useOrder(orderId: string | null) {
     onSettled: () => {
       const branchId = query.data?.branch_id;
       qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["servir-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
       if (branchId) {
         qc.invalidateQueries({ queryKey: ["takeout-orders", branchId] });

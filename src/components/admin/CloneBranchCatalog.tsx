@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { generateUUID } from "@/lib/uuid";
 import { cn } from "@/lib/utils";
-import { showSystemAlert } from "@/App";
+import { showSystemAlert } from "@/lib/systemAlert";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from "@/components/ui/alert-dialog";
 
 interface Branch {

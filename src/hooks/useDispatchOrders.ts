@@ -13,6 +13,7 @@ import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
+import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 
 export type DispatchOrdersModule = "dispatch" | "servir";
 
@@ -42,6 +43,16 @@ export interface DispatchOrderItem {
   sent_to_kitchen_at: string | null;
   /** Marcador de linea cubierta en caja (sync_order_payment_state); util si el snapshot aun no refleja quantity_paid. */
   paid_at: string | null;
+  /** IDs de order_items agrupados cuando la linea esta consolidada en UI. */
+  group_item_ids?: string[];
+  /** Desglose por linea original para repartir despachos parciales. */
+  source_lines?: Array<{
+    id: string;
+    quantity_dispatchable: number;
+    quantity_pending_prepare: number;
+    quantity_ready_available: number;
+    quantity_dispatched: number;
+  }>;
 }
 
 export interface DispatchOrder {
@@ -235,10 +246,7 @@ function paymentRowIsInactive(notes: string | null | undefined, status: string |
 
 function dispatchCardHasWork(card: DispatchOrder): boolean {
   if (card.items.length === 0) return false;
-  if (card.order_type === "EXPRESS") {
-    return card.items.some((it) => it.quantity_dispatchable > 0);
-  }
-  return card.items.some((it) => it.quantity_paid > 0 && it.quantity_dispatched < it.quantity_paid);
+  return card.items.some((it) => it.quantity_dispatchable > 0);
 }
 
 /** Misma regla que `useOrder` / caja: `payment_items` activos, `paid_at` de línea, o cobro total de orden PAID. */
@@ -293,21 +301,41 @@ function groupItemsIntoDispatchCards(
       if (st === "DRAFT" || st === "CANCELLED") return false;
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
-      if (isDispatchFirst) return Math.max(0, Math.floor(Number(item.quantity ?? 0))) > 0;
-      return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order) > 0;
-    })
-    .map((item) => {
-      const quantityPaid = isDispatchFirst
-        ? Math.max(0, Math.floor(Number(item.quantity ?? 0)))
-        : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
-      const quantities = computeOperationalQuantities({
-        quantityOrdered: quantityPaid,
+
+      const quantityOrdered = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+      const operational = computeOperationalQuantities({
+        quantityOrdered,
         quantityReadyTotal: readyMap[item.id] ?? 0,
         quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
         quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
         quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
         quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
       });
+      const activeQty = Math.max(0, quantityOrdered - operational.quantityCancelledTotal);
+      const remainingWork =
+        operational.quantityPendingPrepare
+        + operational.quantityReadyAvailable
+        + operational.quantityDispatchedAvailable;
+
+      if (isDispatchFirst) {
+        return activeQty > 0 && remainingWork > 0;
+      }
+
+      return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order) > 0;
+    })
+    .map((item) => {
+      const quantityOrdered = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+      const quantities = computeOperationalQuantities({
+        quantityOrdered,
+        quantityReadyTotal: readyMap[item.id] ?? 0,
+        quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
+        quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
+        quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+        quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
+      });
+      const quantityPaid = isDispatchFirst
+        ? Math.max(0, quantityOrdered - quantities.quantityCancelledTotal)
+        : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
 
       const quantityDispatched = Math.min(quantities.quantityDispatchedAvailable, quantityPaid);
       const paidNotYetDispatched = Math.max(0, quantityPaid - quantityDispatched);
@@ -359,12 +387,12 @@ function groupItemsIntoDispatchCards(
       ? [...sentCandidates].sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0]!
       : (order.sent_to_kitchen_at ?? order.updated_at);
 
-  const sortedItems = [...mappedItems].sort((left, right) => {
+  const sortedItems = consolidateDispatchOrderItems([...mappedItems].sort((left, right) => {
     const leftTime = new Date(left.created_at ?? left.sent_to_kitchen_at ?? sentAt).getTime();
     const rightTime = new Date(right.created_at ?? right.sent_to_kitchen_at ?? sentAt).getTime();
     if (leftTime !== rightTime) return leftTime - rightTime;
     return left.id.localeCompare(right.id, "es");
-  });
+  }));
 
   const pendingPrepareCount = sortedItems.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
   const readyAvailableCount = sortedItems.reduce((sum, item) => sum + item.quantity_ready_available, 0);
@@ -399,12 +427,10 @@ function groupItemsIntoDispatchCards(
 }
 
 function buildPartialDispatchItems(order: DispatchOrder) {
-  return order.items
-    .filter((item) => item.quantity_dispatchable > 0)
-    .map((item) => ({
-      order_item_id: item.id,
-      quantity_dispatched: item.quantity_dispatchable,
-    }));
+  return order.items.flatMap((item) => {
+    if (item.quantity_dispatchable <= 0) return [];
+    return buildDispatchAllocations(item, item.quantity_dispatchable);
+  });
 }
 
 export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrdersOptions = {}) {
@@ -728,23 +754,28 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   });
 
   const dispatchItem = useMutation({
-    mutationFn: async ({ orderId, itemId, qty }: { orderId: string; itemId: string; qty: number }) => {
+    mutationFn: async ({ orderId, item, qty }: { orderId: string; item: DispatchOrderItem; qty: number }) => {
       if (!user?.id) throw new Error("Usuario no autenticado");
+      const allocations = buildDispatchAllocations(item, qty);
+      if (allocations.length === 0) {
+        throw new Error("No hay cantidades pendientes de despacho para este item");
+      }
+
       const { error } = await supabase.rpc("dispatch_order_quantities" as any, {
         p_order_id: orderId,
         p_dispatched_by: user.id,
-        p_items: [{ order_item_id: itemId, quantity_dispatched: qty }] as any,
+        p_items: allocations as any,
         p_operation_type: "partial",
         p_source_module: "dispatch",
         p_notes: null,
       });
       if (error) throw error;
     },
-    onMutate: async ({ orderId, itemId, qty }) => {
+    onMutate: async ({ orderId, item, qty }) => {
       await qc.cancelQueries({ queryKey: dispatchOrdersQueryKey });
       const previous = qc.getQueryData<DispatchOrdersCache>(dispatchOrdersQueryKey);
       patchDispatchOrdersCache(qc, dispatchOrdersQueryKey, (orders) =>
-        applyOptimisticDispatchItem(orders, orderId, itemId, qty),
+        applyOptimisticDispatchItem(orders, orderId, item.id, qty),
       );
       return { previous };
     },

@@ -267,12 +267,13 @@ const NAV_ITEMS: AppNavItem[] = [
 ];
 
 export function useVisibleNavItems() {
-  const { permissions, isGlobalAdmin, branches } = useBranch();
+  const { permissions, isGlobalAdmin, branches, activeBranch } = useBranch();
   const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
   const shiftGateQuery = useBranchShiftGate();
 
   return useMemo(() => {
     const sg = shiftGateQuery.data;
+    const isDispatchFirstWorkflow = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
 
     const navItemsResolved = NAV_ITEMS.flatMap((navItem) => {
       if (navItem.to !== "/caja") return [navItem];
@@ -340,7 +341,11 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
-        if (!hasSupervisorBypass && Boolean(sg?.canPackOrders)) {
+        if (item.to === "/extra" && isDispatchFirstWorkflow) {
+          return false;
+        }
+
+        if (!hasSupervisorBypass && Boolean(sg?.canPackOrders) && !isDispatchFirstWorkflow) {
           return item.to === "/extra";
         }
         
@@ -392,6 +397,7 @@ export function useVisibleNavItems() {
       canAccessAdmin,
     };
   }, [
+    activeBranch?.workflow_mode,
     branches.length,
     dispatchAccessLoading,
     fallbackVisible,

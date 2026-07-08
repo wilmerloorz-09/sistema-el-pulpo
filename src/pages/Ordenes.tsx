@@ -7,6 +7,7 @@ import {
   fetchTakeoutSiblingOrders,
   fetchExpressSiblingOrders,
   fetchExtraSiblingOrders,
+  applyKitchenPendingItemChanges,
   getOrderQueryKey,
   isTemporaryOrderItemId,
   seedDineInDraftOrderCache,
@@ -56,7 +57,12 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
 import { getOrderMesaHeaderNumber, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
-import { getOrderStatusLabel, isExtraOrder as orderIsExtra } from "@/lib/orderFlow";
+import { getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode } from "@/lib/orderFlow";
+import {
+  computeKitchenSendMoneyDelta,
+  formatKitchenSendMoneyDelta,
+  hasKitchenPendingChanges,
+} from "@/lib/kitchenPendingChanges";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
@@ -676,6 +682,7 @@ const OrdenesContent = () => {
   const isExtraOrder = orderIsExtra(order);
   const activeWorkflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
   const isDispatchFirstFlow = isExpressOrder || (activeWorkflowMode === "DISPATCH_THEN_CASH" && !isTakeoutOrder);
+  const useKitchenStaging = isDispatchFirstFlow && !fromEditar;
   const isTakeoutMenuOrder = isTakeoutOrder || isExpressOrder;
   const isBranchSiblingOrder = isTakeoutOrder || isExpressOrder || isExtraOrder;
   const frequentProductContext = useMemo((): FrequentProductContext | null => {
@@ -1050,11 +1057,13 @@ const OrdenesContent = () => {
   const [fromEditarLocked, setFromEditarLocked] = useState(false);
   const [stagedItems, setStagedItems] = useState(order?.items ?? []);
   const [stagedDirty, setStagedDirty] = useState(false);
+  const [kitchenBaselineItems, setKitchenBaselineItems] = useState(order?.items ?? []);
   const [stagedCancellationData, setStagedCancellationData] = useState<{ reason: string; notes: string } | null>(null);
   const [deletingCajaOrder, setDeletingCajaOrder] = useState(false);
   const [confirmDeleteCajaOrderOpen, setConfirmDeleteCajaOrderOpen] = useState(false);
+  const kitchenBaselineOrderIdRef = useRef<string | null>(null);
 
-  const itemsToUse = fromEditar ? stagedItems : (order?.items ?? []);
+  const itemsToUse = (fromEditar || useKitchenStaging) ? stagedItems : (order?.items ?? []);
   const isPaidItem = (item: any) => {
     const status = String(item.status ?? "");
     const orderedQuantity = Math.max(0, Number(item.quantity_ordered ?? item.original_quantity ?? item.quantity ?? 0));
@@ -1069,13 +1078,44 @@ const OrdenesContent = () => {
   };
 
   useEffect(() => {
-    if (!fromEditar) {
+    if (fromEditar) {
+      if (order && !stagedDirty) {
+        setStagedItems(orderItems);
+      }
+      return;
+    }
+
+    if (!useKitchenStaging) {
       setStagedDirty(false);
       setStagedItems(orderItems);
-    } else if (order && !stagedDirty) {
+      return;
+    }
+
+    if (isLoading || !orderId) return;
+
+    if (kitchenBaselineOrderIdRef.current !== orderId) {
+      kitchenBaselineOrderIdRef.current = orderId;
+      setStagedDirty(false);
+      setKitchenBaselineItems(orderItems);
+      setStagedItems(orderItems);
+      return;
+    }
+
+    if (!stagedDirty) {
       setStagedItems(orderItems);
     }
-  }, [fromEditar, order?.items, orderItems, stagedDirty]);
+  }, [fromEditar, useKitchenStaging, orderId, orderItems, stagedDirty, isLoading, order]);
+
+  useEffect(() => {
+    if (!useKitchenStaging || !stagedDirty || isLoading) return;
+
+    setStagedItems((prev) => {
+      const prevIds = new Set(prev.map((item) => item.id));
+      const newFromServer = orderItems.filter((item) => !prevIds.has(item.id));
+      if (newFromServer.length === 0) return prev;
+      return [...prev, ...newFromServer];
+    });
+  }, [useKitchenStaging, stagedDirty, orderItems, isLoading]);
 
   const tableOrdersQuery = useQuery({
     queryKey: isExpressOrder
@@ -1427,11 +1467,18 @@ const OrdenesContent = () => {
   }, [fromEditar, order?.status, navigate]);
 
   useEffect(() => {
-    if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked) {
+    if (!fromEditar || !order || !isDispatchFirstFlow || !orderId) return;
+
+    const originValue = searchParams.get("origin") || "consulta";
+    navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
+  }, [fromEditar, isDispatchFirstFlow, order, orderId, navigate, searchParams, originParam]);
+
+  useEffect(() => {
+    if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked && !isDispatchFirstFlow) {
       lockOrder.mutate();
       setFromEditarLocked(true);
     }
-  }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, lockOrder]);
+  }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, isDispatchFirstFlow, lockOrder]);
 
   useEffect(() => {
     if (!orderId || isLoading || isFetching || shiftGateQuery.isLoading) return;
@@ -1840,6 +1887,14 @@ const OrdenesContent = () => {
     : draftItemsTotal;
   const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
   const hasTemporaryDraftItems = itemsToUse.some((i) => i.status === "DRAFT" && isTemporaryOrderItemId(i.id));
+  const hasPendingKitchenChanges = useKitchenStaging
+    && hasKitchenPendingChanges(kitchenBaselineItems, stagedItems);
+  const kitchenSendDelta = useKitchenStaging
+    ? computeKitchenSendMoneyDelta(kitchenBaselineItems, stagedItems)
+    : finalButtonTotal;
+  const showKitchenSendButton = useKitchenStaging
+    ? hasPendingKitchenChanges
+    : hasDraftItems;
   const hasPendingCancellationItems = itemsToUse.some((item) =>
     item.status === "PENDING_CANCELLATION" ||
     item.status === "ITEM_PENDING_CANCELLATION" ||
@@ -1919,6 +1974,13 @@ const OrdenesContent = () => {
   const isLockedFromEditar = fromEditar && !isEditableInEditar;
 
   const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
+  const editableItemIdsForEditar = useMemo(
+    () =>
+      fromEditar && isDispatchFirstFlow
+        ? stagedItems.filter(isOrderItemEditableInDispatchFirstEditMode).map((item) => item.id)
+        : [],
+    [fromEditar, isDispatchFirstFlow, stagedItems],
+  );
   const hasVoidableItemsInEditar = itemsToUse.some((item) => {
     if (item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION") {
       return false;
@@ -2018,7 +2080,8 @@ const OrdenesContent = () => {
     !fromEditar &&
     canUseEditarOrden &&
     isEditableInCaja &&
-    !hasPendingCancellationItems;
+    !hasPendingCancellationItems &&
+    !isDispatchFirstFlow;
   const canEditItems =
     (fromEditar && isEditableInEditar) ||
     (
@@ -2945,34 +3008,58 @@ const OrdenesContent = () => {
 
 
         <OrderItemsList
-          items={fromEditar ? stagedItems : orderItems}
+          items={(fromEditar || useKitchenStaging) ? stagedItems : orderItems}
           orderType={order.order_type}
           isSpecialOrder={Boolean(order?.is_special)}
-          alwaysShowControls={fromEditar}
+          alwaysShowControls={fromEditar && !isDispatchFirstFlow}
+          allowSentStageEditing={isDispatchFirstFlow && !fromEditar && canEditItems}
+          splitDispatchSections={isDispatchFirstFlow}
           hideItemControls={false}
-          editableItemIds={[]}
+          editableItemIds={editableItemIdsForEditar}
           specialOrderChargeTotal={order.is_special && specialTotalManual != null ? specialTotalManual : null}
           specialOrderCatalogTotal={order.is_special && specialTotalManual != null ? total : null}
           onRemove={(id) => {
-            if (fromEditar) {
+            const ids = Array.isArray(id) ? id : [id];
+            if (fromEditar || useKitchenStaging) {
               setStagedDirty(true);
               setStagedItems((prev) => {
-                const item = prev.find(i => i.id === id);
-                if (item && item.status !== "DRAFT") {
-                  return prev.map(i => i.id === id ? { ...i, quantity: 0, total: 0 } : i);
+                const next = [...prev];
+                for (const itemId of ids) {
+                  const item = next.find((i) => i.id === itemId);
+                  if (!item) continue;
+                  if (item.status !== "DRAFT") {
+                    const idx = next.findIndex((i) => i.id === itemId);
+                    if (idx >= 0) {
+                      next[idx] = { ...next[idx], quantity: 0, total: 0 };
+                    }
+                  } else {
+                    const idx = next.findIndex((i) => i.id === itemId);
+                    if (idx >= 0) next.splice(idx, 1);
+                  }
                 }
-                return prev.filter((i) => i.id !== id);
+                return next;
               });
             } else {
-              removeItem.mutate(id);
+              void (async () => {
+                for (const itemId of ids) {
+                  await removeItem.mutateAsync(itemId);
+                }
+              })();
             }
           }}
           onUpdateQty={(id, qty, price) => {
-            if (fromEditar) {
+            if (fromEditar || useKitchenStaging) {
               setStagedDirty(true);
               setStagedItems((prev) =>
                 prev.map((i) =>
-                  i.id === id ? { ...i, quantity: qty, unit_price: price, total: qty * price } : i
+                  i.id === id
+                    ? {
+                      ...i,
+                      quantity: qty,
+                      unit_price: price,
+                      total: qty * price + (qty > 0 ? (i.tray_container_cost ?? 0) : 0),
+                    }
+                    : i
                 )
               );
             } else {
@@ -2985,14 +3072,26 @@ const OrdenesContent = () => {
         />
       </div>
 
-      {!fromEditar && canOperateOrders && hasDraftItems && order.status !== "PAID" && order.status !== "CANCELLED" && (
+      {!fromEditar && canOperateOrders && showKitchenSendButton && order.status !== "PAID" && order.status !== "CANCELLED" && (
         <Button
           onClick={async () => {
             try {
+              if (useKitchenStaging && hasPendingKitchenChanges) {
+                await applyKitchenPendingItemChanges(orderItems, stagedItems);
+              }
               if (isExpressOrder) {
                 await sendToDispatch.mutateAsync();
               } else {
                 await sendToKitchen.mutateAsync();
+              }
+              if (useKitchenStaging && orderId) {
+                setStagedDirty(false);
+                await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
+                const freshOrder = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
+                if (freshOrder?.items) {
+                  setKitchenBaselineItems(freshOrder.items);
+                  setStagedItems(freshOrder.items);
+                }
               }
               if (!isDispatchFirstFlow && canUseCaja && (order?.id || orderId)) {
                 if (
@@ -3024,12 +3123,12 @@ const OrdenesContent = () => {
           ) : isExpressOrder ? (
             <>
               <Truck className="h-5 w-5" />
-              Enviar a despacho - ${finalButtonTotal.toFixed(2)}
+              Enviar a despacho - {useKitchenStaging ? formatKitchenSendMoneyDelta(kitchenSendDelta) : `$${finalButtonTotal.toFixed(2)}`}
             </>
           ) : isDispatchFirstFlow ? (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar a cocina - ${finalButtonTotal.toFixed(2)}
+              Enviar a cocina - {useKitchenStaging ? formatKitchenSendMoneyDelta(kitchenSendDelta) : `$${finalButtonTotal.toFixed(2)}`}
             </>
           ) : (
             <>
@@ -3084,10 +3183,15 @@ const OrdenesContent = () => {
             <>
 
 
-              {!fromEditar && hasSentItems && canUseEditarOrden && isEditableInCaja && !order.paid_at && (
+              {!fromEditar
+                && !isDispatchFirstFlow
+                && hasSentItems
+                && canUseEditarOrden
+                && isEditableInCaja
+                && !order.paid_at && (
                 <Button
                   variant="outline"
-                  className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100"
+                  className="h-12 w-full gap-2 rounded-xl border-amber-300 bg-amber-50 font-display text-base font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                   disabled={!canEnterEditMode}
                   title="Editar orden"
                   onClick={() => navigate(`/ordenes?order=${order.id}&from=editar${originParam}`)}
@@ -3461,7 +3565,8 @@ const OrdenesContent = () => {
       )}
 
       {isMesasChromeUi && (
-        <div className="sticky top-[56px] md:top-0 z-20 rounded-t-2xl border border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 px-3 py-2.5 shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:rounded-t-3xl sm:px-4 sm:py-3">
+        <>
+        <div className="fixed inset-x-0 top-below-app-header z-40 border-b border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 px-3 py-2.5 shadow-[0_4px_12px_-8px_rgba(234,88,12,0.35),inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:px-4 sm:py-3 md:relative md:sticky md:inset-x-auto md:top-0 md:z-20 md:rounded-t-3xl md:border md:border-orange-300/90 md:shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)]">
           <div className="flex w-full min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {hasSiblings ? (
@@ -3594,6 +3699,8 @@ const OrdenesContent = () => {
             </div>
           </div>
         </div>
+        <div className="h-[3.75rem] shrink-0 md:hidden" aria-hidden="true" />
+        </>
       )}
 
       {showMesasV2CardPicker ? (

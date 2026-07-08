@@ -185,7 +185,7 @@ const Despacho = () => {
                         markItemReady.mutate({ orderId: order.id, itemId: item.id, qty });
                       }}
                       onDispatchItem={(_, item, qty) => {
-                        dispatchItem.mutate({ orderId: order.id, itemId: item.id, qty });
+                        dispatchItem.mutate({ orderId: order.id, item, qty });
                       }}
                       onDispatchAll={(currentOrder) => {
                         setDispatchingOrderId(currentOrder.id);

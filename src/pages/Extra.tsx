@@ -67,11 +67,18 @@ const Extra = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { activeBranchId, permissions } = useBranch();
+  const { activeBranchId, permissions, activeBranch } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const [creating, setCreating] = useState(false);
   const [closingOrderId, setClosingOrderId] = useState<string | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const isDispatchFirstWorkflow = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
+
+  useEffect(() => {
+    if (isDispatchFirstWorkflow) {
+      navigate("/mesas", { replace: true });
+    }
+  }, [isDispatchFirstWorkflow, navigate]);
 
   const canOperateExtra =
     canOperate(permissions, "mesas")

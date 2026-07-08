@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbUpsert, dbDelete } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
-import { showSystemAlert } from "@/App";
+import { showSystemAlert } from "@/lib/systemAlert";
 
 type TableName = "categories" | "subcategories" | "products" | "modifiers" | "restaurant_tables" | "payment_methods" | "denominations" | "profiles" | "user_roles" | "branches" | "user_branches";
 

@@ -39,6 +39,13 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si se toca envio de ordenes, revisar `submit_order_draft_items(...)`.
 - Si se toca cobro o estado post-pago, revisar `sync_order_payment_state_internal(...)` y `useCaja`.
 - Las políticas RLS deben permitir que usuarios operativos asignados a un turno activo accedan a `cash_register_templates`.
+- **Despacho primero — edicion de lineas En despacho (2026-07-08):**
+  - Los cambios locales (+/-, borrar, borradores nuevos) **no** deben invalidar `dispatch-orders` ni persistir de inmediato en BD.
+  - Mantener `kitchenBaselineItems` (ultimo envio confirmado) vs `stagedItems` (vista actual).
+  - Mostrar **Enviar a cocina** solo si hay diff; etiqueta con **delta monetario** (`formatKitchenSendMoneyDelta`), no total de orden.
+  - Al confirmar: `applyKitchenPendingItemChanges` (incluye `remove_order_item_line` para reducciones) y luego `submit_order_draft_items` para borradores.
+  - En vista de orden, separar visualmente **En despacho** y **Despachados** (`splitDispatchSections` en `OrderItemsList`).
+  - **No** mostrar boton **Editar orden** ni permitir `from=editar` en `DISPATCH_THEN_CASH`; lineas despachadas no editables.
 
 ### 2.2 Cobro en caja: UI unificada y rendimiento
 - La UI estándar de cobro es `PaymentDialogV2` (misma UI para todos los cajeros).
@@ -53,6 +60,13 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Cliente (`DatabaseService`):** reservar `hotPath` en `dbInsert`/`dbInsertMany` solo cuando el registro lleve `id` (u otros NOT NULL) generados en cliente; reservar `skipLocalCache` en `dbSelect` para lecturas calientes del flujo de cobro donde no haga falta actualizar Dexie en el mismo tick.
 - No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
 - En UI post-cobro (`PaymentDialogV2`, `PaymentReceipt`, detalle en `Ordenes.tsx`), no asumir `items` ni `payments` definidos: usar `?? []` y pasar al recibo el objeto `receipt` completo que devuelve el flujo de pago.
+
+### 2.4 Auth, sesion y tablets (Capacitor / WebView, 2026-07-07)
+- Supabase Auth puede usar Web Locks (`navigator.locks`) para `autoRefreshToken` / `getSession`. En tablet, PWA y Capacitor esto produce `AbortError: The lock request is aborted` de forma benigna cuando varias operaciones compiten.
+- **No** mostrar banners/overlays globales de debug por esos aborts. Usar `isBenignAuthLockAbort` en `src/lib/benignAsyncErrors.ts` desde el listener `unhandledrejection` de `src/main.tsx`.
+- Cliente Supabase: mantener `auth.lock` como no-op en `src/integrations/supabase/client.ts` para evitar deadlocks en WebView.
+- Tareas en segundo plano de sesion (`validateSingleSession`, `checkSessionAge` en `AuthContext`) deben usar `logBackgroundTaskError` y no propagar aborts benignos como fallo visible.
+- Si se reactiva coordinacion real de locks, probar en tablet fisica antes de desplegar; el sintoma visible era banner naranja en multiples modulos, no solo Ordenes.
 
 ### 2.3 Clientes, campañas y promociones (2026-06-11+)
 - **Clientes:** tabla `clientes`; cobro y promociones usan `PaymentClienteCard` + `usePaymentClienteSelection`. En caja el cliente es opcional; en promociones es obligatorio.
@@ -71,6 +85,16 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Mientras `order_items.product_id` apunte a `products`, toda venta debe preservar puente legacy.
 - `manual_price_enabled` sigue viviendo en `menu_nodes`, no en `products`.
 - **Productos frecuentes:** tabla `extra_frequent_products` con `context` (`MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA`); admin en `/admin` > Mas frecuentes; UI operativa `FrequentProductCards` en `Ordenes.tsx`. Sin limite de cantidad. Reordenar en BD con staging de `display_order` positivo (no negativos).
+
+### 3.1 Modificadores al agregar producto (2026-07-07)
+- La lista del modal `AddItemDialog` se arma en `Ordenes.tsx` con el catalogo React Query `branch-modifiers-catalog`, no con una consulta ad hoc por producto en cada tap (salvo fallback legacy sin catalogo).
+- **Herencia:** los modificadores pueden vivir en nodos ancestros (`menu_node_modifiers` en categorias). La resolucion operativa debe usar `resolveModifierNodeIds(node, catalog)` recorriendo `parent_id` via `catalog.parentByNodeId`.
+- **No confiar en `node.ancestor_ids`:** `MenuNavigator` / `useMenuTree` lo calculan, pero `FrequentProductCards` pasa `menu_nodes(*)` crudo sin ese campo. Cualquier fix que solo enriquezca el arbol del menu deja el hueco en frecuentes.
+- **Anti-carrera:** `handleSelectMenuProduct` debe ignorar respuestas async de selecciones anteriores (`productSelectSeqRef` o equivalente). En movil, doble toque + red lenta puede sobrescribir modificadores de un producto con los de otro.
+- **Sin cache congelada:** no cachear 60 s un lookup que incluya `modifiers: []`; puede ocultar modificadores durante un minuto tras un primer fallo.
+- **Chunks:** `fetchBranchModifiersCatalog` trocea `.in(node_id, ...)` y `.in(id, ...)` en bloques de 200 para sucursales grandes (tablets con URL larga).
+- **Invalidacion admin:** al agregar/quitar modificadores de un nodo (`useNodeModifiers`, `MenuNodesCrud`), invalidar `branch-modifiers-catalog` ademas de `menu-product-lookup`.
+- **Bandeja tipo A:** en orden bandeja con `tray_item_type = A` (Sin envase), la UI oculta modificadores por regla de negocio; no reportar como bug de catalogo.
 
 ### 4. Caja y turno no son lo mismo
 - No mezclar cierre de caja con cierre de turno.
@@ -158,7 +182,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 9. Editar Orden e In-Situ
 - `Editar Orden` es buffered, no inline y opera de manera **In-Situ**.
-- El boton `Editar orden` solo debe estar activo cuando la orden esta en `SENT_TO_KITCHEN`/En Caja.
+- El boton `Editar orden` solo debe estar activo cuando la orden esta en `SENT_TO_KITCHEN`/En Caja **y la sucursal usa `CASH_THEN_DISPATCH`**.
+- **Excepcion — `DISPATCH_THEN_CASH`:** no existe flujo **Editar orden**; la edicion de lineas En despacho ocurre en vista normal con staging de cocina pendiente; items Despachados no son editables; redirigir si la URL trae `from=editar`.
 - En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos debe seguir activo mientras la orden sea una superficie editable y no tenga bloqueo/anulacion pendiente. Eliminar el ultimo item visible no debe desactivar el catalogo si la orden sigue siendo borrador editable.
 - En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, no activar edicion. Si la pantalla muestra el menu de productos, debe estar visible pero desactivado.
 - Debe seguir aplicando `orders.locked_for_editing` en DB.
@@ -205,6 +230,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 12.1 Extra
 - `order_type = EXTRA`: menu mesa sin PLATOS, requiere mesa obligatoria (`table_id`), flujo caja → despacho manual.
 - Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` o desaparece automáticamente al despacharse.
+- **Visibilidad por workflow (2026-07-08):** modulo `/extra` solo en nav cuando `branches.workflow_mode = CASH_THEN_DISPATCH`. En `DISPATCH_THEN_CASH`, ocultar en `useVisibleNavItems` / `BottomNav`; `usePreferredHomePath` no envia empacadores a `/extra`; acceso directo redirige a `/mesas`.
 - Modulo `/extra`: solo el creador ve sus ordenes activas; sin pagos parciales; cajero secundario sin imprimir comprobante.
 - Usuarios con la capacidad **Empacador (`can_pack_orders`)** tienen acceso exclusivo al módulo `/extra` y a la pantalla de comandas de ese módulo, restringiendo todo acceso a Mesas, Express, Especial y Para Llevar.
 - En Caja: subtitulo **Extra • Nombre Mesa**; visible para creador o cajero principal del turno.
@@ -216,6 +242,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No reintroducir pestaña Express separada; normalizar `localStorage` `EXPRESS` → `TAKEOUT`.
 - Modo SPLIT: asignacion `TAKEOUT` o `EXPRESS` habilita la pestaña unificada; `EXTRA` se evalua como `TABLE`.
 - Conservar una tarjeta por `order_code`; usar `get_batch_order_operational_snapshots` si existe (`20260602140000`).
+- **Consolidacion de lineas en tarjeta expandida (2026-07-08):** agrupar items identicos (producto, precio, modificadores, nota) en una sola fila con cantidad sumada (`consolidateDispatchOrderItems` en `dispatchItemConsolidation.ts`). Despacho parcial debe repartir cantidades entre `source_lines` (`buildDispatchAllocations`).
 - **Despachar todo:** `dispatch_order_quantities` con operacion total e items vacios.
 
 ### 13. Integridad Financiera y Caja
@@ -290,6 +317,24 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 16. Si se toca Promociones, validar selector multi-campaña, filtro `campana_id` en predicciones existentes, `paid_at` para elegibles y migración `20260611180000`.
 17. Si se toca cliente en cobro/promoción, reutilizar `PaymentClienteCard`; no duplicar búsqueda solo por cédula.
 18. Si se toca identidad de usuario, validar `profiles.alias` (unico case-insensitive), login con correo/usuario/alias, `src/lib/userDisplay.ts` en reportes/caja/turnos y nombre real solo en admin.
+19. Si se toca modal de agregar producto o catalogo de modificadores, validar herencia desde categorias, seleccion desde **Mas frecuentes**, doble toque rapido en movil e invalidacion de `branch-modifiers-catalog` tras cambios en admin.
+20. Si se toca auth/sesion en tablet, validar que aborts benignos de Web Locks no muestren banner; conservar `auth.lock` no-op y `benignAsyncErrors.ts`.
+21. Si se toca Despacho primero en mesa, validar staging de cocina, delta en boton **Enviar a cocina**, secciones En despacho/Despachados, ausencia de **Editar orden** y que Despacho no cambie hasta confirmar envio.
+22. Si se toca consolidacion en Despacho, validar `dispatchItemConsolidation.ts` y despacho parcial con multiples `order_items` fuente.
+23. Si se toca Extra, validar ademas visibilidad segun `workflow_mode` (oculto en `DISPATCH_THEN_CASH`).
+
+### Actualizacion Jul 8, 2026
+- **Cocina pendiente (Despacho primero):** `kitchenPendingChanges.ts`, staging `kitchenBaselineItems`/`stagedItems`, `applyKitchenPendingItemChanges`, boton con delta monetario.
+- **UI orden:** secciones En despacho / Despachados en `OrderItemsList`.
+- **Sin Editar orden en DF:** redirect `from=editar`, items despachados bloqueados.
+- **Despacho consolidado:** `dispatchItemConsolidation.ts`, `buildDispatchAllocations`.
+- **Extra oculto en DF:** nav, home path empacador, redirect `/extra`.
+- **BD:** RPC `remove_order_item_line` (`20260707240000`, fix `20260707241000`).
+- **Dev:** `systemAlert.ts` separado de `App.tsx`.
+
+### Actualizacion Jul 7, 2026
+- **Modificadores intermitentes:** `resolveModifierNodeIds`, catalogo con `parentByNodeId`, chunks 200, `productSelectSeqRef`, sin cache `menu-product-lookup`, invalidacion en admin.
+- **Banner AbortError auth:** `benignAsyncErrors.ts`, `main.tsx`, `client.ts` (`auth.lock`), `AuthContext.tsx`.
 
 ### Actualizacion Jun 28, 2026
 - **Alias de usuario:** `profiles.alias` como identificador operativo unico. Migracion `20260628120000_add_profile_alias.sql`. Helper central `src/lib/userDisplay.ts`. No mostrar `first_name`/`full_name` en UI operativa ni reportes.

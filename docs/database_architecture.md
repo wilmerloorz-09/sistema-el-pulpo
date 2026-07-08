@@ -48,10 +48,14 @@
 ### 2. Catalogo
 - Modelo principal:
   - `menu_nodes` (alcances: `TABLE`, `TAKEOUT`, `BULK`; opcional `EXTRA` en BD para arbol dedicado)
-  - `menu_node_modifiers`
+  - `menu_node_modifiers` (asignacion por nodo; herencia operativa hacia productos hijos en POS)
   - `bulk_included_products`
   - `bulk_included_product_ranges`
   - `extra_frequent_products` (accesos rapidos por sucursal y contexto)
+- **Cache frontend de modificadores (2026-07-07, sin migracion SQL):**
+  - El POS precarga por sucursal enlaces `menu_node_modifiers` + textos `modifiers` + mapa `menu_nodes.parent_id` en memoria (query `branch-modifiers-catalog` en `Ordenes.tsx`).
+  - `staleTime` del catalogo: 5 minutos. Invalidar al editar asignaciones en admin.
+  - La herencia padre→hijo se resuelve en cliente con `parentByNodeId`; la BD no expone `ancestor_ids` en `menu_nodes`.
 - Modelo legacy aun activo:
   - `categories`
   - `subcategories`
@@ -70,6 +74,7 @@
 - `order_dispatch_events`
 - `order_item_dispatch_events`
 - `order_ready_notifications`
+- **RPC `remove_order_item_line` (2026-07-07/08):** elimina o reduce cantidad de una linea `order_items` enviada sin flujo de anulacion por dialogo. Usado por `applyKitchenPendingItemChanges` al confirmar cambios de cocina pendientes en Despacho primero. Migraciones: `20260707240000_remove_order_item_line.sql`, fix cantidad `20260707241000_fix_remove_order_item_line_qty.sql`.
 
 ### 4. Mesas y órdenes
 - `restaurant_tables`
@@ -521,6 +526,16 @@
 - **Alias de usuario:** `profiles.alias` como identificador operativo unico. Login con correo/usuario/alias. Reportes y operacion muestran alias; admin conserva nombre real + alias. Ver migracion `20260628120000_add_profile_alias.sql` y `src/lib/userDisplay.ts`.
 - **Sincronización de Estado de Cupón en Monedero Promocional**: Se modificó la función trigger del monedero `procesar_pago_saldo_fifo()` para que cuando se consuma un crédito promocional de un cliente mediante el pago, se marque automáticamente el registro de la predicción correspondiente como usado (`cupon_usado_el = now()`). También se maneja el caso de devolución o anulación de pago regresando el cupón a estado no usado (`cupon_usado_el = NULL`).
 - **Función de Cierre de Campaña Corregida**: Se corrigió la función `cerrar_oferta_campana` en Supabase para asegurar que al calificar predicciones como ganadoras, se calcule el `monto_descuento_ganado` y se cree la fila de crédito promocional en la tabla `creditos_promocionales_clientes`, resolviendo la omisión introducida accidentalmente en la actualización de marcadores.
+
+### Actualizacion Jul 8, 2026
+- **RPC `remove_order_item_line`:** nueva funcion para reducir/eliminar lineas enviadas al aplicar diff de cocina pendiente (`applyKitchenPendingItemChanges`). Migracion base `20260707240000`; correccion de cantidad `20260707241000`.
+- **Staging cocina (frontend):** la logica de diff monetario y baseline vive en `src/lib/kitchenPendingChanges.ts`; no requiere columnas nuevas en BD. El envio final sigue usando `submit_order_draft_items` + mutaciones sobre lineas existentes.
+- **Despacho consolidado (frontend):** agrupacion visual en cliente (`dispatchItemConsolidation.ts`); sin cambio de esquema — las lineas `order_items` individuales se conservan en BD.
+- **Extra vs workflow:** sin migracion; visibilidad del modulo controlada por `branches.workflow_mode` en frontend.
+
+### Actualizacion Jul 7, 2026
+- **Modificadores en POS (solo frontend):** Sin cambio de esquema. El catalogo operativo en memoria agrega `parentByNodeId` para herencia correcta desde categorias; consultas troceadas en chunks de 200; invalidacion React Query `branch-modifiers-catalog` al mutar `menu_node_modifiers` en admin. Ver `src/pages/Ordenes.tsx`, `src/hooks/useNodeModifiers.ts`.
+- **Auth tablet (solo frontend):** Supresion de `AbortError` benigno de Web Locks; `auth.lock` no-op en cliente Supabase. Sin migracion SQL.
 
 ### Actualizacion Jul 2, 2026
 - **Lógica de Cobro de Órdenes Especiales:** Se actualizó `payOrder` para dar soporte a órdenes especiales donde `special_total_manual` es nulo, utilizando dinámicamente la suma total de los ítems no cancelados (`orderRealTotal`) como límite y valor pendiente.

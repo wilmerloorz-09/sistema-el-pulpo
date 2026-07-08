@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { isTemporaryOrderItemId } from "@/hooks/useOrder";
-import { getSentItemStageLabel } from "@/lib/orderFlow";
+import { getSentItemStageLabel, isOrderItemFreelyEditableInDispatchFirst } from "@/lib/orderFlow";
 import { useBranch } from "@/contexts/BranchContext";
 
 interface OrderItem {
@@ -35,7 +35,7 @@ interface OrderItem {
 
 interface Props {
   items: OrderItem[];
-  onRemove: (id: string) => void;
+  onRemove: (id: string | string[]) => void;
   onUpdateQty: (id: string, qty: number, unit_price: number) => void;
   onRequestCancel?: (item: OrderItem, qty: number) => void;
   disableDraftEditing?: boolean;
@@ -50,6 +50,10 @@ interface Props {
   /** TAKEOUT / EXPRESS / DINE_IN: etiqueta de linea enviada ("En caja" vs "En despacho"). */
   orderType?: string | null;
   isSpecialOrder?: boolean;
+  /** Despacho primero: permite +/- en lineas "En despacho" sin modo Editar orden. */
+  allowSentStageEditing?: boolean;
+  /** Despacho primero: separar visualmente "En despacho" y "Despachados". */
+  splitDispatchSections?: boolean;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
@@ -229,6 +233,78 @@ function getOrderItemStageDotClass(stage: OrderItemStage) {
   }
 }
 
+function buildSectionItemTotals(item: OrderItem, quantity: number): OrderItem {
+  const containerCost = Number(item.tray_container_cost ?? 0);
+  const normalizedQty = Math.max(0, Number(quantity ?? 0));
+  const lineTotal = normalizedQty > 0 ? normalizedQty * item.unit_price + containerCost : 0;
+
+  return {
+    ...item,
+    quantity: normalizedQty,
+    quantity_ordered: normalizedQty,
+    total: lineTotal,
+  };
+}
+
+function splitItemsForDispatchFirstSections(items: OrderItem[]) {
+  const inDispatch: OrderItem[] = [];
+  const dispatched: OrderItem[] = [];
+
+  for (const item of items) {
+    const stage = getOrderItemStage(item);
+    const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
+    const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
+    const visibleQty = Math.max(0, Number(item.quantity ?? 0));
+
+    if (stage === "dispatched") {
+      if (visibleQty > 0) dispatched.push(item);
+      continue;
+    }
+
+    if (stage === "partial") {
+      if (remainingQty > 0) {
+        inDispatch.push(buildSectionItemTotals({
+          ...item,
+          quantity_dispatched: 0,
+          quantity_remaining: remainingQty,
+        }, remainingQty));
+      }
+      if (dispatchedQty > 0) {
+        dispatched.push(buildSectionItemTotals({
+          ...item,
+          quantity: dispatchedQty,
+          quantity_dispatched: dispatchedQty,
+          quantity_remaining: 0,
+        }, dispatchedQty));
+      }
+      continue;
+    }
+
+    if (visibleQty > 0 || stage === "pendingCancellation") {
+      inDispatch.push(item);
+    }
+  }
+
+  return { inDispatch, dispatched };
+}
+
+function shouldUseDispatchFirstSections(
+  items: OrderItem[],
+  orderType?: string | null,
+  workflowMode?: string | null,
+) {
+  const isDispatchFirstWorkflow =
+    orderType === "EXPRESS"
+    || (workflowMode === "DISPATCH_THEN_CASH" && orderType !== "TAKEOUT");
+
+  if (!isDispatchFirstWorkflow) return false;
+
+  return items.some((item) => {
+    const stage = getOrderItemStage(item);
+    return stage === "dispatched" || stage === "partial" || stage === "sent";
+  });
+}
+
 const OrderItemsList = ({
   items,
   onRemove,
@@ -243,6 +319,8 @@ const OrderItemsList = ({
   specialOrderCatalogTotal = null,
   orderType = null,
   isSpecialOrder = false,
+  allowSentStageEditing = false,
+  splitDispatchSections = false,
 }: Props) => {
   const { activeBranch } = useBranch();
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
@@ -307,8 +385,14 @@ const OrderItemsList = ({
     return consolidatedGroups.map((item) => {
       const isPending = item.status === "DRAFT";
       const isTemporaryItem = isTemporaryOrderItemId(item.id);
-      const canShowControlsForItem = !listHideControls || editableItemIds.some((id) => item.groupItemIds.includes(id));
-      const showControls = canShowControlsForItem && !isTemporaryItem && (isPending || listAlwaysShowControls);
+      const editableById = editableItemIds.some((id) => item.groupItemIds.includes(id));
+      const canShowControlsForItem = !listHideControls || editableById;
+      const freelyEditableInDispatchFirst =
+        allowSentStageEditing && !listAlwaysShowControls && isOrderItemFreelyEditableInDispatchFirst(item);
+      const showControls =
+        canShowControlsForItem &&
+        !isTemporaryItem &&
+        (isPending || listAlwaysShowControls || freelyEditableInDispatchFirst || editableById);
       const draftDisabled = isPending && disableDraftEditing;
       const controlsDisabled = listAlwaysShowControls ? false : draftDisabled;
       const displayQuantity =
@@ -482,7 +566,10 @@ const OrderItemsList = ({
                     size="icon"
                     className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                     disabled={controlsDisabled}
-                    onClick={() => onRemove(item.id)}
+                    onClick={() => {
+                      const ids = item.groupItemIds.length > 1 ? item.groupItemIds : item.id;
+                      onRemove(ids);
+                    }}
                     title="Eliminar item"
                   >
                     <Trash2 />
@@ -496,8 +583,8 @@ const OrderItemsList = ({
                         className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                         disabled={controlsDisabled || displayQuantity === 0}
                         onClick={() => {
-                          if (item.quantity > 0) {
-                            onUpdateQty(item.id, item.quantity - 1, item.unit_price);
+                          if (displayQuantity > 0) {
+                            onUpdateQty(item.id, displayQuantity - 1, item.unit_price);
                           }
                         }}
                       >
@@ -508,13 +595,13 @@ const OrderItemsList = ({
                         key={`${item.id}-draft-${displayQuantity}`}
                         initialQuantity={displayQuantity}
                         min={0}
-                        max={listAlwaysShowControls ? 9999 : Math.max(1, item.quantity)}
+                        max={listAlwaysShowControls || allowSentStageEditing ? 9999 : Math.max(1, item.quantity)}
                         disabled={controlsDisabled}
                         updateOnChange={false}
                         onUpdate={(newQty) => {
                           if (newQty < 0) {
                             onUpdateQty(item.id, 0, item.unit_price);
-                          } else if (newQty !== item.quantity) {
+                          } else if (newQty !== displayQuantity) {
                             onUpdateQty(item.id, newQty, item.unit_price);
                           }
                         }}
@@ -525,7 +612,7 @@ const OrderItemsList = ({
                         size="icon"
                         className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                         disabled={controlsDisabled}
-                        onClick={() => onUpdateQty(item.id, item.quantity + 1, item.unit_price)}
+                        onClick={() => onUpdateQty(item.id, displayQuantity + 1, item.unit_price)}
                       >
                         <Plus />
                       </Button>
@@ -635,6 +722,60 @@ const OrderItemsList = ({
               ${displayOrderTotal.toFixed(2)}
             </span>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (splitDispatchSections && shouldUseDispatchFirstSections(items, orderType, workflowMode)) {
+    const { inDispatch, dispatched } = splitItemsForDispatchFirstSections(items);
+    const inDispatchLabel = getSentItemStageLabel(orderType, workflowMode);
+
+    return (
+      <div className="flex flex-col gap-4">
+        {inDispatch.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h3 className="w-fit rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-950/20 dark:text-amber-500">
+              {inDispatchLabel}
+            </h3>
+            <div className="flex flex-col gap-3">
+              {renderList(inDispatch, false)}
+            </div>
+          </div>
+        )}
+
+        {dispatched.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h3 className="w-fit rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+              Despachados
+            </h3>
+            <div className="flex flex-col gap-3">
+              {renderList(dispatched, false)}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-1 space-y-1 border-t border-border pt-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-muted-foreground">
+              {specialOrderChargeTotal != null ? "Total a cobrar" : "Total"}
+            </span>
+            <span
+              className={cn(
+                "font-display text-xl font-bold",
+                specialOrderChargeTotal != null ? "text-orange-700" : "text-foreground",
+              )}
+            >
+              $
+              {(specialOrderChargeTotal != null ? specialOrderChargeTotal : total).toFixed(2)}
+            </span>
+          </div>
+          {specialOrderChargeTotal != null && specialOrderCatalogTotal != null ? (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Total real de ítems (referencia)</span>
+              <span>${specialOrderCatalogTotal.toFixed(2)}</span>
+            </div>
+          ) : null}
         </div>
       </div>
     );

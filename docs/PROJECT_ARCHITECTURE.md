@@ -46,7 +46,7 @@
   - `TAKEOUT`
   - `BULK`
 - Ordenes `EXPRESS` usan el mismo arbol de menu que para llevar pero con flujo **despacho -> cobro** (ver `src/lib/orderFlow.ts`).
-- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, requieren mesa fisica (`table_id` obligatorio), flujo **caja -> despacho manual** (como mesa). Tras cobrar quedan `PAID` hasta despacho en modulo Despacho (pestañas Mesa/Todos); cierre con `close_extra_order`. Las órdenes desaparecen automáticamente del módulo Extra al ser despachadas.
+- Ordenes `EXTRA` usan menu mesa (`TABLE`) sin PLATOS, requieren mesa fisica (`table_id` obligatorio), flujo **caja -> despacho manual** (como mesa). Tras cobrar quedan `PAID` hasta despacho en modulo Despacho (pestañas Mesa/Todos); cierre con `close_extra_order`. Las órdenes desaparecen automáticamente del módulo Extra al ser despachadas. **Solo aplica en sucursales `CASH_THEN_DISPATCH`:** en `DISPATCH_THEN_CASH` el modulo Extra no aparece en navegacion y `/extra` redirige a Mesas.
 - **Productos frecuentes:** configuracion en `extra_frequent_products` por `context` (`MESA`, `TAKEOUT`, `EXPRESS`, `EXTRA`); UI operativa `FrequentProductCards`, admin `FrequentProductsAdmin`; menú compuesto Para llevar/Express via `buildCompositeMenuNodes` (`src/lib/compositeMenuTree.ts`).
 - Fuente transaccional legacy que sigue viva:
   - `categories`
@@ -58,8 +58,17 @@
 
 ### 4. Modificadores
 - Catalogo base: `modifiers`.
-- Disponibilidad por nodo: `menu_node_modifiers`.
+- Disponibilidad por nodo: `menu_node_modifiers` (puede asignarse a categoria o producto; los hijos heredan en operacion).
 - Seleccion real del item: `order_item_modifiers`.
+- **Resolucion en POS (`Ordenes.tsx`, 2026-07-07):**
+  - Catalogo en memoria por sucursal: query key `branch-modifiers-catalog` (`fetchBranchModifiersCatalog`).
+  - Estructura: `links` (`menu_node_modifiers` activos), `modifiersById`, `parentByNodeId` (todos los `menu_nodes.id` + `parent_id` de la sucursal).
+  - `resolveModifierNodeIds(node, catalog)` arma `[producto, padre, abuelo, ...]` sin depender de `node.ancestor_ids` (obligatorio para nodos crudos de `extra_frequent_products`).
+  - `buildModifiersForProductNode` deduplica por `modifier_id` respetando `display_order`.
+  - Consultas `.in(...)` troceadas en bloques de 200 IDs (evita fallos en movil con catalogos grandes).
+  - `handleSelectMenuProduct`: secuencia `productSelectSeqRef` anti-carrera; lookup de producto sin cache de 60 s.
+  - UI: `AddItemDialog` renderiza la seccion **Modificaciones** solo si la lista resuelta tiene elementos; orden bandeja tipo A oculta modificadores por diseno.
+  - Admin: invalidar `branch-modifiers-catalog` al mutar asignaciones (`useNodeModifiers`, `MenuNodesCrud`).
 
 ### 5. Ordenes
 - `useOrder`, `useOrdersByStatus` y `get_order_operational_snapshot(...)` sostienen la lectura operativa comun.
@@ -114,10 +123,16 @@
 - La accion solo esta disponible si todos los items estan en `DRAFT` o `En caja`.
 - La UI unifica esta acción para evitar duplicados en el menú de acciones, independientemente del origen de los items (borrador o enviados).
 - La eliminacion completa valida nuevamente esa regla antes de ejecutar para evitar borrar ordenes con items despachados, pagados o con anulacion pendiente.
+- **Despacho primero — vista de orden (2026-07-08):**
+  - `OrderItemsList` con `splitDispatchSections` muestra bloques **En despacho** y **Despachados** en flujo `DISPATCH_THEN_CASH`.
+  - Cambios locales en lineas En despacho quedan en staging (`kitchenBaselineItems` vs `stagedItems`) hasta **Enviar a cocina**; Despacho no se actualiza antes.
+  - Boton **Enviar a cocina** con delta monetario (`formatKitchenSendMoneyDelta`); al confirmar: `applyKitchenPendingItemChanges` + `submit_order_draft_items`.
+  - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/pages/Ordenes.tsx`, `src/hooks/useOrder.ts`.
 
 ### 6. Editar Orden
 - `Editar Orden` es una arquitectura buffered y **In-Situ**.
-- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja.
+- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja **en flujo Caja primero** (`CASH_THEN_DISPATCH`).
+- **Excepcion — Despacho primero (`DISPATCH_THEN_CASH`):** no hay boton `Editar orden` ni flujo `from=editar`; las lineas En despacho se editan en vista normal con staging de cocina; las Despachadas no son editables.
 - En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos se mantiene activo mientras la orden siga siendo editable; eliminar un item no debe bloquear el catalogo. En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, el menu puede permanecer visible pero desactivado.
 - El módulo trabaja con `stagedItems` en memoria y mantiene el contexto de navegación original (`origin`).
 - La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina, Despacho y Caja.
@@ -224,6 +239,7 @@
 ### 11. Despacho
 - Pagina: `src/pages/Despacho.tsx`; acceso: `src/hooks/useDispatchAccess.ts`; datos: `src/hooks/useDispatchOrders.ts`; tarjetas: `src/components/dispatch/DispatchCardBase.tsx`.
 - Solo ordenes elegibles con cobro activo y cantidades pendientes de despacho; Express usa criterio distinto (despacho antes de cobro) pero comparte pestaña con Para llevar.
+- **Consolidacion visual de lineas (2026-07-08):** items identicos (producto, precio, modificadores, nota) se agrupan en una fila con cantidad sumada (`src/lib/dispatchItemConsolidation.ts`). Despacho parcial reparte cantidades entre lineas `order_items` originales via `buildDispatchAllocations`.
 - **Despachar todo:** `dispatchOrder` con `operation_type: 'total'` y `p_items: []`.
 - **Rendimiento:** `get_batch_order_operational_snapshots` (migracion `20260602140000`) + actualizacion optimista e invalidacion diferida de React Query.
 - Modo `SPLIT`: filtro por `dispatch_assignments`; `EXTRA` cuenta como `TABLE` en asignaciones.
@@ -297,9 +313,11 @@
   - `src/hooks/useTablesWithStatus.ts`
   - `src/components/order/OrderItemsList.tsx`
   - `src/components/order/OrderDetailPanel.tsx`
+  - `src/components/order/AddItemDialog.tsx`
   - `src/components/order/MergeSplitOrdersDialog.tsx`
   - `src/components/order/CancelOrderDialog.tsx`
-  - `src/pages/Ordenes.tsx`
+  - `src/pages/Ordenes.tsx` (`fetchBranchModifiersCatalog`, `resolveModifierNodeIds`, `handleSelectMenuProduct`)
+  - `src/hooks/useNodeModifiers.ts` (admin: herencia por nodo)
   - `src/pages/Mesas.tsx`
 - Caja:
   - `src/hooks/useCaja.ts`
@@ -344,6 +362,9 @@
   - `src/components/BottomNav.tsx`
   - `src/hooks/useBranchShiftGate.ts`
   - `src/components/nav/useVisibleNavItems.tsx` (grupo PROMOCIONES)
+  - `src/lib/benignAsyncErrors.ts` (abortos benignos de auth/Web Locks en tablet)
+  - `src/integrations/supabase/client.ts` (`auth.lock` no-op en Capacitor/WebView)
+  - `src/contexts/AuthContext.tsx`
 - Usuarios e identidad:
   - `src/lib/userDisplay.ts` (`getUserAlias`, `getUserDisplayName`, `getUserRealName`, `buildUserDisplayMap`)
   - `src/components/admin/UsersCrud.tsx`, `AddUserDialog.tsx`, `EditUserDialog.tsx`
@@ -378,6 +399,24 @@
 26. **Cliente en promociones/cobro:** Reutilizar `PaymentClienteCard`; no duplicar flujo solo por cédula de 10 dígitos.
 27. **Elegibles:** Filtrar predicciones por `campana_id`; criterio de pago = `paid_at`, no solo cabecera `PAID`.
 28. **Alias de usuario:** En operacion y reportes usar `profiles.alias` via `userDisplay.ts`; no reintroducir nombre real ni prefijo `@` en listados operativos.
+29. **Modificadores en orden:** Resolver herencia con `parentByNodeId` del catalogo; no asumir `ancestor_ids` en nodos de frecuentes; invalidar `branch-modifiers-catalog` tras cambios en admin; preservar secuencia anti-carrera en `handleSelectMenuProduct`.
+30. **Auth tablet:** Mantener supresion de `AbortError` benigno de locks; no mostrar overlays de debug globales por rechazos de `navigator.locks`.
+31. **Despacho primero — cocina pendiente:** No invalidar `dispatch-orders` al editar lineas En despacho; solo al confirmar **Enviar a cocina**. Usar `kitchenPendingChanges.ts` y `applyKitchenPendingItemChanges`.
+32. **Despacho — consolidacion:** Agrupar lineas identicas en tarjeta expandida con `consolidateDispatchOrderItems`; despacho parcial con `buildDispatchAllocations`.
+33. **Extra vs workflow:** Ocultar `/extra` en nav cuando `workflow_mode = DISPATCH_THEN_CASH`.
+
+### Actualizacion Jul 8, 2026
+- **Staging cocina en Despacho primero:** Ediciones locales no afectan Despacho hasta **Enviar a cocina**; boton con delta monetario vs ultimo envio.
+- **Secciones En despacho / Despachados:** `OrderItemsList.splitDispatchSections` en vista de orden.
+- **Sin Editar orden en `DISPATCH_THEN_CASH`:** boton oculto; redirect `from=editar`; items despachados bloqueados.
+- **Consolidacion en Despacho:** `dispatchItemConsolidation.ts` + integracion en `useDispatchOrders.ts`, `Despacho.tsx`, `Servir.tsx`.
+- **Extra oculto en Despacho primero:** `useVisibleNavItems`, `usePreferredHomePath`, redirect en `Extra.tsx`.
+- **RPC `remove_order_item_line`:** migraciones `20260707240000`, `20260707241000`; usado al aplicar cambios de cocina pendientes.
+- **Dev:** `showSystemAlert` en `src/lib/systemAlert.ts` (fix Fast Refresh).
+
+### Actualizacion Jul 7, 2026
+- **Modificaciones en modal de producto:** Catalogo con `parentByNodeId`, chunks de 200, `resolveModifierNodeIds`, secuencia `productSelectSeqRef`, sin cache `menu-product-lookup`, invalidacion de catalogo en admin.
+- **Auth Web Locks en tablet:** `benignAsyncErrors.ts`, `auth.lock` no-op, silencio en `main.tsx`, `catch` en validacion de sesion.
 
 ### Actualizacion Jun 28, 2026
 - **Alias de usuario:** Columna `profiles.alias`, migracion `20260628120000_add_profile_alias.sql`, helper `src/lib/userDisplay.ts`, login con correo/usuario/alias, reportes y caja muestran alias.

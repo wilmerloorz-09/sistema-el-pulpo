@@ -1,1 +1,1 @@
-ALTER TABLE orders ADD COLUMN special_reason text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS special_reason text;
