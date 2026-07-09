@@ -6,6 +6,9 @@ import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
 import { canManage, canView } from "@/lib/permissions";
 
+/** Ocultar sección PROMOCIONES del menú hasta habilitarla en producción. */
+const SHOW_PROMOCIONES_NAV = false;
+
 export interface NavSubItem {
   to: string;
   label: string;
@@ -302,6 +305,13 @@ export function useVisibleNavItems() {
     const hasOperationalShift = Boolean(sg?.shiftOpen) && Boolean(sg?.userEnabled);
     const hasSupervisorBypass = Boolean(sg?.isSupervisor);
     const visibleItems = navItemsResolved.filter((item) => {
+      if (
+        !SHOW_PROMOCIONES_NAV
+        && (item.to.startsWith("/promociones") || item.to.startsWith("/campanas"))
+      ) {
+        return false;
+      }
+
       if (isGlobalAdminWithoutBranches) {
         return item.to === "/admin";
       }

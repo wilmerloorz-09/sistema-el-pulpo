@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useBranch } from "@/contexts/BranchContext";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
 import {
@@ -467,6 +468,10 @@ function BranchCard({ branch, data }: { branch: Branch; data: BranchMonitorData 
 function useGlobalMonitor(branches: Branch[]) {
   const [state, setState] = useState<MonitorState>({});
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const branchIdsKey = useMemo(
+    () => branches.map((branch) => branch.id).join(","),
+    [branches],
+  );
 
   // Load data for a single branch using supabase directly to avoid dbSelect RLS/type issues
   const loadBranchData = async (branch: Branch): Promise<BranchMonitorData> => {
@@ -572,18 +577,25 @@ function useGlobalMonitor(branches: Branch[]) {
         setState((prev) => ({ ...prev, [branch.id]: data }));
       })
     );
-  }, [branches.map((b) => b.id).join(",")]);
+  }, [branchIdsKey]);
 
   // Realtime subscription
   useEffect(() => {
     if (branches.length === 0) return;
+
+    const branchById = new Map(branches.map((branch) => [branch.id, branch]));
+    const shiftToBranchId = new Map<string, string>();
+
+    const rememberShiftBranch = (shift: CashShift | null | undefined, branchId: string) => {
+      if (shift?.id) shiftToBranchId.set(shift.id, branchId);
+    };
 
     // Debounce: avoid rapid-fire reloads when many events arrive at once
     const pendingReloads = new Set<string>();
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const scheduleReload = (branchId: string) => {
-      console.log(`[MonitoreoGlobal] Scheduling reload for branch: ${branchId}`);
+      if (!branchById.has(branchId)) return;
       pendingReloads.add(branchId);
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
@@ -593,38 +605,39 @@ function useGlobalMonitor(branches: Branch[]) {
 
         await Promise.all(
           toReload.map(async (bId) => {
-            const branch = branches.find((b) => b.id === bId);
+            const branch = branchById.get(bId);
             if (!branch) return;
             const data = await loadBranchData(branch);
+            rememberShiftBranch(data.shift, bId);
             setState((prev) => ({ ...prev, [bId]: data }));
           })
         );
-      }, 1200);
+      }, 2000);
     };
 
-    // When we receive an event, find which branch it belongs to
     const handleCashShiftEvent = (payload: any) => {
       const branchId = payload.new?.branch_id ?? payload.old?.branch_id;
       if (!branchId) {
-        branches.forEach((b) => scheduleReload(b.id));
+        branches.forEach((branch) => scheduleReload(branch.id));
         return;
       }
-      if (branches.some((b) => b.id === branchId)) scheduleReload(branchId);
+      scheduleReload(branchId);
     };
 
     const handleCashShiftUserEvent = (payload: any) => {
-      branches.forEach((b) => scheduleReload(b.id));
+      const shiftId = payload.new?.shift_id ?? payload.old?.shift_id;
+      const branchId = shiftId ? shiftToBranchId.get(shiftId) : undefined;
+      if (branchId) {
+        scheduleReload(branchId);
+        return;
+      }
+      branches.forEach((branch) => scheduleReload(branch.id));
     };
 
     const handleOrderEvent = (payload: any) => {
       const branchId = payload.new?.branch_id ?? payload.old?.branch_id;
-      if (!branchId || !branches.some((b) => b.id === branchId)) return;
+      if (!branchId) return;
       scheduleReload(branchId);
-    };
-
-    const handleProfileEvent = (payload: any) => {
-      console.log("[MonitoreoGlobal] Realtime profile update:", payload);
-      branches.forEach((b) => scheduleReload(b.id));
     };
 
     const uniqueChannelName = `global-monitor-${Math.random().toString(36).substring(7)}`;
@@ -633,17 +646,13 @@ function useGlobalMonitor(branches: Branch[]) {
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_shifts" }, handleCashShiftEvent)
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_shift_users" }, handleCashShiftUserEvent)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, handleOrderEvent)
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, handleProfileEvent)
-      .subscribe((status) => {
-        console.log("[MonitoreoGlobal] Realtime status:", status);
-      });
+      .subscribe();
 
     channelRef.current = channel;
 
-    // Robust fallback: auto-refresh every 15 seconds
     const fallbackInterval = setInterval(() => {
-      branches.forEach((b) => scheduleReload(b.id));
-    }, 15000);
+      branches.forEach((branch) => scheduleReload(branch.id));
+    }, 60000);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -651,7 +660,7 @@ function useGlobalMonitor(branches: Branch[]) {
       void supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [branches.map((b) => b.id).join(",")]);
+  }, [branchIdsKey]);
 
   const forceReloadAll = () => {
     setState(
@@ -670,13 +679,7 @@ function useGlobalMonitor(branches: Branch[]) {
 
 const MonitoreoGlobal = () => {
   const { isGlobalAdmin, branches } = useBranch();
-
-  // Security guard — double layer (ProtectedRoute is the first)
-  if (!isGlobalAdmin) {
-    return <Navigate to="/" replace />;
-  }
-
-  const { state: monitorState, forceReloadAll } = useGlobalMonitor(branches);
+  const { state: monitorState, forceReloadAll } = useGlobalMonitor(isGlobalAdmin ? branches : []);
 
   const sortedBranches = useMemo(() => {
     return [...branches].sort((a, b) => {
@@ -691,6 +694,10 @@ const MonitoreoGlobal = () => {
       return a.name.localeCompare(b.name);
     });
   }, [branches, monitorState]);
+
+  if (!isGlobalAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="px-2 py-3 sm:px-4 md:px-5 md:py-4 lg:px-6">
