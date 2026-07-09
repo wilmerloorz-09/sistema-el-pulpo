@@ -1132,26 +1132,36 @@ export function useOrder(orderId: string | null) {
   const sendToKitchen = useMutation({
     mutationFn: async () => {
       const order = query.data;
-      if (!order) return;
+      if (!order) return null;
 
       const draftItems = order.items.filter((item) => item.status === "DRAFT");
-      if (draftItems.length === 0) return;
+      if (draftItems.length === 0) return null;
 
-      const { error } = await supabase.rpc("submit_order_draft_items" as any, {
+      const { data, error } = await supabase.rpc("submit_order_draft_items" as any, {
         p_order_id: orderId!,
       });
       if (error) throw error;
+
+      const row = Array.isArray(data) ? data[0] : null;
+      return row as { order_status?: string } | null;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       const order = query.data;
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false });
+      qc.invalidateQueries({ queryKey: ["reportes-pagos"], exact: false });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       if (order?.order_type === "EXTRA" && order.branch_id) {
         qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
+      }
+
+      if (result?.order_status === "PAID") {
+        toast.success("Orden especial de $0 marcada como pagada");
+        return;
       }
 
       const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");

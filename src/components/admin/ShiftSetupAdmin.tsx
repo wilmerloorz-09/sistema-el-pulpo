@@ -2210,21 +2210,13 @@ const ShiftSetupAdmin = () => {
 
     setPayingZeroValueSpecialOrders(true);
     try {
-      const now = new Date().toISOString();
-      const orderIds = zeroValueSpecialOrders.map((order) => order.id);
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          status: "PAID",
-          paid_at: now,
-          closed_at: now,
-          updated_at: now,
-        })
-        .eq("branch_id", activeBranchId)
-        .eq("is_special", true)
-        .in("id", orderIds);
-
-      if (error) throw error;
+      for (const order of zeroValueSpecialOrders) {
+        const { error } = await supabase.rpc("autopagar_orden_especial_cero_interna" as any, {
+          p_order_id: order.id,
+          p_actor_id: user?.id ?? null,
+        });
+        if (error) throw error;
+      }
 
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["orders"], exact: false }),

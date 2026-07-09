@@ -47,7 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu, Truck } from "lucide-react";
+import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu, Truck, Zap } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM, formatTableBadge } from "@/lib/mesasFlow";
@@ -57,7 +57,7 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
 import { getOrderMesaHeaderNumber, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
-import { getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode } from "@/lib/orderFlow";
+import { getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isSpecialOrderExplicitZeroTotal } from "@/lib/orderFlow";
 import {
   computeKitchenSendMoneyDelta,
   formatKitchenSendMoneyDelta,
@@ -71,6 +71,11 @@ import { useBreakpoint } from "@/hooks/useBreakpoint";
 const mesaOpenDineInCreateByKey = new Map<string, Promise<string>>();
 
 /** Estado en tarjetas del selector de cuentas (mesa). */
+const ORDER_STICKY_CHROME_BAR_CLASS =
+  "fixed inset-x-0 top-below-app-header z-40 border-b border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 px-3 py-2.5 shadow-[0_4px_12px_-8px_rgba(234,88,12,0.35),inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:px-4 sm:py-3 md:relative md:sticky md:inset-x-auto md:top-0 md:z-20 md:rounded-t-3xl md:border md:border-orange-300/90 md:shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)]";
+
+const ORDER_STICKY_CHROME_SPACER_CLASS = "h-[3.75rem] shrink-0 md:hidden";
+
 const MESA_PICKER_CARD_STATUS_LABEL: Record<string, string> = {
   DRAFT: "Borrador",
   SENT_TO_KITCHEN: "En caja",
@@ -1880,27 +1885,42 @@ const OrdenesContent = () => {
   const draftItemsTotal = itemsToUse
     .filter((item) => item.status === "DRAFT")
     .reduce((sum, item) => sum + item.total, 0);
-  const specialTotalManual = order.special_total_manual == null ? null : Number(order.special_total_manual);
-  const specialDifference = specialTotalManual == null ? null : Math.round((specialTotalManual - total) * 100) / 100;
+  const effectiveSpecialTotalManual = useMemo((): number | null => {
+    if (!order.is_special) return null;
+    const rawValue = specialTotalInput.trim().replace(",", ".");
+    if (!rawValue) return null;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) return null;
+    return Math.round(parsed * 100) / 100;
+  }, [order.is_special, specialTotalInput]);
+  const specialDifference =
+    effectiveSpecialTotalManual == null
+      ? null
+      : Math.round((effectiveSpecialTotalManual - total) * 100) / 100;
   const finalButtonTotal = order.is_special
-    ? (specialTotalManual ?? draftItemsTotal)
+    ? (effectiveSpecialTotalManual ?? draftItemsTotal)
     : draftItemsTotal;
   const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
   const hasTemporaryDraftItems = itemsToUse.some((i) => i.status === "DRAFT" && isTemporaryOrderItemId(i.id));
+  const hasSentItems = itemsToUse.some((i) => i.status !== "DRAFT");
   const hasPendingKitchenChanges = useKitchenStaging
     && hasKitchenPendingChanges(kitchenBaselineItems, stagedItems);
   const kitchenSendDelta = useKitchenStaging
     ? computeKitchenSendMoneyDelta(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
   const showKitchenSendButton = useKitchenStaging
-    ? hasPendingKitchenChanges
+    ? (hasPendingKitchenChanges || (hasDraftItems && !hasSentItems))
     : hasDraftItems;
+  const kitchenSendButtonLabel = order.is_special
+    ? `$${finalButtonTotal.toFixed(2)}`
+    : useKitchenStaging && hasPendingKitchenChanges
+      ? formatKitchenSendMoneyDelta(kitchenSendDelta)
+      : `$${finalButtonTotal.toFixed(2)}`;
   const hasPendingCancellationItems = itemsToUse.some((item) =>
     item.status === "PENDING_CANCELLATION" ||
     item.status === "ITEM_PENDING_CANCELLATION" ||
     Math.max(0, Number((item as any).quantity_requested ?? 0)) > 0,
   );
-  const hasSentItems = itemsToUse.some((i) => i.status !== "DRAFT");
   const isSent = order.status === "SENT_TO_KITCHEN";
   const tableOrders = tableOrdersQuery.data?.length
     ? tableOrdersQuery.data
@@ -2661,6 +2681,26 @@ const OrdenesContent = () => {
     updateSpecialTotal.mutate(Math.round(parsed * 100) / 100);
   };
 
+  const flushPendingSpecialTotalSave = async () => {
+    if (!order?.is_special) return;
+
+    if (specialTotalDebounceTimeoutRef.current) {
+      clearTimeout(specialTotalDebounceTimeoutRef.current);
+      specialTotalDebounceTimeoutRef.current = null;
+    }
+
+    const rawValue = specialTotalInput.trim().replace(",", ".");
+    if (!rawValue) {
+      await updateSpecialTotal.mutateAsync(null);
+      return;
+    }
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+
+    await updateSpecialTotal.mutateAsync(Math.round(parsed * 100) / 100);
+  };
+
   const handleSpecialTotalInputChange = (val: string) => {
     setSpecialTotalInput(val);
 
@@ -2927,7 +2967,7 @@ const OrdenesContent = () => {
   );
 
   const orderPanel = (mobile: boolean) => (
-    <div className={cn("flex w-full min-w-0 flex-col", mobile ? "h-full" : "h-auto")}>
+    <div className={cn("flex w-full min-w-0 flex-col", mobile ? "min-h-0" : "h-auto")}>
       <div className="mb-3 flex w-full items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="shrink-0 font-display text-sm font-bold">Orden</h2>
@@ -3016,8 +3056,8 @@ const OrdenesContent = () => {
           splitDispatchSections={isDispatchFirstFlow}
           hideItemControls={false}
           editableItemIds={editableItemIdsForEditar}
-          specialOrderChargeTotal={order.is_special && specialTotalManual != null ? specialTotalManual : null}
-          specialOrderCatalogTotal={order.is_special && specialTotalManual != null ? total : null}
+          specialOrderChargeTotal={order.is_special && effectiveSpecialTotalManual != null ? effectiveSpecialTotalManual : null}
+          specialOrderCatalogTotal={order.is_special && effectiveSpecialTotalManual != null ? total : null}
           onRemove={(id) => {
             const ids = Array.isArray(id) ? id : [id];
             if (fromEditar || useKitchenStaging) {
@@ -3073,9 +3113,13 @@ const OrdenesContent = () => {
       </div>
 
       {!fromEditar && canOperateOrders && showKitchenSendButton && order.status !== "PAID" && order.status !== "CANCELLED" && (
+        <div className={cn("mt-4 shrink-0", mobile && "sticky bottom-0 z-10 -mx-1 bg-background/95 px-1 pb-1 pt-2 backdrop-blur-sm")}>
         <Button
           onClick={async () => {
             try {
+              if (order.is_special) {
+                await flushPendingSpecialTotalSave();
+              }
               if (useKitchenStaging && hasPendingKitchenChanges) {
                 await applyKitchenPendingItemChanges(orderItems, stagedItems);
               }
@@ -3084,16 +3128,29 @@ const OrdenesContent = () => {
               } else {
                 await sendToKitchen.mutateAsync();
               }
+              if (orderId) {
+                await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
+              }
               if (useKitchenStaging && orderId) {
                 setStagedDirty(false);
-                await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
                 const freshOrder = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
                 if (freshOrder?.items) {
                   setKitchenBaselineItems(freshOrder.items);
                   setStagedItems(freshOrder.items);
                 }
               }
-              if (!isDispatchFirstFlow && canUseCaja && (order?.id || orderId)) {
+              const freshOrder = orderId
+                ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
+                : undefined;
+              const skipPaymentForSpecialZero = isSpecialOrderExplicitZeroTotal(freshOrder ?? order)
+                || freshOrder?.status === "PAID";
+
+              if (
+                !isDispatchFirstFlow
+                && canUseCaja
+                && (order?.id || orderId)
+                && !skipPaymentForSpecialZero
+              ) {
                 if (
                   !shiftGateQuery.data?.shiftOpen
                   || shiftGateQuery.data?.cajaStatus === "CLOSED"
@@ -3116,27 +3173,28 @@ const OrdenesContent = () => {
           }}
           disabled={(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems}
           title={addItem.isPending || hasTemporaryDraftItems ? "Espera a que el item termine de guardarse" : undefined}
-          className="mt-4 h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
+          className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
         >
           {(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : isExpressOrder ? (
             <>
               <Truck className="h-5 w-5" />
-              Enviar a despacho - {useKitchenStaging ? formatKitchenSendMoneyDelta(kitchenSendDelta) : `$${finalButtonTotal.toFixed(2)}`}
+              Enviar a despacho - {kitchenSendButtonLabel}
             </>
           ) : isDispatchFirstFlow ? (
             <>
               <ChefHat className="h-5 w-5" />
-              Enviar a cocina - {useKitchenStaging ? formatKitchenSendMoneyDelta(kitchenSendDelta) : `$${finalButtonTotal.toFixed(2)}`}
+              Enviar a cocina - {kitchenSendButtonLabel}
             </>
           ) : (
             <>
               <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja - ${finalButtonTotal.toFixed(2)}
+              Enviar a caja - {kitchenSendButtonLabel}
             </>
           )}
         </Button>
+        </div>
       )}
 
       {!canOperateOrders && (
@@ -3223,350 +3281,370 @@ const OrdenesContent = () => {
     </div>
   );
 
+  const renderMobileMenuOrderToggle = () => (
+    <Button
+      variant="outline"
+      size="sm"
+      className={cn(
+        "relative h-9 min-w-[46px] shrink-0 overflow-visible rounded-xl border-orange-400 bg-white/95 px-2 text-orange-950 shadow-sm hover:bg-orange-50 md:hidden",
+        showCart && "border-orange-500 bg-orange-100/90 text-orange-900",
+      )}
+      onClick={() => setShowCart((current) => !current)}
+      aria-label={showCart ? "Volver al menu" : "Ver orden"}
+    >
+      {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+      {!showCart && mobileOrderBadgeCount > 0 && (
+        <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
+          {mobileOrderBadgeCount}
+        </span>
+      )}
+    </Button>
+  );
+
+  const renderNonMesaOrderTypeLabel = () => {
+    if (order.is_tray_order) {
+      return (
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-amber-800 dark:text-amber-400">
+          <ShoppingBag className="h-4 w-4" />
+          Para Llevar
+        </div>
+      );
+    }
+    if (order.is_special) {
+      return (
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
+          <Sparkles className="h-4 w-4" />
+          Orden Especial
+        </div>
+      );
+    }
+    if (isExpressOrder) {
+      return (
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-violet-800 dark:text-violet-400">
+          <Zap className="h-4 w-4" />
+          Express
+        </div>
+      );
+    }
+    if (order.table_name) {
+      return (
+        <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
+          {(order.table_name ?? "").trim() || "Mesa"}
+        </div>
+      );
+    }
+    if (isTakeout) {
+      return (
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-emerald-800 dark:text-emerald-400">
+          <ShoppingBag className="h-4 w-4" />
+          Para llevar
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="ordenes-mobile-touch flex min-h-0 flex-1 flex-col">
       {!isMesasChromeUi && !isExtraOrder && (
-      <div className="flex flex-wrap items-start gap-1 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
-        <div className="min-w-0 w-full space-y-2">
-          <div className="flex items-center justify-between gap-1">
-            <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
+        <>
+          <div className={ORDER_STICKY_CHROME_BAR_CLASS}>
+            <div className="flex w-full min-w-0 items-center justify-between gap-2">
+              <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
                 <button
                   type="button"
                   onClick={handleMobileBackToMesas}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Volver a Mesas"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-orange-200/35 hover:text-foreground"
+                  aria-label="Volver"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                {order.is_tray_order ? (
-                  <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-amber-800 dark:text-amber-400">
-                    <ShoppingBag className="h-4 w-4" />
-                    Para Llevar
-                  </div>
-                ) : order.is_special ? (
-                  <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
-                    <Sparkles className="h-4 w-4" />
-                    Orden Especial
-                  </div>
-                ) : order.table_name ? (
-                  <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
-                    {(order.table_name ?? "").trim() || "Mesa"}
-                  </div>
-                ) : isTakeout ? (
-                  <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-emerald-800 dark:text-emerald-400">
-                    <ShoppingBag className="h-4 w-4" />
-                    Para llevar
-                  </div>
-                ) : null}
+                {renderNonMesaOrderTypeLabel()}
                 {!canOperateOrders && (
-                  <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                  <span className="hidden rounded-full border border-orange-300/60 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
                     Solo consulta
                   </span>
                 )}
-            </div>
+              </div>
 
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "relative h-9 min-w-[42px] shrink-0 overflow-visible rounded-xl px-2 md:hidden",
-                  showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
-                )}
-                onClick={() => setShowCart((current) => !current)}
-                aria-label={showCart ? "Volver al menu" : "Ver orden"}
-              >
-                {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-                {!showCart && mobileOrderBadgeCount > 0 && (
-                  <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
-                    {mobileOrderBadgeCount}
-                  </span>
-                )}
-              </Button>
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {renderMobileMenuOrderToggle()}
 
-            {order.table_id && (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9 w-9 shrink-0 rounded-lg p-0 md:hidden"
-                      aria-label="Abrir menu de acciones"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 md:hidden">
-                    {canShowConvertToSpecial && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setConvertSpecialTotalInput(total.toFixed(2));
-                          setConvertSpecialDialogOpen(true);
-                        }}
-                        disabled={!canConvertToSpecial}
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Convertir orden especial
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      onClick={() => setMergeSplitOpen(true)}
-                      disabled={!canOperateOrders}
-                    >
-                      <ArrowRightLeft className="mr-2 h-4 w-4" />
-                      Mover Items/Mesa
-                    </DropdownMenuItem>
-                    {canShowChangeTable && (
-                      <DropdownMenuItem
-                        onClick={() => setShowChangeTableDialog(true)}
-                        disabled={!canChangeTable || moveToTable.isPending}
-                      >
-                        {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
-                        Cambiar mesa
-                      </DropdownMenuItem>
-                    )}
-                    {(canCancelOrderFromCaja || hasSiblings) && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          if (canCancelOrderFromCaja) {
-                            setConfirmDeleteCajaOrderOpen(true);
-                          } else {
-                            setShowDeleteSplitConfirm(true);
-                          }
-                        }}
-                        disabled={deletingCajaOrder || removingSplit || (!canCancelOrderFromCaja && !canDeleteSplit)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        {deletingCajaOrder || removingSplit ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Ban className="mr-2 h-4 w-4" />
+                {order.table_id && (
+                  <>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 w-9 shrink-0 rounded-xl border-orange-400 bg-white/95 p-0 text-orange-950 shadow-sm hover:bg-orange-50 md:hidden"
+                          aria-label="Abrir menu de acciones"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56 md:hidden">
+                        {canShowConvertToSpecial && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setConvertSpecialTotalInput(total.toFixed(2));
+                              setConvertSpecialDialogOpen(true);
+                            }}
+                            disabled={!canConvertToSpecial}
+                          >
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Convertir orden especial
+                          </DropdownMenuItem>
                         )}
-                        Eliminar orden
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                        <DropdownMenuItem
+                          onClick={() => setMergeSplitOpen(true)}
+                          disabled={!canOperateOrders}
+                        >
+                          <ArrowRightLeft className="mr-2 h-4 w-4" />
+                          Mover Items/Mesa
+                        </DropdownMenuItem>
+                        {canShowChangeTable && (
+                          <DropdownMenuItem
+                            onClick={() => setShowChangeTableDialog(true)}
+                            disabled={!canChangeTable || moveToTable.isPending}
+                          >
+                            {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
+                            Cambiar mesa
+                          </DropdownMenuItem>
+                        )}
+                        {(canCancelOrderFromCaja || hasSiblings) && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              if (canCancelOrderFromCaja) {
+                                setConfirmDeleteCajaOrderOpen(true);
+                              } else {
+                                setShowDeleteSplitConfirm(true);
+                              }
+                            }}
+                            disabled={deletingCajaOrder || removingSplit || (!canCancelOrderFromCaja && !canDeleteSplit)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            {deletingCajaOrder || removingSplit ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Ban className="mr-2 h-4 w-4" />
+                            )}
+                            Eliminar orden
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
-                {hasSiblings && (
-                  <Button
-                    variant={canDeleteSplit ? "destructive" : "ghost"}
-                    size="sm"
-                    className={cn(
-                      "hidden h-9 w-9 shrink-0 rounded-lg p-0 md:inline-flex md:h-7 md:w-7",
-                      !canDeleteSplit && "text-muted-foreground",
+                    {hasSiblings && (
+                      <Button
+                        variant={canDeleteSplit ? "destructive" : "ghost"}
+                        size="sm"
+                        className={cn(
+                          "hidden h-9 w-9 shrink-0 rounded-lg p-0 md:inline-flex md:h-7 md:w-7",
+                          !canDeleteSplit && "text-muted-foreground",
+                        )}
+                        onClick={() => setShowDeleteSplitConfirm(true)}
+                        disabled={!canDeleteSplit || removingSplit}
+                        title={
+                          !canDeleteSplit
+                            ? "Solo puedes eliminar una orden borrador que aun no haya sido enviada, pagada o anulada"
+                            : "Eliminar esta orden"
+                        }
+                      >
+                        {removingSplit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                      </Button>
                     )}
-                    onClick={() => setShowDeleteSplitConfirm(true)}
-                    disabled={!canDeleteSplit || removingSplit}
-                    title={
-                      !canDeleteSplit
-                        ? "Solo puedes eliminar una orden borrador que aun no haya sido enviada, pagada o anulada"
-                        : "Eliminar esta orden"
-                    }
-                  >
-                    {removingSplit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-                  </Button>
+                  </>
                 )}
-              </>
-            )}
+              </div>
             </div>
           </div>
+          <div className={ORDER_STICKY_CHROME_SPACER_CLASS} aria-hidden="true" />
 
           {order.table_id && (
-            <div className="flex items-center gap-2 pb-1">
-              <div className="relative min-w-0 flex-1">
-                {tableOrdersTabsOverflow.left && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute left-0 top-1/2 z-10 h-8 w-8 -translate-y-1/2 rounded-full border border-orange-200 bg-white/95 text-orange-700 shadow-[0_12px_26px_-18px_rgba(249,115,22,0.75)] hover:bg-orange-50 hover:text-orange-800"
-                    onClick={() => scrollTableOrdersTabs("left")}
-                    title="Ver ordenes anteriores"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                )}
-                {tableOrdersTabsOverflow.right && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-1/2 z-10 h-8 w-8 -translate-y-1/2 rounded-full border border-orange-200 bg-white/95 text-orange-700 shadow-[0_12px_26px_-18px_rgba(249,115,22,0.75)] hover:bg-orange-50 hover:text-orange-800"
-                    onClick={() => scrollTableOrdersTabs("right")}
-                    title="Ver mas ordenes"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                )}
-                <div
-                  ref={tableOrdersTabsRef}
-                  data-no-order-swipe
-                  onScroll={updateTableOrdersTabsOverflow}
-                  className={cn(
-                    "scrollbar-none flex min-w-0 flex-1 items-stretch gap-0 overflow-x-auto scroll-smooth pr-1",
-                    tableOrdersTabsOverflow.left && "pl-9",
-                    tableOrdersTabsOverflow.right && "pr-9",
+            <div className="border-b border-border bg-card/50 px-3 py-2 sm:px-4">
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  {tableOrdersTabsOverflow.left && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute left-0 top-1/2 z-10 h-8 w-8 -translate-y-1/2 rounded-full border border-orange-200 bg-white/95 text-orange-700 shadow-[0_12px_26px_-18px_rgba(249,115,22,0.75)] hover:bg-orange-50 hover:text-orange-800"
+                      onClick={() => scrollTableOrdersTabs("left")}
+                      title="Ver ordenes anteriores"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
                   )}
-                >
-                  {mergedTableOrders.map((tableOrder, index) => (
+                  {tableOrdersTabsOverflow.right && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-1/2 z-10 h-8 w-8 -translate-y-1/2 rounded-full border border-orange-200 bg-white/95 text-orange-700 shadow-[0_12px_26px_-18px_rgba(249,115,22,0.75)] hover:bg-orange-50 hover:text-orange-800"
+                      onClick={() => scrollTableOrdersTabs("right")}
+                      title="Ver mas ordenes"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <div
+                    ref={tableOrdersTabsRef}
+                    data-no-order-swipe
+                    onScroll={updateTableOrdersTabsOverflow}
+                    className={cn(
+                      "scrollbar-none flex min-w-0 flex-1 items-stretch gap-0 overflow-x-auto scroll-smooth pr-1",
+                      tableOrdersTabsOverflow.left && "pl-9",
+                      tableOrdersTabsOverflow.right && "pr-9",
+                    )}
+                  >
+                    {mergedTableOrders.map((tableOrder, index) => (
+                      <button
+                        key={tableOrder.id}
+                        type="button"
+                        className={cn(
+                          "group flex h-10 shrink-0 items-center gap-2 border border-border bg-card px-3 text-[11px] font-semibold text-foreground transition-colors",
+                          index === 0 && "rounded-l-xl",
+                          index === mergedTableOrders.length - 1 && "border-r-0",
+                          tableOrder.id === order.id
+                            ? "border-orange-300 bg-orange-50 text-orange-900 shadow-[0_10px_20px_-18px_rgba(249,115,22,0.85)]"
+                            : "hover:bg-muted/60",
+                        )}
+                        onClick={() => navigate(`/ordenes?order=${tableOrder.id}${sourceParams}`, { replace: true })}
+                      >
+                        <span className="whitespace-nowrap">{getTableOrderButtonLabel(tableOrder)}</span>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "px-1.5 py-0 text-[10px]",
+                            tableOrder.id === order.id && "bg-orange-100 text-orange-700",
+                          )}
+                        >
+                          {tableOrder.item_count}
+                        </Badge>
+                        {tableOrder.id === order.id && canDeleteSplit && (
+                          <span
+                            role="button"
+                            aria-label="Eliminar orden activa"
+                            className={cn(
+                              "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-orange-700 opacity-0 transition-opacity",
+                              "group-hover:opacity-100",
+                            )}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setShowDeleteSplitConfirm(true);
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </span>
+                        )}
+                      </button>
+                    ))}
                     <button
-                      key={tableOrder.id}
                       type="button"
                       className={cn(
-                        "group flex h-10 shrink-0 items-center gap-2 border border-border bg-card px-3 text-[11px] font-semibold text-foreground transition-colors",
-                        index === 0 && "rounded-l-xl",
-                        index === mergedTableOrders.length - 1 && "border-r-0",
-                        tableOrder.id === order.id
-                          ? "border-orange-300 bg-orange-50 text-orange-900 shadow-[0_10px_20px_-18px_rgba(249,115,22,0.85)]"
-                          : "hover:bg-muted/60",
+                        "flex h-10 shrink-0 items-center justify-center rounded-r-xl border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted/60",
+                        (!canSplit || splitting) && "cursor-not-allowed opacity-50",
                       )}
-                      onClick={() => navigate(`/ordenes?order=${tableOrder.id}${sourceParams}`, { replace: true })}
+                      onClick={handleSplit}
+                      disabled={!canSplit || splitting}
+                      title={
+                        !canOperateOrders
+                          ? `No tienes permiso para crear nuevas ordenes en ${orderGroupLabel}`
+                          : orderItems.length <= 0
+                            ? "La orden actual debe tener al menos un item"
+                            : !shiftOkForSiblingOrder
+                              ? "Abre turno en caja para crear otra orden"
+                              : !canSplit
+                                ? isTakeoutOrder ? "Para Llevar debe seguir activo para crear otra orden" : "La mesa debe seguir activa para crear otra orden"
+                                : "Nueva orden"
+                      }
                     >
-                      <span className="whitespace-nowrap">{getTableOrderButtonLabel(tableOrder)}</span>
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          "px-1.5 py-0 text-[10px]",
-                          tableOrder.id === order.id && "bg-orange-100 text-orange-700",
-                        )}
-                      >
-                        {tableOrder.item_count}
-                      </Badge>
-                      {tableOrder.id === order.id && canDeleteSplit && (
-                        <span
-                          role="button"
-                          aria-label="Eliminar orden activa"
-                          className={cn(
-                            "ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-orange-700 opacity-0 transition-opacity",
-                            "group-hover:opacity-100",
-                          )}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setShowDeleteSplitConfirm(true);
-                          }}
-                        >
-                          <X className="h-3 w-3" />
-                        </span>
-                      )}
+                      {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex h-10 shrink-0 items-center justify-center rounded-r-xl border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted/60",
-                      (!canSplit || splitting) && "cursor-not-allowed opacity-50",
-                    )}
-                    onClick={handleSplit}
-                    disabled={!canSplit || splitting}
-                    title={
-                      !canOperateOrders
-                        ? `No tienes permiso para crear nuevas ordenes en ${orderGroupLabel}`
-                        : orderItems.length <= 0
-                          ? "La orden actual debe tener al menos un item"
-                          : !shiftOkForSiblingOrder
-                            ? "Abre turno en caja para crear otra orden"
-                            : !canSplit
-                            ? isTakeoutOrder ? "Para Llevar debe seguir activo para crear otra orden" : "La mesa debe seguir activa para crear otra orden"
-                              : "Nueva orden"
-                    }
-                  >
-                    {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
-                  </button>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="scrollbar-none flex items-center gap-2 overflow-x-auto pb-1">
-            {canShowConvertToSpecial && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:inline-flex md:h-7"
-                onClick={() => {
-                  setConvertSpecialTotalInput(total.toFixed(2));
-                  setConvertSpecialDialogOpen(true);
-                }}
-                disabled={!canConvertToSpecial}
-                title={!canConvertToSpecial ? "La orden debe tener al menos un item" : "Convertir en orden especial"}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Convertir Ord. Espec.
-              </Button>
-            )}
-            {canShowChangeTable && (
-              <>
-                <Button
-                  variant={canChangeTable ? "outline" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "hidden h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:inline-flex md:h-7",
-                    !canChangeTable && "text-muted-foreground",
-                  )}
-                  onClick={() => setShowChangeTableDialog(true)}
-                  disabled={!canChangeTable || moveToTable.isPending}
-                  title={
-                    !canChangeTable
-                      ? hasOrderItems
-                        ? "Solo puedes cambiar de mesa ordenes DINE_IN activas"
-                        : "La orden debe tener al menos un item"
-                      : "Cambiar esta orden de mesa"
-                  }
-                >
-                  {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
-                  Cambiar mesa
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+          {(canShowConvertToSpecial || canShowChangeTable) && (
+            <div className="hidden border-b border-border bg-card/50 px-3 py-2 sm:px-4 md:block">
+              <div className="scrollbar-none flex items-center gap-2 overflow-x-auto">
+                {canShowConvertToSpecial && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:h-7"
+                    onClick={() => {
+                      setConvertSpecialTotalInput(total.toFixed(2));
+                      setConvertSpecialDialogOpen(true);
+                    }}
+                    disabled={!canConvertToSpecial}
+                    title={!canConvertToSpecial ? "La orden debe tener al menos un item" : "Convertir en orden especial"}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Convertir Ord. Espec.
+                  </Button>
+                )}
+                {canShowChangeTable && (
+                  <Button
+                    variant={canChangeTable ? "outline" : "ghost"}
+                    size="sm"
+                    className={cn(
+                      "h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:h-7",
+                      !canChangeTable && "text-muted-foreground",
+                    )}
+                    onClick={() => setShowChangeTableDialog(true)}
+                    disabled={!canChangeTable || moveToTable.isPending}
+                    title={
+                      !canChangeTable
+                        ? hasOrderItems
+                          ? "Solo puedes cambiar de mesa ordenes DINE_IN activas"
+                          : "La orden debe tener al menos un item"
+                        : "Cambiar esta orden de mesa"
+                    }
+                  >
+                    {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
+                    Cambiar mesa
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {isExtraOrder && (
-        <div className="flex flex-wrap items-start gap-1 border-b border-border bg-card/50 px-3 py-3 sm:px-4">
-          <div className="flex w-full min-w-0 items-center justify-between gap-1">
-            <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
-              <button
-                type="button"
-                onClick={handleMobileBackToMesas}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label="Volver"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
-                <Truck className="h-4 w-4" />
-                Extra
+        <>
+          <div className={ORDER_STICKY_CHROME_BAR_CLASS}>
+            <div className="flex w-full min-w-0 items-center justify-between gap-2">
+              <div className="scrollbar-none min-w-0 flex flex-1 items-center gap-2 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={handleMobileBackToMesas}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-orange-200/35 hover:text-foreground"
+                  aria-label="Volver"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
+                  <Truck className="h-4 w-4" />
+                  Extra
+                </div>
               </div>
+              {renderMobileMenuOrderToggle()}
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "relative h-9 min-w-[42px] shrink-0 overflow-visible rounded-xl px-2 md:hidden",
-                showCart && "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800",
-              )}
-              onClick={() => setShowCart((current) => !current)}
-              aria-label={showCart ? "Volver al menu" : "Ver orden"}
-            >
-              {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-              {!showCart && mobileOrderBadgeCount > 0 && (
-                <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
-                  {mobileOrderBadgeCount}
-                </span>
-              )}
-            </Button>
           </div>
-        </div>
+          <div className={ORDER_STICKY_CHROME_SPACER_CLASS} aria-hidden="true" />
+        </>
       )}
 
       {isMesasChromeUi && (
         <>
-        <div className="fixed inset-x-0 top-below-app-header z-40 border-b border-orange-300/90 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 px-3 py-2.5 shadow-[0_4px_12px_-8px_rgba(234,88,12,0.35),inset_0_1px_0_0_rgba(251,146,60,0.45)] sm:px-4 sm:py-3 md:relative md:sticky md:inset-x-auto md:top-0 md:z-20 md:rounded-t-3xl md:border md:border-orange-300/90 md:shadow-[inset_0_1px_0_0_rgba(251,146,60,0.45)]">
+        <div className={ORDER_STICKY_CHROME_BAR_CLASS}>
           <div className="flex w-full min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {hasSiblings ? (
@@ -3594,23 +3672,7 @@ const OrdenesContent = () => {
                   Solo consulta
                 </span>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "relative h-9 min-w-[46px] shrink-0 overflow-visible rounded-xl border-orange-400 bg-white/95 px-2 text-orange-950 shadow-sm hover:bg-orange-50 md:hidden",
-                  showCart && "border-orange-500 bg-orange-100/90 text-orange-900",
-                )}
-                onClick={() => setShowCart((current) => !current)}
-                aria-label={showCart ? "Volver al menu" : "Ver orden"}
-              >
-                {showCart ? <BookOpenText className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-                {!showCart && mobileOrderBadgeCount > 0 && (
-                  <span className="absolute right-0.5 top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground shadow-sm">
-                    {mobileOrderBadgeCount}
-                  </span>
-                )}
-              </Button>
+              {renderMobileMenuOrderToggle()}
               <Button
                 type="button"
                 size="sm"
@@ -3699,7 +3761,7 @@ const OrdenesContent = () => {
             </div>
           </div>
         </div>
-        <div className="h-[3.75rem] shrink-0 md:hidden" aria-hidden="true" />
+        <div className={ORDER_STICKY_CHROME_SPACER_CLASS} aria-hidden="true" />
         </>
       )}
 

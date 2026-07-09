@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, type ReactNode } from "react";
+import { useMemo, useState, useEffect, useRef, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,23 +90,23 @@ const AddItemDialog = ({
   const [quantityInput, setQuantityInput] = useState("1");
   const [manualPrice, setManualPrice] = useState("");
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
- 
+  /** Orden especial: precio bloqueado al catálogo hasta pulsar Editar */
+  const [specialPriceEditing, setSpecialPriceEditing] = useState(false);
+  const specialPriceInputRef = useRef<HTMLInputElement>(null);
+
   const dialogOpen = Boolean(open && displayProduct);
 
   useEffect(() => {
     if (dialogOpen) {
       setQuantity(1);
       setQuantityInput("1");
+      setSpecialPriceEditing(false);
       setManualPrice(
-        isSpecial
-          ? "0"
-          : displayProduct?.unit_price != null
-          ? String(displayProduct.unit_price)
-          : ""
+        displayProduct?.unit_price != null ? String(displayProduct.unit_price) : "",
       );
       setSelectedMods([]);
     }
-  }, [dialogOpen, product?.id, displayProduct, isSpecial]);
+  }, [dialogOpen, product?.id, displayProduct?.unit_price, isSpecial]);
 
   const sortedModifiers = useMemo(
     () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),
@@ -115,15 +115,22 @@ const AddItemDialog = ({
 
   const isManual =
     displayProduct != null ? (priceModeOverride ?? displayProduct.price_mode) === "MANUAL" : false;
+  const catalogUnitPrice = displayProduct?.unit_price ?? 0;
   const price =
     displayProduct != null
       ? isManual
-        ? parseDecimalInput(manualPrice)
-        : (displayProduct.unit_price ?? 0)
+        ? isSpecial && !specialPriceEditing
+          ? catalogUnitPrice
+          : parseDecimalInput(manualPrice)
+        : catalogUnitPrice
       : 0;
   const effectiveQuantity = hideQuantity ? 1 : quantity;
   const canAdd =
-    Boolean(product) && displayProduct != null && effectiveQuantity > 0 && (!isManual || price > 0);
+    Boolean(product) &&
+    displayProduct != null &&
+    effectiveQuantity > 0 &&
+    (!isManual ||
+      (isSpecial && !specialPriceEditing ? catalogUnitPrice > 0 : price > 0));
   const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
 
   const handleConfirm = () => {
@@ -141,7 +148,14 @@ const AddItemDialog = ({
     setQuantity(1);
     setQuantityInput("1");
     setManualPrice("");
+    setSpecialPriceEditing(false);
     setSelectedMods([]);
+  };
+
+  const handleStartSpecialPriceEdit = () => {
+    setSpecialPriceEditing(true);
+    setManualPrice("");
+    requestAnimationFrame(() => specialPriceInputRef.current?.focus());
   };
 
   const toggleMod = (id: string) => {
@@ -201,20 +215,43 @@ const AddItemDialog = ({
           {isManual && (
             <div className="space-y-1.5 mt-2">
               <Label className="text-sm font-semibold text-muted-foreground">{manualPriceLabel}</Label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                <Input
-                  type="text"
-                  step="0.01"
-                  min="0"
-                  inputMode="decimal"
-                  pattern="[0-9]*[.,]?[0-9]*"
-                  value={manualPrice}
-                  onChange={(event) => setManualPrice(sanitizeDecimalInput(event.target.value))}
-                  placeholder="0.00"
-                  className="h-11 rounded-xl pl-8 text-lg font-bold shadow-sm"
-                  autoFocus
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                  <Input
+                    ref={isSpecial ? specialPriceInputRef : undefined}
+                    type="text"
+                    step="0.01"
+                    min="0"
+                    inputMode="decimal"
+                    pattern="[0-9]*[.,]?[0-9]*"
+                    value={
+                      isSpecial && !specialPriceEditing
+                        ? catalogUnitPrice > 0
+                          ? catalogUnitPrice.toFixed(2)
+                          : ""
+                        : manualPrice
+                    }
+                    onChange={(event) => setManualPrice(sanitizeDecimalInput(event.target.value))}
+                    placeholder={isSpecial && specialPriceEditing ? "" : "0.00"}
+                    disabled={isSpecial && !specialPriceEditing}
+                    className={cn(
+                      "h-11 rounded-xl pl-8 text-lg font-bold shadow-sm",
+                      isSpecial && !specialPriceEditing && "cursor-default bg-muted/40 text-foreground opacity-100",
+                    )}
+                    autoFocus={!isSpecial}
+                  />
+                </div>
+                {isSpecial && !specialPriceEditing && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 shrink-0 rounded-xl px-4 font-semibold"
+                    onClick={handleStartSpecialPriceEdit}
+                  >
+                    Editar
+                  </Button>
+                )}
               </div>
             </div>
           )}

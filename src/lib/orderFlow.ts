@@ -219,3 +219,25 @@ export function orderIsPayableInCaja(order: {
 }): boolean {
   return ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"].includes(String(order.status ?? ""));
 }
+
+/** Orden especial con total manual explícito en $0 (no aplica si special_total_manual es null). */
+export function isSpecialOrderExplicitZeroTotal(order: {
+  is_special?: boolean | null;
+  special_total_manual?: number | null;
+} | null | undefined): boolean {
+  if (!order?.is_special) return false;
+  if (order.special_total_manual == null) return false;
+  return Number(order.special_total_manual) === 0;
+}
+
+/** Total a cobrar: manual en orden especial si está definido; si no, suma de ítems. */
+export function resolveOrderChargeTotal(params: {
+  is_special?: boolean | null;
+  special_total_manual?: number | null;
+  itemsTotal: number;
+}): number {
+  if (params.is_special && params.special_total_manual != null) {
+    return Number(params.special_total_manual);
+  }
+  return params.itemsTotal;
+}

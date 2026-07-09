@@ -3,6 +3,7 @@ import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders
 import { Button } from "@/components/ui/button";
 import { Clock, Check, Loader2, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { resolveOrderChargeTotal } from "@/lib/orderFlow";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -262,7 +263,12 @@ export function DispatchCardBase({
     [order.items, order.order_type],
   );
   const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
-  const orderTotal = order.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+  const itemsTotal = order.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
+  const orderTotal = resolveOrderChargeTotal({
+    is_special: order.is_special,
+    special_total_manual: order.special_total_manual,
+    itemsTotal,
+  });
 
   const summaryParts: string[] = [];
   if (order.pending_prepare_count > 0) summaryParts.push(`${order.pending_prepare_count} pendientes`);

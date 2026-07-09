@@ -64,6 +64,7 @@ export interface DispatchOrder {
   is_special: boolean;
   is_tray_order?: boolean;
   is_packer_order?: boolean;
+  special_total_manual?: number | null;
   created_by: string | null;
   created_by_name: string | null;
   table_name: string | null;
@@ -407,6 +408,7 @@ function groupItemsIntoDispatchCards(
     is_special: Boolean(order.is_special),
     is_tray_order: Boolean(order.is_tray_order),
     is_packer_order: Boolean(order.is_packer_order),
+    special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
     created_by: order.created_by ?? null,
     created_by_name: order.created_by_name ?? null,
     table_name: order.table_name ?? null,
@@ -463,7 +465,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const ordersMerged = (
         await dbSelect<any>("orders", {
-          select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
+          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["PAID", "READY", "SENT_TO_KITCHEN"] },
@@ -822,6 +824,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     },
     onSuccess: () => {
       toast.success("Orden despachada");
+      qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
+      qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false });
+      qc.invalidateQueries({ queryKey: ["reportes-pagos"], exact: false });
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
       scheduleDeferredDispatchInvalidation(qc);
     },
