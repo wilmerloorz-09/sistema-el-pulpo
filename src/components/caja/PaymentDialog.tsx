@@ -34,8 +34,7 @@ import type { PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderPa
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReceipt from "./PaymentReceipt";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
-import { supabase } from "@/integrations/supabase/client";
-import QRCode from "qrcode";
+import { fetchPromocionReciboExtrasForOrder } from "@/lib/promocionesRecibo";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -857,42 +856,13 @@ export default function PaymentDialog({
           await payPromise;
         }
 
-        let token_promocion: string | null = null;
-        let qrCodeDataUrl: string | null = null;
-        if (willSettleOrder) {
-          let attempts = 0;
-          while (attempts < 5 && !token_promocion) {
-            attempts++;
-            try {
-              const { data: orderData } = await supabase
-                .from("orders")
-                .select("token_promocion")
-                .eq("id", order.id)
-                .single();
-              if (orderData?.token_promocion) {
-                token_promocion = orderData.token_promocion;
-                break;
-              }
-            } catch (err) {
-              console.error(`Attempt ${attempts} failed to fetch token_promocion:`, err);
-            }
-            await new Promise((resolveTimeout) => setTimeout(resolveTimeout, 300));
-          }
-
-          if (token_promocion) {
-            try {
-              const url = `https://sistema-el-pulpo.vercel.app/promociones/registro?t=${token_promocion}`;
-              qrCodeDataUrl = await QRCode.toDataURL(url, { width: 120, margin: 1 });
-            } catch (qrErr) {
-              console.error("Error generating QR code:", qrErr);
-            }
-          }
-        }
+        const promocionExtras = willSettleOrder
+          ? await fetchPromocionReciboExtrasForOrder(order.id)
+          : { token_promocion: null, qrCodeDataUrl: null };
 
         const finalReceiptData = {
           ...receiptData,
-          token_promocion,
-          qrCodeDataUrl,
+          ...promocionExtras,
         };
 
         setPreparedTransferProofSession(null);
