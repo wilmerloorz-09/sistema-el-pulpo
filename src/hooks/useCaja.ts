@@ -13,7 +13,7 @@ import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
-import { orderIsPayableInCaja } from "@/lib/orderFlow";
+import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
 import { cleanOrderCode } from "@/lib/orderPresentation";
 
 
@@ -1575,13 +1575,12 @@ export function useCaja(params?: {
 
       const payableSourceOrders = activeOrders.filter((o) => orderIsPayableInCaja(o));
 
-      const isDispatchFirstWorkflow = activeWorkflowMode === "DISPATCH_THEN_CASH";
-
       return payableSourceOrders
         .map((o) => {
           const orderItems = (items ?? []).filter((i) => i.order_id === o.id && i.status !== "DRAFT");
+          const requiresDispatchBeforePay = isDispatchFirstOrder(o, activeWorkflowMode);
           let undispatchedUnits = 0;
-          if (isDispatchFirstWorkflow) {
+          if (requiresDispatchBeforePay) {
             for (const i of orderItems) {
               const quantities = computeOperationalQuantities({
                 quantityOrdered: Number(i.quantity ?? 0),
@@ -1594,7 +1593,7 @@ export function useCaja(params?: {
               undispatchedUnits += computeUndispatchedQuantity(quantities);
             }
           }
-          const readyToCollect = !isDispatchFirstWorkflow || undispatchedUnits === 0;
+          const readyToCollect = !requiresDispatchBeforePay || undispatchedUnits === 0;
 
           const mappedItems = orderItems
             .map((i) => {
@@ -1686,7 +1685,7 @@ export function useCaja(params?: {
             total: displayTotal,
             tray_products_total: trayProductsTotal,
             tray_container_total: trayContainerTotal,
-            undispatched_units: isDispatchFirstWorkflow ? undispatchedUnits : 0,
+            undispatched_units: requiresDispatchBeforePay ? undispatchedUnits : 0,
             ready_to_collect: readyToCollect,
             items: mappedItems,
           } as PayableOrder;
@@ -2370,7 +2369,7 @@ export function useCaja(params?: {
         throw new Error("Una orden borrador no puede cobrarse en caja.");
       }
 
-      if (activeWorkflowMode === "DISPATCH_THEN_CASH") {
+      if (isDispatchFirstOrder(orderData, activeWorkflowMode)) {
         const orderUndispatchedUnits = (allDbItems ?? [])
           .filter((item: any) => item.status !== "DRAFT")
           .reduce((sum: number, item: any) => {

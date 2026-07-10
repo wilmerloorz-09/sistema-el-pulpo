@@ -36,6 +36,19 @@ export function expressOrderAwaitingPayment(order: {
   return isExpressOrder(order) && String(order?.status ?? "") === "KITCHEN_DISPATCHED";
 }
 
+/** Para llevar operativo: TAKEOUT sin bandeja ni orden especial. */
+export function isPureTakeoutOrder(order: {
+  order_type?: string | null;
+  is_tray_order?: boolean | null;
+  is_special?: boolean | null;
+} | null | undefined): boolean {
+  return (
+    order?.order_type === "TAKEOUT"
+    && !order?.is_tray_order
+    && !order?.is_special
+  );
+}
+
 export function getSentItemStageLabel(orderType?: string | null, workflowMode?: string | null): string {
   const isExpress = orderType === "EXPRESS";
   const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && orderType !== "TAKEOUT");
@@ -143,7 +156,8 @@ export function isDispatchFirstOrder(
   } | null | undefined,
   workflowMode: string,
 ): boolean {
-  return isExpressOrder(order) || (workflowMode === "DISPATCH_THEN_CASH" && order?.order_type !== "TAKEOUT");
+  return isExpressOrder(order)
+    || (workflowMode === "DISPATCH_THEN_CASH" && !isPureTakeoutOrder(order));
 }
 
 /**
