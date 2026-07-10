@@ -1,12 +1,13 @@
 import QRCode from "qrcode";
 import { supabase } from "@/integrations/supabase/client";
+import { campanaTieneOfertasRegistrables } from "@/lib/campanasValidacion";
 import { listarCampanasActivas } from "@/services/campanasPromocionalesDb";
 
 const PROMO_REGISTRO_BASE_URL = "https://sistema-el-pulpo.vercel.app/promociones/registro";
 
-export async function hayCampanasPromocionalesActivas(): Promise<boolean> {
+export async function hayPromocionRegistrableEnRecibo(): Promise<boolean> {
   const campanas = await listarCampanasActivas();
-  return campanas.length > 0;
+  return campanas.some(campanaTieneOfertasRegistrables);
 }
 
 export async function fetchOrderTokenPromocion(orderId: string): Promise<string | null> {
@@ -35,8 +36,8 @@ export async function buildPromocionReciboExtras(
 ): Promise<{ token_promocion: string | null; qrCodeDataUrl: string | null }> {
   if (!token) return { token_promocion: null, qrCodeDataUrl: null };
 
-  const tieneCampanaActiva = await hayCampanasPromocionalesActivas();
-  if (!tieneCampanaActiva) {
+  const promocionRegistrable = await hayPromocionRegistrableEnRecibo();
+  if (!promocionRegistrable) {
     return { token_promocion: null, qrCodeDataUrl: null };
   }
 
@@ -53,10 +54,20 @@ export async function buildPromocionReciboExtras(
 export async function fetchPromocionReciboExtrasForOrder(
   orderId: string,
 ): Promise<{ token_promocion: string | null; qrCodeDataUrl: string | null }> {
-  const tieneCampanaActiva = await hayCampanasPromocionalesActivas();
-  if (!tieneCampanaActiva) {
+  const promocionRegistrable = await hayPromocionRegistrableEnRecibo();
+  if (!promocionRegistrable) {
     return { token_promocion: null, qrCodeDataUrl: null };
   }
   const token = await fetchOrderTokenPromocion(orderId);
   return buildPromocionReciboExtras(token);
+}
+
+export async function sanitizarPromocionReciboData<T extends { token_promocion?: string | null; qrCodeDataUrl?: string | null }>(
+  input: T,
+): Promise<T> {
+  if (!input.token_promocion) {
+    return { ...input, token_promocion: null, qrCodeDataUrl: null };
+  }
+  const extras = await buildPromocionReciboExtras(input.token_promocion);
+  return { ...input, ...extras };
 }

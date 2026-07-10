@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { normalizarCedulaCelular, normalizarSoloLetras } from "@/lib/clientesValidacion";
+import { ofertaDisponibleParaRegistro } from "@/lib/campanasValidacion";
 
 interface CampanaActiva {
   id: string;
@@ -26,27 +27,6 @@ interface ValidacionTokenResult {
   id_cliente: string | null;
   cedula_cliente: string | null;
   nombre_cliente: string | null;
-}
-
-function ofertaDisponible(oferta: any): boolean {
-  if (oferta.resultado === "GANADA" || oferta.resultado === "PERDIDA") {
-    return false;
-  }
-  if (!oferta.bloqueo_at) {
-    return false;
-  }
-  const ahora = Date.now();
-  const bloqueoTime = new Date(oferta.bloqueo_at).getTime();
-  if (ahora > bloqueoTime) {
-    return false;
-  }
-  if (oferta.inicio_at) {
-    const inicioTime = new Date(oferta.inicio_at).getTime();
-    if (ahora < inicioTime) {
-      return false;
-    }
-  }
-  return true;
 }
 
 export default function PromocionRegistro() {
@@ -114,7 +94,7 @@ export default function PromocionRegistro() {
   // Auto-select offer if only 1 is available
   useEffect(() => {
     if (selectedCampana) {
-      const disponibles = selectedCampana.cartelera_ofertas?.filter(ofertaDisponible) || [];
+      const disponibles = selectedCampana.cartelera_ofertas?.filter(ofertaDisponibleParaRegistro) || [];
       if (disponibles.length === 1) {
         setSelectedOfertaId(disponibles[0].id_oferta);
       } else {
@@ -244,7 +224,7 @@ export default function PromocionRegistro() {
   // Filter available offers for selected campaign
   const ofertasVisibles = useMemo(() => {
     if (!selectedCampana) return [];
-    return (selectedCampana.cartelera_ofertas ?? []).filter(ofertaDisponible);
+    return (selectedCampana.cartelera_ofertas ?? []).filter(ofertaDisponibleParaRegistro);
   }, [selectedCampana]);
 
   const selectedOfertaObj = useMemo(() => {

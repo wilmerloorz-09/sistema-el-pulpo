@@ -212,6 +212,34 @@ export function campanaFormularioEsValido(errores: ErroresCampanaFormulario): bo
   return Object.keys(errores).length === 0;
 }
 
+/** Oferta abierta para registrar predicción (misma regla que /promociones/registro). */
+export function ofertaDisponibleParaRegistro(
+  oferta: Pick<OfertaCartelera, "resultado" | "bloqueo_at" | "inicio_at">,
+  ahoraMs: number = Date.now(),
+): boolean {
+  const resultado = normalizarResultadoOferta(oferta.resultado);
+  if (resultado === "GANADA" || resultado === "PERDIDA") return false;
+  if (!oferta.bloqueo_at?.trim()) return false;
+
+  const bloqueoTime = new Date(oferta.bloqueo_at).getTime();
+  if (!Number.isFinite(bloqueoTime) || ahoraMs > bloqueoTime) return false;
+
+  if (oferta.inicio_at?.trim()) {
+    const inicioTime = new Date(oferta.inicio_at).getTime();
+    if (Number.isFinite(inicioTime) && ahoraMs < inicioTime) return false;
+  }
+
+  return true;
+}
+
+export function campanaTieneOfertasRegistrables(
+  campana: Pick<CampanaPromocional, "activa" | "cartelera_ofertas">,
+  ahoraMs: number = Date.now(),
+): boolean {
+  if (!campana.activa) return false;
+  return (campana.cartelera_ofertas ?? []).some((oferta) => ofertaDisponibleParaRegistro(oferta, ahoraMs));
+}
+
 export function prepararCampanaParaGuardar(valores: CampanaPromocionalFormulario) {
   return {
     titulo: valores.titulo.trim(),

@@ -1,5 +1,6 @@
 import { buildPaymentReceiptEscPos, type PaymentReceiptEscPosInput } from "@/lib/escpos/buildPaymentReceipt";
 import { buildOrderReceiptEscPos, type OrderReceiptEscPosInput } from "@/lib/escpos/buildOrderReceipt";
+import { sanitizarPromocionReciboData } from "@/lib/promocionesRecibo";
 import { DEFAULT_THERMAL_PRINT_BRIDGE_URL } from "@/lib/escpos/constants";
 import { Capacitor } from "@capacitor/core";
 import { TcpSocket } from "@deedarb/capacitor-tcp-socket";
@@ -112,30 +113,32 @@ export function isThermalBridgeEnabled(): boolean {
 
 /** Imprime comprobante de pago: ESC/POS primero; si falla, window.print() (HTML 80mm). */
 export async function printPaymentReceipt(input: PaymentReceiptEscPosInput): Promise<ThermalPrintResult> {
+  const receiptInput = await sanitizarPromocionReciboData(input);
+
   if (isThermalBridgeEnabled()) {
     try {
-      const date = new Date(input.createdAt);
+      const date = new Date(receiptInput.createdAt);
       const dateStr = date.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
       const timeStr = date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 
       const resolveLabel = () => {
-        if (input.isTrayOrder) return "ORDEN BANDEJA";
-        if (input.isSpecial) return "ORDEN ESPECIAL";
-        if (input.orderType === "TAKEOUT") return "PARA LLEVAR";
-        if (input.orderType === "EXPRESS") return "EXPRESS";
-        if (input.orderType === "EXTRA") return "EXTRA";
-        return input.tableName ?? "MESA";
+        if (receiptInput.isTrayOrder) return "ORDEN BANDEJA";
+        if (receiptInput.isSpecial) return "ORDEN ESPECIAL";
+        if (receiptInput.orderType === "TAKEOUT") return "PARA LLEVAR";
+        if (receiptInput.orderType === "EXPRESS") return "EXPRESS";
+        if (receiptInput.orderType === "EXTRA") return "EXTRA";
+        return receiptInput.tableName ?? "MESA";
       };
 
       const headerLines = [
-        input.branchName || "",
+        receiptInput.branchName || "",
         "ORDEN",
-        `${input.orderNumber}`,
+        `${receiptInput.orderNumber}`,
         `${resolveLabel()} - ${dateStr} ${timeStr}`
       ].filter(Boolean);
 
       const headerBytes = await buildCombinedHeaderRaster("/logo.png", headerLines).catch(() => null);
-      const bytes = buildPaymentReceiptEscPos({ ...input, headerBytes });
+      const bytes = buildPaymentReceiptEscPos({ ...receiptInput, headerBytes });
       await sendEscPosToBridge(bytes);
       return { mode: "escpos" };
     } catch (error: unknown) {
