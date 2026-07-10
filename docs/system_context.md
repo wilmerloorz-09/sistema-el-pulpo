@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-06-02)
+## Estado operativo vigente (2026-07-10)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -84,6 +84,7 @@
   - **Promociones** (`/promociones`): requiere turno abierto y `usuario_puede_registrar_promociones()` (fila en `permisos_promociones_turnos`, creada al habilitar usuario en turno).
   - Elegibles: órdenes del turno con `paid_at` no nulo (incluye `PAID` y `KITCHEN_DISPATCHED` pagadas), consumo mínimo por campaña (usa `special_total_manual`, `orders.total` o suma de pagos activos del turno), sin predicción previa **en esa campaña** (`UNIQUE (orden_id, campana_id)` — migración `20260611180000`).
   - Registro: misma UX de cliente que caja (`PaymentClienteCard`, requerido en promociones); ofertas con `bloqueo_at` futuro; persiste `predicciones_clientes` y actualiza `orders.cliente_id` si cambió.
+  - **QR en ticket de cobro (2026-07-09):** solo se genera/imprime si hay campaña activa con ofertas registrables (`src/lib/promocionesRecibo.ts`, `src/lib/campanasValidacion.ts`). Sin eso, ocultar `token_promocion` y QR aunque exista token en BD.
   - Menú lateral: categoría **PROMOCIONES** (Promociones operativo; Campañas solo admin global o `MANAGE` en `admin_global` en nav).
   - Migraciones: `20260611120000` … `20260611180000` (clientes, `orders.cliente_id`, campañas, admin, cierre oferta, unicidad por campaña).
 - **Productos frecuentes ("Mas frecuentes"):**
@@ -147,11 +148,11 @@
 - **Administrador general:** puede cambiar a cualquier sucursal activa cuando quiera; no aplica redireccion por turno ni auto-reasignacion al refrescar `get_my_access_context` (`20260524120000_global_admin_free_branch_switch.sql`).
   - **Monitoreo Global de Turnos (`/admin/monitoreo-global`):**
     - Vista exclusiva para el Administrador General que consolida todas las sucursales en tiempo real.
-    - Utiliza `supabase_realtime` sobre `cash_shifts`, `cash_shift_users`, `orders` y `profiles`.
+    - Utiliza `supabase_realtime` sobre `cash_shifts`, `cash_shift_users` y `orders` (sin suscripcion amplia a `profiles` que recargaba todas las sucursales).
     - Muestra usuarios de turno conectados/desconectados en tiempo real (🟢 basado en `profiles.current_app_session_id`).
     - Muestra estado de operacion de caja en tiempo real (etiqueta "En Caja" basada en `last_session_id` o `secondary_session_id`).
     - Embudo de ordenes consolidado para cada sucursal (Generadas, En Caja, Pagadas, Despachadas, Anuladas).
-    - Mecanismos de robustez: nombre de canal dinamico (`global-monitor-${hash}`) y `fallbackInterval` de 15s para evitar desconexiones silenciosas de Supabase. Boton de "Actualizar" manual disponible.
+    - Mecanismos de robustez: nombre de canal dinamico (`global-monitor-${hash}`), polling de respaldo cada **60 s** y boton **Actualizar** manual. Hooks de React deben declararse antes de cualquier `return` condicional en `MonitoreoGlobal.tsx`.
   - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
 - Si un usuario del turno tiene `cash_shift_users.can_double_session = true` y `can_use_caja = true`, puede conservar una segunda sesion simultanea mediante:
@@ -189,6 +190,13 @@
 - **Diálogo de cobro (unificado):**
   - `PaymentDialogV2` (`src/components/caja/PaymentDialogV2.tsx`) es la UI estándar para cobrar (misma UI para todos los cajeros).
   - `PaymentDialog` (`src/components/caja/PaymentDialog.tsx`) se conserva como referencia/compatibilidad.
+- **Despacho primero — bloqueo de cobro en Caja (2026-07-10):**
+  - Solo cuando `branches.workflow_mode = DISPATCH_THEN_CASH`.
+  - Cada `PayableOrder` expone `undispatched_units` y `ready_to_collect` (calculados en `useCaja` con `computeUndispatchedQuantity` de `src/lib/orderOperational.ts`).
+  - Si `ready_to_collect = false`, `PayableOrdersList` muestra boton **Cobrar** rojo; al pulsarlo abre `AlertDialog` (“No estan despachados todos los items…”) sin abrir el dialogo de pago.
+  - Si todo esta despachado, boton verde como antes.
+  - `payOrder` rechaza el cobro en servidor si aun quedan unidades sin despachar (defensa adicional).
+  - `orders.locked_for_editing` sigue deshabilitando el boton independientemente del color.
 - **Rendimiento del cobro (cliente + BD):**
   - Inserciones calientes usan `dbInsert` / `dbInsertMany` con `hotPath` (insert sin `select` y sin escribir Dexie en ese momento) para `payments`, `payment_items` y fallback de `cash_movements`.
   - Lecturas previas al cobro en `payOrder` pueden usar `skipLocalCache` en `dbSelect` para no bloquear el hilo con `bulkPut` en IndexedDB.
@@ -206,7 +214,8 @@
 - **Resumen por cajero (regla UI):** dentro de `ShiftSummary`, las secciones **Resumen de caja**, **Desglose** y **Cambio** deben reflejar exclusivamente los pagos y movimientos del usuario logueado (no el total global del turno).
 - La caja fisica se reconstruye desde `cash_shift_denoms` + `cash_movements`.
 - El resumen de caja ya debe mostrar efectivo neto aplicado, no efectivo bruto recibido antes del cambio.
-- Caja debe considerar cobrable la cantidad ordenada activa completa, no solo la cantidad despachada, incluso para ordenes de mesa.
+- En flujo **`CASH_THEN_DISPATCH`**, Caja debe considerar cobrable la cantidad ordenada activa completa, no solo la cantidad despachada, incluso para ordenes de mesa.
+- En flujo **`DISPATCH_THEN_CASH`**, las ordenes en **Ordenes por cobrar** pueden listar montos parcialmente cobrables (solo unidades ya despachadas), pero el boton **Cobrar** permanece **rojo** y bloqueado hasta que **todos** los items activos de la orden esten despachados. La misma regla aplica a mesa, para llevar, especial, bandeja y cualquier orden visible en esa lista.
 - Existen plantillas persistentes para apertura de caja:
   - `cash_register_templates`
   - `cash_register_template_denoms`
@@ -305,7 +314,10 @@
   - Los cambios locales (+/-, borrar, agregar borrador) **no** propagan a Despacho hasta confirmar con **Enviar a cocina**.
   - El boton **Enviar a cocina** solo aparece si hay diferencias respecto al ultimo envio confirmado; muestra el **delta monetario** (ej. `-$1.25`, `+$3.50`), no el total de la orden.
   - Staging en cliente: `kitchenBaselineItems` (ultimo envio) vs `stagedItems` (vista actual); al enviar se llama `applyKitchenPendingItemChanges(...)` y luego `submit_order_draft_items(...)`.
-  - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/hooks/useOrder.ts` (`applyKitchenPendingItemChanges`), `src/pages/Ordenes.tsx`.
+  - Si un item ya enviado aumenta de cantidad, `applyKitchenPendingItemChanges` crea una linea **DRAFT** con la diferencia (`add_dine_in_order_item`), no modifica in place la linea despachada/enviada.
+  - Reconciliacion de ids temporales (`temp-*`): `reconcileKitchenStagedItems` / `isTemporaryKitchenItemId` evita spinner infinito y controles +/- ausentes tras `addItem` con staging activo.
+  - Tras agregar producto en orden ya despachada, `submit_order_draft_items` debe aceptar envio desde `KITCHEN_DISPATCHED` (migracion `20260709220000`).
+  - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/hooks/useOrder.ts` (`applyKitchenPendingItemChanges`, `sendToKitchen`), `src/pages/Ordenes.tsx`.
 - La regla se valida al mostrar la accion y justo antes de ejecutar la eliminacion.
 - **Navegación Contextual:** Al navegar entre Mesas y Ordenes, el sistema usa el parámetro `origin=mesas` para que el Sidebar y el Bottom Nav mantengan el resaltado en la sección de origen, evitando confusiones visuales.
 - **Gestión de Mesas con Pagos Anulados (2026-05-06):** Las mesas con pagos anulados permanecen marcadas como ocupadas. La navegación es directa: el usuario hace clic en la mesa para ver el detalle y proceder al re-cobro (re-billing). Se eliminó el banner central de "Pagos Anulados" para simplificar la interfaz.
@@ -549,12 +561,15 @@
 17. Promociones: aplicar `20260611180000` si debe permitirse la misma orden en dos campañas; sin ella falla el segundo registro por `predicciones_orden_unica`.
 18. Listado de elegibles para promoción: no filtrar solo `status = 'PAID'`; usar `paid_at IS NOT NULL` y consumo desde pagos del turno. Desde `20260623190000`, `orders.total` es confiable para órdenes nuevas; para históricas anteriores a esa fecha, preferir suma de pagos activos.
 19. Campañas: `listarCampanasActivas` en operativo; no asumir una sola campaña activa (`limit 1`).
-20. Token de promoción: se genera al cobrar (`paid_at` no nulo) y **no se borra** al despachar (`KITCHEN_DISPATCHED`). Migración `20260623210000`. Recibos impresos antes de ese fix con token ya borrado requieren reimpresión (backfill asigna token nuevo distinto al del papel).
+20. Token de promoción: se genera al cobrar (`paid_at` no nulo) y **no se borra** al despachar (`KITCHEN_DISPATCHED`). Migración `20260623210000`. El **QR en ticket** solo debe mostrarse si existe al menos una campaña activa con ofertas registrables (`hayPromocionRegistrableEnRecibo`, `campanaTieneOfertasRegistrables`); migraciones `20260709200000` (trigger solo con campaña activa) y `20260709210000` (solo ofertas registrables). Sin campaña/oferta valida, no imprimir QR aunque exista `token_promocion` en BD.
 21. **Modificaciones en modal de producto:** no reintroducir dependencia exclusiva de `node.ancestor_ids` para resolver herencia; usar `parentByNodeId` del catalogo. No cachear lookup de producto con lista vacia de modificadores. Invalidar `branch-modifiers-catalog` al cambiar `menu_node_modifiers` en admin.
 22. **Despacho primero — cocina pendiente:** no invalidar `dispatch-orders` al editar lineas En despacho en vista normal; solo al confirmar **Enviar a cocina**. No mostrar boton **Editar orden** en `DISPATCH_THEN_CASH`.
 23. **Despacho — consolidacion UI:** no separar el mismo producto en varias filas si comparten descripcion, precio, modificadores y nota; usar `consolidateDispatchOrderItems`.
 24. **Extra vs workflow:** no mostrar `/extra` en nav cuando `branches.workflow_mode = DISPATCH_THEN_CASH`.
 25. **Auth en tablet/Capacitor:** no reactivar banner global por `AbortError` benigno de Web Locks; mantener `auth.lock` no-op en cliente Supabase y `isBenignAuthLockAbort` en `main.tsx`.
+26. **Despacho primero — cobro en Caja:** no abrir `PaymentDialog` si `ready_to_collect = false`; mantener validacion en `payOrder` y calculo con `computeUndispatchedQuantity` sobre todos los items no `DRAFT` de la orden.
+27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
+28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
@@ -624,6 +639,13 @@
   - Causa: Web Locks API de Supabase Auth (`autoRefreshToken`, `getSession`) compitiendo con validacion de sesion en `AuthContext` en entorno Capacitor.
   - Correccion: `src/lib/benignAsyncErrors.ts` (`isBenignAuthLockAbort`, `logBackgroundTaskError`); listener global en `src/main.tsx` silencia aborts benignos; `auth.lock` no-op en `src/integrations/supabase/client.ts`; `catch` en `validateSingleSession` y `checkSessionAge` de `AuthContext.tsx`.
   - Sin migracion SQL; requiere despliegue de frontend en tablets.
+
+### Actualizacion Jul 9–10, 2026
+- **Caja — boton Cobrar rojo (Despacho primero):** En `DISPATCH_THEN_CASH`, si cualquier item de la orden tiene unidades sin despachar, `PayableOrdersList` muestra boton rojo y `AlertDialog` de bloqueo. Campos `ready_to_collect` y `undispatched_units` en `PayableOrder`; helper `computeUndispatchedQuantity`; validacion en `payOrder`. Aplica a todas las ordenes en “Ordenes por cobrar”.
+- **QR promocion en ticket:** Solo si hay campaña activa con ofertas registrables (`src/lib/promocionesRecibo.ts`, `src/lib/campanasValidacion.ts`). Sanitizacion en impresion termica y dialogs de pago. Migraciones `20260709200000`, `20260709210000`.
+- **Enviar a cocina tras despacho total:** `submit_order_draft_items` acepta ordenes `KITCHEN_DISPATCHED` con borradores nuevos (`20260709220000`). `sendToKitchen` refetch antes de enviar y error si no hay borradores.
+- **Staging cocina — fixes:** `reconcileKitchenStagedItems` para ids `temp-*`; aumento de cantidad en lineas enviadas crea DRAFT con diferencia; reset de baseline tras envio exitoso.
+- **Monitoreo Global:** Fix colgado (import `useBranch`, orden de hooks, realtime menos agresivo, polling 60 s).
 
 ### Actualizacion Jul 8, 2026
 - **Despacho primero — cambios pendientes de cocina:**

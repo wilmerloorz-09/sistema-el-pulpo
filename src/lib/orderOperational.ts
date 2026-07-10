@@ -52,6 +52,12 @@ export function computeOperationalQuantities(input: {
   };
 }
 
+/** Unidades pedidas que aún no fueron despachadas (neto de cancelaciones). */
+export function computeUndispatchedQuantity(quantities: OperationalQuantitySnapshot): number {
+  const activeOrdered = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+  return Math.max(0, activeOrdered - quantities.quantityDispatchedAvailable);
+}
+
 export function sumRowsByItem<Row extends Record<string, unknown>>(
   rows: Row[],
   itemIdKey: keyof Row,

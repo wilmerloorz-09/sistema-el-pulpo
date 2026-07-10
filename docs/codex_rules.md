@@ -43,7 +43,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - Los cambios locales (+/-, borrar, borradores nuevos) **no** deben invalidar `dispatch-orders` ni persistir de inmediato en BD.
   - Mantener `kitchenBaselineItems` (ultimo envio confirmado) vs `stagedItems` (vista actual).
   - Mostrar **Enviar a cocina** solo si hay diff; etiqueta con **delta monetario** (`formatKitchenSendMoneyDelta`), no total de orden.
-  - Al confirmar: `applyKitchenPendingItemChanges` (incluye `remove_order_item_line` para reducciones) y luego `submit_order_draft_items` para borradores.
+  - Al confirmar: `applyKitchenPendingItemChanges` (incluye `remove_order_item_line` para reducciones; `add_dine_in_order_item` para aumentos en lineas ya enviadas) y luego `submit_order_draft_items` para borradores.
+  - Reconciliar ids `temp-*` con `reconcileKitchenStagedItems` tras `addItem` para no dejar spinner infinito en Enviar a cocina.
+  - `submit_order_draft_items` debe aceptar orden `KITCHEN_DISPATCHED` con borradores (migracion `20260709220000`).
   - En vista de orden, separar visualmente **En despacho** y **Despachados** (`splitDispatchSections` en `OrderItemsList`).
   - **No** mostrar boton **Editar orden** ni permitir `from=editar` en `DISPATCH_THEN_CASH`; lineas despachadas no editables.
 
@@ -60,6 +62,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Cliente (`DatabaseService`):** reservar `hotPath` en `dbInsert`/`dbInsertMany` solo cuando el registro lleve `id` (u otros NOT NULL) generados en cliente; reservar `skipLocalCache` en `dbSelect` para lecturas calientes del flujo de cobro donde no haga falta actualizar Dexie en el mismo tick.
 - No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
 - En UI post-cobro (`PaymentDialogV2`, `PaymentReceipt`, detalle en `Ordenes.tsx`), no asumir `items` ni `payments` definidos: usar `?? []` y pasar al recibo el objeto `receipt` completo que devuelve el flujo de pago.
+- **Despacho primero — boton Cobrar (2026-07-10):** en `DISPATCH_THEN_CASH`, `PayableOrdersList` no debe abrir pago si `ready_to_collect = false`. Calcular `undispatched_units` con `computeUndispatchedQuantity` sobre todos los items no `DRAFT`. Duplicar validacion en `payOrder`. Misma regla para todas las ordenes en “Ordenes por cobrar”.
 
 ### 2.4 Auth, sesion y tablets (Capacitor / WebView, 2026-07-07)
 - Supabase Auth puede usar Web Locks (`navigator.locks`) para `autoRefreshToken` / `getSession`. En tablet, PWA y Capacitor esto produce `AbortError: The lock request is aborted` de forma benigna cuando varias operaciones compiten.
@@ -78,6 +81,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Migraciones del módulo (orden):** `20260611120000`, `20260611140000`, `20260611150000`, `20260611160000`, `20260611161000`, `20260611170000`, `20260611180000`.
 - Al cobrar o registrar promoción, persistir `orders.cliente_id` cuando el operador asigna o cambia cliente.
 - **Token QR en recibo:** `token_promocion` se ata a `paid_at`, no a `status = 'PAID'`. No borrarlo al pasar a `KITCHEN_DISPATCHED`; migración `20260623210000`.
+- **QR visible solo con promoción registrable (2026-07-09):** no imprimir QR si no hay campaña activa con ofertas registrables (`hayPromocionRegistrableEnRecibo`, `campanaTieneOfertasRegistrables`). BD: `20260709200000`, `20260709210000`. Usar `sanitizarPromocionReciboData` antes de imprimir.
 
 ### 3. Catalogo
 - `menu_nodes` es la fuente principal de estructura.
@@ -193,6 +197,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - `origin=orden-especial`
 - **Resaltado Manual:** Usar `forceActive` y `suppressActive` en `NavLink` y `BottomNav` para anular la lógica automática basada solo en la URL técnica.
 - **Bloqueo en Caja:** Mientras una orden esté en edición (`locked_for_editing`), el botón "Cobrar" en el módulo de Caja debe estar deshabilitado automáticamente.
+- **Bloqueo por despacho incompleto (solo `DISPATCH_THEN_CASH`):** aunque haya monto pendiente cobrable por unidades ya despachadas, el botón "Cobrar" debe mostrarse rojo y abrir solo un aviso si quedan unidades sin despachar en la orden (`ready_to_collect = false`).
 - No exponer controles directos de cantidad para items originales despachados/cerrados en ese modulo.
 - Los controles `+/-`, eliminar e input de cantidad solo deben existir para items nuevos agregados durante la sesion de edicion.
 - Al aceptar cambios:
@@ -322,6 +327,15 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 21. Si se toca Despacho primero en mesa, validar staging de cocina, delta en boton **Enviar a cocina**, secciones En despacho/Despachados, ausencia de **Editar orden** y que Despacho no cambie hasta confirmar envio.
 22. Si se toca consolidacion en Despacho, validar `dispatchItemConsolidation.ts` y despacho parcial con multiples `order_items` fuente.
 23. Si se toca Extra, validar ademas visibilidad segun `workflow_mode` (oculto en `DISPATCH_THEN_CASH`).
+24. Si se toca Caja en Despacho primero, validar `ready_to_collect`, boton rojo/verde, `AlertDialog` y guard en `payOrder`.
+25. Si se toca QR en ticket, validar campaña activa + ofertas registrables y migraciones `20260709200000` / `20260709210000`.
+26. Si se toca envio post-despacho, validar `20260709220000` y reconciliacion de staging (`reconcileKitchenStagedItems`).
+
+### Actualizacion Jul 9–10, 2026
+- **Cobro DF:** `ready_to_collect`, `computeUndispatchedQuantity`, `PayableOrdersList` rojo/verde.
+- **QR promocion:** condicional en `promocionesRecibo.ts`; triggers Jul 9.
+- **Cocina:** envio desde `KITCHEN_DISPATCHED`, ids `temp-*`, aumentos → DRAFT.
+- **Monitoreo Global:** no colgar hooks; realtime acotado; polling 60 s.
 
 ### Actualizacion Jul 8, 2026
 - **Cocina pendiente (Despacho primero):** `kitchenPendingChanges.ts`, staging `kitchenBaselineItems`/`stagedItems`, `applyKitchenPendingItemChanges`, boton con delta monetario.

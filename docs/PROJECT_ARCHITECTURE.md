@@ -127,6 +127,8 @@
   - `OrderItemsList` con `splitDispatchSections` muestra bloques **En despacho** y **Despachados** en flujo `DISPATCH_THEN_CASH`.
   - Cambios locales en lineas En despacho quedan en staging (`kitchenBaselineItems` vs `stagedItems`) hasta **Enviar a cocina**; Despacho no se actualiza antes.
   - Boton **Enviar a cocina** con delta monetario (`formatKitchenSendMoneyDelta`); al confirmar: `applyKitchenPendingItemChanges` + `submit_order_draft_items`.
+  - Aumentos de cantidad en lineas ya enviadas crean borrador con la diferencia (`add_dine_in_order_item`), no actualizan la linea enviada in place.
+  - `reconcileKitchenStagedItems` elimina ids `temp-*` huerfanos tras `addItem` con staging.
   - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/pages/Ordenes.tsx`, `src/hooks/useOrder.ts`.
 
 ### 6. Editar Orden
@@ -166,6 +168,11 @@
   - pagos realizados
   - movimientos de caja
   - anulacion de pagos
+- **Ordenes por cobrar — Despacho primero (2026-07-10):**
+  - `PayableOrdersList` recibe `PayableOrder` con `ready_to_collect` y `undispatched_units` desde `useCaja`.
+  - Boton **Cobrar** verde solo si `ready_to_collect`; si no, boton rojo + `AlertDialog` sin abrir pago.
+  - Regla uniforme para todas las filas de la lista cuando `workflow_mode = DISPATCH_THEN_CASH`.
+  - `computeUndispatchedQuantity` en `src/lib/orderOperational.ts`; test `src/test/orderOperationalUndispatched.test.ts`.
 - Si el usuario no tiene caja abierta (`userCajaIsOpen` / `shiftGate.cajaStatus !== OPEN`), la pagina muestra `OpenShiftForm` aunque otro cajero del turno ya haya abierto la suya.
 - Navegacion: subitem deshabilitado `Abrir mi caja...` / `Reabrir mi caja...` segun `computeCajaAbrirTerminalState` en `src/components/nav/cajaTerminalNav.ts` (ya no redirige a `claim-terminal`).
 -- **Modal de pago (unificado):**
@@ -321,6 +328,8 @@
   - `src/pages/Mesas.tsx`
 - Caja:
   - `src/hooks/useCaja.ts`
+  - `src/lib/orderOperational.ts` (`computeUndispatchedQuantity`, snapshots batch)
+  - `src/components/caja/PayableOrdersList.tsx` (boton Cobrar verde/rojo en Despacho primero)
   - `src/lib/cajaPaymentUi.ts` (flags UI de pago)
   - `src/lib/cajaDenominations.ts` (`catalogToPaymentDenoms`)
   - `src/components/caja/usePaymentChargeFlow.ts` (logica compartida V2/Secondary)
@@ -350,6 +359,8 @@
   - `src/services/clientesDb.ts`
   - `src/services/campanasPromocionalesDb.ts`
   - `src/services/prediccionesClientesDb.ts`
+  - `src/lib/promocionesRecibo.ts` (QR condicional en ticket)
+  - `src/lib/campanasValidacion.ts` (`ofertaDisponibleParaRegistro`, `campanaTieneOfertasRegistrables`)
   - `src/hooks/usePromociones.ts`
   - `src/hooks/usePaymentClienteSelection.ts`
   - `src/components/caja/PaymentClienteCard.tsx`
@@ -404,6 +415,15 @@
 31. **Despacho primero — cocina pendiente:** No invalidar `dispatch-orders` al editar lineas En despacho; solo al confirmar **Enviar a cocina**. Usar `kitchenPendingChanges.ts` y `applyKitchenPendingItemChanges`.
 32. **Despacho — consolidacion:** Agrupar lineas identicas en tarjeta expandida con `consolidateDispatchOrderItems`; despacho parcial con `buildDispatchAllocations`.
 33. **Extra vs workflow:** Ocultar `/extra` en nav cuando `workflow_mode = DISPATCH_THEN_CASH`.
+34. **Caja Despacho primero:** Respetar `ready_to_collect`; no abrir cobro con items sin despachar; validar en `payOrder`.
+35. **QR promocion:** No imprimir sin campaña activa y ofertas registrables; usar `promocionesRecibo.ts` y migraciones `20260709200000` / `20260709210000`.
+36. **Staging cocina:** Reconciliar ids `temp-*`; aumentos en lineas enviadas → DRAFT con diferencia; migracion `20260709220000` para envio post-despacho.
+
+### Actualizacion Jul 9–10, 2026
+- **Cobro bloqueado hasta despacho completo (DF):** `PayableOrdersList`, `useCaja`, `computeUndispatchedQuantity`.
+- **QR ticket condicional:** `promocionesRecibo.ts`, `campanasValidacion.ts`, migraciones token promocion Jul 9.
+- **Cocina post-despacho y staging:** `20260709220000`, `reconcileKitchenStagedItems`, diff de cantidad en lineas enviadas.
+- **Monitoreo Global:** hooks/realtime/polling 60 s.
 
 ### Actualizacion Jul 8, 2026
 - **Staging cocina en Despacho primero:** Ediciones locales no afectan Despacho hasta **Enviar a cocina**; boton con delta monetario vs ultimo envio.

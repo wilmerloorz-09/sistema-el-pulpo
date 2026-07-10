@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import type { Denomination, PayableOrder, PreparedTransferProofSession, ShiftDenom, PayOrderParams } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
@@ -64,6 +73,7 @@ export default function PayableOrdersList({
 }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [undispatchedBlockOrder, setUndispatchedBlockOrder] = useState<PayableOrder | null>(null);
 
   // Eliminamos el auto-open para que sea manual y no interfiera con otros modulos
   useEffect(() => {
@@ -244,9 +254,17 @@ export default function PayableOrdersList({
                             disabled={readOnly || order.locked_for_editing}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (!order.ready_to_collect) {
+                                setUndispatchedBlockOrder(order);
+                                return;
+                              }
                               setSelectedOrder(order);
                             }}
-                            className="h-9 rounded-full border border-[#15803d] bg-[#15803d] px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
+                            className={
+                              order.ready_to_collect
+                                ? "h-9 rounded-full border border-[#15803d] bg-[#15803d] px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
+                                : "h-9 rounded-full border border-red-600 bg-red-600 px-4 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-red-700 hover:text-white"
+                            }
                           >
                             <CreditCard className="h-4 w-4" />
                             Cobrar
@@ -362,6 +380,36 @@ export default function PayableOrdersList({
           </div>
         </section>
       </section>
+
+      <AlertDialog
+        open={!!undispatchedBlockOrder}
+        onOpenChange={(open) => {
+          if (!open) setUndispatchedBlockOrder(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>No se puede cobrar</AlertDialogTitle>
+            <AlertDialogDescription>
+              No estan despachados todos los items de esta orden.
+              {undispatchedBlockOrder && (undispatchedBlockOrder.undispatched_units ?? 0) > 0 ? (
+                <>
+                  {" "}
+                  Faltan {undispatchedBlockOrder.undispatched_units}{" "}
+                  {undispatchedBlockOrder.undispatched_units === 1 ? "unidad" : "unidades"} por despachar.
+                </>
+              ) : null}
+              {" "}
+              Despacha todo antes de registrar el cobro.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setUndispatchedBlockOrder(null)}>
+              Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {USE_PAYMENT_DIALOG_V2 ? (
         <PaymentDialogV2

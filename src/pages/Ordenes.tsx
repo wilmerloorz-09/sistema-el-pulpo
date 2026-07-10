@@ -976,6 +976,7 @@ const OrdenesContent = () => {
       table_name_snapshot: order.table_name,
       split_code: order.split_code,
       total: realTotal,
+      ready_to_collect: true,
       items: orderItems.map(item => ({
         id: item.id,
         product_id: item.product_id,

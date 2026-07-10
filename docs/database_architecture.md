@@ -75,6 +75,7 @@
 - `order_item_dispatch_events`
 - `order_ready_notifications`
 - **RPC `remove_order_item_line` (2026-07-07/08):** elimina o reduce cantidad de una linea `order_items` enviada sin flujo de anulacion por dialogo. Usado por `applyKitchenPendingItemChanges` al confirmar cambios de cocina pendientes en Despacho primero. Migraciones: `20260707240000_remove_order_item_line.sql`, fix cantidad `20260707241000_fix_remove_order_item_line_qty.sql`.
+- **`submit_order_draft_items` post-despacho (2026-07-09):** permite enviar borradores nuevos cuando la cabecera esta `KITCHEN_DISPATCHED` (regresion corregida en `20260709220000_submit_draft_items_after_dispatch.sql`). Necesario al agregar productos tras despachar todo en Despacho primero.
 
 ### 4. Mesas y órdenes
 - `restaurant_tables`
@@ -162,6 +163,8 @@
 - A partir de la migración `20260623190000`, `orders.total` se mantiene sincronizado automáticamente vía trigger `trg_sync_order_total`.
 - Órdenes pagadas y despachadas: `paid_at IS NOT NULL` aunque `status = 'KITCHEN_DISPATCHED'`.
 - Token de promoción (`orders.token_promocion`): se genera cuando la orden queda con `paid_at` (al alcanzar `PAID` en cobro). **Persiste** aunque la cabecera pase a `KITCHEN_DISPATCHED` tras despacho; solo se anula si `paid_at` pasa a `NULL` o la orden se cancela (`20260623210000`). `validar_token_promocion_cliente` acepta órdenes con `paid_at` en `PAID` o `KITCHEN_DISPATCHED`.
+- **Generación condicionada (2026-07-09):** el trigger de token solo asigna `token_promocion` si existe al menos una campaña con `activa = true` (`20260709200000_token_promocion_solo_campana_activa.sql`).
+- **Ofertas registrables (2026-07-09):** además, el token/QR en recibo solo aplica si la campaña activa tiene ofertas con cupo y `bloqueo_at` futuro (`20260709210000_token_promocion_solo_oferta_registrable.sql`). Frontend: `hayPromocionRegistrableEnRecibo`, `campanaTieneOfertasRegistrables`, `sanitizarPromocionReciboData`.
 
 ## Reglas vigentes por area
 
@@ -239,7 +242,8 @@
 - `cash_shift_users.can_double_session` habilita una segunda sesion de app solo para usuarios de caja en turno abierto.
 - Las sesiones de app se registran en `profiles.current_app_session_id` y, cuando aplica doble sesion, en `profiles.current_app_secondary_session_id` con timestamp/dispositivo auxiliar.
 - Cerrar caja y cerrar turno no son la misma operacion.
-- La cantidad cobrable sale de la cantidad ordenada activa antes de despacho para mesa y para llevar; orden especial cobra su valor activo configurado.
+- La cantidad cobrable en UI depende de `getPayableQuantityForOrderType` y del `workflow_mode` (en `DISPATCH_THEN_CASH`, solo unidades despachadas netas entran al monto pendiente).
+- **Bloqueo de cobro en Despacho primero (2026-07-10, capa app):** aunque exista saldo cobrable parcial, `PayableOrder.ready_to_collect` exige `undispatched_units = 0` sobre todos los items no `DRAFT`. Calculo: `computeUndispatchedQuantity` en `src/lib/orderOperational.ts`; validacion duplicada en `useCaja.payOrder`.
 - `close_cash_shift_with_tables(...)` sigue siendo el cierre final del turno. Antes de llamarlo desde UI, `Admin > Turno` puede resolver ordenes especiales pendientes con valor `$0` mediante confirmacion explicita, marcandolas `PAID`.
 - Antes de cerrar turno, `cancel_empty_draft_orders_for_branch(...)` cancela borradores no enviados sin cobros ni items operativos.
 - `list_branch_closure_blocking_orders(...)` solo debe reportar `DRAFT` como bloqueante si tiene pagos o items no `DRAFT`.
@@ -447,6 +451,11 @@
 - `20260531130000_extra_frequent_products.sql`
 - `20260531140000_frequent_products_multi_context.sql`
 
+### Promociones, token y despacho primero (2026-07)
+- `20260709200000_token_promocion_solo_campana_activa.sql`
+- `20260709210000_token_promocion_solo_oferta_registrable.sql`
+- `20260709220000_submit_draft_items_after_dispatch.sql`
+
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
 - `20260411223000_allow_move_of_unpaid_remaining_item_quantity.sql`
@@ -526,6 +535,11 @@
 - **Alias de usuario:** `profiles.alias` como identificador operativo unico. Login con correo/usuario/alias. Reportes y operacion muestran alias; admin conserva nombre real + alias. Ver migracion `20260628120000_add_profile_alias.sql` y `src/lib/userDisplay.ts`.
 - **Sincronización de Estado de Cupón en Monedero Promocional**: Se modificó la función trigger del monedero `procesar_pago_saldo_fifo()` para que cuando se consuma un crédito promocional de un cliente mediante el pago, se marque automáticamente el registro de la predicción correspondiente como usado (`cupon_usado_el = now()`). También se maneja el caso de devolución o anulación de pago regresando el cupón a estado no usado (`cupon_usado_el = NULL`).
 - **Función de Cierre de Campaña Corregida**: Se corrigió la función `cerrar_oferta_campana` en Supabase para asegurar que al calificar predicciones como ganadoras, se calcule el `monto_descuento_ganado` y se cree la fila de crédito promocional en la tabla `creditos_promocionales_clientes`, resolviendo la omisión introducida accidentalmente en la actualización de marcadores.
+
+### Actualizacion Jul 9–10, 2026
+- **Token/QR promocion:** `20260709200000` (solo con campaña activa), `20260709210000` (solo ofertas registrables). Frontend alinea impresion con `promocionesRecibo.ts`.
+- **Envio post-despacho:** `20260709220000_submit_draft_items_after_dispatch.sql` — `submit_order_draft_items` no rechaza `KITCHEN_DISPATCHED` cuando hay lineas `DRAFT`.
+- **Caja Despacho primero:** sin migracion SQL; `ready_to_collect` / `undispatched_units` en cliente + guard en `payOrder`.
 
 ### Actualizacion Jul 8, 2026
 - **RPC `remove_order_item_line`:** nueva funcion para reducir/eliminar lineas enviadas al aplicar diff de cocina pendiente (`applyKitchenPendingItemChanges`). Migracion base `20260707240000`; correccion de cantidad `20260707241000`.

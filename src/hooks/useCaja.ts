@@ -7,7 +7,7 @@ import { generateUUID } from "@/lib/uuid";
 import { dedupePaymentMethods, isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paymentMethods";
 import { computeLineTotalWithContainer, roundMoney } from "@/lib/paymentQuantity";
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
-import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import { computeOperationalQuantities, computeUndispatchedQuantity, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -329,6 +329,10 @@ export interface PayableOrder {
   total: number;
   tray_products_total?: number;
   tray_container_total?: number;
+  /** Unidades de la orden que aún no fueron despachadas (solo relevante en despacho primero). */
+  undispatched_units?: number;
+  /** Si la orden puede abrir el diálogo de cobro (todo despachado en despacho primero). */
+  ready_to_collect: boolean;
   items: {
     id: string;
     product_id: string;
@@ -1571,9 +1575,27 @@ export function useCaja(params?: {
 
       const payableSourceOrders = activeOrders.filter((o) => orderIsPayableInCaja(o));
 
+      const isDispatchFirstWorkflow = activeWorkflowMode === "DISPATCH_THEN_CASH";
+
       return payableSourceOrders
         .map((o) => {
           const orderItems = (items ?? []).filter((i) => i.order_id === o.id && i.status !== "DRAFT");
+          let undispatchedUnits = 0;
+          if (isDispatchFirstWorkflow) {
+            for (const i of orderItems) {
+              const quantities = computeOperationalQuantities({
+                quantityOrdered: Number(i.quantity ?? 0),
+                quantityReadyTotal: operationalMaps.readyMap[i.id] ?? 0,
+                quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[i.id] ?? 0,
+                quantityCancelledPending: operationalMaps.cancelledPendingMap[i.id] ?? 0,
+                quantityCancelledReady: operationalMaps.cancelledReadyMap[i.id] ?? 0,
+                quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[i.id] ?? 0,
+              });
+              undispatchedUnits += computeUndispatchedQuantity(quantities);
+            }
+          }
+          const readyToCollect = !isDispatchFirstWorkflow || undispatchedUnits === 0;
+
           const mappedItems = orderItems
             .map((i) => {
               const quantities = computeOperationalQuantities({
@@ -1664,6 +1686,8 @@ export function useCaja(params?: {
             total: displayTotal,
             tray_products_total: trayProductsTotal,
             tray_container_total: trayContainerTotal,
+            undispatched_units: isDispatchFirstWorkflow ? undispatchedUnits : 0,
+            ready_to_collect: readyToCollect,
             items: mappedItems,
           } as PayableOrder;
         })
@@ -2344,6 +2368,26 @@ export function useCaja(params?: {
       if (!orderData) throw new Error("Orden no encontrada");
       if (orderData.status === "DRAFT") {
         throw new Error("Una orden borrador no puede cobrarse en caja.");
+      }
+
+      if (activeWorkflowMode === "DISPATCH_THEN_CASH") {
+        const orderUndispatchedUnits = (allDbItems ?? [])
+          .filter((item: any) => item.status !== "DRAFT")
+          .reduce((sum: number, item: any) => {
+            const quantities = computeOperationalQuantities({
+              quantityOrdered: Number(item.quantity ?? 0),
+              quantityReadyTotal: operationalMaps.readyMap[item.id] ?? 0,
+              quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[item.id] ?? 0,
+              quantityCancelledPending: operationalMaps.cancelledPendingMap[item.id] ?? 0,
+              quantityCancelledReady: operationalMaps.cancelledReadyMap[item.id] ?? 0,
+              quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[item.id] ?? 0,
+            });
+            return sum + computeUndispatchedQuantity(quantities);
+          }, 0);
+
+        if (orderUndispatchedUnits > 0) {
+          throw new Error("No se puede cobrar: aun hay items sin despachar.");
+        }
       }
 
       const orderRealTotal = roundMoney(
