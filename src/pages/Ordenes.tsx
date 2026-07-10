@@ -62,6 +62,7 @@ import {
   computeKitchenSendMoneyDelta,
   formatKitchenSendMoneyDelta,
   hasKitchenPendingChanges,
+  reconcileKitchenStagedItems,
 } from "@/lib/kitchenPendingChanges";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { dbSelect } from "@/services/DatabaseService";
@@ -1112,13 +1113,20 @@ const OrdenesContent = () => {
   }, [fromEditar, useKitchenStaging, orderId, orderItems, stagedDirty, isLoading, order]);
 
   useEffect(() => {
+    if (!useKitchenStaging || fromEditar || isLoading) return;
+
+    setStagedItems((prev) => reconcileKitchenStagedItems(prev, orderItems));
+  }, [useKitchenStaging, fromEditar, isLoading, orderItems]);
+
+  useEffect(() => {
     if (!useKitchenStaging || !stagedDirty || isLoading) return;
 
     setStagedItems((prev) => {
-      const prevIds = new Set(prev.map((item) => item.id));
+      const reconciled = reconcileKitchenStagedItems(prev, orderItems);
+      const prevIds = new Set(reconciled.map((item) => item.id));
       const newFromServer = orderItems.filter((item) => !prevIds.has(item.id));
-      if (newFromServer.length === 0) return prev;
-      return [...prev, ...newFromServer];
+      if (newFromServer.length === 0) return reconciled;
+      return [...reconciled, ...newFromServer];
     });
   }, [useKitchenStaging, stagedDirty, orderItems, isLoading]);
 
@@ -3121,7 +3129,7 @@ const OrdenesContent = () => {
                 await flushPendingSpecialTotalSave();
               }
               if (useKitchenStaging && hasPendingKitchenChanges) {
-                await applyKitchenPendingItemChanges(orderItems, stagedItems);
+                await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
               }
               if (isExpressOrder) {
                 await sendToDispatch.mutateAsync();
@@ -3129,7 +3137,10 @@ const OrdenesContent = () => {
                 await sendToKitchen.mutateAsync();
               }
               if (orderId) {
-                await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
+                const freshOrder = await fetchOrderDetail(orderId);
+                if (freshOrder) {
+                  qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
+                }
               }
               if (useKitchenStaging && orderId) {
                 setStagedDirty(false);
@@ -3164,18 +3175,18 @@ const OrdenesContent = () => {
                 } else {
                   toast.error("El dispositivo es demasiado pequeño para operar caja.");
                 }
-              } else {
-                handleExit();
+              } else if (isDispatchFirstFlow && mobile) {
+                setShowCart(false);
               }
             } catch {
               // error handled by hook
             }
           }}
           disabled={(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems}
-          title={addItem.isPending || hasTemporaryDraftItems ? "Espera a que el item termine de guardarse" : undefined}
+          title={addItem.isPending ? "Espera a que el item termine de guardarse" : hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
           className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
         >
-          {(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems ? (
+          {(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : isExpressOrder ? (
             <>

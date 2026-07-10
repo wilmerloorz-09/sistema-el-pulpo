@@ -206,16 +206,44 @@ type KitchenPendingServerItem = {
   quantity: number;
   unit_price: number;
   status: string;
+  product_id?: string;
+  menu_node_id?: string | null;
+  description_snapshot?: string;
+  item_note?: string | null;
+  modifiers?: { modifier_id: string }[];
+  tray_item_type?: "A" | "B" | "C" | null;
+  tray_container_cost?: number | null;
 };
 
-type KitchenPendingTargetItem = {
-  id: string;
-  quantity: number;
-  unit_price: number;
-};
+type KitchenPendingTargetItem = KitchenPendingServerItem;
+
+async function addDraftKitchenItemDelta(
+  orderId: string,
+  source: KitchenPendingServerItem,
+  quantity: number,
+): Promise<void> {
+  if (!source.product_id) {
+    throw new Error(`No se pudo agregar mas cantidad de ${source.description_snapshot ?? "producto"}.`);
+  }
+
+  const { error } = await supabase.rpc("add_dine_in_order_item" as any, {
+    p_order_id: orderId,
+    p_product_id: source.product_id,
+    p_menu_node_id: source.menu_node_id ?? null,
+    p_quantity: quantity,
+    p_unit_price: source.unit_price,
+    p_description_snapshot: source.description_snapshot,
+    p_item_note: source.item_note ?? null,
+    p_modifier_ids: (source.modifiers ?? []).map((modifier) => modifier.modifier_id).filter(Boolean),
+    p_tray_item_type: source.tray_item_type ?? null,
+    p_tray_container_cost: source.tray_container_cost ?? 0,
+  });
+  if (error) throw error;
+}
 
 /** Aplica en BD las diferencias entre el estado del servidor y la vista pendiente de cocina. */
 export async function applyKitchenPendingItemChanges(
+  orderId: string,
   serverItems: KitchenPendingServerItem[],
   pendingItems: KitchenPendingTargetItem[],
 ): Promise<void> {
@@ -232,6 +260,12 @@ export async function applyKitchenPendingItemChanges(
     }
 
     if (pendingQty === serverQty) continue;
+
+    const isSent = String(server.status ?? "") !== "DRAFT";
+    if (isSent && pendingQty > serverQty) {
+      await addDraftKitchenItemDelta(orderId, pending ?? server, pendingQty - serverQty);
+      continue;
+    }
 
     await persistOrderItemLineQuantity(
       server.id,
@@ -1027,8 +1061,8 @@ export function useOrder(orderId: string | null) {
       }
       toast.error(err.message);
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+    onSettled: async () => {
+      await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
     },
@@ -1131,21 +1165,34 @@ export function useOrder(orderId: string | null) {
 
   const sendToKitchen = useMutation({
     mutationFn: async () => {
-      const order = query.data;
-      if (!order) return null;
+      if (!orderId) {
+        throw new Error("No se encontró la orden");
+      }
 
-      const draftItems = order.items.filter((item) => item.status === "DRAFT");
-      if (draftItems.length === 0) return null;
+      const freshOrder = await fetchOrderDetail(orderId);
+      if (!freshOrder) {
+        throw new Error("No se encontró la orden");
+      }
+
+      const draftItems = freshOrder.items.filter(
+        (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+      );
+      if (draftItems.length === 0) {
+        throw new Error("No hay productos pendientes por enviar");
+      }
 
       const { data, error } = await supabase.rpc("submit_order_draft_items" as any, {
-        p_order_id: orderId!,
+        p_order_id: orderId,
       });
       if (error) throw error;
 
       const row = Array.isArray(data) ? data[0] : null;
-      return row as { order_status?: string } | null;
+      return {
+        row: row as { order_status?: string } | null,
+        hadSentItems: freshOrder.items.some((item) => item.status !== "DRAFT"),
+      };
     },
-    onSuccess: (result) => {
+    onSuccess: ({ row, hadSentItems }) => {
       const order = query.data;
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
@@ -1159,14 +1206,13 @@ export function useOrder(orderId: string | null) {
         qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
       }
 
-      if (result?.order_status === "PAID") {
+      if (row?.order_status === "PAID") {
         toast.success("Orden especial de $0 marcada como pagada");
         return;
       }
 
-      const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
-      const message = hasSentAlready
-        ? "Nuevos items listos para cobrar"
+      const message = hadSentItems
+        ? "Nuevos items enviados correctamente"
         : "Orden lista para cobrar en caja";
 
       toast.success(message);
@@ -1176,28 +1222,42 @@ export function useOrder(orderId: string | null) {
 
   const sendToDispatch = useMutation({
     mutationFn: async () => {
-      const order = query.data;
-      if (!order) return;
-      if (order.order_type !== "EXPRESS") {
+      if (!orderId) {
+        throw new Error("No se encontró la orden");
+      }
+
+      const freshOrder = await fetchOrderDetail(orderId);
+      if (!freshOrder) {
+        throw new Error("No se encontró la orden");
+      }
+
+      if (freshOrder.order_type !== "EXPRESS") {
         throw new Error("Solo las ordenes Express pueden enviarse a despacho desde aqui");
       }
 
-      const draftItems = order.items.filter((item) => item.status === "DRAFT");
-      if (draftItems.length === 0) return;
+      const draftItems = freshOrder.items.filter(
+        (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+      );
+      if (draftItems.length === 0) {
+        throw new Error("No hay productos pendientes por enviar");
+      }
 
       const { error } = await supabase.rpc("submit_express_order_draft_items" as any, {
-        p_order_id: orderId!,
+        p_order_id: orderId,
       });
       if (error) throw error;
+
+      return {
+        hadSentItems: freshOrder.items.some((item) => item.status !== "DRAFT"),
+      };
     },
-    onSuccess: () => {
+    onSuccess: ({ hadSentItems }) => {
       const order = query.data;
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["express-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
 
-      const hasSentAlready = order?.items.some((item) => item.status !== "DRAFT");
-      const message = hasSentAlready
+      const message = hadSentItems
         ? "Nuevos items enviados a despacho"
         : "Orden enviada a despacho";
 

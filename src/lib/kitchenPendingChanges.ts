@@ -57,3 +57,24 @@ export function formatKitchenSendMoneyDelta(delta: number): string {
   const prefix = delta > 0 ? "+" : "";
   return `${prefix}$${delta.toFixed(2)}`;
 }
+
+export function isTemporaryKitchenItemId(itemId: string | null | undefined): boolean {
+  return String(itemId ?? "").startsWith("temp-");
+}
+
+/** Elimina ids optimistas temp-* y trae líneas reales del servidor (despacho primero). */
+export function reconcileKitchenStagedItems<T extends { id: string }>(
+  staged: T[],
+  server: T[],
+): T[] {
+  const hasTemporaryItems = staged.some((item) => isTemporaryKitchenItemId(item.id));
+  const withoutTemp = staged.filter((item) => !isTemporaryKitchenItemId(item.id));
+  const stagedIds = new Set(withoutTemp.map((item) => item.id));
+  const additions = server.filter((item) => !stagedIds.has(item.id));
+
+  if (!hasTemporaryItems && additions.length === 0) {
+    return staged;
+  }
+
+  return [...withoutTemp, ...additions];
+}

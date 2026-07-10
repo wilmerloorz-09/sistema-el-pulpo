@@ -3,6 +3,7 @@ import {
   computeKitchenSendMoneyDelta,
   formatKitchenSendMoneyDelta,
   hasKitchenPendingChanges,
+  reconcileKitchenStagedItems,
 } from "@/lib/kitchenPendingChanges";
 
 describe("kitchenPendingChanges", () => {
@@ -36,5 +37,21 @@ describe("kitchenPendingChanges", () => {
   it("no marca cambios cuando la vista coincide con la base", () => {
     expect(hasKitchenPendingChanges(baseline, baseline)).toBe(false);
     expect(computeKitchenSendMoneyDelta(baseline, baseline)).toBe(0);
+  });
+
+  it("reemplaza ids temp-* con lineas reales del servidor", () => {
+    const staged = [
+      { id: "line-1", quantity: 1, unit_price: 3 },
+      { id: "temp-123", quantity: 2, unit_price: 0.5 },
+    ];
+    const server = [
+      { id: "line-1", quantity: 1, unit_price: 3 },
+      { id: "real-999", quantity: 2, unit_price: 0.5 },
+    ];
+
+    expect(reconcileKitchenStagedItems(staged, server)).toEqual([
+      { id: "line-1", quantity: 1, unit_price: 3 },
+      { id: "real-999", quantity: 2, unit_price: 0.5 },
+    ]);
   });
 });
