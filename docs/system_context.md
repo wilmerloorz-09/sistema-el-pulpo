@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-07-10)
+## Estado operativo vigente (2026-07-12)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -219,8 +219,19 @@
 - Existen plantillas persistentes para apertura de caja:
   - `cash_register_templates`
   - `cash_register_template_denoms`
+- El flujo de cobro por transferencia usa `TransferenciaPagoSection` + `TransferenciaPagoDialog`:
+  - Tarjeta violeta: boton **Transferencia** + input de monto **solo lectura**.
+  - Modal: banco (obligatorio, por defecto el primero del catalogo — `orden_visual`), numero de transferencia (obligatorio), boton **Exacto** y valor.
+  - Al **Aceptar**, el monto confirmado se refleja en el input principal; al **Cancelar**, no se guarda nada.
+- Los datos `banco_id`, `numero_transferencia` y `amount` se persisten en `payments` cuando el metodo es transferencia.
+- La combinacion **banco + numero de transferencia** es unica en **todo el sistema** (incluye pagos anulados); se valida al aceptar el modal (mensaje inline rojo en el dialogo) y al registrar el cobro en servidor (`useCaja.payOrder` + RPC `register_payment_with_items` + indice unico).
+- Mensaje canonico de duplicado: `Ya existe un pago registrado con este banco y numero de transferencia.` (`src/lib/transferenciaDuplicada.ts`).
+- El catalogo `bancos` se administra en **Admin > Bancos** (solo admin global; CRUD `BancosCrud`, lectura activa via `useBancosActivos`).
+- Helpers: `src/lib/transferenciaPago.ts`, `src/lib/transferenciaDuplicada.ts`.
+- Migraciones: `20260712220000_bancos_y_datos_transferencia_pagos.sql`, `20260713050000_transferencia_unica_global.sql`.
 - El flujo de cobro por transferencia prepara captura previa de comprobante antes del cierre final.
 - El modal no debe dar por confirmado un pago de transferencia solo por el monto digitado.
+- **Feedback operativo (2026-07-12):** no usar popups flotantes Sonner en el POS. `import { toast } from "sonner"` esta silenciado via alias Vite (`src/lib/sonner-stub.ts`). Errores de validacion criticos deben mostrarse **inline** en el dialogo o componente que los origina.
 - El cierre de caja ya genera reporte imprimible.
 - Existen dos tipos de reporte vigentes:
   - consolidado por turno
@@ -646,6 +657,21 @@
 - **Enviar a cocina tras despacho total:** `submit_order_draft_items` acepta ordenes `KITCHEN_DISPATCHED` con borradores nuevos (`20260709220000`). `sendToKitchen` refetch antes de enviar y error si no hay borradores.
 - **Staging cocina — fixes:** `reconcileKitchenStagedItems` para ids `temp-*`; aumento de cantidad en lineas enviadas crea DRAFT con diferencia; reset de baseline tras envio exitoso.
 - **Monitoreo Global:** Fix colgado (import `useBranch`, orden de hooks, realtime menos agresivo, polling 60 s).
+
+### Actualizacion Jul 12, 2026
+- **Cobro por transferencia — datos bancarios:**
+  - Tabla `bancos` (catalogo global) y columnas `payments.banco_id`, `payments.numero_transferencia`.
+  - UI: `TransferenciaPagoDialog`, `TransferenciaPagoSection` en `PaymentDialogV2` y `PaymentDialogSecondary`.
+  - Admin: pestaña **Bancos** (`BancosCrud`); seed de bancos ecuatorianos en migracion.
+  - Banco por defecto al abrir modal: primer registro activo por `orden_visual` (ej. Banco Pichincha).
+- **Unicidad global de comprobante:**
+  - Indice `idx_payments_transferencia_unica` sobre `(banco_id, lower(trim(numero_transferencia)))`.
+  - Validacion cliente (`existeTransferenciaDuplicada`) + servidor en `register_payment_with_items`.
+  - Mensaje inline en modal; sin depender de toast flotante.
+- **Sin popups Sonner en POS:**
+  - Alias Vite `sonner` → `src/lib/sonner-stub.ts` (toasts silenciados).
+  - Evita mensajes como *"Orden lista para cobrar en caja"* u otros `toast.success`/`toast.error` flotantes.
+  - Mantener feedback en UI contextual (texto destructive en dialogos, `payValidationMessage`, `AlertDialog`, etc.).
 
 ### Actualizacion Jul 8, 2026
 - **Despacho primero — cambios pendientes de cocina:**

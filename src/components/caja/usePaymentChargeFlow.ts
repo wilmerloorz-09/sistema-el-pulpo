@@ -7,10 +7,11 @@ import { isCashPaymentMethodName, isTransferPaymentMethodName } from "@/lib/paym
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
 import { getOrderTotalToCharge } from "@/components/caja/PaymentDialogV2";
+import type { TransferenciaPagoDatos } from "@/lib/transferenciaPago";
+import { mensajeErrorPago } from "@/lib/transferenciaDuplicada";
 
 function getPayFailureMessage(e: unknown): string {
-  if (e instanceof Error && e.message.trim()) return e.message;
-  return "No se pudo registrar el cobro.";
+  return mensajeErrorPago(e, "No se pudo registrar el cobro.");
 }
 
 export interface PaymentChargeFlowOptions {
@@ -42,7 +43,7 @@ export function usePaymentChargeFlow({
   const suppressCloseOnceRef = useRef(false);
 
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
-  const [transferInput, setTransferInput] = useState("");
+  const [transferDatos, setTransferDatos] = useState<TransferenciaPagoDatos | null>(null);
   const [payItemQtys, setPayItemQtys] = useState<Record<string, number>>({});
   const [postPaySummary, setPostPaySummary] = useState<{
     changeAmount: number;
@@ -79,7 +80,7 @@ export function usePaymentChargeFlow({
     if (!order) return;
     if (postPaySummary) return;
     setReceivedByDenom({});
-    setTransferInput("");
+    setTransferDatos(null);
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
@@ -117,9 +118,9 @@ export function usePaymentChargeFlow({
   );
 
   const transferAmount = useMemo(() => {
-    const n = Number(transferInput.replace(",", "."));
+    const n = Number(transferDatos?.monto ?? 0);
     return Number.isFinite(n) && n >= 0 ? roundMoney(n) : 0;
-  }, [transferInput]);
+  }, [transferDatos?.monto]);
 
   const totalDelivered = roundMoney(cashTotal + transferAmount);
   const cashMethod = useMemo(() => paymentMethods.find((m) => isCashPaymentMethodName(m.name)), [paymentMethods]);
@@ -168,6 +169,10 @@ export function usePaymentChargeFlow({
     if (paymentMethods.length === 0) return "No hay metodos de pago activos configurados";
     if (totalDelivered + 0.005 < orderChargeTotal) return "El total entregado es menor al total a cobrar";
     if (appliedTransfer > 0.005 && !transferMethod) return "No hay metodo de transferencia activo";
+    if (appliedTransfer > 0.005 && !transferDatos?.bancoId) return "Registra la transferencia con banco y numero";
+    if (appliedTransfer > 0.005 && !transferDatos?.numeroTransferencia?.trim()) {
+      return "El numero de transferencia es obligatorio";
+    }
     if (appliedCash > 0.005 && !cashMethod) return "No hay metodo de efectivo activo";
     if (appliedCash > 0.005 && !hasReceivedDenoms) return "Efectivo requiere registrar el monto recibido por denominaciones";
     if (appliedCash > 0.005 && cashTotal + 0.005 < appliedCash) {
@@ -185,6 +190,7 @@ export function usePaymentChargeFlow({
     appliedTransfer,
     appliedCash,
     transferMethod,
+    transferDatos,
     cashMethod,
     hasReceivedDenoms,
     cashTotal,
@@ -254,6 +260,10 @@ export function usePaymentChargeFlow({
         toast.error("No hay metodo de transferencia activo");
         return;
       }
+      if (!transferDatos?.bancoId || !transferDatos.numeroTransferencia.trim()) {
+        toast.error("Registra la transferencia con banco y numero");
+        return;
+      }
       tenderedSplits.push({ methodId: transferMethod.id, amount: transferAmount });
     }
     if (cashTotal > 0.005) {
@@ -309,6 +319,13 @@ export function usePaymentChargeFlow({
       cashChangeDenoms,
       preparedTransferProofSession: null,
       clienteId: selectedCliente?.id ?? null,
+      transferencia: transferAmount > 0.005 && transferDatos
+        ? {
+            bancoId: transferDatos.bancoId,
+            numeroTransferencia: transferDatos.numeroTransferencia,
+            monto: transferAmount,
+          }
+        : null,
     };
 
     const summary = {
@@ -368,6 +385,7 @@ export function usePaymentChargeFlow({
     changeDenomBreakdown,
     changeAmount,
     transferMethod,
+    transferDatos,
     cashMethod,
     paymentMethods,
     onPay,
@@ -415,8 +433,8 @@ export function usePaymentChargeFlow({
     setPostPaySummary,
     suppressCloseOnceRef,
     settlePendingPay,
-    transferInput,
-    setTransferInput,
+    transferDatos,
+    setTransferDatos,
     orderChargeTotal,
     cashTotal,
     transferAmount,

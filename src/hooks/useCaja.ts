@@ -15,6 +15,12 @@ import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 import { orderIsPayableInCaja } from "@/lib/orderFlow";
 import { cleanOrderCode } from "@/lib/orderPresentation";
+import {
+  existeTransferenciaDuplicada,
+  mensajeErrorPago,
+  MENSAJE_TRANSFERENCIA_DUPLICADA,
+  esErrorTransferenciaDuplicada,
+} from "@/lib/transferenciaDuplicada";
 
 
 export const ensureTableSnapshot = async (orderId: string) => {
@@ -395,6 +401,12 @@ export interface PayOrderParams {
   clienteId?: string | null;
   /** ID de la predicción (oferta ganadora) a marcar como consumida tras el cobro. */
   prediccionIdAUsar?: string;
+  /** Datos de transferencia bancaria cuando el cobro incluye transferencia. */
+  transferencia?: {
+    bancoId: string;
+    numeroTransferencia: string;
+    monto: number;
+  } | null;
 }
 
 export interface PreparedTransferProofSession {
@@ -633,6 +645,8 @@ type RegisterPaymentRpcRow = {
   amount: number;
   change_amount: number;
   notes: string;
+  banco_id?: string | null;
+  numero_transferencia?: string | null;
   created_by: string;
   created_at: string;
 };
@@ -654,6 +668,20 @@ type CashMovementBatchRpcRow = {
   created_at: string;
 };
 
+function resolveTransferenciaCampos(
+  methodId: string,
+  transferMethodIds: Set<string>,
+  transferencia?: PayOrderParams["transferencia"],
+): { banco_id: string | null; numero_transferencia: string | null } {
+  if (!transferMethodIds.has(methodId)) {
+    return { banco_id: null, numero_transferencia: null };
+  }
+  return {
+    banco_id: transferencia?.bancoId ?? null,
+    numero_transferencia: transferencia?.numeroTransferencia?.trim() || null,
+  };
+}
+
 async function registerPaymentWithItemsCompat(
   payments: RegisterPaymentRpcRow[],
   items: RegisterPaymentItemRpcRow[],
@@ -663,6 +691,9 @@ async function registerPaymentWithItemsCompat(
     p_items: items,
   });
   if (!error) return;
+  if (esErrorTransferenciaDuplicada(error)) {
+    throw new Error(MENSAJE_TRANSFERENCIA_DUPLICADA);
+  }
   if (!isMissingRpcSignature(error, "register_payment_with_items")) throw error;
 
   for (const payment of payments) {
@@ -675,6 +706,8 @@ async function registerPaymentWithItemsCompat(
         amount: payment.amount,
         change_amount: payment.change_amount,
         notes: payment.notes,
+        banco_id: payment.banco_id ?? null,
+        numero_transferencia: payment.numero_transferencia ?? null,
         created_by: payment.created_by,
         created_at: payment.created_at,
       },
@@ -2287,7 +2320,7 @@ export function useCaja(params?: {
   });
 
   const payOrder = useMutation({
-    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession, clienteId, prediccionIdAUsar }: PayOrderParams) => {
+    mutationFn: async ({ orderId, itemSelections, paymentSplits, tenderedSplits, isSpecial = false, specialAmount, receivedTotal, totalAmount, cashReceivedDenoms, cashChangeDenoms, preparedTransferProofSession, clienteId, prediccionIdAUsar, transferencia }: PayOrderParams) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
@@ -2364,6 +2397,25 @@ export function useCaja(params?: {
       const effectiveCashReceivedDenoms = cashMethodId ? cashReceivedDenoms : [];
       /** Cambio puede existir con solo transferencia (sobrepago); antes se descartaba al no haber tramo efectivo. */
       const effectiveCashChangeDenoms = Array.isArray(cashChangeDenoms) ? cashChangeDenoms : [];
+
+      const hasTransferPayment = paymentSplits.some(
+        (split) => transferMethodIds.has(split.methodId) && Number(split.amount) > 0.005,
+      );
+      if (hasTransferPayment) {
+        if (!transferencia?.bancoId) {
+          throw new Error("El banco es obligatorio para pagos por transferencia");
+        }
+        if (!String(transferencia?.numeroTransferencia ?? "").trim()) {
+          throw new Error("El numero de transferencia es obligatorio");
+        }
+        const duplicada = await existeTransferenciaDuplicada(
+          transferencia.bancoId,
+          transferencia.numeroTransferencia,
+        );
+        if (duplicada) {
+          throw new Error(MENSAJE_TRANSFERENCIA_DUPLICADA);
+        }
+      }
 
       if (!orderData) throw new Error("Orden no encontrada");
       if (orderData.status === "DRAFT") {
@@ -2578,6 +2630,7 @@ export function useCaja(params?: {
           const paymentId = generateUUID();
           const isCash = isCashPaymentMethodName(selectedMethods.find(m => m.id === split.methodId)?.name);
           if (isCash) cashPaymentId = paymentId;
+          const transferenciaCampos = resolveTransferenciaCampos(split.methodId, transferMethodIds, transferencia);
 
           await dbInsert(
             "payments",
@@ -2596,6 +2649,8 @@ export function useCaja(params?: {
                 cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
                 cashChangeDenoms: effectiveCashChangeDenoms,
               }),
+              banco_id: transferenciaCampos.banco_id,
+              numero_transferencia: transferenciaCampos.numero_transferencia,
               created_by: user.id,
               created_at: now,
             },
@@ -2626,6 +2681,7 @@ export function useCaja(params?: {
           const isCash = isCashPaymentMethodName(selectedMethods.find((m) => m.id === split.methodId)?.name);
           if (isCash) cashPaymentId = paymentId;
           if (index === 0) anchorPaymentId = paymentId;
+          const transferenciaCampos = resolveTransferenciaCampos(split.methodId, transferMethodIds, transferencia);
 
           paymentRows.push({
             id: paymentId,
@@ -2642,6 +2698,8 @@ export function useCaja(params?: {
               cashReceivedDenoms: isCash ? effectiveCashReceivedDenoms : [],
               cashChangeDenoms: effectiveCashChangeDenoms,
             }),
+            banco_id: transferenciaCampos.banco_id,
+            numero_transferencia: transferenciaCampos.numero_transferencia,
             created_by: user.id,
             created_at: now,
           });
@@ -2731,7 +2789,7 @@ export function useCaja(params?: {
         toast.success("Pago registrado");
       });
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: unknown) => toast.error(mensajeErrorPago(err)),
   });
 
   const requestPaymentVoid = useMutation({

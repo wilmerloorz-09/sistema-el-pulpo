@@ -56,7 +56,9 @@ proof_capture_frontend_vue/
 ## Decisiones De Integracion
 
 - Se reutiliza `public.cash_shifts` como `cash_sessions`.
-- Se reutiliza `public.payments`; la migracion le agrega `status`, `currency` y `updated_at`.
+- Se reutiliza `public.payments`; las migraciones le agregan `status`, `currency`, `updated_at`, y desde 2026-07-12 tambien `banco_id` (FK `bancos`) y `numero_transferencia` para cobros por transferencia en caja POS.
+- Tabla `public.bancos`: catalogo global administrado en Admin > Bancos (solo admin global).
+- Unicidad operativa: la combinacion `banco_id` + `numero_transferencia` no puede repetirse en pagos (incluye anulados); ver migracion `20260713050000_transferencia_unica_global.sql`.
 - Se agregan `capture_user_id` y `capture_device_label` en `public.cash_shifts`.
 - Las imagenes se guardan solo en Supabase Storage privado.
 - PostgreSQL guarda solo metadatos y trazabilidad.

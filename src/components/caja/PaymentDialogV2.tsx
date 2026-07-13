@@ -17,7 +17,7 @@ import type { Denomination, PayableOrder, PayOrderParams, ShiftDenom } from "@/h
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import { PaymentItemSplitDialog } from "@/components/caja/PaymentItemSplitDialog";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
-import { Banknote, CircleCheck, Coins, CreditCard, Loader2, Printer, UserRound, Wallet, CopyCheck } from "lucide-react";
+import { CircleCheck, Coins, CreditCard, Loader2, Printer, UserRound, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
 import { catalogToPaymentDenoms } from "@/lib/cajaDenominations";
@@ -26,6 +26,10 @@ import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
 import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
 import { useClientWinningOffer } from "@/hooks/useClientWinningOffer";
 import { fetchPromocionReciboExtrasForOrder } from "@/lib/promocionesRecibo";
+import { useBancosActivos } from "@/hooks/useBancosActivos";
+import type { TransferenciaPagoDatos } from "@/lib/transferenciaPago";
+import TransferenciaPagoSection from "@/components/caja/TransferenciaPagoSection";
+import { mensajeErrorPago } from "@/lib/transferenciaDuplicada";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -86,8 +90,7 @@ function DenominationQtyCircle({
 }
 
 function getPayFailureMessage(e: unknown): string {
-  if (e instanceof Error && e.message.trim()) return e.message;
-  return "No se pudo registrar el cobro.";
+  return mensajeErrorPago(e, "No se pudo registrar el cobro.");
 }
 
 /** Monto que debe cubrir el cobro (pendiente especial o suma de líneas pendientes). */
@@ -127,7 +130,8 @@ export default function PaymentDialogV2({
   const suppressCloseOnceRef = useRef(false);
 
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
-  const [transferInput, setTransferInput] = useState("");
+  const [transferDatos, setTransferDatos] = useState<TransferenciaPagoDatos | null>(null);
+  const { data: bancosActivos = [] } = useBancosActivos(open);
   const [useSaldo, setUseSaldo] = useState(true);
   const [wasFullyPaid, setWasFullyPaid] = useState(false);
   const wasFullyPaidRef = useRef(false);
@@ -207,7 +211,7 @@ export default function PaymentDialogV2({
     }
     if (!order) return;
     setReceivedByDenom({});
-    setTransferInput("");
+    setTransferDatos(null);
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
@@ -277,9 +281,9 @@ export default function PaymentDialogV2({
   const cashTotal = useMemo(() => roundMoney(sortedDenoms.reduce((sum, d) => sum + (receivedByDenom[d.denomination_id] || 0) * d.value, 0)), [receivedByDenom, sortedDenoms]);
 
   const transferAmount = useMemo(() => {
-    const n = Number(transferInput.replace(",", "."));
+    const n = Number(transferDatos?.monto ?? 0);
     return Number.isFinite(n) && n >= 0 ? roundMoney(n) : 0;
-  }, [transferInput]);
+  }, [transferDatos?.monto]);
 
   const totalDelivered = roundMoney(cashTotal + transferAmount);
 
@@ -451,6 +455,14 @@ export default function PaymentDialogV2({
         toast.error("No hay metodo de transferencia activo");
         return;
       }
+      if (!transferDatos?.bancoId) {
+        toast.error("Registra la transferencia con banco y numero");
+        return;
+      }
+      if (!transferDatos.numeroTransferencia.trim()) {
+        toast.error("El numero de transferencia es obligatorio");
+        return;
+      }
       tenderedSplits.push({ methodId: transferMethod.id, amount: transferAmount });
     }
     if (cashTotal > 0.005) {
@@ -533,6 +545,13 @@ export default function PaymentDialogV2({
       preparedTransferProofSession: null,
       clienteId: clienteSelection.selectedCliente?.id ?? null,
       prediccionIdAUsar: discountAmount > 0 && winningOffer ? winningOffer.prediccion_id : undefined,
+      transferencia: transferAmount > 0.005 && transferDatos
+        ? {
+            bancoId: transferDatos.bancoId,
+            numeroTransferencia: transferDatos.numeroTransferencia,
+            monto: transferAmount,
+          }
+        : null,
     };
 
     const changeLinesSnapshot = changeDenomBreakdown.map((d) => ({
@@ -898,44 +917,13 @@ export default function PaymentDialogV2({
                   </div>
                 </div>
 
-                <div className="flex min-h-[100px] min-w-0 flex-col justify-center gap-1.5 rounded-2xl border border-violet-200 bg-violet-50/60 px-2.5 py-2.5 shadow-sm xl:max-w-[9.25rem]">
-                  <label
-                    htmlFor="payment-v2-transfer"
-                    className="flex items-center gap-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-violet-800"
-                  >
-                    <Banknote className="h-3 w-3 shrink-0" />
-                    Transferencia
-                  </label>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      disabled={readOnly}
-                      onClick={() => {
-                        const isExact = Math.abs(Number(transferInput || 0) - netChargeTotal) < 0.005;
-                        if (isExact) {
-                          setTransferInput("");
-                        } else {
-                          setTransferInput(netChargeTotal.toFixed(2));
-                        }
-                      }}
-                      className="flex shrink-0 items-center gap-0.5 rounded-md border border-violet-300 bg-white/60 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
-                      title={Math.abs(Number(transferInput || 0) - netChargeTotal) < 0.005 ? "Limpiar monto" : "Usar monto total"}
-                    >
-                      <CopyCheck className="h-2.5 w-2.5" />
-                      {Math.abs(Number(transferInput || 0) - netChargeTotal) < 0.005 ? "Limpiar" : "Exacto"}
-                    </button>
-                  </div>
-                  <Input
-                    id="payment-v2-transfer"
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={transferInput}
-                    onChange={(e) => setTransferInput(sanitizeDecimalInput(e.target.value))}
-                    disabled={readOnly}
-                    className="h-10 rounded-xl border-violet-200 bg-white px-2 text-base font-semibold tabular-nums"
-                  />
-                </div>
+                <TransferenciaPagoSection
+                  transferDatos={transferDatos}
+                  onTransferDatosChange={setTransferDatos}
+                  netChargeTotal={netChargeTotal}
+                  bancos={bancosActivos}
+                  readOnly={readOnly}
+                />
 
                 <div className="flex min-h-[100px] flex-col justify-center rounded-2xl border border-stone-200 bg-stone-50/90 px-4 py-3 shadow-sm">
                   <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-600">
@@ -1133,7 +1121,7 @@ export default function PaymentDialogV2({
                     const handleSuccessDismiss = () => {
                       setPostPaySummary(null);
                       setReceivedByDenom({});
-                      setTransferInput("");
+                      setTransferDatos(null);
                       const isFullyPaidVal = wasFullyPaidRef.current || wasFullyPaid || (order 
                         ? order.is_special 
                           ? Number(order.special_pending_amount ?? 0) <= 0.005 
@@ -1172,7 +1160,7 @@ export default function PaymentDialogV2({
                 onClick={() => {
                   setPostPaySummary(null);
                   setReceivedByDenom({});
-                  setTransferInput("");
+                  setTransferDatos(null);
                   const isFullyPaidVal = wasFullyPaidRef.current || wasFullyPaid || (order 
                     ? order.is_special 
                       ? Number(order.special_pending_amount ?? 0) <= 0.005 

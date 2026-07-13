@@ -1,7 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
@@ -9,7 +7,9 @@ import DenominationVisual from "@/components/caja/DenominationVisual";
 import { usePaymentChargeFlow } from "@/components/caja/usePaymentChargeFlow";
 import PaymentClienteCard from "@/components/caja/PaymentClienteCard";
 import { usePaymentClienteSelection } from "@/hooks/usePaymentClienteSelection";
-import { Banknote, CircleCheck, Coins, Loader2, UserRound, Wallet, CopyCheck } from "lucide-react";
+import { useBancosActivos } from "@/hooks/useBancosActivos";
+import TransferenciaPagoSection from "@/components/caja/TransferenciaPagoSection";
+import { CircleCheck, Coins, Loader2, UserRound, Wallet } from "lucide-react";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -52,6 +52,7 @@ export default function PaymentDialogSecondary({
   readOnly = false,
 }: Props) {
   const clienteSelection = usePaymentClienteSelection(order, open);
+  const { data: bancosActivos = [] } = useBancosActivos(open);
 
   const flow = usePaymentChargeFlow({
     order,
@@ -70,8 +71,8 @@ export default function PaymentDialogSecondary({
     setPostPaySummary,
     suppressCloseOnceRef,
     settlePendingPay,
-    transferInput,
-    setTransferInput,
+    transferDatos,
+    setTransferDatos,
     orderChargeTotal,
     cashTotal,
     transferAmount,
@@ -224,37 +225,14 @@ export default function PaymentDialogSecondary({
                       {formatCurrency(orderChargeTotal)}
                     </p>
                   </div>
-                  <div className="flex min-w-0 max-w-[7.75rem] flex-col justify-center gap-1 rounded-2xl border border-violet-200 bg-violet-50/80 px-2 py-2">
-                    <label
-                      htmlFor="secondary-transfer"
-                      className="flex items-center gap-1 text-[9px] font-semibold uppercase leading-tight text-violet-800"
-                    >
-                      <Banknote className="h-3 w-3 shrink-0" />
-                      Transferencia
-                    </label>
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        disabled={readOnly}
-                        onClick={() => setTransferInput(orderChargeTotal.toFixed(2))}
-                        className="flex shrink-0 items-center gap-0.5 rounded-md border border-violet-300 bg-white/60 px-1.5 py-0.5 text-[8px] font-bold uppercase text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:opacity-50"
-                        title="Usar monto total"
-                      >
-                        <CopyCheck className="h-3 w-3" />
-                        Exacto
-                      </button>
-                    </div>
-                    <Input
-                      id="secondary-transfer"
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={transferInput}
-                      onChange={(e) => setTransferInput(sanitizeDecimalInput(e.target.value))}
-                      disabled={readOnly}
-                      className="h-9 rounded-xl border-violet-200 bg-white px-1.5 text-sm font-semibold tabular-nums"
-                    />
-                  </div>
+                  <TransferenciaPagoSection
+                    transferDatos={transferDatos}
+                    onTransferDatosChange={setTransferDatos}
+                    netChargeTotal={orderChargeTotal}
+                    bancos={bancosActivos}
+                    readOnly={readOnly}
+                    className="flex min-w-0 max-w-[7.75rem] flex-col justify-center gap-1 rounded-2xl border border-violet-200 bg-violet-50/80 px-2 py-2"
+                  />
                 </div>
 
                 <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5">
@@ -358,7 +336,7 @@ export default function PaymentDialogSecondary({
                 onClick={() => {
                   setPostPaySummary(null);
                   clearCash();
-                  setTransferInput("");
+                  setTransferDatos(null);
                   const isFullyPaid = order 
                     ? order.is_special 
                       ? Number(order.special_pending_amount ?? 0) <= 0.005 

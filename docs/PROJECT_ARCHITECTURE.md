@@ -177,6 +177,8 @@
 - Navegacion: subitem deshabilitado `Abrir mi caja...` / `Reabrir mi caja...` segun `computeCajaAbrirTerminalState` en `src/components/nav/cajaTerminalNav.ts` (ya no redirige a `claim-terminal`).
 -- **Modal de pago (unificado):**
   - `PaymentDialogV2`: UI estándar para cobrar (misma UI para todos los cajeros).
+  - `PaymentDialogSecondary`: layout vertical para caja secundaria; comparte `usePaymentChargeFlow`.
+  - **Transferencia bancaria (2026-07-12):** `TransferenciaPagoSection` abre `TransferenciaPagoDialog` con banco, numero de comprobante y valor; input principal de monto en solo lectura. Catalogo via `useBancosActivos`; admin en `BancosCrud`.
   - **Denominaciones en cobro:** “Efectivo entregado” usa el catálogo global `denominations` activas (independiente de plantilla); el cálculo de cambio usa el inventario del cajero (`shift.denoms`).
   - Recibo: `PaymentReceipt` + `window.print`; estilos en `src/index.css`.
 - **Capa de datos en cobro (`useCaja.payOrder`):**
@@ -189,6 +191,8 @@
   - el turno puede seguir abierto aunque la caja se cierre
   - `close_cash_register(...)` no equivale a cierre de turno
 - El cálculo de cambio (`changeAmount`) en el diálogo de pago se unifica para agregar excedentes de todos los métodos de pago (efectivo, transferencia, etc.).
+- **Transferencia — unicidad de comprobante:** `banco_id` + `numero_transferencia` no puede repetirse en todo el sistema (incluye pagos anulados). Validacion en modal (inline) y en `payOrder` / RPC.
+- **Feedback sin popups:** Sonner esta silenciado (`src/lib/sonner-stub.ts` via alias Vite). No reintroducir toasts flotantes; usar mensajes inline en dialogos y estados de validacion existentes.
 - **Consolidación en Caja:**
   - `PayableOrdersList` y `PaymentDialog` presentan los ítems agrupados por descripción y precio.
   - Esto facilita el cobro rápido al mostrar totales consolidados por producto idéntico.
@@ -253,6 +257,7 @@
 
 ### 12. Comprobantes de transferencia
 - `PaymentDialog` puede preparar una sesion provisional de pago con comprobante.
+- Los pagos por transferencia en caja persisten `payments.banco_id` y `payments.numero_transferencia` ademas del monto (`amount`); ver `TransferenciaPagoDialog` y migraciones `20260712220000`, `20260713050000`.
 - Persistencia:
   - `payment_capture_requests`
   - `payment_proofs`
@@ -335,6 +340,14 @@
   - `src/components/caja/usePaymentChargeFlow.ts` (logica compartida V2/Secondary)
   - `src/components/caja/PaymentDialog.tsx`
   - `src/components/caja/PaymentDialogV2.tsx`
+  - `src/components/caja/PaymentDialogSecondary.tsx`
+  - `src/components/caja/TransferenciaPagoSection.tsx`
+  - `src/components/caja/TransferenciaPagoDialog.tsx`
+  - `src/lib/transferenciaPago.ts`
+  - `src/lib/transferenciaDuplicada.ts`
+  - `src/hooks/useBancosActivos.ts`
+  - `src/components/admin/BancosCrud.tsx`
+  - `src/lib/sonner-stub.ts` (toasts Sonner deshabilitados globalmente)
   - `src/components/caja/PaymentReceipt.tsx`
   - `src/hooks/useBranchShiftGate.ts` (`primaryCashierId`)
   - `src/components/admin/ShiftSetupAdmin.tsx` (config caja por turno)
@@ -418,6 +431,13 @@
 34. **Caja Despacho primero:** Respetar `ready_to_collect`; no abrir cobro con items sin despachar; validar en `payOrder`.
 35. **QR promocion:** No imprimir sin campaña activa y ofertas registrables; usar `promocionesRecibo.ts` y migraciones `20260709200000` / `20260709210000`.
 36. **Staging cocina:** Reconciliar ids `temp-*`; aumentos en lineas enviadas → DRAFT con diferencia; migracion `20260709220000` para envio post-despacho.
+37. **Transferencia bancaria:** Modal con banco/numero/valor; unicidad global; migraciones `20260712220000`, `20260713050000`; sin toasts Sonner.
+38. **Feedback POS:** Errores inline en dialogos; `sonner-stub.ts` silencia popups flotantes.
+
+### Actualizacion Jul 12, 2026
+- **Cobro por transferencia:** `TransferenciaPagoSection`, `TransferenciaPagoDialog`, tabla `bancos`, columnas en `payments`, Admin > Bancos.
+- **Unicidad comprobante:** indice + validacion RPC + mensaje inline en modal.
+- **Sin popups Sonner:** alias Vite a `src/lib/sonner-stub.ts`.
 
 ### Actualizacion Jul 9–10, 2026
 - **Cobro bloqueado hasta despacho completo (DF):** `PayableOrdersList`, `useCaja`, `computeUndispatchedQuantity`.

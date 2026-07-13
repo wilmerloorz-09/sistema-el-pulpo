@@ -232,6 +232,15 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Si no hay OCR disponible, el flujo debe degradar a revision manual.
 - La limpieza de metadata SQL y la limpieza del bucket `payment-proofs` son procesos separados.
 
+### 11.1 Cobro por transferencia bancaria (2026-07-12)
+- UI: `TransferenciaPagoSection` + `TransferenciaPagoDialog` en `PaymentDialogV2` y `PaymentDialogSecondary`.
+- Campos obligatorios al confirmar transferencia: `banco_id`, `numero_transferencia`, monto > 0.
+- Banco por defecto: primer banco activo por `orden_visual` al abrir el modal.
+- Unicidad global `(banco_id, numero_transferencia)` — incluye pagos anulados; no reutilizar comprobante.
+- Mensaje de duplicado inline en el modal (`MENSAJE_TRANSFERENCIA_DUPLICADA`); validacion adicional en `payOrder` y RPC.
+- Catalogo `bancos`: solo admin global en `Admin > Bancos` (`BancosCrud`).
+- Migraciones obligatorias: `20260712220000_bancos_y_datos_transferencia_pagos.sql`, `20260713050000_transferencia_unica_global.sql`.
+
 ### 12.1 Extra
 - `order_type = EXTRA`: menu mesa sin PLATOS, requiere mesa obligatoria (`table_id`), flujo caja → despacho manual.
 - Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` o desaparece automáticamente al despacharse.
@@ -261,7 +270,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ## Convenciones de implementacion
 
 ### Frontend
-- **Manejo de Feedback:** Usar `sonner` toasts para todas las notificaciones operativas y errores de validación, garantizando una experiencia de usuario consistente y no intrusiva.
+- **Manejo de feedback (2026-07-12):** No usar popups flotantes Sonner en el POS. `toast` de `sonner` esta silenciado via `src/lib/sonner-stub.ts` (alias en `vite.config.ts`). Mostrar errores y avisos **inline** en el componente activo (`role="alert"`, `payValidationMessage`, `AlertDialog`, texto `text-destructive`). No reactivar `<SonnerToaster />` en `App.tsx` ni montar toasts de exito operativos (ej. *"Orden lista para cobrar en caja"*).
 - En usuarios, no reintroducir `Nombre completo` como campo principal; usar `Nombres` (`profiles.first_name`), `Apellidos` (`profiles.last_name`) y **Alias** (`profiles.alias`, obligatorio, alfanumerico, unico).
 - En listados compactos operativos mostrar **alias** (sin `@`); nombre real, cedula y telefono solo en administracion o detalle. En admin de usuarios: columnas separadas nombre real + alias.
 - Login acepta correo, `username` o `alias` (`login-with-identifier`).
@@ -280,6 +289,11 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - reporte por apertura
   - reimpresion
   - hoja de denominaciones al cierre
+- Si tocas cobro por transferencia, validar:
+  - modal `TransferenciaPagoDialog` (banco, numero, valor, Exacto)
+  - unicidad global banco + numero (modal inline + `payOrder` + migracion `20260713050000`)
+  - catalogo `bancos` en Admin
+  - sin toasts Sonner para errores de duplicado
 
 ### Backend / BD
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
@@ -330,6 +344,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 24. Si se toca Caja en Despacho primero, validar `ready_to_collect`, boton rojo/verde, `AlertDialog` y guard en `payOrder`.
 25. Si se toca QR en ticket, validar campaña activa + ofertas registrables y migraciones `20260709200000` / `20260709210000`.
 26. Si se toca envio post-despacho, validar `20260709220000` y reconciliacion de staging (`reconcileKitchenStagedItems`).
+
+### Actualizacion Jul 12, 2026
+- **Transferencia en cobro:** reglas en seccion 11.1; componentes `TransferenciaPago*`, `useBancosActivos`, `BancosCrud`.
+- **Feedback:** Sonner silenciado; errores inline en dialogos.
 
 ### Actualizacion Jul 9–10, 2026
 - **Cobro DF:** `ready_to_collect`, `computeUndispatchedQuantity`, `PayableOrdersList` rojo/verde.

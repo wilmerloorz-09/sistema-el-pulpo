@@ -155,6 +155,30 @@ export type Database = {
         }
         Relationships: []
       }
+      bancos: {
+        Row: {
+          activo: boolean
+          created_at: string
+          id: string
+          nombre: string
+          orden_visual: number
+        }
+        Insert: {
+          activo?: boolean
+          created_at?: string
+          id?: string
+          nombre: string
+          orden_visual?: number
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          id?: string
+          nombre?: string
+          orden_visual?: number
+        }
+        Relationships: []
+      }
       bulk_included_product_ranges: {
         Row: {
           amount_from: number
@@ -2161,12 +2185,14 @@ export type Database = {
       payments: {
         Row: {
           amount: number
+          banco_id: string | null
           change_amount: number | null
           created_at: string
           created_by: string
           currency: string | null
           id: string
           notes: string | null
+          numero_transferencia: string | null
           order_id: string
           payment_code: string | null
           payment_method_id: string
@@ -2185,12 +2211,14 @@ export type Database = {
         }
         Insert: {
           amount: number
+          banco_id?: string | null
           change_amount?: number | null
           created_at?: string
           created_by: string
           currency?: string | null
           id?: string
           notes?: string | null
+          numero_transferencia?: string | null
           order_id: string
           payment_code?: string | null
           payment_method_id: string
@@ -2209,12 +2237,14 @@ export type Database = {
         }
         Update: {
           amount?: number
+          banco_id?: string | null
           change_amount?: number | null
           created_at?: string
           created_by?: string
           currency?: string | null
           id?: string
           notes?: string | null
+          numero_transferencia?: string | null
           order_id?: string
           payment_code?: string | null
           payment_method_id?: string
@@ -2232,6 +2262,13 @@ export type Database = {
           voided_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "payments_banco_id_fkey"
+            columns: ["banco_id"]
+            isOneToOne: false
+            referencedRelation: "bancos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "payments_created_by_fkey"
             columns: ["created_by"]

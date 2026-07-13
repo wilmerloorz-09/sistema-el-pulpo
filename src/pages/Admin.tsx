@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus } from "lucide-react";
+import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark } from "lucide-react";
+import BancosCrud from "@/components/admin/BancosCrud";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -146,6 +147,13 @@ const TABS: AdminTab[] = [
     label: "Denominaciones",
     icon: <Coins className="h-4 w-4" />,
     component: DenominationsCrud,
+    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "bancos",
+    label: "Bancos",
+    icon: <Landmark className="h-4 w-4" />,
+    component: BancosCrud,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
   },
   {

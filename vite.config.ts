@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      sonner: path.resolve(__dirname, "./src/lib/sonner-stub.ts"),
     },
   },
 }));

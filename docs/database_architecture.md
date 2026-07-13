@@ -102,6 +102,8 @@
 - `cash_register_movements`
 - `cash_movements`
 - `payments`
+  - Columnas de transferencia (2026-07-12): `banco_id` (FK `bancos`), `numero_transferencia` (texto).
+  - Unicidad global: indice `idx_payments_transferencia_unica` en `(banco_id, lower(trim(numero_transferencia)))` cuando ambos valores existen; aplica tambien a pagos anulados.
 - `payment_items`
 - `payment_void_requests`
 - `cash_register_templates`
@@ -119,6 +121,18 @@
 ### 6. Comprobantes de transferencia
 - `payment_capture_requests`
 - `payment_proofs`
+
+### 6.1 Bancos y datos de transferencia en pagos (2026-07-12)
+- `bancos`
+  - Catalogo global: `id`, `nombre` (unico), `activo`, `orden_visual`, `created_at`.
+  - RLS: lectura autenticados; escritura solo admin global (`has_role(..., 'admin')`).
+  - Seed inicial de bancos ecuatorianos en migracion `20260712220000`.
+- `payments.banco_id`, `payments.numero_transferencia`
+  - Solo aplican cuando el metodo de pago es transferencia.
+  - El monto va en `payments.amount` (columna existente).
+  - Comparacion de numero case-insensitive en validacion e indice unico.
+- RPC `register_payment_with_items` persiste `banco_id` y `numero_transferencia` y rechaza duplicados antes del insert (`20260713050000`).
+- Cliente: `existeTransferenciaDuplicada` en `src/lib/transferenciaDuplicada.ts`.
 
 ### 7. Clientes, campañas y predicciones (2026-06-11+)
 - `clientes`
@@ -383,7 +397,7 @@
 - `claim_cash_session_slot(...)` (sesion de terminal; no sustituye apertura de caja por cajero)
 - `create_extra_order(...)`
 - Cobro rápido (batch):
-  - `register_payment_with_items(p_payments jsonb, p_items jsonb)` inserta pagos + items en un solo roundtrip.
+  - `register_payment_with_items(p_payments jsonb, p_items jsonb)` inserta pagos + items en un solo roundtrip; incluye `banco_id` y `numero_transferencia`; valida unicidad de transferencia.
   - `registrar_movimientos_caja_operativos_batch(p_shift_id uuid, p_movements jsonb)` registra movimientos operativos en lote.
 
 ### Anulacion de pagos
@@ -455,6 +469,10 @@
 - `20260709200000_token_promocion_solo_campana_activa.sql`
 - `20260709210000_token_promocion_solo_oferta_registrable.sql`
 - `20260709220000_submit_draft_items_after_dispatch.sql`
+
+### Transferencia bancaria y unicidad de comprobante (2026-07-12)
+- `20260712220000_bancos_y_datos_transferencia_pagos.sql` — tabla `bancos`, columnas en `payments`, seed, RLS, RPC `register_payment_with_items` actualizada.
+- `20260713050000_transferencia_unica_global.sql` — indice unico global + validacion de duplicado en RPC.
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
@@ -540,6 +558,10 @@
 - **Token/QR promocion:** `20260709200000` (solo con campaña activa), `20260709210000` (solo ofertas registrables). Frontend alinea impresion con `promocionesRecibo.ts`.
 - **Envio post-despacho:** `20260709220000_submit_draft_items_after_dispatch.sql` — `submit_order_draft_items` no rechaza `KITCHEN_DISPATCHED` cuando hay lineas `DRAFT`.
 - **Caja Despacho primero:** sin migracion SQL; `ready_to_collect` / `undispatched_units` en cliente + guard en `payOrder`.
+
+### Actualizacion Jul 12, 2026
+- **Bancos y transferencia en pagos:** `bancos`, `payments.banco_id`, `payments.numero_transferencia`. Migraciones `20260712220000`, `20260713050000`.
+- **Unicidad:** `(banco_id, numero_transferencia)` global, incluye anulados; validacion en RPC y cliente.
 
 ### Actualizacion Jul 8, 2026
 - **RPC `remove_order_item_line`:** nueva funcion para reducir/eliminar lineas enviadas al aplicar diff de cocina pendiente (`applyKitchenPendingItemChanges`). Migracion base `20260707240000`; correccion de cantidad `20260707241000`.
