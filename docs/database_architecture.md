@@ -18,7 +18,7 @@
 - Las lecturas de `Despacho` deben agrupar por `orders.id` / `order_code`; `order_items.sent_to_kitchen_at` no debe crear tarjetas operativas separadas para la misma orden.
 - En Despacho, `TAKEOUT`, `EXPRESS` (pestaña unificada **Para llevar / Express**) y `orders.is_special = true` se procesan como despacho total de la orden; no deben dividirse por botones de item en la UI.
 - Las ordenes `EXTRA` pagadas se agrupan en pestañas **Mesa** y **Todos**; el listado no exige `sent_to_kitchen_at` en lineas Extra (a diferencia de mesa clasica).
-- Cuando se anula un pago, la sucesora activa queda con nuevo numero en `SENT_TO_KITCHEN`/En Caja.
+- Cuando se anula un pago (desde 2026-07-14), la misma orden vuelve a `SENT_TO_KITCHEN`/En Caja con el mismo numero (sin sucesora). Las historicas legacy con `VOID_SUCCESSOR_ORDER` siguen sin revivir.
 
 ## Dominios principales
 
@@ -285,22 +285,15 @@
   - `cash_refund_detail`
   - `replacement_payment_id`
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
-- **Trazabilidad de Anulación (2026-05-09):**
-  - Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` (tipo `partial` para pagos).
-  - Se actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`, el ID del supervisor y el motivo de la anulación.
+- **Re-cobro misma orden (2026-07-14):** el trigger `create_successor_order_after_payment_void` ya **no** crea sucesora. Reabre la orden: `status = SENT_TO_KITCHEN`, `paid_at = NULL`, limpia `token_promocion` e ítems `paid_at`, conserva mesa/código/número. Migración `20260714120000_anular_pago_reabre_misma_orden.sql`.
+- **Legacy:** ordenes con `VOID_SUCCESSOR_ORDER` siguen fuera de flujo activo; `recalculate_check_balance` las mantiene `CANCELLED`.
+- **Trazabilidad de Anulación:**
+  - Cada anulación inserta registro en `order_cancellations` y marca `orders.notes` (`VOIDED_PAYMENT` / `VOIDED_PAYMENT_REOPEN`).
 - Las devoluciones en efectivo disminuyen `cash_shift_denoms.qty_current` y registran `cash_movements`.
-- Al anular un pago, la orden original conserva `order_code` / `order_number` y queda como historica:
-  - `orders.status = 'CANCELLED'`
-  - `orders.table_id`, `split_id`, `table_order_position` en `NULL`
-  - `orders.paid_at = NULL`
-  - `orders.cancelled_at` definido
-  - `orders.notes` incluye `VOID_SUCCESSOR_ORDER:<new_order_id>` y `VOIDED_PAYMENT_HISTORICAL:<payment_id>`
-- La orden activa se recrea como sucesora:
-  - nuevo `order_code` / `order_number`
-  - `orders.notes` incluye `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`
-  - recibe items/modificadores y pagos activos no anulados.
-- `recalculate_check_balance(...)` debe revisar `VOID_SUCCESSOR_ORDER` antes de invocar sincronizaciones que puedan recalcular estado, para no revivir historicas anuladas.
 - La anulacion operativa de pago solo debe proceder para ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
+
+### Actualizacion Jul 14, 2026
+- **Anular pago sin sucesora:** misma orden re-cobrable; Pagos del Turno muestra Cobrar en filas anuladas.
 
 ### Express (`order_type = EXPRESS`)
 - Enum `order_type` incluye `EXPRESS` (migracion `20260516000000_add_express_order_type.sql`).

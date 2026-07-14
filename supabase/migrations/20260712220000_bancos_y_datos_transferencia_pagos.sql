@@ -30,8 +30,8 @@ CREATE POLICY "Authenticated can view bancos"
 DROP POLICY IF EXISTS "Global Admin manage bancos" ON public.bancos;
 CREATE POLICY "Global Admin manage bancos"
   ON public.bancos FOR ALL TO authenticated
-  USING (public.has_role(auth.uid(), 'admin'::public.app_role))
-  WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
+  USING (public.is_global_admin(auth.uid()))
+  WITH CHECK (public.is_global_admin(auth.uid()));
 
 INSERT INTO public.bancos (nombre, activo, orden_visual)
 VALUES

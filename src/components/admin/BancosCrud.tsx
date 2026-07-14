@@ -1,10 +1,22 @@
-import { toast } from "sonner";
+import { useMutation } from "@tanstack/react-query";
 import { Shield } from "lucide-react";
 import { useCrud } from "@/hooks/useCrud";
 import { useEditState } from "@/hooks/useEditState";
 import { useBranch } from "@/contexts/BranchContext";
 import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { showSystemAlert } from "@/lib/systemAlert";
 import { AdminTable, ColumnDef } from "./AdminTable";
+
+function formatSaveError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [e.message, e.details, e.hint, e.code ? `Codigo: ${e.code}` : ""].filter(Boolean);
+    if (parts.length > 0) return parts.join(" — ");
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return "Revisa que la migracion de bancos este aplicada y que tengas permisos de administrador global.";
+}
 
 interface Banco {
   id: string;
@@ -33,6 +45,34 @@ const BancosCrud = () => {
     orden_visual: 1,
   } as Banco);
 
+  const saveMutation = useMutation({
+    mutationFn: async (values: Record<string, unknown>) => {
+      const nombre = String(values.nombre ?? "").trim();
+      if (!nombre) throw new Error("Debes ingresar el nombre del banco");
+
+      const id = String(values.id ?? "");
+      if (!id) throw new Error("No se encontro el identificador del banco");
+
+      const payload = {
+        id,
+        nombre,
+        orden_visual: Math.max(1, Math.floor(Number(values.orden_visual ?? 1))),
+        activo: values.activo === true,
+      };
+
+      const { error } = await supabase.from("bancos").upsert(payload, { onConflict: "id" });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-bancos"] });
+      qc.invalidateQueries({ queryKey: ["bancos-activos"] });
+      edit.cancelEdit();
+    },
+    onError: (err: unknown) => {
+      showSystemAlert("No se pudo guardar el banco", formatSaveError(err));
+    },
+  });
+
   if (!isGlobalAdmin) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-[28px] border border-orange-200 bg-white/80 p-8 shadow-sm">
@@ -55,19 +95,7 @@ const BancosCrud = () => {
   };
 
   const handleSave = () => {
-    const nombre = String(edit.editValues.nombre ?? "").trim();
-    if (!nombre) {
-      toast.error("Debes ingresar el nombre del banco");
-      return;
-    }
-    const orden = Math.max(1, Math.floor(Number(edit.editValues.orden_visual ?? 1)));
-    crud.save({
-      ...(edit.editValues as Banco),
-      nombre,
-      orden_visual: orden,
-      activo: Boolean(edit.editValues.activo),
-    });
-    qc.invalidateQueries({ queryKey: ["bancos-activos"] });
+    saveMutation.mutate(edit.editValues);
   };
 
   const handleAdd = () => {
@@ -92,7 +120,7 @@ const BancosCrud = () => {
       onDelete={handleDelete}
       onAdd={handleAdd}
       onFieldChange={edit.setField}
-      saving={crud.saving}
+      saving={saveMutation.isPending}
       addLabel="Agregar banco"
     />
   );

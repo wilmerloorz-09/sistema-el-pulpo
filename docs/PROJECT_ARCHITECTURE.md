@@ -13,7 +13,7 @@
 - `KITCHEN_DISPATCHED`/Despachada: la orden ya fue despachada y deja de ser pendiente de Despacho.
 - `PAID` y `KITCHEN_DISPATCHED` son etapas visibles excluyentes: una orden despachada no debe seguir listada como pagada.
 - En `Despacho`, una orden pagada se muestra una sola vez por `orders.id` / `order_code`; los items enviados en momentos distintos se agregan dentro de la misma tarjeta/fila.
-- La anulacion de pago solo aplica sobre una orden pagada no despachada; al anular, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` y la sucesora queda con numero nuevo en `SENT_TO_KITCHEN`/En Caja.
+- La anulacion de pago solo aplica sobre una orden pagada no despachada; al anular, la misma orden se reabre en `SENT_TO_KITCHEN`/En Caja con el mismo numero para re-cobrar (sin sucesora, desde 2026-07-14).
 
 ## Capas funcionales
 
@@ -242,9 +242,9 @@
   - devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda parte activa del pago
   - **Trazabilidad y Auditoría (2026-05-09):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`, el ID del supervisor y el motivo.
-  - separacion de orden despues de anular pago: la orden original queda como historica `CANCELLED` con su numero original y marcador `VOID_SUCCESSOR_ORDER:<new_order_id>`, y la operacion activa pasa a una sucesora con nuevo numero y marcador `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`.
-  - la orden historica por anulacion no debe aparecer en Caja, Mesas ni Despacho como flujo activo; la sucesora es la unica cobrable.
-  - `recalculate_check_balance(...)` debe preservar primero las historicas `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
+  - re-cobro sobre la misma orden tras anular (mismo `order_code` / `order_number`); marcador `VOIDED_PAYMENT_REOPEN`. Historicas legacy con `VOID_SUCCESSOR_ORDER` siguen preservadas como `CANCELLED`.
+  - En Pagos del Turno: Anular si pagado, Cobrar si anulado (misma orden).
+  - `recalculate_check_balance(...)` sigue preservando historicas legacy `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
 - No se debe permitir anulacion operativa de pago sobre una orden `KITCHEN_DISPATCHED`.
 
 ### 11. Despacho

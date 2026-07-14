@@ -49,6 +49,7 @@ interface PaymentGroup {
   order_has_dispatched_items: boolean;
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
+  successor_order_id: string | null;
   payment_opening_status: CompletedPayment["payment_opening_status"];
   cash_received_detail: CompletedPayment["cash_received_detail"];
   cash_change_detail: CompletedPayment["cash_change_detail"];
@@ -110,6 +111,9 @@ interface Props {
     paymentSelections: PaymentVoidSelectionInput[],
     cashRefundDenoms: CashRefundDenomInput[],
   ) => Promise<void>;
+  /** Re-cobrar la orden de la fila (misma orden anulada; legacy: sucesora si aplica). */
+  onChargeOrder?: (args: { orderId: string; successorOrderId: string | null }) => void;
+  canChargePayments?: boolean;
 }
 
 const scopeOptions: { value: CompletedPaymentsScope; label: string }[] = [
@@ -229,6 +233,8 @@ export default function CompletedPaymentsList({
   onFiltersChange,
   onRequestVoid,
   onVoidWithSupervisor,
+  onChargeOrder,
+  canChargePayments = false,
 }: Props) {
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<{
@@ -320,6 +326,7 @@ export default function CompletedPaymentsList({
           reversal_requested: row.reversal_requested,
           order_has_dispatched_items: row.order_has_dispatched_items,
           order_has_voided_payments: row.order_has_voided_payments,
+          successor_order_id: row.successor_order_id ?? null,
           payment_opening_status: row.payment_opening_status,
           cash_received_detail: row.cash_received_detail,
           cash_change_detail: row.cash_change_detail,
@@ -336,6 +343,8 @@ export default function CompletedPaymentsList({
           },
           items: [],
         });
+      } else if (!map.get(row.id)!.successor_order_id && row.successor_order_id) {
+        map.get(row.id)!.successor_order_id = row.successor_order_id;
       }
 
       map.get(row.id)!.items.push({
@@ -356,9 +365,22 @@ export default function CompletedPaymentsList({
 
     const grouped = Array.from(map.values());
 
+    // Si la misma orden ya tiene un cobro vigente, no mostrar filas Anulado/Reversado:
+    // anular + re-cobrar debe dejar una sola fila (Pagado), no dos con el mismo código.
+    const ordersWithActivePayment = new Set(
+      grouped
+        .filter((payment) => payment.status === "APPLIED" || payment.status === "PARTIAL")
+        .map((payment) => payment.order.id),
+    );
+    const visibleGrouped = grouped.filter((payment) => {
+      const isVoidedOrReversed = payment.status === "VOIDED" || payment.status === "REVERSED";
+      if (!isVoidedOrReversed) return true;
+      return !ordersWithActivePayment.has(payment.order.id);
+    });
+
     // Calculate the most recent activity timestamp for each order group (by order.id, code or number)
     const latestActivityByOrder = new Map<string, number>();
-    for (const payment of grouped) {
+    for (const payment of visibleGrouped) {
       const orderKey = payment.order.id || payment.order.code || String(payment.order.number);
       const paymentTime = new Date(payment.created_at).getTime();
       const currentMax = latestActivityByOrder.get(orderKey) ?? 0;
@@ -367,7 +389,7 @@ export default function CompletedPaymentsList({
       }
     }
 
-    return grouped.sort((a, b) => {
+    return visibleGrouped.sort((a, b) => {
       const orderKeyA = a.order.id || a.order.code || String(a.order.number);
       const orderKeyB = b.order.id || b.order.code || String(b.order.number);
 
@@ -664,15 +686,15 @@ export default function CompletedPaymentsList({
               const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
               const blockedByState = isVoidedOrReversed || payment.reversal_requested || blockedByClosedOpening;
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
-              const groupCash = cashAggregateByGroupId.get(payment.paymentGroupId) ?? {
+              const groupCash =           cashAggregateByGroupId.get(payment.paymentGroupId) ?? {
                 receivedAmount: getReceivedAmount(payment),
-                receivedLines: payment.cash_received_detail,
-                changeLines: payment.cash_change_detail,
-                refundLines: payment.cash_refund_detail,
+                receivedLines: payment.cash_received_detail ?? [],
+                changeLines: payment.cash_change_detail ?? [],
+                refundLines: payment.cash_refund_detail ?? [],
                 undocumentedChange: (() => {
                   const t = payment.tendered_amount ?? 0;
                   const impl = roundMoney(Math.max(0, t - payment.amount));
-                  const fromDen = sumDetailLines(payment.cash_change_detail);
+                  const fromDen = sumDetailLines(payment.cash_change_detail ?? []);
                   return roundMoney(Math.max(0, impl - fromDen));
                 })(),
               };
@@ -793,6 +815,22 @@ export default function CompletedPaymentsList({
                           title="Anular pago"
                         >
                           <Undo2 className="h-5 w-5 transition-transform group-hover/btn:-rotate-45" />
+                        </button>
+                      )}
+                      {isVoidedOrReversed && canChargePayments && onChargeOrder && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onChargeOrder({
+                              orderId: payment.order.id,
+                              successorOrderId: payment.successor_order_id,
+                            });
+                          }}
+                          className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-green-700 to-lime-500 text-white shadow-[0_4px_14px_0_rgba(21,128,61,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(21,128,61,0.23)] active:scale-95"
+                          title="Cobrar orden"
+                        >
+                          <CreditCard className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
                         </button>
                       )}
                     </div>

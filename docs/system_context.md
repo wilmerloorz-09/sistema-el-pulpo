@@ -20,7 +20,7 @@
 - En `Despacho`, una orden pagada debe representarse como una sola tarjeta/fila por `orders.id` / `order_code`; si sus items fueron enviados en momentos distintos, se agregan dentro de esa misma orden y no se generan tarjetas duplicadas con el mismo numero.
 - Al despachar, la orden pasa a `KITCHEN_DISPATCHED` cuando ya no quedan cantidades activas pendientes de despacho.
 - Los estados principales son exclusivos en las pestanas operativas: una orden `PAID` no debe aparecer como `KITCHEN_DISPATCHED`, y una orden `KITCHEN_DISPATCHED` no debe seguir apareciendo como `PAID`.
-- Al anular un pago, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y la orden sucesora conserva nuevo numero en estado `SENT_TO_KITCHEN`/En Caja.
+- Al anular un pago (desde 2026-07-14), la **misma orden** se reabre para re-cobro: conserva `order_code` / `order_number`, limpia `paid_at` y vuelve a `SENT_TO_KITCHEN`/En Caja. Ya no se crea orden sucesora ni se marca historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` (salvo ordenes antiguas ya separadas).
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -265,12 +265,11 @@
   - bloqueo si la apertura de caja del pago ya fue cerrada/anulada o si el pago ya fue anulado
 - Una anulacion de pago puede reabrir el estado operativo de la orden o liberar la mesa visualmente segun el saldo restante.
 - **Historial de Anulaciones (2026-05-06):** Toda anulación de pago genera un registro de auditoría en la tabla `order_cancellations` y adjunta una nota histórica detallada al pedido (`orders.notes`), garantizando la trazabilidad del supervisor responsable y el motivo.
-- **Separacion historica por anulacion de pago (2026-05-07):**
-  - al anular un pago, el pedido original conserva su `order_code` / `order_number` para auditoria y queda marcado con `VOID_SUCCESSOR_ORDER:<new_order_id>`.
-  - ese pedido original debe quedar `CANCELLED`, sin `table_id`, sin `paid_at`, con `cancelled_at`, y fuera de Caja/Mesas/Despacho como flujo activo.
-  - el saldo/operacion activa se mueve a una orden sucesora con nuevo `order_code` / `order_number`, marcada con `SUCCESSOR_OF_VOIDED_ORDER:<old_order_id>`.
-  - la orden sucesora es la unica que debe aparecer en `Por cobrar`.
-  - `recalculate_check_balance(...)` debe detectar primero `VOID_SUCCESSOR_ORDER` y mantener la orden historica en `CANCELLED`; no debe revivirla a `SENT_TO_KITCHEN`, `READY`, `KITCHEN_DISPATCHED` ni `PAID`.
+- **Re-cobro tras anulación (2026-07-14):**
+  - al anular un pago, la **misma orden** conserva su `order_code` / `order_number`, limpia `paid_at` y vuelve a `SENT_TO_KITCHEN`/En Caja para re-cobrar.
+  - ya no se crea orden sucesora ni se marca la original como historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` (las anulaciones previas a esta fecha pueden conservar ese patrón).
+  - En **Pagos del Turno**, fila anulada → botón **Cobrar** abre el cobro sobre esa misma orden.
+  - Ordenes legacy con `VOID_SUCCESSOR_ORDER` siguen tratadas como historicas; el cobro puede caer en la sucesora si la original ya no está cobrable.
 
 ### 5. Ordenes y mesas
 - En `Ordenes.tsx`, el detalle usa `orderItems = order?.items ?? []` de forma consistente para evitar errores si la caché devuelve la orden sin arreglo `items` durante refetch (p. ej. tras cobrar); no asumir `order.items` siempre definido en render.

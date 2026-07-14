@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
@@ -451,6 +452,8 @@ export interface CompletedPayment {
   order_has_dispatched_items: boolean;
   reversal_requested: boolean;
   order_has_voided_payments: boolean;
+  /** Orden activa a re-cobrar tras anulación (VOID_SUCCESSOR_ORDER en la orden histórica). */
+  successor_order_id: string | null;
   payment_opening_status: "abierta" | "cerrada" | "anulada" | null;
   cash_received_detail: CashMovementDetailLine[];
   cash_change_detail: CashMovementDetailLine[];
@@ -978,6 +981,230 @@ function getPayableQuantityForOrderType(
   }
 
   return quantities.quantityDispatchedAvailable;
+}
+
+/** Construye una PayableOrder por id sin filtrar por cash_shift (recobro tras anulación). */
+async function buildPayableOrderById(params: {
+  orderId: string;
+  branchId: string;
+  workflowMode: string;
+  /** Tras anulación: ignorar cantidades pagadas y tratar todo el saldo activo como pendiente. */
+  forRecharge?: boolean;
+}): Promise<PayableOrder | null> {
+  const { orderId, branchId, workflowMode, forRecharge = false } = params;
+
+  const orderRows = await dbSelect<any>("orders", {
+    select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, special_total_manual, table_name_snapshot, locked_for_editing, notes, cliente_id",
+    branchId,
+    filters: [{ column: "id", op: "eq", value: orderId }],
+    skipLocalCache: true,
+  });
+  const order = orderRows[0];
+  if (!order) return null;
+  if (!forRecharge && String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return null;
+  if (!orderIsPayableInCaja(order)) return null;
+
+  const items = await dbSelect<any>("order_items", {
+    select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
+    filters: [{ column: "order_id", op: "eq", value: orderId }],
+    skipLocalCache: true,
+  });
+  const orderItems = (items ?? []).filter((i) => i.status !== "DRAFT");
+  if (orderItems.length === 0 && !order.is_special) return null;
+
+  let tableName: string | null = null;
+  if (order.order_type === "DINE_IN" && order.table_id) {
+    const tables = await dbSelect<any>("restaurant_tables", {
+      select: "id, name, visual_order",
+      filters: [{ column: "id", op: "eq", value: order.table_id }],
+      skipLocalCache: true,
+    });
+    const t = tables[0];
+    if (t) {
+      const baseName = (t.name || "Mesa").trim();
+      tableName = /\d/.test(baseName) ? baseName : `${baseName} ${Number(t.visual_order ?? 0) + 1}`;
+    } else {
+      tableName = order.table_name_snapshot || "Mesa";
+    }
+  }
+
+  let splitCode: string | null = null;
+  if (order.split_id) {
+    const splits = await dbSelect<any>("table_splits", {
+      select: "id, split_code",
+      filters: [{ column: "id", op: "eq", value: order.split_id }],
+      skipLocalCache: true,
+    });
+    splitCode = splits[0]?.split_code ?? null;
+  }
+
+  let createdByName: string | null = null;
+  if (order.created_by) {
+    const profiles = await dbSelect<any>("profiles", {
+      select: "id, first_name, full_name, username, alias, email",
+      filters: [{ column: "id", op: "eq", value: order.created_by }],
+      skipLocalCache: true,
+    });
+    createdByName = profiles[0] ? getUserDisplayName(profiles[0]) : "Usuario";
+  }
+
+  let cliente: PayableOrderCliente | null = null;
+  if (order.cliente_id) {
+    const clientes = await dbSelect<PayableOrderCliente>("clientes", {
+      select: "id, cedula, nombres, apellidos",
+      filters: [{ column: "id", op: "eq", value: order.cliente_id }],
+      skipLocalCache: true,
+    });
+    cliente = clientes[0] ?? null;
+  }
+
+  const orderItemIds = orderItems.map((i) => i.id);
+  const legacyProductIds = Array.from(new Set(orderItems.map((i) => i.product_id).filter(Boolean)));
+  let menuNodeByLegacyProductId: Record<string, { id: string; image_url: string | null; icon: string | null }> = {};
+  if (legacyProductIds.length > 0) {
+    const menuNodes = await dbSelect<any>("menu_nodes", {
+      select: "id, legacy_product_id, image_url, icon",
+      branchId,
+      filters: [
+        { column: "is_active", op: "eq", value: true },
+        { column: "legacy_product_id", op: "in", value: legacyProductIds },
+      ],
+      skipLocalCache: true,
+    });
+    menuNodeByLegacyProductId = Object.fromEntries(
+      ((menuNodes ?? []) as Array<{ id: string; legacy_product_id: string | null; image_url?: string | null; icon?: string | null }>)
+        .filter((node) => Boolean(node.legacy_product_id))
+        .map((node) => [
+          node.legacy_product_id as string,
+          { id: node.id, image_url: node.image_url ?? null, icon: node.icon ?? null },
+        ]),
+    );
+  }
+
+  const [activePaymentItems, activePaymentsTotalByOrder, operationalMaps] = await Promise.all([
+    fetchActivePaymentItemsForOrderItems(orderItemIds, { skipLocalCache: true }),
+    fetchActivePaymentsTotalByOrder([orderId], { skipLocalCache: true }),
+    fetchOperationalMapsForOrders([orderId]),
+  ]);
+  const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
+
+  const requiresDispatchBeforePay = isDispatchFirstOrder(order, workflowMode);
+  let undispatchedUnits = 0;
+  if (requiresDispatchBeforePay) {
+    for (const i of orderItems) {
+      const quantities = computeOperationalQuantities({
+        quantityOrdered: Number(i.quantity ?? 0),
+        quantityReadyTotal: operationalMaps.readyMap[i.id] ?? 0,
+        quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[i.id] ?? 0,
+        quantityCancelledPending: operationalMaps.cancelledPendingMap[i.id] ?? 0,
+        quantityCancelledReady: operationalMaps.cancelledReadyMap[i.id] ?? 0,
+        quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[i.id] ?? 0,
+      });
+      undispatchedUnits += computeUndispatchedQuantity(quantities);
+    }
+  }
+
+  const mappedItems = orderItems
+    .map((i) => {
+      const quantities = computeOperationalQuantities({
+        quantityOrdered: Number(i.quantity ?? 0),
+        quantityReadyTotal: operationalMaps.readyMap[i.id] ?? 0,
+        quantityDispatchedTotal: operationalMaps.dispatchedTotalMap[i.id] ?? 0,
+        quantityCancelledPending: operationalMaps.cancelledPendingMap[i.id] ?? 0,
+        quantityCancelledReady: operationalMaps.cancelledReadyMap[i.id] ?? 0,
+        quantityCancelledDispatched: operationalMaps.cancelledDispatchedMap[i.id] ?? 0,
+      });
+      const activeOrderedQty = Math.max(0, quantities.quantityOrdered - quantities.quantityCancelledTotal);
+      // En recobro tras anulación: cobran todo lo activo (sin exigir despacho DF ni saldo de pagos previos).
+      const payableQty = forRecharge
+        ? activeOrderedQty
+        : order.is_special
+          ? activeOrderedQty
+          : getPayableQuantityForOrderType(
+              order.order_type as "DINE_IN" | "TAKEOUT" | "EXPRESS" | "EXTRA",
+              quantities,
+              workflowMode,
+            );
+      const paidQty = forRecharge
+        ? 0
+        : resolvePaidQuantity({
+            payableQuantity: payableQty,
+            orderedQuantity: Number(i.quantity ?? 0),
+            paidQuantityFromPayments: paidQtyMap[i.id] ?? 0,
+            paidAt: i.paid_at,
+            allowPaidAtFallback: false,
+          });
+      const pendingQty = Math.max(0, payableQty - paidQty);
+      const unitPrice = Number(i.unit_price ?? 0);
+      const trayContainerCost = Number(i.tray_container_cost ?? 0);
+      return {
+        id: i.id,
+        product_id: i.product_id,
+        menu_node_id: menuNodeByLegacyProductId[i.product_id]?.id ?? null,
+        image_url: menuNodeByLegacyProductId[i.product_id]?.image_url ?? null,
+        icon: menuNodeByLegacyProductId[i.product_id]?.icon ?? null,
+        description_snapshot: i.description_snapshot,
+        quantity: payableQty,
+        unit_price: unitPrice,
+        total: computeLineTotalWithContainer(payableQty, unitPrice, trayContainerCost),
+        tray_item_type: (i.tray_item_type ?? null) as "A" | "B" | "C" | null,
+        tray_container_cost: trayContainerCost,
+        paid_at: forRecharge ? null : i.paid_at,
+        quantity_paid: paidQty,
+        quantity_pending: pendingQty,
+        pending_total: computeLineTotalWithContainer(pendingQty, unitPrice, trayContainerCost),
+      };
+    })
+    .filter((item) => item.quantity > 0 || item.quantity_paid > 0 || item.quantity_pending > 0);
+
+  const isSpecial = Boolean(order.is_special);
+  const specialRealTotal = roundMoney(mappedItems.reduce((sum, item) => sum + Number(item.total), 0));
+  const specialManualTotal = isSpecial
+    ? (order.special_total_manual == null ? null : Number(order.special_total_manual))
+    : null;
+  const specialPaidAmount = forRecharge
+    ? 0
+    : isSpecial
+      ? roundMoney(activePaymentsTotalByOrder[orderId] ?? 0)
+      : 0;
+  const specialPendingAmount = isSpecial
+    ? (specialManualTotal != null
+        ? roundMoney(Math.max(0, specialManualTotal - specialPaidAmount))
+        : roundMoney(Math.max(0, specialRealTotal - specialPaidAmount)))
+    : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0));
+
+  const hasPending = isSpecial
+    ? specialPendingAmount > 0
+    : mappedItems.some((item) => item.quantity_pending > 0);
+  if (!hasPending) return null;
+
+  return {
+    id: order.id,
+    order_number: order.order_number,
+    order_code: cleanOrderCode(order.order_code) ?? null,
+    order_type: order.order_type,
+    is_special: isSpecial,
+    is_tray_order: Boolean(order.is_tray_order),
+    locked_for_editing: Boolean(order.locked_for_editing),
+    created_by: order.created_by ?? null,
+    created_by_name: createdByName,
+    cliente,
+    special_total_manual: specialManualTotal,
+    special_real_total: specialRealTotal,
+    special_paid_amount: specialPaidAmount,
+    special_pending_amount: specialPendingAmount,
+    table_name: tableName,
+    table_name_snapshot: order.table_name_snapshot,
+    split_code: splitCode,
+    total: isSpecial && specialManualTotal != null ? specialManualTotal : specialRealTotal,
+    tray_products_total: roundMoney(
+      mappedItems.reduce((sum, item) => sum + Math.max(0, Number(item.total) - Number(item.tray_container_cost ?? 0)), 0),
+    ),
+    tray_container_total: roundMoney(mappedItems.reduce((sum, item) => sum + Number(item.tray_container_cost ?? 0), 0)),
+    undispatched_units: requiresDispatchBeforePay && !forRecharge ? undispatchedUnits : 0,
+    ready_to_collect: forRecharge || !requiresDispatchBeforePay || undispatchedUnits === 0,
+    items: mappedItems,
+  };
 }
 
 export function useCaja(params?: { 
@@ -1850,7 +2077,7 @@ export function useCaja(params?: {
       }
 
       const ordersInRange = await dbSelect<any>("orders", {
-        select: "id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, created_by, table_name_snapshot",
+        select: "id, order_number, order_code, order_type, table_id, split_id, branch_id, status, is_special, special_total_manual, created_by, table_name_snapshot, notes",
         filters: [
           { column: "id", op: "in", value: paymentOrderIds },
           { column: "branch_id", op: "eq", value: activeBranchId }
@@ -2138,6 +2365,8 @@ export function useCaja(params?: {
           : orderRealTotal;
         const paidAmount = orderPaidMap[payment.order_id] ?? 0;
         const pendingAmount = Math.max(0, orderTotal - paidAmount);
+        const successorOrderId =
+          String(order.notes ?? "").match(/VOID_SUCCESSOR_ORDER:([a-f0-9-]{36})/i)?.[1] ?? null;
 
         let status: CompletedPaymentStatus = "APPLIED";
         if (meta.reversed || payment.status === "reversed") {
@@ -2189,6 +2418,7 @@ export function useCaja(params?: {
               reversal_requested: meta.reversalRequested,
               order_has_dispatched_items: Boolean(orderHasDispatchedMap[order.id]),
               order_has_voided_payments: Boolean(orderHasVoidedPaymentsMap[order.id]),
+              successor_order_id: successorOrderId,
               payment_opening_status: paymentOpeningStatus,
               cash_received_detail: cashReceivedDetailByPayment[payment.id] ?? [],
               cash_change_detail: cashChangeDetailByPayment[payment.id] ?? [],
@@ -2235,6 +2465,7 @@ export function useCaja(params?: {
             reversal_requested: meta.reversalRequested,
             order_has_dispatched_items: Boolean(orderHasDispatchedMap[payment.order_id]),
             order_has_voided_payments: orderHasVoidedPaymentsMap[payment.order_id] || false,
+            successor_order_id: successorOrderId,
             payment_opening_status: paymentOpeningStatus,
             cash_received_detail: cashReceivedDetailByPayment[payment.id] ?? [],
             cash_change_detail: cashChangeDetailByPayment[payment.id] ?? [],
@@ -2996,6 +3227,42 @@ export function useCaja(params?: {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const prepareOrderForRecharge = useCallback(
+    async (args: { orderId: string; successorOrderId: string | null }): Promise<PayableOrder | null> => {
+      if (!activeBranchId) return null;
+
+      const { data: preparedId, error } = await supabase.rpc("preparar_orden_para_recobro" as any, {
+        p_order_id: args.orderId,
+        p_successor_hint: args.successorOrderId,
+      });
+      if (error) {
+        console.warn("[useCaja] preparar_orden_para_recobro:", error);
+        throw error;
+      }
+
+      const targetId = String(preparedId ?? args.orderId);
+      if (!targetId) return null;
+
+      const built = await buildPayableOrderById({
+        orderId: targetId,
+        branchId: activeBranchId,
+        workflowMode: activeWorkflowMode,
+        forRecharge: true,
+      });
+      if (built) {
+        void qc.invalidateQueries({
+          queryKey: ["payable-orders", activeBranchId, activeWorkflowMode, shiftGate?.shiftId ?? "_"],
+        });
+        return built;
+      }
+
+      // Fallback: lista estándar tras preparar en BD.
+      const refreshed = await ordersQuery.refetch();
+      return (refreshed.data ?? []).find((entry) => entry.id === targetId) ?? null;
+    },
+    [activeBranchId, activeWorkflowMode, ordersQuery, qc, shiftGate?.shiftId],
+  );
+
   return {
     denominations: denomsQuery.data ?? [],
     shift: shiftQuery.data,
@@ -3030,5 +3297,6 @@ export function useCaja(params?: {
     annulCashOpening,
     registerCashMovement,
     takeCajaControl: takeCajaControl.mutateAsync,
+    prepareOrderForRecharge,
   };
 }

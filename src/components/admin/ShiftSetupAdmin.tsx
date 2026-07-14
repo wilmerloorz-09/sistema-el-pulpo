@@ -2537,7 +2537,7 @@ const ShiftSetupAdmin = () => {
                 Todavia no has agregado usuarios a este turno.
               </div>
             ) : (
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {shiftUsersState.map((branchUser) => {
                   const userState = shiftUsersState.find(
                     (u) => u.user_id === branchUser.user_id,
@@ -2548,17 +2548,17 @@ const ShiftSetupAdmin = () => {
                   return (
                     <div
                       key={branchUser.user_id}
-                      className="rounded-xl border border-violet-200 bg-violet-50/80 px-2 py-1.5 transition-colors"
+                      className="rounded-xl border border-violet-200 bg-violet-50/80 px-3 py-3 transition-colors"
                     >
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <p className="truncate text-xs font-bold text-foreground">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="truncate text-sm font-bold text-foreground">
                             {getUserAlias(branchUser) || "Usuario"}
                           </p>
                           {userState?.is_supervisor && (
                             <Badge
                               variant="outline"
-                              className="h-4 shrink-0 border-amber-200 bg-amber-50 px-1 py-0 text-[9px] leading-none text-amber-800"
+                              className="h-5 shrink-0 border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] leading-none text-amber-800"
                             >
                               Supervisor
                             </Badge>
@@ -2569,7 +2569,7 @@ const ShiftSetupAdmin = () => {
                           variant="ghost"
                           size="icon"
                           disabled={isStale || isSupervisorLocked}
-                          className="h-6 w-6 shrink-0 rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          className="h-7 w-7 shrink-0 rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive"
                           onClick={() => toggleUser(branchUser.user_id, false)}
                           title={
                             isSupervisorLocked
@@ -2581,10 +2581,10 @@ const ShiftSetupAdmin = () => {
                         </Button>
                       </div>
 
-                      <div className="mt-1 grid grid-cols-3 gap-x-1.5 gap-y-0.5 rounded-lg border border-violet-100 bg-white/60 px-1.5 py-1">
-                        <label className="flex min-w-0 items-center gap-1 text-[10px] leading-none">
+                      <div className="mt-2.5 grid grid-cols-3 gap-x-2 gap-y-2 rounded-lg border border-violet-100 bg-white/60 px-2.5 py-2.5">
+                        <label className="flex min-w-0 items-center gap-1.5 text-xs leading-snug">
                           <Checkbox
-                            className="h-3.5 w-3.5"
+                            className="h-4 w-4"
                             checked={userState?.can_serve_tables ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2600,9 +2600,9 @@ const ShiftSetupAdmin = () => {
                           </span>
                         </label>
 
-                        <label className="flex min-w-0 items-center gap-1 text-[10px] leading-none">
+                        <label className="flex min-w-0 items-center gap-1.5 text-xs leading-snug">
                           <Checkbox
-                            className="h-3.5 w-3.5"
+                            className="h-4 w-4"
                             checked={userState?.can_dispatch_orders ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2618,9 +2618,9 @@ const ShiftSetupAdmin = () => {
                           </span>
                         </label>
 
-                        <label className="flex min-w-0 items-center gap-1 text-[10px] leading-none">
+                        <label className="flex min-w-0 items-center gap-1.5 text-xs leading-snug">
                           <Checkbox
-                            className="h-3.5 w-3.5"
+                            className="h-4 w-4"
                             checked={userState?.can_serve_plates ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2637,11 +2637,11 @@ const ShiftSetupAdmin = () => {
                         </label>
 
                         <label
-                          className="flex min-w-0 items-center gap-1 text-[10px] leading-none"
+                          className="flex min-w-0 items-center gap-1.5 text-xs leading-snug"
                           title="Permiso de Empacador (solo uno por turno)"
                         >
                           <Checkbox
-                            className="h-3.5 w-3.5"
+                            className="h-4 w-4"
                             checked={userState?.can_pack_orders ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2658,11 +2658,11 @@ const ShiftSetupAdmin = () => {
                         </label>
 
                         <label
-                          className="col-span-2 flex min-w-0 items-center gap-1 text-[10px] leading-none"
+                          className="col-span-2 flex min-w-0 items-center gap-1.5 text-xs leading-snug"
                           title="Permite acceder al sistema en dos dispositivos a la vez"
                         >
                           <Checkbox
-                            className="h-3.5 w-3.5"
+                            className="h-4 w-4"
                             checked={userState?.can_double_session ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>

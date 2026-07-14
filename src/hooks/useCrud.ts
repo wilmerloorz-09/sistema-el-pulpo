@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { showSystemAlert } from "@/lib/systemAlert";
 
-type TableName = "categories" | "subcategories" | "products" | "modifiers" | "restaurant_tables" | "payment_methods" | "denominations" | "profiles" | "user_roles" | "branches" | "user_branches";
+type TableName = "categories" | "subcategories" | "products" | "modifiers" | "restaurant_tables" | "payment_methods" | "denominations" | "profiles" | "user_roles" | "branches" | "user_branches" | "bancos";
 
 /** Tables that have a branch_id column and should be filtered/injected automatically */
 const BRANCH_TABLES: TableName[] = [

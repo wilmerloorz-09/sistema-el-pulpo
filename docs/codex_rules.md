@@ -12,7 +12,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - `Despacho` debe mostrar una sola tarjeta/fila por orden pagada (`orders.id` / `order_code`). Nunca separar la misma orden en varias tarjetas por `sent_to_kitchen_at` de sus items.
 - `dispatch_order_quantities(...)` debe rechazar cualquier orden que no este `PAID`.
 - `PAID` y `KITCHEN_DISPATCHED` son clasificaciones visibles excluyentes. Una orden no puede aparecer simultaneamente en `Pagada` y `Despachada`.
-- Al anular un pago, la orden original queda historica `CANCELLED` con `VOID_SUCCESSOR_ORDER`; la sucesora activa queda con numero nuevo en `SENT_TO_KITCHEN`/En Caja.
+- Al anular un pago, la misma orden se reabre en `SENT_TO_KITCHEN`/En Caja con el mismo numero (sin sucesora, desde 2026-07-14).
 - La anulacion operativa de pago solo aplica sobre ordenes `PAID` que no esten `KITCHEN_DISPATCHED`.
 
 ### 1. Refactor incremental
@@ -150,8 +150,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - devolucion por denominacion
   - `replacement_payment_id`
   - **Auditoría de Anulación (2026-05-09):** Queda terminantemente prohibido anular pagos sin registrar el evento en `order_cancellations` y adjuntar una nota técnica en `orders.notes`. La nota debe incluir el supervisor responsable y el motivo.
-  - separacion historica cuando un pago anulado deja una cuenta activa: orden original `CANCELLED` con `VOID_SUCCESSOR_ORDER`, y orden sucesora activa con nuevo numero y `SUCCESSOR_OF_VOIDED_ORDER`.
-  - la orden historica por pago anulado nunca debe quedar `PAID`, aparecer en `Por cobrar`, ocupar mesa ni reactivarse por `recalculate_check_balance(...)`.
+  - re-cobro sobre la **misma orden** (mismo numero) tras anular; historicas legacy con `VOID_SUCCESSOR_ORDER` se preservan sin revivirlas.
+  - En Pagos del Turno: pago activo → Anular; pago anulado → Cobrar (misma orden).
 - No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
 - En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.

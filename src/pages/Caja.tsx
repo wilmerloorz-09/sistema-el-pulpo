@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters } from "@/hooks/useCaja";
+import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters, type PayableOrder } from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -23,6 +23,8 @@ import {
 import OpenShiftForm from "@/components/caja/OpenShiftForm";
 import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
+import PaymentDialog from "@/components/caja/PaymentDialog";
+import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
 import CajaPayableOrderScopeSelect from "@/components/caja/CajaPayableOrderScopeSelect";
 import {
   buildPayableOrderCreatorOptions,
@@ -32,6 +34,7 @@ import {
   persistCajaPayableScope,
   type CajaPayableOrderScope,
 } from "@/lib/cajaPayableOrderScope";
+import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
 import { toast } from "sonner";
 import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, RotateCcw, Upload } from "lucide-react";
@@ -90,6 +93,12 @@ const Caja = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [payableOrderScope, setPayableOrderScope] = useState<CajaPayableOrderScope>("all");
+  const [completedChargeOrder, setCompletedChargeOrder] = useState<PayableOrder | null>(null);
+  const [completedChargeBlock, setCompletedChargeBlock] = useState<{
+    kind: "not_found" | "undispatched" | "locked";
+    orderRef?: string;
+  } | null>(null);
+  const [rechargeLoading, setRechargeLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeTabParam = searchParams.get("tab");
   const autoOpenOrderId = searchParams.get("order");
@@ -157,6 +166,7 @@ const Caja = () => {
     closeCashRegister,
     annulCashOpening,
     registerCashMovement,
+    prepareOrderForRecharge,
   } = useCaja({ completedPaymentsFilters: completedFilters, autoOpenOrderId });
 
   const cashierMethodSummaryQuery = useQuery({
@@ -252,6 +262,57 @@ const Caja = () => {
   const userCajaStatus = shiftGateQuery.data?.cajaStatus ?? "UNOPENED";
   const userCajaIsOpen = userCajaStatus === "OPEN";
   const cajaPanelReadOnly = !canOperateCaja || !userCajaIsOpen;
+  const canChargeFromCompleted = canOperateCaja && userCajaIsOpen;
+
+  useEffect(() => {
+    if (!completedChargeOrder) return;
+    const refreshed = payableOrders.find((order) => order.id === completedChargeOrder.id) ?? null;
+    if (refreshed) {
+      setCompletedChargeOrder(refreshed);
+    }
+  }, [payableOrders, completedChargeOrder?.id]);
+
+  const handleChargeOrderFromCompleted = useCallback(
+    async (args: { orderId: string; successorOrderId: string | null }) => {
+      setRechargeLoading(true);
+      let order: PayableOrder | null = null;
+      try {
+        // Siempre preparar en BD (reabre misma orden / limpia sucesora legacy) y construir saldo pendiente.
+        order = await prepareOrderForRecharge(args);
+      } catch (error: any) {
+        order = null;
+        setCompletedChargeBlock({
+          kind: "not_found",
+          orderRef: error?.message ? String(error.message) : undefined,
+        });
+        setRechargeLoading(false);
+        return;
+      } finally {
+        setRechargeLoading(false);
+      }
+
+      if (!order) {
+        setCompletedChargeBlock({ kind: "not_found" });
+        return;
+      }
+      if (order.locked_for_editing) {
+        setCompletedChargeBlock({
+          kind: "locked",
+          orderRef: getOrderRef(order.order_code, order.order_number),
+        });
+        return;
+      }
+      if (!order.ready_to_collect) {
+        setCompletedChargeBlock({
+          kind: "undispatched",
+          orderRef: getOrderRef(order.order_code, order.order_number),
+        });
+        return;
+      }
+      setCompletedChargeOrder(order);
+    },
+    [prepareOrderForRecharge],
+  );
 
   const userOpeningHistory = useMemo(
     () => (shift?.openingHistory ?? []).filter((entry) => entry.cashier_id === user?.id),
@@ -633,6 +694,7 @@ const Caja = () => {
               filters={completedFilters}
               permissions={permissions}
               canVoidPayments={canOperateCaja}
+              canChargePayments={false}
               shiftDenoms={shift?.denoms ?? []}
               cashierUsers={captureCandidates}
               currentUserId={user?.id ?? null}
@@ -1158,6 +1220,7 @@ const Caja = () => {
                 filters={completedFilters}
                 permissions={permissions}
                 canVoidPayments={canOperateCaja}
+                canChargePayments={canChargeFromCompleted}
                 shiftDenoms={shift.denoms}
                 cashierUsers={captureCandidates}
                 currentUserId={user?.id ?? null}
@@ -1177,11 +1240,90 @@ const Caja = () => {
                     cashRefundDenoms,
                   })
                 }
+                onChargeOrder={handleChargeOrderFromCompleted}
               />
             </div>
           ) : null}
         </div>
       </div>
+
+      <AlertDialog
+        open={!!completedChargeBlock}
+        onOpenChange={(open) => {
+          if (!open) setCompletedChargeBlock(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {completedChargeBlock?.kind === "locked"
+                ? "Orden en edición"
+                : completedChargeBlock?.kind === "undispatched"
+                  ? "Despacho incompleto"
+                  : "No se puede cobrar"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {completedChargeBlock?.kind === "locked" ? (
+                <>
+                  La orden{completedChargeBlock.orderRef ? ` ${completedChargeBlock.orderRef}` : ""} está bloqueada por edición. Finaliza o cancela la edición antes de cobrar.
+                </>
+              ) : completedChargeBlock?.kind === "undispatched" ? (
+                <>
+                  La orden{completedChargeBlock.orderRef ? ` ${completedChargeBlock.orderRef}` : ""} aún tiene ítems sin despachar. Despacha todo antes de registrar el cobro.
+                </>
+              ) : (
+                <>
+                  {completedChargeBlock?.orderRef
+                    ? completedChargeBlock.orderRef
+                    : "No se encontró la orden pendiente de cobro en este turno. Actualiza la lista o revisa que el pago anulado tenga saldo por cobrar."}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setCompletedChargeBlock(null)}>
+              Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {rechargeLoading ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20">
+          <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Preparando cobro...
+          </div>
+        </div>
+      ) : null}
+
+      {USE_PAYMENT_DIALOG_V2 ? (
+        <PaymentDialogV2
+          order={completedChargeOrder}
+          denominations={denominations}
+          shiftDenoms={shift?.denoms ?? []}
+          paymentMethods={paymentMethods}
+          onPay={(params) => payOrder.mutateAsync(params)}
+          paying={payOrder.isPending}
+          open={!!completedChargeOrder}
+          onClose={() => setCompletedChargeOrder(null)}
+          readOnly={cajaPanelReadOnly}
+        />
+      ) : (
+        <PaymentDialog
+          order={completedChargeOrder}
+          paymentMethods={paymentMethods}
+          shiftDenoms={shift?.denoms ?? []}
+          onPay={(params) => payOrder.mutateAsync(params)}
+          onPrepareTransferProof={(params) => prepareTransferProof(params)}
+          onDiscardPreparedTransferProof={(session) => discardPreparedTransferProof(session)}
+          getTransferProofReadiness={getTransferProofReadiness}
+          paying={payOrder.isPending}
+          open={!!completedChargeOrder}
+          onClose={() => setCompletedChargeOrder(null)}
+          readOnly={cajaPanelReadOnly}
+        />
+      )}
     </div>
   );
 };

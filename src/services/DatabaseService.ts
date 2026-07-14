@@ -41,7 +41,8 @@ type TableName =
   | "clientes"
   | "campanas_promocionales"
   | "predicciones_clientes"
-  | "permisos_promociones_turnos";
+  | "permisos_promociones_turnos"
+  | "bancos";
 
 const CATALOG_TABLES: TableName[] = [
   "categories",
@@ -446,7 +447,7 @@ export async function dbUpsert<T = any>(
   const isOnline = navigator.onLine;
 
   if (isOnline) {
-    const { error } = await supabase.from(table as any).upsert(record as any);
+    const { error } = await supabase.from(table as any).upsert(record as any, { onConflict: "id" });
     if (error) throw error;
 
     if (record.id) {
