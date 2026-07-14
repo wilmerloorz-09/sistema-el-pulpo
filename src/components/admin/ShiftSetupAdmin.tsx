@@ -206,10 +206,6 @@ function normalizeShiftUser(
     normalized.can_manage_products = true;
   }
 
-  if (!normalized.can_use_caja) {
-    normalized.can_double_session = false;
-  }
-
   return normalized;
 }
 
@@ -283,6 +279,7 @@ function shiftUserRolesSignature(rows: ShiftUserRow[]) {
         can_dispatch_orders: user.can_dispatch_orders,
         can_manage_products: user.can_manage_products,
         can_authorize_order_cancel: user.can_authorize_order_cancel,
+        can_double_session: user.can_double_session,
         is_supervisor: user.is_supervisor,
         can_pack_orders: user.can_pack_orders,
       }))
@@ -1403,7 +1400,7 @@ const ShiftSetupAdmin = () => {
     value: boolean,
   ) => {
 
-    if (role === "can_use_caja" || role === "can_double_session") {
+    if (role === "can_use_caja") {
       return;
     }
 
@@ -1642,7 +1639,7 @@ const ShiftSetupAdmin = () => {
           can_manage_products: sanitizedParams.canManageProducts,
           can_use_caja: false,
           can_authorize_order_cancel: sanitizedParams.canAuthorizeOrderCancel,
-          can_double_session: false,
+          can_double_session: sanitizedParams.canDoubleSession,
           is_supervisor: sanitizedParams.isSupervisor,
           can_pack_orders: sanitizedParams.canPackOrders,
           can_serve_plates: sanitizedParams.canServePlates ?? false,
@@ -1767,8 +1764,9 @@ const ShiftSetupAdmin = () => {
           canManageProducts: u.can_manage_products,
           canUseCaja: false,
           canAuthorizeOrderCancel: u.can_authorize_order_cancel,
-          canDoubleSession: false,
+          canDoubleSession: u.can_double_session,
           isSupervisor: u.is_supervisor,
+          canPackOrders: u.can_pack_orders,
           canServePlates: u.can_serve_plates ?? false,
         }),
       )
@@ -1823,8 +1821,9 @@ const ShiftSetupAdmin = () => {
       can_manage_products: entry.canManageProducts,
       can_use_caja: false,
       can_authorize_order_cancel: entry.canAuthorizeOrderCancel,
-      can_double_session: false,
+      can_double_session: entry.canDoubleSession,
       is_supervisor: entry.isSupervisor,
+      can_pack_orders: entry.canPackOrders ?? false,
       can_serve_plates: entry.canServePlates ?? false,
     }));
 
@@ -1966,7 +1965,7 @@ const ShiftSetupAdmin = () => {
             canManageProducts: entry.can_manage_products,
             canUseCaja: false,
             canAuthorizeOrderCancel: entry.can_authorize_order_cancel,
-            canDoubleSession: false,
+            canDoubleSession: entry.can_double_session,
             isSupervisor: entry.is_supervisor,
             canPackOrders: entry.can_pack_orders,
             canServePlates: entry.can_serve_plates ?? false,
@@ -2538,7 +2537,7 @@ const ShiftSetupAdmin = () => {
                 Todavia no has agregado usuarios a este turno.
               </div>
             ) : (
-              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {shiftUsersState.map((branchUser) => {
                   const userState = shiftUsersState.find(
                     (u) => u.user_id === branchUser.user_id,
@@ -2549,30 +2548,28 @@ const ShiftSetupAdmin = () => {
                   return (
                     <div
                       key={branchUser.user_id}
-                      className="flex flex-col gap-2.5 rounded-2xl border border-violet-200 bg-violet-50/80 px-3 py-2.5 transition-colors sm:min-h-[168px]"
+                      className="rounded-xl border border-violet-200 bg-violet-50/80 px-2 py-1.5 transition-colors"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate text-[13px] font-bold text-foreground">
-                              {getUserAlias(branchUser) || "Usuario"}
-                            </p>
-                            {userState?.is_supervisor && (
-                              <Badge
-                                variant="outline"
-                                className="border-amber-200 bg-amber-50 text-[10px] text-amber-800"
-                              >
-                                Supervisor
-                              </Badge>
-                            )}
-                          </div>
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <p className="truncate text-xs font-bold text-foreground">
+                            {getUserAlias(branchUser) || "Usuario"}
+                          </p>
+                          {userState?.is_supervisor && (
+                            <Badge
+                              variant="outline"
+                              className="h-4 shrink-0 border-amber-200 bg-amber-50 px-1 py-0 text-[9px] leading-none text-amber-800"
+                            >
+                              Supervisor
+                            </Badge>
+                          )}
                         </div>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           disabled={isStale || isSupervisorLocked}
-                          className="h-9 w-9 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          className="h-6 w-6 shrink-0 rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive"
                           onClick={() => toggleUser(branchUser.user_id, false)}
                           title={
                             isSupervisorLocked
@@ -2580,13 +2577,14 @@ const ShiftSetupAdmin = () => {
                               : "Quitar usuario del turno"
                           }
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
 
-                      <div className="mt-1.5 grid grid-cols-2 gap-2 rounded-xl border border-violet-100 bg-white/60 p-2.5 shadow-sm">
-                        <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
+                      <div className="mt-1 grid grid-cols-3 gap-x-1.5 gap-y-0.5 rounded-lg border border-violet-100 bg-white/60 px-1.5 py-1">
+                        <label className="flex min-w-0 items-center gap-1 text-[10px] leading-none">
                           <Checkbox
+                            className="h-3.5 w-3.5"
                             checked={userState?.can_serve_tables ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2597,13 +2595,14 @@ const ShiftSetupAdmin = () => {
                               )
                             }
                           />
-                          <span className="min-w-0 text-muted-foreground">
+                          <span className="min-w-0 truncate text-muted-foreground">
                             Venta
                           </span>
                         </label>
 
-                        <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
+                        <label className="flex min-w-0 items-center gap-1 text-[10px] leading-none">
                           <Checkbox
+                            className="h-3.5 w-3.5"
                             checked={userState?.can_dispatch_orders ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2614,12 +2613,14 @@ const ShiftSetupAdmin = () => {
                               )
                             }
                           />
-                          <span className="min-w-0 text-muted-foreground">
+                          <span className="min-w-0 truncate text-muted-foreground">
                             Despacho
                           </span>
                         </label>
-                        <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight">
+
+                        <label className="flex min-w-0 items-center gap-1 text-[10px] leading-none">
                           <Checkbox
+                            className="h-3.5 w-3.5"
                             checked={userState?.can_serve_plates ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2630,13 +2631,17 @@ const ShiftSetupAdmin = () => {
                               )
                             }
                           />
-                          <span className="min-w-0 text-muted-foreground">
+                          <span className="min-w-0 truncate text-muted-foreground">
                             Servir
                           </span>
                         </label>
 
-                        <label className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight" title="Permiso de Empacador (solo uno por turno)">
+                        <label
+                          className="flex min-w-0 items-center gap-1 text-[10px] leading-none"
+                          title="Permiso de Empacador (solo uno por turno)"
+                        >
                           <Checkbox
+                            className="h-3.5 w-3.5"
                             checked={userState?.can_pack_orders ?? false}
                             disabled={isStale}
                             onCheckedChange={(c) =>
@@ -2647,8 +2652,29 @@ const ShiftSetupAdmin = () => {
                               )
                             }
                           />
-                          <span className="min-w-0 text-muted-foreground">
+                          <span className="min-w-0 truncate text-muted-foreground">
                             Empacador
+                          </span>
+                        </label>
+
+                        <label
+                          className="col-span-2 flex min-w-0 items-center gap-1 text-[10px] leading-none"
+                          title="Permite acceder al sistema en dos dispositivos a la vez"
+                        >
+                          <Checkbox
+                            className="h-3.5 w-3.5"
+                            checked={userState?.can_double_session ?? false}
+                            disabled={isStale}
+                            onCheckedChange={(c) =>
+                              updateUserRole(
+                                branchUser.user_id,
+                                "can_double_session",
+                                c === true,
+                              )
+                            }
+                          />
+                          <span className="min-w-0 truncate text-muted-foreground">
+                            Sesión doble
                           </span>
                         </label>
                       </div>

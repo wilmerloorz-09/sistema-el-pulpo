@@ -155,11 +155,11 @@
     - Mecanismos de robustez: nombre de canal dinamico (`global-monitor-${hash}`), polling de respaldo cada **60 s** y boton **Actualizar** manual. Hooks de React deben declararse antes de cualquier `return` condicional en `MonitoreoGlobal.tsx`.
   - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
-- Si un usuario del turno tiene `cash_shift_users.can_double_session = true` y `can_use_caja = true`, puede conservar una segunda sesion simultanea mediante:
+- Si un usuario del turno tiene `cash_shift_users.can_double_session = true` (checkbox **Sesión doble** en la tarjeta de `Admin > Turno`), puede conservar una segunda sesion simultanea en otro dispositivo mediante:
   - `profiles.current_app_secondary_session_id`
   - `profiles.current_app_secondary_session_started_at`
   - `profiles.current_app_secondary_session_device`
-- La doble sesion solo aplica para usuarios habilitados en un turno abierto y pensada para caja/operacion controlada; fuera de ese caso, el bloqueo sigue siendo de una sola sesion.
+- La doble sesion aplica a **cualquier** usuario habilitado en un turno abierto (Venta, Despacho, Servir, Empacador, Caja, etc.); ya no exige `can_use_caja`. Sin el flag, el bloqueo sigue siendo de una sola sesion.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
 - **Flujos Operativos Configurable:** Las sucursales pueden configurarse mediante `branches.workflow_mode` en uno de dos flujos operativos:
@@ -328,6 +328,7 @@
   - Si un item ya enviado aumenta de cantidad, `applyKitchenPendingItemChanges` crea una linea **DRAFT** con la diferencia (`add_dine_in_order_item`), no modifica in place la linea despachada/enviada.
   - Reconciliacion de ids temporales (`temp-*`): `reconcileKitchenStagedItems` / `isTemporaryKitchenItemId` evita spinner infinito y controles +/- ausentes tras `addItem` con staging activo.
   - Tras agregar producto en orden ya despachada, `submit_order_draft_items` debe aceptar envio desde `KITCHEN_DISPATCHED` (migracion `20260709220000`).
+  - Si solo se bajan cantidades de lineas ya enviadas (sin borradores nuevos), al confirmar se aplica `remove_order_item_line` / `applyKitchenPendingItemChanges` y **no** se exige `submit_order_draft_items`; luego se resetea el baseline para ocultar el boton.
   - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/hooks/useOrder.ts` (`applyKitchenPendingItemChanges`, `sendToKitchen`), `src/pages/Ordenes.tsx`.
 - La regla se valida al mostrar la accion y justo antes de ejecutar la eliminacion.
 - **Navegación Contextual:** Al navegar entre Mesas y Ordenes, el sistema usa el parámetro `origin=mesas` para que el Sidebar y el Bottom Nav mantengan el resaltado en la sección de origen, evitando confusiones visuales.

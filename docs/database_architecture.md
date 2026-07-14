@@ -253,7 +253,7 @@
 - `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
 - `Pagos del turno` debe filtrar por el rango real de `cash_shifts.opened_at` a `cash_shifts.closed_at`/`now()`, no por inicio del dia calendario.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
-- `cash_shift_users.can_double_session` habilita una segunda sesion de app solo para usuarios de caja en turno abierto.
+- `cash_shift_users.can_double_session` habilita una segunda sesion de app para cualquier usuario habilitado en turno abierto (UI: **Sesión doble**). No depende de `can_use_caja`. Migracion: `20260713220000_sesion_doble_para_cualquier_usuario.sql`.
 - Las sesiones de app se registran en `profiles.current_app_session_id` y, cuando aplica doble sesion, en `profiles.current_app_secondary_session_id` con timestamp/dispositivo auxiliar.
 - Cerrar caja y cerrar turno no son la misma operacion.
 - La cantidad cobrable en UI depende de `getPayableQuantityForOrderType` y del `workflow_mode` (en `DISPATCH_THEN_CASH`, solo unidades despachadas netas entran al monto pendiente).
@@ -558,6 +558,10 @@
 - **Token/QR promocion:** `20260709200000` (solo con campaña activa), `20260709210000` (solo ofertas registrables). Frontend alinea impresion con `promocionesRecibo.ts`.
 - **Envio post-despacho:** `20260709220000_submit_draft_items_after_dispatch.sql` — `submit_order_draft_items` no rechaza `KITCHEN_DISPATCHED` cuando hay lineas `DRAFT`.
 - **Caja Despacho primero:** sin migracion SQL; `ready_to_collect` / `undispatched_units` en cliente + guard en `payOrder`.
+
+### Actualizacion Jul 13, 2026
+- **Enviar a cocina — solo reduccion de cantidad:** Si el operador baja cantidades de lineas ya enviadas (sin borradores nuevos), `applyKitchenPendingItemChanges` persiste el cambio y **no** debe llamar a `submit_order_draft_items`/`sendToKitchen` (fallaba con "No hay productos pendientes por enviar" y el baseline no se reseteaba, dejando el boton activo). Tras aplicar, se actualiza `kitchenBaselineItems`/`stagedItems` y se invalidan despacho/cocina.
+- **Sesión doble en tarjeta de turno:** checkbox **Sesión doble** en `ShiftSetupAdmin` persiste `cash_shift_users.can_double_session` para cualquier usuario del turno (no solo caja). Migracion `20260713220000_sesion_doble_para_cualquier_usuario.sql` relaja el trigger, `user_has_double_app_session_permission` y deja de borrar el flag en `apply_shift_caja_configuration`.
 
 ### Actualizacion Jul 12, 2026
 - **Bancos y transferencia en pagos:** `bancos`, `payments.banco_id`, `payments.numero_transferencia`. Migraciones `20260712220000`, `20260713050000`.

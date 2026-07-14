@@ -10,6 +10,7 @@ import {
   applyKitchenPendingItemChanges,
   getOrderQueryKey,
   isTemporaryOrderItemId,
+  persistOrderItemLineQuantity,
   seedDineInDraftOrderCache,
   useOrder,
   buildItemPreviewLinesForTableCard,
@@ -1068,6 +1069,8 @@ const OrdenesContent = () => {
   const [stagedCancellationData, setStagedCancellationData] = useState<{ reason: string; notes: string } | null>(null);
   const [deletingCajaOrder, setDeletingCajaOrder] = useState(false);
   const [confirmDeleteCajaOrderOpen, setConfirmDeleteCajaOrderOpen] = useState(false);
+  const [deleteCajaOrderError, setDeleteCajaOrderError] = useState("");
+  const [sendingKitchenChanges, setSendingKitchenChanges] = useState(false);
   const kitchenBaselineOrderIdRef = useRef<string | null>(null);
 
   const itemsToUse = (fromEditar || useKitchenStaging) ? stagedItems : (order?.items ?? []);
@@ -1307,8 +1310,12 @@ const OrdenesContent = () => {
     if (!user || !order || deletingCajaOrder) return;
 
     setDeletingCajaOrder(true);
+    setDeleteCajaOrderError("");
     try {
-      const isCurrentCajaItem = (item: typeof orderItems[number]) =>
+      const activeItems = (order.items ?? []).filter(
+        (item) => Math.max(0, Number(item.quantity ?? 0)) > 0 || item.status === "DRAFT",
+      );
+      const isCurrentCajaItem = (item: (typeof activeItems)[number]) =>
         item.status !== "DRAFT" &&
         Number(item.quantity_dispatched ?? 0) <= 0 &&
         item.status !== "DISPATCHED" &&
@@ -1319,127 +1326,111 @@ const OrdenesContent = () => {
         ) &&
         !isPaidItem(item);
       const canDeleteCurrentOrder =
-        orderItems.length > 0 &&
-        orderItems.every((item) => item.status === "DRAFT" || isCurrentCajaItem(item)) &&
-        !orderItems.some((item) => item.status === "DRAFT" && isTemporaryOrderItemId(item.id));
+        activeItems.length > 0 &&
+        activeItems.every((item) => item.status === "DRAFT" || isCurrentCajaItem(item)) &&
+        !activeItems.some((item) => item.status === "DRAFT" && isTemporaryOrderItemId(item.id));
 
       if (!canDeleteCurrentOrder) {
-        throw new Error("Solo puedes eliminar la orden si todos los items estan en borrador o en caja.");
+        throw new Error("Solo puedes eliminar la orden si todos los items estan en borrador o en cocina/caja, sin pagos ni despacho.");
       }
 
-      const draftItems = orderItems.filter((item) => item.status === "DRAFT");
+      const draftItems = activeItems.filter((item) => item.status === "DRAFT");
+      const sentItems = activeItems.filter((item) => item.status !== "DRAFT");
 
-      if (draftItems.length === orderItems.length) {
+      if (sentItems.length === 0) {
         if (!order.table_id) {
           for (const item of draftItems) {
-            await removeItem.mutateAsync(item.id);
+            await persistOrderItemLineQuantity(item.id, 0, item.unit_price, item.quantity, item.status);
           }
         } else {
           await deleteTableOrder.mutateAsync();
         }
-        qc.invalidateQueries({ queryKey: getOrderQueryKey(order.id) });
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["table-orders"] });
-        setConfirmDeleteCajaOrderOpen(false);
-        if (order.table_id) {
-          navigate(mesasListPathForOrigin(origin), { replace: true });
-        } else if (sourceParams.includes("origin=para-llevar")) {
-          navigate("/para-llevar", { replace: true });
-        } else if (sourceParams.includes("origin=express")) {
-          navigate("/express", { replace: true });
-        } else if (sourceParams.includes("origin=extra")) {
-          navigate("/extra", { replace: true });
-        } else if (sourceParams.includes("origin=orden-especial")) {
-          navigate("/orden-especial", { replace: true });
-        } else {
-          navigate("/ordenes", { replace: true });
-        }
-        return;
-      }
-
-      const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", { p_order_id: order.id });
-      if (error) throw error;
-
-      const snapshotRows = Array.isArray(data) ? data : [];
-      const cancellationItems = snapshotRows
-        .map((row: any) => {
-          const orderItem = orderItems.find((item) => item.id === row.order_item_id);
-          const pending = Math.max(0, Number(row.quantity_pending_prepare ?? 0));
-          const ready = Math.max(0, Number(row.quantity_ready_available ?? 0));
-          const dispatched = Math.max(
-            0,
-            Number(row.quantity_dispatched_total ?? row.quantity_dispatched ?? 0) - Number(row.quantity_cancelled_dispatched ?? 0),
+      } else {
+        // Evitar cancelOrderMutation: su onSuccess hace refetchQueries(["orders"]) y puede colgar el diálogo.
+        const isBenignDeleteError = (raw: unknown) => {
+          const message = String((raw as { message?: string })?.message ?? raw ?? "").toLowerCase();
+          return (
+            message.includes("ya esta cancelada")
+            || message.includes("ya está cancelada")
+            || message.includes("no hay cantidades pendientes")
+            || message.includes("no hay items")
+            || message.includes("orden cerrada")
           );
-          const quantity = pending + ready + dispatched;
+        };
 
-          if (quantity <= 0) return null;
+        const { error: cancelError } = await (supabase as any).rpc("cancel_order_quantities", {
+          p_order_id: order.id,
+          p_cancelled_by: user.id,
+          p_reason: "Eliminacion de orden",
+          p_notes: "Orden eliminada directamente desde el detalle de la orden.",
+          p_items: [],
+          p_cancellation_type: "total",
+        });
 
-          return {
-            order_item_id: row.order_item_id,
-            quantity_cancelled: quantity,
-            status: String(row.item_status ?? orderItem?.status ?? "SENT"),
-            description_snapshot: String(row.description_snapshot ?? orderItem?.description_snapshot ?? "Item"),
-            unit_price: Number(row.unit_price ?? orderItem?.unit_price ?? 0),
-            quantity_cancelled_pending: pending,
-            quantity_cancelled_ready: ready,
-            quantity_cancelled_dispatched: dispatched,
-          };
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
+        if (cancelError) {
+          const message = String(cancelError.message ?? "");
+          if (message.toLowerCase().includes("requiere autorizacion")) {
+            throw new Error("Esta orden requiere autorizacion de supervisor para eliminarse.");
+          }
 
-      if (cancellationItems.length === 0) {
-        throw new Error("No hay items disponibles para eliminar en esta orden.");
-      }
+          if (!isBenignDeleteError(cancelError)) {
+            // Fallback: anular cada linea enviada (despacho primero).
+            for (const item of sentItems) {
+              try {
+                await persistOrderItemLineQuantity(
+                  item.id,
+                  0,
+                  item.unit_price,
+                  item.quantity,
+                  item.status,
+                );
+              } catch (lineError) {
+                if (!isBenignDeleteError(lineError)) throw lineError;
+              }
+            }
+          }
+          // Si ya quedó cancelada / sin cantidades, el objetivo se cumplió: no reintentar RPC.
+        }
 
-      await cancelOrderMutation.mutateAsync({
-        orderId: order.id,
-        items: cancellationItems,
-        userId: user.id,
-        cancellationType: "total",
-        requiresAuthorization: false,
-        cancellationData: {
-          reason: "otro",
-          notes: "Orden eliminada directamente desde mesa con todos los items en caja.",
-          cancelledBy: user.id,
-        },
-      });
-
-      for (const item of draftItems) {
-        await removeItem.mutateAsync(item.id);
+        for (const item of draftItems) {
+          try {
+            await persistOrderItemLineQuantity(item.id, 0, item.unit_price, item.quantity, item.status);
+          } catch (lineError) {
+            if (!isBenignDeleteError(lineError)) throw lineError;
+          }
+        }
       }
 
       qc.invalidateQueries({ queryKey: getOrderQueryKey(order.id) });
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       setConfirmDeleteCajaOrderOpen(false);
 
       if (order.table_id) {
-        qc.invalidateQueries({ queryKey: ["table-orders", order.table_id] });
         navigate(mesasListPathForOrigin(origin), { replace: true });
+      } else if (sourceParams.includes("origin=para-llevar")) {
+        navigate("/para-llevar", { replace: true });
+      } else if (sourceParams.includes("origin=express")) {
+        navigate("/express", { replace: true });
+      } else if (sourceParams.includes("origin=extra")) {
+        navigate("/extra", { replace: true });
+      } else if (sourceParams.includes("origin=orden-especial")) {
+        navigate("/orden-especial", { replace: true });
       } else {
-        qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
-        if (sourceParams.includes("origin=para-llevar")) {
-          navigate("/para-llevar", { replace: true });
-        } else if (sourceParams.includes("origin=express")) {
-          navigate("/express", { replace: true });
-        } else if (sourceParams.includes("origin=extra")) {
-          navigate("/extra", { replace: true });
-        } else if (sourceParams.includes("origin=orden-especial")) {
-          navigate("/orden-especial", { replace: true });
-        } else {
-          navigate("/ordenes", { replace: true });
-        }
+        navigate("/ordenes", { replace: true });
       }
     } catch (error: any) {
       console.error("Error eliminando orden en caja:", error);
-      toast.error("No se pudo eliminar la orden: " + (error?.message || "Error desconocido"));
+      const message = error?.message || "Error desconocido";
+      setDeleteCajaOrderError(`No se pudo eliminar la orden: ${message}`);
     } finally {
       setDeletingCajaOrder(false);
     }
-  }, [cancelOrderMutation, deleteTableOrder, deletingCajaOrder, isPaidItem, navigate, order, origin, qc, removeItem, user]);
+  }, [deleteTableOrder, deletingCajaOrder, isPaidItem, navigate, order, origin, qc, sourceParams, user]);
 
   useEffect(() => {
     updateTableOrdersTabsOverflow();
@@ -3126,34 +3117,71 @@ const OrdenesContent = () => {
         <Button
           onClick={async () => {
             try {
+              setSendingKitchenChanges(true);
               if (order.is_special) {
                 await flushPendingSpecialTotalSave();
               }
-              if (useKitchenStaging && hasPendingKitchenChanges) {
+
+              const hadKitchenPending = useKitchenStaging && hasPendingKitchenChanges;
+              if (hadKitchenPending) {
                 await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
               }
-              if (isExpressOrder) {
-                await sendToDispatch.mutateAsync();
-              } else {
-                await sendToKitchen.mutateAsync();
+
+              let freshOrder = orderId ? await fetchOrderDetail(orderId) : null;
+              if (freshOrder && orderId) {
+                qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
               }
-              if (orderId) {
-                const freshOrder = await fetchOrderDetail(orderId);
-                if (freshOrder) {
-                  qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
+
+              const draftsToSend = (freshOrder?.items ?? []).some(
+                (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+              );
+
+              if (draftsToSend) {
+                if (isExpressOrder) {
+                  await sendToDispatch.mutateAsync();
+                } else {
+                  await sendToKitchen.mutateAsync();
                 }
+                if (orderId) {
+                  freshOrder = await fetchOrderDetail(orderId);
+                  if (freshOrder) {
+                    qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
+                  }
+                }
+              } else if (!hadKitchenPending) {
+                if (isExpressOrder) {
+                  await sendToDispatch.mutateAsync();
+                } else {
+                  await sendToKitchen.mutateAsync();
+                }
+                if (orderId) {
+                  freshOrder = await fetchOrderDetail(orderId);
+                  if (freshOrder) {
+                    qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
+                  }
+                }
+              } else {
+                // Solo ajustes de cantidad en lineas ya enviadas (sin borradores nuevos).
+                qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+                qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+                qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+                qc.invalidateQueries({ queryKey: ["order", orderId] });
+                qc.invalidateQueries({ queryKey: ["payable-orders"] });
               }
+
               if (useKitchenStaging && orderId) {
                 setStagedDirty(false);
-                const freshOrder = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
-                if (freshOrder?.items) {
-                  setKitchenBaselineItems(freshOrder.items);
-                  setStagedItems(freshOrder.items);
+                const itemsForBaseline =
+                  freshOrder?.items ??
+                  (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)?.items;
+                if (itemsForBaseline) {
+                  setKitchenBaselineItems(itemsForBaseline);
+                  setStagedItems(itemsForBaseline);
+                } else {
+                  setKitchenBaselineItems(stagedItems);
                 }
               }
-              const freshOrder = orderId
-                ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
-                : undefined;
+
               const skipPaymentForSpecialZero = isSpecialOrderExplicitZeroTotal(freshOrder ?? order)
                 || freshOrder?.status === "PAID";
 
@@ -3181,13 +3209,20 @@ const OrdenesContent = () => {
               }
             } catch {
               // error handled by hook
+            } finally {
+              setSendingKitchenChanges(false);
             }
           }}
-          disabled={(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending || hasTemporaryDraftItems}
+          disabled={
+            sendingKitchenChanges
+            || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending)
+            || addItem.isPending
+            || hasTemporaryDraftItems
+          }
           title={addItem.isPending ? "Espera a que el item termine de guardarse" : hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
           className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
         >
-          {(isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending ? (
+          {sendingKitchenChanges || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : isExpressOrder ? (
             <>
@@ -4105,22 +4140,30 @@ const OrdenesContent = () => {
       <AlertDialog
         open={confirmDeleteCajaOrderOpen}
         onOpenChange={(open) => {
-          if (!deletingCajaOrder) setConfirmDeleteCajaOrderOpen(open);
+          if (!deletingCajaOrder) {
+            setConfirmDeleteCajaOrderOpen(open);
+            if (!open) setDeleteCajaOrderError("");
+          }
         }}
       >
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar orden</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminara esta orden completa con todos sus items. Esta accion no se puede deshacer.
+              Se eliminará esta orden completa con todos sus items. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteCajaOrderError ? (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
+              {deleteCajaOrderError}
+            </p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingCajaOrder}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
-                handleDeleteCajaOrder();
+                void handleDeleteCajaOrder();
               }}
               disabled={deletingCajaOrder}
               className="bg-red-600 text-white hover:bg-red-700"
