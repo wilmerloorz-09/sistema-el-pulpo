@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CopyCheck } from "lucide-react";
+import { Camera, CopyCheck, Trash2 } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import type { Banco } from "@/hooks/useBancosActivos";
 import type { TransferenciaPagoDatos } from "@/lib/transferenciaPago";
@@ -53,6 +53,17 @@ export default function TransferenciaPagoDialog({
   const [montoInput, setMontoInput] = useState("");
   const [validando, setValidando] = useState(false);
   const [errorMensaje, setErrorMensaje] = useState<string | null>(null);
+  const [fotoArchivo, setFotoArchivo] = useState<File | Blob | null>(null);
+  const [fotoVistaPreviaUrl, setFotoVistaPreviaUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const localPreviewRef = useRef<string | null>(null);
+
+  const revokeLocalPreview = () => {
+    if (localPreviewRef.current) {
+      URL.revokeObjectURL(localPreviewRef.current);
+      localPreviewRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -64,7 +75,12 @@ export default function TransferenciaPagoDialog({
         ? formatTransferenciaMontoInput(initialDatos.monto)
         : "",
     );
-  }, [open, initialDatos?.bancoId, initialDatos?.numeroTransferencia, initialDatos?.monto, bancos]);
+    revokeLocalPreview();
+    setFotoArchivo(initialDatos?.fotoArchivo ?? null);
+    setFotoVistaPreviaUrl(initialDatos?.fotoVistaPreviaUrl ?? null);
+  }, [open, initialDatos?.bancoId, initialDatos?.numeroTransferencia, initialDatos?.monto, initialDatos?.fotoArchivo, initialDatos?.fotoVistaPreviaUrl, bancos]);
+
+  useEffect(() => () => revokeLocalPreview(), []);
 
   const handleExacto = () => {
     const current = parseTransferenciaMontoInput(montoInput);
@@ -74,6 +90,27 @@ export default function TransferenciaPagoDialog({
       return;
     }
     setMontoInput(netChargeTotal.toFixed(2));
+  };
+
+  const handleFotoSeleccionada = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setErrorMensaje("Selecciona una imagen del comprobante.");
+      return;
+    }
+    revokeLocalPreview();
+    const previewUrl = URL.createObjectURL(file);
+    localPreviewRef.current = previewUrl;
+    setFotoArchivo(file);
+    setFotoVistaPreviaUrl(previewUrl);
+    setErrorMensaje(null);
+  };
+
+  const handleQuitarFoto = () => {
+    revokeLocalPreview();
+    setFotoArchivo(null);
+    setFotoVistaPreviaUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleConfirm = async () => {
@@ -91,10 +128,14 @@ export default function TransferenciaPagoDialog({
         return;
       }
 
+      // El padre conserva la URL; no revocar al confirmar.
+      localPreviewRef.current = null;
       onConfirm({
         bancoId,
         numeroTransferencia: numeroTransferencia.trim(),
         monto,
+        fotoArchivo: fotoArchivo ?? null,
+        fotoVistaPreviaUrl: fotoVistaPreviaUrl ?? null,
       });
       onOpenChange(false);
     } catch {
@@ -186,6 +227,61 @@ export default function TransferenciaPagoDialog({
               disabled={readOnly}
               className="text-base font-semibold tabular-nums"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Comprobante (opcional)</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={readOnly}
+                onClick={() => fileInputRef.current?.click()}
+                className="h-10 gap-2 rounded-xl border-violet-300 bg-white font-semibold text-violet-800 hover:bg-violet-100"
+              >
+                <Camera className="h-4 w-4" />
+                {fotoArchivo ? "Cambiar foto" : "Tomar foto"}
+              </Button>
+              {fotoArchivo ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={readOnly}
+                  onClick={handleQuitarFoto}
+                  className="h-10 gap-1.5 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Quitar
+                </Button>
+              ) : null}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              disabled={readOnly}
+              onChange={(e) => {
+                handleFotoSeleccionada(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+            {fotoVistaPreviaUrl ? (
+              <div className="overflow-hidden rounded-xl border border-violet-200 bg-violet-50/40">
+                <img
+                  src={fotoVistaPreviaUrl}
+                  alt="Vista previa del comprobante"
+                  className="max-h-40 w-full object-contain"
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                La foto se guardará al confirmar el cobro en caja.
+              </p>
+            )}
           </div>
         </div>
 

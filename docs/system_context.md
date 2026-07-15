@@ -222,6 +222,7 @@
 - El flujo de cobro por transferencia usa `TransferenciaPagoSection` + `TransferenciaPagoDialog`:
   - Tarjeta violeta: boton **Transferencia** + input de monto **solo lectura**.
   - Modal: banco (obligatorio, por defecto el primero del catalogo — `orden_visual`), numero de transferencia (obligatorio), boton **Exacto** y valor.
+  - Boton opcional de **camara** para foto del comprobante; se guarda en Storage + `comprobantes_pago` solo al confirmar el cobro final (`payOrder`).
   - Al **Aceptar**, el monto confirmado se refleja en el input principal; al **Cancelar**, no se guarda nada.
 - Los datos `banco_id`, `numero_transferencia` y `amount` se persisten en `payments` cuando el metodo es transferencia.
 - La combinacion **banco + numero de transferencia** es unica en **todo el sistema** (incluye pagos anulados); se valida al aceptar el modal (mensaje inline rojo en el dialogo) y al registrar el cobro en servidor (`useCaja.payOrder` + RPC `register_payment_with_items` + indice unico).

@@ -1,13 +1,6 @@
 AL INICIAR
 *************************************************************************
-En el contexto del sistema POS que estoy desarrollando, lee primero los archivos:
-
-docs/system_context.md
-docs/PROJECT_ARCHITECTURE.md
-docs/database_architecture.md
-docs/codex_rules.md
-
-y analiza el sistema antes de continuar.
+En el contexto del sistema POS que estoy desarrollando, lee primero los archivos de la carpeta /docs; y analiza el sistema antes de continuar.
 
 Adicionalmente, si se requiere crear nuevas tablas o campos, necesito que los nombres de estas tablas y campos, sean en español
 
@@ -15,6 +8,8 @@ Adicionalmente, si se requiere crear nuevas tablas o campos, necesito que los no
 
 
 AL CULMINAR
+
+Actualiza los archivos de la carpeta /docs
 
 Realiza lo siguiente:
 

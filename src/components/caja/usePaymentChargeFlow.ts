@@ -8,6 +8,7 @@ import type { PayableOrder, PayOrderParams, ShiftDenom } from "@/hooks/useCaja";
 import { datosClienteEnRecibo, type PaymentReceiptData } from "@/lib/paymentReceiptData";
 import { getOrderTotalToCharge } from "@/components/caja/PaymentDialogV2";
 import type { TransferenciaPagoDatos } from "@/lib/transferenciaPago";
+import { liberarVistaPreviaTransferencia } from "@/lib/transferenciaPago";
 import { mensajeErrorPago } from "@/lib/transferenciaDuplicada";
 
 function getPayFailureMessage(e: unknown): string {
@@ -44,6 +45,23 @@ export function usePaymentChargeFlow({
 
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
   const [transferDatos, setTransferDatos] = useState<TransferenciaPagoDatos | null>(null);
+  const transferDatosRef = useRef<TransferenciaPagoDatos | null>(null);
+  transferDatosRef.current = transferDatos;
+
+  const clearTransferDatos = useCallback(() => {
+    liberarVistaPreviaTransferencia(transferDatosRef.current);
+    setTransferDatos(null);
+  }, []);
+
+  const handleTransferDatosChange = useCallback((datos: TransferenciaPagoDatos | null) => {
+    setTransferDatos((prev) => {
+      if (prev?.fotoVistaPreviaUrl && prev.fotoVistaPreviaUrl !== datos?.fotoVistaPreviaUrl) {
+        liberarVistaPreviaTransferencia(prev);
+      }
+      return datos;
+    });
+  }, []);
+
   const [payItemQtys, setPayItemQtys] = useState<Record<string, number>>({});
   const [postPaySummary, setPostPaySummary] = useState<{
     changeAmount: number;
@@ -80,11 +98,11 @@ export function usePaymentChargeFlow({
     if (!order) return;
     if (postPaySummary) return;
     setReceivedByDenom({});
-    setTransferDatos(null);
+    clearTransferDatos();
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
-  }, [open, order?.id, postPaySummary]);
+  }, [open, order?.id, postPaySummary, clearTransferDatos]);
 
   useEffect(() => {
     if (!open || !order) return;
@@ -324,6 +342,7 @@ export function usePaymentChargeFlow({
             bancoId: transferDatos.bancoId,
             numeroTransferencia: transferDatos.numeroTransferencia,
             monto: transferAmount,
+            fotoArchivo: transferDatos.fotoArchivo ?? null,
           }
         : null,
     };
@@ -434,7 +453,8 @@ export function usePaymentChargeFlow({
     suppressCloseOnceRef,
     settlePendingPay,
     transferDatos,
-    setTransferDatos,
+    setTransferDatos: handleTransferDatosChange,
+    clearTransferDatos,
     orderChargeTotal,
     cashTotal,
     transferAmount,

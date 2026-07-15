@@ -134,6 +134,13 @@
 - RPC `register_payment_with_items` persiste `banco_id` y `numero_transferencia` y rechaza duplicados antes del insert (`20260713050000`).
 - Cliente: `existeTransferenciaDuplicada` en `src/lib/transferenciaDuplicada.ts`.
 
+### 6.2 Comprobante foto simple en cobro por transferencia (2026-07-14)
+- Tabla `comprobantes_pago` (metadatos en español): `pago_id`, `sucursal_id`, `nombre_bucket`, `ruta_objeto`, `nombre_archivo`, `tipo_mime`, `tamano_bytes`, `subido_por_usuario_id`, `creado_en`.
+- Bucket privado Storage `comprobantes-pago`.
+- Flujo simple (sin `payment_capture_requests` / OCR): foto opcional en `TransferenciaPagoDialog`; se sube solo al confirmar `payOrder`.
+- Helper: `src/lib/comprobantePagoTransferencia.ts`.
+- Migracion: `20260714220000_comprobantes_pago_transferencia.sql`.
+
 ### 7. Clientes, campañas y predicciones (2026-06-11+)
 - `clientes`
   - Comensales; cédula única (`^[0-9]{10}$`); `sexo` ∈ `M`/`F`.
@@ -466,6 +473,7 @@
 ### Transferencia bancaria y unicidad de comprobante (2026-07-12)
 - `20260712220000_bancos_y_datos_transferencia_pagos.sql` — tabla `bancos`, columnas en `payments`, seed, RLS, RPC `register_payment_with_items` actualizada.
 - `20260713050000_transferencia_unica_global.sql` — indice unico global + validacion de duplicado en RPC.
+- `20260714220000_comprobantes_pago_transferencia.sql` — tabla `comprobantes_pago` + bucket `comprobantes-pago` (foto opcional en cobro).
 
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`

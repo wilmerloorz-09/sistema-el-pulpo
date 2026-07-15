@@ -28,6 +28,7 @@ import { useClientWinningOffer } from "@/hooks/useClientWinningOffer";
 import { fetchPromocionReciboExtrasForOrder } from "@/lib/promocionesRecibo";
 import { useBancosActivos } from "@/hooks/useBancosActivos";
 import type { TransferenciaPagoDatos } from "@/lib/transferenciaPago";
+import { liberarVistaPreviaTransferencia } from "@/lib/transferenciaPago";
 import TransferenciaPagoSection from "@/components/caja/TransferenciaPagoSection";
 import { mensajeErrorPago } from "@/lib/transferenciaDuplicada";
 
@@ -131,6 +132,23 @@ export default function PaymentDialogV2({
 
   const [receivedByDenom, setReceivedByDenom] = useState<Record<string, number>>({});
   const [transferDatos, setTransferDatos] = useState<TransferenciaPagoDatos | null>(null);
+  const transferDatosRef = useRef<TransferenciaPagoDatos | null>(null);
+  transferDatosRef.current = transferDatos;
+
+  const clearTransferDatos = useCallback(() => {
+    liberarVistaPreviaTransferencia(transferDatosRef.current);
+    setTransferDatos(null);
+  }, []);
+
+  const handleTransferDatosChange = useCallback((datos: TransferenciaPagoDatos | null) => {
+    setTransferDatos((prev) => {
+      if (prev?.fotoVistaPreviaUrl && prev.fotoVistaPreviaUrl !== datos?.fotoVistaPreviaUrl) {
+        liberarVistaPreviaTransferencia(prev);
+      }
+      return datos;
+    });
+  }, []);
+
   const { data: bancosActivos = [] } = useBancosActivos(open);
   const [useSaldo, setUseSaldo] = useState(true);
   const [wasFullyPaid, setWasFullyPaid] = useState(false);
@@ -211,7 +229,7 @@ export default function PaymentDialogV2({
     }
     if (!order) return;
     setReceivedByDenom({});
-    setTransferDatos(null);
+    clearTransferDatos();
     setPostPaySummary(null);
     pendingPayPromiseRef.current = null;
     suppressCloseOnceRef.current = false;
@@ -219,7 +237,7 @@ export default function PaymentDialogV2({
     setSplitItemsDialogOpen(false);
     setWasFullyPaid(false);
     wasFullyPaidRef.current = false;
-  }, [open, order?.id]);
+  }, [open, order?.id, clearTransferDatos]);
 
   useEffect(() => {
     if (!open || !order) return;
@@ -550,6 +568,7 @@ export default function PaymentDialogV2({
             bancoId: transferDatos.bancoId,
             numeroTransferencia: transferDatos.numeroTransferencia,
             monto: transferAmount,
+            fotoArchivo: transferDatos.fotoArchivo ?? null,
           }
         : null,
     };
@@ -919,7 +938,7 @@ export default function PaymentDialogV2({
 
                 <TransferenciaPagoSection
                   transferDatos={transferDatos}
-                  onTransferDatosChange={setTransferDatos}
+                  onTransferDatosChange={handleTransferDatosChange}
                   netChargeTotal={netChargeTotal}
                   bancos={bancosActivos}
                   readOnly={readOnly}
@@ -1121,7 +1140,7 @@ export default function PaymentDialogV2({
                     const handleSuccessDismiss = () => {
                       setPostPaySummary(null);
                       setReceivedByDenom({});
-                      setTransferDatos(null);
+                      clearTransferDatos();
                       const isFullyPaidVal = wasFullyPaidRef.current || wasFullyPaid || (order 
                         ? order.is_special 
                           ? Number(order.special_pending_amount ?? 0) <= 0.005 
@@ -1160,7 +1179,7 @@ export default function PaymentDialogV2({
                 onClick={() => {
                   setPostPaySummary(null);
                   setReceivedByDenom({});
-                  setTransferDatos(null);
+                  clearTransferDatos();
                   const isFullyPaidVal = wasFullyPaidRef.current || wasFullyPaid || (order 
                     ? order.is_special 
                       ? Number(order.special_pending_amount ?? 0) <= 0.005 

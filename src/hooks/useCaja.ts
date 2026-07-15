@@ -22,6 +22,7 @@ import {
   MENSAJE_TRANSFERENCIA_DUPLICADA,
   esErrorTransferenciaDuplicada,
 } from "@/lib/transferenciaDuplicada";
+import { guardarComprobantePagoTransferencia } from "@/lib/comprobantePagoTransferencia";
 
 
 export const ensureTableSnapshot = async (orderId: string) => {
@@ -407,6 +408,8 @@ export interface PayOrderParams {
     bancoId: string;
     numeroTransferencia: string;
     monto: number;
+    /** Foto opcional; se sube a Storage al confirmar el cobro. */
+    fotoArchivo?: File | Blob | null;
   } | null;
 }
 
@@ -2790,6 +2793,7 @@ export function useCaja(params?: {
       const tenderedByMethod = Object.fromEntries(tenderedSplits.map((split) => [split.methodId, roundMoney(split.amount)]));
       let anchorPaymentId: string | null = null;
       let cashPaymentId: string | null = null;
+      let transferPaymentId: string | null = null;
 
       const insertCashMovementCompat = async (payload: {
         shift_id: string;
@@ -2836,6 +2840,9 @@ export function useCaja(params?: {
         for (const payment of payments) {
           const meta = parsePaymentNotes(payment.notes);
           if (meta.itemsAnchor) anchorPaymentId = payment.id;
+          if (transferMethodIds.has(payment.payment_method_id)) {
+            transferPaymentId = payment.id;
+          }
           
           const updatedNotes = appendNoteMarker(payment.notes, "TRANSFER_PROOF_PENDING:0");
           await dbUpdate("payments", payment.id, { notes: updatedNotes });
@@ -2910,6 +2917,7 @@ export function useCaja(params?: {
           const paymentId = generateUUID();
           const isCash = isCashPaymentMethodName(selectedMethods.find((m) => m.id === split.methodId)?.name);
           if (isCash) cashPaymentId = paymentId;
+          if (transferMethodIds.has(split.methodId)) transferPaymentId = paymentId;
           if (index === 0) anchorPaymentId = paymentId;
           const transferenciaCampos = resolveTransferenciaCampos(split.methodId, transferMethodIds, transferencia);
 
@@ -2997,6 +3005,20 @@ export function useCaja(params?: {
           ? dbUpdate("predicciones_clientes", prediccionIdAUsar, { cupon_usado_el: now })
           : Promise.resolve(),
       ]);
+
+      if (transferencia?.fotoArchivo && transferPaymentId && activeBranchId) {
+        try {
+          await guardarComprobantePagoTransferencia({
+            pagoId: transferPaymentId,
+            sucursalId: activeBranchId,
+            usuarioId: user.id,
+            archivo: transferencia.fotoArchivo,
+          });
+        } catch (photoError) {
+          // Foto opcional: el cobro ya quedó registrado; no revertir el pago.
+          console.error("No se pudo guardar el comprobante de transferencia:", photoError);
+        }
+      }
 
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */
       void ensureTableSnapshot(orderId);

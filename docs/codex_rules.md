@@ -240,7 +240,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Mensaje de duplicado inline en el modal (`MENSAJE_TRANSFERENCIA_DUPLICADA`); validacion adicional en `payOrder` y RPC.
 - Catalogo `bancos`: solo admin global en `Admin > Bancos` (`BancosCrud`).
 - Migraciones obligatorias: `20260712220000_bancos_y_datos_transferencia_pagos.sql`, `20260713050000_transferencia_unica_global.sql`.
-
+- **Foto de comprobante (opcional, 2026-07-14):** boton camara en `TransferenciaPagoDialog`; la foto viaja en memoria hasta `payOrder`; entonces Storage `comprobantes-pago` + fila `comprobantes_pago`. No usa el flujo de captura por token/OCR. Si falla la subida, el cobro ya registrado no se revierte.
 ### 12.1 Extra
 - `order_type = EXTRA`: menu mesa sin PLATOS, requiere mesa obligatoria (`table_id`), flujo caja → despacho manual.
 - Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` o desaparece automáticamente al despacharse.

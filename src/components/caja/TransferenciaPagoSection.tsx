@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Camera } from "lucide-react";
 import type { Banco } from "@/hooks/useBancosActivos";
 import type { TransferenciaPagoDatos } from "@/lib/transferenciaPago";
 import { formatTransferenciaMontoInput } from "@/lib/transferenciaPago";
@@ -28,6 +29,7 @@ export default function TransferenciaPagoSection({
   const displayValue = transferDatos?.monto
     ? formatTransferenciaMontoInput(transferDatos.monto)
     : "";
+  const tieneFoto = Boolean(transferDatos?.fotoArchivo);
 
   return (
     <>
@@ -46,6 +48,7 @@ export default function TransferenciaPagoSection({
           className="h-9 rounded-xl border-violet-300 bg-white font-semibold text-violet-800 hover:bg-violet-100"
         >
           Transferencia
+          {tieneFoto ? <Camera className="ml-1.5 h-3.5 w-3.5" aria-label="Con foto" /> : null}
         </Button>
         <Input
           type="text"

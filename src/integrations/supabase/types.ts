@@ -179,6 +179,67 @@ export type Database = {
         }
         Relationships: []
       }
+      comprobantes_pago: {
+        Row: {
+          id: string
+          pago_id: string
+          sucursal_id: string
+          nombre_bucket: string
+          ruta_objeto: string
+          nombre_archivo: string
+          tipo_mime: string
+          tamano_bytes: number
+          subido_por_usuario_id: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          pago_id: string
+          sucursal_id: string
+          nombre_bucket?: string
+          ruta_objeto: string
+          nombre_archivo: string
+          tipo_mime: string
+          tamano_bytes: number
+          subido_por_usuario_id: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          pago_id?: string
+          sucursal_id?: string
+          nombre_bucket?: string
+          ruta_objeto?: string
+          nombre_archivo?: string
+          tipo_mime?: string
+          tamano_bytes?: number
+          subido_por_usuario_id?: string
+          creado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comprobantes_pago_pago_id_fkey"
+            columns: ["pago_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_pago_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_pago_subido_por_usuario_id_fkey"
+            columns: ["subido_por_usuario_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bulk_included_product_ranges: {
         Row: {
           amount_from: number

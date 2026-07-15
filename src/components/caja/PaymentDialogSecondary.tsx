@@ -73,6 +73,7 @@ export default function PaymentDialogSecondary({
     settlePendingPay,
     transferDatos,
     setTransferDatos,
+    clearTransferDatos,
     orderChargeTotal,
     cashTotal,
     transferAmount,
@@ -336,7 +337,7 @@ export default function PaymentDialogSecondary({
                 onClick={() => {
                   setPostPaySummary(null);
                   clearCash();
-                  setTransferDatos(null);
+                  clearTransferDatos();
                   const isFullyPaid = order 
                     ? order.is_special 
                       ? Number(order.special_pending_amount ?? 0) <= 0.005 

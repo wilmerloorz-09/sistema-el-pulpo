@@ -179,6 +179,7 @@
   - `PaymentDialogV2`: UI estándar para cobrar (misma UI para todos los cajeros).
   - `PaymentDialogSecondary`: layout vertical para caja secundaria; comparte `usePaymentChargeFlow`.
   - **Transferencia bancaria (2026-07-12):** `TransferenciaPagoSection` abre `TransferenciaPagoDialog` con banco, numero de comprobante y valor; input principal de monto en solo lectura. Catalogo via `useBancosActivos`; admin en `BancosCrud`.
+  - **Foto comprobante (opcional, 2026-07-14):** camara en el modal; subida a Storage `comprobantes-pago` + tabla `comprobantes_pago` en `payOrder` (`src/lib/comprobantePagoTransferencia.ts`).
   - **Denominaciones en cobro:** “Efectivo entregado” usa el catálogo global `denominations` activas (independiente de plantilla); el cálculo de cambio usa el inventario del cajero (`shift.denoms`).
   - Recibo: `PaymentReceipt` + `window.print`; estilos en `src/index.css`.
 - **Capa de datos en cobro (`useCaja.payOrder`):**
