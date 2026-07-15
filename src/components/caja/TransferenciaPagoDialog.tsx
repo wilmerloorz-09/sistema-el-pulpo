@@ -285,12 +285,13 @@ export default function TransferenciaPagoDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:gap-2">
+          <Button type="button" variant="outline" className="flex-1 sm:flex-none" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
           <Button
             type="button"
+            className="flex-1 sm:flex-none"
             disabled={
               validando
               || readOnly

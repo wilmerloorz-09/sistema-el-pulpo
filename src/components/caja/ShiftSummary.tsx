@@ -133,42 +133,70 @@ export default function ShiftSummary({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
-          onClick={() => setShowTotals(true)}
-        >
-          <BarChart3 className="h-4 w-4" />
-          Resumen
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
-          onClick={() => setShowDenoms(true)}
-        >
-          <Coins className="h-4 w-4" />
-          Desglose
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950"
-          onClick={() => setShowMovements(true)}
-        >
-          <ArrowRightLeft className="h-4 w-4" />
-          Cambio
-        </button>
-        {!readOnly && (
-          <Button
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 sm:gap-x-6 sm:gap-y-3">
+          <button
             type="button"
-            size="sm"
-            className="h-11 rounded-full border-0 bg-[#0f766e] px-6 text-sm font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#115e59]"
-            onClick={() => setShowClose(true)}
+            className="hidden items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 sm:inline-flex"
+            onClick={() => setShowTotals(true)}
           >
-            <WalletCards className="h-4 w-4" />
-            Cerrar caja
-          </Button>
-        )}
+            <BarChart3 className="h-4 w-4" />
+            Resumen
+          </button>
+          <button
+            type="button"
+            className="hidden items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 sm:inline-flex"
+            onClick={() => setShowDenoms(true)}
+          >
+            <Coins className="h-4 w-4" />
+            Desglose
+          </button>
+          <button
+            type="button"
+            className="hidden items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 sm:inline-flex"
+            onClick={() => setShowMovements(true)}
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            Cambio
+          </button>
+          {!readOnly && (
+            <Button
+              type="button"
+              size="sm"
+              className="h-9 shrink-0 rounded-full border-0 bg-[#0f766e] px-4 text-xs font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#115e59] sm:h-11 sm:px-6 sm:text-sm"
+              onClick={() => setShowClose(true)}
+            >
+              <WalletCards className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              Cerrar caja
+            </Button>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-x-3 sm:hidden">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600"
+            onClick={() => setShowTotals(true)}
+          >
+            <BarChart3 className="h-3 w-3" />
+            Resumen
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600"
+            onClick={() => setShowDenoms(true)}
+          >
+            <Coins className="h-3 w-3" />
+            Desglose
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600"
+            onClick={() => setShowMovements(true)}
+          >
+            <ArrowRightLeft className="h-3 w-3" />
+            Cambio
+          </button>
+        </div>
       </div>
 
       <Dialog open={showTotals} onOpenChange={setShowTotals}>

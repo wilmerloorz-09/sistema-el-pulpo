@@ -282,6 +282,7 @@ function shiftUserRolesSignature(rows: ShiftUserRow[]) {
         can_double_session: user.can_double_session,
         is_supervisor: user.is_supervisor,
         can_pack_orders: user.can_pack_orders,
+        can_serve_plates: user.can_serve_plates ?? false,
       }))
       .sort((a, b) => a.user_id.localeCompare(b.user_id)),
   );
@@ -488,6 +489,8 @@ const ShiftSetupAdmin = () => {
   >([]);
   const [cancelPoliciesDirty, setCancelPoliciesDirty] = useState(false);
   const [isShiftSetupDirty, setIsShiftSetupDirty] = useState(false);
+  /** Se incrementa tras guardar para forzar rehidratacion del formulario. */
+  const [baselineSyncToken, setBaselineSyncToken] = useState(0);
 
   const [draftDispatchConfig, setDraftDispatchConfig] =
     useState<DispatchConfigModel | null>(null);
@@ -1017,6 +1020,7 @@ const ShiftSetupAdmin = () => {
   );
 
   const previousPersistedSnapshotKeyRef = useRef("");
+  const previousBaselineSyncTokenRef = useRef(0);
 
   const markShiftSetupDirty = () => {
     setIsShiftSetupDirty(true);
@@ -1033,7 +1037,16 @@ const ShiftSetupAdmin = () => {
   };
 
   useEffect(() => {
-    if (previousPersistedSnapshotKeyRef.current === persistedSnapshotKey) {
+    const forceSync =
+      baselineSyncToken !== previousBaselineSyncTokenRef.current;
+    if (forceSync) {
+      previousBaselineSyncTokenRef.current = baselineSyncToken;
+    }
+
+    const snapshotChanged =
+      previousPersistedSnapshotKeyRef.current !== persistedSnapshotKey;
+
+    if (!forceSync && !snapshotChanged) {
       return;
     }
 
@@ -1047,7 +1060,8 @@ const ShiftSetupAdmin = () => {
       previousParts[0] !== nextParts[0] ||
       previousParts[1] !== nextParts[1];
 
-    if (isShiftSetupDirty && !branchOrShiftChanged) {
+    // Conservar ediciones locales solo si no forzamos sync (post-guardar).
+    if (!forceSync && isShiftSetupDirty && !branchOrShiftChanged) {
       setShiftCajaSetup((current) => {
         if (countConfiguredShiftCashiers(current) > 0) {
           return current;
@@ -1070,6 +1084,7 @@ const ShiftSetupAdmin = () => {
     setIsShiftSetupDirty(false);
   }, [
     persistedSnapshotKey,
+    baselineSyncToken,
     isShiftSetupDirty,
     persistedTablesCount,
     persistedEnabledUsersData,
@@ -1091,7 +1106,9 @@ const ShiftSetupAdmin = () => {
   }, [availableUsersToAdd, selectedUserToAdd]);
 
   const workingDispatchConfig = draftDispatchConfig ?? dispatchConfig;
-  const workingAssignments = draftAssignments;
+  // Hasta hidratar el draft, comparar contra assignments del servidor (evita "dirty" falso).
+  const workingAssignments =
+    draftDispatchConfig != null ? draftAssignments : (assignments ?? []);
 
   const enabledViews = useMemo(() => {
     const views: Array<{ code: "TABLE" | "TAKEOUT"; label: string }> = [];
@@ -1238,7 +1255,17 @@ const ShiftSetupAdmin = () => {
     assignmentsChanged ||
     cancelPoliciesChanged ||
     cancelPoliciesDirty;
-  const hasLocalChanges = isShiftSetupDirty || hasComputedLocalChanges;
+  // Solo diferencias reales vs servidor; no usar isShiftSetupDirty solo
+  // (puede quedar true aunque el usuario revirtiera los cambios).
+  const hasLocalChanges = hasComputedLocalChanges;
+
+  // Si el usuario deshace los cambios (vuelve al estado persistido), limpiar dirty flag.
+  useEffect(() => {
+    if (!isShiftSetupDirty) return;
+    if (hasComputedLocalChanges) return;
+    setIsShiftSetupDirty(false);
+    setCancelPoliciesDirty(false);
+  }, [isShiftSetupDirty, hasComputedLocalChanges]);
 
   const validateSetup = () => {
     if (setupIssues.length > 0) {
@@ -1421,26 +1448,48 @@ const ShiftSetupAdmin = () => {
     );
   };
 
-  const invalidateShiftState = () => {
-    qc.invalidateQueries({ queryKey: ["shift-admin-current-shift"] });
-    qc.invalidateQueries({ queryKey: ["shift-admin-users"] });
-    qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
-    qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false });
-    qc.invalidateQueries({ queryKey: ["orders"], exact: false });
-    qc.invalidateQueries({ queryKey: ["order"], exact: false });
-    qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false });
-    qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false });
-    qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
-    qc.invalidateQueries({ queryKey: ["current-shift"] });
-    qc.invalidateQueries({ queryKey: ["open-cash-shift"], exact: false });
-    qc.invalidateQueries({ queryKey: ["open-cash-shift-id"], exact: false });
-    qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] });
-    qc.invalidateQueries({
-      queryKey: ["shift-admin-cancel-policy", activeBranchId],
-    });
-    qc.invalidateQueries({
-      queryKey: ["shift-admin-latest-shift-audit", activeBranchId],
-    });
+  const invalidateShiftState = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["shift-admin-current-shift"] }),
+      qc.invalidateQueries({ queryKey: ["shift-admin-users"] }),
+      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] }),
+      qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["order"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["current-shift"] }),
+      qc.invalidateQueries({ queryKey: ["open-cash-shift"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["open-cash-shift-id"], exact: false }),
+      qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] }),
+      qc.invalidateQueries({
+        queryKey: ["shift-admin-cancel-policy", activeBranchId],
+      }),
+      qc.invalidateQueries({
+        queryKey: ["shift-admin-latest-shift-audit", activeBranchId],
+      }),
+    ]);
+
+    // Refetch critico para que hasLocalChanges se limpie tras guardar.
+    await Promise.all([
+      qc.refetchQueries({ queryKey: ["shift-admin-current-shift"] }),
+      qc.refetchQueries({
+        queryKey: [
+          "shift-admin-users",
+          activeBranchId,
+          shiftQuery.data?.id ?? "closed",
+        ],
+      }),
+      qc.refetchQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] }),
+      ...(SHOW_SHIFT_CANCEL_POLICY_UI
+        ? [
+            qc.refetchQueries({
+              queryKey: ["shift-admin-cancel-policy", activeBranchId],
+            }),
+          ]
+        : []),
+    ]);
   };
 
   const updateCancelPolicy = (
@@ -2004,9 +2053,11 @@ const ShiftSetupAdmin = () => {
 
       if (cleanupError) throw cleanupError;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setIsShiftSetupDirty(false);
-      invalidateShiftState();
+      setCancelPoliciesDirty(false);
+      await invalidateShiftState();
+      setBaselineSyncToken((token) => token + 1);
       toast.success("Configuracion del turno guardada");
     },
     onError: (err: any) => showShiftSetupError(err, setWarningDialog),
@@ -2277,7 +2328,8 @@ const ShiftSetupAdmin = () => {
         : validatingCashierChangePassword
           ? "Validando contrasena..."
           : null;
-  const isSaveShiftDisabled = Boolean(saveShiftDisabledReason);
+  const isSaveShiftDisabled =
+    Boolean(saveShiftDisabledReason) || !hasLocalChanges;
 
   const enabledViewLabels = enabledViews.map((view) => view.label);
   const shiftUsers = shiftUsersQuery.data ?? [];

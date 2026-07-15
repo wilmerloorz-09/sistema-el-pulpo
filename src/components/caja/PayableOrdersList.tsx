@@ -102,34 +102,44 @@ export default function PayableOrdersList({
 
   return (
     <>
-      <section className="space-y-6">
-        <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_48px_-42px_rgba(15,23,42,0.38)]">
-          <div className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-3 sm:gap-0 sm:px-8 sm:py-5">
-            <div className="sm:px-4">
-              <p className="inline-flex items-center gap-2 text-sm text-slate-500">
-                <ReceiptText className="h-4 w-4 text-slate-400" />
-                <span>Ordenes por cobrar: <span className="font-semibold text-slate-950">{orders.length}</span></span>
+      <section className="space-y-4 sm:space-y-6">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white sm:rounded-[26px]">
+          <div className="flex flex-nowrap items-center justify-between gap-2 overflow-x-auto px-2.5 py-1.5 text-[11px] sm:grid sm:grid-cols-3 sm:gap-0 sm:overflow-visible sm:px-8 sm:py-5 sm:text-sm">
+            <div className="shrink-0 sm:px-4">
+              <p className="inline-flex items-center gap-1 text-slate-500 sm:gap-2">
+                <ReceiptText className="h-3 w-3 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
+                <span>
+                  <span className="sm:hidden">Ordenes: </span>
+                  <span className="hidden sm:inline">Ordenes por cobrar: </span>
+                  <span className="font-semibold text-slate-950">{orders.length}</span>
+                </span>
               </p>
             </div>
-            <div className="sm:border-l sm:border-r sm:border-slate-200 sm:px-6">
-              <p className="inline-flex items-center gap-2 text-sm text-slate-500">
-                <UtensilsCrossed className="h-4 w-4 text-slate-400" />
-                <span>Unidades pendientes: <span className="font-semibold text-slate-950">{totalPendingUnits}</span></span>
+            <div className="shrink-0 sm:border-l sm:border-r sm:border-slate-200 sm:px-6">
+              <p className="inline-flex items-center gap-1 text-slate-500 sm:gap-2">
+                <UtensilsCrossed className="h-3 w-3 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
+                <span>
+                  <span className="sm:hidden">Pend.: </span>
+                  <span className="hidden sm:inline">Unidades pendientes: </span>
+                  <span className="font-semibold text-slate-950">{totalPendingUnits}</span>
+                </span>
               </p>
             </div>
-            <div className="sm:px-6">
-              <p className="inline-flex items-center gap-2 text-sm text-slate-500">
-                <CreditCard className="h-4 w-4 text-slate-400" />
-                <span>Total: <span className="font-semibold text-slate-950">{formatCurrency(totalPendingAmount)}</span></span>
+            <div className="shrink-0 sm:px-6">
+              <p className="inline-flex items-center gap-1 text-slate-500 sm:gap-2">
+                <CreditCard className="h-3 w-3 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
+                <span>
+                  Total: <span className="font-semibold text-slate-950">{formatCurrency(totalPendingAmount)}</span>
+                </span>
               </p>
             </div>
           </div>
         </div>
 
-        <section className="space-y-4">
+        <section className="space-y-2.5 sm:space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-[1.35rem] font-semibold tracking-[-0.025em] text-slate-950 sm:text-[1.5rem]">Ordenes por cobrar</h2>
+              <h2 className="text-sm font-semibold tracking-[-0.02em] text-slate-950 sm:text-[1.5rem]">Ordenes por cobrar</h2>
               {readOnly && (
                 <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <p className="text-sm text-slate-500">
@@ -185,16 +195,92 @@ export default function PayableOrdersList({
                   const pendingTotal = order.is_special
                     ? order.special_pending_amount
                     : order.items.reduce((sum, item) => sum + item.pending_total, 0);
-                  const pendingUnitsText = `${pending} ${pending === 1 ? "unidad pendiente" : "unidades pendientes"}`;
                   const rowCode = getOrderRef(order.order_code, order.order_number);
                   const displayRowCode = rowCode === "Borrador" ? "Sin codigo" : rowCode;
                   const isExpanded = expandedOrderId === order.id;
+                  const OrderKindIcon =
+                    orderKind === "tray"
+                      ? Soup
+                      : orderKind === "takeout"
+                        ? ShoppingBag
+                        : orderKind === "special"
+                          ? CreditCard
+                          : UtensilsCrossed;
 
                   return (
                     <div key={order.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/80"}>
+                      {/* Móvil: ~2 filas compactas */}
                       <div
                         onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                        className="group grid cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid-cols-[auto_minmax(220px,1.7fr)_minmax(150px,0.9fr)_minmax(100px,0.6fr)_auto] sm:items-center sm:px-8"
+                        className="group cursor-pointer px-3 py-2 transition-colors hover:bg-slate-100/50 sm:hidden"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
+                            aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
+                          >
+                            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </div>
+
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                            <OrderKindIcon className="h-3.5 w-3.5" />
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <p className="truncate text-[13px] font-semibold leading-tight tracking-[-0.01em] text-slate-950">
+                                {label}
+                              </p>
+                              {order.created_by_name ? (
+                                <p className="flex min-w-0 items-center gap-0.5 truncate text-[11px] font-medium text-slate-500">
+                                  <UserRound className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{order.created_by_name}</span>
+                                </p>
+                              ) : null}
+                            </div>
+                            <p className="mt-0.5 truncate font-mono text-[10px] font-semibold tracking-[0.04em] text-slate-500">
+                              {displayRowCode}
+                            </p>
+                          </div>
+
+                          <p className="shrink-0 text-sm font-bold tabular-nums leading-none tracking-[-0.02em] text-slate-950">
+                            {formatCurrency(pendingTotal)}
+                          </p>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={readOnly || order.locked_for_editing}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!order.ready_to_collect) {
+                                setUndispatchedBlockOrder(order);
+                                return;
+                              }
+                              setSelectedOrder(order);
+                            }}
+                            className={
+                              order.ready_to_collect
+                                ? "h-7 shrink-0 rounded-full border border-[#15803d] bg-[#15803d] px-2.5 text-[11px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
+                                : "h-7 shrink-0 rounded-full border border-red-600 bg-red-600 px-2.5 text-[11px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-red-700 hover:text-white"
+                            }
+                          >
+                            <CreditCard className="h-3 w-3" />
+                            Cobrar
+                          </Button>
+                        </div>
+                        {order.is_special ? (
+                          <p className="mt-1 pl-8 text-[10px] text-slate-500">
+                            Real {formatCurrency(order.special_real_total)}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      {/* Desktop / tablet: fila horizontal */}
+                      <div
+                        onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                        className="group hidden cursor-pointer gap-3 px-5 py-3.5 transition-colors hover:bg-slate-100/50 sm:grid sm:grid-cols-[auto_minmax(220px,1.7fr)_minmax(150px,0.9fr)_minmax(100px,0.6fr)_auto] sm:items-center sm:px-8"
                       >
                         <div
                           className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
@@ -206,15 +292,7 @@ export default function PayableOrdersList({
                         <div className="min-w-0">
                           <div className="flex items-center gap-2.5">
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                              {orderKind === "tray" ? (
-                                <Soup className="h-4 w-4" />
-                              ) : orderKind === "takeout" ? (
-                                <ShoppingBag className="h-4 w-4" />
-                              ) : orderKind === "special" ? (
-                                <CreditCard className="h-4 w-4" />
-                              ) : (
-                                <UtensilsCrossed className="h-4 w-4" />
-                              )}
+                              <OrderKindIcon className="h-4 w-4" />
                             </span>
                             <p className="min-w-0 break-words text-lg font-semibold tracking-[-0.02em] text-slate-950">
                               {label}
@@ -245,7 +323,6 @@ export default function PayableOrdersList({
                           )}
                         </div>
 
-
                         <div className="sm:justify-self-end">
                           <Button
                             type="button"
@@ -273,7 +350,7 @@ export default function PayableOrdersList({
                       </div>
 
                       {isExpanded && (
-                        <div className="border-t border-slate-200 px-4 py-4 sm:px-8">
+                        <div className="border-t border-slate-200 px-3 py-3 sm:px-8 sm:py-4">
                           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                             <div className="hidden grid-cols-[minmax(0,1.8fr)_90px_110px_110px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:grid">
                               <span>Detalle</span>
@@ -324,13 +401,13 @@ export default function PayableOrdersList({
                                 return (
                                   <div
                                     key={`${item.description_snapshot}_${item.unit_price}`}
-                                    className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] sm:gap-3"
+                                    className="grid gap-1.5 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] sm:gap-3 sm:px-4 sm:py-3 sm:text-sm"
                                   >
                                     <div className="min-w-0">
                                       <p className="truncate font-medium text-slate-900">{item.description_snapshot}</p>
                                       
                                       {consolidatedModifiers.length > 0 && (
-                                        <div className="mt-1 flex flex-col gap-0.5 text-xs font-semibold text-red-600">
+                                        <div className="mt-0.5 flex flex-col gap-0.5 text-[11px] font-semibold text-red-600 sm:text-xs">
                                           {consolidatedModifiers.map((mc) => (
                                             <p key={mc.firstId} className="break-words whitespace-normal">
                                               - {mc.description} {mc.count > 1 ? `(${mc.count})` : ""}
@@ -339,29 +416,29 @@ export default function PayableOrdersList({
                                         </div>
                                       )}
 
-                                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      <div className="mt-0.5 flex flex-wrap items-center gap-2">
                                         {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
                                         {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
-                                          <span className="text-[11px] font-semibold text-orange-600">
+                                          <span className="text-[10px] font-semibold text-orange-600 sm:text-[11px]">
                                             + {formatCurrency(Number(item.tray_container_cost ?? 0))} tarrina
                                           </span>
                                         ) : null}
                                       </div>
-                                      <p className="mt-0.5 text-xs text-slate-500">
+                                      <p className="mt-0.5 text-[10px] text-slate-500 sm:text-xs">
                                         {isBulkItem ? formatCurrency(item.unit_price) : `${formatCurrency(item.unit_price)} c/u`}
                                       </p>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-2 text-xs sm:contents sm:text-sm">
-                                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                    <div className="grid grid-cols-3 gap-1.5 text-[10px] sm:contents sm:text-sm">
+                                      <span className="rounded-lg bg-slate-50 px-1.5 py-0.5 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
                                         {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Cant.</span> : null}
                                         {isBulkItem ? "A granel" : item.quantity}
                                       </span>
-                                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                      <span className="rounded-lg bg-slate-50 px-1.5 py-0.5 text-center text-slate-600 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
                                         {!isBulkItem ? <span className="mr-1 font-medium text-slate-500 sm:hidden">Pend.</span> : null}
                                         {isBulkItem ? "-" : item.quantity_pending}
                                       </span>
-                                      <span className="rounded-xl bg-slate-50 px-2 py-1 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
-                                        <span className="mr-1 font-medium text-slate-500 sm:hidden">Subtotal</span>
+                                      <span className="rounded-lg bg-slate-50 px-1.5 py-0.5 text-center font-medium text-slate-900 sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                        <span className="mr-1 font-medium text-slate-500 sm:hidden">Sub.</span>
                                         {formatCurrency(item.pending_total)}
                                       </span>
                                     </div>

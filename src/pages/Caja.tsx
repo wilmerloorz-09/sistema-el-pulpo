@@ -1133,14 +1133,14 @@ const Caja = () => {
   return (
     <div className="min-h-full bg-slate-50 px-4 pt-3 pb-0 sm:px-6 sm:pt-4 lg:px-10">
       <div className="w-full space-y-6">
-        <div className="border-b border-slate-200 pb-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h1 className="text-[1.72rem] font-semibold tracking-[-0.035em] text-slate-950 sm:text-[1.95rem]">
-                Caja · {activeBranch?.name ?? "Sucursal"}
-              </h1>
-              {activeTab !== "capture" && (
-                <div className="mt-3 space-y-1">
+        <div className="border-b border-slate-200 pb-4 sm:pb-6">
+          <div className="flex flex-col gap-3 sm:gap-5">
+            <h1 className="text-base font-semibold tracking-[-0.03em] text-slate-950 sm:text-[1.95rem]">
+              Caja · {activeBranch?.name ?? "Sucursal"}
+            </h1>
+            {activeTab !== "capture" && (
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                <div className="min-w-0 space-y-1">
                   <p className="text-sm text-slate-500">
                     Turno abierto hace {shiftElapsed}
                   </p>
@@ -1154,36 +1154,34 @@ const Caja = () => {
                     )}
                   </div>
                 </div>
-              )}
-            </div>
 
-            {activeTab !== "capture" && (
-              <ShiftSummary
-                shift={shift}
-                methodSummary={shiftSummaryMethodSummary}
-                movements={shiftSummaryMovements}
-                movementsLoading={isLoadingCashRegisterMovements}
-                onClose={handleCloseCashRegister}
-                onAnnulOpen={async (reason) => {
-                  const opening = shift.openingHistory.find((entry) => entry.is_current);
-                  if (!opening) throw new Error("No hay apertura activa para anular");
-                  await annulCashOpening.mutateAsync({ openingId: opening.id, reason });
-                }}
-                onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
-                closing={closeCashRegister.isPending}
-                annulling={annulCashOpening.isPending}
-                registeringMovement={registerCashMovement.isPending}
-                canAnnulOpen={canAnnulOpening}
-                readOnly={cajaPanelReadOnly}
-              />
+                <ShiftSummary
+                  shift={shift}
+                  methodSummary={shiftSummaryMethodSummary}
+                  movements={shiftSummaryMovements}
+                  movementsLoading={isLoadingCashRegisterMovements}
+                  onClose={handleCloseCashRegister}
+                  onAnnulOpen={async (reason) => {
+                    const opening = shift.openingHistory.find((entry) => entry.is_current);
+                    if (!opening) throw new Error("No hay apertura activa para anular");
+                    await annulCashOpening.mutateAsync({ openingId: opening.id, reason });
+                  }}
+                  onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
+                  closing={closeCashRegister.isPending}
+                  annulling={annulCashOpening.isPending}
+                  registeringMovement={registerCashMovement.isPending}
+                  canAnnulOpen={canAnnulOpening}
+                  readOnly={cajaPanelReadOnly}
+                />
+              </div>
             )}
           </div>
         </div>
 
         <div className={cn(!isDesktop && "space-y-4")}>
           {activeTab === "pending" ? (
-            <div className={cn(!isDesktop && "rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]")}>
-              <div className="mb-4">
+            <div className="space-y-3 sm:space-y-4">
+              <div>
                 <CajaPayableOrderScopeSelect
                   scope={payableOrderScope}
                   creatorOptions={payableCreatorOptions}
