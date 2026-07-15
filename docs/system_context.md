@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-07-12)
+## Estado operativo vigente (2026-07-14)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -156,10 +156,19 @@
   - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
 - Si un usuario del turno tiene `cash_shift_users.can_double_session = true` (checkbox **Sesión doble** en la tarjeta de `Admin > Turno`), puede conservar una segunda sesion simultanea en otro dispositivo mediante:
-  - `profiles.current_app_secondary_session_id`
+  - `profiles.current_app_session_id` (slot primario)
+  - `profiles.current_app_secondary_session_id` (slot secundario)
   - `profiles.current_app_secondary_session_started_at`
   - `profiles.current_app_secondary_session_device`
 - La doble sesion aplica a **cualquier** usuario habilitado en un turno abierto (Venta, Despacho, Servir, Empacador, Caja, etc.); ya no exige `can_use_caja`. Sin el flag, el bloqueo sigue siendo de una sola sesion.
+- **Registro y validacion (cliente):**
+  - Cada dispositivo guarda su id en `localStorage` (`authOwnedSingleSession`).
+  - `register_my_single_session` escribe el slot primario o secundario segun `user_has_double_app_session_permission(auth.uid())`.
+  - `AuthContext` valida cada ~15 s y al focus/visibility leyendo slots directo de `profiles` (no via `dbSelect`).
+  - **No** borrar `authOwnedSingleSession` cuando `user` parpadea a `null` (refresh de token): regenerar el id ocuparia el secundario y echaria el otro dispositivo. Solo limpiar en `signOut` / kick concurrente.
+  - Reservar el id local **antes** del RPC para evitar dos UUID en paralelo.
+- **Persistencia en turno:** al abrir, `open_cash_shift_with_tables` debe guardar `can_double_session` sin `AND can_use_caja` (el cliente envia caja=false y luego `apply_shift_caja_configuration`). Tras aplicar caja, `ShiftSetupAdmin.restoreDoubleSessionFlags` reaplica el flag.
+- Si falla doble sesion en operacion, verificar: turno `OPEN`, `cash_shift_users.can_double_session = true`, migraciones `20260713220000` / `20260714230000` / `20260714240000`, y que con dos dispositivos abiertos existan ambos slots en `profiles`.
 - Administrador general y supervisor de sucursal mantienen override administrativo para operar caja.
 - Cerrar caja ya no implica cerrar turno.
 - **Flujos Operativos Configurable:** Las sucursales pueden configurarse mediante `branches.workflow_mode` en uno de dos flujos operativos:
@@ -660,8 +669,9 @@
 - **Monitoreo Global:** Fix colgado (import `useBranch`, orden de hooks, realtime menos agresivo, polling 60 s).
 
 ### Actualizacion Jul 14, 2026
-- **Sesión doble:** `open_cash_shift_with_tables` ya no exige `can_use_caja` al guardar `can_double_session` (el cliente enviaba caja=false al abrir). Migracion `20260714230000_fix_open_shift_sesion_doble.sql`. Tras aplicar caja, `ShiftSetupAdmin` reaplica el flag **Sesión doble**.
-- **Sesión doble — cierre fantasma:** `AuthContext` ya no borra `authOwnedSingleSession` cuando el usuario parpadea a `null` (refresh de token). Eso generaba un `sessionId` nuevo, ocupaba el slot secundario y echaba el otro dispositivo. Validacion lee slots directo de `profiles`. Migracion `20260714240000_harden_register_double_session.sql`.
+- **Sesión doble (persistencia al abrir turno):** `open_cash_shift_with_tables` ya no hace `can_double_session AND can_use_caja`. El cliente envia `can_use_caja=false` al abrir y la caja se aplica despues; el `AND` dejaba el flag siempre en `false`. Migracion `20260714230000_fix_open_shift_sesion_doble.sql` (tambien reafirma `normalize_cash_shift_user_capabilities` y `user_has_double_app_session_permission`). Tras `apply_shift_caja_configuration`, `ShiftSetupAdmin` llama `restoreDoubleSessionFlags`.
+- **Sesión doble — cierre fantasma (AuthContext):** al refrescar token el `user` podia pasar a `null` y el efecto borraba `authOwnedSingleSession`; al volver se registraba un UUID nuevo que pisaba el slot secundario y cerraba el otro dispositivo. Fix: no limpiar ese storage en parpadeos; validar slots con select directo a `profiles`; escribir el id local antes del RPC. Migracion `20260714240000_harden_register_double_session.sql` endurece `register_my_single_session` (con doble sesion y ambos slots ocupados, reemplaza el mas antiguo por `started_at`).
+- **Re-cobro tras anulación / comprobantes:** ver secciones operativas de re-cobro misma orden y `comprobantes_pago` (migraciones `20260714120000` … `20260714220000`).
 
 ### Actualizacion Jul 12, 2026
 - **Cobro por transferencia — datos bancarios:**

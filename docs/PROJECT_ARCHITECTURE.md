@@ -31,7 +31,10 @@
 - El campo `caja_status` de ese gate es **por usuario** (`get_user_caja_status`), no el estado global del turno.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` agregan control de sesion activa. (Utilizado tambien en `Monitoreo Global` para ver quien esta operando en linea y en caja).
 - `cash_shift_users.caja_session_slots` y `cash_shifts.max_caja_sessions` limitan terminales simultaneas; varios usuarios pueden tener `can_use_caja` en el mismo turno.
-- `cash_shift_users.can_double_session` (**Sesión doble** en Admin > Turno) permite una segunda sesion de app para el **mismo** usuario en otro dispositivo; se registra en `profiles.current_app_secondary_session_id`. No requiere `can_use_caja`. Al abrir turno, `open_cash_shift_with_tables` debe persistir el flag sin exigir `can_use_caja` (fix: `20260714230000_fix_open_shift_sesion_doble.sql`).
+- `cash_shift_users.can_double_session` (**Sesión doble** en Admin > Turno) permite una segunda sesion de app para el **mismo** usuario en otro dispositivo; se registra en `profiles.current_app_secondary_session_id`. No requiere `can_use_caja`.
+- Cliente: `AuthContext` + `localStorage` key `authOwnedSingleSession`; RPC `register_my_single_session` / `clear_my_single_session`; validacion ~15 s con select directo a slots en `profiles`.
+- Al abrir turno, `open_cash_shift_with_tables` debe persistir el flag sin exigir `can_use_caja` (`20260714230000`). Tras aplicar caja, `ShiftSetupAdmin.restoreDoubleSessionFlags` reaplica el flag. Registro endurecido en `20260714240000`.
+- **No** limpiar `authOwnedSingleSession` cuando el usuario auth parpadea a `null` (refresh de token); solo en `signOut` / kick por sesion concurrente.
 - `cash_shift_users.can_pack_orders` permite el acceso exclusivamente a crear y cobrar Ordenes Extra, restringiendo visualmente Mesas, Para Llevar, Express y Especial.
 - `cash_shift_users.can_serve_plates` delega el despacho de la categoría PLATOS al módulo Servir, ocultando estos productos en Despacho.
 - Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
@@ -405,7 +408,12 @@
 7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final (Aceptar cambios).
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
 9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` resolviendo **`profiles.alias`** via `src/lib/userDisplay.ts` (no nombre real).
-10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`. No borrar `authOwnedSingleSession` en parpadeos de auth (solo en signOut / kick concurrente).
+10. Si se toca session lock / sesion doble:
+    - Revisar `cash_shift_users.can_double_session`, `user_has_double_app_session_permission`, `register_my_single_session`.
+    - Revisar slots `profiles.current_app_session_id` y `current_app_secondary_session_id`.
+    - No borrar `authOwnedSingleSession` en parpadeos de auth (solo signOut / kick concurrente).
+    - Reservar id local antes del RPC; validar slots sin depender de cache offline/`dbSelect`.
+    - Tras `apply_shift_caja_configuration`, reaplicar flags de sesion doble si el cliente los gestiona aparte de caja.
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
 13. **Agrupamiento Visual:** Toda modificación en la lógica de listado de ítems debe preservar la consolidación por descripción y precio para mantener la limpieza visual de la orden.

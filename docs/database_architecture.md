@@ -260,7 +260,12 @@
 - `annul_cash_opening(p_opening_id, ...)` anula una apertura y borra solo sus `cash_shift_denoms` (no las de otros cajeros).
 - `Pagos del turno` debe filtrar por el rango real de `cash_shifts.opened_at` a `cash_shifts.closed_at`/`now()`, no por inicio del dia calendario.
 - `cash_register_templates` y `cash_register_template_denoms` guardan composiciones predefinidas de apertura.
-- `cash_shift_users.can_double_session` habilita una segunda sesion de app para cualquier usuario habilitado en turno abierto (UI: **Sesión doble**). No depende de `can_use_caja`. Migraciones: `20260713220000_sesion_doble_para_cualquier_usuario.sql`, `20260714230000_fix_open_shift_sesion_doble.sql` (deja de exigir caja al abrir turno).
+- `cash_shift_users.can_double_session` habilita una segunda sesion de app para cualquier usuario habilitado en turno abierto (UI: **Sesión doble**). No depende de `can_use_caja`.
+- Permiso efectivo: `user_has_double_app_session_permission(user_id)` = usuario en `cash_shift_users` con `is_enabled`, `can_double_session` y turno `OPEN`.
+- RPC `register_my_single_session(session_id, device_label)`:
+  - sin permiso → un solo slot (`current_app_session_id`) y limpia secundaria;
+  - con permiso → primario o secundario; si ambos ocupados, reemplaza el mas antiguo por `started_at`.
+- Migraciones: `20260713220000_sesion_doble_para_cualquier_usuario.sql`, `20260714230000_fix_open_shift_sesion_doble.sql` (`open_cash_shift_with_tables` sin `AND can_use_caja`), `20260714240000_harden_register_double_session.sql`.
 - Las sesiones de app se registran en `profiles.current_app_session_id` y, cuando aplica doble sesion, en `profiles.current_app_secondary_session_id` con timestamp/dispositivo auxiliar.
 - Cerrar caja y cerrar turno no son la misma operacion.
 - La cantidad cobrable en UI depende de `getPayableQuantityForOrderType` y del `workflow_mode` (en `DISPATCH_THEN_CASH`, solo unidades despachadas netas entran al monto pendiente).
@@ -475,6 +480,11 @@
 - `20260713050000_transferencia_unica_global.sql` — indice unico global + validacion de duplicado en RPC.
 - `20260714220000_comprobantes_pago_transferencia.sql` — tabla `comprobantes_pago` + bucket `comprobantes-pago` (foto opcional en cobro).
 
+### Sesion doble de app (2026-07)
+- `20260713220000_sesion_doble_para_cualquier_usuario.sql` — permiso sin exigir caja; normalize; `apply_shift_caja_configuration` no borra `can_double_session`.
+- `20260714230000_fix_open_shift_sesion_doble.sql` — `open_cash_shift_with_tables` persiste `can_double_session` sin `AND can_use_caja`.
+- `20260714240000_harden_register_double_session.sql` — `register_my_single_session` + permiso; reemplazo del slot mas antiguo si ambos ocupados.
+
 ### Unir / Dividir entre ordenes
 - `20260411213000_move_dine_in_order_items_between_orders.sql`
 - `20260411223000_allow_move_of_unpaid_remaining_item_quantity.sql`
@@ -562,7 +572,13 @@
 
 ### Actualizacion Jul 13, 2026
 - **Enviar a cocina — solo reduccion de cantidad:** Si el operador baja cantidades de lineas ya enviadas (sin borradores nuevos), `applyKitchenPendingItemChanges` persiste el cambio y **no** debe llamar a `submit_order_draft_items`/`sendToKitchen` (fallaba con "No hay productos pendientes por enviar" y el baseline no se reseteaba, dejando el boton activo). Tras aplicar, se actualiza `kitchenBaselineItems`/`stagedItems` y se invalidan despacho/cocina.
-- **Sesión doble en tarjeta de turno:** checkbox **Sesión doble** en `ShiftSetupAdmin` persiste `cash_shift_users.can_double_session` para cualquier usuario del turno (no solo caja). Migracion `20260713220000_sesion_doble_para_cualquier_usuario.sql` relaja el trigger, `user_has_double_app_session_permission` y deja de borrar el flag en `apply_shift_caja_configuration`. Migracion `20260714230000_fix_open_shift_sesion_doble.sql` corrige `open_cash_shift_with_tables` para no anular el flag al abrir (el cliente envia `can_use_caja=false` hasta `apply_shift_caja_configuration`).
+- **Sesión doble en tarjeta de turno:** checkbox **Sesión doble** en `ShiftSetupAdmin` persiste `cash_shift_users.can_double_session` para cualquier usuario del turno (no solo caja). Migracion `20260713220000_sesion_doble_para_cualquier_usuario.sql` relaja el trigger, `user_has_double_app_session_permission` y deja de borrar el flag en `apply_shift_caja_configuration`.
+
+### Actualizacion Jul 14, 2026
+- **Sesión doble — abrir turno:** `20260714230000_fix_open_shift_sesion_doble.sql` — `open_cash_shift_with_tables` persiste `can_double_session` sin exigir `can_use_caja` (el cliente envia caja=false hasta `apply_shift_caja_configuration`). Reafirma normalize + permiso.
+- **Sesión doble — registro:** `20260714240000_harden_register_double_session.sql` — reafirma permiso; `register_my_single_session` con doble sesion y ambos slots ocupados reemplaza el mas antiguo. Frontend: no borrar `authOwnedSingleSession` en refresh de token; `ShiftSetupAdmin.restoreDoubleSessionFlags` tras aplicar caja.
+- **Comprobantes foto transferencia:** `20260714220000_comprobantes_pago_transferencia.sql`.
+- **Re-cobro misma orden:** `20260714120000` … `20260714160000` (anular pago reabre la misma orden).
 
 ### Actualizacion Jul 12, 2026
 - **Bancos y transferencia en pagos:** `bancos`, `payments.banco_id`, `payments.numero_transferencia`. Migraciones `20260712220000`, `20260713050000`.
