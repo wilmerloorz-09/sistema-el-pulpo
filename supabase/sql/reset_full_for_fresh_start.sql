@@ -97,7 +97,7 @@
 --   - Mesas incluye acceso a Ordenes
 --   - Despacho incluye acceso total a Productos
 --   - Ordenes y Productos tambien pueden habilitarse por separado
---   - la doble sesion de Caja sigue dependiendo de `cash_shift_users.can_double_session`
+--   - la doble sesion de app depende de `cash_shift_users.can_double_session` (cualquier usuario del turno; no exige caja)
 -- - TAMBIEN PERMANECEN INTACTAS LAS RPCS de ORDEN ESPECIAL Y EL SISTEMA de TICKETS (80mm)
 -- - TAMBIEN PERMANECE INTACTA LA LIMPIEZA CENTRAL DE CIERRE DE TURNO:
 --   - `cancel_empty_draft_orders_for_branch(...)` cancela borradores no enviados sin pagos ni items operativos
@@ -315,7 +315,7 @@ BEGIN
   END IF;
 
   -- Limpia session locks efimeros de la app antes/despues del borrado.
-  -- Incluye la segunda sesion permitida para Caja por `can_double_session`.
+  -- Incluye la segunda sesion permitida por `can_double_session` (cualquier usuario del turno).
   FOREACH v_session_column IN ARRAY ARRAY[
     'current_app_session_id',
     'current_app_session_started_at',

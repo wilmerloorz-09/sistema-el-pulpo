@@ -103,7 +103,7 @@
 --   - dispatch_assignments
 -- - Reinicia la operacion diaria sin desmontar el sistema
 --   - al borrar cash_shift_users se limpian permisos del turno actual para Mesas, Ordenes, Despacho, Productos, Caja, autorizacion de anulacion, Empacador (can_pack_orders) y Servir (can_serve_plates)
---   - al borrar cash_shift_users se limpia tambien la habilitacion `can_double_session`; el reset ademas limpia las columnas de sesion secundaria en profiles
+--   - al borrar cash_shift_users se limpia tambien la habilitacion `can_double_session` (cualquier usuario del turno, no solo caja); el reset ademas limpia las columnas de sesion secundaria en profiles
 --   - al borrar cash_shifts tambien se elimina la auditoria de cierre (usuario/equipo/user agent)
 --   - al borrar payment_void_requests y payments se eliminan solicitudes/aprobaciones/ejecuciones de anulacion de pago
 --   - esto incluye anulacion total y parcial, pagos de reemplazo (`replacement_payment_id`) y desglose de devolucion en efectivo
@@ -208,7 +208,7 @@ BEGIN
   END LOOP;
 
   -- Limpia session locks efimeros en perfiles conservados.
-  -- Incluye la segunda sesion permitida para Caja por `can_double_session`.
+  -- Incluye la segunda sesion permitida por `can_double_session` (cualquier usuario del turno).
   IF to_regclass('public.profiles') IS NOT NULL THEN
     SELECT EXISTS (
       SELECT 1

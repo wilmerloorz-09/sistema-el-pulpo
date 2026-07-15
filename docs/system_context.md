@@ -446,7 +446,7 @@
 
 ### 2026-04-28
 - Sesiones:
-  - existe soporte de segunda sesion de app para usuarios de caja habilitados con `cash_shift_users.can_double_session = true`.
+  - existe soporte de segunda sesion de app para cualquier usuario del turno con `cash_shift_users.can_double_session = true` (no exige `can_use_caja`).
   - las columnas secundarias de sesion viven en `profiles` y deben limpiarse en resets operativos.
 - Cierre de turno:
   - `cancel_empty_draft_orders_for_branch(...)` centraliza la limpieza de borradores vacios/no enviados.
@@ -598,7 +598,7 @@
    - que el usuario este en `cash_shift_users.is_enabled = true`
    - que tenga al menos una capacidad operativa
    - que no este intentando habilitarse en otro turno abierto
-   - si usa doble sesion, que tenga `can_use_caja = true` y `can_double_session = true` en el turno abierto
+   - si usa doble sesion, que tenga `can_double_session = true` en el turno abierto (no requiere `can_use_caja`)
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.
@@ -658,6 +658,9 @@
 - **Enviar a cocina tras despacho total:** `submit_order_draft_items` acepta ordenes `KITCHEN_DISPATCHED` con borradores nuevos (`20260709220000`). `sendToKitchen` refetch antes de enviar y error si no hay borradores.
 - **Staging cocina — fixes:** `reconcileKitchenStagedItems` para ids `temp-*`; aumento de cantidad en lineas enviadas crea DRAFT con diferencia; reset de baseline tras envio exitoso.
 - **Monitoreo Global:** Fix colgado (import `useBranch`, orden de hooks, realtime menos agresivo, polling 60 s).
+
+### Actualizacion Jul 14, 2026
+- **Sesión doble:** `open_cash_shift_with_tables` ya no exige `can_use_caja` al guardar `can_double_session` (el cliente enviaba caja=false al abrir). Migracion `20260714230000_fix_open_shift_sesion_doble.sql`. Tras aplicar caja, `ShiftSetupAdmin` reaplica el flag **Sesión doble**.
 
 ### Actualizacion Jul 12, 2026
 - **Cobro por transferencia — datos bancarios:**

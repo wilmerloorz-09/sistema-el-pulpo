@@ -1777,6 +1777,22 @@ const ShiftSetupAdmin = () => {
     if (error) throw error;
   };
 
+  /** Reaplica Sesión doble tras apply_shift_caja_* (versiones antiguas podían ponerla en false). */
+  const restoreDoubleSessionFlags = async (
+    shiftId: string,
+    users: Array<{ userId: string; canDoubleSession: boolean }>,
+  ) => {
+    for (const entry of users) {
+      if (!entry.canDoubleSession) continue;
+      const { error } = await (supabase
+        .from("cash_shift_users" as any)
+        .update({ can_double_session: true } as any)
+        .eq("shift_id", shiftId)
+        .eq("user_id", entry.userId) as any);
+      if (error) throw error;
+    }
+  };
+
   const resolveCurrentOpenShiftId = async () => {
     if (!activeBranchId) throw new Error("No hay sucursal activa");
 
@@ -1911,6 +1927,13 @@ const ShiftSetupAdmin = () => {
       );
       // persistShiftUsersForShift fuerza can_use_caja=false; reaplicar cajero principal/secundarios.
       await persistShiftCajaConfiguration(shiftId);
+      await restoreDoubleSessionFlags(
+        shiftId,
+        sanitizedEnabledUsers.map((entry) => ({
+          userId: entry.user_id,
+          canDoubleSession: entry.canDoubleSession,
+        })),
+      );
       return shiftId;
     }
 
@@ -1962,6 +1985,13 @@ const ShiftSetupAdmin = () => {
     if (countConfiguredShiftCashiers(shiftCajaSetup) > 0) {
       await persistShiftCajaConfiguration(shiftId);
     }
+    await restoreDoubleSessionFlags(
+      shiftId,
+      sanitizedEnabledUsers.map((entry) => ({
+        userId: entry.user_id,
+        canDoubleSession: entry.canDoubleSession,
+      })),
+    );
 
     return shiftId;
   };
@@ -2033,6 +2063,13 @@ const ShiftSetupAdmin = () => {
         sanitizedEnabledUsers,
       );
       await persistShiftCajaConfiguration(shiftQuery.data.id);
+      await restoreDoubleSessionFlags(
+        shiftQuery.data.id,
+        sanitizedEnabledUsers.map((entry) => ({
+          userId: entry.userId,
+          canDoubleSession: entry.canDoubleSession,
+        })),
+      );
 
       const enabledUserIdsForShift = sanitizedEnabledUsers.map(
         (entry) => entry.userId,
