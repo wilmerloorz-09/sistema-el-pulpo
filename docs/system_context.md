@@ -661,6 +661,7 @@
 
 ### Actualizacion Jul 14, 2026
 - **Sesión doble:** `open_cash_shift_with_tables` ya no exige `can_use_caja` al guardar `can_double_session` (el cliente enviaba caja=false al abrir). Migracion `20260714230000_fix_open_shift_sesion_doble.sql`. Tras aplicar caja, `ShiftSetupAdmin` reaplica el flag **Sesión doble**.
+- **Sesión doble — cierre fantasma:** `AuthContext` ya no borra `authOwnedSingleSession` cuando el usuario parpadea a `null` (refresh de token). Eso generaba un `sessionId` nuevo, ocupaba el slot secundario y echaba el otro dispositivo. Validacion lee slots directo de `profiles`. Migracion `20260714240000_harden_register_double_session.sql`.
 
 ### Actualizacion Jul 12, 2026
 - **Cobro por transferencia — datos bancarios:**

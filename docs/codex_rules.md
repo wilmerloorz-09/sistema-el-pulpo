@@ -23,7 +23,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - La UI no define seguridad.
 - Validar permisos reales por sucursal/modulo y, cuando aplique, por turno.
 - Las reglas de flujo global deben vivir en BD/RPC y no solo en texto/botones del frontend.
-- Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session` (UI: **Sesión doble** en tarjeta de turno; no requiere `can_use_caja`).
+- Si se toca bloqueo de sesion, revisar tanto la sesion principal como la sesion secundaria autorizada por `cash_shift_users.can_double_session` (UI: **Sesión doble** en tarjeta de turno; no requiere `can_use_caja`). Conservar `authOwnedSingleSession` ante refresh de token.
 
 ### 2.1 Modos de Flujo Operativo en Sucursales (Caja primero vs Despacho primero)
 - Cada sucursal se puede configurar desde administración a través de su propiedad `branches.workflow_mode` con dos métodos de flujo operativo:

@@ -405,7 +405,7 @@
 7. Si se toca `Editar Orden`, revisar juntos buffer UI, `locked_for_editing`, visibilidad de controles y compromiso final (Aceptar cambios).
 8. Si se toca reporteria de caja, revisar juntos filtrado temporal, `cash_register_openings`, `cash_shift_denoms` y reimpresion por apertura/turno.
 9. Si una vista muestra ordenes, debe mostrar tambien el usuario creador de `orders.created_by` resolviendo **`profiles.alias`** via `src/lib/userDisplay.ts` (no nombre real).
-10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`.
+10. Si se toca session lock, revisar la sesion principal y la secundaria permitida por `cash_shift_users.can_double_session`. No borrar `authOwnedSingleSession` en parpadeos de auth (solo en signOut / kick concurrente).
 11. Si se toca envio/cobro/despacho de ordenes, revisar `submit_order_draft_items(...)`, `sync_order_payment_state_internal(...)`, `useCaja` y la UI de `Ordenes`.
 12. Si se toca eliminacion completa de orden, preservar confirmacion previa y validar que todos los items sigan en borrador o en caja.
 13. **Agrupamiento Visual:** Toda modificación en la lógica de listado de ítems debe preservar la consolidación por descripción y precio para mantener la limpieza visual de la orden.

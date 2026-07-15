@@ -165,6 +165,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (profiles?.[0] ?? null) as Profile | null;
   }, []);
 
+  /** Lectura fresca solo de slots de sesion (sin cache offline / sin dbSelect). */
+  const fetchAppSessionSlots = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("current_app_session_id, current_app_secondary_session_id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as {
+      current_app_session_id: string | null;
+      current_app_secondary_session_id: string | null;
+    } | null;
+  }, []);
+
   const clearSessionTracking = useCallback(() => {
     localStorage.removeItem(SESSION_ACTIVITY_STORAGE_KEY);
   }, []);
@@ -212,6 +227,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const registerOwnedSingleSession = useCallback(async (userId: string, sessionId?: string) => {
     const resolvedSessionId = sessionId ?? generateClientSessionId();
+    // Reservar id local ANTES del RPC: evita dos UUID nuevos en paralelo
+    // (uno quedaria en secundario y echaria al otro dispositivo).
+    writeOwnedSingleSession(userId, resolvedSessionId);
 
     const { error } = await supabase.rpc("register_my_single_session" as any, {
       p_session_id: resolvedSessionId,
@@ -220,7 +238,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (error) throw error;
 
-    writeOwnedSingleSession(userId, resolvedSessionId);
     return resolvedSessionId;
   }, []);
 
@@ -294,8 +311,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const userId = state.user?.id;
+    // No borrar authOwnedSingleSession si user parpadea a null (refresh de token):
+    // un sessionId nuevo pisaria el slot secundario y cerraria el otro dispositivo.
     if (!userId) {
-      clearOwnedSingleSession();
       return;
     }
 
@@ -305,8 +323,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       try {
         const ownedSession = readOwnedSingleSession();
-        const currentProfile = await fetchProfile(userId);
-        setState((prev) => ({ ...prev, profile: currentProfile }));
+        const sessionSlots = await fetchAppSessionSlots(userId);
 
         if (!ownedSession || ownedSession.userId !== userId) {
           await registerOwnedSingleSession(userId);
@@ -314,8 +331,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const activeSessionIds = [
-          currentProfile?.current_app_session_id ?? null,
-          currentProfile?.current_app_secondary_session_id ?? null,
+          sessionSlots?.current_app_session_id ?? null,
+          sessionSlots?.current_app_secondary_session_id ?? null,
         ].filter((value): value is string => Boolean(value));
 
         if (activeSessionIds.length === 0) {
@@ -358,8 +375,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       window.clearInterval(intervalId);
     };
   }, [
-    clearOwnedSingleSession,
-    fetchProfile,
+    fetchAppSessionSlots,
     forceSignOutDueToConcurrentSession,
     registerOwnedSingleSession,
     state.user?.id,
