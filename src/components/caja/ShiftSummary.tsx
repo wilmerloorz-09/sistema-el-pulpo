@@ -163,10 +163,10 @@ export default function ShiftSummary({
             <Button
               type="button"
               size="sm"
-              className="h-9 shrink-0 rounded-full border-0 bg-[#0f766e] px-4 text-xs font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#115e59] sm:h-11 sm:px-6 sm:text-sm"
+              className="h-7 shrink-0 rounded-full border-0 bg-[#0f766e] px-2.5 text-[11px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#115e59] sm:h-11 sm:px-6 sm:text-sm"
               onClick={() => setShowClose(true)}
             >
-              <WalletCards className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <WalletCards className="h-3 w-3 sm:h-4 sm:w-4" />
               Cerrar caja
             </Button>
           )}

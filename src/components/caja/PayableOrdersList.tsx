@@ -160,9 +160,9 @@ export default function PayableOrdersList({
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
+          <div className="sm:overflow-hidden sm:rounded-[28px] sm:border sm:border-slate-200 sm:bg-white sm:shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">
             {orders.length === 0 ? (
-              <div className="px-6 py-16 text-center">
+              <div className="px-2 py-12 text-center sm:px-6 sm:py-16">
                 {autoOpenOrderId ? (
                   <div className="flex flex-col items-center gap-3">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -177,7 +177,7 @@ export default function PayableOrdersList({
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-slate-200">
+              <div className="divide-y divide-slate-200 sm:border-0">
                 {orders.map((order, index) => {
                   const label = getCajaOrderOriginLabel({
                     orderType: order.order_type,
@@ -212,22 +212,22 @@ export default function PayableOrdersList({
                       {/* Móvil: ~2 filas compactas */}
                       <div
                         onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                        className="group cursor-pointer px-3 py-2 transition-colors hover:bg-slate-100/50 sm:hidden"
+                        className="group cursor-pointer px-1.5 py-2 transition-colors hover:bg-slate-100/50 sm:hidden"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <div
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
                             aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
                           >
-                            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                           </div>
 
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                            <OrderKindIcon className="h-3.5 w-3.5" />
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                            <OrderKindIcon className="h-3 w-3" />
                           </span>
 
                           <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 items-center gap-1.5">
+                            <div className="flex min-w-0 items-center gap-1">
                               <p className="truncate text-[13px] font-semibold leading-tight tracking-[-0.01em] text-slate-950">
                                 {label}
                               </p>
@@ -243,7 +243,7 @@ export default function PayableOrdersList({
                             </p>
                           </div>
 
-                          <p className="shrink-0 text-sm font-bold tabular-nums leading-none tracking-[-0.02em] text-slate-950">
+                          <p className="shrink-0 text-[13px] font-bold tabular-nums leading-none tracking-[-0.02em] text-slate-950">
                             {formatCurrency(pendingTotal)}
                           </p>
 
@@ -262,16 +262,16 @@ export default function PayableOrdersList({
                             }}
                             className={
                               order.ready_to_collect
-                                ? "h-7 shrink-0 rounded-full border border-[#15803d] bg-[#15803d] px-2.5 text-[11px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
-                                : "h-7 shrink-0 rounded-full border border-red-600 bg-red-600 px-2.5 text-[11px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-red-700 hover:text-white"
+                                ? "h-6 shrink-0 gap-1 rounded-full border border-[#15803d] bg-[#15803d] px-2 text-[10px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#166534] hover:text-white"
+                                : "h-6 shrink-0 gap-1 rounded-full border border-red-600 bg-red-600 px-2 text-[10px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-red-700 hover:text-white"
                             }
                           >
-                            <CreditCard className="h-3 w-3" />
+                            <CreditCard className="h-2.5 w-2.5" />
                             Cobrar
                           </Button>
                         </div>
                         {order.is_special ? (
-                          <p className="mt-1 pl-8 text-[10px] text-slate-500">
+                          <p className="mt-1 pl-7 text-[10px] text-slate-500">
                             Real {formatCurrency(order.special_real_total)}
                           </p>
                         ) : null}

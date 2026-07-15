@@ -1139,40 +1139,42 @@ const Caja = () => {
               Caja · {activeBranch?.name ?? "Sucursal"}
             </h1>
             {activeTab !== "capture" && (
-              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm text-slate-500">
+              <div className="flex flex-nowrap items-start justify-between gap-2">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="truncate text-xs text-slate-500 sm:text-sm">
                     Turno abierto hace {shiftElapsed}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block h-2 w-2 rounded-full bg-[#0f766e]" />
-                    <span className="text-sm text-slate-700">Mi caja abierta</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[#0f766e]" />
+                    <span className="truncate text-xs text-slate-700 sm:text-sm">Mi caja abierta</span>
                     {!canOperateCaja && (
-                      <span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-500">
+                      <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 sm:text-xs">
                         Solo consulta
                       </span>
                     )}
                   </div>
                 </div>
 
-                <ShiftSummary
-                  shift={shift}
-                  methodSummary={shiftSummaryMethodSummary}
-                  movements={shiftSummaryMovements}
-                  movementsLoading={isLoadingCashRegisterMovements}
-                  onClose={handleCloseCashRegister}
-                  onAnnulOpen={async (reason) => {
-                    const opening = shift.openingHistory.find((entry) => entry.is_current);
-                    if (!opening) throw new Error("No hay apertura activa para anular");
-                    await annulCashOpening.mutateAsync({ openingId: opening.id, reason });
-                  }}
-                  onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
-                  closing={closeCashRegister.isPending}
-                  annulling={annulCashOpening.isPending}
-                  registeringMovement={registerCashMovement.isPending}
-                  canAnnulOpen={canAnnulOpening}
-                  readOnly={cajaPanelReadOnly}
-                />
+                <div className="shrink-0">
+                  <ShiftSummary
+                    shift={shift}
+                    methodSummary={shiftSummaryMethodSummary}
+                    movements={shiftSummaryMovements}
+                    movementsLoading={isLoadingCashRegisterMovements}
+                    onClose={handleCloseCashRegister}
+                    onAnnulOpen={async (reason) => {
+                      const opening = shift.openingHistory.find((entry) => entry.is_current);
+                      if (!opening) throw new Error("No hay apertura activa para anular");
+                      await annulCashOpening.mutateAsync({ openingId: opening.id, reason });
+                    }}
+                    onRegisterMovement={(payload) => registerCashMovement.mutateAsync(payload)}
+                    closing={closeCashRegister.isPending}
+                    annulling={annulCashOpening.isPending}
+                    registeringMovement={registerCashMovement.isPending}
+                    canAnnulOpen={canAnnulOpening}
+                    readOnly={cajaPanelReadOnly}
+                  />
+                </div>
               </div>
             )}
           </div>
