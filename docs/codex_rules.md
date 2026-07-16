@@ -273,8 +273,54 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
 
-### Actualizacion Jul 15, 2026
-- **Autopedidos QR:** menú TABLE only (sin Con envase / A granel); feedback inline; tokens estables al regenerar; aprobar vía `submit_order_draft_items`; migración `20260716000000`.
+### 14. Autopedidos QR en mesa (2026-07-16)
+
+#### Alcance del módulo
+- Comensal escanea QR físico en mesa → web pública `/qr-pedido/:token_seguro`.
+- Personal aprueba o rechaza antes de integrar al flujo POS.
+- **No confundir** con QR promocional en ticket de cobro (`token_promocion`).
+
+#### Reglas de producto / menú
+- Menú cliente: **solo** `menu_scope = 'TABLE'`.
+- **Prohibido** exponer Con envase (`TAKEOUT`) ni A granel (`BULK`) en la web del comensal.
+- Modificadores: herencia por ancestros en el cliente; no asumir `ancestor_ids` en nodos de frecuentes.
+
+#### Reglas de UI (web pública)
+- **100% móvil:** `max-w-md`, safe-area (`pt-safe`, `safe-bottom`), botones táctiles ≥ 44px.
+- **Sin Sonner:** errores y éxitos **inline** (`role="alert"`, `text-destructive`).
+- Identificación del comensal **opcional** (cédula 10 dígitos o continuar sin identificar).
+- `InstallPrompt` omitido en `/qr-pedido`.
+
+#### Reglas de tokens QR
+- Tabla `tokens_qr_mesas`; columnas y RPCs en **español** (`sucursal_id`, `token_seguro`, `creado_en`, etc.).
+- Generación admin: cantidad configurable 1–100 (`generar_tokens_qr_mesas_sucursal`).
+- Tokens **estables:** regenerar reactiva filas existentes; no rotar tokens impresos.
+- **No usar** `gen_random_bytes` / `pgcrypto`; usar `gen_random_uuid()` concatenado (migración `20260716010000`).
+- Requiere `ensure_branch_table_capacity` antes de generar tokens.
+
+#### Reglas de orden y aprobación
+- Creación: `DRAFT` + `es_autopedido_qr = true` + `estado_aprobacion_qr = 'PENDIENTE'`.
+- `orders.created_by` NULL en creación; se asigna al usuario que **aprueba**.
+- Aprobar: **siempre** vía RPC `aprobar_autopedido_qr` (internamente llama `submit_order_draft_items`).
+- Rechazar: vía `rechazar_autopedido_qr` → ítems y orden `CANCELLED`.
+- Requiere turno `OPEN` en la sucursal del token (validado en RPCs).
+
+#### Reglas de seguridad
+- Escritura del comensal solo vía RPCs `SECURITY DEFINER`; no inserts directos desde UI anónima.
+- RLS anon acotado a tokens activos + turno abierto + menú TABLE.
+- Staff: `usuario_puede_gestionar_autopedidos_qr` para aprobar/rechazar.
+
+#### Archivos a tocar con cuidado
+| Área | Archivos |
+|------|----------|
+| SQL | `20260716000000_autopedidos_qr.sql`, `20260716010000_fix_gen_random_bytes_tokens_qr.sql` |
+| Cliente | `src/pages/QrPedido.tsx`, `src/services/autopedidosQrDb.ts` |
+| Admin | `src/components/admin/QrMesasAdmin.tsx` |
+| POS | `src/components/autopedidos/AutopedidosQrPanel.tsx`, `src/hooks/useAutopedidosQrPendientes.ts` |
+| Shell | `src/App.tsx`, `AppLayout.tsx`, `SidebarNav.tsx`, `Admin.tsx` |
+
+### Actualizacion Jul 15–16, 2026
+- **Autopedidos QR:** ver sección **14** arriba. Migraciones `20260716000000` + `20260716010000` obligatorias en Supabase remota.
 
 ## Convenciones de implementacion
 
@@ -303,6 +349,14 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - unicidad global banco + numero (modal inline + `payOrder` + migracion `20260713050000`)
   - catalogo `bancos` en Admin
   - sin toasts Sonner para errores de duplicado
+- Si tocas **Autopedidos QR**, validar:
+  - migraciones `20260716000000` y `20260716010000` aplicadas en BD remota
+  - menú cliente solo `TABLE` (sin TAKEOUT/BULK)
+  - turno `OPEN` requerido para escanear y pedir
+  - aprobación vía `aprobar_autopedido_qr` (no `submit_order_draft_items` directo)
+  - feedback inline en `/qr-pedido` y panel POS (sin Sonner)
+  - tokens estables al regenerar en Admin
+  - no confundir con QR promocional de ticket (`token_promocion`)
 
 ### Backend / BD
 - Toda regla de caja, turno, anulacion de pago y movimiento entre ordenes debe vivir en RPC/BD, no solo en cliente.
@@ -353,6 +407,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 24. Si se toca Caja en Despacho primero, validar `ready_to_collect`, boton rojo/verde, `AlertDialog` y guard en `payOrder`.
 25. Si se toca QR en ticket, validar campaña activa + ofertas registrables y migraciones `20260709200000` / `20260709210000`.
 26. Si se toca envio post-despacho, validar `20260709220000` y reconciliacion de staging (`reconcileKitchenStagedItems`).
+27. Si se toca **Autopedidos QR**, validar migraciones `20260716000000` + `20260716010000`, flujo completo (admin generar → cliente pedir → POS aprobar/rechazar), menú TABLE only, turno OPEN, sin Sonner, y distinción vs QR promocional de ticket.
+
+### Actualizacion Jul 15–16, 2026
+- **Autopedidos QR:** reglas en sección **14**; checklist item 27.
 
 ### Actualizacion Jul 12, 2026
 - **Transferencia en cobro:** reglas en seccion 11.1; componentes `TransferenciaPago*`, `useBancosActivos`, `BancosCrud`.

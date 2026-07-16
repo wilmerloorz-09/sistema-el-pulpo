@@ -592,8 +592,77 @@
 27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
 28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
 
-### Actualizacion Jul 15, 2026
-- **Autopedidos QR en mesa:** migración `20260716000000_autopedidos_qr.sql` (`tokens_qr_mesas`, `orders.es_autopedido_qr`, `orders.estado_aprobacion_qr`, RPCs anon/staff). Admin: pestaña **Mesas QR**. Público: `/qr-pedido/:token`. POS: badge + panel aprobar/rechazar.
+### Actualizacion Jul 15–16, 2026 — Autopedidos QR en mesa
+
+Módulo que permite al comensal escanear un QR físico en la mesa, ver el menú de mesas y enviar un pedido desde el celular. El personal del turno debe **aprobar** el pedido antes de que entre al flujo normal del POS.
+
+#### Flujo operativo
+1. **Admin** genera tokens en `/admin` → pestaña **Mesas QR** (`QrMesasAdmin.tsx`).
+2. Cada mesa obtiene URL pública: `/qr-pedido/:token_seguro`.
+3. El comensal abre la URL (sin login). Requiere **turno `OPEN`** en la sucursal del token.
+4. El comensal arma el pedido (menú `TABLE` only) y envía.
+5. La orden queda `status = 'DRAFT'`, `es_autopedido_qr = true`, `estado_aprobacion_qr = 'PENDIENTE'`.
+6. En el POS, badge + panel **Autopedidos entrantes** (`AutopedidosQrPanel.tsx`).
+7. **Aprobar** → `aprobar_autopedido_qr` → `submit_order_draft_items` → `SENT_TO_KITCHEN` + `estado_aprobacion_qr = 'APROBADO'`.
+8. **Rechazar** → `rechazar_autopedido_qr` → ítems `CANCELLED`, orden `CANCELLED`, `estado_aprobacion_qr = 'RECHAZADO'`.
+9. Tras aprobar, la orden sigue el flujo canónico: En Caja → Pagada → Despachada (según `workflow_mode`).
+
+#### Web App del cliente (`/qr-pedido/:token`)
+- Ruta pública en `App.tsx` (hermana de `/login` y `/promociones/registro`); **sin** `AuthGate` ni `AppLayout`.
+- Página: `src/pages/QrPedido.tsx`. Servicio: `src/services/autopedidosQrDb.ts`.
+- **Mobile-first:** `max-w-md`, `pt-safe`, botones táctiles ≥ 44px, sin popups Sonner.
+- **Identificación opcional:** cédula 10 dígitos → `buscar_cliente_autopedido_qr` / `registrar_cliente_autopedido_qr`; puede omitirse (`cliente_id` NULL).
+- **Menú:** solo `menu_scope = 'TABLE'` vía `obtener_menu_autopedido_qr`. **Excluye** Con envase (`TAKEOUT`) y A granel (`BULK`).
+- **Modificadores:** herencia por ancestros en cliente (`obtener_modificadores_autopedido_qr` + resolución `parent_id`); misma lógica que POS pero sin depender de `ancestor_ids`.
+- **Envío:** RPC `crear_orden_autopedido_qr(p_token_seguro, p_items jsonb, p_cliente_id)`.
+- `p_items`: array `{ menu_node_id, quantity, item_note?, unit_price?, modifier_ids? }`.
+
+#### Admin — generación de QR
+- Pestaña **Mesas QR** en `Admin.tsx` (`QrMesasAdmin.tsx`).
+- Campo **Cantidad de mesas** configurable (1–100; sugerido según mesas de la sucursal).
+- Antes de generar: `ensure_branch_table_capacity` + RPC `generar_tokens_qr_mesas_sucursal(p_sucursal_id, p_limite)`.
+- Tokens **estables:** al regenerar se reactivan filas existentes; no se rotan (QR impresos siguen válidos).
+- Impresión: vista con QR (`qrcode` → data URL) + botón **Imprimir**.
+- Permiso: admin global o `can_manage_branch_admin` en la sucursal.
+
+#### POS — aprobación
+- Badge discreto en header móvil (`AppLayout`) y sidebar desktop (`SidebarNav`) cuando `contar_autopedidos_pendientes > 0`.
+- Panel lateral: `AutopedidosQrPanel.tsx`; datos: `useAutopedidosQrPendientes.ts`.
+- Listado agrupado por mesa; polling ~15 s mientras hay turno abierto.
+- Quien puede gestionar: `usuario_puede_gestionar_autopedidos_qr` (mesero, caja, supervisor o admin en turno `OPEN`).
+
+#### Base de datos (nomenclatura en español)
+- Tabla `tokens_qr_mesas`: `id`, `sucursal_id`, `mesa_id`, `token_seguro`, `activo`, `creado_en`, `actualizado_en`.
+- `orders`: `es_autopedido_qr`, `estado_aprobacion_qr` (`PENDIENTE`|`APROBADO`|`RECHAZADO`), `token_qr_id`.
+- `orders.created_by` nullable solo si `es_autopedido_qr = true` (comensal no es usuario auth).
+- Trigger `trg_orders_normalizar_estado_aprobacion_qr`: órdenes no-QR siempre `APROBADO`.
+
+#### Seguridad
+- Lectura anónima acotada: `tokens_qr_mesas` activos + turno `OPEN`; `menu_nodes`/`modifiers`/`menu_node_modifiers` solo `TABLE`.
+- Escritura del comensal vía RPCs `SECURITY DEFINER` (patrón promociones públicas), no inserts directos desde UI.
+- Policies INSERT `TO anon` en `orders`/`order_items` documentan el contrato; camino operativo real: `crear_orden_autopedido_qr`.
+
+#### Migraciones obligatorias
+- `20260716000000_autopedidos_qr.sql` — esquema, RLS, RPCs.
+- `20260716010000_fix_gen_random_bytes_tokens_qr.sql` — `token_seguro` con `gen_random_uuid()` (no `pgcrypto.gen_random_bytes`).
+
+#### Archivos clave
+| Capa | Archivos |
+|------|----------|
+| SQL | `supabase/migrations/20260716000000_autopedidos_qr.sql`, `20260716010000_fix_gen_random_bytes_tokens_qr.sql` |
+| Servicio | `src/services/autopedidosQrDb.ts` |
+| Cliente | `src/pages/QrPedido.tsx` |
+| Admin | `src/components/admin/QrMesasAdmin.tsx` |
+| POS | `src/components/autopedidos/AutopedidosQrPanel.tsx`, `src/hooks/useAutopedidosQrPendientes.ts` |
+| Shell | `src/App.tsx`, `src/components/AppLayout.tsx`, `src/components/SidebarNav.tsx`, `src/pages/Admin.tsx` |
+
+#### Riesgos / no romper
+29. **Autopedidos QR:** requiere migraciones `20260716000000` y `20260716010000` aplicadas en Supabase remota.
+30. **Autopedidos QR:** no usar `gen_random_bytes` para tokens; usar `gen_random_uuid()` concatenado.
+31. **Autopedidos QR:** menú cliente solo `TABLE`; no exponer `TAKEOUT`/`BULK` en `/qr-pedido`.
+32. **Autopedidos QR:** sin Sonner; errores inline (`role="alert"`, `text-destructive`).
+33. **Autopedidos QR:** aprobar siempre vía `aprobar_autopedido_qr` (no `submit_order_draft_items` directo sin marcar `APROBADO`).
+34. **Autopedidos QR:** no confundir con QR promocional de ticket (`token_promocion` / `promocionesRecibo.ts`).
 
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
@@ -611,6 +680,12 @@
    - que tenga al menos una capacidad operativa
    - que no este intentando habilitarse en otro turno abierto
    - si usa doble sesion, que tenga `can_double_session = true` en el turno abierto (no requiere `can_use_caja`)
+7. Si falla **Autopedidos QR** (Admin / cliente / POS), revisar:
+   - migraciones `20260716000000` y `20260716010000` aplicadas en Supabase remota
+   - turno `OPEN` en la sucursal del token (cliente ve error si está cerrado)
+   - tabla `tokens_qr_mesas` existe y token `activo = true`
+   - error `gen_random_bytes` → aplicar fix `20260716010000`
+   - pedido pendiente: `estado_aprobacion_qr = 'PENDIENTE'` y permisos `usuario_puede_gestionar_autopedidos_qr`
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.

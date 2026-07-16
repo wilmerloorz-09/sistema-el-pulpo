@@ -187,8 +187,77 @@
 - **Generación condicionada (2026-07-09):** el trigger de token solo asigna `token_promocion` si existe al menos una campaña con `activa = true` (`20260709200000_token_promocion_solo_campana_activa.sql`).
 - **Ofertas registrables (2026-07-09):** además, el token/QR en recibo solo aplica si la campaña activa tiene ofertas con cupo y `bloqueo_at` futuro (`20260709210000_token_promocion_solo_oferta_registrable.sql`). Frontend: `hayPromocionRegistrableEnRecibo`, `campanaTieneOfertasRegistrables`, `sanitizarPromocionReciboData`.
 
-### Actualizacion Jul 15, 2026
-- **Autopedidos QR:** `20260716000000_autopedidos_qr.sql` — tabla `tokens_qr_mesas`; columnas `orders.es_autopedido_qr`, `estado_aprobacion_qr`, `token_qr_id`; RPCs `crear_orden_autopedido_qr`, `aprobar_autopedido_qr`, `rechazar_autopedido_qr`, `generar_tokens_qr_mesas_sucursal`.
+### 7.1 Autopedidos QR en mesa (2026-07-16)
+
+#### Tabla `tokens_qr_mesas`
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `id` | uuid PK | |
+| `sucursal_id` | uuid FK → `branches` | |
+| `mesa_id` | uuid FK → `restaurant_tables` | UNIQUE con `sucursal_id` |
+| `token_seguro` | text | UNIQUE; ≥ 24 chars; URL `/qr-pedido/:token_seguro` |
+| `activo` | boolean | default `true` |
+| `creado_en` | timestamptz | |
+| `actualizado_en` | timestamptz | trigger `trg_tokens_qr_mesas_actualizar_marca_tiempo` |
+
+#### Columnas en `orders`
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| `es_autopedido_qr` | boolean | default `false` |
+| `estado_aprobacion_qr` | text | `PENDIENTE` \| `APROBADO` \| `RECHAZADO`; CHECK constraint |
+| `token_qr_id` | uuid FK → `tokens_qr_mesas` | nullable; auditoría |
+
+- `orders.created_by` nullable **solo** si `es_autopedido_qr = true` (CHECK `orders_created_by_autopedido_chk`).
+- Trigger `trg_orders_normalizar_estado_aprobacion_qr`: órdenes con `es_autopedido_qr = false` → `estado_aprobacion_qr = 'APROBADO'` automático.
+- Índice parcial: `idx_orders_autopedido_pendiente` WHERE `es_autopedido_qr AND estado_aprobacion_qr = 'PENDIENTE'`.
+
+#### Helpers SECURITY DEFINER
+- `token_qr_mesa_activo(p_token_seguro)` — token activo + mesa activa + turno `OPEN`.
+- `usuario_puede_gestionar_autopedidos_qr(p_user_id, p_sucursal_id)` — staff en turno con capacidad operativa.
+
+#### RPCs — cliente anónimo (`GRANT TO anon, authenticated`)
+| RPC | Propósito |
+|-----|-----------|
+| `resolver_contexto_token_qr_mesa` | Valida token; devuelve sucursal, mesa, turno |
+| `obtener_menu_autopedido_qr` | Nodos `TABLE` activos (sin `is_tray_category`) |
+| `obtener_modificadores_autopedido_qr` | Enlaces `menu_node_modifiers` + textos |
+| `buscar_cliente_autopedido_qr` | Busca por cédula |
+| `registrar_cliente_autopedido_qr` | Alta comensal con validaciones |
+| `crear_orden_autopedido_qr` | Crea orden `DRAFT` + ítems + modificadores |
+
+#### RPCs — staff (`GRANT TO authenticated`)
+| RPC | Propósito |
+|-----|-----------|
+| `generar_tokens_qr_mesas_sucursal(p_sucursal_id, p_limite)` | Genera/reactiva tokens (1–100 mesas) |
+| `contar_autopedidos_pendientes` | Badge POS |
+| `listar_autopedidos_pendientes` | Panel con ítems JSON |
+| `aprobar_autopedido_qr` | Marca `APROBADO` + `submit_order_draft_items` |
+| `rechazar_autopedido_qr` | Cancela ítems/orden + `RECHAZADO` |
+
+#### Generación de `token_seguro`
+- **No usar** `gen_random_bytes` (requiere `pgcrypto`; no disponible en este proyecto).
+- Usar: `replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '')` → 64 hex chars.
+- Fix: migración `20260716010000_fix_gen_random_bytes_tokens_qr.sql`.
+
+#### RLS resumen
+- `tokens_qr_mesas`: SELECT anon si activo + turno OPEN; admin write autenticado.
+- `menu_nodes` / `modifiers` / `menu_node_modifiers`: SELECT anon solo `TABLE` + turno OPEN.
+- `orders` / `order_items`: INSERT/SELECT anon acotado a autopedidos QR pendientes (contrato; escritura real vía RPC).
+
+#### Flujo de estados autopedido
+```
+Comensal envía → DRAFT + PENDIENTE
+Staff aprueba  → SENT_TO_KITCHEN + APROBADO (+ order_code/number)
+Staff rechaza  → CANCELLED + RECHAZADO
+Post-aprobación → flujo canónico (Caja → PAID → Despacho)
+```
+
+#### Migraciones
+- `20260716000000_autopedidos_qr.sql` — esquema completo.
+- `20260716010000_fix_gen_random_bytes_tokens_qr.sql` — fix generación token.
+
+### Actualizacion Jul 15–16, 2026
+- **Autopedidos QR:** ver dominio **7.1** arriba. Aplicar ambas migraciones en Supabase remota antes de usar Admin > Mesas QR.
 
 ## Reglas vigentes por area
 
@@ -212,6 +281,7 @@
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas en pantallas que clasifican despachos y listos (Cocina, Despacho, listados complejos).
 - En el **cobro en caja** (`useCaja.payOrder`), con flujo `CASH_THEN_DISPATCH`, la validación de cantidad cobrable puede basarse en `order_items` + cancelaciones aplicadas (`order_item_cancellations` / `order_cancellations`) **sin** llamar a `get_order_operational_snapshot` por orden, reduciendo latencia.
+- **Autopedidos QR (2026-07-16):** órdenes con `es_autopedido_qr = true` y `estado_aprobacion_qr = 'PENDIENTE'` no deben aparecer en pestañas operativas hasta aprobarse. Tras `aprobar_autopedido_qr`, integran flujo normal. `created_by` NULL en creación; se asigna al aprobar.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`. Impide el cobro en Caja mientras la orden está siendo modificada.
 - `submit_order_draft_items(...)` y `sync_order_payment_state_internal(...)` operan la secuencia de la orden en base a la propiedad `branches.workflow_mode` configurada en la sucursal activa.
 - Los nuevos ítems añadidos durante una edición de una orden se marcan para seguir el flujo operativo correspondiente.
@@ -506,6 +576,10 @@
 - `20260502103000_profile_full_name_reflects_first_name.sql`
 - `20260502104500_reload_postgrest_schema.sql`
 
+### Autopedidos QR en mesa (2026-07-16)
+- `20260716000000_autopedidos_qr.sql` — tabla `tokens_qr_mesas`, columnas QR en `orders`, RLS anon, RPCs cliente/staff.
+- `20260716010000_fix_gen_random_bytes_tokens_qr.sql` — `token_seguro` con `gen_random_uuid()` (sin `pgcrypto`).
+
 ### Perfiles y alias (2026-06-28)
 - `20260628120000_add_profile_alias.sql`
   - Columna `profiles.alias` (NOT NULL, unico case-insensitive, check alfanumerico).
@@ -533,7 +607,8 @@
 18. **Despacho UI:** pestaña unificada Para llevar/Express; Extra en Mesa/Todos; preferir `get_batch_order_operational_snapshots` cuando exista la migracion.
 19. **Productos frecuentes:** reordenar con staging positivo; respetar unique por `(branch_id, context, display_order)`.
 20. **Mesas KITCHEN_DISPATCHED:** `get_branch_tables_overview` no incluye `KITCHEN_DISPATCHED` en el filtro de ordenes activas. En el frontend (`useTablesWithStatus`) existe la guardia `isDispatchedComplete` que fuerza `status = 'free'` si `active_order_status = 'KITCHEN_DISPATCHED'` y `total_due <= 0`, como defensa adicional. Migracion: `20260526120000_fix_dispatched_tables_show_as_free.sql`.
-20. **Caja unificada:** el alcance “todas/mías/por usuario” se maneja en cliente (combo en Recaudar), no por flags `secondary_caja_*`.
+20. **Autopedidos QR:** si se tocan tokens, órdenes QR o RPCs de aprobación, preservar `estado_aprobacion_qr`, `created_by` nullable solo en autopedidos, y no rotar tokens al regenerar.
+21. **Autopedidos QR:** no usar `gen_random_bytes`; generar `token_seguro` con `gen_random_uuid()` concatenado.
 
 ### Actualizacion May 23, 2026
 - **Ordenes Especiales:** Se corrigio el trigger de pago para marcar como PAID a las ordenes especiales cuando alcanzan el monto manual configurado. Tambien se actualizo useReportesOnlineData.ts para que aparezcan bajo el tipo SPECIAL en los reportes y filtros, y dejen de estar ocultas como Mesa o Extra.

@@ -398,8 +398,58 @@
   - `src/components/admin/UsersCrud.tsx`, `AddUserDialog.tsx`, `EditUserDialog.tsx`
   - `supabase/functions/login-with-identifier`, `create-user`, `void-payment`
 
-### Actualizacion Jul 15, 2026
-- **Autopedidos QR:** ruta pública `/qr-pedido/:token` (`QrPedido.tsx`); admin `QrMesasAdmin`; panel `AutopedidosQrPanel` + badge en `AppLayout`/`SidebarNav`; servicio `autopedidosQrDb.ts`.
+### 15. Autopedidos QR en mesa (2026-07-16)
+
+Permite que el comensal escanee un QR en la mesa y pida desde el celular. El pedido entra como borrador pendiente de aprobación del personal.
+
+#### Arquitectura por capas
+
+| Capa | Responsabilidad |
+|------|-----------------|
+| **BD / RPC** | Tokens, validación turno `OPEN`, creación orden+ítems, aprobación/rechazo |
+| **Admin** | Generar QR por sucursal (cantidad configurable), imprimir |
+| **Web pública** | Menú TABLE, carrito, envío anónimo |
+| **POS** | Badge pendientes, panel aprobar/rechazar |
+
+#### Ruta pública del cliente
+- URL: `/qr-pedido/:token_seguro` (definida en `App.tsx` fuera de `AuthGate`).
+- Página: `src/pages/QrPedido.tsx`.
+- Mismo cliente Supabase (`integrations/supabase/client.ts`); sesión `anon` implícita.
+- `InstallPrompt` omitido en `/qr-pedido` (como `/promociones/registro`).
+- Layout: standalone mobile-first (`max-w-md`, `pt-safe`, `safe-bottom`).
+
+#### Flujo UI del comensal (`QrPedido.tsx`)
+1. `resolver_contexto_token_qr_mesa` — valida token, resuelve sucursal/mesa/turno.
+2. **Identidad** (opcional): cédula → buscar/registrar en `clientes`.
+3. **Menú:** categorías raíz `TABLE`; productos por categoría; **sin** pestañas Con envase / A granel.
+4. **Producto:** cantidad, modificadores heredados, nota opcional.
+5. **Carrito** → `crear_orden_autopedido_qr`.
+6. **Éxito:** mensaje inline; puede pedir de nuevo en la misma sesión.
+
+#### Admin — generación QR
+- `src/components/admin/QrMesasAdmin.tsx` — pestaña **Mesas QR** en `Admin.tsx`.
+- Input **Cantidad de mesas** (1–100) + botones Generar / Imprimir.
+- Flujo: `ensure_branch_table_capacity` → `generar_tokens_qr_mesas_sucursal`.
+- QR renderizado con librería `qrcode` (data URL); no `qrcode.react` en runtime admin.
+- URL impresa: `{origin}/qr-pedido/{token_seguro}`.
+
+#### POS — aprobación operativa
+- `src/hooks/useAutopedidosQrPendientes.ts` — `contar_autopedidos_pendientes`, `listar_autopedidos_pendientes`.
+- `src/components/autopedidos/AutopedidosQrPanel.tsx` — Sheet lateral; agrupa por mesa.
+- `AutopedidosQrBadgeButton` en `AppLayout` (móvil) y `SidebarNav` (desktop).
+- **Aprobar:** `aprobar_autopedido_qr` → asigna `created_by` al aprobador → `submit_order_draft_items`.
+- **Rechazar:** `rechazar_autopedido_qr` → cancela ítems y orden.
+
+#### Servicio frontend
+- `src/services/autopedidosQrDb.ts` — wrappers RPC para cliente anónimo y staff autenticado.
+
+#### Integración con flujo canónico de orden
+- Pre-aprobación: `DRAFT` + `estado_aprobacion_qr = 'PENDIENTE'` (no visible en pestañas operativas normales hasta aprobar).
+- Post-aprobación: `SENT_TO_KITCHEN` (En Caja) — mismo flujo que mesa creada por mesero.
+- `created_by` se asigna al usuario que aprueba (no al comensal anónimo).
+
+### Actualizacion Jul 15–16, 2026
+- **Autopedidos QR:** implementación completa cliente + admin + POS. Migraciones `20260716000000`, `20260716010000`. Ver sección **15. Autopedidos QR en mesa**.
 
 ## Principios vigentes
 1. Refactor incremental, no corte brusco del modelo legacy.
@@ -444,9 +494,9 @@
 35. **QR promocion:** No imprimir sin campaña activa y ofertas registrables; usar `promocionesRecibo.ts` y migraciones `20260709200000` / `20260709210000`.
 36. **Staging cocina:** Reconciliar ids `temp-*`; aumentos en lineas enviadas → DRAFT con diferencia; migracion `20260709220000` para envio post-despacho.
 37. **Transferencia bancaria:** Modal con banco/numero/valor; unicidad global; migraciones `20260712220000`, `20260713050000`; sin toasts Sonner.
-38. **Feedback POS:** Errores inline en dialogos; `sonner-stub.ts` silencia popups flotantes.
+39. **Autopedidos QR:** Menú cliente solo TABLE; aprobar vía `aprobar_autopedido_qr`; migraciones `20260716000000` + `20260716010000`; sin Sonner en `/qr-pedido`.
 
-### Actualizacion Jul 12, 2026
+### Actualizacion Jul 15–16, 2026
 - **Cobro por transferencia:** `TransferenciaPagoSection`, `TransferenciaPagoDialog`, tabla `bancos`, columnas en `payments`, Admin > Bancos.
 - **Unicidad comprobante:** indice + validacion RPC + mensaje inline en modal.
 - **Sin popups Sonner:** alias Vite a `src/lib/sonner-stub.ts`.
