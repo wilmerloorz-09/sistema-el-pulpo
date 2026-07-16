@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { Loader2, Printer, QrCode, RefreshCw, TableProperties } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { useBranch } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -12,6 +14,30 @@ import {
 } from "@/services/autopedidosQrDb";
 
 type TokenConImagen = TokenQrMesaGenerado & { qrDataUrl: string };
+
+const LIMITE_MAX_MESAS = 100;
+
+function isMissingSchemaError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("schema cache") ||
+    lower.includes("tokens_qr_mesas") ||
+    lower.includes("generar_tokens_qr_mesas_sucursal") ||
+    lower.includes("could not find the table") ||
+    lower.includes("could not find the function")
+  );
+}
+
+function formatSchemaError(message: string): string {
+  if (isMissingSchemaError(message)) {
+    return (
+      "Falta aplicar la migración SQL de autopedidos QR en Supabase " +
+      "(archivo supabase/migrations/20260716000000_autopedidos_qr.sql). " +
+      "Hasta que exista la tabla tokens_qr_mesas y la función generar_tokens_qr_mesas_sucursal, esta pantalla no puede operar."
+    );
+  }
+  return message;
+}
 
 async function enrichTokensWithQr(tokens: TokenQrMesaGenerado[]): Promise<TokenConImagen[]> {
   return Promise.all(
@@ -32,10 +58,51 @@ const QrMesasAdmin = () => {
   const { activeBranch, activeBranchId } = useBranch();
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [inlineOk, setInlineOk] = useState<string | null>(null);
+  const [cantidadMesas, setCantidadMesas] = useState(20);
+
+  const branchTablesQuery = useQuery({
+    queryKey: ["admin-qr-mesas-capacidad", activeBranchId],
+    enabled: !!activeBranchId,
+    queryFn: async () => {
+      if (!activeBranchId) return { referenceCount: 20, generatedCount: 0 };
+
+      const [{ data: branch, error: branchError }, { count, error: countError }] = await Promise.all([
+        supabase
+          .from("branches")
+          .select("reference_table_count")
+          .eq("id", activeBranchId)
+          .single(),
+        supabase
+          .from("restaurant_tables")
+          .select("id", { count: "exact", head: true })
+          .eq("branch_id", activeBranchId),
+      ]);
+
+      if (branchError) throw branchError;
+      if (countError) throw countError;
+
+      const referenceCount = Math.max(1, Number(branch?.reference_table_count ?? 20));
+      const generatedCount = Number(count ?? 0);
+      return { referenceCount, generatedCount };
+    },
+  });
+
+  useEffect(() => {
+    if (!branchTablesQuery.data) return;
+    const suggested = Math.min(
+      LIMITE_MAX_MESAS,
+      Math.max(
+        1,
+        branchTablesQuery.data.generatedCount || branchTablesQuery.data.referenceCount || 20,
+      ),
+    );
+    setCantidadMesas(suggested);
+  }, [branchTablesQuery.data]);
 
   const existingQuery = useQuery({
     queryKey: ["tokens-qr-mesas", activeBranchId],
     enabled: !!activeBranchId,
+    retry: false,
     queryFn: async () => {
       if (!activeBranchId) return [];
 
@@ -51,7 +118,7 @@ const QrMesasAdmin = () => {
           .eq("branch_id", activeBranchId),
       ]);
 
-      if (tokensError) throw tokensError;
+      if (tokensError) throw new Error(formatSchemaError(tokensError.message));
       if (mesasError) throw mesasError;
 
       const mesaById = new Map((mesas ?? []).map((m) => [m.id, m]));
@@ -73,21 +140,43 @@ const QrMesasAdmin = () => {
   });
 
   const displayTokens = existingQuery.data ?? [];
+  const limiteNormalizado = Math.max(1, Math.min(LIMITE_MAX_MESAS, Math.trunc(cantidadMesas || 1)));
 
   const generateMutation = useMutation({
     mutationFn: async () => {
       if (!activeBranchId) throw new Error("No hay sucursal activa.");
-      const generated = await generarTokensQrMesasSucursal(activeBranchId, 20);
-      return enrichTokensWithQr(generated);
+      if (limiteNormalizado < 1) throw new Error("Indica al menos 1 mesa.");
+
+      // Asegura que existan filas de mesas físicas antes de generar tokens.
+      const { error: ensureError } = await supabase.rpc("ensure_branch_table_capacity", {
+        p_branch_id: activeBranchId,
+        p_requested_count: limiteNormalizado,
+      });
+      if (ensureError) throw new Error(ensureError.message);
+
+      try {
+        return await generarTokensQrMesasSucursal(activeBranchId, limiteNormalizado);
+      } catch (err) {
+        throw new Error(formatSchemaError(err instanceof Error ? err.message : String(err)));
+      }
     },
-    onSuccess: async () => {
+    onSuccess: async (generated) => {
       setInlineError(null);
-      setInlineOk("Códigos QR generados/actualizados. Los tokens ya impresos se conservan.");
-      await qc.invalidateQueries({ queryKey: ["tokens-qr-mesas", activeBranchId] });
+      const creados = generated.filter((t) => t.creado).length;
+      setInlineOk(
+        creados > 0
+          ? `Listo: ${generated.length} mesas con QR (${creados} tokens nuevos).`
+          : `Listo: ${generated.length} códigos QR actualizados (tokens existentes conservados).`,
+      );
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["tokens-qr-mesas", activeBranchId] }),
+        qc.invalidateQueries({ queryKey: ["admin-qr-mesas-capacidad", activeBranchId] }),
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] }),
+      ]);
     },
     onError: (err: Error) => {
       setInlineOk(null);
-      setInlineError(err.message || "No se pudieron generar los códigos QR.");
+      setInlineError(formatSchemaError(err.message || "No se pudieron generar los códigos QR."));
     },
   });
 
@@ -115,16 +204,42 @@ const QrMesasAdmin = () => {
             <div>
               <h3 className="font-display text-lg font-black text-foreground">Autopedidos QR en mesa</h3>
               <p className="text-sm text-muted-foreground">
-                Genera o actualiza tokens para hasta 20 mesas de{" "}
+                Genera o actualiza tokens para{" "}
                 <span className="font-semibold text-foreground">{activeBranch?.name}</span>.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="cantidad-mesas-qr" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Cantidad de mesas
+            </Label>
+            <NumericInput
+              id="cantidad-mesas-qr"
+              mode="integer"
+              min={1}
+              max={LIMITE_MAX_MESAS}
+              value={cantidadMesas}
+              onValueChange={setCantidadMesas}
+              showStepButtons
+              className="h-11 w-36 rounded-2xl text-center text-lg font-black"
+            />
+            <p className="text-xs text-muted-foreground">
+              Máximo {LIMITE_MAX_MESAS}. Sugerido:{" "}
+              {branchTablesQuery.data?.generatedCount ||
+                branchTablesQuery.data?.referenceCount ||
+                "—"}{" "}
+              mesas en sucursal.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pb-6">
             <Button
               type="button"
               onClick={() => generateMutation.mutate()}
-              disabled={generateMutation.isPending}
+              disabled={generateMutation.isPending || limiteNormalizado < 1}
               className="h-11 min-w-[11rem] rounded-2xl px-4 font-bold"
             >
               {generateMutation.isPending ? (
@@ -178,11 +293,11 @@ const QrMesasAdmin = () => {
           role="alert"
           className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive print:hidden"
         >
-          {(existingQuery.error as Error)?.message || "No se pudieron cargar los códigos QR."}
+          {formatSchemaError((existingQuery.error as Error)?.message || "No se pudieron cargar los códigos QR.")}
         </p>
       ) : displayTokens.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-orange-200 bg-white/70 p-6 text-center text-sm text-muted-foreground print:hidden">
-          Aún no hay códigos. Pulsa <strong>Generar Códigos QR</strong>.
+          Aún no hay códigos. Elige la cantidad de mesas y pulsa <strong>Generar Códigos QR</strong>.
         </div>
       ) : (
         <div className="print-qr-root space-y-3">

@@ -988,7 +988,8 @@ BEGIN
       creado := false;
       RETURN NEXT;
     ELSE
-      v_token := encode(gen_random_bytes(24), 'hex');
+      -- 64 hex chars sin depender de pgcrypto.gen_random_bytes
+      v_token := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
       INSERT INTO public.tokens_qr_mesas (
         sucursal_id, mesa_id, token_seguro, activo
       ) VALUES (
