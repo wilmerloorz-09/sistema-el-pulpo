@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark } from "lucide-react";
+import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark, QrCode } from "lucide-react";
 import BancosCrud from "@/components/admin/BancosCrud";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
@@ -11,6 +11,7 @@ import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
 import FrequentProductsAdmin from "@/components/admin/FrequentProductsAdmin";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
+import QrMesasAdmin from "@/components/admin/QrMesasAdmin";
 import ShiftSetupAdmin from "@/components/admin/ShiftSetupAdmin";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
@@ -126,6 +127,13 @@ const TABS: AdminTab[] = [
     label: "Más frecuentes",
     icon: <PackagePlus className="h-4 w-4" />,
     component: MenuNodesCrudExtra,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+  },
+  {
+    value: "mesas-qr",
+    label: "Mesas QR",
+    icon: <QrCode className="h-4 w-4" />,
+    component: QrMesasAdmin,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {

@@ -592,6 +592,9 @@
 27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
 28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
 
+### Actualizacion Jul 15, 2026
+- **Autopedidos QR en mesa:** migración `20260716000000_autopedidos_qr.sql` (`tokens_qr_mesas`, `orders.es_autopedido_qr`, `orders.estado_aprobacion_qr`, RPCs anon/staff). Admin: pestaña **Mesas QR**. Público: `/qr-pedido/:token`. POS: badge + panel aprobar/rechazar.
+
 ## Checklist rapido para continuidad
 1. Confirmar migraciones recientes de abril si se trabaja con una base remota.
 2. Si falla anulacion de pago, revisar Edge Function `void-payment`, apertura de caja del pago y supervisor real del mismo turno.

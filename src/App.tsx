@@ -28,6 +28,7 @@ import Clientes from "./pages/Clientes";
 import Promociones from "./pages/Promociones";
 import PromocionesConsulta from "./pages/PromocionesConsulta";
 import PromocionRegistro from "./pages/PromocionRegistro";
+import QrPedido from "./pages/QrPedido";
 import Campanas from "./pages/Campanas";
 import CampanaDetalle from "./pages/CampanaDetalle";
 import Despacho from "./pages/Despacho";
@@ -221,6 +222,9 @@ const InstallPrompt = () => {
   if (window.location.pathname.startsWith("/promociones/registro")) {
     return null;
   }
+  if (window.location.pathname.startsWith("/qr-pedido")) {
+    return null;
+  }
 
   useEffect(() => {
     if (!import.meta.env.PROD) return;
@@ -333,6 +337,7 @@ const App = () => (
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/promociones/registro" element={<PromocionRegistro />} />
+              <Route path="/qr-pedido/:token" element={<QrPedido />} />
               <Route
                 element={
                   <AuthGate>

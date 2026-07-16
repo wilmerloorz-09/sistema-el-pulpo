@@ -68,13 +68,15 @@ export function reconcileKitchenStagedItems<T extends { id: string }>(
   server: T[],
 ): T[] {
   const hasTemporaryItems = staged.some((item) => isTemporaryKitchenItemId(item.id));
+  // Sin temps no hay nada que reconciliar: no reinyectar lineas del servidor
+  // (evita que un borrador eliminado localmente reaparezca tras un refetch).
+  if (!hasTemporaryItems) {
+    return staged;
+  }
+
   const withoutTemp = staged.filter((item) => !isTemporaryKitchenItemId(item.id));
   const stagedIds = new Set(withoutTemp.map((item) => item.id));
   const additions = server.filter((item) => !stagedIds.has(item.id));
-
-  if (!hasTemporaryItems && additions.length === 0) {
-    return staged;
-  }
 
   return [...withoutTemp, ...additions];
 }

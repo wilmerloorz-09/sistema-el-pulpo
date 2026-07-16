@@ -398,6 +398,9 @@
   - `src/components/admin/UsersCrud.tsx`, `AddUserDialog.tsx`, `EditUserDialog.tsx`
   - `supabase/functions/login-with-identifier`, `create-user`, `void-payment`
 
+### Actualizacion Jul 15, 2026
+- **Autopedidos QR:** ruta pública `/qr-pedido/:token` (`QrPedido.tsx`); admin `QrMesasAdmin`; panel `AutopedidosQrPanel` + badge en `AppLayout`/`SidebarNav`; servicio `autopedidosQrDb.ts`.
+
 ## Principios vigentes
 1. Refactor incremental, no corte brusco del modelo legacy.
 2. Seguridad y reglas operativas en backend/BD primero.

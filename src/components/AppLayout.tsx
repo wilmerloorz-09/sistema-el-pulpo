@@ -6,6 +6,7 @@ import { Building2, KeyRound, LogOut, UserRound, WifiOff, Menu } from "lucide-re
 import BottomNav from "./BottomNav";
 import SidebarNav from "./SidebarNav";
 import ChangePasswordDialog from "./ChangePasswordDialog";
+import { AutopedidosQrBadgeButton, AutopedidosQrPanel } from "@/components/autopedidos/AutopedidosQrPanel";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -22,6 +23,7 @@ import { getUserDisplayName, getUserRealName } from "@/lib/userDisplay";
 const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [autopedidosOpen, setAutopedidosOpen] = useState(false);
   const location = useLocation();
   const qc = useQueryClient();
   const ordenesLeaveRef = useRef<{ orderId: string; skipPurge: boolean } | null>(null);
@@ -74,7 +76,14 @@ const AppLayout = () => {
   return (
     <>
       <div className="min-h-dvh bg-transparent md:grid md:grid-cols-[248px_minmax(0,1fr)]">
-        {isDesktop ? <SidebarNav isDark={isDark} onToggleTheme={toggle} onOpenAccount={() => setUserMenuOpen(true)} /> : null}
+        {isDesktop ? (
+          <SidebarNav
+            isDark={isDark}
+            onToggleTheme={toggle}
+            onOpenAccount={() => setUserMenuOpen(true)}
+            onOpenAutopedidos={() => setAutopedidosOpen(true)}
+          />
+        ) : null}
 
         <div className="flex min-h-dvh min-w-0 flex-col">
           {!isDesktop && (
@@ -89,12 +98,15 @@ const AppLayout = () => {
                     </span>
                   </div>
                 </div>
-                {!isOnline && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
-                    <WifiOff className="h-3 w-3" />
-                    <span className="hidden xs:inline">Sin conexion</span>
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  <AutopedidosQrBadgeButton onClick={() => setAutopedidosOpen(true)} />
+                  {!isOnline && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
+                      <WifiOff className="h-3 w-3" />
+                      <span className="hidden xs:inline">Sin conexion</span>
+                    </span>
+                  )}
+                </div>
               </div>
             </header>
           )}
@@ -114,6 +126,7 @@ const AppLayout = () => {
       </div>
 
       <OrderReadyAlertCenter />
+      <AutopedidosQrPanel open={autopedidosOpen} onOpenChange={setAutopedidosOpen} />
       {!isDesktop ? <BottomNav isDark={isDark} onToggleTheme={toggle} onOpenAccount={() => setUserMenuOpen(true)} /> : null}
 
       <Dialog open={userMenuOpen} onOpenChange={setUserMenuOpen}>

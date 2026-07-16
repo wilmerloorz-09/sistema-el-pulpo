@@ -273,6 +273,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
 
+### Actualizacion Jul 15, 2026
+- **Autopedidos QR:** menú TABLE only (sin Con envase / A granel); feedback inline; tokens estables al regenerar; aprobar vía `submit_order_draft_items`; migración `20260716000000`.
+
 ## Convenciones de implementacion
 
 ### Frontend

@@ -187,6 +187,9 @@
 - **Generación condicionada (2026-07-09):** el trigger de token solo asigna `token_promocion` si existe al menos una campaña con `activa = true` (`20260709200000_token_promocion_solo_campana_activa.sql`).
 - **Ofertas registrables (2026-07-09):** además, el token/QR en recibo solo aplica si la campaña activa tiene ofertas con cupo y `bloqueo_at` futuro (`20260709210000_token_promocion_solo_oferta_registrable.sql`). Frontend: `hayPromocionRegistrableEnRecibo`, `campanaTieneOfertasRegistrables`, `sanitizarPromocionReciboData`.
 
+### Actualizacion Jul 15, 2026
+- **Autopedidos QR:** `20260716000000_autopedidos_qr.sql` — tabla `tokens_qr_mesas`; columnas `orders.es_autopedido_qr`, `estado_aprobacion_qr`, `token_qr_id`; RPCs `crear_orden_autopedido_qr`, `aprobar_autopedido_qr`, `rechazar_autopedido_qr`, `generar_tokens_qr_mesas_sucursal`.
+
 ## Reglas vigentes por area
 
 ### Catalogo y venta

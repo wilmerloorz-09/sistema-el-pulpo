@@ -54,4 +54,14 @@ describe("kitchenPendingChanges", () => {
       { id: "real-999", quantity: 2, unit_price: 0.5 },
     ]);
   });
+
+  it("sin temps no reinyecta lineas del servidor ausentes en staging", () => {
+    const staged = [{ id: "line-1", quantity: 1, unit_price: 3 }];
+    const server = [
+      { id: "line-1", quantity: 1, unit_price: 3 },
+      { id: "deleted-locally", quantity: 1, unit_price: 2 },
+    ];
+
+    expect(reconcileKitchenStagedItems(staged, server)).toEqual(staged);
+  });
 });

@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AutopedidosQrBadgeButton } from "@/components/autopedidos/AutopedidosQrPanel";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -19,6 +20,7 @@ interface SidebarNavProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenAccount: () => void;
+  onOpenAutopedidos?: () => void;
   onClose?: () => void;
   className?: string;
 }
@@ -42,7 +44,7 @@ function formatLocalBuildTime(value?: string | null) {
   }).format(date);
 }
 
-const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }: SidebarNavProps) => {
+const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, onClose, className }: SidebarNavProps) => {
   const { visibleItems } = useVisibleNavItems();
   const { profile } = useAuth();
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
@@ -66,7 +68,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
       <div className="shrink-0 border-b border-slate-800 px-4 py-4">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="El Pulpo" className="h-10 w-10 object-cover rounded-full" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Sistema</p>
             <div className="flex min-w-0 items-baseline gap-2">
               <p className="truncate font-display text-lg font-black text-white">El Pulpo</p>
@@ -82,6 +84,12 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onClose, className }
               ) : null}
             </div>
           </div>
+          {onOpenAutopedidos ? (
+            <AutopedidosQrBadgeButton
+              onClick={onOpenAutopedidos}
+              className="border-slate-700 bg-slate-800 text-orange-300 hover:bg-slate-700"
+            />
+          ) : null}
         </div>
 
         <div className="mt-4 space-y-2">

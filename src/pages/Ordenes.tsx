@@ -1128,11 +1128,16 @@ const OrdenesContent = () => {
     setStagedItems((prev) => {
       const reconciled = reconcileKitchenStagedItems(prev, orderItems);
       const prevIds = new Set(reconciled.map((item) => item.id));
-      const newFromServer = orderItems.filter((item) => !prevIds.has(item.id));
+      const baselineIds = new Set(kitchenBaselineItems.map((item) => item.id));
+      // Solo incorporar lineas realmente nuevas (p.ej. addItem), no reinyectar
+      // borradores que el usuario ya quito del staging aunque sigan un instante en BD.
+      const newFromServer = orderItems.filter(
+        (item) => !prevIds.has(item.id) && !baselineIds.has(item.id),
+      );
       if (newFromServer.length === 0) return reconciled;
       return [...reconciled, ...newFromServer];
     });
-  }, [useKitchenStaging, stagedDirty, orderItems, isLoading]);
+  }, [useKitchenStaging, stagedDirty, orderItems, isLoading, kitchenBaselineItems]);
 
   const tableOrdersQuery = useQuery({
     queryKey: isExpressOrder
@@ -3060,7 +3065,9 @@ const OrdenesContent = () => {
           specialOrderCatalogTotal={order.is_special && effectiveSpecialTotalManual != null ? total : null}
           onRemove={(id) => {
             const ids = Array.isArray(id) ? id : [id];
-            if (fromEditar || useKitchenStaging) {
+
+            // Modo editar (Caja primero): cambios locales hasta aceptar.
+            if (fromEditar) {
               setStagedDirty(true);
               setStagedItems((prev) => {
                 const next = [...prev];
@@ -3079,16 +3086,71 @@ const OrdenesContent = () => {
                 }
                 return next;
               });
-            } else {
-              void (async () => {
-                for (const itemId of ids) {
-                  await removeItem.mutateAsync(itemId);
-                }
-              })();
+              return;
             }
+
+            // Mesa / despacho primero: borradores se persisten al instante (como para llevar);
+            // lineas ya enviadas quedan pendientes hasta "Enviar a cocina".
+            if (useKitchenStaging) {
+              const draftIds: string[] = [];
+              const sentIds: string[] = [];
+              for (const itemId of ids) {
+                const item = stagedItems.find((i) => i.id === itemId);
+                if (!item) continue;
+                if (item.status === "DRAFT") draftIds.push(itemId);
+                else sentIds.push(itemId);
+              }
+
+              if (sentIds.length > 0) {
+                setStagedDirty(true);
+                setStagedItems((prev) => {
+                  const next = [...prev];
+                  for (const itemId of sentIds) {
+                    const idx = next.findIndex((i) => i.id === itemId);
+                    if (idx >= 0) {
+                      next[idx] = { ...next[idx], quantity: 0, total: 0 };
+                    }
+                  }
+                  return next;
+                });
+              }
+
+              if (draftIds.length > 0) {
+                const draftIdSet = new Set(draftIds);
+                const removedSnapshots = stagedItems.filter((i) => draftIdSet.has(i.id));
+                setStagedItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
+                setKitchenBaselineItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
+                void (async () => {
+                  try {
+                    for (const itemId of draftIds) {
+                      await removeItem.mutateAsync(itemId);
+                    }
+                  } catch {
+                    // removeItem ya restaura el cache de la orden; reponer staging/baseline.
+                    setStagedItems((prev) => {
+                      const ids = new Set(prev.map((i) => i.id));
+                      const missing = removedSnapshots.filter((i) => !ids.has(i.id));
+                      return missing.length === 0 ? prev : [...prev, ...missing];
+                    });
+                    setKitchenBaselineItems((prev) => {
+                      const ids = new Set(prev.map((i) => i.id));
+                      const missing = removedSnapshots.filter((i) => !ids.has(i.id));
+                      return missing.length === 0 ? prev : [...prev, ...missing];
+                    });
+                  }
+                })();
+              }
+              return;
+            }
+
+            void (async () => {
+              for (const itemId of ids) {
+                await removeItem.mutateAsync(itemId);
+              }
+            })();
           }}
           onUpdateQty={(id, qty, price) => {
-            if (fromEditar || useKitchenStaging) {
+            if (fromEditar) {
               setStagedDirty(true);
               setStagedItems((prev) =>
                 prev.map((i) =>
@@ -3102,9 +3164,40 @@ const OrdenesContent = () => {
                     : i
                 )
               );
-            } else {
-              updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
+              return;
             }
+
+            if (useKitchenStaging) {
+              const stagedItem = stagedItems.find((i) => i.id === id);
+              const nextTotal = qty * price + (qty > 0 ? (stagedItem?.tray_container_cost ?? 0) : 0);
+              const patchItem = <T extends { id: string; quantity: number; unit_price: number; total: number; tray_container_cost?: number | null }>(
+                items: T[],
+              ) =>
+                items.map((i) =>
+                  i.id === id
+                    ? {
+                      ...i,
+                      quantity: qty,
+                      unit_price: price,
+                      total: nextTotal,
+                    }
+                    : i
+                );
+
+              // Borradores: persistir ya (misma regla que para llevar / agregar producto).
+              if (stagedItem?.status === "DRAFT") {
+                setStagedItems(patchItem);
+                setKitchenBaselineItems(patchItem);
+                updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
+                return;
+              }
+
+              setStagedDirty(true);
+              setStagedItems(patchItem);
+              return;
+            }
+
+            updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
           }}
           onRequestCancel={fromEditar ? undefined : handleRequestInlineCancel}
           disableDraftEditing={!canEditItems}
