@@ -1,13 +1,21 @@
-import { dbSelect } from "@/services/DatabaseService";
+import { dbSelect, dbSelectStrict } from "@/services/DatabaseService";
 
 export interface OpenCashShift {
   id: string;
   opened_at: string;
 }
 
-/** Turno operativo abierto de la sucursal (el mas reciente por opened_at). */
-export async function getOpenCashShiftForBranch(branchId: string): Promise<OpenCashShift | null> {
-  const rows = await dbSelect<OpenCashShift>("cash_shifts", {
+/**
+ * Turno operativo abierto de la sucursal (el mas reciente por opened_at).
+ * Con `strict: true` la lectura no cae al cache local en fallo de red: lanza
+ * para que React Query reintente (evita mostrar "sin turno" o un turno viejo).
+ */
+export async function getOpenCashShiftForBranch(
+  branchId: string,
+  opts?: { strict?: boolean },
+): Promise<OpenCashShift | null> {
+  const read = opts?.strict ? dbSelectStrict : dbSelect;
+  const rows = await read<OpenCashShift>("cash_shifts", {
     select: "id, opened_at",
     branchId,
     filters: [{ column: "status", op: "eq", value: "OPEN" }],

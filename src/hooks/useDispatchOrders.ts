@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { dbSelect, supabase } from "@/services/DatabaseService";
+import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -460,11 +460,15 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const openShift = await getOpenCashShiftForBranch(activeBranchId);
+      // Lecturas estrictas (sin fallback a cache local): si la red falla, la query
+      // lanza y React Query conserva los ultimos datos buenos y reintenta, en vez
+      // de renderizar ordenes/items viejos del cache como si fueran actuales
+      // (causa de "el item nuevo no aparece en Despacho hasta varios minutos").
+      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
       if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const ordersMerged = (
-        await dbSelect<any>("orders", {
+        await dbSelectStrict<any>("orders", {
           select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
           branchId: activeBranchId,
           filters: [
@@ -472,14 +476,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
             { column: "cash_shift_id", op: "eq", value: openShift.id },
           ],
           orderBy: { column: "updated_at", ascending: true },
-          skipLocalCache: true,
         })
       ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
 
       if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const allOrderIds = ordersMerged.map((o) => o.id);
-      const paymentsForOrders = await dbSelect<any>("payments", {
+      const paymentsForOrders = await dbSelectStrict<any>("payments", {
         select: "order_id, notes, status",
         filters: [{ column: "order_id", op: "in", value: allOrderIds }],
       });
@@ -490,7 +493,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         if (!paymentRowIsInactive(p.notes, p.status)) ordersWithActivePayment.add(p.order_id);
       }
 
-      const paidLineRows = await dbSelect<any>("order_items", {
+      const paidLineRows = await dbSelectStrict<any>("order_items", {
         select: "order_id, paid_at",
         filters: [{ column: "order_id", op: "in", value: allOrderIds }],
       });
@@ -524,7 +527,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
-        ? await dbSelect<any>("profiles", {
+        ? await dbSelectStrict<any>("profiles", {
             select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
@@ -532,7 +535,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
       const packerUsers = creatorIds.length > 0
-        ? await dbSelect<any>("cash_shift_users", {
+        ? await dbSelectStrict<any>("cash_shift_users", {
             select: "user_id",
             filters: [
               { column: "shift_id", op: "eq", value: openShift.id },
@@ -550,7 +553,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const getPermittedForView = (v: DispatchView, source: any[]) => {
         let baseFiltered = source.filter((order) => {
           if (v === "SPECIAL") return Boolean(order.is_special);
-          if (v === "TABLE") return matchesScope(order.order_type, v) && !Boolean(order.is_special);
+          if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
           return matchesScope(order.order_type, v);
         });
 
@@ -579,9 +582,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const splitIds = Array.from(splitIdSet);
 
       const [tables, splits, items] = await Promise.all([
-        tableIds.length > 0 ? dbSelect("restaurant_tables", { filters: [{ column: "id", op: "in", value: tableIds }] }) : Promise.resolve([]),
-        splitIds.length > 0 ? dbSelect("table_splits", { filters: [{ column: "id", op: "in", value: splitIds }] }) : Promise.resolve([]),
-        dbSelect("order_items", { filters: [{ column: "order_id", op: "in", value: orderIdsToFetch }] })
+        tableIds.length > 0 ? dbSelectStrict("restaurant_tables", { filters: [{ column: "id", op: "in", value: tableIds }] }) : Promise.resolve([]),
+        splitIds.length > 0 ? dbSelectStrict("table_splits", { filters: [{ column: "id", op: "in", value: splitIds }] }) : Promise.resolve([]),
+        dbSelectStrict("order_items", { filters: [{ column: "order_id", op: "in", value: orderIdsToFetch }] })
       ]);
 
       const tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
@@ -590,7 +593,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const itemIds = (items ?? []).map((item: any) => item.id);
       const modifiersMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
-        const modifierRows = await dbSelect<any>("order_item_modifiers", {
+        const modifierRows = await dbSelectStrict<any>("order_item_modifiers", {
           select: "id, order_item_id, modifiers(description)",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
@@ -609,7 +612,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const operationalMaps = await fetchOperationalMapsForOrders(orderIdsToFetch);
 
       const clientPaidQtyByItemId = await fetchActivePaidQuantityByOrderItemId(itemIds, {
-        skipLocalCache: true,
+        strict: true,
       });
 
       let platosProductIds: Set<string> | undefined;
@@ -618,7 +621,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (isServirModule) {
         platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
       } else if (moduleMode === "dispatch") {
-        const serverUsers = await dbSelect<any>("cash_shift_users", {
+        const serverUsers = await dbSelectStrict<any>("cash_shift_users", {
           select: "user_id",
           filters: [
             { column: "shift_id", op: "eq", value: openShift.id },

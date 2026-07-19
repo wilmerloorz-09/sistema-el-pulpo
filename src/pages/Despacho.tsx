@@ -144,7 +144,7 @@ const Despacho = () => {
               </div>
             )}
 
-            {isError ? (
+            {isError && orders.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
                 <AlertCircle className="mb-3 h-12 w-12 text-destructive/40" />
                 <p className="font-display text-lg font-bold text-foreground">Error al cargar ordenes</p>

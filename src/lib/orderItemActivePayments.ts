@@ -1,4 +1,4 @@
-import { dbSelect } from "@/services/DatabaseService";
+import { dbSelect, dbSelectStrict } from "@/services/DatabaseService";
 
 /** Alineado a caja / detalle de orden: no contar pagos anulados, revertidos o con comprobante pendiente. */
 function paymentNotesBlocked(notes: string | null | undefined): boolean {
@@ -12,11 +12,13 @@ function paymentNotesBlocked(notes: string | null | undefined): boolean {
  */
 export async function fetchActivePaidQuantityByOrderItemId(
   orderItemIds: string[],
-  readOpts?: { skipLocalCache?: boolean },
+  readOpts?: { skipLocalCache?: boolean; strict?: boolean },
 ): Promise<Record<string, number>> {
   if (orderItemIds.length === 0) return {};
 
-  const paymentItems = await dbSelect<any>("payment_items", {
+  const read = readOpts?.strict ? dbSelectStrict : dbSelect;
+
+  const paymentItems = await read<any>("payment_items", {
     select: "payment_id, order_item_id, quantity_paid",
     filters: [{ column: "order_item_id", op: "in", value: orderItemIds }],
     skipLocalCache: readOpts?.skipLocalCache,
@@ -26,7 +28,7 @@ export async function fetchActivePaidQuantityByOrderItemId(
   const paymentIds = Array.from(paymentIdSet);
   if (paymentIds.length === 0) return {};
 
-  const payments = await dbSelect<any>("payments", {
+  const payments = await read<any>("payments", {
     select: "id, notes",
     filters: [{ column: "id", op: "in", value: paymentIds }],
     skipLocalCache: readOpts?.skipLocalCache,

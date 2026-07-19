@@ -118,6 +118,19 @@ export async function dbSelect<T = any>(
   }
 }
 
+/**
+ * Lectura estricta: siempre red, sin fallback a cache local.
+ * Si la red falla o supera el timeout, LANZA el error para que React Query
+ * conserve los ultimos datos buenos y reintente (modulos operativos como
+ * Despacho/Servir no deben renderizar datos viejos del cache como actuales).
+ */
+export async function dbSelectStrict<T = any>(
+  table: TableName,
+  options: QueryOptions = {}
+): Promise<T[]> {
+  return withTimeout(fetchFromSupabase<T>(table, options), 12_000, `dbSelectStrict(${table})`);
+}
+
 async function fetchFromSupabase<T>(table: TableName, options: QueryOptions): Promise<T[]> {
   let selectClause = options.select ?? "*";
 
