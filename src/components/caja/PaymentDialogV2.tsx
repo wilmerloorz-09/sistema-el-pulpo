@@ -993,7 +993,8 @@ export default function PaymentDialogV2({
                   <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden md:overflow-y-auto">
                     {!shiftDenoms || shiftDenoms.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        No hay denominaciones configuradas para este turno. Abre la caja correctamente.
+                        Cargando denominaciones del turno... Si no aparecen en unos segundos,
+                        verifica tu conexion y que tu caja este abierta en este turno.
                       </p>
                     ) : (
                       <>

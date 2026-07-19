@@ -1315,13 +1315,16 @@ export function useCaja(params?: {
       const shiftData = shifts[0];
       if (!shiftData) return null;
 
-      const denoms = await dbSelect<any>("cash_shift_denoms", {
-        select: "id, denomination_id, qty_initial, qty_current",
-        filters: [
-          { column: "shift_id", op: "eq", value: shiftData.id },
-          { column: "cashier_id", op: "eq", value: user.id },
-        ],
-      });
+      // Consulta directa (sin fallback a cache local): si la red falla debe
+      // lanzar error para que React Query reintente, en lugar de devolver []
+      // y dejar la pantalla de cobro sin monedas/billetes hasta recargar.
+      const { data: denomRows, error: denomsError } = await supabase
+        .from("cash_shift_denoms")
+        .select("id, denomination_id, qty_initial, qty_current")
+        .eq("shift_id", shiftData.id)
+        .eq("cashier_id", user.id);
+      if (denomsError) throw denomsError;
+      const denoms = denomRows ?? [];
 
       const allDenoms = denomsQuery.data ?? [];
       const enriched: ShiftDenom[] = (denoms ?? []).map((d: any) => {
@@ -1365,6 +1368,15 @@ export function useCaja(params?: {
         payment_count: Number(row.payment_count ?? 0),
       })) as CashRegisterOpeningHistoryEntry[];
 
+      // Guardia de consistencia: si el usuario tiene su caja abierta en este
+      // turno, SIEMPRE deben existir denominaciones (la apertura las crea).
+      // Un resultado vacio aqui es una lectura fallida/incompleta: reintentar
+      // en lugar de dejar el cobro sin tarjetas de monedas/billetes.
+      const hasOpenOwnCaja = openingHistory.some((entry) => entry.status === "abierta");
+      if (hasOpenOwnCaja && enriched.length === 0 && (denomsQuery.data?.length ?? 0) > 0) {
+        throw new Error("Caja abierta sin denominaciones cargadas; se reintentara la lectura");
+      }
+
       const openedDate = new Date(shiftData.opened_at);
       const today = new Date();
       const isStale = openedDate.getFullYear() !== today.getFullYear() ||
@@ -1381,6 +1393,11 @@ export function useCaja(params?: {
       } as CashShift;
     },
     enabled: !!activeBranchId && !!user?.id && !!denomsQuery.data,
+    // Autocuración en dispositivos que quedan con datos viejos (p. ej. tablet
+    // que nunca pierde el foco): si la caja se abre desde otro equipo o una
+    // lectura fallo, el polling recupera las denominaciones sin recargar.
+    refetchInterval: 20000,
+    placeholderData: (prev: any) => prev,
   });
 
   const enabledShiftUsersQuery = useQuery({
