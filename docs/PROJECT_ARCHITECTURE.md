@@ -136,17 +136,17 @@
 
 ### 6. Editar Orden
 - `Editar Orden` es una arquitectura buffered y **In-Situ**.
-- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja **en flujo Caja primero** (`CASH_THEN_DISPATCH`).
-- **Excepcion — Despacho primero (`DISPATCH_THEN_CASH`):** no hay boton `Editar orden` ni flujo `from=editar`; las lineas En despacho se editan en vista normal con staging de cocina; las Despachadas no son editables.
+- En Caja primero (`CASH_THEN_DISPATCH`), el boton se habilita para ordenes editables en `SENT_TO_KITCHEN`/En Caja.
+- En Despacho primero (`DISPATCH_THEN_CASH`), la opcion **Editar orden** aparece en el menu superior cuando existe al menos una unidad despachada. Los controles del modo `from=editar` actuan sobre la porcion **Despachada**; una porcion parcial que siga **En despacho** no se reduce accidentalmente.
 - En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos se mantiene activo mientras la orden siga siendo editable; eliminar un item no debe bloquear el catalogo. En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, el menu puede permanecer visible pero desactivado.
 - El módulo trabaja con `stagedItems` en memoria y mantiene el contexto de navegación original (`origin`).
 - La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina, Despacho y Caja.
-- Los items originales despachados o cerrados permanecen sin controles directos de cantidad.
+- En Despacho primero, aumentar, disminuir o eliminar una cantidad despachada solo modifica el buffer hasta **Aceptar cambios**.
 - Los items nuevos agregados dentro de la sesion si pueden usar `+/-`, eliminar e input de cantidad.
 - Al pulsar `Aceptar cambios`:
   - se comprometen los diffs en batch
-  - se registran las anulaciones derivadas del buffer
-  - los items nuevos pasan directo a estado operativo (Despachado o "En Caja"), no vuelven a mesa
+  - toda reduccion/eliminacion despachada se registra como anulacion o ajuste de despacho; si la politica exige autorizacion, queda como solicitud pendiente
+  - en Despacho primero, los aumentos generan una diferencia `DRAFT` para enviarla a cocina desde la vista normal
 - El modulo usa `Aceptar cambios` como accion principal; `Enviar` no debe mostrarse ahi.
 - El Sidebar preserva su estado resaltado (ej. "Mesas") mediante el parámetro de URL `origin`.
 
@@ -246,7 +246,7 @@
   - devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda parte activa del pago
   - **Trazabilidad y Auditoría (2026-05-09):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`, el ID del supervisor y el motivo.
-  - re-cobro sobre la misma orden tras anular (mismo `order_code` / `order_number`); marcador `VOIDED_PAYMENT_REOPEN`. Historicas legacy con `VOID_SUCCESSOR_ORDER` siguen preservadas como `CANCELLED`.
+  - al anular el último pago activo la orden queda `CANCELLED` (marcador `VOIDED_PAYMENT_CLOSED`): no vuelve a Recaudar ni ocupa mesa. Se puede re-cobrar bajo demanda desde Pagos realizados (misma orden, mismo `order_code` / `order_number`). Historicas legacy con `VOID_SUCCESSOR_ORDER` siguen preservadas como `CANCELLED`.
   - En Pagos del Turno: Anular si pagado, Cobrar si anulado (misma orden).
   - `recalculate_check_balance(...)` sigue preservando historicas legacy `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
 - No se debe permitir anulacion operativa de pago sobre una orden `KITCHEN_DISPATCHED`.
@@ -269,6 +269,9 @@
   - Storage privado `payment-proofs`
   - OCR basico opcional con `tesseract`
 - `proof_capture_backend` concentra captura, subida, analisis y aprobacion/rechazo.
+- **Lectura y validacion inmediata en Caja (actualizado 2026-07-18):** `TransferenciaPagoDialog` envía una copia optimizada de la foto a la Edge Function autenticada `analizar-comprobante-transferencia`. La función usa visión IA (`OPENAI_API_KEY`, modelo configurable con `OPENAI_VISION_MODEL`) y extrae banco origen/destino, titular, cuenta destino enmascarada, fecha, número y monto. No almacena esa copia; el original sigue en memoria hasta confirmar `payOrder`.
+- **Cuentas autorizadas:** Admin > **Cuentas bancarias** gestiona `cuentas_bancarias_destino`; Admin > **Bancos de origen** configura la mascara usada por cada emisor (`#` visible, `X`/`*` oculto).
+- **Decision humana auditada:** la UI compara cuenta/titular/banco destino, fecha de Ecuador y monto. El cajero puede aceptar diferencias, pero debe escribir motivo; `register_payment_with_items` persiste el snapshot en `validaciones_comprobantes_transferencia` junto con el usuario.
 
 ### 13. Clientes, campañas y promociones (2026-06-11+)
 
@@ -510,7 +513,7 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 ### Actualizacion Jul 8, 2026
 - **Staging cocina en Despacho primero:** Ediciones locales no afectan Despacho hasta **Enviar a cocina**; boton con delta monetario vs ultimo envio.
 - **Secciones En despacho / Despachados:** `OrderItemsList.splitDispatchSections` en vista de orden.
-- **Sin Editar orden en `DISPATCH_THEN_CASH`:** boton oculto; redirect `from=editar`; items despachados bloqueados.
+- **Editar orden en `DISPATCH_THEN_CASH`:** opcion visible con cantidades despachadas; buffer hasta confirmar y anulacion/ajuste auditable al reducir o eliminar.
 - **Consolidacion en Despacho:** `dispatchItemConsolidation.ts` + integracion en `useDispatchOrders.ts`, `Despacho.tsx`, `Servir.tsx`.
 - **Extra oculto en Despacho primero:** `useVisibleNavItems`, `usePreferredHomePath`, redirect en `Extra.tsx`.
 - **RPC `remove_order_item_line`:** migraciones `20260707240000`, `20260707241000`; usado al aplicar cambios de cocina pendientes.

@@ -148,6 +148,25 @@ export function isOrderItemEditableInDispatchFirstEditMode(item: OrderItemEditSu
   return Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED";
 }
 
+/**
+ * Cantidad despachada que debe mostrar el editor temporal.
+ * `quantity` representa el total activo objetivo; la parte aun en despacho permanece fija.
+ */
+export function getDispatchedEditQuantity(item: OrderItemEditSurface): number {
+  const targetQuantity = Math.max(0, Number(item.quantity ?? 0));
+  const remainingQuantity = Math.max(0, Number(item.quantity_remaining ?? 0));
+  return Math.max(0, targetQuantity - remainingQuantity);
+}
+
+/** Convierte la cantidad despachada editada al total activo objetivo de la linea. */
+export function getDispatchedEditTargetQuantity(
+  item: OrderItemEditSurface,
+  dispatchedQuantity: number,
+): number {
+  const remainingQuantity = Math.max(0, Number(item.quantity_remaining ?? 0));
+  return remainingQuantity + Math.max(0, Number(dispatchedQuantity ?? 0));
+}
+
 export function isDispatchFirstOrder(
   order: {
     order_type?: string | null;

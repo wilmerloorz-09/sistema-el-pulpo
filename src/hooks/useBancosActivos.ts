@@ -6,6 +6,8 @@ export interface Banco {
   nombre: string;
   activo: boolean;
   orden_visual: number;
+  /** # = dígito visible; X o * = oculto en comprobantes de este banco origen. */
+  mascara_cuenta_destino: string;
 }
 
 export function useBancosActivos(enabled = true) {
@@ -13,7 +15,7 @@ export function useBancosActivos(enabled = true) {
     queryKey: ["bancos-activos"],
     queryFn: async () => {
       const rows = await dbSelect<Banco>("bancos", {
-        select: "id, nombre, activo, orden_visual",
+        select: "id, nombre, activo, orden_visual, mascara_cuenta_destino",
         filters: [{ column: "activo", op: "eq", value: true }],
         orderBy: { column: "orden_visual" },
       });

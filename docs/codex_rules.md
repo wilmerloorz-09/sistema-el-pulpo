@@ -12,7 +12,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - `Despacho` debe mostrar una sola tarjeta/fila por orden pagada (`orders.id` / `order_code`). Nunca separar la misma orden en varias tarjetas por `sent_to_kitchen_at` de sus items.
 - `dispatch_order_quantities(...)` debe rechazar cualquier orden que no este `PAID`.
 - `PAID` y `KITCHEN_DISPATCHED` son clasificaciones visibles excluyentes. Una orden no puede aparecer simultaneamente en `Pagada` y `Despachada`.
-- Al anular un pago, la misma orden se reabre en `SENT_TO_KITCHEN`/En Caja con el mismo numero (sin sucesora, desde 2026-07-14).
+- Al anular el último pago activo, la orden queda `CANCELLED`; solo se reabre bajo demanda al usar **Cobrar orden** en Pagos realizados.
+- Una orden solo puede tener una anulación de pago durante toda su vida. Si se reabre y vuelve a cobrarse, el nuevo pago no se puede anular.
 - La anulacion operativa de pago solo aplica sobre ordenes `PAID` que no esten `KITCHEN_DISPATCHED`.
 
 ### 1. Refactor incremental
@@ -53,7 +54,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - Reconciliar ids `temp-*` con `reconcileKitchenStagedItems` tras `addItem` para no dejar spinner infinito en Enviar a cocina.
   - `submit_order_draft_items` debe aceptar orden `KITCHEN_DISPATCHED` con borradores (migracion `20260709220000`).
   - En vista de orden, separar visualmente **En despacho** y **Despachados** (`splitDispatchSections` en `OrderItemsList`).
-  - **No** mostrar boton **Editar orden** ni permitir `from=editar` en `DISPATCH_THEN_CASH`; lineas despachadas no editables.
+  - Si existe al menos una unidad despachada, mostrar **Editar orden** en el menu superior. Este modo usa buffer temporal y solo habilita controles sobre la porcion **Despachada** (ademas de borradores nuevos).
 
 ### 2.2 Cobro en caja: UI unificada y rendimiento
 - La UI estándar de cobro es `PaymentDialogV2` (misma UI para todos los cajeros).
@@ -158,6 +159,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - **Auditoría de Anulación (2026-05-09):** Queda terminantemente prohibido anular pagos sin registrar el evento en `order_cancellations` y adjuntar una nota técnica en `orders.notes`. La nota debe incluir el supervisor responsable y el motivo.
   - re-cobro sobre la **misma orden** (mismo numero) tras anular; historicas legacy con `VOID_SUCCESSOR_ORDER` se preservan sin revivirlas.
   - En Pagos del Turno: pago activo → Anular; pago anulado → Cobrar (misma orden).
+  - `can_void_payment(...)` debe impedir una segunda anulación en la misma orden, incluso si fue reabierta y cobrada otra vez. La UI mantiene visible el botón Anular, pero desactivado.
 - No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
 - En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
@@ -192,10 +194,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 9. Editar Orden e In-Situ
 - `Editar Orden` es buffered, no inline y opera de manera **In-Situ**.
-- El boton `Editar orden` solo debe estar activo cuando la orden esta en `SENT_TO_KITCHEN`/En Caja **y la sucursal usa `CASH_THEN_DISPATCH`**.
-- **Excepcion — `DISPATCH_THEN_CASH`:** no existe flujo **Editar orden**; la edicion de lineas En despacho ocurre en vista normal con staging de cocina pendiente; items Despachados no son editables; redirigir si la URL trae `from=editar`.
+- En `CASH_THEN_DISPATCH`, el boton se limita a las ordenes editables en `SENT_TO_KITCHEN`/En Caja.
+- En `DISPATCH_THEN_CASH`, permitir `from=editar` cuando exista al menos una unidad despachada y la orden no este pagada, cancelada ni con anulacion pendiente.
+- Los cambios sobre cantidades despachadas (aumentar, disminuir o eliminar) permanecen solo en `stagedItems` hasta **Aceptar cambios**.
+- Toda reduccion/eliminacion despachada debe registrarse mediante `cancel_order_quantities`; si el actor requiere autorizacion, se crea la solicitud de anulacion pendiente en lugar de omitir la trazabilidad.
 - En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos debe seguir activo mientras la orden sea una superficie editable y no tenga bloqueo/anulacion pendiente. Eliminar el ultimo item visible no debe desactivar el catalogo si la orden sigue siendo borrador editable.
-- En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, no activar edicion. Si la pantalla muestra el menu de productos, debe estar visible pero desactivado.
+- En `PAID` y `CANCELLED`, no activar edicion. `KITCHEN_DISPATCHED` solo admite editar cantidades despachadas en `DISPATCH_THEN_CASH` mientras la orden siga pendiente de cobro.
 - Debe seguir aplicando `orders.locked_for_editing` en DB.
 - **Contexto de Navegación:** El flujo de edición y la navegación desde Mesas deben preservar el contexto original. Usar el parámetro `origin=mesas` para que el Sidebar y el BottomNav mantengan su estado resaltado.
 - **Contexto de Navegación (Para llevar / Orden especial):** cuando el usuario entra por estas opciones del menú lateral, preservar el resaltado usando:
@@ -204,12 +208,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Resaltado Manual:** Usar `forceActive` y `suppressActive` en `NavLink` y `BottomNav` para anular la lógica automática basada solo en la URL técnica.
 - **Bloqueo en Caja:** Mientras una orden esté en edición (`locked_for_editing`), el botón "Cobrar" en el módulo de Caja debe estar deshabilitado automáticamente.
 - **Bloqueo por despacho incompleto (solo `DISPATCH_THEN_CASH`):** aunque haya monto pendiente cobrable por unidades ya despachadas, el botón "Cobrar" debe mostrarse rojo y abrir solo un aviso si quedan unidades sin despachar en la orden (`ready_to_collect = false`).
-- No exponer controles directos de cantidad para items originales despachados/cerrados en ese modulo.
-- Los controles `+/-`, eliminar e input de cantidad solo deben existir para items nuevos agregados durante la sesion de edicion.
+- En edicion de Despacho primero, no exponer controles sobre la porcion **En despacho** de una linea parcial; solo sobre su porcion **Despachada**.
+- En Caja primero los controles directos siguen reservados a items nuevos; en Despacho primero tambien se muestran sobre la porcion despachada editable.
 - Al aceptar cambios:
   - se registran anulaciones derivadas del buffer
   - los items nuevos no vuelven a mesa
-  - los items nuevos pasan directo a estado operativo (Despachado o "En caja")
+  - aumentos sobre una linea despachada crean una diferencia `DRAFT`, que vuelve a la vista normal para su envio a cocina
 - La accion principal del modulo es `Aceptar cambios`.
 
 ### 10. Snapshot operativo compartido
@@ -244,9 +248,14 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Banco por defecto: primer banco activo por `orden_visual` al abrir el modal.
 - Unicidad global `(banco_id, numero_transferencia)` — incluye pagos anulados; no reutilizar comprobante.
 - Mensaje de duplicado inline en el modal (`MENSAJE_TRANSFERENCIA_DUPLICADA`); validacion adicional en `payOrder` y RPC.
-- Catalogo `bancos`: solo admin global en `Admin > Bancos` (`BancosCrud`).
+- Catalogo `bancos`: solo admin global en `Admin > Bancos de origen` (`BancosCrud`). `mascara_cuenta_destino` usa `#` para digitos visibles y `X`/`*` para ocultos; la mascara pertenece al banco emisor, no a la cuenta receptora.
+- Cuentas receptoras de El Pulpo: `Admin > Cuentas bancarias` (`CuentasBancariasDestinoAdmin`); guardar banco destino, numero completo, tipo, titular, identificacion opcional, alias, alcance de sucursal y activa.
 - Migraciones obligatorias: `20260712220000_bancos_y_datos_transferencia_pagos.sql`, `20260713050000_transferencia_unica_global.sql`.
-- **Foto de comprobante (opcional, 2026-07-14):** boton camara en `TransferenciaPagoDialog`; la foto viaja en memoria hasta `payOrder`; entonces Storage `comprobantes-pago` + fila `comprobantes_pago`. No usa el flujo de captura por token/OCR. Si falla la subida, el cobro ya registrado no se revierte.
+- **Foto de comprobante (opcional, actualizado 2026-07-18):** boton camara en `TransferenciaPagoDialog`; la foto viaja en memoria hasta `payOrder`; entonces Storage `comprobantes-pago` + fila `comprobantes_pago`. `analizar-comprobante-transferencia` extrae banco origen/destino, titular/cuenta destino, fecha, numero y monto. La copia de analisis no se almacena.
+- Comparar cuenta enmascarada segun la mascara del banco origen, banco/titular contra `cuentas_bancarias_destino`, fecha con `America/Guayaquil` y monto final.
+- El usuario es el validador final. Si hay diferencias o datos no verificables, permitir continuar solo con motivo (minimo 5 caracteres) y persistir snapshot + novedades + usuario en `validaciones_comprobantes_transferencia`. No permitir editar/borrar esa auditoria.
+- Si falta IA o falla lectura, degradar a ingreso manual con estado `NO_VERIFICABLE`; nunca usar Sonner.
+- Migracion obligatoria adicional: `20260718100000_cuentas_bancarias_y_validacion_comprobantes.sql`.
 ### 12.1 Extra
 - `order_type = EXTRA`: menu mesa sin PLATOS, requiere mesa obligatoria (`table_id`), flujo caja → despacho manual.
 - Tras cobro total queda `PAID`; **no** auto-despachar ni cerrar en `sync_order_payment_state_internal` (`20260602120000`). Cierre con `close_extra_order` desde `/extra` o desaparece automáticamente al despacharse.
@@ -401,7 +410,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 18. Si se toca identidad de usuario, validar `profiles.alias` (unico case-insensitive), login con correo/usuario/alias, `src/lib/userDisplay.ts` en reportes/caja/turnos y nombre real solo en admin.
 19. Si se toca modal de agregar producto o catalogo de modificadores, validar herencia desde categorias, seleccion desde **Mas frecuentes**, doble toque rapido en movil e invalidacion de `branch-modifiers-catalog` tras cambios en admin.
 20. Si se toca auth/sesion en tablet, validar que aborts benignos de Web Locks no muestren banner; conservar `auth.lock` no-op y `benignAsyncErrors.ts`.
-21. Si se toca Despacho primero en mesa, validar staging de cocina, delta en boton **Enviar a cocina**, secciones En despacho/Despachados, ausencia de **Editar orden** y que Despacho no cambie hasta confirmar envio.
+21. Si se toca Despacho primero en mesa, validar staging de cocina, delta en **Enviar a cocina**, secciones En despacho/Despachados y **Editar orden** solo cuando haya unidades despachadas; ningun ajuste debe persistir antes de confirmar.
 22. Si se toca consolidacion en Despacho, validar `dispatchItemConsolidation.ts` y despacho parcial con multiples `order_items` fuente.
 23. Si se toca Extra, validar ademas visibilidad segun `workflow_mode` (oculto en `DISPATCH_THEN_CASH`).
 24. Si se toca Caja en Despacho primero, validar `ready_to_collect`, boton rojo/verde, `AlertDialog` y guard en `payOrder`.
@@ -425,7 +434,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### Actualizacion Jul 8, 2026
 - **Cocina pendiente (Despacho primero):** `kitchenPendingChanges.ts`, staging `kitchenBaselineItems`/`stagedItems`, `applyKitchenPendingItemChanges`, boton con delta monetario.
 - **UI orden:** secciones En despacho / Despachados en `OrderItemsList`.
-- **Sin Editar orden en DF:** redirect `from=editar`, items despachados bloqueados.
+- **Editar orden en DF:** buffer confirmado, controles limitados a la porcion despachada y reducciones con trazabilidad de anulacion/ajuste.
 - **Despacho consolidado:** `dispatchItemConsolidation.ts`, `buildDispatchAllocations`.
 - **Extra oculto en DF:** nav, home path empacador, redirect `/extra`.
 - **BD:** RPC `remove_order_item_line` (`20260707240000`, fix `20260707241000`).

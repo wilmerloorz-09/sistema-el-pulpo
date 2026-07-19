@@ -14,6 +14,7 @@ import type {
   CompletedPayment,
   CompletedPaymentsFilters,
   CompletedPaymentsScope,
+  PaymentRefundMethod,
   PaymentVoidSelectionInput,
   ShiftDenom,
 } from "@/hooks/useCaja";
@@ -101,6 +102,7 @@ interface Props {
     paymentSelections: PaymentVoidSelectionInput[],
     cashRefundDenoms: CashRefundDenomInput[],
     refundAmount: number,
+    refundMethod: PaymentRefundMethod,
   ) => Promise<{ requestId: string }>;
   onVoidWithSupervisor: (
     paymentId: string,
@@ -245,6 +247,7 @@ export default function CompletedPaymentsList({
       reason: string;
       paymentSelections: PaymentVoidSelectionInput[];
       cashRefundDenoms: CashRefundDenomInput[];
+      refundMethod?: PaymentRefundMethod | null;
     } | null;
     autoOpenConfirm: boolean;
   }>({
@@ -536,7 +539,7 @@ export default function CompletedPaymentsList({
             token_promocion = orderData.token_promocion;
           }
 
-          // @ts-ignore - The join works but types might not be perfectly inferred
+          // @ts-expect-error - The join works but generated relation types are incomplete.
           const cliente = orderData.clientes;
           if (cliente && !Array.isArray(cliente)) {
             clienteCedula = cliente.cedula;
@@ -684,7 +687,15 @@ export default function CompletedPaymentsList({
               const normalizedStatus = (payment.status?.toString() || "").toUpperCase();
               const isVoidedOrReversed = normalizedStatus === "REVERSED" || normalizedStatus === "VOIDED";
               const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
-              const blockedByState = isVoidedOrReversed || payment.reversal_requested || blockedByClosedOpening;
+              const blockedByPriorOrderVoid = payment.order_has_voided_payments && !isVoidedOrReversed;
+              const blockedByState = payment.reversal_requested || blockedByClosedOpening || blockedByPriorOrderVoid;
+              const voidButtonTitle = blockedByPriorOrderVoid
+                ? "Esta orden ya tuvo una anulación de pago"
+                : payment.reversal_requested
+                  ? "La anulación está pendiente"
+                  : blockedByClosedOpening
+                    ? "No se puede anular un pago de una caja cerrada"
+                    : "Anular pago";
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
               const groupCash =           cashAggregateByGroupId.get(payment.paymentGroupId) ?? {
                 receivedAmount: getReceivedAmount(payment),
@@ -804,15 +815,18 @@ export default function CompletedPaymentsList({
                       >
                         <Printer className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
                       </button>
-                      {!blockedByState && permissionFlags.canStartVoid && (
+                      {!isVoidedOrReversed && permissionFlags.canStartVoid && (
                         <button
                           type="button"
+                          disabled={blockedByState}
                           onClick={(event) => {
                             event.stopPropagation();
+                            if (blockedByState) return;
                             openModalForPayment(payment);
                           }}
-                          className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-rose-600 to-orange-400 text-white shadow-[0_4px_14px_0_rgba(225,29,72,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(225,29,72,0.23)] active:scale-95"
-                          title="Anular pago"
+                          className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-rose-600 to-orange-400 text-white shadow-[0_4px_14px_0_rgba(225,29,72,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(225,29,72,0.23)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:scale-100 disabled:hover:shadow-[0_4px_14px_0_rgba(225,29,72,0.39)]"
+                          title={voidButtonTitle}
+                          aria-label={voidButtonTitle}
                         >
                           <Undo2 className="h-5 w-5 transition-transform group-hover/btn:-rotate-45" />
                         </button>
@@ -1031,7 +1045,7 @@ export default function CompletedPaymentsList({
           titleOverride="Anular pago"
           initialDraft={modalState.draft}
           autoOpenConfirm={modalState.autoOpenConfirm}
-          onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms, refundAmount }) => {
+          onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod }) => {
             try {
               const itemList = modalState.payment?.items ?? [];
               const selectedAmount = paymentSelections.reduce((sum, selection) => {
@@ -1047,6 +1061,7 @@ export default function CompletedPaymentsList({
                 paymentSelections,
                 cashRefundDenoms,
                 refundAmount,
+                refundMethod,
               );
               const requestId = requestIdResponse.requestId;
 
@@ -1101,6 +1116,7 @@ export default function CompletedPaymentsList({
                   reason,
                   paymentSelections,
                   cashRefundDenoms,
+                  refundMethod,
                 },
                 autoOpenConfirm: false,
               });

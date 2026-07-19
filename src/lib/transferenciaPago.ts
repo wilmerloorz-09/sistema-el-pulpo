@@ -1,3 +1,6 @@
+import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
+import type { ResultadoValidacionComprobante } from "@/lib/validacionComprobanteTransferencia";
+
 export interface TransferenciaPagoDatos {
   bancoId: string;
   numeroTransferencia: string;
@@ -6,6 +9,12 @@ export interface TransferenciaPagoDatos {
   fotoArchivo?: File | Blob | null;
   /** Object URL local para previsualizar; no se persiste en BD. */
   fotoVistaPreviaUrl?: string | null;
+  /** Snapshot de los datos extraídos de la foto. */
+  analisisIa?: AnalisisComprobanteTransferencia | null;
+  /** Comparación del análisis contra cuentas autorizadas y fecha/monto. */
+  validacionComprobante?: ResultadoValidacionComprobante | null;
+  /** Obligatorio cuando el usuario acepta novedades o datos no verificables. */
+  motivoAceptacion?: string | null;
 }
 
 /** Libera la URL de vista previa en memoria (si existe). */

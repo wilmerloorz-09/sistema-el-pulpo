@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.void-payment]
 verify_jwt = false
+
+[functions.analizar-comprobante-transferencia]
+verify_jwt = false

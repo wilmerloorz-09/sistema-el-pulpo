@@ -23,6 +23,8 @@ import {
   esErrorTransferenciaDuplicada,
 } from "@/lib/transferenciaDuplicada";
 import { guardarComprobantePagoTransferencia } from "@/lib/comprobantePagoTransferencia";
+import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
+import type { ResultadoValidacionComprobante } from "@/lib/validacionComprobanteTransferencia";
 
 
 export const ensureTableSnapshot = async (orderId: string) => {
@@ -387,6 +389,8 @@ export interface CashRefundDenomInput {
   qty: number;
 }
 
+export type PaymentRefundMethod = "CASH" | "TRANSFER";
+
 export interface PayOrderParams {
   orderId: string;
   itemSelections: ItemPaymentInput[];
@@ -410,6 +414,9 @@ export interface PayOrderParams {
     monto: number;
     /** Foto opcional; se sube a Storage al confirmar el cobro. */
     fotoArchivo?: File | Blob | null;
+    analisisIa?: AnalisisComprobanteTransferencia | null;
+    validacionComprobante?: ResultadoValidacionComprobante | null;
+    motivoAceptacion?: string | null;
   } | null;
 }
 
@@ -655,6 +662,14 @@ type RegisterPaymentRpcRow = {
   numero_transferencia?: string | null;
   created_by: string;
   created_at: string;
+  validacion_transferencia?: {
+    cuenta_bancaria_destino_id: string | null;
+    estado: "VALIDADO" | "CON_NOVEDADES" | "NO_VERIFICABLE";
+    analisis_ia: Record<string, unknown>;
+    validaciones: Record<string, unknown>;
+    novedades: string[];
+    motivo_aceptacion: string | null;
+  };
 };
 
 type RegisterPaymentItemRpcRow = {
@@ -685,6 +700,39 @@ function resolveTransferenciaCampos(
   return {
     banco_id: transferencia?.bancoId ?? null,
     numero_transferencia: transferencia?.numeroTransferencia?.trim() || null,
+  };
+}
+
+function buildValidacionTransferencia(
+  transferencia: PayOrderParams["transferencia"],
+): RegisterPaymentRpcRow["validacion_transferencia"] | undefined {
+  const analisis = transferencia?.analisisIa;
+  const validacion = transferencia?.validacionComprobante;
+  if (!transferencia?.fotoArchivo || !analisis || !validacion) return undefined;
+
+  return {
+    cuenta_bancaria_destino_id: validacion.cuentaDestinoId,
+    estado: validacion.estado,
+    analisis_ia: {
+      numero_transferencia: analisis.numeroTransferencia,
+      monto: analisis.monto,
+      banco_origen: analisis.bancoOrigen,
+      banco_destino: analisis.bancoDestino,
+      titular_destino: analisis.titularDestino,
+      cuenta_destino: analisis.cuentaDestino,
+      fecha_transferencia: analisis.fechaTransferencia,
+      confianza: analisis.confianza,
+      observaciones: analisis.observaciones,
+    },
+    validaciones: {
+      banco_destino: validacion.reglas.bancoDestino,
+      titular_destino: validacion.reglas.titularDestino,
+      cuenta_destino: validacion.reglas.cuentaDestino,
+      fecha: validacion.reglas.fecha,
+      monto: validacion.reglas.monto,
+    },
+    novedades: validacion.novedades,
+    motivo_aceptacion: transferencia.motivoAceptacion?.trim() || null,
   };
 }
 
@@ -2940,6 +2988,9 @@ export function useCaja(params?: {
             numero_transferencia: transferenciaCampos.numero_transferencia,
             created_by: user.id,
             created_at: now,
+            validacion_transferencia: transferMethodIds.has(split.methodId)
+              ? buildValidacionTransferencia(transferencia)
+              : undefined,
           });
 
           for (const itemSelection of itemSelections) {
@@ -3045,17 +3096,30 @@ export function useCaja(params?: {
   });
 
   const requestPaymentVoid = useMutation({
-    mutationFn: async ({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount }: {
+    mutationFn: async ({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod }: {
       paymentId: string;
       orderId: string;
       reason: string;
       paymentSelections: PaymentVoidSelectionInput[];
       cashRefundDenoms: CashRefundDenomInput[];
       refundAmount: number;
+      refundMethod: PaymentRefundMethod;
     }) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
+
+      const { data: validationRows, error: validationError } = await supabase.rpc("can_void_payment", {
+        p_payment_id: paymentId,
+        p_current_shift_id: shift.id,
+        p_user_id: user.id,
+      });
+      if (validationError) throw validationError;
+
+      const validation = validationRows?.[0];
+      if (!validation?.can_void) {
+        throw new Error(validation?.error_message || "Este pago no se puede anular");
+      }
 
       // Check for an existing pending request to avoid unique constraint violations
       const { data: existing } = await supabase
@@ -3076,6 +3140,7 @@ export function useCaja(params?: {
         reason: reason,
         status: "pending",
         refund_amount: refundAmount,
+        refund_method: refundMethod,
         payment_item_selections: paymentSelections.map((sel) => ({
           payment_item_id: sel.paymentEntryId,
           quantity: sel.quantity,
@@ -3132,7 +3197,9 @@ export function useCaja(params?: {
           try {
              const contextJson = await (error as any).context.json();
              if (contextJson?.error) msg = contextJson.error;
-          } catch(e) {}
+          } catch {
+            // Conserva el mensaje original si la respuesta no contiene JSON.
+          }
         }
         
         throw new Error(msg);

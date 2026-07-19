@@ -1067,6 +1067,7 @@ const OrdenesContent = () => {
   const [stagedDirty, setStagedDirty] = useState(false);
   const [kitchenBaselineItems, setKitchenBaselineItems] = useState(order?.items ?? []);
   const [stagedCancellationData, setStagedCancellationData] = useState<{ reason: string; notes: string } | null>(null);
+  const [acceptingEditChanges, setAcceptingEditChanges] = useState(false);
   const [deletingCajaOrder, setDeletingCajaOrder] = useState(false);
   const [confirmDeleteCajaOrderOpen, setConfirmDeleteCajaOrderOpen] = useState(false);
   const [deleteCajaOrderError, setDeleteCajaOrderError] = useState("");
@@ -1477,18 +1478,24 @@ const OrdenesContent = () => {
   }, [fromEditar, order?.status, navigate]);
 
   useEffect(() => {
-    if (!fromEditar || !order || !isDispatchFirstFlow || !orderId) return;
-
-    const originValue = searchParams.get("origin") || "consulta";
-    navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
-  }, [fromEditar, isDispatchFirstFlow, order, orderId, navigate, searchParams, originParam]);
-
-  useEffect(() => {
-    if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked && !isDispatchFirstFlow) {
+    if (fromEditar && order?.id && !order.locked_for_editing && !fromEditarLocked) {
       lockOrder.mutate();
       setFromEditarLocked(true);
     }
-  }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, isDispatchFirstFlow, lockOrder]);
+  }, [fromEditar, order?.id, order?.locked_for_editing, fromEditarLocked, lockOrder]);
+
+  // Radix deja body con pointer-events:none si el dropdown que abrio "Editar orden"
+  // se desmonta al cambiar la vista; sin esta limpieza toda la pantalla queda sin clics.
+  useEffect(() => {
+    const clearBodyPointerLock = () => {
+      if (document.body.style.pointerEvents === "none") {
+        document.body.style.pointerEvents = "";
+      }
+    };
+    clearBodyPointerLock();
+    const timeoutId = window.setTimeout(clearBodyPointerLock, 350);
+    return () => window.clearTimeout(timeoutId);
+  }, [fromEditar]);
 
   useEffect(() => {
     if (!orderId || isLoading || isFetching || shiftGateQuery.isLoading) return;
@@ -1913,8 +1920,11 @@ const OrdenesContent = () => {
   const kitchenSendDelta = useKitchenStaging
     ? computeKitchenSendMoneyDelta(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
+  // En despacho-primero los borradores se persisten al instante: cualquier DRAFT
+  // representa trabajo sin enviar, aunque la linea base ya lo incluya (p. ej. al
+  // reabrir la orden con un borrador atascado de una sesion anterior).
   const showKitchenSendButton = useKitchenStaging
-    ? (hasPendingKitchenChanges || (hasDraftItems && !hasSentItems))
+    ? (hasPendingKitchenChanges || hasDraftItems)
     : hasDraftItems;
   const kitchenSendButtonLabel = order.is_special
     ? `$${finalButtonTotal.toFixed(2)}`
@@ -2104,9 +2114,20 @@ const OrdenesContent = () => {
   const canEnterEditMode =
     !fromEditar &&
     canUseEditarOrden &&
-    isEditableInCaja &&
+    (isDispatchFirstFlow
+      ? (hasDispatchedItems && isEditableInEditar)
+      : isEditableInCaja) &&
     !hasPendingCancellationItems &&
-    !isDispatchFirstFlow;
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED";
+  const showDispatchEditOrderAction =
+    !fromEditar &&
+    isDispatchFirstFlow &&
+    hasDispatchedItems &&
+    canUseEditarOrden &&
+    isEditableInEditar &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED";
   const canEditItems =
     (fromEditar && isEditableInEditar) ||
     (
@@ -2471,7 +2492,33 @@ const OrdenesContent = () => {
     });
   };
 
+  /** Navega tras cerrar el dropdown; navegar dentro del item deja body con pointer-events:none. */
+  const navigateToEditarOrdenAfterMenuClose = () => {
+    setTimeout(() => {
+      navigate(`/ordenes?order=${order!.id}&from=editar${originParam}`);
+    }, 0);
+  };
+
+  /** Evita cuelgues silenciosos: si un paso supera el tiempo, falla indicando cuál fue. */
+  const runEditStep = async <T,>(stepName: string, action: () => Promise<T>): Promise<T> => {
+    let timeoutId: number | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(
+        () => reject(new Error(`Se agoto el tiempo en el paso: ${stepName}.`)),
+        20000,
+      );
+    });
+    try {
+      return await Promise.race([action(), timeout]);
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
   const handleAcceptEditedOrderChanges = async () => {
+    if (acceptingEditChanges) return;
+    setAcceptingEditChanges(true);
+    const progressToastId = toast.loading("Aplicando cambios de la orden...");
     try {
       const resolveMissingMenuNodeId = async (item: {
         product_id?: string;
@@ -2515,11 +2562,13 @@ const OrdenesContent = () => {
       const newAddedIds: { order_item_id: string; quantity_dispatched: number }[] = [];
 
       for (const item of toAdd) {
-        const resolvedMenuNodeId = await resolveMissingMenuNodeId(item as {
-          product_id?: string;
-          menu_node_id?: string | null;
-          tray_item_type?: "A" | "B" | "C" | null;
-        });
+        const resolvedMenuNodeId = await runEditStep("buscar producto en menu", () =>
+          resolveMissingMenuNodeId(item as {
+            product_id?: string;
+            menu_node_id?: string | null;
+            tray_item_type?: "A" | "B" | "C" | null;
+          }),
+        );
 
         const reqData = {
           product_id: item.product_id,
@@ -2533,10 +2582,14 @@ const OrdenesContent = () => {
           tray_container_cost: item.tray_container_cost ?? 0,
         };
 
-        const preAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
-        await addItem.mutateAsync(reqData);
+        const preAddItems = await runEditStep("leer items actuales", async () =>
+          supabase.from("order_items").select("id").eq("order_id", orderId),
+        );
+        await runEditStep("agregar producto nuevo", () => addItem.mutateAsync(reqData));
 
-        const postAddItems = await supabase.from("order_items").select("id").eq("order_id", orderId);
+        const postAddItems = await runEditStep("leer items actualizados", async () =>
+          supabase.from("order_items").select("id").eq("order_id", orderId),
+        );
         const postIds = new Set((postAddItems.data ?? []).map((row) => row.id));
         for (const previous of preAddItems.data ?? []) {
           postIds.delete(previous.id);
@@ -2551,7 +2604,7 @@ const OrdenesContent = () => {
       // Remove draft items that were discarded while editing.
       const toRemove = originalOrderItems.filter((item) => !stagedIds.has(item.id) && item.status === "DRAFT");
       for (const item of toRemove) {
-        await removeItem.mutateAsync(item.id);
+        await runEditStep("quitar borrador descartado", () => removeItem.mutateAsync(item.id));
       }
 
       // Persist quantity updates for existing items.
@@ -2567,17 +2620,21 @@ const OrdenesContent = () => {
 
         if (original.status === "DRAFT") {
           if (originalQuantity !== stagedQuantity || priceChanged) {
-            await updateQuantity.mutateAsync({
-              itemId: staged.id,
-              quantity: stagedQuantity,
-              unit_price: staged.unit_price,
-            });
+            await runEditStep("actualizar cantidad de borrador", () =>
+              updateQuantity.mutateAsync({
+                itemId: staged.id,
+                quantity: stagedQuantity,
+                unit_price: staged.unit_price,
+              }),
+            );
           }
         } else {
           if (stagedQuantity > originalQuantity) {
             const diffQty = stagedQuantity - originalQuantity;
-            const resolvedMenuNodeId = await resolveMissingMenuNodeId(staged as any);
-            await addItem.mutateAsync({
+            const resolvedMenuNodeId = await runEditStep("buscar producto en menu", () =>
+              resolveMissingMenuNodeId(staged as any),
+            );
+            await runEditStep("agregar aumento de cantidad", () => addItem.mutateAsync({
               product_id: staged.product_id,
               menu_node_id: resolvedMenuNodeId,
               description_snapshot: staged.description_snapshot,
@@ -2587,14 +2644,16 @@ const OrdenesContent = () => {
               modifier_ids: staged.modifiers.map((modifier) => modifier.modifier_id).filter(Boolean) as string[],
               tray_item_type: staged.tray_item_type as "A" | "B" | "C" | undefined,
               tray_container_cost: staged.tray_container_cost ?? 0,
-            });
+            }));
           }
           if (priceChanged) {
-            await updateQuantity.mutateAsync({
-              itemId: staged.id,
-              quantity: originalQuantity,
-              unit_price: staged.unit_price,
-            });
+            await runEditStep("actualizar precio", () =>
+              updateQuantity.mutateAsync({
+                itemId: staged.id,
+                quantity: originalQuantity,
+                unit_price: staged.unit_price,
+              }),
+            );
           }
         }
       }
@@ -2619,42 +2678,55 @@ const OrdenesContent = () => {
         })
         .filter((item): item is NonNullable<typeof item> => item !== null);
 
+      let cancellationBecameRequest = false;
       if (cancellationSelections.length > 0 && user) {
         // Always use "partial" cancellation when accepting edit changes.
         // Even if all items are removed, we do NOT auto-cancel the order so
         // the user stays on the order page and can add new products.
-        await cancelOrderMutation.mutateAsync({
-          orderId,
-          items: cancellationSelections,
-          userId: user.id,
-          cancellationType: "partial",
-          requiresAuthorization: false,
-          cancellationData: {
-            reason: stagedCancellationData?.reason ?? "otro",
-            notes: stagedCancellationData?.notes
-              ? stagedCancellationData.notes
-              : isClosedForPayment
-                ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
-                : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
-            cancelledBy: user.id,
-          },
-        });
+        const cancellationResult = await runEditStep("registrar anulacion de despachados", () =>
+          cancelOrderMutation.mutateAsync({
+            orderId,
+            items: cancellationSelections,
+            userId: user.id,
+            cancellationType: "partial",
+            requiresAuthorization: false,
+            cancellationData: {
+              reason: stagedCancellationData?.reason ?? "otro",
+              notes: stagedCancellationData?.notes
+                ? stagedCancellationData.notes
+                : isClosedForPayment
+                  ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
+                  : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
+              cancelledBy: user.id,
+            },
+          }),
+        );
+        cancellationBecameRequest = Boolean((cancellationResult as { isRequest?: boolean })?.isRequest);
       }
 
-      await unlockOrder.mutateAsync();
+      await runEditStep("desbloquear la orden", () => unlockOrder.mutateAsync());
       setStagedDirty(false);
-      toast.success(
-        isClosedForPayment
-          ? "Cambios aceptados."
-          : "Cambios aceptados.",
-      );
+      if (cancellationBecameRequest) {
+        toast.warning(
+          "Tu usuario no puede anular despachados directamente: la reduccion quedo como solicitud pendiente de autorizacion.",
+          { duration: 8000 },
+        );
+      } else {
+        toast.success("Cambios aceptados.");
+      }
+      if (orderId) {
+        void qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+      }
       // Always navigate back to the order page after accepting changes.
       // This keeps the user on the order (with menu enabled) even when all
       // items were removed, so they can add new products without leaving.
       const originValue = searchParams.get("origin") || "consulta";
       navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error?.message || "No se pudieron aplicar los cambios.");
+    } finally {
+      toast.dismiss(progressToastId);
+      setAcceptingEditChanges(false);
     }
   };
 
@@ -3059,6 +3131,7 @@ const OrdenesContent = () => {
           alwaysShowControls={fromEditar && !isDispatchFirstFlow}
           allowSentStageEditing={isDispatchFirstFlow && !fromEditar && canEditItems}
           splitDispatchSections={isDispatchFirstFlow}
+          editDispatchedItemsOnly={fromEditar && isDispatchFirstFlow}
           hideItemControls={false}
           editableItemIds={editableItemIdsForEditar}
           specialOrderChargeTotal={order.is_special && effectiveSpecialTotalManual != null ? effectiveSpecialTotalManual : null}
@@ -3217,10 +3290,24 @@ const OrdenesContent = () => {
 
               const hadKitchenPending = useKitchenStaging && hasPendingKitchenChanges;
               if (hadKitchenPending) {
-                await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
+                // Si este paso falla, los borradores quedarian sin enviarse: avisar siempre.
+                try {
+                  await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
+                } catch (error: any) {
+                  toast.error(
+                    `No se pudieron aplicar los cambios antes de enviar: ${error?.message || "error desconocido"}. Intenta de nuevo.`,
+                  );
+                  return;
+                }
               }
 
-              let freshOrder = orderId ? await fetchOrderDetail(orderId) : null;
+              let freshOrder: Awaited<ReturnType<typeof fetchOrderDetail>> | null = null;
+              try {
+                freshOrder = orderId ? await fetchOrderDetail(orderId) : null;
+              } catch {
+                toast.error("No se pudo verificar la orden antes de enviar. Revisa tu conexion e intenta de nuevo.");
+                return;
+              }
               if (freshOrder && orderId) {
                 qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
               }
@@ -3369,10 +3456,10 @@ const OrdenesContent = () => {
                 <Button
                   className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
                   variant="info"
-                  disabled={!stagedDirty && stagedItems.length === orderItems.length}
+                  disabled={acceptingEditChanges}
                   onClick={handleAcceptEditedOrderChanges}
                 >
-                  <Sparkles className="h-5 w-5" />
+                  {acceptingEditChanges ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                   Aceptar cambios
                 </Button>
               )}
@@ -3512,7 +3599,7 @@ const OrdenesContent = () => {
 
                 {order.table_id && (
                   <>
-                    <DropdownMenu>
+                    <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="outline"
@@ -3524,6 +3611,15 @@ const OrdenesContent = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-56 md:hidden">
+                        {showDispatchEditOrderAction && (
+                          <DropdownMenuItem
+                            onClick={() => navigateToEditarOrdenAfterMenuClose()}
+                            disabled={!canEnterEditMode}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar orden
+                          </DropdownMenuItem>
+                        )}
                         {canShowConvertToSpecial && (
                           <DropdownMenuItem
                             onClick={() => {
@@ -3835,7 +3931,7 @@ const OrdenesContent = () => {
                 {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquarePlus className="h-4 w-4" />}
                 Añadir orden
               </Button>
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
@@ -3851,6 +3947,15 @@ const OrdenesContent = () => {
                   <DropdownMenuItem onClick={handleMobileBackToMesas}>
                     Volver a mesas
                   </DropdownMenuItem>
+                  {showDispatchEditOrderAction && (
+                    <DropdownMenuItem
+                      onClick={() => navigateToEditarOrdenAfterMenuClose()}
+                      disabled={!canEnterEditMode}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Editar orden
+                    </DropdownMenuItem>
+                  )}
                   {canShowConvertToSpecial && (
                     <DropdownMenuItem
                       onClick={() => {

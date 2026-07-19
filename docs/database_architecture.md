@@ -124,12 +124,21 @@
 
 ### 6.1 Bancos y datos de transferencia en pagos (2026-07-12)
 - `bancos`
-  - Catalogo global: `id`, `nombre` (unico), `activo`, `orden_visual`, `created_at`.
+  - Catalogo global de bancos de origen: `id`, `nombre` (unico), `activo`, `orden_visual`, `mascara_cuenta_destino`, `created_at`.
+  - `mascara_cuenta_destino`: `#` indica cada digito visible a comparar; `X` o `*` indica oculto. Ejemplos: `XXXXXX####`, `##XXXXX##`.
   - RLS: lectura autenticados; escritura solo admin global (`has_role(..., 'admin')`).
   - Seed inicial de bancos ecuatorianos en migracion `20260712220000`.
 - `payments.banco_id`, `payments.numero_transferencia`
   - Solo aplican cuando el metodo de pago es transferencia.
   - El monto va en `payments.amount` (columna existente).
+
+### 6.2 Cuentas destino y auditoria IA (2026-07-18)
+- `cuentas_bancarias_destino`: cuentas autorizadas de El Pulpo (`banco_id`, numero completo, tipo, titular, identificacion, alias, sucursal nullable, activa). `sucursal_id NULL` aplica a todas las sucursales.
+- `validaciones_comprobantes_transferencia`: snapshot inmutable ligado a `payments`; guarda analisis IA, resultado por regla, novedades, cuenta candidata, motivo, usuario y fecha.
+- Estados: `VALIDADO`, `CON_NOVEDADES`, `NO_VERIFICABLE`.
+- Si el estado no es `VALIDADO`, `motivo_aceptacion` es obligatorio (minimo 5 caracteres).
+- El camino rapido `register_payment_with_items` inserta pago + auditoria en la misma transaccion.
+- RLS: operadores de caja/admin leen por sucursal; el usuario que cobra registra su propia decision. No hay policies UPDATE/DELETE para preservar auditoria.
   - Comparacion de numero case-insensitive en validacion e indice unico.
 - RPC `register_payment_with_items` persiste `banco_id` y `numero_transferencia` y rechaza duplicados antes del insert (`20260713050000`).
 - Cliente: `existeTransferenciaDuplicada` en `src/lib/transferenciaDuplicada.ts`.
@@ -301,6 +310,7 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - No se permite esa eliminacion si hay items despachados, pagados o con solicitud de anulacion pendiente.
 - **Regla de Agrupamiento:** Las consultas que alimentan `OrderItemsList` y `PayableOrdersList` deben permitir la consolidación lógica en el cliente por `description_snapshot` y `unit_price`.
 - **Acceso Operativo:** La visibilidad del botón "Editar orden" y la búsqueda en el módulo de Órdenes se extiende a perfiles con `can_operate_orders` activo en el turno.
+- En `DISPATCH_THEN_CASH`, reducir o eliminar una cantidad ya despachada desde **Editar orden** se confirma mediante `cancel_order_quantities(...)`. La trazabilidad queda en `order_cancellations` / `order_item_cancellations` con `source_stage = 'DISPATCHED'`; las politicas de autorizacion vigentes pueden convertir la confirmacion en solicitud pendiente.
 - El cálculo de cambio en el cobro debe centralizarse para evitar discrepancias entre distintos métodos de pago.
 
 ### Mesas / Múltiples órdenes
@@ -370,10 +380,11 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
   - `cash_refund_detail`
   - `replacement_payment_id`
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
-- **Re-cobro misma orden (2026-07-14):** el trigger `create_successor_order_after_payment_void` ya **no** crea sucesora. Reabre la orden: `status = SENT_TO_KITCHEN`, `paid_at = NULL`, limpia `token_promocion` e ítems `paid_at`, conserva mesa/código/número. Migración `20260714120000_anular_pago_reabre_misma_orden.sql`.
+- **Anulación cierra la orden (2026-07-19):** el trigger `create_successor_order_after_payment_void` deja la orden `CANCELLED` (marcador `VOIDED_PAYMENT_CLOSED`) cuando no quedan pagos activos: sale de Recaudar/Ordenes y libera la mesa (conserva `table_id` para restaurarla en re-cobro). Si quedan pagos activos (anulación parcial con reemplazo) se reabre a `SENT_TO_KITCHEN` y sync recalcula. `recompute_order_operational_state` no resucita órdenes con `VOIDED_PAYMENT_CLOSED`. Re-cobro bajo demanda: botón "Cobrar orden" en Pagos realizados → `preparar_orden_para_recobro` reabre la misma orden (mismo `order_code`/`order_number`). Migración `20260719010000_anulacion_pago_cierra_orden.sql`.
+- **Una anulación por orden (2026-07-19):** `can_void_payment(...)` serializa la validación por orden y rechaza cualquier nuevo intento si existe otro pago `voided`/`reversed`, `voided_at`, marcador `VOIDED:` o una solicitud ejecutada. Esto también bloquea el nuevo pago creado al re-cobrar una orden previamente anulada. Migración `20260719012000_una_anulacion_pago_por_orden.sql`.
 - **Legacy:** ordenes con `VOID_SUCCESSOR_ORDER` siguen fuera de flujo activo; `recalculate_check_balance` las mantiene `CANCELLED`.
 - **Trazabilidad de Anulación:**
-  - Cada anulación inserta registro en `order_cancellations` y marca `orders.notes` (`VOIDED_PAYMENT` / `VOIDED_PAYMENT_REOPEN`).
+  - Cada anulación inserta registro en `order_cancellations` y marca `orders.notes` (`VOIDED_PAYMENT` / `VOIDED_PAYMENT_CLOSED` o `VOIDED_PAYMENT_REOPEN`).
 - Las devoluciones en efectivo disminuyen `cash_shift_denoms.qty_current` y registran `cash_movements`.
 - La anulacion operativa de pago solo debe proceder para ordenes `PAID` que aun no esten `KITCHEN_DISPATCHED`.
 
@@ -552,6 +563,7 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `20260712220000_bancos_y_datos_transferencia_pagos.sql` — tabla `bancos`, columnas en `payments`, seed, RLS, RPC `register_payment_with_items` actualizada.
 - `20260713050000_transferencia_unica_global.sql` — indice unico global + validacion de duplicado en RPC.
 - `20260714220000_comprobantes_pago_transferencia.sql` — tabla `comprobantes_pago` + bucket `comprobantes-pago` (foto opcional en cobro).
+- `20260718100000_cuentas_bancarias_y_validacion_comprobantes.sql` — mascara por banco origen, cuentas destino, auditoria inmutable y registro atomico con el pago.
 
 ### Sesion doble de app (2026-07)
 - `20260713220000_sesion_doble_para_cualquier_usuario.sql` — permiso sin exigir caja; normalize; `apply_shift_caja_configuration` no borra `can_double_session`.

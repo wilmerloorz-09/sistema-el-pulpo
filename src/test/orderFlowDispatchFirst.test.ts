@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isDispatchFirstOrder, isPureTakeoutOrder } from "@/lib/orderFlow";
+import {
+  getDispatchedEditQuantity,
+  getDispatchedEditTargetQuantity,
+  isDispatchFirstOrder,
+  isPureTakeoutOrder,
+} from "@/lib/orderFlow";
 
 describe("isPureTakeoutOrder", () => {
   it("identifies para llevar without bandeja or especial", () => {
@@ -38,5 +43,39 @@ describe("isDispatchFirstOrder", () => {
     expect(
       isDispatchFirstOrder({ order_type: "DINE_IN" }, "CASH_THEN_DISPATCH"),
     ).toBe(false);
+  });
+});
+
+describe("edicion temporal de cantidades despachadas", () => {
+  it("edita solo la porcion despachada de una linea parcial", () => {
+    const item = {
+      quantity: 5,
+      quantity_dispatched: 2,
+      quantity_remaining: 3,
+    };
+
+    expect(getDispatchedEditQuantity(item)).toBe(2);
+    expect(getDispatchedEditTargetQuantity(item, 1)).toBe(4);
+  });
+
+  it("permite eliminar la porcion despachada sin tocar lo que sigue en despacho", () => {
+    const item = {
+      quantity: 5,
+      quantity_dispatched: 2,
+      quantity_remaining: 3,
+    };
+
+    expect(getDispatchedEditTargetQuantity(item, 0)).toBe(3);
+  });
+
+  it("usa directamente la cantidad objetivo cuando toda la linea fue despachada", () => {
+    const item = {
+      quantity: 3,
+      quantity_dispatched: 3,
+      quantity_remaining: 0,
+    };
+
+    expect(getDispatchedEditQuantity(item)).toBe(3);
+    expect(getDispatchedEditTargetQuantity(item, 5)).toBe(5);
   });
 });

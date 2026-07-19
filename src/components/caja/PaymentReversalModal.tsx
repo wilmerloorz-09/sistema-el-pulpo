@@ -2,11 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DenominationVisual from "@/components/caja/DenominationVisual";
-import type { CashRefundDenomInput, CompletedPaymentStatus, PaymentVoidSelectionInput, ShiftDenom } from "@/hooks/useCaja";
+import type {
+  CashRefundDenomInput,
+  CompletedPaymentStatus,
+  PaymentRefundMethod,
+  PaymentVoidSelectionInput,
+  ShiftDenom,
+} from "@/hooks/useCaja";
 import { cn } from "@/lib/utils";
 import { roundMoney } from "@/lib/paymentQuantity";
-import { isCashPaymentMethodName } from "@/lib/paymentMethods";
+import { isTransferPaymentMethodName } from "@/lib/paymentMethods";
 import { ArrowLeft, ArrowRight, Loader2, ReceiptText, RotateCcw } from "lucide-react";
 
 export interface ReversalPaymentData {
@@ -50,6 +57,7 @@ interface Props {
     reason: string;
     paymentSelections: PaymentVoidSelectionInput[];
     cashRefundDenoms?: CashRefundDenomInput[];
+    refundMethod?: PaymentRefundMethod | null;
   } | null;
   autoOpenConfirm?: boolean;
   onSubmit: (payload: {
@@ -58,6 +66,7 @@ interface Props {
     paymentSelections: PaymentVoidSelectionInput[];
     cashRefundDenoms: CashRefundDenomInput[];
     refundAmount: number;
+    refundMethod: PaymentRefundMethod;
   }) => Promise<void> | void;
 }
 
@@ -92,6 +101,7 @@ export default function PaymentReversalModal({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [refundMethod, setRefundMethod] = useState<PaymentRefundMethod | null>(null);
 
   const itemHash = useMemo(
     () => payment?.items.map((item) => `${item.paymentEntryId}:${item.quantity}:${item.amount}`).join("|") ?? "",
@@ -105,6 +115,7 @@ export default function PaymentReversalModal({
       setConfirmOpen(false);
       setConfirmSubmitting(false);
       setSubmitError(null);
+      setRefundMethod(null);
       return;
     }
 
@@ -125,6 +136,10 @@ export default function PaymentReversalModal({
     setConfirmOpen(false);
     setConfirmSubmitting(false);
     setSubmitError(null);
+    setRefundMethod(
+      initialDraft?.refundMethod
+      ?? (isTransferPaymentMethodName(payment.methodsSummary) ? null : "CASH"),
+    );
   }, [allowPartial, initialDraft, itemHash, open, payment]);
 
   useEffect(() => {
@@ -162,10 +177,11 @@ export default function PaymentReversalModal({
   const selectedTotal = useMemo(() => roundMoney(selectedItems.reduce((sum, item) => sum + item.selectedAmount, 0)), [selectedItems]);
   const requiresSupervisor = payment?.requiresSupervisor || (payment?.orderHasDispatchedItems ?? true);
 
-  const isCash = payment ? isCashPaymentMethodName(payment.methodsSummary) : false;
+  const isTransferPayment = payment ? isTransferPaymentMethodName(payment.methodsSummary) : false;
+  const refundUsesCash = refundMethod === "CASH";
 
   const refundBreakdown = useMemo(() => {
-    if (selectedTotal <= 0 || !isCash) return [];
+    if (selectedTotal <= 0 || !refundUsesCash) return [];
 
     const sorted = [...shiftDenoms]
       .filter((denomination) => denomination.value > 0)
@@ -204,13 +220,14 @@ export default function PaymentReversalModal({
     }
 
     return result;
-  }, [selectedTotal, shiftDenoms, isCash]);
+  }, [selectedTotal, shiftDenoms, refundUsesCash]);
 
-  const refundTotal = useMemo(
+  const cashRefundTotal = useMemo(
     () => roundMoney(refundBreakdown.reduce((sum, denomination) => sum + denomination.total, 0)),
     [refundBreakdown],
   );
-  const refundDifference = roundMoney(selectedTotal - refundTotal);
+  const refundTotal = refundMethod === "TRANSFER" ? selectedTotal : cashRefundTotal;
+  const refundDifference = roundMoney(selectedTotal - cashRefundTotal);
   const refundMatches = selectedTotal > 0 && Math.abs(refundDifference) < 0.001;
 
   const setItemQty = (paymentEntryId: string, nextQty: number, maxQty: number) => {
@@ -228,7 +245,12 @@ export default function PaymentReversalModal({
     setSelectedQuantities(Object.fromEntries((payment?.items ?? []).map((item) => [item.paymentEntryId, item.quantity])));
   };
 
-  const canOpenConfirm = Boolean(payment) && selectedUnits > 0 && (requiresSupervisor ? refundMatches : true) && !loading;
+  const refundMethodIsValid = !isTransferPayment || refundMethod !== null;
+  const canOpenConfirm = Boolean(payment)
+    && selectedUnits > 0
+    && refundMethodIsValid
+    && (refundUsesCash ? refundMatches : true)
+    && !loading;
 
   const handleSubmit = async () => {
     if (!payment || !canOpenConfirm || confirmSubmitting) return;
@@ -249,8 +271,9 @@ export default function PaymentReversalModal({
         paymentId: payment.paymentId,
         reason: reason.trim() || "Sin motivo especificado",
         paymentSelections,
-        cashRefundDenoms,
+        cashRefundDenoms: refundUsesCash ? cashRefundDenoms : [],
         refundAmount: selectedTotal,
+        refundMethod: refundMethod ?? "CASH",
       });
     } catch (error: any) {
       setSubmitError(error?.message || "No se pudo completar la anulacion.");
@@ -358,12 +381,23 @@ export default function PaymentReversalModal({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+          <div className={cn(
+            "rounded-2xl border p-3",
+            refundUsesCash ? "border-red-500/20 bg-red-500/5" : "border-blue-200 bg-blue-50",
+          )}>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">Devolucion a entregar desde caja</p>
-              <p className="font-display text-xl font-bold text-red-600">${refundTotal.toFixed(2)}</p>
+              <p className="text-sm font-semibold text-foreground">
+                {refundUsesCash ? "Devolucion a entregar desde caja" : "Devolucion por transferencia"}
+              </p>
+              <p className={cn("font-display text-xl font-bold", refundUsesCash ? "text-red-600" : "text-blue-700")}>
+                ${refundTotal.toFixed(2)}
+              </p>
             </div>
-            {refundBreakdown.length > 0 ? (
+            {!refundUsesCash ? (
+              <p className="text-sm text-blue-800">
+                La devolucion se registrara por transferencia y no descontara efectivo de caja.
+              </p>
+            ) : refundBreakdown.length > 0 ? (
               <div className="space-y-1">
                 {refundBreakdown.map((denomination) => (
                   <div key={denomination.denomination_id} className="flex items-center justify-between gap-3 text-sm">
@@ -385,7 +419,7 @@ export default function PaymentReversalModal({
             )}
           </div>
 
-          {Math.abs(refundDifference) >= 0.001 && (
+          {refundUsesCash && Math.abs(refundDifference) >= 0.001 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
               Falta cuadrar ${Math.abs(refundDifference).toFixed(2)} en denominaciones para completar la devolucion exacta.
             </div>
@@ -540,6 +574,32 @@ export default function PaymentReversalModal({
                       </div>
                     </div>
                   </div>
+
+                  {isTransferPayment && (
+                    <div className="rounded-[26px] border border-blue-200 bg-blue-50/50 p-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <p className="text-sm font-semibold text-slate-950">Forma de devolucion</p>
+                        <Select
+                          value={refundMethod ?? ""}
+                          onValueChange={(value) => setRefundMethod(value as PaymentRefundMethod)}
+                          disabled={loading}
+                        >
+                          <SelectTrigger className="h-9 w-full min-w-[220px] rounded-xl bg-white sm:w-auto sm:flex-1">
+                            <SelectValue placeholder="Selecciona una opcion" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CASH">En efectivo (sale de caja)</SelectItem>
+                            <SelectItem value="TRANSFER">Por transferencia (no afecta caja)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {refundMethod === null && (
+                        <p className="mt-2 text-xs font-medium text-amber-700">
+                          Selecciona una forma de devolucion para continuar.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="mb-3 flex items-start gap-3">

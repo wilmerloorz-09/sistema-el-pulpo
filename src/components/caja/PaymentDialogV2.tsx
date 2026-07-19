@@ -569,6 +569,9 @@ export default function PaymentDialogV2({
             numeroTransferencia: transferDatos.numeroTransferencia,
             monto: transferAmount,
             fotoArchivo: transferDatos.fotoArchivo ?? null,
+            analisisIa: transferDatos.analisisIa ?? null,
+            validacionComprobante: transferDatos.validacionComprobante ?? null,
+            motivoAceptacion: transferDatos.motivoAceptacion ?? null,
           }
         : null,
     };

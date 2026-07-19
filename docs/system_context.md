@@ -345,8 +345,9 @@
 
 ### 6. Editar Orden (In-Situ)
 - `Editar Orden` ya es un flujo base del sistema y ahora opera de manera **In-Situ**.
-- **Excepcion — Despacho primero (`DISPATCH_THEN_CASH`):** en mesas (y flujo despacho primero en general) **no** se muestra el boton `Editar orden` ni los botones `Cancelar edicion` / `Aceptar cambios`. Las lineas **En despacho** se editan en la vista normal de la orden (+/-, borrar) con cambios **pendientes** hasta pulsar **Enviar a cocina**; las lineas **Despachadas** no son editables. Si alguien entra con `from=editar` en la URL, la app redirige a la vista normal.
-- El boton `Editar orden` solo debe estar activo para ordenes en `SENT_TO_KITCHEN`/En Caja **en flujo Caja primero** (`CASH_THEN_DISPATCH`).
+- En Despacho primero (`DISPATCH_THEN_CASH`), el menu superior muestra **Editar orden** cuando la orden tiene al menos una unidad despachada. El modo habilita `Cancelar edicion` / `Aceptar cambios` y mantiene el despacho bloqueado con `orders.locked_for_editing`.
+- La porcion **En despacho** de una linea parcial permanece fija; los controles modifican exclusivamente la cantidad **Despachada**. Los cambios son locales hasta **Aceptar cambios**.
+- En Caja primero (`CASH_THEN_DISPATCH`), el boton sigue limitado a ordenes editables en `SENT_TO_KITCHEN`/En Caja.
 - En pantallas operativas de Mesa, Para llevar y Orden especial, una orden `DRAFT` editable debe mantener activo el menu de productos aunque se elimine un item; si ya esta `PAID`, `KITCHEN_DISPATCHED` o `CANCELLED`, el menu puede verse pero debe quedar desactivado.
 - Si una orden no es editable, la pantalla debe seguir mostrando el menu de productos desactivado; no debe reemplazarlo por un panel de bloqueo que oculte el menu.
 - Al editar desde el módulo de "Mesas" o "Ordenes", el usuario ya no es redirigido a la pantalla principal al aceptar o cancelar cambios, manteniendo el contexto visual del detalle de la orden.
@@ -354,12 +355,11 @@
 - Usa buffer temporal en UI (`stagedItems`).
 - Bloquea la orden en DB con `orders.locked_for_editing`.
 - El bloqueo se propaga a Caja, donde el botón "Cobrar" se deshabilita automáticamente mientras la edición esté activa para evitar conflictos transaccionales.
-- Los items originales despachados o cerrados no exponen controles directos de cantidad en este modulo.
+- Disminuir o eliminar cantidades despachadas registra una anulacion/ajuste con `source_stage = 'DISPATCHED'`; si el usuario no puede autorizarla directamente, queda una solicitud pendiente.
 - Los items nuevos agregados durante la sesion si pueden exponer `+/-`, eliminar e input de cantidad.
 - Al aceptar cambios:
   - se registran y aplican automaticamente las anulaciones derivadas del buffer
-  - los items nuevos no vuelven a mesa
-  - los items nuevos pasan directo a `Despachado` o al flujo de orden cerrada ("En caja"), segun el estado actual de la orden
+  - en Despacho primero, todo aumento sobre una linea despachada crea una diferencia `DRAFT` para enviarla a cocina desde la vista normal
 - La accion principal del modulo es `Aceptar cambios`, no `Enviar`.
 
 ### 7. Orden especial
@@ -377,6 +377,15 @@
   - `payment_proofs`
 - OCR basico sin IA sigue disponible cuando el entorno tiene `tesseract`.
 - Si no hay `tesseract`, el comprobante se guarda y queda en revision manual.
+- **Autocompletado y validación IA en Caja (actualizado 2026-07-18):**
+  - Al tomar/cambiar foto en `TransferenciaPagoDialog`, se invoca automáticamente `analizar-comprobante-transferencia`.
+  - Extrae numero, monto, banco origen/destino, titular/cuenta destino y fecha.
+  - La Edge Function requiere usuario autenticado, optimiza la imagen en cliente y no la almacena durante el análisis.
+  - Secretos remotos: `OPENAI_API_KEY` obligatorio para activar; `OPENAI_VISION_MODEL` opcional (default `gpt-4.1-mini`).
+  - Admin > **Bancos de origen** define la mascara de cuenta mostrada (`#` visible; `X`/`*` oculto). Admin > **Cuentas bancarias** registra cuentas receptoras de El Pulpo.
+  - Validaciones: banco/titular/cuenta destino autorizada, fecha del dia en `America/Guayaquil` y monto.
+  - El cajero decide: diferencias o datos ilegibles requieren motivo y se registran de forma inmutable en `validaciones_comprobantes_transferencia` con usuario/pago.
+  - Sin secreto, error del proveedor o foto ilegible: ingreso manual + estado `NO_VERIFICABLE`; no se bloquea el cobro, pero exige motivo.
 
 ### 9. Usuarios
 - Crear/editar usuario incluye datos de contacto extendidos:
@@ -511,7 +520,7 @@
   - una orden `PAID` permanece visible en su mesa hasta que sea despachada; pagarla no libera la mesa ni oculta la orden.
   - `Ordenes` clasifica `PAID` y `KITCHEN_DISPATCHED` como pestanas mutuamente excluyentes.
   - `Despacho` agrupa por orden, no por lote temporal de items: un mismo `order_code` debe aparecer una sola vez con sus cantidades pendientes agregadas.
-  - `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja.
+  - En Caja primero, `Editar orden` queda limitado a `SENT_TO_KITCHEN`/En Caja; en Despacho primero se habilita con unidades despachadas activas.
   - cuando una orden se mueve de mesa, el encabezado debe resolver el nombre desde `restaurant_tables.name` y usar `orders.table_name_snapshot` solo como respaldo.
 
 ### 2026-06-02
@@ -584,7 +593,7 @@
 19. Campañas: `listarCampanasActivas` en operativo; no asumir una sola campaña activa (`limit 1`).
 20. Token de promoción: se genera al cobrar (`paid_at` no nulo) y **no se borra** al despachar (`KITCHEN_DISPATCHED`). Migración `20260623210000`. El **QR en ticket** solo debe mostrarse si existe al menos una campaña activa con ofertas registrables (`hayPromocionRegistrableEnRecibo`, `campanaTieneOfertasRegistrables`); migraciones `20260709200000` (trigger solo con campaña activa) y `20260709210000` (solo ofertas registrables). Sin campaña/oferta valida, no imprimir QR aunque exista `token_promocion` en BD.
 21. **Modificaciones en modal de producto:** no reintroducir dependencia exclusiva de `node.ancestor_ids` para resolver herencia; usar `parentByNodeId` del catalogo. No cachear lookup de producto con lista vacia de modificadores. Invalidar `branch-modifiers-catalog` al cambiar `menu_node_modifiers` en admin.
-22. **Despacho primero — cocina pendiente:** no invalidar `dispatch-orders` al editar lineas En despacho en vista normal; solo al confirmar **Enviar a cocina**. No mostrar boton **Editar orden** en `DISPATCH_THEN_CASH`.
+22. **Despacho primero — cocina pendiente y edicion:** no invalidar `dispatch-orders` al editar lineas En despacho en vista normal; solo al confirmar **Enviar a cocina**. Mostrar **Editar orden** cuando haya unidades despachadas y confirmar sus ajustes con trazabilidad.
 23. **Despacho — consolidacion UI:** no separar el mismo producto en varias filas si comparten descripcion, precio, modificadores y nota; usar `consolidateDispatchOrderItems`.
 24. **Extra vs workflow:** no mostrar `/extra` en nav cuando `branches.workflow_mode = DISPATCH_THEN_CASH`.
 25. **Auth en tablet/Capacitor:** no reactivar banner global por `AbortError` benigno de Web Locks; mantener `auth.lock` no-op en cliente Supabase y `isBenignAuthLockAbort` en `main.tsx`.
@@ -772,7 +781,7 @@ Módulo que permite al comensal escanear un QR físico en la mesa, ver el menú 
   - Los cambios quedan en `stagedItems` hasta pulsar **Enviar a cocina**; entonces `applyKitchenPendingItemChanges` aplica el diff y `submit_order_draft_items` envia borradores.
   - El boton muestra solo si hay pendientes y etiqueta con **delta en dinero** vs el ultimo envio (`formatKitchenSendMoneyDelta` en `kitchenPendingChanges.ts`).
 - **UI orden — secciones En despacho / Despachados:** `OrderItemsList` con `splitDispatchSections` (vista normal y, si aplica, modo edicion en Caja primero).
-- **Sin Editar orden en Despacho primero:** boton oculto; redireccion si `from=editar`; items despachados no editables.
+- **Editar orden en Despacho primero:** opcion condicionada a unidades despachadas, buffer temporal y anulacion/ajuste al confirmar reducciones.
 - **Despacho — lineas consolidadas:** mismo producto/precio/modificadores en una fila; despacho parcial reparte por `source_lines` (`dispatchItemConsolidation.ts`).
 - **Extra oculto en Despacho primero:** nav sin `/extra`; `usePreferredHomePath` no envia empacadores a Extra; `/extra` redirige a Mesas.
 - **RPC `remove_order_item_line`:** elimina o reduce lineas enviadas sin dialogo de anulacion en despacho primero (migraciones `20260707240000`, fix `20260707241000`). Usado al confirmar envio a cocina.

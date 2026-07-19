@@ -23,10 +23,17 @@ interface Banco {
   nombre: string;
   activo: boolean;
   orden_visual: number;
+  mascara_cuenta_destino: string;
 }
 
 const columns: ColumnDef<Banco>[] = [
-  { key: "nombre", header: "Nombre", width: "1.4fr", type: "text" },
+  { key: "nombre", header: "Banco de origen", width: "1.4fr", type: "text" },
+  {
+    key: "mascara_cuenta_destino",
+    header: "Máscara cuenta destino",
+    width: "1.2fr",
+    type: "text",
+  },
   { key: "orden_visual", header: "Orden", width: "5rem", type: "number" },
   { key: "activo", header: "Activo", width: "4rem", type: "switch" },
 ];
@@ -43,6 +50,7 @@ const BancosCrud = () => {
     nombre: "",
     activo: true,
     orden_visual: 1,
+    mascara_cuenta_destino: "XXXXXX####",
   } as Banco);
 
   const saveMutation = useMutation({
@@ -52,12 +60,19 @@ const BancosCrud = () => {
 
       const id = String(values.id ?? "");
       if (!id) throw new Error("No se encontro el identificador del banco");
+      const mascara = String(values.mascara_cuenta_destino ?? "")
+        .trim()
+        .replace(/\s+/g, "");
+      if (!/^[Xx*#.-]+$/.test(mascara) || !mascara.includes("#")) {
+        throw new Error("La máscara debe usar # para dígitos visibles y X o * para ocultos");
+      }
 
       const payload = {
         id,
         nombre,
         orden_visual: Math.max(1, Math.floor(Number(values.orden_visual ?? 1))),
         activo: values.activo === true,
+        mascara_cuenta_destino: mascara,
       };
 
       const { error } = await supabase.from("bancos").upsert(payload, { onConflict: "id" });
@@ -99,7 +114,12 @@ const BancosCrud = () => {
   };
 
   const handleAdd = () => {
-    edit.startAdd({ nombre: "", activo: true, orden_visual: getNextOrden() } as Banco);
+    edit.startAdd({
+      nombre: "",
+      activo: true,
+      orden_visual: getNextOrden(),
+      mascara_cuenta_destino: "XXXXXX####",
+    } as Banco);
   };
 
   const handleDelete = (id: string) => {
@@ -108,21 +128,32 @@ const BancosCrud = () => {
   };
 
   return (
-    <AdminTable<Banco>
-      columns={columns}
-      data={crud.data}
-      isLoading={crud.isLoading}
-      editingId={edit.editingId}
-      editValues={edit.editValues}
-      onEdit={edit.startEdit}
-      onCancelEdit={edit.cancelEdit}
-      onSave={handleSave}
-      onDelete={handleDelete}
-      onAdd={handleAdd}
-      onFieldChange={edit.setField}
-      saving={saveMutation.isPending}
-      addLabel="Agregar banco"
-    />
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
+        <p className="font-bold">Máscara mostrada por cada banco de origen</p>
+        <p className="mt-1 text-xs">
+          Usa <strong>#</strong> para cada dígito visible que se compara y
+          <strong> X</strong> o <strong>*</strong> para los ocultos.
+          Ejemplos: <code>XXXXXX####</code> (últimos 4) o{" "}
+          <code>##XXXXX##</code> (primeros 2 y últimos 2).
+        </p>
+      </div>
+      <AdminTable<Banco>
+        columns={columns}
+        data={crud.data}
+        isLoading={crud.isLoading}
+        editingId={edit.editingId}
+        editValues={edit.editValues}
+        onEdit={edit.startEdit}
+        onCancelEdit={edit.cancelEdit}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        onAdd={handleAdd}
+        onFieldChange={edit.setField}
+        saving={saveMutation.isPending}
+        addLabel="Agregar banco"
+      />
+    </div>
   );
 };
 

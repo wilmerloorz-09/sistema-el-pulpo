@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark, QrCode } from "lucide-react";
 import BancosCrud from "@/components/admin/BancosCrud";
+import CuentasBancariasDestinoAdmin from "@/components/admin/CuentasBancariasDestinoAdmin";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -159,9 +160,16 @@ const TABS: AdminTab[] = [
   },
   {
     value: "bancos",
-    label: "Bancos",
+    label: "Bancos de origen",
     icon: <Landmark className="h-4 w-4" />,
     component: BancosCrud,
+    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "cuentas-bancarias",
+    label: "Cuentas bancarias",
+    icon: <CreditCard className="h-4 w-4" />,
+    component: CuentasBancariasDestinoAdmin,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
   },
   {

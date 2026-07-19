@@ -2147,6 +2147,7 @@ export type Database = {
           payment_item_selections: Json | null
           reason: string
           refund_amount: number | null
+          refund_method: string | null
           rejected_at: string | null
           rejection_reason: string | null
           replacement_payment_id: string | null
@@ -2168,6 +2169,7 @@ export type Database = {
           payment_item_selections?: Json | null
           reason: string
           refund_amount?: number | null
+          refund_method?: string | null
           rejected_at?: string | null
           rejection_reason?: string | null
           replacement_payment_id?: string | null
@@ -2189,6 +2191,7 @@ export type Database = {
           payment_item_selections?: Json | null
           reason?: string
           refund_amount?: number | null
+          refund_method?: string | null
           rejected_at?: string | null
           rejection_reason?: string | null
           replacement_payment_id?: string | null

@@ -8,7 +8,12 @@ import { useState, useEffect } from "react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
 import { isTemporaryOrderItemId } from "@/hooks/useOrder";
-import { getSentItemStageLabel, isOrderItemFreelyEditableInDispatchFirst } from "@/lib/orderFlow";
+import {
+  getDispatchedEditQuantity,
+  getDispatchedEditTargetQuantity,
+  getSentItemStageLabel,
+  isOrderItemFreelyEditableInDispatchFirst,
+} from "@/lib/orderFlow";
 import { useBranch } from "@/contexts/BranchContext";
 
 interface OrderItem {
@@ -54,6 +59,8 @@ interface Props {
   allowSentStageEditing?: boolean;
   /** Despacho primero: separar visualmente "En despacho" y "Despachados". */
   splitDispatchSections?: boolean;
+  /** Modo Editar orden: controles solo sobre la porcion ya despachada (y borradores nuevos). */
+  editDispatchedItemsOnly?: boolean;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
@@ -246,13 +253,15 @@ function buildSectionItemTotals(item: OrderItem, quantity: number): OrderItem {
   };
 }
 
-function splitItemsForDispatchFirstSections(items: OrderItem[]) {
+function splitItemsForDispatchFirstSections(items: OrderItem[], editDispatchedItemsOnly = false) {
   const inDispatch: OrderItem[] = [];
   const dispatched: OrderItem[] = [];
 
   for (const item of items) {
     const stage = getOrderItemStage(item);
-    const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
+    const dispatchedQty = editDispatchedItemsOnly
+      ? getDispatchedEditQuantity(item)
+      : Math.max(0, Number(item.quantity_dispatched ?? 0));
     const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
     const visibleQty = Math.max(0, Number(item.quantity ?? 0));
 
@@ -274,7 +283,7 @@ function splitItemsForDispatchFirstSections(items: OrderItem[]) {
           ...item,
           quantity: dispatchedQty,
           quantity_dispatched: dispatchedQty,
-          quantity_remaining: 0,
+          quantity_remaining: remainingQty,
         }, dispatchedQty));
       }
       continue;
@@ -321,6 +330,7 @@ const OrderItemsList = ({
   isSpecialOrder = false,
   allowSentStageEditing = false,
   splitDispatchSections = false,
+  editDispatchedItemsOnly = false,
 }: Props) => {
   const { activeBranch } = useBranch();
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
@@ -334,7 +344,11 @@ const OrderItemsList = ({
       </div>
     );
   }
-  const renderList = (subItems: typeof items, isPaidGroup: boolean) => {
+  const renderList = (
+    subItems: typeof items,
+    isPaidGroup: boolean,
+    section: "default" | "inDispatch" | "dispatched" = "default",
+  ) => {
     const listHideControls = isPaidGroup ? true : hideItemControls;
     const listAlwaysShowControls = isPaidGroup ? false : alwaysShowControls;
 
@@ -345,7 +359,8 @@ const OrderItemsList = ({
         .sort()
         .join("|");
       const isDraft = item.status === "DRAFT";
-      const key = `${item.description_snapshot}_${item.unit_price}_${isDraft ? "draft" : "non-draft"}_${modKey}`;
+      const editLineKey = editDispatchedItemsOnly && section === "dispatched" ? `_${item.id}` : "";
+      const key = `${item.description_snapshot}_${item.unit_price}_${isDraft ? "draft" : "non-draft"}_${modKey}${editLineKey}`;
       const itemQty = item.quantity || item.quantity_ordered || 0;
       if (!groups[key]) {
         groups[key] = {
@@ -385,7 +400,13 @@ const OrderItemsList = ({
     return consolidatedGroups.map((item) => {
       const isPending = item.status === "DRAFT";
       const isTemporaryItem = isTemporaryOrderItemId(item.id);
-      const editableById = editableItemIds.some((id) => item.groupItemIds.includes(id));
+      const editableById =
+        editableItemIds.some((id) => item.groupItemIds.includes(id))
+        && (
+          !editDispatchedItemsOnly
+          || section === "dispatched"
+          || item.status === "DRAFT"
+        );
       const canShowControlsForItem = !listHideControls || editableById;
       const freelyEditableInDispatchFirst =
         allowSentStageEditing && !listAlwaysShowControls && isOrderItemFreelyEditableInDispatchFirst(item);
@@ -567,6 +588,14 @@ const OrderItemsList = ({
                     className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border border-destructive/20 bg-red-50 !p-0 text-destructive hover:bg-red-100 [&_svg]:!h-3 [&_svg]:!w-3 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                     disabled={controlsDisabled}
                     onClick={() => {
+                      if (editDispatchedItemsOnly && section === "dispatched") {
+                        onUpdateQty(
+                          item.id,
+                          getDispatchedEditTargetQuantity(item, 0),
+                          item.unit_price,
+                        );
+                        return;
+                      }
                       const ids = item.groupItemIds.length > 1 ? item.groupItemIds : item.id;
                       onRemove(ids);
                     }}
@@ -584,7 +613,10 @@ const OrderItemsList = ({
                         disabled={controlsDisabled || displayQuantity === 0}
                         onClick={() => {
                           if (displayQuantity > 0) {
-                            onUpdateQty(item.id, displayQuantity - 1, item.unit_price);
+                            const nextQuantity = editDispatchedItemsOnly && section === "dispatched"
+                              ? getDispatchedEditTargetQuantity(item, displayQuantity - 1)
+                              : displayQuantity - 1;
+                            onUpdateQty(item.id, nextQuantity, item.unit_price);
                           }
                         }}
                       >
@@ -599,10 +631,19 @@ const OrderItemsList = ({
                         disabled={controlsDisabled}
                         updateOnChange={false}
                         onUpdate={(newQty) => {
+                          const targetQuantity = editDispatchedItemsOnly && section === "dispatched"
+                            ? getDispatchedEditTargetQuantity(item, newQty)
+                            : newQty;
                           if (newQty < 0) {
-                            onUpdateQty(item.id, 0, item.unit_price);
+                            onUpdateQty(
+                              item.id,
+                              editDispatchedItemsOnly && section === "dispatched"
+                                ? getDispatchedEditTargetQuantity(item, 0)
+                                : 0,
+                              item.unit_price,
+                            );
                           } else if (newQty !== displayQuantity) {
-                            onUpdateQty(item.id, newQty, item.unit_price);
+                            onUpdateQty(item.id, targetQuantity, item.unit_price);
                           }
                         }}
                       />
@@ -612,7 +653,15 @@ const OrderItemsList = ({
                         size="icon"
                         className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
                         disabled={controlsDisabled}
-                        onClick={() => onUpdateQty(item.id, displayQuantity + 1, item.unit_price)}
+                        onClick={() =>
+                          onUpdateQty(
+                            item.id,
+                            editDispatchedItemsOnly && section === "dispatched"
+                              ? getDispatchedEditTargetQuantity(item, displayQuantity + 1)
+                              : displayQuantity + 1,
+                            item.unit_price,
+                          )
+                        }
                       >
                         <Plus />
                       </Button>
@@ -728,7 +777,7 @@ const OrderItemsList = ({
   }
 
   if (splitDispatchSections && shouldUseDispatchFirstSections(items, orderType, workflowMode)) {
-    const { inDispatch, dispatched } = splitItemsForDispatchFirstSections(items);
+    const { inDispatch, dispatched } = splitItemsForDispatchFirstSections(items, editDispatchedItemsOnly);
     const inDispatchLabel = getSentItemStageLabel(orderType, workflowMode);
 
     return (
@@ -739,7 +788,7 @@ const OrderItemsList = ({
               {inDispatchLabel}
             </h3>
             <div className="flex flex-col gap-3">
-              {renderList(inDispatch, false)}
+              {renderList(inDispatch, false, "inDispatch")}
             </div>
           </div>
         )}
@@ -750,7 +799,7 @@ const OrderItemsList = ({
               Despachados
             </h3>
             <div className="flex flex-col gap-3">
-              {renderList(dispatched, false)}
+              {renderList(dispatched, false, "dispatched")}
             </div>
           </div>
         )}
