@@ -54,7 +54,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - Reconciliar ids `temp-*` con `reconcileKitchenStagedItems` tras `addItem` para no dejar spinner infinito en Enviar a cocina.
   - `submit_order_draft_items` debe aceptar orden `KITCHEN_DISPATCHED` con borradores (migracion `20260709220000`).
   - En vista de orden, separar visualmente **En despacho** y **Despachados** (`splitDispatchSections` en `OrderItemsList`).
-  - Si existe al menos una unidad despachada, mostrar **Editar orden** en el menu superior. Este modo usa buffer temporal y solo habilita controles sobre la porcion **Despachada** (ademas de borradores nuevos).
+  - Si existe al menos una unidad despachada, mostrar **Editar orden** en el menu superior. Este modo usa buffer temporal y solo habilita controles sobre la porcion **Despachada** (ademas de borradores nuevos). Helpers `getDispatchedEditQuantity` / `getDispatchedEditTargetQuantity` en `src/lib/orderFlow.ts`.
+  - **Fix cast enum (2026-07-18):** `cancel_order_quantities` y `set_draft_order_item_quantity` deben usar `order_type::text` (no `COALESCE(order_type, '')`), o fallan con `22P02` y rompen en silencio reducciones/eliminaciones y el envio de items nuevos tras despachar. Migracion `20260718230000_fix_enum_order_type_cast_cancelaciones.sql`. No silenciar errores de `applyKitchenPendingItemChanges`: mostrar toast y dejar visible **Enviar a cocina** mientras haya `DRAFT`.
 
 ### 2.2 Cobro en caja: UI unificada y rendimiento
 - La UI estándar de cobro es `PaymentDialogV2` (misma UI para todos los cajeros).
@@ -160,6 +161,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - re-cobro sobre la **misma orden** (mismo numero) tras anular; historicas legacy con `VOID_SUCCESSOR_ORDER` se preservan sin revivirlas.
   - En Pagos del Turno: pago activo → Anular; pago anulado → Cobrar (misma orden).
   - `can_void_payment(...)` debe impedir una segunda anulación en la misma orden, incluso si fue reabierta y cobrada otra vez. La UI mantiene visible el botón Anular, pero desactivado.
+  - **Forma de devolución en transferencia (2026-07-18):** al anular un pago por transferencia, ofrecer combo `refund_method` (`CASH` afecta caja / `TRANSFER` no la afecta, solo se registra). `approve_and_void_payment` debe respetar el método y no crear movimiento de caja si es `TRANSFER`. Migración `20260718225000_metodo_devolucion_anulacion_transferencia.sql`.
 - No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
 - En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
@@ -253,6 +255,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Migraciones obligatorias: `20260712220000_bancos_y_datos_transferencia_pagos.sql`, `20260713050000_transferencia_unica_global.sql`.
 - **Foto de comprobante (opcional, actualizado 2026-07-18):** boton camara en `TransferenciaPagoDialog`; la foto viaja en memoria hasta `payOrder`; entonces Storage `comprobantes-pago` + fila `comprobantes_pago`. `analizar-comprobante-transferencia` extrae banco origen/destino, titular/cuenta destino, fecha, numero y monto. La copia de analisis no se almacena.
 - Comparar cuenta enmascarada segun la mascara del banco origen, banco/titular contra `cuentas_bancarias_destino`, fecha con `America/Guayaquil` y monto final.
+- **Fecha (fin de semana, 2026-07-19):** entre semana solo vale la fecha de hoy; sabado y domingo tambien la del lunes siguiente (los bancos registran transferencias de fin de semana con fecha del lunes). Usar `fechasAceptadasComprobante` en `src/lib/validacionComprobanteTransferencia.ts`; no hardcodear una sola fecha.
 - El usuario es el validador final. Si hay diferencias o datos no verificables, permitir continuar solo con motivo (minimo 5 caracteres) y persistir snapshot + novedades + usuario en `validaciones_comprobantes_transferencia`. No permitir editar/borrar esa auditoria.
 - Si falta IA o falla lectura, degradar a ingreso manual con estado `NO_VERIFICABLE`; nunca usar Sonner.
 - Migracion obligatoria adicional: `20260718100000_cuentas_bancarias_y_validacion_comprobantes.sql`.
@@ -278,6 +281,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Integridad Financiera (2026-05-09):**
   - **Redondeo:** Todos los cálculos financieros deben redondearse a 2 decimales en el origen (BD/RPC) y en la UI para evitar errores de precisión.
   - **Caja Abierta:** Los diálogos de pago no deben permitir cobros si el cajero no tiene apertura activa (`shiftGate.cajaStatus === OPEN`). El catálogo de denominaciones en cobro viene de `denominations`, no de la plantilla sola.
+  - **Lectura robusta de denominaciones (2026-07-19):** leer `cash_shift_denoms` con query directa a Supabase (no `dbSelect` con fallback a cache local, que devuelve `[]` en fallo de red y deja el cobro sin tarjetas de monedas/billetes). Mantener guardia de consistencia (si hay apertura abierta y catálogo global no vacío, un resultado vacío es lectura fallida → reintentar) y `refetchInterval` (~20 s) en `shiftQuery` para auto-sanar tablets/PWA con foco permanente. El cache Dexie de `cash_shift_denoms` no indexa `cashier_id`; no usarlo como respaldo filtrando por cajero.
   - **Exclusión de Cancelados:** Los ítems con anulación confirmada o pendiente no deben sumarse a ninguna cifra operativa de cobro.
   - La anulacion operativa de pagos solo aplica sobre ordenes `PAID` no despachadas.
 - **Optimización UI:** El módulo de Despacho debe estar optimizado para resoluciones de tablet (1280px), ajustando proporciones de rejilla y tipografía para máxima visibilidad operativa.
@@ -417,6 +421,16 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 25. Si se toca QR en ticket, validar campaña activa + ofertas registrables y migraciones `20260709200000` / `20260709210000`.
 26. Si se toca envio post-despacho, validar `20260709220000` y reconciliacion de staging (`reconcileKitchenStagedItems`).
 27. Si se toca **Autopedidos QR**, validar migraciones `20260716000000` + `20260716010000`, flujo completo (admin generar → cliente pedir → POS aprobar/rechazar), menú TABLE only, turno OPEN, sin Sonner, y distinción vs QR promocional de ticket.
+28. Si se toca **validación IA de comprobantes**, validar `cuentas_bancarias_destino`, máscara por banco origen, fecha `America/Guayaquil` con excepción de fin de semana (`fechasAceptadasComprobante`), motivo obligatorio con novedades y snapshot inmutable; migración `20260718100000`.
+29. Si se toca **anulación de pagos**, validar cierre de orden (`VOIDED_PAYMENT_CLOSED`, fuera de Recaudar), una sola anulación por orden (`can_void_payment`) y `refund_method` CASH/TRANSFER; migraciones `20260718225000`, `20260719010000`, `20260719012000`, `20260719013000`.
+30. Si se toca **cancelación/ajuste en Despacho primero**, validar `order_type::text` en `cancel_order_quantities` / `set_draft_order_item_quantity` (migración `20260718230000`) y que no se silencien errores de `applyKitchenPendingItemChanges`.
+31. Si se toca **lectura de denominaciones en cobro**, validar query directa (no cache local), guardia de consistencia y `refetchInterval` para tablets/PWA.
+
+### Actualizacion Jul 18–19, 2026
+- **Validación IA de comprobantes + fecha fin de semana:** reglas en sección 11.1; checklist item 28. Migración `20260718100000`; helper `fechasAceptadasComprobante`.
+- **Anulación cierra orden, una por orden y forma de devolución:** reglas en sección de anulación; checklist item 29. Migraciones `20260718225000`, `20260719010000`, `20260719012000`, `20260719013000`.
+- **Fix cast enum en cancelaciones Despacho primero:** checklist item 30. Migración `20260718230000`; toast en fallo de diff de cocina; **Enviar a cocina** visible con `DRAFT`.
+- **Denominaciones robustas en tablet:** checklist item 31. `useCaja` con query directa, guardia de consistencia y `refetchInterval`; mensaje de carga en `PaymentDialogV2`.
 
 ### Actualizacion Jul 15–16, 2026
 - **Autopedidos QR:** reglas en sección **14**; checklist item 27.

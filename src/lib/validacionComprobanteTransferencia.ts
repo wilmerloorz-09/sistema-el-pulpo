@@ -133,6 +133,29 @@ export function fechaActualEcuador(now = new Date()): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+function diaSemanaEcuador(now: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Guayaquil",
+    weekday: "short",
+  }).format(now);
+}
+
+/**
+ * Fechas que puede traer un comprobante válido según el día actual en Ecuador.
+ * Los bancos registran las transferencias de fin de semana con fecha del lunes
+ * siguiente, por lo que sábado y domingo también se acepta esa fecha.
+ */
+export function fechasAceptadasComprobante(now = new Date()): string[] {
+  const hoy = fechaActualEcuador(now);
+  const diaSemana = diaSemanaEcuador(now);
+  const diasHastaLunes = diaSemana === "Sat" ? 2 : diaSemana === "Sun" ? 1 : 0;
+  if (diasHastaLunes === 0) return [hoy];
+  const lunes = fechaActualEcuador(
+    new Date(now.getTime() + diasHastaLunes * 24 * 60 * 60 * 1000),
+  );
+  return [hoy, lunes];
+}
+
 function validarFecha(
   fechaDetectada: string | null,
   now: Date,
@@ -140,7 +163,9 @@ function validarFecha(
   if (!fechaDetectada) return "NO_VERIFICABLE";
   const isoDate = fechaDetectada.match(/\d{4}-\d{2}-\d{2}/)?.[0];
   if (!isoDate) return "NO_VERIFICABLE";
-  return isoDate === fechaActualEcuador(now) ? "COINCIDE" : "NO_COINCIDE";
+  return fechasAceptadasComprobante(now).includes(isoDate)
+    ? "COINCIDE"
+    : "NO_COINCIDE";
 }
 
 function validarMonto(
@@ -210,7 +235,7 @@ export function validarComprobanteContraCuentas(params: {
     bancoDestino: "El banco destino no coincide con una cuenta autorizada",
     titularDestino: "El titular destino no coincide con una cuenta autorizada",
     cuentaDestino: "Los dígitos visibles de la cuenta destino no coinciden",
-    fecha: "La fecha del comprobante no corresponde al día de hoy",
+    fecha: "La fecha del comprobante no corresponde al día de hoy (en fin de semana también se acepta la del lunes siguiente)",
     monto: "El valor detectado no coincide con el valor registrado",
   };
   const unverifiable: Record<keyof typeof reglas, string> = {

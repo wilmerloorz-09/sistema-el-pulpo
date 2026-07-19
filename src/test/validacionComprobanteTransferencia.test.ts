@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compararCuentaEnmascarada,
+  fechasAceptadasComprobante,
   validarComprobanteContraCuentas,
   type BancoParaValidacion,
   type CuentaBancariaDestino,
@@ -55,6 +56,32 @@ describe("compararCuentaEnmascarada", () => {
   });
 });
 
+describe("fechasAceptadasComprobante", () => {
+  it("entre semana solo acepta la fecha del día", () => {
+    // 2026-07-15 es miércoles.
+    expect(fechasAceptadasComprobante(new Date("2026-07-15T15:00:00Z")))
+      .toEqual(["2026-07-15"]);
+  });
+
+  it("sábado acepta el día y el lunes siguiente", () => {
+    // 2026-07-18 es sábado.
+    expect(fechasAceptadasComprobante(new Date("2026-07-18T15:00:00Z")))
+      .toEqual(["2026-07-18", "2026-07-20"]);
+  });
+
+  it("domingo acepta el día y el lunes siguiente", () => {
+    // 2026-07-19 es domingo.
+    expect(fechasAceptadasComprobante(new Date("2026-07-19T15:00:00Z")))
+      .toEqual(["2026-07-19", "2026-07-20"]);
+  });
+
+  it("respeta el cambio de día en zona horaria de Ecuador", () => {
+    // 2026-07-20T03:00Z aún es domingo 19 en Ecuador (UTC-5).
+    expect(fechasAceptadasComprobante(new Date("2026-07-20T03:00:00Z")))
+      .toEqual(["2026-07-19", "2026-07-20"]);
+  });
+});
+
 describe("validarComprobanteContraCuentas", () => {
   it("valida banco, titular, cuenta, fecha Ecuador y monto", () => {
     const result = validarComprobanteContraCuentas({
@@ -79,6 +106,38 @@ describe("validarComprobanteContraCuentas", () => {
       bancoOrigenId: "origen-final",
       montoEsperado: 25.5,
       now: new Date("2026-07-18T15:00:00Z"),
+    });
+
+    expect(result.estado).toBe("CON_NOVEDADES");
+    expect(result.reglas.fecha).toBe("NO_COINCIDE");
+  });
+
+  it("en fin de semana acepta comprobantes con fecha del lunes siguiente", () => {
+    // Cobro el sábado 2026-07-18; el banco registró la transferencia con
+    // fecha del lunes 2026-07-20.
+    const result = validarComprobanteContraCuentas({
+      analisis: { ...analisisBase, fechaTransferencia: "2026-07-20" },
+      cuentas: [cuenta],
+      bancos,
+      bancoOrigenId: "origen-final",
+      montoEsperado: 25.5,
+      now: new Date("2026-07-18T15:00:00Z"),
+    });
+
+    expect(result.estado).toBe("VALIDADO");
+    expect(result.reglas.fecha).toBe("COINCIDE");
+  });
+
+  it("entre semana rechaza fechas de otros días aunque sean lunes", () => {
+    // Cobro el miércoles 2026-07-15; un comprobante con fecha del lunes
+    // siguiente (2026-07-20) no es válido.
+    const result = validarComprobanteContraCuentas({
+      analisis: { ...analisisBase, fechaTransferencia: "2026-07-20" },
+      cuentas: [cuenta],
+      bancos,
+      bancoOrigenId: "origen-final",
+      montoEsperado: 25.5,
+      now: new Date("2026-07-15T15:00:00Z"),
     });
 
     expect(result.estado).toBe("CON_NOVEDADES");

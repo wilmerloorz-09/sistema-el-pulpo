@@ -383,7 +383,7 @@
   - La Edge Function requiere usuario autenticado, optimiza la imagen en cliente y no la almacena durante el análisis.
   - Secretos remotos: `OPENAI_API_KEY` obligatorio para activar; `OPENAI_VISION_MODEL` opcional (default `gpt-4.1-mini`).
   - Admin > **Bancos de origen** define la mascara de cuenta mostrada (`#` visible; `X`/`*` oculto). Admin > **Cuentas bancarias** registra cuentas receptoras de El Pulpo.
-  - Validaciones: banco/titular/cuenta destino autorizada, fecha del dia en `America/Guayaquil` y monto.
+  - Validaciones: banco/titular/cuenta destino autorizada, fecha del dia en `America/Guayaquil` y monto. En sabado o domingo tambien se acepta la fecha del lunes siguiente (los bancos registran transferencias de fin de semana con fecha del lunes).
   - El cajero decide: diferencias o datos ilegibles requieren motivo y se registran de forma inmutable en `validaciones_comprobantes_transferencia` con usuario/pago.
   - Sin secreto, error del proveedor o foto ilegible: ingreso manual + estado `NO_VERIFICABLE`; no se bloquea el cobro, pero exige motivo.
 
@@ -600,6 +600,16 @@
 26. **Despacho primero — cobro en Caja:** no abrir `PaymentDialog` si `ready_to_collect = false`; mantener validacion en `payOrder` y calculo con `computeUndispatchedQuantity` sobre todos los items no `DRAFT` de la orden.
 27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
 28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
+
+### Actualizacion Jul 18–19, 2026 — IA de comprobantes, anulaciones y caja en tablet
+- **Cuentas destino + validación IA (Jul 18):** Admin > **Cuentas bancarias** (`cuentas_bancarias_destino`) y máscara por banco origen en **Bancos de origen**. `TransferenciaPagoDialog` analiza la foto con la Edge Function `analizar-comprobante-transferencia` y valida banco/titular/cuenta destino, fecha (Ecuador) y monto. Diferencias o datos ilegibles exigen motivo y se guardan inmutables en `validaciones_comprobantes_transferencia`. Migración `20260718100000`.
+- **Fecha en fin de semana (Jul 19):** la validación acepta la fecha de hoy y, si es sábado o domingo, también la del lunes siguiente (los bancos registran transferencias de fin de semana con fecha del lunes). Helper `fechasAceptadasComprobante` en `src/lib/validacionComprobanteTransferencia.ts`; solo frontend.
+- **Editar orden en Despacho primero:** con al menos una unidad despachada, la opción aparece en el menú superior; los controles afectan solo la porción despachada (buffer hasta **Aceptar cambios**) y las reducciones/eliminaciones se registran como anulación/ajuste. Helpers `getDispatchedEditQuantity` / `getDispatchedEditTargetQuantity` en `src/lib/orderFlow.ts`.
+- **Fix cancelaciones Despacho primero (Jul 18):** `cancel_order_quantities` y `set_draft_order_item_quantity` casteaban `''` al enum `order_type` (error `22P02`), lo que hacía fallar en silencio reducciones/eliminaciones y podía impedir que un item nuevo agregado tras despachar llegara a Despacho. Corregido con `::text` en `20260718230000`. Además, `Ordenes.tsx` muestra toast si falla `applyKitchenPendingItemChanges` y el botón **Enviar a cocina** ahora aparece siempre que haya borradores `DRAFT`.
+- **Forma de devolución al anular transferencia (Jul 18):** el cajero elige **En efectivo** (afecta caja) o **Por transferencia** (no afecta caja) mediante un combo en `PaymentReversalModal`. Se persiste `refund_method` y `approve_and_void_payment` lo respeta. Migración `20260718225000`.
+- **Anulación cierra la orden (Jul 19):** al anular el último pago activo la orden queda `CANCELLED` (`VOIDED_PAYMENT_CLOSED`): desaparece de Recaudar y libera la mesa. Se puede re-cobrar bajo demanda con **Cobrar orden** en Pagos realizados. Migración `20260719010000`.
+- **Una anulación por orden (Jul 19):** una orden solo admite una anulación de pago en toda su vida; tras re-cobrarla, el nuevo pago no se puede anular (`can_void_payment` lo bloquea; botón Anular visible pero desactivado). Migraciones `20260719012000` y fix de ambigüedad `20260719013000`.
+- **Denominaciones en tablet (Jul 19, solo frontend):** `useCaja` lee `cash_shift_denoms` con query directa a Supabase (no cache local que devolvía `[]` en fallo de red), guardia de consistencia y `refetchInterval` (~20 s) para auto-sanar tablets/PWA con datos viejos. `PaymentDialogV2` muestra mensaje de carga/conexión mientras no lleguen las denominaciones.
 
 ### Actualizacion Jul 15–16, 2026 — Autopedidos QR en mesa
 

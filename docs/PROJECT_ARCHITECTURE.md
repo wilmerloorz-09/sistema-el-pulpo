@@ -247,6 +247,8 @@
   - `replacement_payment_id` cuando queda parte activa del pago
   - **Trazabilidad y Auditoría (2026-05-09):** Cada anulación de pago (parcial o total) inserta un registro en `order_cancellations` y actualiza `orders.notes` con un marcador de rastro `VOIDED_PAYMENT`, el ID del supervisor y el motivo.
   - al anular el último pago activo la orden queda `CANCELLED` (marcador `VOIDED_PAYMENT_CLOSED`): no vuelve a Recaudar ni ocupa mesa. Se puede re-cobrar bajo demanda desde Pagos realizados (misma orden, mismo `order_code` / `order_number`). Historicas legacy con `VOID_SUCCESSOR_ORDER` siguen preservadas como `CANCELLED`.
+  - **Una anulación por orden (2026-07-19):** tras re-cobrar una orden anulada, el nuevo pago ya no se puede anular (`can_void_payment`); la UI mantiene el botón visible pero desactivado.
+  - **Forma de devolución en transferencia (2026-07-18):** al anular un pago por transferencia el cajero elige `refund_method` (`CASH` afecta caja / `TRANSFER` no la afecta, solo queda registrado). `approve_and_void_payment` ajusta `cash_refund_detail` según el método.
   - En Pagos del Turno: Anular si pagado, Cobrar si anulado (misma orden).
   - `recalculate_check_balance(...)` sigue preservando historicas legacy `VOID_SUCCESSOR_ORDER` como `CANCELLED`.
 - No se debe permitir anulacion operativa de pago sobre una orden `KITCHEN_DISPATCHED`.
@@ -272,6 +274,7 @@
 - **Lectura y validacion inmediata en Caja (actualizado 2026-07-18):** `TransferenciaPagoDialog` envía una copia optimizada de la foto a la Edge Function autenticada `analizar-comprobante-transferencia`. La función usa visión IA (`OPENAI_API_KEY`, modelo configurable con `OPENAI_VISION_MODEL`) y extrae banco origen/destino, titular, cuenta destino enmascarada, fecha, número y monto. No almacena esa copia; el original sigue en memoria hasta confirmar `payOrder`.
 - **Cuentas autorizadas:** Admin > **Cuentas bancarias** gestiona `cuentas_bancarias_destino`; Admin > **Bancos de origen** configura la mascara usada por cada emisor (`#` visible, `X`/`*` oculto).
 - **Decision humana auditada:** la UI compara cuenta/titular/banco destino, fecha de Ecuador y monto. El cajero puede aceptar diferencias, pero debe escribir motivo; `register_payment_with_items` persiste el snapshot en `validaciones_comprobantes_transferencia` junto con el usuario.
+- **Fecha en fin de semana:** entre semana solo vale la fecha de hoy; sábado y domingo también se acepta la del lunes siguiente (`fechasAceptadasComprobante`, zona `America/Guayaquil`), porque los bancos registran transferencias de fin de semana con fecha del lunes.
 
 ### 13. Clientes, campañas y promociones (2026-06-11+)
 
@@ -451,6 +454,14 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 - Post-aprobación: `SENT_TO_KITCHEN` (En Caja) — mismo flujo que mesa creada por mesero.
 - `created_by` se asigna al usuario que aprueba (no al comensal anónimo).
 
+### Actualizacion Jul 18–19, 2026
+- **Cuentas destino + validación IA de comprobantes:** `cuentas_bancarias_destino`, máscara por banco origen, Edge Function `analizar-comprobante-transferencia`, `validaciones_comprobantes_transferencia`. Valida banco/titular/cuenta destino, fecha (Ecuador) y monto; el cajero puede aceptar con novedades pero debe justificar (motivo ≥ 5 chars). Migración `20260718100000`.
+- **Fecha de comprobante en fin de semana:** sábado y domingo también aceptan la fecha del lunes siguiente (`fechasAceptadasComprobante` en `src/lib/validacionComprobanteTransferencia.ts`); solo frontend.
+- **Fix cancelaciones Despacho primero:** `cancel_order_quantities` / `set_draft_order_item_quantity` con `order_type::text` (error `22P02` al castear `''`); `20260718230000`. `Ordenes.tsx` avisa por toast si falla el diff de cocina y muestra **Enviar a cocina** con cualquier `DRAFT`.
+- **Forma de devolución al anular transferencia:** combo CASH/TRANSFER en `PaymentReversalModal`; `refund_method` en `payment_void_requests`; `approve_and_void_payment` respeta el método (TRANSFER no afecta caja). Migración `20260718225000`.
+- **Anulación cierra la orden y una anulación por orden:** al anular el último pago activo la orden queda `CANCELLED` (`VOIDED_PAYMENT_CLOSED`), fuera de Recaudar, re-cobrable con **Cobrar orden**; `can_void_payment` impide una segunda anulación (botón visible desactivado). Migraciones `20260719010000`, `20260719012000`, `20260719013000`.
+- **Denominaciones en tablet (solo frontend):** `useCaja` lee `cash_shift_denoms` con query directa, guardia de consistencia y `refetchInterval` (~20 s) para auto-sanar tablets/PWA; mensaje de carga en `PaymentDialogV2`.
+
 ### Actualizacion Jul 15–16, 2026
 - **Autopedidos QR:** implementación completa cliente + admin + POS. Migraciones `20260716000000`, `20260716010000`. Ver sección **15. Autopedidos QR en mesa**.
 
@@ -498,6 +509,9 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 36. **Staging cocina:** Reconciliar ids `temp-*`; aumentos en lineas enviadas → DRAFT con diferencia; migracion `20260709220000` para envio post-despacho.
 37. **Transferencia bancaria:** Modal con banco/numero/valor; unicidad global; migraciones `20260712220000`, `20260713050000`; sin toasts Sonner.
 39. **Autopedidos QR:** Menú cliente solo TABLE; aprobar vía `aprobar_autopedido_qr`; migraciones `20260716000000` + `20260716010000`; sin Sonner en `/qr-pedido`.
+40. **Validación IA de comprobantes:** Validar contra `cuentas_bancarias_destino` + máscara del banco origen; fecha en `America/Guayaquil` (fin de semana acepta lunes siguiente); aceptar con novedades exige motivo y snapshot inmutable en `validaciones_comprobantes_transferencia`. No almacenar la foto durante el análisis.
+41. **Anulación de pago:** Al anular el último pago activo la orden queda `CANCELLED` (fuera de Recaudar, mesa libre); una sola anulación por orden (`can_void_payment`); en transferencias, `refund_method` decide si afecta caja (CASH) o no (TRANSFER).
+42. **Denominaciones en cobro:** Leer `cash_shift_denoms` con query directa (no cache local que devuelva `[]` en fallo de red); mantener guardia de consistencia y `refetchInterval` para auto-sanar tablets/PWA.
 
 ### Actualizacion Jul 15–16, 2026
 - **Cobro por transferencia:** `TransferenciaPagoSection`, `TransferenciaPagoDialog`, tabla `bancos`, columnas en `payments`, Admin > Bancos.

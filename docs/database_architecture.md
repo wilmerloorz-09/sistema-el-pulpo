@@ -75,6 +75,7 @@
 - `order_item_dispatch_events`
 - `order_ready_notifications`
 - **RPC `remove_order_item_line` (2026-07-07/08):** elimina o reduce cantidad de una linea `order_items` enviada sin flujo de anulacion por dialogo. Usado por `applyKitchenPendingItemChanges` al confirmar cambios de cocina pendientes en Despacho primero. Migraciones: `20260707240000_remove_order_item_line.sql`, fix cantidad `20260707241000_fix_remove_order_item_line_qty.sql`.
+- **Fix cast enum `order_type` en cancelaciones (2026-07-18):** `cancel_order_quantities` y `set_draft_order_item_quantity` usaban `COALESCE(v_order.order_type, '')`, lo que hacía que Postgres intentara castear `''` al enum `order_type` (error `22P02 invalid input value for enum`). Esto rompía en silencio las reducciones/eliminaciones de items despachados en "Editar orden" (Despacho primero) y podía impedir que un item nuevo agregado tras un despacho se enviara correctamente. Corregido a `COALESCE(v_order.order_type::text, '')` en `20260718230000_fix_enum_order_type_cast_cancelaciones.sql`.
 - **`submit_order_draft_items` post-despacho (2026-07-09):** permite enviar borradores nuevos cuando la cabecera esta `KITCHEN_DISPATCHED` (regresion corregida en `20260709220000_submit_draft_items_after_dispatch.sql`). Necesario al agregar productos tras despachar todo en Despacho primero.
 
 ### 4. Mesas y órdenes
@@ -96,6 +97,7 @@
   - `cashier_id`, `opening_id`: particion por cajero y apertura dentro del turno.
   - indice unico: `(shift_id, cashier_id, denomination_id)` cuando `cashier_id` no es null.
   - refleja inventario/arqueo del cajero; al cobrar, `PAYMENT_IN` puede **crear** fila con `qty_initial = 0` si el cliente entrega una denominacion no incluida en la plantilla.
+  - **Lectura robusta en tablet (2026-07-19, solo frontend):** `useCaja` consulta `cash_shift_denoms` con query directa a Supabase (no `dbSelect` con fallback a cache local, que devolvía `[]` en fallo de red y dejaba el cobro sin tarjetas de monedas/billetes). Guardia de consistencia: si el cajero tiene apertura abierta y el catálogo global no está vacío pero la lectura de denominaciones sí, se lanza error para que React Query reintente. `shiftQuery` usa `refetchInterval` (~20 s) para auto-sanar tablets/PWA que nunca pierden el foco tras abrir caja desde otro equipo. El cache local Dexie de `cash_shift_denoms` no indexa `cashier_id`, por eso no debe usarse como respaldo filtrando por cajero.
 - `cash_register_openings`
   - una fila `abierta` maxima por `(shift_id, cashier_id)`.
   - `register_role`: `primary` | `secondary` | `standard` (legacy).
@@ -136,6 +138,7 @@
 - `cuentas_bancarias_destino`: cuentas autorizadas de El Pulpo (`banco_id`, numero completo, tipo, titular, identificacion, alias, sucursal nullable, activa). `sucursal_id NULL` aplica a todas las sucursales.
 - `validaciones_comprobantes_transferencia`: snapshot inmutable ligado a `payments`; guarda analisis IA, resultado por regla, novedades, cuenta candidata, motivo, usuario y fecha.
 - Estados: `VALIDADO`, `CON_NOVEDADES`, `NO_VERIFICABLE`.
+- Validacion de fecha (cliente, `America/Guayaquil`): entre semana solo la fecha de hoy; sabado y domingo tambien se acepta la del lunes siguiente (los bancos registran transferencias de fin de semana con fecha del lunes). Helper `fechasAceptadasComprobante` en `src/lib/validacionComprobanteTransferencia.ts`.
 - Si el estado no es `VALIDADO`, `motivo_aceptacion` es obligatorio (minimo 5 caracteres).
 - El camino rapido `register_payment_with_items` inserta pago + auditoria en la misma transaccion.
 - RLS: operadores de caja/admin leen por sucursal; el usuario que cobra registra su propia decision. No hay policies UPDATE/DELETE para preservar auditoria.
@@ -379,9 +382,11 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
   - `refund_amount`
   - `cash_refund_detail`
   - `replacement_payment_id`
+  - `refund_method` (`CASH` | `TRANSFER`, nullable) — solo para pagos por transferencia.
 - La anulacion parcial genera un `replacement_payment_id` para la parte que sigue activa.
+- **Forma de devolución en anulación de transferencia (2026-07-18):** al anular un pago hecho por transferencia el cajero elige `refund_method`. `CASH` afecta caja (descuenta `cash_shift_denoms`, requiere cuadrar denominaciones) y `TRANSFER` no toca caja pero queda registrado. `approve_and_void_payment` lee `refund_method` de la solicitud (o lo infiere si es null), ajusta `cash_refund_detail` y, si es `TRANSFER`, omite el movimiento en `cash_register_movements` y deja un `audit_log` (`payment_refund_by_transfer`). Migración `20260718225000_metodo_devolucion_anulacion_transferencia.sql`.
 - **Anulación cierra la orden (2026-07-19):** el trigger `create_successor_order_after_payment_void` deja la orden `CANCELLED` (marcador `VOIDED_PAYMENT_CLOSED`) cuando no quedan pagos activos: sale de Recaudar/Ordenes y libera la mesa (conserva `table_id` para restaurarla en re-cobro). Si quedan pagos activos (anulación parcial con reemplazo) se reabre a `SENT_TO_KITCHEN` y sync recalcula. `recompute_order_operational_state` no resucita órdenes con `VOIDED_PAYMENT_CLOSED`. Re-cobro bajo demanda: botón "Cobrar orden" en Pagos realizados → `preparar_orden_para_recobro` reabre la misma orden (mismo `order_code`/`order_number`). Migración `20260719010000_anulacion_pago_cierra_orden.sql`.
-- **Una anulación por orden (2026-07-19):** `can_void_payment(...)` serializa la validación por orden y rechaza cualquier nuevo intento si existe otro pago `voided`/`reversed`, `voided_at`, marcador `VOIDED:` o una solicitud ejecutada. Esto también bloquea el nuevo pago creado al re-cobrar una orden previamente anulada. Migración `20260719012000_una_anulacion_pago_por_orden.sql`.
+- **Una anulación por orden (2026-07-19):** `can_void_payment(...)` serializa la validación por orden y rechaza cualquier nuevo intento si existe otro pago `voided`/`reversed`, `voided_at`, marcador `VOIDED:` o una solicitud ejecutada. Esto también bloquea el nuevo pago creado al re-cobrar una orden previamente anulada. Migración `20260719012000_una_anulacion_pago_por_orden.sql`. Corrección de ambigüedad `order_id` (OUT vs columna) en `20260719013000_fix_ambiguous_order_id_can_void_payment.sql` (usa variable local `v_order_id`).
 - **Legacy:** ordenes con `VOID_SUCCESSOR_ORDER` siguen fuera de flujo activo; `recalculate_check_balance` las mantiene `CANCELLED`.
 - **Trazabilidad de Anulación:**
   - Cada anulación inserta registro en `order_cancellations` y marca `orders.notes` (`VOIDED_PAYMENT` / `VOIDED_PAYMENT_CLOSED` o `VOIDED_PAYMENT_REOPEN`).
@@ -564,6 +569,13 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `20260713050000_transferencia_unica_global.sql` — indice unico global + validacion de duplicado en RPC.
 - `20260714220000_comprobantes_pago_transferencia.sql` — tabla `comprobantes_pago` + bucket `comprobantes-pago` (foto opcional en cobro).
 - `20260718100000_cuentas_bancarias_y_validacion_comprobantes.sql` — mascara por banco origen, cuentas destino, auditoria inmutable y registro atomico con el pago.
+
+### Anulacion de pagos: devolucion, cierre y unicidad (2026-07-18/19)
+- `20260718225000_metodo_devolucion_anulacion_transferencia.sql` — columna `refund_method` en `payment_void_requests` y `approve_and_void_payment` que respeta CASH/TRANSFER (TRANSFER no toca caja).
+- `20260718230000_fix_enum_order_type_cast_cancelaciones.sql` — corrige `COALESCE(order_type, '')` a `::text` en `cancel_order_quantities` y `set_draft_order_item_quantity` (evita error `22P02` en cancelaciones/ajustes de Despacho primero).
+- `20260719010000_anulacion_pago_cierra_orden.sql` — al anular el ultimo pago activo la orden queda `CANCELLED` (`VOIDED_PAYMENT_CLOSED`), sale de Recaudar y libera mesa; backfill de reabiertas sin pago.
+- `20260719012000_una_anulacion_pago_por_orden.sql` — `can_void_payment` rechaza una segunda anulacion en la misma orden.
+- `20260719013000_fix_ambiguous_order_id_can_void_payment.sql` — corrige ambiguedad `order_id` (OUT vs columna) con variable local `v_order_id`.
 
 ### Sesion doble de app (2026-07)
 - `20260713220000_sesion_doble_para_cualquier_usuario.sql` — permiso sin exigir caja; normalize; `apply_shift_caja_configuration` no borra `can_double_session`.
