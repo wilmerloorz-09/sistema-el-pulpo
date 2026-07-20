@@ -432,6 +432,20 @@ function showShiftSetupError(
     return;
   }
 
+  if (
+    /statement timeout|canceling statement due to statement timeout/i.test(
+      rawMessage,
+    )
+  ) {
+    setWarningDialog({
+      open: true,
+      title: "El cierre del turno tardo demasiado",
+      description:
+        "La base de datos cancelo la operacion por tiempo de espera. Suele ocurrir en sucursales con muchas ordenes del turno. Aplica la migracion de optimizacion de cierre de turno y vuelve a intentarlo. Si el error persiste, revisa ordenes pendientes en Caja/Despacho.",
+    });
+    return;
+  }
+
   setWarningDialog({
     open: true,
     title: "Revisa la configuracion del turno",

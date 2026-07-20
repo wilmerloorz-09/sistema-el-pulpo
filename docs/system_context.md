@@ -601,6 +601,11 @@
 27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
 28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
 
+### Actualizacion Jul 20, 2026 — Timeout al cerrar turno (Local Principal)
+- **Síntoma:** al cerrar turno aparece `canceling statement due to statement timeout`.
+- **Causa:** `close_cash_shift_with_tables` evaluaba bloqueantes dos veces y `list_branch_closure_blocking_orders` llamaba `order_is_fully_dispatched` → `get_order_operational_snapshot` por cada orden `PAID` del turno (N+1). En sucursales con alto volumen (p. ej. Local Principal) superaba el `statement_timeout`.
+- **Fix:** migración `20260720140000_fix_close_shift_statement_timeout.sql` — chequeo set-based de despacho pendiente, cancelación de borradores acotada al turno `OPEN`, una sola pasada de bloqueantes y `SET LOCAL statement_timeout = '120s'` en el cierre.
+
 ### Actualizacion Jul 18–19, 2026 — IA de comprobantes, anulaciones y caja en tablet
 - **Cuentas destino + validación IA (Jul 18):** Admin > **Cuentas bancarias** (`cuentas_bancarias_destino`) y máscara por banco origen en **Bancos de origen**. `TransferenciaPagoDialog` analiza la foto con la Edge Function `analizar-comprobante-transferencia` y valida banco/titular/cuenta destino, fecha (Ecuador) y monto. Diferencias o datos ilegibles exigen motivo y se guardan inmutables en `validaciones_comprobantes_transferencia`. Migración `20260718100000`.
 - **Fecha en fin de semana (Jul 19):** la validación acepta la fecha de hoy y, si es sábado o domingo, también la del lunes siguiente (los bancos registran transferencias de fin de semana con fecha del lunes). Helper `fechasAceptadasComprobante` en `src/lib/validacionComprobanteTransferencia.ts`; solo frontend.
