@@ -55,7 +55,7 @@ export function useKitchenNotifications(onNotification: NotificationCallback) {
       });
 
     return () => {
-      kitchenChannel.unsubscribe();
+      void supabase.removeChannel(kitchenChannel);
     };
   }, [channel, onNotification]);
 }

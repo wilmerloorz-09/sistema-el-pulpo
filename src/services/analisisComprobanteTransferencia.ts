@@ -77,7 +77,9 @@ async function prepararImagenParaAnalisis(imagen: File | Blob): Promise<Blob> {
 
   try {
     const bitmap = await createImageBitmap(imagen);
-    const maxDimension = 1800;
+    // Suficiente para OCR de comprobantes, con bastante menos peso de subida
+    // que la foto original de la camara.
+    const maxDimension = 1400;
     const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -96,7 +98,7 @@ async function prepararImagenParaAnalisis(imagen: File | Blob): Promise<Blob> {
       canvas.toBlob(
         (blob) => resolve(blob ?? imagen),
         "image/jpeg",
-        0.86,
+        0.84,
       );
     });
   } catch {
@@ -110,70 +112,86 @@ export async function analizarComprobanteTransferencia(
   montoEsperado: number,
 ): Promise<AnalisisComprobanteTransferencia> {
   const imagenOptimizada = await prepararImagenParaAnalisis(imagen);
-  const formData = new FormData();
-  formData.append(
-    "imagen",
-    imagenOptimizada,
-    "comprobante-analisis.jpg",
-  );
-  formData.append("bancos", bancos.map((banco) => banco.nombre).join(", "));
-  if (Number.isFinite(montoEsperado) && montoEsperado > 0) {
-    formData.append("monto_esperado", montoEsperado.toFixed(2));
-  }
 
-  const { data, error } = await supabase.functions.invoke<FunctionPayload>(
-    "analizar-comprobante-transferencia",
-    { body: formData },
-  );
-
-  if (error) throw new Error(await getFunctionErrorMessage(error));
-  if (!data?.data) {
-    throw new Error(
-      typeof data?.error === "string"
-        ? data.error
-        : "La lectura no devolvió datos. Ingresa los datos manualmente.",
+  const analizarConDetalle = async (
+    detalle: "low" | "high",
+  ): Promise<AnalisisComprobanteTransferencia> => {
+    const formData = new FormData();
+    formData.append(
+      "imagen",
+      imagenOptimizada,
+      "comprobante-analisis.jpg",
     );
+    formData.append("detalle", detalle);
+    formData.append("bancos", bancos.map((banco) => banco.nombre).join(", "));
+    if (Number.isFinite(montoEsperado) && montoEsperado > 0) {
+      formData.append("monto_esperado", montoEsperado.toFixed(2));
+    }
+
+    const { data, error } = await supabase.functions.invoke<FunctionPayload>(
+      "analizar-comprobante-transferencia",
+      { body: formData },
+    );
+
+    if (error) throw new Error(await getFunctionErrorMessage(error));
+    if (!data?.data) {
+      throw new Error(
+        typeof data?.error === "string"
+          ? data.error
+          : "La lectura no devolvió datos. Ingresa los datos manualmente.",
+      );
+    }
+
+    const result = data.data;
+    return {
+      numeroTransferencia:
+        typeof result.numero_transferencia === "string"
+          ? result.numero_transferencia.trim() || null
+          : null,
+      monto:
+        typeof result.monto === "number"
+          && Number.isFinite(result.monto)
+          && result.monto > 0
+          ? Math.round(result.monto * 100) / 100
+          : null,
+      bancoOrigen:
+        typeof result.banco_origen === "string"
+          ? result.banco_origen.trim() || null
+          : null,
+      bancoDestino:
+        typeof result.banco_destino === "string"
+          ? result.banco_destino.trim() || null
+          : null,
+      titularDestino:
+        typeof result.titular_destino === "string"
+          ? result.titular_destino.trim() || null
+          : null,
+      cuentaDestino:
+        typeof result.cuenta_destino === "string"
+          ? result.cuenta_destino.trim() || null
+          : null,
+      fechaTransferencia:
+        typeof result.fecha_transferencia === "string"
+          ? result.fecha_transferencia.trim() || null
+          : null,
+      confianza:
+        typeof result.confianza === "number"
+          ? Math.max(0, Math.min(1, result.confianza))
+          : 0,
+      observaciones:
+        typeof result.observaciones === "string"
+          ? result.observaciones.trim()
+          : "",
+    };
+  };
+
+  // La mayoría de comprobantes claros se resuelve con una lectura rápida.
+  // Si faltan los dos datos críticos del cobro, repetimos automáticamente con
+  // mayor detalle para no sacrificar confiabilidad por velocidad.
+  const lecturaRapida = await analizarConDetalle("low");
+  if (lecturaRapida.numeroTransferencia && lecturaRapida.monto) {
+    return lecturaRapida;
   }
 
-  const result = data.data;
-  return {
-    numeroTransferencia:
-      typeof result.numero_transferencia === "string"
-        ? result.numero_transferencia.trim() || null
-        : null,
-    monto:
-      typeof result.monto === "number"
-        && Number.isFinite(result.monto)
-        && result.monto > 0
-        ? Math.round(result.monto * 100) / 100
-        : null,
-    bancoOrigen:
-      typeof result.banco_origen === "string"
-        ? result.banco_origen.trim() || null
-        : null,
-    bancoDestino:
-      typeof result.banco_destino === "string"
-        ? result.banco_destino.trim() || null
-        : null,
-    titularDestino:
-      typeof result.titular_destino === "string"
-        ? result.titular_destino.trim() || null
-        : null,
-    cuentaDestino:
-      typeof result.cuenta_destino === "string"
-        ? result.cuenta_destino.trim() || null
-        : null,
-    fechaTransferencia:
-      typeof result.fecha_transferencia === "string"
-        ? result.fecha_transferencia.trim() || null
-        : null,
-    confianza:
-      typeof result.confianza === "number"
-        ? Math.max(0, Math.min(1, result.confianza))
-        : 0,
-    observaciones:
-      typeof result.observaciones === "string"
-        ? result.observaciones.trim()
-        : "",
-  };
+  return analizarConDetalle("high");
 }

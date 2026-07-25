@@ -15,6 +15,30 @@ export interface ReportesFilters {
   supervisorId?: string | null; // Usado en anulaciones
 }
 
+/** Tope de seguridad: sin fechas el reporte no debe barrer toda la historia. */
+const REPORTES_MAX_LOOKBACK_DAYS = 31;
+
+function resolveReportesDateBounds(desde: string | null, hasta: string | null): { desde: string; hasta: string } {
+  const now = new Date();
+  const resolvedHasta = hasta ? new Date(hasta) : now;
+  let resolvedDesde = desde ? new Date(desde) : new Date(resolvedHasta);
+
+  if (!desde) {
+    resolvedDesde.setDate(resolvedDesde.getDate() - REPORTES_MAX_LOOKBACK_DAYS);
+  }
+
+  // Evitar rangos invertidos o corruptos
+  if (Number.isNaN(resolvedDesde.getTime()) || Number.isNaN(resolvedHasta.getTime()) || resolvedDesde > resolvedHasta) {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    return { desde: start.toISOString(), hasta: end.toISOString() };
+  }
+
+  return { desde: resolvedDesde.toISOString(), hasta: resolvedHasta.toISOString() };
+}
+
 // Helper para redondear a 2 decimales de forma segura
 export function round2(num: number): number {
   return Math.round((num + Number.EPSILON) * 100) / 100;
@@ -89,6 +113,7 @@ export function useReportesFiltros(branchId: string) {
       };
     },
     enabled: !!branchId,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -103,16 +128,25 @@ export function useReportesPagos(filters: ReportesFilters) {
     queryFn: async () => {
       if (!branchId) return { payments: [], kpis: { totalNeto: 0, desglose: {}, ticketPromedio: 0, transacciones: 0 } };
 
+      const dateBounds = resolveReportesDateBounds(desde, hasta);
+
       // Si hay filtros de producto, primero obtenemos las órdenes que contienen esos productos
+      // dentro del mismo rango de fechas (evita escanear order_items historicos completos).
       let orderIdsFilter: string[] | null = null;
       if (productIds && productIds.length > 0) {
         const { data: itemsData, error: itemsError } = await supabase
           .from('order_items')
-          .select('order_id')
-          .in('product_id', productIds);
+          .select('order_id, order:orders!inner(id, branch_id, created_at)')
+          .in('product_id', productIds)
+          .gte('order.created_at', dateBounds.desde)
+          .lte('order.created_at', dateBounds.hasta);
         
         if (itemsError) throw itemsError;
-        orderIdsFilter = Array.from(new Set((itemsData || []).map((item) => item.order_id)));
+        let scoped = itemsData || [];
+        if (branchId !== 'ALL') {
+          scoped = scoped.filter((item: any) => item.order?.branch_id === branchId);
+        }
+        orderIdsFilter = Array.from(new Set(scoped.map((item: any) => item.order_id)));
         
         // Si no hay órdenes con estos productos, devolvemos resultado vacío inmediatamente
         if (orderIdsFilter.length === 0) {
@@ -154,9 +188,8 @@ export function useReportesPagos(filters: ReportesFilters) {
         query = query.eq('order.branch_id', branchId);
       }
 
-      // Aplicar filtros de fecha/hora
-      if (desde) query = query.gte('created_at', desde);
-      if (hasta) query = query.lte('created_at', hasta);
+      // Aplicar filtros de fecha/hora (siempre con tope de seguridad)
+      query = query.gte('created_at', dateBounds.desde).lte('created_at', dateBounds.hasta);
 
       // Aplicar turno
       if (shiftId) query = query.eq('shift_id', shiftId);
@@ -265,6 +298,8 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
     queryFn: async () => {
       if (!branchId) return { voids: [], kpis: { totalAnulado: 0, incidentes: 0, topSupervisor: 'Ninguno' } };
 
+      const dateBounds = resolveReportesDateBounds(desde, hasta);
+
       let query = supabase
         .from('payment_void_requests')
         .select(`
@@ -295,8 +330,7 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
       }
 
       // Filtros
-      if (desde) query = query.gte('created_at', desde);
-      if (hasta) query = query.lte('created_at', hasta);
+      query = query.gte('created_at', dateBounds.desde).lte('created_at', dateBounds.hasta);
       if (shiftId) query = query.eq('shift_id', shiftId);
       if (cashierId) query = query.eq('requested_by_user_id', cashierId);
       if (supervisorId) query = query.eq('approved_by_supervisor_id', supervisorId);
@@ -405,6 +439,8 @@ export function useReportesProductos(filters: ReportesFilters) {
     queryFn: async () => {
       if (!branchId) return { productsSold: [], kpis: { top3: [], totalUnidades: 0 }, rawTimeData: [] };
 
+      const dateBounds = resolveReportesDateBounds(desde, hasta);
+
       // Consulta de order_items con joins
       let query = supabase
         .from('order_items')
@@ -450,9 +486,8 @@ export function useReportesProductos(filters: ReportesFilters) {
         query = query.eq('order.branch_id', branchId);
       }
 
-      // Filtros de fecha en la orden
-      if (desde) query = query.gte('order.created_at', desde);
-      if (hasta) query = query.lte('order.created_at', hasta);
+      // Filtros de fecha en la orden (siempre con tope de seguridad)
+      query = query.gte('order.created_at', dateBounds.desde).lte('order.created_at', dateBounds.hasta);
 
       // Filtro de turno
       if (shiftId) query = query.eq('order.cash_shift_id', shiftId);

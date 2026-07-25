@@ -231,35 +231,64 @@ export function useMeseroOrderReadyNotification(
     if (!enabled || !activeBranchId || !currentUserId) return;
 
     let cancelled = false;
+    let inFlight = false;
 
     const pollNotificationTable = async () => {
-      const data = await fetchMeseroReadyAlerts(activeBranchId, currentUserId);
-      if (cancelled || data.length === 0) return;
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const data = await fetchMeseroReadyAlerts(activeBranchId, currentUserId);
+        if (cancelled || data.length === 0) return;
 
-      for (const notification of [...data].reverse()) {
-        const notificationId = String(notification.id ?? `${notification.order_id}:${notification.created_at}`);
-        if (handledNotificationsRef.current.has(notificationId)) continue;
-        handledNotificationsRef.current.add(notificationId);
-        if (cancelled) continue;
+        for (const notification of [...data].reverse()) {
+          const notificationId = String(notification.id ?? `${notification.order_id}:${notification.created_at}`);
+          if (handledNotificationsRef.current.has(notificationId)) continue;
+          handledNotificationsRef.current.add(notificationId);
+          if (cancelled) continue;
 
-        if (handledNotificationsRef.current.size > 100) {
-          const firstKey = handledNotificationsRef.current.values().next().value;
-          if (firstKey) handledNotificationsRef.current.delete(firstKey);
+          if (handledNotificationsRef.current.size > 100) {
+            const firstKey = handledNotificationsRef.current.values().next().value;
+            if (firstKey) handledNotificationsRef.current.delete(firstKey);
+          }
+
+          void playNotificationSound();
+          vibrateDevice();
+          onNotificationRef.current(notification);
         }
-
-        void playNotificationSound();
-        vibrateDevice();
-        onNotificationRef.current(notification);
+      } finally {
+        inFlight = false;
       }
     };
 
+    // Camino rapido: la base avisa al registrarse el evento de "orden lista",
+    // en lugar de que cada tablet pregunte cada 2 segundos.
+    const channel = supabase
+      .channel(`mesero-ready-alerts:${activeBranchId}:${currentUserId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "order_ready_events" },
+        () => {
+          void pollNotificationTable();
+        },
+      )
+      .subscribe();
+
+    // Respaldo por si Realtime se cae o la tablet estuvo suspendida.
     const interval = window.setInterval(() => {
+      if (document.hidden) return;
       void pollNotificationTable();
-    }, 2000);
+    }, 20000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) void pollNotificationTable();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      void supabase.removeChannel(channel);
     };
   }, [activeBranchId, currentUserId, enabled]);
 }

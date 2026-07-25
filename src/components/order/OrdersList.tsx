@@ -94,12 +94,17 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
   useEffect(() => {
     if (!activeBranchId) return;
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const invalidateOrders = () => {
-      qc.invalidateQueries({ queryKey: ["orders", activeBranchId] });
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["orders", activeBranchId] });
+        qc.invalidateQueries({ queryKey: ["order"] });
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      }, 250);
     };
 
+    // Solo tablas publicadas en supabase_realtime.
     const channel = supabase
       .channel(`orders-live-sync:${activeBranchId}`)
       .on(
@@ -130,54 +135,10 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
         },
         invalidateOrders,
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_item_ready_events",
-        },
-        invalidateOrders,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_dispatch_events",
-        },
-        invalidateOrders,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_item_dispatch_events",
-        },
-        invalidateOrders,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_cancellations",
-        },
-        invalidateOrders,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_item_cancellations",
-        },
-        invalidateOrders,
-      )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
   }, [activeBranchId, qc]);

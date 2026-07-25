@@ -118,6 +118,8 @@ Deno.serve(async (req) => {
 
     const bancos = String(formData.get("bancos") ?? "").trim();
     const montoEsperado = String(formData.get("monto_esperado") ?? "").trim();
+    const detalleSolicitado = String(formData.get("detalle") ?? "high");
+    const imageDetail = detalleSolicitado === "low" ? "low" : "high";
     const imageBase64 = arrayBufferToBase64(await image.arrayBuffer());
 
     const prompt = [
@@ -161,7 +163,7 @@ Deno.serve(async (req) => {
                 type: "image_url",
                 image_url: {
                   url: `data:${image.type};base64,${imageBase64}`,
-                  detail: "high",
+                  detail: imageDetail,
                 },
               },
             ],

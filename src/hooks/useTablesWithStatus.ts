@@ -216,10 +216,18 @@ export function useTablesWithStatus() {
   useEffect(() => {
     if (!activeBranchId) return;
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const invalidateTables = () => {
-      qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId], exact: false });
+      // Un solo cambio operativo puede disparar varios eventos seguidos
+      // (orders + order_items + ready). Agrupar evita refetch en cascada.
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId], exact: false });
+      }, 250);
     };
 
+    // Solo tablas publicadas en supabase_realtime. Suscribirse a tablas no
+    // publicadas abre canales muertos sin beneficio y suma carga al cliente.
     const channel = supabase
       .channel(`tables-overview:${activeBranchId}`)
       .on(
@@ -228,26 +236,6 @@ export function useTablesWithStatus() {
           event: "*",
           schema: "public",
           table: "orders",
-          filter: `branch_id=eq.${activeBranchId}`,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "restaurant_tables",
-          filter: `branch_id=eq.${activeBranchId}`,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cash_shifts",
           filter: `branch_id=eq.${activeBranchId}`,
         },
         invalidateTables,
@@ -266,85 +254,14 @@ export function useTablesWithStatus() {
         {
           event: "*",
           schema: "public",
-          table: "payments",
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "payment_items",
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "table_splits",
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
           table: "order_ready_events" as any,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_item_ready_events" as any,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_dispatch_events" as any,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_item_dispatch_events" as any,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_cancellations",
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_item_cancellations",
         },
         invalidateTables,
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
   }, [activeBranchId, qc]);

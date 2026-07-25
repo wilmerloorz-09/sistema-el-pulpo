@@ -36,6 +36,7 @@ import {
 } from "@/lib/cajaPayableOrderScope";
 import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
+import ComprobantesPagoPendientesPanel from "@/components/caja/ComprobantesPagoPendientesPanel";
 import { toast } from "sonner";
 import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, RotateCcw, Upload } from "lucide-react";
 import { cn, formatElapsedSince } from "@/lib/utils";
@@ -193,7 +194,7 @@ const Caja = () => {
       const methodNameById = Object.fromEntries((methods ?? []).map((m: any) => [m.id, m.name]));
       return buildMethodSummaryFromPayments(payments ?? [], methodNameById);
     },
-    refetchInterval: 10000,
+    refetchInterval: 20000,
   });
 
   const shiftSummaryMethodSummary = cashierMethodSummaryQuery.data ?? [];
@@ -215,17 +216,31 @@ const Caja = () => {
     );
   }, [activeBranch?.id, shiftGateQuery.data?.shiftId, shiftGateQuery.data?.primaryCashierId, user?.id]);
 
+  const isDispatchThenCash = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
+
   const payableCreatorOptions = useMemo(
-    () => buildPayableOrderCreatorOptions(payableOrders),
-    [payableOrders],
+    () =>
+      buildPayableOrderCreatorOptions(
+        isDispatchThenCash
+          ? payableOrders.filter((order) => order.ready_to_collect)
+          : payableOrders,
+      ),
+    [payableOrders, isDispatchThenCash],
   );
 
   const filteredPayableOrders = useMemo(() => {
-    if (!user?.id) return payableOrders;
-    return payableOrders.filter((order) =>
-      orderMatchesCajaPayableScope(order, payableOrderScope, user.id),
-    );
-  }, [payableOrders, payableOrderScope, user?.id]);
+    let orders = payableOrders;
+    if (user?.id) {
+      orders = orders.filter((order) =>
+        orderMatchesCajaPayableScope(order, payableOrderScope, user.id),
+      );
+    }
+    // Despacho primero: solo órdenes 100% despachadas (sin botón rojo de bloqueo).
+    if (isDispatchThenCash) {
+      orders = orders.filter((order) => order.ready_to_collect);
+    }
+    return orders;
+  }, [payableOrders, payableOrderScope, user?.id, isDispatchThenCash]);
 
   const handlePayableOrderScopeChange = useCallback(
     (scope: CajaPayableOrderScope) => {
@@ -1191,6 +1206,7 @@ const Caja = () => {
         <div className={cn(!isDesktop && "space-y-4")}>
           {activeTab === "pending" ? (
             <div className="space-y-3 sm:space-y-4">
+              <ComprobantesPagoPendientesPanel />
               <div>
                 <CajaPayableOrderScopeSelect
                   scope={payableOrderScope}
@@ -1215,6 +1231,8 @@ const Caja = () => {
               />
             </div>
           ) : activeTab === "completed" ? (
+            <div className="space-y-3 sm:space-y-4">
+              <ComprobantesPagoPendientesPanel />
             <div className={cn(
               "rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]",
               !isDesktop ? "p-4" : "p-5"
@@ -1258,6 +1276,7 @@ const Caja = () => {
                 }
                 onChargeOrder={handleChargeOrderFromCompleted}
               />
+            </div>
             </div>
           ) : null}
         </div>

@@ -21,6 +21,9 @@ export interface OrderWithStatus {
   source: 'local' | 'supabase';
 }
 
+const REMOTE_ORDERS_LOOKBACK_DAYS = 7;
+const REMOTE_ORDERS_LIMIT = 300;
+
 /**
  * Hook para obtener datos de ordenes tanto locales como remotas
  */
@@ -28,7 +31,7 @@ export function useReportesData() {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
 
-  // Ordenes locales (IndexedDB)
+  // Ordenes locales (IndexedDB) — no golpea Supabase
   const localOrders = useQuery({
     queryKey: ['reports-local-orders'],
     queryFn: async () => {
@@ -70,23 +73,28 @@ export function useReportesData() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     },
-    refetchInterval: 5000, // Actualizar cada 5s
+    refetchInterval: 30_000,
   });
 
-  // Ordenes remotas (Supabase)
+  // Ordenes remotas (Supabase): ventana corta + limite duro
   const remoteOrders = useQuery({
-    queryKey: ['reports-remote-orders', activeBranchId],
+    queryKey: ['reports-remote-orders', activeBranchId, REMOTE_ORDERS_LOOKBACK_DAYS, REMOTE_ORDERS_LIMIT],
     queryFn: async () => {
       if (!navigator.onLine || !activeBranchId) {
         return [];
       }
 
       try {
+        const since = new Date();
+        since.setDate(since.getDate() - REMOTE_ORDERS_LOOKBACK_DAYS);
+
         const { data: orders, error } = await supabase
           .from('orders')
           .select('id, order_number, order_code, status, created_by, created_at, order_items(total)')
           .eq('branch_id', activeBranchId)
-          .order('created_at', { ascending: false });
+          .gte('created_at', since.toISOString())
+          .order('created_at', { ascending: false })
+          .limit(REMOTE_ORDERS_LIMIT);
 
         if (error) throw error;
         const creatorIds = Array.from(new Set((orders || []).map((order: any) => order.created_by).filter(Boolean))) as string[];
@@ -116,17 +124,18 @@ export function useReportesData() {
         return [];
       }
     },
-    refetchInterval: 60000, // Reduced frequency (1 min) for performance
+    refetchInterval: 60_000,
+    staleTime: 30_000,
     enabled: navigator.onLine && !!activeBranchId,
   });
 
-  // Contador de pendientes
+  // Contador de pendientes (IndexedDB local)
   const pendingCount = useQuery({
     queryKey: ['sync-pending-count'],
     queryFn: async () => {
       return await getPendingSyncCount();
     },
-    refetchInterval: 5000,
+    refetchInterval: 15_000,
   });
 
   // Mutacion para sincronizar

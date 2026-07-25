@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,7 +22,10 @@ import {
   MENSAJE_TRANSFERENCIA_DUPLICADA,
   esErrorTransferenciaDuplicada,
 } from "@/lib/transferenciaDuplicada";
-import { guardarComprobantePagoTransferencia } from "@/lib/comprobantePagoTransferencia";
+import {
+  COMPROBANTES_PENDIENTES_QUERY_KEY,
+  iniciarSubidaComprobanteEnSegundoPlano,
+} from "@/lib/comprobantePagoPendienteLocal";
 import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
 import type { ResultadoValidacionComprobante } from "@/lib/validacionComprobanteTransferencia";
 
@@ -1787,7 +1790,14 @@ export function useCaja(params?: {
       if (!activeBranchId) return [];
 
       const openShift = await getOpenCashShiftForBranch(activeBranchId);
-      if (!openShift) return [];
+      if (!openShift) {
+        // El gate ya confirmo turno abierto: una lectura vacia aqui es un fallo
+        // transitorio, y devolver [] vaciaria la lista de cobro por un instante.
+        if (shiftGate?.shiftId) {
+          throw new Error("No se pudo leer el turno abierto de la sucursal");
+        }
+        return [];
+      }
 
       const orders = (
         await dbSelect<any>("orders", {
@@ -2026,6 +2036,9 @@ export function useCaja(params?: {
     },
     refetchInterval: 10000,
     enabled: !!activeBranchId,
+    // Al cambiar de sucursal o de turno se conserva la lista previa en lugar de
+    // mostrar el vacio de carga.
+    placeholderData: keepPreviousData,
   });
 
   const methodsQuery = useQuery({
@@ -2548,7 +2561,7 @@ export function useCaja(params?: {
       return { rows, total: allPaymentsInRange.length, methodSummary, collectedTotal };
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
-    refetchInterval: 10000,
+    refetchInterval: 20000,
     placeholderData: (prev: any) => prev,
   });
 
@@ -2665,7 +2678,7 @@ export function useCaja(params?: {
           skipLocalCache: true,
         }),
         dbSelect<any>("orders", {
-          select: "id, order_type, status, is_special, is_tray_order, special_total_manual, table_id, created_by",
+          select: "id, order_number, order_code, order_type, status, is_special, is_tray_order, special_total_manual, table_id, created_by",
           filters: [{ column: "id", op: "eq", value: orderId }],
           skipLocalCache: true,
         }).then((res) => res[0]),
@@ -3075,17 +3088,33 @@ export function useCaja(params?: {
       ]);
 
       if (transferencia?.fotoArchivo && transferPaymentId && activeBranchId) {
-        try {
-          await guardarComprobantePagoTransferencia({
-            pagoId: transferPaymentId,
-            sucursalId: activeBranchId,
-            usuarioId: user.id,
-            archivo: transferencia.fotoArchivo,
-          });
-        } catch (photoError) {
-          // Foto opcional: el cobro ya quedó registrado; no revertir el pago.
-          console.error("No se pudo guardar el comprobante de transferencia:", photoError);
-        }
+        // No bloquear "Cobrando": encola localmente y sube en segundo plano.
+        // Si falla, queda pendiente en esta tablet para reintentar.
+        const transferAmount =
+          paymentSplits.find((split) => transferMethodIds.has(split.methodId))?.amount
+          ?? transferencia.monto
+          ?? null;
+        iniciarSubidaComprobanteEnSegundoPlano({
+          pagoId: transferPaymentId,
+          ordenId: orderId,
+          sucursalId: activeBranchId,
+          usuarioId: user.id,
+          ordenNumero: orderData.order_number ?? null,
+          ordenCodigo: orderData.order_code ?? null,
+          monto: transferAmount,
+          archivo: transferencia.fotoArchivo,
+          onResult: (ok, errorMessage) => {
+            qc.invalidateQueries({ queryKey: [COMPROBANTES_PENDIENTES_QUERY_KEY] });
+            qc.invalidateQueries({ queryKey: ["completed-payments"] });
+            if (ok) return;
+            toast.warning(
+              errorMessage
+                ? `Pago registrado. Falta subir la foto: ${errorMessage}`
+                : "Pago registrado. Falta subir la foto del comprobante. Revisa Pendientes en Recaudar.",
+              { duration: 8000 },
+            );
+          },
+        });
       }
 
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */

@@ -584,11 +584,6 @@ function useGlobalMonitor(branches: Branch[]) {
     if (branches.length === 0) return;
 
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
-    const shiftToBranchId = new Map<string, string>();
-
-    const rememberShiftBranch = (shift: CashShift | null | undefined, branchId: string) => {
-      if (shift?.id) shiftToBranchId.set(shift.id, branchId);
-    };
 
     // Debounce: avoid rapid-fire reloads when many events arrive at once
     const pendingReloads = new Set<string>();
@@ -608,30 +603,10 @@ function useGlobalMonitor(branches: Branch[]) {
             const branch = branchById.get(bId);
             if (!branch) return;
             const data = await loadBranchData(branch);
-            rememberShiftBranch(data.shift, bId);
             setState((prev) => ({ ...prev, [bId]: data }));
           })
         );
       }, 2000);
-    };
-
-    const handleCashShiftEvent = (payload: any) => {
-      const branchId = payload.new?.branch_id ?? payload.old?.branch_id;
-      if (!branchId) {
-        branches.forEach((branch) => scheduleReload(branch.id));
-        return;
-      }
-      scheduleReload(branchId);
-    };
-
-    const handleCashShiftUserEvent = (payload: any) => {
-      const shiftId = payload.new?.shift_id ?? payload.old?.shift_id;
-      const branchId = shiftId ? shiftToBranchId.get(shiftId) : undefined;
-      if (branchId) {
-        scheduleReload(branchId);
-        return;
-      }
-      branches.forEach((branch) => scheduleReload(branch.id));
     };
 
     const handleOrderEvent = (payload: any) => {
@@ -640,11 +615,11 @@ function useGlobalMonitor(branches: Branch[]) {
       scheduleReload(branchId);
     };
 
-    const uniqueChannelName = `global-monitor-${Math.random().toString(36).substring(7)}`;
+    const uniqueChannelName = `global-monitor:${branchIdsKey || "all"}`;
     const channel = supabase
       .channel(uniqueChannelName)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cash_shifts" }, handleCashShiftEvent)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cash_shift_users" }, handleCashShiftUserEvent)
+      // cash_shifts / cash_shift_users no estan en supabase_realtime; el fallback
+      // de 60s cubre esos cambios. Solo escuchamos tablas publicadas.
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, handleOrderEvent)
       .subscribe();
 

@@ -8,6 +8,24 @@ import { usuarioPuedeRegistrarPromociones } from "@/services/prediccionesCliente
 
 export const TAB_SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36);
 
+/**
+ * El permiso de promociones se asigna al abrir turno y no cambia dentro de el,
+ * pero el gate corre cada pocos segundos en cada tablet. Cachearlo por turno
+ * evita repetir la misma consulta cientos de miles de veces al dia.
+ */
+const PROMO_PERMISSION_TTL_MS = 5 * 60 * 1000;
+const promoPermissionCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+async function leerPuedeRegistrarPromociones(userId: string, shiftId: string): Promise<boolean> {
+  const cacheKey = `${userId}:${shiftId}`;
+  const cached = promoPermissionCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const value = await usuarioPuedeRegistrarPromociones();
+  promoPermissionCache.set(cacheKey, { value, expiresAt: Date.now() + PROMO_PERMISSION_TTL_MS });
+  return value;
+}
+
 export interface BranchShiftGate {
   shiftId: string | null;
   shiftOpen: boolean;
@@ -242,7 +260,7 @@ export function useBranchShiftGate() {
 
       let puedeRegistrarPromociones = false;
       try {
-        puedeRegistrarPromociones = await usuarioPuedeRegistrarPromociones();
+        puedeRegistrarPromociones = await leerPuedeRegistrarPromociones(user.id, shiftId);
       } catch {
         puedeRegistrarPromociones = false;
       }
@@ -309,7 +327,10 @@ export function useBranchShiftGate() {
   },
     enabled: !!activeBranchId && !!user?.id,
     staleTime: 0,
-    refetchInterval: 5000,
+    // Cada corrida son ~5 consultas. Los cambios de turno propios ya invalidan
+    // esta query, asi que el intervalo solo cubre cambios hechos en otro equipo.
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
     // Conserva el gate previo mientras cambia sucursal/usuario o hay un refetch en curso.
     placeholderData: keepPreviousData,
   });

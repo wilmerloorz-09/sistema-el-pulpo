@@ -182,24 +182,36 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
     if (!error) {
       return buildOperationalMapsFromSnapshotRows((data ?? []) as OrderOperationalSnapshotRow[]);
     }
-  } catch {
-    // Fallback si la migracion batch aun no esta aplicada.
+    warnBatchSnapshotUnavailable(error);
+  } catch (error) {
+    warnBatchSnapshotUnavailable(error);
   }
 
   const snapshots = await Promise.all(
     uniqueOrderIds.map(async (orderId) => {
-      try {
-        const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", {
-          p_order_id: orderId,
-        });
-        if (error) throw error;
-        return (data ?? []) as OrderOperationalSnapshotRow[];
-      } catch (error) {
-        console.warn("No se pudo cargar el snapshot operativo de la orden", orderId, error);
-        return [] as OrderOperationalSnapshotRow[];
-      }
+      const { data, error } = await (supabase as any).rpc("get_order_operational_snapshot", {
+        p_order_id: orderId,
+      });
+      // Devolver [] aqui equivale a "nada despachado/preparado": la orden cambia de
+      // estado en pantalla y reaparece al siguiente refetch. Preferimos propagar el
+      // fallo para que React Query conserve los datos anteriores.
+      if (error) throw error;
+      return (data ?? []) as OrderOperationalSnapshotRow[];
     }),
   );
 
   return buildOperationalMapsFromSnapshotRows(snapshots.flat());
+}
+
+let batchSnapshotWarningShown = false;
+
+/** La ruta por orden multiplica las consultas; avisar una vez evita que pase inadvertida. */
+function warnBatchSnapshotUnavailable(error: unknown) {
+  if (batchSnapshotWarningShown) return;
+  batchSnapshotWarningShown = true;
+  console.warn(
+    "[orderOperational] `get_orders_operational_snapshots` no respondio; se consultara una orden a la vez. " +
+      "Revisa que la migracion 20260602140000_batch_operational_snapshots.sql este aplicada.",
+    error,
+  );
 }
