@@ -267,7 +267,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Un evento sin sesion que no sea SIGNED_OUT es un parpadeo de refresh de token:
+      // limpiar `user` aqui recalcula el gate de turno con estado vacio y el menu
+      // lateral alterna entre la vista operativa y la vista solo-admin.
+      if (!session?.user && event !== "SIGNED_OUT") {
+        return;
+      }
+
       // Prevent flipping the global "loading" switch if we already have a session and profile.
       // This stops the whole app from unmounting (flashing white) when the browser refocuses or tokens refresh.
       setState((prev) => ({

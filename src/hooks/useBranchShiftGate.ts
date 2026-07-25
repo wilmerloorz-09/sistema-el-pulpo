@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -52,6 +53,8 @@ export interface BranchShiftGate {
 export function useBranchShiftGate() {
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
+  /** Ultimo gate leido de verdad; se reutiliza si una lectura falla o expira. */
+  const lastResolvedGateRef = useRef<BranchShiftGate | null>(null);
 
   return useQuery({
     queryKey: ["branch-shift-gate", activeBranchId, user?.id ?? null],
@@ -289,19 +292,25 @@ export function useBranchShiftGate() {
     };
 
     try {
-      return await Promise.race([
+      const resolved = await Promise.race([
         runQuery(),
         new Promise<BranchShiftGate>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout de turno")), 6000)
         ),
       ]);
+      lastResolvedGateRef.current = resolved;
+      return resolved;
     } catch (err) {
       console.warn("[useBranchShiftGate] Query timed out or failed. Returning fallback: ", err);
-      return defaultValue;
+      // Inventar capacidades aqui hace que el menu y `ProtectedRoute` salten entre
+      // vista operativa y vista solo-admin en cada reintento.
+      return lastResolvedGateRef.current ?? defaultValue;
     }
   },
     enabled: !!activeBranchId && !!user?.id,
     staleTime: 0,
     refetchInterval: 5000,
+    // Conserva el gate previo mientras cambia sucursal/usuario o hay un refetch en curso.
+    placeholderData: keepPreviousData,
   });
 }

@@ -77,8 +77,11 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } else {
         localStorage.removeItem("activeBranchId");
       }
-    } catch {
-      setAccess(emptyAccess);
+    } catch (error) {
+      // Un fallo transitorio no debe vaciar sucursal activa ni permisos: eso cambia
+      // la queryKey del gate de turno y colapsa el menu lateral a la vista solo-admin.
+      console.warn("[BranchContext] get_my_access_context fallo; se conserva el acceso previo", error);
+      setAccess((prev) => (prev.branches.length > 0 ? prev : emptyAccess));
     } finally {
       setLoading(false);
     }
