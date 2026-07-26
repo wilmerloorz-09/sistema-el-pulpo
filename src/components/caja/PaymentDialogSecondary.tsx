@@ -169,7 +169,7 @@ export default function PaymentDialogSecondary({
                     <span className="mt-0.5 block text-sm font-semibold text-muted-foreground">
                       {getCajaOrderOriginLabel({
                         orderType: order.order_type,
-                        tableName: order.table_name,
+                        tableName: order.table_name ?? order.table_name_snapshot,
                         splitCode: order.split_code,
                         isSpecial: order.is_special,
                         isTrayOrder: order.is_tray_order,

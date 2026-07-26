@@ -33,6 +33,7 @@ import ThermalReceipt from "@/components/order/ThermalReceipt";
 import OrdersList from "@/components/order/OrdersList";
 import CancelOrderDialog from "@/components/order/CancelOrderDialog";
 import ChangeTableDialog from "@/components/order/ChangeTableDialog";
+import ConvertirOrdenEspecialDialog from "@/components/order/ConvertirOrdenEspecialDialog";
 import MergeSplitOrdersDialog from "@/components/order/MergeSplitOrdersDialog";
 import PaymentDialog from "@/components/caja/PaymentDialog";
 import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
@@ -57,7 +58,7 @@ import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
-import { getOrderMesaHeaderNumber, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isSpecialOrderExplicitZeroTotal } from "@/lib/orderFlow";
 import {
   computeKitchenSendMoneyDelta,
@@ -639,8 +640,6 @@ const OrdenesContent = () => {
     deleteTableOrder,
     updateMenuScope,
     updateSpecialTotal,
-    updateSpecialReason,
-    convertToSpecial,
     closeOrder,
     lockOrder,
     unlockOrder,
@@ -921,10 +920,10 @@ const OrdenesContent = () => {
   const [inlineCancellationType, setInlineCancellationType] = useState<"partial" | "total">("partial");
   const [specialTotalInput, setSpecialTotalInput] = useState("");
   const specialTotalDebounceTimeoutRef = useRef<any>(null);
-  const [specialReasonInput, setSpecialReasonInput] = useState("");
-  const specialReasonDebounceTimeoutRef = useRef<any>(null);
+  const [specialGroupInput, setSpecialGroupInput] = useState("");
+  const specialGroupDebounceTimeoutRef = useRef<any>(null);
   const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
-  const [convertSpecialTotalInput, setConvertSpecialTotalInput] = useState("");
+  const [convertingToSpecial, setConvertingToSpecial] = useState(false);
   const [takeoutCajaPreview, setTakeoutCajaPreview] = useState<TakeoutCajaPreview | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
   /** Evita volver a forzar el panel de orden en movil si el usuario ya paso al menu (misma orden). Se limpia al cambiar `orderId`. */
@@ -1578,8 +1577,10 @@ const OrdenesContent = () => {
     setSpecialTotalInput(
       order.special_total_manual == null ? "" : Number(order.special_total_manual).toFixed(2),
     );
-    setSpecialReasonInput(order.special_reason ?? "");
-  }, [order?.id, order?.is_special, order?.special_total_manual, order?.special_reason]);
+    setSpecialGroupInput(
+      order.special_group_total == null ? "" : Number(order.special_group_total).toFixed(2),
+    );
+  }, [order?.id, order?.is_special, order?.special_total_manual, order?.special_group_total]);
 
   useEffect(() => {
     if (!isTrayOrder) {
@@ -1909,6 +1910,75 @@ const OrdenesContent = () => {
     effectiveSpecialTotalManual == null
       ? null
       : Math.round((effectiveSpecialTotalManual - total) * 100) / 100;
+
+  /** Orden especial MIXTA: parte con valor manual (grupo) + resto a precio real. */
+  const isMixedSpecial = Boolean(order.is_special) && order.special_group_total != null;
+  const specialBreakdown = useMemo(() => {
+    const lines = itemsToUse.map((item) => {
+      const qty = Math.max(0, Number(item.quantity ?? 0));
+      const especialQty = Math.min(Math.max(0, Number((item as any).cantidad_especial ?? 0)), qty);
+      const normalQty = Math.max(0, qty - especialQty);
+      const unit = Number(item.unit_price ?? 0);
+      return {
+        item,
+        especialQty,
+        normalQty,
+        unit,
+        especialRealTotal: Math.round(especialQty * unit * 100) / 100,
+        normalTotal: Math.round(normalQty * unit * 100) / 100,
+      };
+    });
+    const especialLines = lines.filter((l) => l.especialQty > 0);
+    const normalLines = lines.filter((l) => l.normalQty > 0);
+    const restRealTotal = Math.round(normalLines.reduce((s, l) => s + l.normalTotal, 0) * 100) / 100;
+    const especialRealRef = Math.round(especialLines.reduce((s, l) => s + l.especialRealTotal, 0) * 100) / 100;
+    return { especialLines, normalLines, restRealTotal, especialRealRef };
+  }, [itemsToUse]);
+
+  const specialGroupValueNum = useMemo(() => {
+    const fallback = order.special_group_total != null ? Number(order.special_group_total) : 0;
+    const raw = specialGroupInput.trim().replace(",", ".");
+    if (!raw) return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : fallback;
+  }, [specialGroupInput, order.special_group_total]);
+
+  const mixedGeneralTotal = Math.round((specialGroupValueNum + specialBreakdown.restRealTotal) * 100) / 100;
+
+  /** Items del resto proyectados a cantidad normal (sin unidades del grupo especial). */
+  const mixedRestoItems = useMemo(() => {
+    return specialBreakdown.normalLines.map((l) => {
+      const item = l.item;
+      const especialQty = l.especialQty;
+      const normalQty = l.normalQty;
+      const dispatched = Math.max(0, Number(item.quantity_dispatched ?? 0));
+      const remaining = Math.max(0, Number(item.quantity_remaining ?? 0));
+      const normalDispatched = Math.min(normalQty, Math.max(0, dispatched - especialQty));
+      const unit = Number(item.unit_price ?? 0);
+      return {
+        ...item,
+        quantity: normalQty,
+        quantity_ordered: Math.max(normalQty, Number(item.quantity_ordered ?? 0) - especialQty),
+        quantity_dispatched: normalDispatched,
+        quantity_remaining: Math.min(normalQty, remaining),
+        quantity_sent: Math.max(0, Number(item.quantity_sent ?? 0) - especialQty),
+        quantity_cancellable: Math.min(
+          normalQty,
+          Math.max(0, Number(item.quantity_cancellable ?? normalQty)),
+        ),
+        total: Math.round(normalQty * unit * 100) / 100,
+      };
+    });
+  }, [specialBreakdown]);
+
+  const especialQtyByItemId = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const line of specialBreakdown.especialLines) {
+      map[line.item.id] = line.especialQty;
+    }
+    return map;
+  }, [specialBreakdown]);
+
   const finalButtonTotal = order.is_special
     ? (effectiveSpecialTotalManual ?? draftItemsTotal)
     : draftItemsTotal;
@@ -1926,7 +1996,9 @@ const OrdenesContent = () => {
   const showKitchenSendButton = useKitchenStaging
     ? (hasPendingKitchenChanges || hasDraftItems)
     : hasDraftItems;
-  const kitchenSendButtonLabel = order.is_special
+  const kitchenSendButtonLabel = isMixedSpecial
+    ? `$${draftItemsTotal.toFixed(2)}`
+    : order.is_special
     ? `$${finalButtonTotal.toFixed(2)}`
     : useKitchenStaging && hasPendingKitchenChanges
       ? formatKitchenSendMoneyDelta(kitchenSendDelta)
@@ -2196,19 +2268,14 @@ const OrdenesContent = () => {
   const canShowConvertToSpecial =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
-    !order.is_special &&
+    (!order.is_special || isMixedSpecial) &&
     !!order.table_id &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
     !fromEditar;
-  const canConvertToSpecial = canShowConvertToSpecial && hasOrderItems;
-  const orderOriginLabel = getOrderOriginLabel({
-    orderType: order.order_type,
-    tableName: order.table_name,
-    splitCode: order.split_code,
-    isSpecial: order.is_special,
-    isTrayOrder: order.is_tray_order,
-  });
+  const canConvertToSpecial = canShowConvertToSpecial && hasDispatchedItems;
+  /** Mixta ya convertida: la accion pasa a ser "Editar orden especial". */
+  const convertSpecialActionLabel = isMixedSpecial ? "Editar orden especial" : "Convertir orden especial";
   const tableWatermark =
     order.is_tray_order
       ? "ORDEN BANDEJA"
@@ -2814,44 +2881,117 @@ const OrdenesContent = () => {
     });
   };
 
-  const saveSpecialReasonSilently = (value: string) => {
-    updateSpecialReason.mutate(value.trim() || null);
-  };
-
-  const handleSpecialReasonInputChange = (val: string) => {
-    setSpecialReasonInput(val);
-
-    if (specialReasonDebounceTimeoutRef.current) {
-      clearTimeout(specialReasonDebounceTimeoutRef.current);
+  const saveSpecialGroupValue = async (value: number) => {
+    if (!orderId) return;
+    try {
+      const { error } = await (supabase as any).rpc("actualizar_valor_grupo_especial", {
+        p_order_id: orderId,
+        p_group_total: value,
+      });
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["order"] });
+      await qc.invalidateQueries({ queryKey: ["orders"] });
+      await qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      await qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      await qc.invalidateQueries({ queryKey: ["table-orders"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "No se pudo actualizar el valor especial");
     }
-
-    specialReasonDebounceTimeoutRef.current = setTimeout(() => {
-      saveSpecialReasonSilently(val);
-    }, 500);
   };
 
-  const handleSaveSpecialReason = () => {
-    if (specialReasonDebounceTimeoutRef.current) {
-      clearTimeout(specialReasonDebounceTimeoutRef.current);
+  const handleSpecialGroupInputChange = (val: string) => {
+    setSpecialGroupInput(val);
+    if (specialGroupDebounceTimeoutRef.current) {
+      clearTimeout(specialGroupDebounceTimeoutRef.current);
     }
-    updateSpecialReason.mutate(specialReasonInput.trim() || null, {
-      onSuccess: () => toast.success("Motivo de orden especial actualizado"),
-    });
+    const raw = val.trim().replace(",", ".");
+    const n = Number(raw);
+    if (!raw || !Number.isFinite(n) || n < 0) return;
+    specialGroupDebounceTimeoutRef.current = setTimeout(() => {
+      void saveSpecialGroupValue(Math.round(n * 100) / 100);
+    }, 600);
   };
 
-  const handleConvertToSpecial = () => {
-    const rawValue = convertSpecialTotalInput.trim().replace(",", ".");
-    const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      toast.error("Ingresa un total especial valido");
+  const handleSaveSpecialGroup = () => {
+    if (specialGroupDebounceTimeoutRef.current) {
+      clearTimeout(specialGroupDebounceTimeoutRef.current);
+    }
+    const raw = specialGroupInput.trim().replace(",", ".");
+    const n = Number(raw);
+    if (!raw || !Number.isFinite(n) || n < 0) {
+      toast.error("Ingresa un valor especial valido");
       return;
     }
+    void saveSpecialGroupValue(Math.round(n * 100) / 100).then(() =>
+      toast.success("Valor del grupo especial actualizado"),
+    );
+  };
 
-    convertToSpecial.mutate(Math.round(parsed * 100) / 100, {
-      onSuccess: () => {
-        setConvertSpecialDialogOpen(false);
-      },
-    });
+  const handleConvertToSpecial = async (params: {
+    qtyByItemId: Record<string, number>;
+    specialTotal: number;
+    specialReason: string;
+  }) => {
+    if (!orderId || !order) {
+      const msg = "No se encontro la orden a convertir";
+      toast.error(msg);
+      throw new Error(msg);
+    }
+    if (convertingToSpecial) {
+      throw new Error("Ya hay una conversion en curso");
+    }
+
+    const itemsPayload = Object.entries(params.qtyByItemId)
+      .filter(([, qty]) => Number(qty) > 0)
+      .map(([order_item_id, cantidad]) => ({
+        order_item_id,
+        cantidad: Math.floor(Number(cantidad)),
+      }));
+
+    const revertingToNormal = isMixedSpecial && itemsPayload.length === 0;
+    if (itemsPayload.length === 0 && !revertingToNormal) {
+      const msg = "Selecciona al menos una unidad despachada";
+      toast.error(msg);
+      throw new Error(msg);
+    }
+
+    setConvertingToSpecial(true);
+    try {
+      const { data, error } = await (supabase as any).rpc("convertir_orden_especial_parcial", {
+        p_order_id: orderId,
+        p_items: itemsPayload,
+        p_group_total: params.specialTotal,
+        p_reason: params.specialReason.trim() || null,
+      });
+      if (error) {
+        const msg = [error.message, error.details, error.hint].filter(Boolean).join(" — ");
+        throw new Error(msg || "No se pudo convertir la orden a especial");
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) throw new Error("No se pudo convertir la orden a especial");
+
+      setConvertSpecialDialogOpen(false);
+      if (revertingToNormal) {
+        toast.success("La orden volvió a ser una orden normal.");
+      } else if (isMixedSpecial) {
+        toast.success("Orden especial actualizada.");
+      } else {
+        toast.success("Orden convertida en especial. El grupo especial usa el valor manual y el resto conserva su precio real.");
+      }
+
+      await qc.invalidateQueries({ queryKey: ["order"] });
+      await qc.invalidateQueries({ queryKey: ["orders"] });
+      await qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      await qc.invalidateQueries({ queryKey: ["table-orders"] });
+      await qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      await qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      await qc.invalidateQueries({ queryKey: ["payable-orders"] });
+    } catch (err: any) {
+      toast.error(err?.message ?? "No se pudo convertir a especial");
+      throw err;
+    } finally {
+      setConvertingToSpecial(false);
+    }
   };
 
   const handleRequestInlineCancel = (
@@ -3065,7 +3205,7 @@ const OrdenesContent = () => {
       )}
 
       <div className={cn("min-h-0", mobile && "flex-1")}>
-        {order.is_special && (
+        {order.is_special && !isMixedSpecial && (
           <div className="mb-4 rounded-[24px] border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-50 p-4 shadow-[0_18px_42px_-30px_rgba(249,115,22,0.35)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -3079,41 +3219,22 @@ const OrdenesContent = () => {
 
 
             {canEditItems ? (
-              <div className="mt-4 space-y-3">
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Total Manual</label>
-                  <Input
-                    inputMode="decimal"
-                    value={specialTotalInput}
-                    onChange={(event) => handleSpecialTotalInputChange(sanitizeDecimalInput(event.target.value))}
-                    onBlur={handleSaveSpecialTotal}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleSaveSpecialTotal();
-                        e.currentTarget.blur();
-                      }
-                    }}
-                    placeholder="Ingresa el total manual"
-                    className="h-11 rounded-xl mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Motivo</label>
-                  <Input
-                    type="text"
-                    value={specialReasonInput}
-                    onChange={(event) => handleSpecialReasonInputChange(event.target.value)}
-                    onBlur={handleSaveSpecialReason}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleSaveSpecialReason();
-                        e.currentTarget.blur();
-                      }
-                    }}
-                    placeholder="Ingresa el motivo"
-                    className="h-11 rounded-xl mt-1"
-                  />
-                </div>
+              <div className="mt-4">
+                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Total Manual</label>
+                <Input
+                  inputMode="decimal"
+                  value={specialTotalInput}
+                  onChange={(event) => handleSpecialTotalInputChange(sanitizeDecimalInput(event.target.value))}
+                  onBlur={handleSaveSpecialTotal}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSaveSpecialTotal();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  placeholder="Ingresa el total manual"
+                  className="h-11 rounded-xl mt-1"
+                />
               </div>
             ) : (
               <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
@@ -3124,6 +3245,195 @@ const OrdenesContent = () => {
         )}
 
 
+        {isMixedSpecial && !fromEditar && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h3 className="w-fit rounded-lg bg-orange-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-orange-800">
+                  Orden especial
+                </h3>
+                <span className="text-[11px] font-medium text-muted-foreground">Valor manual</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {specialBreakdown.especialLines.map((l) => (
+                  <div
+                    key={`esp-${l.item.id}`}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-orange-100 bg-white px-3 py-2"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-orange-100 px-1.5 text-xs font-bold text-orange-800">
+                        {l.especialQty}
+                      </span>
+                      <span className="truncate text-sm font-medium text-foreground">{l.item.description_snapshot}</span>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground line-through">${l.especialRealTotal.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between border-t border-dashed border-border pt-1.5">
+                <span className="text-sm font-semibold text-foreground">Subtotal especial</span>
+                <span className="font-display text-base font-black text-foreground">${specialGroupValueNum.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {mixedRestoItems.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="w-fit rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Orden normal
+                </h3>
+                <OrderItemsList
+                  items={mixedRestoItems}
+                  orderType={order.order_type}
+                  isSpecialOrder={false}
+                  alwaysShowControls={false}
+                  allowSentStageEditing={isDispatchFirstFlow && canEditItems}
+                  splitDispatchSections={isDispatchFirstFlow}
+                  editDispatchedItemsOnly={false}
+                  hideItemControls={false}
+                  hideFooterTotals
+                  specialOrderChargeTotal={null}
+                  specialOrderCatalogTotal={null}
+                  onRemove={(id) => {
+                    const ids = Array.isArray(id) ? id : [id];
+                    if (useKitchenStaging) {
+                      const draftIds: string[] = [];
+                      const sentIds: string[] = [];
+                      for (const itemId of ids) {
+                        const item = stagedItems.find((i) => i.id === itemId);
+                        if (!item) continue;
+                        if (item.status === "DRAFT") draftIds.push(itemId);
+                        else sentIds.push(itemId);
+                      }
+
+                      if (sentIds.length > 0) {
+                        setStagedDirty(true);
+                        setStagedItems((prev) => {
+                          const next = [...prev];
+                          for (const itemId of sentIds) {
+                            const idx = next.findIndex((i) => i.id === itemId);
+                            if (idx < 0) continue;
+                            const especialQty = especialQtyByItemId[itemId] ?? 0;
+                            if (especialQty > 0) {
+                              const unit = Number(next[idx].unit_price ?? 0);
+                              next[idx] = {
+                                ...next[idx],
+                                quantity: especialQty,
+                                total: Math.round(especialQty * unit * 100) / 100,
+                              };
+                            } else {
+                              next[idx] = { ...next[idx], quantity: 0, total: 0 };
+                            }
+                          }
+                          return next;
+                        });
+                      }
+
+                      if (draftIds.length > 0) {
+                        const draftIdSet = new Set(draftIds);
+                        const removedSnapshots = stagedItems.filter((i) => draftIdSet.has(i.id));
+                        setStagedItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
+                        setKitchenBaselineItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
+                        void (async () => {
+                          try {
+                            for (const itemId of draftIds) {
+                              await removeItem.mutateAsync(itemId);
+                            }
+                          } catch {
+                            setStagedItems((prev) => {
+                              const present = new Set(prev.map((i) => i.id));
+                              const missing = removedSnapshots.filter((i) => !present.has(i.id));
+                              return missing.length === 0 ? prev : [...prev, ...missing];
+                            });
+                            setKitchenBaselineItems((prev) => {
+                              const present = new Set(prev.map((i) => i.id));
+                              const missing = removedSnapshots.filter((i) => !present.has(i.id));
+                              return missing.length === 0 ? prev : [...prev, ...missing];
+                            });
+                          }
+                        })();
+                      }
+                      return;
+                    }
+
+                    void (async () => {
+                      for (const itemId of ids) {
+                        const especialQty = especialQtyByItemId[itemId] ?? 0;
+                        if (especialQty > 0) {
+                          const item = itemsToUse.find((i) => i.id === itemId);
+                          await updateQuantity.mutateAsync({
+                            itemId,
+                            quantity: especialQty,
+                            unit_price: Number(item?.unit_price ?? 0),
+                          });
+                        } else {
+                          await removeItem.mutateAsync(itemId);
+                        }
+                      }
+                    })();
+                  }}
+                  onUpdateQty={(id, qty, price) => {
+                    const especialQty = especialQtyByItemId[id] ?? 0;
+                    const fullQty = especialQty + Math.max(0, qty);
+
+                    if (useKitchenStaging) {
+                      const stagedItem = stagedItems.find((i) => i.id === id);
+                      const nextTotal =
+                        fullQty * price + (fullQty > 0 ? (stagedItem?.tray_container_cost ?? 0) : 0);
+                      const patchItem = <T extends { id: string; quantity: number; unit_price: number; total: number; tray_container_cost?: number | null }>(
+                        list: T[],
+                      ) =>
+                        list.map((i) =>
+                          i.id === id
+                            ? {
+                                ...i,
+                                quantity: fullQty,
+                                unit_price: price,
+                                total: nextTotal,
+                              }
+                            : i,
+                        );
+
+                      if (stagedItem?.status === "DRAFT") {
+                        setStagedItems(patchItem);
+                        setKitchenBaselineItems(patchItem);
+                        updateQuantity.mutate({ itemId: id, quantity: fullQty, unit_price: price });
+                        return;
+                      }
+
+                      setStagedDirty(true);
+                      setStagedItems(patchItem);
+                      return;
+                    }
+
+                    updateQuantity.mutate({ itemId: id, quantity: fullQty, unit_price: price });
+                  }}
+                  onRequestCancel={handleRequestInlineCancel}
+                  disableDraftEditing={!canEditItems}
+                  disableOperationalCancel={order.status === "PAID"}
+                />
+                <div className="flex items-center justify-between border-t border-dashed border-border pt-1.5">
+                  <span className="text-sm font-semibold text-foreground">Subtotal orden normal</span>
+                  <span className="font-display text-base font-black text-foreground">
+                    ${specialBreakdown.restRealTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1 border-t border-border pt-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-foreground">Total a cobrar</span>
+                <span className="font-display text-xl font-black text-orange-700">${mixedGeneralTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Total real de referencia</span>
+                <span>${total.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!(isMixedSpecial && !fromEditar) && (
         <OrderItemsList
           items={(fromEditar || useKitchenStaging) ? stagedItems : orderItems}
           orderType={order.order_type}
@@ -3276,6 +3586,7 @@ const OrdenesContent = () => {
           disableDraftEditing={!canEditItems}
           disableOperationalCancel={order.status === "PAID"}
         />
+        )}
       </div>
 
       {!fromEditar && canOperateOrders && showKitchenSendButton && order.status !== "PAID" && order.status !== "CANCELLED" && (
@@ -3623,13 +3934,13 @@ const OrdenesContent = () => {
                         {canShowConvertToSpecial && (
                           <DropdownMenuItem
                             onClick={() => {
-                              setConvertSpecialTotalInput(total.toFixed(2));
-                              setConvertSpecialDialogOpen(true);
+                              // Evita pointer-events:none residual del DropdownMenu de Radix.
+                              window.setTimeout(() => setConvertSpecialDialogOpen(true), 0);
                             }}
                             disabled={!canConvertToSpecial}
                           >
                             <Sparkles className="mr-2 h-4 w-4" />
-                            Convertir orden especial
+                            {convertSpecialActionLabel}
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem
@@ -3815,14 +4126,19 @@ const OrdenesContent = () => {
                     size="sm"
                     className="h-11 shrink-0 gap-1 rounded-lg px-3 text-xs md:h-7"
                     onClick={() => {
-                      setConvertSpecialTotalInput(total.toFixed(2));
-                      setConvertSpecialDialogOpen(true);
+                      window.setTimeout(() => setConvertSpecialDialogOpen(true), 0);
                     }}
                     disabled={!canConvertToSpecial}
-                    title={!canConvertToSpecial ? "La orden debe tener al menos un item" : "Convertir en orden especial"}
+                    title={
+                      !canConvertToSpecial
+                        ? "Se requiere al menos un item despachado"
+                        : isMixedSpecial
+                          ? "Reasignar items entre orden normal y especial"
+                          : "Convertir items despachados en orden especial"
+                    }
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    Convertir Ord. Espec.
+                    {isMixedSpecial ? "Editar Ord. Espec." : "Convertir Ord. Espec."}
                   </Button>
                 )}
                 {canShowChangeTable && (
@@ -3959,13 +4275,12 @@ const OrdenesContent = () => {
                   {canShowConvertToSpecial && (
                     <DropdownMenuItem
                       onClick={() => {
-                        setConvertSpecialTotalInput(total.toFixed(2));
-                        setConvertSpecialDialogOpen(true);
+                        window.setTimeout(() => setConvertSpecialDialogOpen(true), 0);
                       }}
                       disabled={!canConvertToSpecial}
                     >
                       <Sparkles className="mr-2 h-4 w-4" />
-                      Convertir orden especial
+                      {convertSpecialActionLabel}
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem onClick={() => setMergeSplitOpen(true)} disabled={!canOperateOrders}>
@@ -4386,52 +4701,32 @@ const OrdenesContent = () => {
         onConfirm={handleChangeTable}
       />
 
-      <Dialog open={convertSpecialDialogOpen} onOpenChange={setConvertSpecialDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl font-black text-foreground">Convertir en orden especial</DialogTitle>
-            <DialogDescription>
-              La mesa se liberara y esta cuenta pasara a cobrarse con un total manual. El total real de items seguira visible como referencia.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Origen</p>
-                <p className="mt-1 font-display text-lg font-black text-sky-900">{orderOriginLabel}</p>
-              </div>
-              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">Total real actual</p>
-                <p className="mt-1 font-display text-lg font-black text-orange-900">${total.toFixed(2)}</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Total especial manual</label>
-              <Input
-                inputMode="decimal"
-                value={convertSpecialTotalInput}
-                onChange={(event) => setConvertSpecialTotalInput(sanitizeDecimalInput(event.target.value))}
-                placeholder="Ingresa el total a cobrar"
-                className="h-11 rounded-xl"
-              />
-              <p className="text-xs text-muted-foreground">
-                Puedes usar el total real como base y luego ajustarlo si el cliente deja una parte pendiente o se acuerda un cobro distinto.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setConvertSpecialDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="button" onClick={handleConvertToSpecial} disabled={convertToSpecial.isPending}>
-              {convertToSpecial.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Convertir"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConvertirOrdenEspecialDialog
+        open={convertSpecialDialogOpen}
+        onOpenChange={setConvertSpecialDialogOpen}
+        submitting={convertingToSpecial}
+        mode={isMixedSpecial ? "edit" : "convert"}
+        initialQtyByItemId={isMixedSpecial ? especialQtyByItemId : undefined}
+        initialSpecialTotal={isMixedSpecial ? order.special_group_total : undefined}
+        initialSpecialReason={isMixedSpecial ? order.special_reason : undefined}
+        items={itemsToUse
+          .filter((item) => item.status !== "DRAFT")
+          .map((item) => ({
+            id: item.id,
+            description_snapshot: item.description_snapshot,
+            unit_price: Number(item.unit_price ?? 0),
+            quantity: Number(item.quantity ?? 0),
+            quantity_dispatched:
+              Number(item.quantity_dispatched ?? 0) > 0
+                ? Number(item.quantity_dispatched)
+                : item.status === "DISPATCHED"
+                  ? Number(item.quantity ?? 0)
+                  : 0,
+            image_url: null,
+            total: Number(item.total ?? 0),
+          }))}
+        onConfirm={(params) => handleConvertToSpecial(params)}
+      />
 
       {user && canCancelOrders && (
         <CancelOrderDialog

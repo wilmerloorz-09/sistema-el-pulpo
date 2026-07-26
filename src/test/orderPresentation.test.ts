@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cleanOrderCode, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
+import {
+  cleanOrderCode,
+  getOrderMesaHeaderNumber,
+  getOrderOriginLabel,
+  getOrderRef,
+} from "@/lib/orderPresentation";
 
 describe("cleanOrderCode", () => {
   it("quita el sufijo de anulación -Vxxxx", () => {
@@ -14,6 +19,28 @@ describe("getOrderRef", () => {
 
   it("usa order_number aunque order_code sea null (histórica)", () => {
     expect(getOrderRef(null, 1)).toBe("#0001");
+  });
+});
+
+describe("getOrderOriginLabel", () => {
+  it("para especial en mesa muestra la mesa y el marcador especial", () => {
+    expect(
+      getOrderOriginLabel({
+        orderType: "DINE_IN",
+        tableName: "Mesa 2",
+        isSpecial: true,
+      }),
+    ).toBe("Mesa 2 (Orden Especial)");
+  });
+
+  it("para especial sin mesa queda solo Orden Especial", () => {
+    expect(
+      getOrderOriginLabel({
+        orderType: "DINE_IN",
+        tableName: null,
+        isSpecial: true,
+      }),
+    ).toBe("Orden Especial");
   });
 });
 

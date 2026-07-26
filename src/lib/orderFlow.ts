@@ -263,12 +263,28 @@ export function isSpecialOrderExplicitZeroTotal(order: {
   return Number(order.special_total_manual) === 0;
 }
 
-/** Total a cobrar: manual en orden especial si está definido; si no, suma de ítems. */
+/** Total a cobrar: manual en orden especial si está definido; si no, suma de ítems.
+ *  Orden especial MIXTA: special_group_total + precio real de unidades no especiales. */
 export function resolveOrderChargeTotal(params: {
   is_special?: boolean | null;
   special_total_manual?: number | null;
+  special_group_total?: number | null;
+  items?: Array<{
+    quantity?: number | null;
+    unit_price?: number | null;
+    cantidad_especial?: number | null;
+  }> | null;
   itemsTotal: number;
 }): number {
+  if (params.is_special && params.special_group_total != null && params.items) {
+    const rest = params.items.reduce((sum, item) => {
+      const qty = Math.max(0, Number(item.quantity ?? 0));
+      const especial = Math.min(Math.max(0, Number(item.cantidad_especial ?? 0)), qty);
+      const normal = Math.max(0, qty - especial);
+      return sum + normal * Number(item.unit_price ?? 0);
+    }, 0);
+    return Math.round((Number(params.special_group_total) + rest) * 100) / 100;
+  }
   if (params.is_special && params.special_total_manual != null) {
     return Number(params.special_total_manual);
   }

@@ -40,6 +40,8 @@ interface OrderItem {
   quantity_remaining?: number;
   quantity_cancelled?: number;
   quantity_cancellable?: number;
+  /** Unidades de la linea que forman parte del grupo especial (orden especial mixta). */
+  cantidad_especial?: number;
   paid_at?: string | null;
   modifiers: { id: string; modifier_id: string; description: string }[];
 }
@@ -128,6 +130,8 @@ export interface Order {
   is_special: boolean;
   is_tray_order?: boolean;
   special_total_manual: number | null;
+  /** Valor manual SOLO del grupo especial (orden especial mixta). NULL = especial no mixta. */
+  special_group_total?: number | null;
   special_reason?: string | null;
   special_marked_at?: string | null;
   branch_id: string;
@@ -677,7 +681,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
   
   const startOrders = Date.now();
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_group_total, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   console.log(`[PERF] Consultar orders tomo: ${Date.now() - startOrders}ms`);
@@ -697,7 +701,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
       ? withCallTimeout(dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] }), 4000, "divisiones de mesa")
       : Promise.resolve([]),
     withCallTimeout(dbSelect<any>("order_items", {
-      select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
+      select: "id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost, cantidad_especial",
       filters: [{ column: "order_id", op: "eq", value: orderId }],
       orderBy: { column: "created_at" },
     }), 4000, "items de orden"),

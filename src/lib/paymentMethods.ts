@@ -19,6 +19,26 @@ export function isTransferPaymentMethodName(value: string): boolean {
   return normalizePaymentMethodName(value).includes("transfer");
 }
 
+export function isCardPaymentMethodName(value: string): boolean {
+  const normalized = normalizePaymentMethodName(value);
+  return (
+    normalized.includes("tarjeta")
+    || normalized.includes("card")
+    || normalized.includes("credito")
+    || normalized.includes("debito")
+  );
+}
+
+/** Clasificacion visual del metodo de pago (para iconos en listados). */
+export type PaymentMethodVisualKind = "cash" | "transfer" | "card" | "other";
+
+export function getPaymentMethodVisualKind(value: string): PaymentMethodVisualKind {
+  if (isCashPaymentMethodName(value)) return "cash";
+  if (isTransferPaymentMethodName(value)) return "transfer";
+  if (isCardPaymentMethodName(value)) return "card";
+  return "other";
+}
+
 export function dedupePaymentMethods(methods: PaymentMethodOption[]): PaymentMethodOption[] {
   const seen = new Set<string>();
   const unique: PaymentMethodOption[] = [];

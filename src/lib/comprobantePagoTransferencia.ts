@@ -107,3 +107,45 @@ export async function guardarComprobantePagoTransferencia(params: {
 
   return { comprobanteId, rutaObjeto };
 }
+
+/** URLs firmadas de comprobantes por pago_id (bucket privado). */
+export async function obtenerUrlsComprobantesPorPagos(
+  pagoIds: string[],
+  expiresInSeconds = 60 * 60,
+): Promise<Record<string, string[]>> {
+  const uniqueIds = Array.from(new Set(pagoIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return {};
+
+  const { data: rows, error } = await supabase
+    .from("comprobantes_pago")
+    .select("pago_id, nombre_bucket, ruta_objeto, creado_en")
+    .in("pago_id", uniqueIds)
+    .order("creado_en", { ascending: false });
+
+  if (error || !rows?.length) {
+    return {};
+  }
+
+  const result: Record<string, string[]> = {};
+
+  await Promise.all(
+    rows.map(async (row) => {
+      const bucket = String(row.nombre_bucket || BUCKET_COMPROBANTES_PAGO);
+      const path = String(row.ruta_objeto || "");
+      if (!path) return;
+
+      const { data: signed, error: signedError } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(path, expiresInSeconds);
+
+      const url = !signedError ? signed?.signedUrl : null;
+      if (!url) return;
+
+      const pagoId = String(row.pago_id);
+      if (!result[pagoId]) result[pagoId] = [];
+      if (!result[pagoId].includes(url)) result[pagoId].push(url);
+    }),
+  );
+
+  return result;
+}

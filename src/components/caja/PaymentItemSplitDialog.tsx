@@ -394,9 +394,22 @@ export function PaymentItemSplitDialog({
             <p className="text-xs text-muted-foreground">
               {selectedUnits > 0 ? `${selectedUnits} unidad(es) en este cobro` : "Selecciona al menos una unidad para cobrar"}
             </p>
-            <Button type="button" onClick={() => onOpenChange(false)} className="rounded-xl">
-              Listo
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => {
+                  clearAllSelection();
+                  onOpenChange(false);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="button" onClick={() => onOpenChange(false)} className="rounded-xl">
+                Aceptar
+              </Button>
+            </div>
           </div>
         </DialogFooter>
       </DialogContent>

@@ -3,7 +3,6 @@ import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders
 import { Button } from "@/components/ui/button";
 import { Clock, Check, Loader2, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
-import { resolveOrderChargeTotal } from "@/lib/orderFlow";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -256,24 +255,28 @@ export function DispatchCardBase({
   const canDispatchAny = order.dispatchable_count > 0;
   const dispatchAllBusy = isDispatching || isDispatchingOrder;
   const dispatchAllDisabled = order.locked_for_editing || dispatchAllBusy || !canDispatchAny;
+  // Solo unidades pendientes de servir/despachar (no mostrar ya despachadas).
   const previewableItems = useMemo(
-    () => order.items.filter((item) =>
-      order.order_type === "EXPRESS" ? item.quantity_dispatchable > 0 || item.quantity_dispatched > 0 : item.quantity_paid > 0,
-    ),
-    [order.items, order.order_type],
+    () => order.items.filter((item) => item.quantity_dispatchable > 0),
+    [order.items],
   );
-  const dispatchedCount = order.items.reduce((sum, item) => sum + item.quantity_dispatched, 0);
-  const itemsTotal = order.items.reduce((sum, item) => sum + Number(item.total ?? 0), 0);
-  const orderTotal = resolveOrderChargeTotal({
-    is_special: order.is_special,
-    special_total_manual: order.special_total_manual,
-    itemsTotal,
-  });
+  const pendingTotal = useMemo(
+    () => previewableItems.reduce((sum, item) => {
+      const qty = Math.max(0, item.quantity_dispatchable);
+      if (qty <= 0) return sum;
+      if (item.tray_item_type === "C") {
+        return sum + Number(item.total ?? 0);
+      }
+      return sum
+        + Number(item.unit_price ?? 0) * qty
+        + (item.tray_item_type === "B" ? Number(item.tray_container_cost ?? 0) : 0);
+    }, 0),
+    [previewableItems],
+  );
 
   const summaryParts: string[] = [];
   if (order.pending_prepare_count > 0) summaryParts.push(`${order.pending_prepare_count} pendientes`);
   if (order.ready_available_count > 0) summaryParts.push(`${order.ready_available_count} listos`);
-  if (dispatchedCount > 0) summaryParts.push(`${dispatchedCount} despachados`);
   const summaryText = summaryParts.length > 0 ? summaryParts.join(" - ") : "Sin acciones pendientes";
 
   return (
@@ -345,7 +348,7 @@ export function DispatchCardBase({
               {summaryText}
             </p>
             <p className="mt-0.5 text-sm font-black text-emerald-700">
-              Total {formatMoney(orderTotal)}
+              Total pendiente {formatMoney(pendingTotal)}
             </p>
           </div>
           <div className={cn(
@@ -361,7 +364,7 @@ export function DispatchCardBase({
         <div className="flex lg:hidden items-center justify-between pl-11">
           <div>
              <p className="text-xs font-semibold text-slate-700">{summaryText}</p>
-             <p className="mt-0.5 text-xs font-black text-emerald-700">Total {formatMoney(orderTotal)}</p>
+             <p className="mt-0.5 text-xs font-black text-emerald-700">Total pendiente {formatMoney(pendingTotal)}</p>
           </div>
           <div className={cn(
             "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold shadow-sm",
@@ -422,29 +425,30 @@ export function DispatchCardBase({
           const isBulkItem = item.tray_item_type === "C";
           const trimmedItemNote = String(item.item_note ?? "").trim();
           const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
-          const selectedQty = Math.max(1, Math.min(item.quantity_dispatchable || 1, qtyByItem[item.id] ?? 1));
-          const canDispatch = item.quantity_dispatchable > 0;
-          const remainingToDispatch = item.quantity_dispatchable;
-          const dispatchedQuantity = item.quantity_dispatched;
-          const activeQuantity = Math.max(item.quantity_paid, remainingToDispatch + dispatchedQuantity);
-          const isFullyDispatched = item.quantity_pending_prepare === 0 && item.quantity_dispatchable === 0 && dispatchedQuantity > 0;
+          const remainingToDispatch = Math.max(0, item.quantity_dispatchable);
+          const selectedQty = Math.max(1, Math.min(remainingToDispatch || 1, qtyByItem[item.id] ?? 1));
+          const canDispatch = remainingToDispatch > 0;
+          const remainingLineTotal = Number(item.unit_price ?? 0) * remainingToDispatch
+            + (item.tray_item_type === "B" && remainingToDispatch > 0
+              ? Number(item.tray_container_cost ?? 0)
+              : 0);
 
           return (
-            <div key={item.id} className={cn("px-4 py-4 lg:px-8", isFullyDispatched && "opacity-50 grayscale transition-opacity")}>
+            <div key={item.id} className="px-4 py-4 lg:px-8">
               <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
                 <div className="flex min-w-0 items-start gap-3">
                   {!isBulkItem ? (
                     <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
-                      {activeQuantity}X
+                      {remainingToDispatch}X
                     </div>
                   ) : null}
                   <div className="min-w-0 flex-1">
-                    <p className={cn("break-words whitespace-normal font-medium leading-tight text-[15px]", isFullyDispatched ? "text-slate-500 line-through" : "text-foreground")}>
+                    <p className="break-words whitespace-normal font-medium leading-tight text-[15px] text-foreground">
                       {item.description_snapshot}
                     </p>
                     {item.modifiers.length > 0 ? (
                       <div className="mt-1 flex flex-col gap-1">
-                        {consolidateModifiersForDisplay(item.modifiers, activeQuantity).map((mc) => (
+                        {consolidateModifiersForDisplay(item.modifiers, remainingToDispatch).map((mc) => (
                           <p
                             key={`${item.id}-modifier-${mc.key}`}
                             className="break-words whitespace-normal text-sm font-semibold text-red-700"
@@ -480,7 +484,7 @@ export function DispatchCardBase({
                       {isBulkItem ? (
                         <span>{formatMoney(item.total)}</span>
                       ) : (
-                        <span>{formatMoney(item.unit_price)} x {activeQuantity} = {formatMoney(item.total)}</span>
+                        <span>{formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingLineTotal)}</span>
                       )}
                     </div>
                   </div>
@@ -534,11 +538,6 @@ export function DispatchCardBase({
             </div>
           );
         })}
-            </div>
-            <div className="flex items-center justify-end border-t border-slate-200 bg-slate-100 px-4 py-3 lg:px-8">
-              <span className="text-[15px] font-black text-slate-900">
-                Total de la orden: {formatMoney(orderTotal)}
-              </span>
             </div>
           </div>
       )}

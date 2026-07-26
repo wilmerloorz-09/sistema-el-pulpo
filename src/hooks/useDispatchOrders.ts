@@ -40,6 +40,8 @@ export interface DispatchOrderItem {
   modifiers: { description: string }[];
   item_note?: string | null;
   total?: number;
+  /** Unidades de la linea en el grupo especial (orden especial mixta). */
+  cantidad_especial?: number;
   sent_to_kitchen_at: string | null;
   /** Marcador de linea cubierta en caja (sync_order_payment_state); util si el snapshot aun no refleja quantity_paid. */
   paid_at: string | null;
@@ -65,6 +67,8 @@ export interface DispatchOrder {
   is_tray_order?: boolean;
   is_packer_order?: boolean;
   special_total_manual?: number | null;
+  /** Valor manual del grupo especial (orden mixta). */
+  special_group_total?: number | null;
   created_by: string | null;
   created_by_name: string | null;
   table_name: string | null;
@@ -372,6 +376,7 @@ function groupItemsIntoDispatchCards(
         total:
           computeLineAmount(quantityPaid, Number(item.unit_price ?? 0))
           + (quantityPaid > 0 ? trayContainerCost : 0),
+        cantidad_especial: Math.min(Math.max(0, Number(item.cantidad_especial ?? 0)), quantityPaid),
         modifiers: modifiersMap[item.id] ?? [],
         item_note: item.item_note ?? null,
         sent_to_kitchen_at: sentStamp,
@@ -409,6 +414,9 @@ function groupItemsIntoDispatchCards(
     is_tray_order: Boolean(order.is_tray_order),
     is_packer_order: Boolean(order.is_packer_order),
     special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
+    special_group_total: (order as { special_group_total?: number | null }).special_group_total == null
+      ? null
+      : Number((order as { special_group_total?: number | null }).special_group_total),
     created_by: order.created_by ?? null,
     created_by_name: order.created_by_name ?? null,
     table_name: order.table_name ?? null,
@@ -469,7 +477,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const ordersMerged = (
         await dbSelectStrict<any>("orders", {
-          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
+          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["PAID", "READY", "SENT_TO_KITCHEN"] },

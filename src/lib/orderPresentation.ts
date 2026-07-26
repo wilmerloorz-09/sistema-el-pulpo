@@ -10,6 +10,10 @@ export function getOrderOriginLabel(params: {
   }
 
   if (params.isSpecial) {
+    const tableName = params.tableName?.trim();
+    if (tableName) {
+      return `${tableName} (Orden Especial)`;
+    }
     return "Orden Especial";
   }
 

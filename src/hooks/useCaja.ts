@@ -26,6 +26,7 @@ import {
   COMPROBANTES_PENDIENTES_QUERY_KEY,
   iniciarSubidaComprobanteEnSegundoPlano,
 } from "@/lib/comprobantePagoPendienteLocal";
+import { obtenerUrlsComprobantesPorPagos } from "@/lib/comprobantePagoTransferencia";
 import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
 import type { ResultadoValidacionComprobante } from "@/lib/validacionComprobanteTransferencia";
 
@@ -333,6 +334,8 @@ export interface PayableOrder {
   created_by_name: string | null;
   cliente?: PayableOrderCliente | null;
   special_total_manual: number | null;
+  /** Valor manual SOLO del grupo especial (orden especial mixta). NULL = especial no mixta. */
+  special_group_total?: number | null;
   special_real_total: number;
   special_paid_amount: number;
   special_pending_amount: number;
@@ -358,6 +361,8 @@ export interface PayableOrder {
     total: number;
     tray_item_type?: "A" | "B" | "C" | null;
     tray_container_cost?: number;
+    /** Unidades de la linea en el grupo especial (orden especial mixta). */
+    cantidad_especial?: number;
     paid_at: string | null;
     quantity_paid: number;
     quantity_pending: number;
@@ -471,6 +476,12 @@ export interface CompletedPayment {
   cash_received_detail: CashMovementDetailLine[];
   cash_change_detail: CashMovementDetailLine[];
   cash_refund_detail: CashMovementDetailLine[];
+  /** Datos de transferencia (null si el pago no es por transferencia). */
+  banco_id: string | null;
+  banco_nombre: string | null;
+  numero_transferencia: string | null;
+  /** URLs firmadas de fotos de comprobante asociadas al pago. */
+  comprobante_urls: string[];
 }
 
 export interface CashMovementDetailLine {
@@ -1048,7 +1059,7 @@ async function buildPayableOrderById(params: {
   const { orderId, branchId, workflowMode, forRecharge = false } = params;
 
   const orderRows = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, special_total_manual, table_name_snapshot, locked_for_editing, notes, cliente_id",
+    select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id",
     branchId,
     filters: [{ column: "id", op: "eq", value: orderId }],
     skipLocalCache: true,
@@ -1059,7 +1070,7 @@ async function buildPayableOrderById(params: {
   if (!orderIsPayableInCaja(order)) return null;
 
   const items = await dbSelect<any>("order_items", {
-    select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
+    select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost, cantidad_especial",
     filters: [{ column: "order_id", op: "eq", value: orderId }],
     skipLocalCache: true,
   });
@@ -1067,7 +1078,7 @@ async function buildPayableOrderById(params: {
   if (orderItems.length === 0 && !order.is_special) return null;
 
   let tableName: string | null = null;
-  if (order.order_type === "DINE_IN" && order.table_id) {
+  if ((order.order_type === "DINE_IN" || order.is_special) && order.table_id) {
     const tables = await dbSelect<any>("restaurant_tables", {
       select: "id, name, visual_order",
       filters: [{ column: "id", op: "eq", value: order.table_id }],
@@ -1079,6 +1090,23 @@ async function buildPayableOrderById(params: {
       tableName = /\d/.test(baseName) ? baseName : `${baseName} ${Number(t.visual_order ?? 0) + 1}`;
     } else {
       tableName = order.table_name_snapshot || "Mesa";
+    }
+  } else if (order.is_special) {
+    const originTableId = (order as { special_origin_table_id?: string | null }).special_origin_table_id ?? null;
+    if (originTableId) {
+      const tables = await dbSelect<any>("restaurant_tables", {
+        select: "id, name, visual_order",
+        filters: [{ column: "id", op: "eq", value: originTableId }],
+        skipLocalCache: true,
+      });
+      const t = tables[0];
+      if (t) {
+        const baseName = (t.name || "Mesa").trim();
+        tableName = /\d/.test(baseName) ? baseName : `${baseName} ${Number(t.visual_order ?? 0) + 1}`;
+      }
+    }
+    if (!tableName) {
+      tableName = order.table_name_snapshot || null;
     }
   }
 
@@ -1203,6 +1231,7 @@ async function buildPayableOrderById(params: {
         total: computeLineTotalWithContainer(payableQty, unitPrice, trayContainerCost),
         tray_item_type: (i.tray_item_type ?? null) as "A" | "B" | "C" | null,
         tray_container_cost: trayContainerCost,
+        cantidad_especial: Math.min(Math.max(0, Number(i.cantidad_especial ?? 0)), payableQty),
         paid_at: forRecharge ? null : i.paid_at,
         quantity_paid: paidQty,
         quantity_pending: pendingQty,
@@ -1244,6 +1273,7 @@ async function buildPayableOrderById(params: {
     created_by_name: createdByName,
     cliente,
     special_total_manual: specialManualTotal,
+    special_group_total: order.special_group_total == null ? null : Number(order.special_group_total),
     special_real_total: specialRealTotal,
     special_paid_amount: specialPaidAmount,
     special_pending_amount: specialPendingAmount,
@@ -1801,7 +1831,7 @@ export function useCaja(params?: {
 
       const orders = (
         await dbSelect<any>("orders", {
-          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, table_name_snapshot, locked_for_editing, notes, cliente_id",
+          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] },
@@ -1817,7 +1847,12 @@ export function useCaja(params?: {
       const activeOrders = orders.filter((order) => !String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:"));
       if (activeOrders.length === 0) return [];
 
-      const tableIdSet = new Set<string>(activeOrders.map((o) => o.table_id).filter(Boolean));
+      const tableIdSet = new Set<string>();
+      for (const o of activeOrders) {
+        if (o.table_id) tableIdSet.add(o.table_id);
+        const originTableId = (o as { special_origin_table_id?: string | null }).special_origin_table_id;
+        if (originTableId) tableIdSet.add(originTableId);
+      }
       const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, { name: string; visual_order: number }> = {};
       if (tableIds.length > 0) {
@@ -1862,7 +1897,7 @@ export function useCaja(params?: {
       const clientesMap = Object.fromEntries(clientesRows.map((cliente) => [cliente.id, cliente]));
 
       const items = await dbSelect<any>("order_items", {
-        select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost",
+        select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost, cantidad_especial",
         filters: [{ column: "order_id", op: "in", value: orderIds }]
       });
 
@@ -1973,6 +2008,7 @@ export function useCaja(params?: {
                 total: activeLineTotal,
                 tray_item_type: (i.tray_item_type ?? null) as "A" | "B" | "C" | null,
                 tray_container_cost: trayContainerCost,
+                cantidad_especial: Math.min(Math.max(0, Number(i.cantidad_especial ?? 0)), payableQty),
                 paid_at: i.paid_at,
                 quantity_paid: paidQty,
                 quantity_pending: pendingQty,
@@ -2011,13 +2047,25 @@ export function useCaja(params?: {
             created_by_name: o.created_by ? (creatorNameMap[o.created_by] ?? "Usuario") : null,
             cliente: o.cliente_id ? (clientesMap[o.cliente_id] ?? null) : null,
             special_total_manual: specialManualTotal,
+            special_group_total: (o as { special_group_total?: number | null }).special_group_total == null
+              ? null
+              : Number((o as { special_group_total?: number | null }).special_group_total),
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
             table_name:
-              o.order_type === "DINE_IN" && o.table_id
+              (o.order_type === "DINE_IN" || Boolean((o as { is_special?: boolean | null }).is_special))
+              && o.table_id
                 ? resolveTableName(o.table_id, (o as any).table_name_snapshot)
-                : null,
+                : Boolean((o as { is_special?: boolean | null }).is_special)
+                  ? ((o as any).table_name_snapshot
+                    || ((o as { special_origin_table_id?: string | null }).special_origin_table_id
+                      ? resolveTableName(
+                          (o as { special_origin_table_id?: string | null }).special_origin_table_id ?? null,
+                          (o as any).table_name_snapshot,
+                        )
+                      : null))
+                  : null,
             table_name_snapshot: (o as any).table_name_snapshot,
             split_code: o.split_id ? splitsMap[o.split_id] : null,
             total: displayTotal,
@@ -2142,7 +2190,7 @@ export function useCaja(params?: {
       }
 
       const allPaymentsInRangeRaw = await dbSelect<any>("payments", {
-        select: "id, created_at, amount, notes, order_id, payment_method_id, created_by, status",
+        select: "id, created_at, amount, notes, order_id, payment_method_id, created_by, status, banco_id, numero_transferencia",
         filters: paymentsFilters,
         orderBy: { column: "created_at", ascending: false }
       });
@@ -2193,6 +2241,10 @@ export function useCaja(params?: {
       const methodIds = Array.from(methodIdSet);
       const createdByIdSet = new Set<string>(allPaymentsInRange.map((p) => p.created_by));
       const createdByIds = Array.from(createdByIdSet);
+      const bancoIdSet = new Set<string>(
+        allPaymentsInRange.map((p) => p.banco_id).filter((id): id is string => Boolean(id)),
+      );
+      const bancoIds = Array.from(bancoIdSet);
       
       const selectedPaymentItems = await dbSelect<any>("payment_items", {
         select: "id, payment_id, order_item_id, quantity_paid, unit_price, total_amount",
@@ -2208,11 +2260,15 @@ export function useCaja(params?: {
       ]);
       const itemIds = Array.from(itemIdsSet);
 
-      const [methods, profiles, allOrderPayments, allOrderItems] = await Promise.all([
+      const [methods, profiles, allOrderPayments, allOrderItems, bancos, comprobanteUrlsByPago] = await Promise.all([
         dbSelect<any>("payment_methods", { select: "id, name", filters: [{ column: "id", op: "in", value: methodIds }] }),
         dbSelect<any>("profiles", { select: "id, first_name, full_name, username, alias", filters: [{ column: "id", op: "in", value: createdByIds }] }),
         dbSelect<any>("payments", { select: "order_id, amount, notes, status", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
         dbSelect<any>("order_items", { select: "id, order_id, total, status, description_snapshot, quantity, unit_price, tray_item_type", filters: [{ column: "order_id", op: "in", value: orderIds }] }),
+        bancoIds.length > 0
+          ? dbSelect<any>("bancos", { select: "id, nombre", filters: [{ column: "id", op: "in", value: bancoIds }] })
+          : Promise.resolve([]),
+        obtenerUrlsComprobantesPorPagos(allPaymentsInRange.map((payment) => payment.id)),
       ]);
 
       const orders = ordersInRange.filter((o) => validOrdersMap.has(o.id));
@@ -2235,6 +2291,7 @@ export function useCaja(params?: {
       const ordersMap = Object.fromEntries(orders.map((o) => [o.id, o]));
       const methodsMap = Object.fromEntries(methods.map((m) => [m.id, m.name]));
       const profilesMap = Object.fromEntries(profiles.map((p) => [p.id, getUserDisplayName(p)]));
+      const bancosMap = Object.fromEntries((bancos ?? []).map((b: any) => [b.id, b.nombre]));
       const orderCreatorIds = Array.from(new Set((orders ?? []).map((order: any) => order.created_by).filter(Boolean))) as string[];
       const orderCreatorProfiles = orderCreatorIds.length > 0
         ? await dbSelect<any>("profiles", {
@@ -2504,6 +2561,10 @@ export function useCaja(params?: {
               cash_received_detail: cashReceivedDetailByPayment[payment.id] ?? [],
               cash_change_detail: cashChangeDetailByPayment[payment.id] ?? [],
               cash_refund_detail: cashRefundDetailByPayment[payment.id] ?? [],
+              banco_id: payment.banco_id ?? null,
+              banco_nombre: payment.banco_id ? (bancosMap[payment.banco_id] ?? null) : null,
+              numero_transferencia: payment.numero_transferencia ?? null,
+              comprobante_urls: comprobanteUrlsByPago[payment.id] ?? [],
             });
           }
         } else {
@@ -2551,6 +2612,10 @@ export function useCaja(params?: {
             cash_received_detail: cashReceivedDetailByPayment[payment.id] ?? [],
             cash_change_detail: cashChangeDetailByPayment[payment.id] ?? [],
             cash_refund_detail: cashRefundDetailByPayment[payment.id] ?? [],
+            banco_id: payment.banco_id ?? null,
+            banco_nombre: payment.banco_id ? (bancosMap[payment.banco_id] ?? null) : null,
+            numero_transferencia: payment.numero_transferencia ?? null,
+            comprobante_urls: comprobanteUrlsByPago[payment.id] ?? [],
           });
         }
       }

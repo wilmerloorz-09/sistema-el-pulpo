@@ -24,6 +24,7 @@ export type ConsolidatableDispatchItem = {
   modifiers: { description: string }[];
   item_note?: string | null;
   total?: number;
+  cantidad_especial?: number;
   sent_to_kitchen_at: string | null;
   paid_at: string | null;
   group_item_ids?: string[];
@@ -81,6 +82,7 @@ export function consolidateDispatchOrderItems<T extends ConsolidatableDispatchIt
     existing.quantity_dispatched += item.quantity_dispatched;
     existing.quantity_cancelled += item.quantity_cancelled;
     existing.total = Number(existing.total ?? 0) + Number(item.total ?? 0);
+    existing.cantidad_especial = Number(existing.cantidad_especial ?? 0) + Number(item.cantidad_especial ?? 0);
     existing.group_item_ids = [...(existing.group_item_ids ?? [existing.id]), item.id];
     existing.source_lines = [...(existing.source_lines ?? []), sourceLine];
 

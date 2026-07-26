@@ -198,6 +198,21 @@ export default function PaymentDialogV2({
 
   const { data: winningOffer } = useClientWinningOffer(clienteSelection.selectedCliente?.id);
 
+  /** Orden especial MIXTA: parte con valor manual (grupo) + resto a precio real. */
+  const isMixedSpecial = Boolean(order?.is_special) && order?.special_group_total != null;
+  const mixedRestReal = useMemo(() => {
+    if (!order || !isMixedSpecial) return 0;
+    return roundMoney(
+      (order.items ?? []).reduce((sum, i) => {
+        const qty = Math.max(0, Number(i.quantity ?? 0));
+        const esp = Math.min(Math.max(0, Number(i.cantidad_especial ?? 0)), qty);
+        const normal = Math.max(0, qty - esp);
+        return sum + normal * Number(i.unit_price ?? 0);
+      }, 0),
+    );
+  }, [order, isMixedSpecial]);
+  const mixedGroupTotal = isMixedSpecial ? roundMoney(Number(order?.special_group_total ?? 0)) : 0;
+
   const discountAmount = 0;
 
   const orderChargeTotal = roundMoney(Math.max(0, baseChargeTotal - discountAmount));
@@ -799,7 +814,7 @@ export default function PaymentDialogV2({
                 -{" "}
                 {getCajaOrderOriginLabel({
                   orderType: order.order_type,
-                  tableName: order.table_name,
+                  tableName: order.table_name ?? order.table_name_snapshot,
                   splitCode: order.split_code,
                   isSpecial: order.is_special,
                   isTrayOrder: order.is_tray_order,
@@ -949,6 +964,19 @@ export default function PaymentDialogV2({
                   </div>
                   
                   <div className="flex flex-col gap-1.5 px-4 pb-3 text-[11px] font-medium text-sky-800/75">
+                    {isMixedSpecial && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span>Orden especial (valor manual)</span>
+                          <span className="font-semibold text-orange-700">{formatCurrency(mixedGroupTotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Orden normal (precio real)</span>
+                          <span className="font-semibold">{formatCurrency(mixedRestReal)}</span>
+                        </div>
+                        <div className="my-0.5 border-t border-dashed border-sky-200" />
+                      </>
+                    )}
                     <div className="flex items-center justify-between">
                       <span>Descuento Normal</span>
                       <span>{formatCurrency(0)}</span>

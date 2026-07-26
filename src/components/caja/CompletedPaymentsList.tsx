@@ -5,6 +5,7 @@ import DenominationVisual from "@/components/caja/DenominationVisual";
 import PaymentReversalModal, { type ReversalPaymentData } from "@/components/caja/PaymentReversalModal";
 import SupervisorAuthorizationDialog from "@/components/caja/SupervisorAuthorizationDialog";
 import PaymentStatusBadge from "@/components/caja/PaymentStatusBadge";
+import PaymentMethodIcons from "@/components/caja/PaymentMethodIcons";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { buildPromocionReciboExtras } from "@/lib/promocionesRecibo";
@@ -25,7 +26,9 @@ import { canManage, canOperate, type PermissionMap } from "@/lib/permissions";
 import { printPaymentReceipt } from "@/lib/thermalPrint";
 import type { PaymentReceiptData } from "@/lib/paymentReceiptData";
 import PaymentReceipt from "@/components/caja/PaymentReceipt";
-import { ChevronDown, ChevronUp, Clock3, CreditCard, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed, Printer, ScanSearch, Undo2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock3, CreditCard, Landmark, Loader2, ReceiptText, RotateCcw, ShoppingBag, UserRound, UtensilsCrossed, Printer, ScanSearch, Undo2 } from "lucide-react";
+import { isTransferPaymentMethodName } from "@/lib/paymentMethods";
+import { cn } from "@/lib/utils";
 
 function getCajaOrderOriginLabel(params: Parameters<typeof getOrderOriginLabel>[0]) {
   return getOrderOriginLabel({
@@ -55,6 +58,10 @@ interface PaymentGroup {
   cash_received_detail: CompletedPayment["cash_received_detail"];
   cash_change_detail: CompletedPayment["cash_change_detail"];
   cash_refund_detail: CompletedPayment["cash_refund_detail"];
+  banco_id: string | null;
+  banco_nombre: string | null;
+  numero_transferencia: string | null;
+  comprobante_urls: string[];
   order: {
     id: string;
     number: number;
@@ -286,6 +293,14 @@ export default function CompletedPaymentsList({
     supervisorIdentifier: "",
     supervisorPassword: "",
   });
+  type TransferDetailEntry = {
+    paymentId: string;
+    amount: number;
+    bancoNombre: string | null;
+    numeroTransferencia: string | null;
+    comprobanteUrls: string[];
+  };
+
   const [changeDetailState, setChangeDetailState] = useState<{
     open: boolean;
     title: string;
@@ -295,6 +310,7 @@ export default function CompletedPaymentsList({
     changeLines: CompletedPayment["cash_change_detail"];
     refundLines: CompletedPayment["cash_refund_detail"];
     undocumentedChange: number;
+    transferDetails: TransferDetailEntry[];
   }>({
     open: false,
     title: "Detalle de cambio",
@@ -304,6 +320,7 @@ export default function CompletedPaymentsList({
     changeLines: [],
     refundLines: [],
     undocumentedChange: 0,
+    transferDetails: [],
   });
   const [reprintData, setReprintData] = useState<PaymentReceiptData | null>(null);
 
@@ -334,6 +351,10 @@ export default function CompletedPaymentsList({
           cash_received_detail: row.cash_received_detail,
           cash_change_detail: row.cash_change_detail,
           cash_refund_detail: row.cash_refund_detail,
+          banco_id: row.banco_id ?? null,
+          banco_nombre: row.banco_nombre ?? null,
+          numero_transferencia: row.numero_transferencia ?? null,
+          comprobante_urls: row.comprobante_urls ?? [],
           order: {
             id: row.order_id,
             number: row.order_number ?? 0,
@@ -437,6 +458,50 @@ export default function CompletedPaymentsList({
     return result;
   }, [payments]);
 
+  /** Metodos de todo el cobro (mismo payment_group_id), p. ej. efectivo + transferencia. */
+  const methodsByGroupId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const row of payments) {
+      const gid = row.payment_group_id ?? row.id;
+      const name = String(row.method_name ?? "").trim();
+      if (!name) continue;
+      const list = map.get(gid) ?? [];
+      if (!list.includes(name)) list.push(name);
+      map.set(gid, list);
+    }
+    return map;
+  }, [payments]);
+
+  /** Detalle de transferencia de todo el cobro (mismo payment_group_id). */
+  const transferDetailByGroupId = useMemo(() => {
+    const map = new Map<string, TransferDetailEntry[]>();
+    const seenPaymentIds = new Set<string>();
+
+    for (const row of payments) {
+      if (seenPaymentIds.has(row.id)) continue;
+      seenPaymentIds.add(row.id);
+
+      const isTransfer =
+        isTransferPaymentMethodName(row.method_name)
+        || Boolean(row.banco_id)
+        || Boolean(row.numero_transferencia)
+        || (row.comprobante_urls?.length ?? 0) > 0;
+
+      if (!isTransfer) continue;
+
+      const gid = row.payment_group_id ?? row.id;
+      const list = map.get(gid) ?? [];
+      list.push({
+        paymentId: row.id,
+        amount: Number(row.amount ?? 0),
+        bancoNombre: row.banco_nombre ?? null,
+        numeroTransferencia: row.numero_transferencia ?? null,
+        comprobanteUrls: row.comprobante_urls ?? [],
+      });
+      map.set(gid, list);
+    }
+    return map;
+  }, [payments]);
 
   const visiblePayments = useMemo(() => {
     if (filters.cashierName === "ALL") return groupedPayments;
@@ -715,13 +780,20 @@ export default function CompletedPaymentsList({
                 || groupCash.changeLines.length > 0
                 || groupCash.refundLines.length > 0
                 || groupCash.undocumentedChange > 0.005;
+              const groupTransferDetails = transferDetailByGroupId.get(payment.paymentGroupId) ?? [];
+              const hasTransferDetail = groupTransferDetails.length > 0;
+              const hasPaymentDetail = hasCashTrace || hasTransferDetail;
               const rowChangeTitle = isVoidedOrReversed
                 ? "Detalle de devolucion"
-                : groupCash.changeLines.length > 0 || groupCash.undocumentedChange > 0.005
-                  ? "Detalle de pago y cambio"
-                  : groupCash.receivedLines.length > 0
-                    ? "Detalle de efectivo recibido"
-                    : "Detalle del pago";
+                : hasCashTrace && hasTransferDetail
+                  ? "Detalle de pago (efectivo y transferencia)"
+                  : hasTransferDetail
+                    ? "Detalle de transferencia"
+                    : groupCash.changeLines.length > 0 || groupCash.undocumentedChange > 0.005
+                      ? "Detalle de pago y cambio"
+                      : groupCash.receivedLines.length > 0
+                        ? "Detalle de efectivo recibido"
+                        : "Detalle del pago";
 
               return (
                 <div key={payment.paymentId} className={index % 2 === 0 ? "bg-white" : "bg-slate-100/70"}>
@@ -755,6 +827,14 @@ export default function CompletedPaymentsList({
                             {getOrderRef(payment.order.code, payment.order.number)}
                           </p>
                           <PaymentStatusBadge status={payment.status} />
+                          <PaymentMethodIcons
+                            methodNames={
+                              methodsByGroupId.get(payment.paymentGroupId)
+                              ?? (payment.items.length > 0
+                                ? payment.items.map((item) => item.method_name)
+                                : [payment.method_name])
+                            }
+                          />
                           {payment.reversal_requested && !isVoidedOrReversed && (
                             <Badge className="border-amber-200 bg-amber-50 text-amber-700">
                               Anulación Pendiente
@@ -782,7 +862,7 @@ export default function CompletedPaymentsList({
 
                     {/* Right Section: Actions */}
                     <div className="flex items-center justify-start lg:justify-end gap-3 pl-11 lg:pl-0 shrink-0 mt-2 lg:mt-0">
-                      {hasCashTrace && (
+                      {hasPaymentDetail && (
                         <button
                           type="button"
                           onClick={(event) => {
@@ -790,16 +870,17 @@ export default function CompletedPaymentsList({
                             setChangeDetailState({
                               open: true,
                               title: rowChangeTitle,
-                              showReceived: !isVoidedOrReversed,
+                              showReceived: !isVoidedOrReversed && hasCashTrace,
                               receivedAmount: groupCash.receivedAmount,
                               receivedLines: groupCash.receivedLines,
                               changeLines: groupCash.changeLines,
                               refundLines: groupCash.refundLines,
                               undocumentedChange: groupCash.undocumentedChange,
+                              transferDetails: groupTransferDetails,
                             });
                           }}
                           className="group/btn flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 text-white shadow-[0_4px_14px_0_rgba(6,182,212,0.39)] transition-all hover:scale-110 hover:shadow-[0_6px_20px_rgba(6,182,212,0.23)] active:scale-95"
-                          title="Ver detalle de efectivo"
+                          title={rowChangeTitle}
                         >
                           <ScanSearch className="h-5 w-5 transition-transform group-hover/btn:scale-110" />
                         </button>
@@ -910,11 +991,82 @@ export default function CompletedPaymentsList({
         open={changeDetailState.open}
         onOpenChange={(open) => setChangeDetailState((current) => ({ ...current, open }))}
       >
-        <DialogContent className="max-w-[calc(100vw-1rem)] rounded-[24px] sm:max-w-md">
+        <DialogContent
+          className={cn(
+            "max-h-[min(92dvh,720px)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-[24px]",
+            changeDetailState.transferDetails.length > 0 ? "sm:max-w-lg" : "sm:max-w-md",
+          )}
+        >
           <DialogHeader>
             <DialogTitle>{changeDetailState.title}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {changeDetailState.transferDetails.length > 0 && (
+              <div className="space-y-3">
+                {changeDetailState.transferDetails.map((transfer) => (
+                  <div
+                    key={transfer.paymentId}
+                    className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3"
+                  >
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-500 text-white shadow-sm shadow-sky-500/40">
+                        <Landmark className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-950">Transferencia</p>
+                        <p className="text-xs text-sky-900/70">Monto aplicado al cobro</p>
+                      </div>
+                      <span className="text-lg font-bold text-sky-700">
+                        {formatCurrency(transfer.amount)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 rounded-xl bg-white/80 px-3 py-2 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-slate-500">Banco</span>
+                        <span className="text-right font-semibold text-slate-950">
+                          {transfer.bancoNombre || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-slate-500">N.º transferencia</span>
+                        <span className="break-all text-right font-semibold text-slate-950">
+                          {transfer.numeroTransferencia || "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {transfer.comprobanteUrls.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">
+                          Comprobante
+                        </p>
+                        {transfer.comprobanteUrls.map((url) => (
+                          <a
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block overflow-hidden rounded-xl border border-sky-200 bg-white"
+                          >
+                            <img
+                              src={url}
+                              alt="Comprobante de transferencia"
+                              className="max-h-72 w-full object-contain"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-medium text-sky-900/70">
+                        No hay foto de comprobante asociada a este pago.
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {changeDetailState.showReceived && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
                 <div className="flex items-center justify-between gap-3">

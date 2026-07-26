@@ -61,6 +61,8 @@ interface Props {
   splitDispatchSections?: boolean;
   /** Modo Editar orden: controles solo sobre la porcion ya despachada (y borradores nuevos). */
   editDispatchedItemsOnly?: boolean;
+  /** Oculta el bloque de totales al pie (p. ej. seccion resto en orden especial mixta). */
+  hideFooterTotals?: boolean;
 }
 
 type OrderItemStage = "sent" | "partial" | "dispatched" | "draft" | "pendingCancellation" | "paid";
@@ -254,6 +256,7 @@ function buildSectionItemTotals(item: OrderItem, quantity: number): OrderItem {
 }
 
 function splitItemsForDispatchFirstSections(items: OrderItem[], editDispatchedItemsOnly = false) {
+  const draft: OrderItem[] = [];
   const inDispatch: OrderItem[] = [];
   const dispatched: OrderItem[] = [];
 
@@ -264,6 +267,11 @@ function splitItemsForDispatchFirstSections(items: OrderItem[], editDispatchedIt
       : Math.max(0, Number(item.quantity_dispatched ?? 0));
     const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
     const visibleQty = Math.max(0, Number(item.quantity ?? 0));
+
+    if (stage === "draft") {
+      if (visibleQty > 0) draft.push(item);
+      continue;
+    }
 
     if (stage === "dispatched") {
       if (visibleQty > 0) dispatched.push(item);
@@ -294,7 +302,7 @@ function splitItemsForDispatchFirstSections(items: OrderItem[], editDispatchedIt
     }
   }
 
-  return { inDispatch, dispatched };
+  return { draft, inDispatch, dispatched };
 }
 
 function shouldUseDispatchFirstSections(
@@ -331,6 +339,7 @@ const OrderItemsList = ({
   allowSentStageEditing = false,
   splitDispatchSections = false,
   editDispatchedItemsOnly = false,
+  hideFooterTotals = false,
 }: Props) => {
   const { activeBranch } = useBranch();
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
@@ -777,14 +786,25 @@ const OrderItemsList = ({
   }
 
   if (splitDispatchSections && shouldUseDispatchFirstSections(items, orderType, workflowMode)) {
-    const { inDispatch, dispatched } = splitItemsForDispatchFirstSections(items, editDispatchedItemsOnly);
+    const { draft, inDispatch, dispatched } = splitItemsForDispatchFirstSections(items, editDispatchedItemsOnly);
     const inDispatchLabel = getSentItemStageLabel(orderType, workflowMode);
 
     return (
       <div className="flex flex-col gap-4">
-        {inDispatch.length > 0 && (
+        {draft.length > 0 && (
           <div className="flex flex-col gap-2">
             <h3 className="w-fit rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-950/20 dark:text-amber-500">
+              Por enviar
+            </h3>
+            <div className="flex flex-col gap-3">
+              {renderList(draft, false, "inDispatch")}
+            </div>
+          </div>
+        )}
+
+        {inDispatch.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h3 className="w-fit rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
               {inDispatchLabel}
             </h3>
             <div className="flex flex-col gap-3">
@@ -804,6 +824,39 @@ const OrderItemsList = ({
           </div>
         )}
 
+        {!hideFooterTotals && (
+          <div className="mt-1 space-y-1 border-t border-border pt-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">
+                {specialOrderChargeTotal != null ? "Total a cobrar" : "Total"}
+              </span>
+              <span
+                className={cn(
+                  "font-display text-xl font-bold",
+                  specialOrderChargeTotal != null ? "text-orange-700" : "text-foreground",
+                )}
+              >
+                $
+                {(specialOrderChargeTotal != null ? specialOrderChargeTotal : total).toFixed(2)}
+              </span>
+            </div>
+            {specialOrderChargeTotal != null && specialOrderCatalogTotal != null ? (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Total real de ítems (referencia)</span>
+                <span>${specialOrderCatalogTotal.toFixed(2)}</span>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {renderList(items, false)}
+
+      {!hideFooterTotals && (
         <div className="mt-1 space-y-1 border-t border-border pt-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-muted-foreground">
@@ -826,36 +879,7 @@ const OrderItemsList = ({
             </div>
           ) : null}
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {renderList(items, false)}
-
-      <div className="mt-1 space-y-1 border-t border-border pt-2">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-muted-foreground">
-            {specialOrderChargeTotal != null ? "Total a cobrar" : "Total"}
-          </span>
-          <span
-            className={cn(
-              "font-display text-xl font-bold",
-              specialOrderChargeTotal != null ? "text-orange-700" : "text-foreground",
-            )}
-          >
-            $
-            {(specialOrderChargeTotal != null ? specialOrderChargeTotal : total).toFixed(2)}
-          </span>
-        </div>
-        {specialOrderChargeTotal != null && specialOrderCatalogTotal != null ? (
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Total real de ítems (referencia)</span>
-            <span>${specialOrderCatalogTotal.toFixed(2)}</span>
-          </div>
-        ) : null}
-      </div>
+      )}
     </div>
   );
 };
