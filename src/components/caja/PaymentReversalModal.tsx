@@ -441,7 +441,7 @@ export default function PaymentReversalModal({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-stone-200 bg-white px-3 py-3 sm:px-4 lg:px-6">
+      <div className="footer-safe-bottom shrink-0 border-t border-stone-200 bg-white px-3 pt-3 sm:px-4 lg:px-6">
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)} disabled={loading || confirmSubmitting}>
             Volver
@@ -472,10 +472,10 @@ export default function PaymentReversalModal({
           onOpenChange(nextOpen);
         }}
       >
-        <DialogContent className="max-h-[94vh] max-w-[calc(100vw-1rem)] overflow-hidden rounded-[28px] border border-orange-200 p-0 sm:max-w-6xl">
+        <DialogContent className="max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.5rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-[28px] border border-orange-200 p-0 sm:max-h-[94vh] sm:max-w-6xl">
           {!payment ? null : (
             confirmOpen ? renderConfirmView() : (
-            <div className="flex max-h-[94vh] flex-col bg-white">
+            <div className="flex max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.5rem)] flex-col bg-white sm:max-h-[94vh]">
               <DialogHeader className="border-b border-slate-200 px-5 py-4 text-left sm:px-6">
                 <DialogTitle className="text-xl font-semibold text-slate-950">
                   {titleOverride ?? "Anular pago"}
@@ -622,7 +622,7 @@ export default function PaymentReversalModal({
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-stone-200 bg-white px-3 py-3 sm:px-4 lg:px-6">
+              <div className="footer-safe-bottom shrink-0 border-t border-stone-200 bg-white px-3 pt-3 sm:px-4 lg:px-6">
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
                   <div className="rounded-[22px] border border-stone-200 bg-stone-50/70 px-4 py-3">
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">

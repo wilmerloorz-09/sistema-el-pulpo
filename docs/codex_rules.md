@@ -164,7 +164,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - **Forma de devolución en transferencia (2026-07-18):** al anular un pago por transferencia, ofrecer combo `refund_method` (`CASH` afecta caja / `TRANSFER` no la afecta, solo se registra). `approve_and_void_payment` debe respetar el método y no crear movimiento de caja si es `TRANSFER`. Migración `20260718225000_metodo_devolucion_anulacion_transferencia.sql`.
 - No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
 - En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
-- No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro.
+- No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro. En particular, **la solicitud de anulacion se crea via RPC `request_void_payment` (`SECURITY DEFINER`)**, no con un `upsert` directo a `payment_void_requests` (fallaba con RLS `(USING expression)` cuando ya existia una solicitud `pending` de otro usuario). La RPC acepta `p_refund_method` (CASH/TRANSFER) y persiste `refund_method`. Migracion `20260726120000_request_void_payment_persiste_refund_method.sql`.
 
 ### 7. Mesas y órdenes independientes
 - No asumir que `table_splits` siga siendo la fuente principal de tabs/cuentas activas.

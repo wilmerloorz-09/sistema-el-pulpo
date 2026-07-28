@@ -15,15 +15,15 @@ export function ExtraTableSelectorModal({ open, onOpenChange, onSelectTable, isC
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="px-6 py-4 border-b bg-slate-50/80">
-          <DialogTitle className="text-xl font-display text-slate-800">Seleccionar Mesa</DialogTitle>
+      <DialogContent className="max-h-dialog-safe flex max-w-3xl flex-col overflow-hidden p-0">
+        <DialogHeader className="border-b bg-slate-50/80 px-6 py-4">
+          <DialogTitle className="font-display text-xl text-slate-800">Seleccionar Mesa</DialogTitle>
           <DialogDescription>
             Selecciona la mesa a la que le pertenece esta orden extra.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        <div className="footer-safe-bottom flex-1 overflow-y-auto bg-slate-50 p-6">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin mb-4" />

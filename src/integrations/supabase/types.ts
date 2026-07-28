@@ -4058,6 +4058,7 @@ export type Database = {
           p_payment_id: string
           p_payment_item_selections?: Json
           p_reason: string
+          p_refund_method?: string
           p_terminal_id?: string
         }
         Returns: string

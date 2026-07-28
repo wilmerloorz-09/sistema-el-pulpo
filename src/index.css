@@ -195,6 +195,34 @@
     padding-bottom: max(0.5rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   }
 
+  /**
+   * Pie de modal/sheet con p-0: garantiza espacio sobre la barra del sistema.
+   * Usar en footers sticky/fijos internos (no en DialogContent con padding propio).
+   */
+  .footer-safe-bottom {
+    padding-bottom: max(0.75rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  }
+
+  @supports (padding: max(0px)) {
+    .footer-safe-bottom {
+      padding-bottom: max(0.75rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+    }
+  }
+
+  /**
+   * Altura máxima de diálogos centrados respetando notch y barra del sistema.
+   * Preferir esta clase en lugar de max-h-[90vh]/[92dvh]/[94vh] en móvil.
+   */
+  .max-h-dialog-safe {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 0.75rem);
+  }
+
+  @media (min-width: 640px) {
+    .max-h-dialog-safe {
+      max-height: min(92vh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1rem));
+    }
+  }
+
   .main-content-padding {
     padding-bottom: calc(60px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 0.75rem);
   }

@@ -550,7 +550,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
         </div>
 
         {!isProtected && (
-          <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur-sm sm:px-6">
+          <div className="footer-safe-bottom sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 pt-4 backdrop-blur-sm sm:px-6">
             <Button
               size="sm"
               variant="ghost"

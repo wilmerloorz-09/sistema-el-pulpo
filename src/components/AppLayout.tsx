@@ -88,17 +88,17 @@ const AppLayout = () => {
         <div className="flex min-h-dvh min-w-0 flex-col">
           {!isDesktop && (
             <header className="sticky top-0 z-50 border-b border-orange-200/80 bg-white pt-safe dark:border-border dark:bg-card">
-              <div className="flex h-14 items-center justify-between px-2.5">
-                <div className="flex items-center gap-3">
+              <div className="flex h-14 items-center justify-between gap-2 px-2.5">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <MobileMenuSheet onOpenAccount={() => setUserMenuOpen(true)} />
-                  <div className="flex items-center gap-2">
-                    <img src="/logo.png" alt="Logo" className="h-8 w-8 rounded-full object-cover" />
-                    <span className="font-display text-sm font-black tracking-tight text-foreground sm:text-base">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <img src="/logo.png" alt="Logo" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                    <span className="truncate font-display text-sm font-black tracking-tight text-foreground sm:text-base">
                       POS El pulpo
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                   <AutopedidosQrBadgeButton onClick={() => setAutopedidosOpen(true)} />
                   {!isOnline && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
@@ -106,6 +106,29 @@ const AppLayout = () => {
                       <span className="hidden xs:inline">Sin conexion</span>
                     </span>
                   )}
+                  {accountAlias ? (
+                    <button
+                      type="button"
+                      onClick={() => setUserMenuOpen(true)}
+                      className="ml-0.5 flex max-w-[9.5rem] items-center gap-1.5 rounded-full border border-orange-200/80 bg-orange-50/70 px-2.5 py-1.5 text-left transition-colors hover:bg-orange-50 sm:max-w-[12rem]"
+                      aria-label={`Mi cuenta: ${accountAlias}`}
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-[11px] font-black text-primary shadow-sm">
+                        {profile?.avatar_url ? (
+                          <img
+                            src={profile.avatar_url}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          accountAlias[0]?.toUpperCase()
+                        )}
+                      </span>
+                      <span className="min-w-0 truncate text-xs font-bold tracking-tight text-foreground sm:text-sm">
+                        {accountAlias}
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </header>

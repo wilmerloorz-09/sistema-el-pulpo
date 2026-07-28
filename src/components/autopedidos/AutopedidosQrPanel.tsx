@@ -86,7 +86,7 @@ export function AutopedidosQrPanel({ open, onOpenChange }: AutopedidosQrPanelPro
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="footer-safe-bottom flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {actionError ? (
             <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {actionError}

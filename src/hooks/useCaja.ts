@@ -3232,36 +3232,29 @@ export function useCaja(params?: {
         throw new Error(validation?.error_message || "Este pago no se puede anular");
       }
 
-      // Check for an existing pending request to avoid unique constraint violations
-      const { data: existing } = await supabase
-        .from("payment_void_requests")
-        .select("id")
-        .eq("payment_id", paymentId)
-        .eq("status", "pending")
-        .maybeSingle();
-
-      const requestId = existing?.id || generateUUID();
-
-      const { error } = await supabase.from("payment_void_requests").upsert({
-        id: requestId,
-        payment_id: paymentId,
-        order_id: orderId,
-        shift_id: shift.id,
-        requested_by_user_id: user.id,
-        reason: reason,
-        status: "pending",
-        refund_amount: refundAmount,
-        refund_method: refundMethod,
-        payment_item_selections: paymentSelections.map((sel) => ({
+      // La solicitud de anulacion se crea via RPC SECURITY DEFINER (request_void_payment)
+      // en lugar de un upsert directo a payment_void_requests, que fallaba con RLS
+      // ("new row violates row-level security policy (USING expression)") cuando ya
+      // existia una solicitud pending creada por otro usuario. La RPC resuelve el
+      // ON CONFLICT internamente, reasigna el solicitante y persiste refund_method.
+      void orderId;
+      void refundAmount;
+      const { data: requestId, error } = await supabase.rpc("request_void_payment", {
+        p_payment_id: paymentId,
+        p_current_shift_id: shift.id,
+        p_reason: reason,
+        p_terminal_id: null,
+        p_payment_item_selections: paymentSelections.map((sel) => ({
           payment_item_id: sel.paymentEntryId,
           quantity: sel.quantity,
         })),
-        cash_refund_detail: cashRefundDenoms as any,
+        p_cash_refund_detail: cashRefundDenoms,
+        p_refund_method: refundMethod,
       });
 
       if (error) throw error;
 
-      return { requestId };
+      return { requestId: requestId as string };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completed-payments"] });

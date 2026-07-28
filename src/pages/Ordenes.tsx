@@ -3590,7 +3590,7 @@ const OrdenesContent = () => {
       </div>
 
       {!fromEditar && canOperateOrders && showKitchenSendButton && order.status !== "PAID" && order.status !== "CANCELLED" && (
-        <div className={cn("mt-4 shrink-0", mobile && "sticky bottom-0 z-10 -mx-1 bg-background/95 px-1 pb-1 pt-2 backdrop-blur-sm")}>
+        <div className={cn("mt-4 shrink-0", mobile && "footer-safe-bottom sticky bottom-0 z-10 -mx-1 bg-background/95 px-1 pt-2 backdrop-blur-sm")}>
         <Button
           onClick={async () => {
             try {
@@ -4605,7 +4605,7 @@ const OrdenesContent = () => {
             </div>
           </div>
 
-          <DialogFooter className="border-t border-slate-100 px-5 py-4">
+          <DialogFooter className="footer-safe-bottom border-t border-slate-100 px-5 pt-4">
             <Button
               className="w-full rounded-xl"
               onClick={() => {

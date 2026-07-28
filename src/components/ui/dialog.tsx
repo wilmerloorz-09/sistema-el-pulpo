@@ -36,7 +36,9 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-[24px] border border-orange-200/90 bg-card p-4 text-card-foreground shadow-[0_30px_80px_-42px_rgba(249,115,22,0.72)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:max-w-lg sm:max-h-[90vh] sm:rounded-[28px] sm:p-6 dark:border-border",
+        // max-h y padding inferior contemplan safe-area (barra del sistema en Android/iOS).
+        // sm:pb-6 restaura el padding desktop; en móvil pb usa al menos 1rem o el inset.
+        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-[24px] border border-orange-200/90 bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] text-card-foreground shadow-[0_30px_80px_-42px_rgba(249,115,22,0.72)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:max-w-lg sm:max-h-[min(90vh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-1rem))] sm:rounded-[28px] sm:p-6 sm:pb-6 dark:border-border",
         className,
       )}
       {...props}

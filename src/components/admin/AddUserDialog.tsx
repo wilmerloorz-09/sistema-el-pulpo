@@ -567,7 +567,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
           )}
         </div>
 
-        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-sm">
+        <div className="footer-safe-bottom sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-6 pt-4 backdrop-blur-sm">
           <Button
             size="sm"
             variant="ghost"

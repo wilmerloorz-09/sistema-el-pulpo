@@ -576,6 +576,7 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `20260719010000_anulacion_pago_cierra_orden.sql` — al anular el ultimo pago activo la orden queda `CANCELLED` (`VOIDED_PAYMENT_CLOSED`), sale de Recaudar y libera mesa; backfill de reabiertas sin pago.
 - `20260719012000_una_anulacion_pago_por_orden.sql` — `can_void_payment` rechaza una segunda anulacion en la misma orden.
 - `20260719013000_fix_ambiguous_order_id_can_void_payment.sql` — corrige ambiguedad `order_id` (OUT vs columna) con variable local `v_order_id`.
+- `20260726120000_request_void_payment_persiste_refund_method.sql` — `request_void_payment` acepta `p_refund_method` (CASH/TRANSFER) y lo persiste en `payment_void_requests.refund_method`. El cliente (`useCaja.requestPaymentVoid`) crea la solicitud via esta RPC `SECURITY DEFINER` en lugar de un `upsert` directo a `payment_void_requests`, que fallaba con RLS (`new row violates row-level security policy (USING expression)`) cuando ya existia una solicitud `pending` de otro usuario. La RPC resuelve el `ON CONFLICT` internamente y reasigna `requested_by_user_id = auth.uid()`.
 
 ### Sesion doble de app (2026-07)
 - `20260713220000_sesion_doble_para_cualquier_usuario.sql` — permiso sin exigir caja; normalize; `apply_shift_caja_configuration` no borra `can_double_session`.

@@ -503,7 +503,7 @@ export default function ConvertirOrdenEspecialDialog({
           </div>
         </div>
 
-        <DialogFooter className="shrink-0 border-t border-border bg-white px-4 py-3 sm:px-5">
+        <DialogFooter className="footer-safe-bottom shrink-0 border-t border-border bg-white px-4 pt-3 sm:px-5 sm:pb-3">
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
               {selectedUnits > 0

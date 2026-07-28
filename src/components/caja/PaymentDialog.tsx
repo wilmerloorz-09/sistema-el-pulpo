@@ -1329,7 +1329,7 @@ export default function PaymentDialog({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-stone-200 bg-white px-3 py-3 sm:px-4 lg:px-6">
+      <div className="footer-safe-bottom shrink-0 border-t border-stone-200 bg-white px-3 pt-3 sm:px-4 lg:px-6">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
           <div className="rounded-[22px] border border-stone-200 bg-stone-50/70 px-3 py-3">
             {paymentMethods.length === 0 ? (
@@ -1795,7 +1795,7 @@ export default function PaymentDialog({
               )}
             </div>
 
-            <div className="sticky bottom-0 flex shrink-0 flex-col gap-2 border-t border-border bg-background px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end sm:px-4 mt-auto">
+            <div className="footer-safe-bottom sticky bottom-0 mt-auto flex shrink-0 flex-col gap-2 border-t border-border bg-background px-3 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end sm:px-4 sm:pb-3">
               <Button type="button" variant="outline" onClick={cancelCashDetail} className="w-full sm:w-auto">
                 Cancelar
               </Button>

@@ -309,7 +309,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
         })}
       </nav>
 
-      <div className="shrink-0 border-t border-slate-800 px-3 py-4">
+      <div className="shrink-0 border-t border-slate-800 px-3 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
         <div className="flex flex-col gap-2">
           <Tooltip delayDuration={120}>
             <TooltipTrigger asChild>

@@ -47,7 +47,8 @@ export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
       </SheetTrigger>
       <SheetContent 
         side="left" 
-        className="w-[248px] p-0 flex flex-col bg-sidebar text-sidebar-foreground border-sidebar-border border-r"
+        className="z-[60] w-[248px] p-0 flex flex-col bg-sidebar text-sidebar-foreground border-sidebar-border border-r"
+        overlayClassName="z-[60]"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >

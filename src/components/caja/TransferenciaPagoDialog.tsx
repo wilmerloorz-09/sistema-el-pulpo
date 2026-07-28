@@ -318,6 +318,10 @@ export default function TransferenciaPagoDialog({
       <DialogContent
         className={cn(
           "max-w-md",
+          // Modo normal: altura acotada al safe area y pie fijo para que Cancelar/Aceptar
+          // no queden detrás de la barra del sistema en móvil/tablet.
+          !mostrandoAmpliada
+            && "flex max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem)] flex-col gap-3 overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:max-h-[90vh] sm:p-6 sm:pb-6",
           // Modo ampliado: el mismo diálogo ocupa toda la pantalla (móvil primero).
           mostrandoAmpliada
             && "flex h-[100dvh] max-h-[100dvh] w-[100vw] max-w-[100vw] flex-col gap-0 overflow-hidden rounded-none border-0 bg-zinc-950 p-0 sm:max-h-[100dvh] sm:max-w-[100vw] sm:rounded-none sm:p-0 [&>button]:hidden",
@@ -386,11 +390,11 @@ export default function TransferenciaPagoDialog({
           </>
         ) : (
           <>
-            <DialogHeader>
+            <DialogHeader className="shrink-0 pr-8">
               <DialogTitle>Registrar transferencia</DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-4 py-1">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain py-1">
               {errorMensaje ? (
                 <div
                   role="alert"
@@ -593,9 +597,18 @@ export default function TransferenciaPagoDialog({
                           placeholder="Ej. Verifiqué manualmente el comprobante con el cliente"
                           className="min-h-20 bg-white text-foreground"
                         />
-                        <p className="opacity-80">
-                          La decisión, las novedades y tu usuario quedarán registrados para auditoría.
-                        </p>
+                        {motivoAceptacion.trim().length < 5 ? (
+                          <p className="font-medium text-amber-800" role="status">
+                            Escribe al menos 5 caracteres para habilitar &quot;Aceptar con novedades&quot;
+                            {motivoAceptacion.trim().length > 0
+                              ? ` (faltan ${5 - motivoAceptacion.trim().length}).`
+                              : "."}
+                          </p>
+                        ) : (
+                          <p className="opacity-80">
+                            La decisión, las novedades y tu usuario quedarán registrados para auditoría.
+                          </p>
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -625,7 +638,7 @@ export default function TransferenciaPagoDialog({
               </div>
             </div>
 
-            <DialogFooter className="flex-row justify-end gap-2 space-x-0 sm:gap-2">
+            <DialogFooter className="footer-safe-bottom shrink-0 flex-row justify-end gap-2 space-x-0 border-t border-border/60 pt-3 sm:gap-2 sm:pb-0">
               <Button type="button" variant="outline" className="flex-1 sm:flex-none" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
