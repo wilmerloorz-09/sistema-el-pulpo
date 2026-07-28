@@ -84,7 +84,7 @@ export function KitchenNotificationBanner({
   const isItemCancelled = notification.type === "ITEM_CANCELLED";
 
   return (
-    <div className="fixed inset-x-0 bottom-20 z-50 px-4 animate-in slide-in-from-bottom">
+    <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] z-50 px-4 animate-in slide-in-from-bottom">
       <Alert
         variant="destructive"
         className={`${

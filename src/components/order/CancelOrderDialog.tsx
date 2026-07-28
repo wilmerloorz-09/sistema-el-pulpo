@@ -442,7 +442,7 @@ export default function CancelOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[92vw] lg:max-w-5xl">
+      <DialogContent className="max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-[92vw] lg:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Anular orden</DialogTitle>
           <DialogDescription>{String(orderNumber)}</DialogDescription>

@@ -216,7 +216,7 @@ const CampanasPromocionalesCrud = () => {
       </div>
 
       <Dialog open={formAbierto} onOpenChange={setFormAbierto}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-dialog-safe max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{modo === "crear" ? "Nueva campaña" : "Editar campaña"}</DialogTitle>
           </DialogHeader>

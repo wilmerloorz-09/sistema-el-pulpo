@@ -786,8 +786,8 @@ export default function PaymentDialogV2({
           className={cn(
             "flex flex-col overflow-hidden bg-white p-0 sm:max-h-[96vh]",
             postPaySummary
-              ? "no-print max-h-[96dvh] w-[min(560px,calc(100vw-1.25rem))] max-w-[min(560px,calc(100vw-1.25rem))] sm:max-w-2xl"
-              : "max-h-[calc(100dvh-0.5rem)] w-[calc(100vw-0.75rem)] max-w-[min(1320px,calc(100vw-0.75rem))] sm:w-[calc(100vw-1rem)] sm:max-w-[min(1320px,calc(100vw-1rem))] lg:max-w-[min(1400px,calc(100vw-1.5rem))]",
+              ? "no-print max-h-dialog-safe w-[min(560px,calc(100vw-1.25rem))] max-w-[min(560px,calc(100vw-1.25rem))] sm:max-w-2xl"
+              : "max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.5rem)] w-[calc(100vw-0.75rem)] max-w-[min(1320px,calc(100vw-0.75rem))] sm:w-[calc(100vw-1rem)] sm:max-w-[min(1320px,calc(100vw-1rem))] lg:max-w-[min(1400px,calc(100vw-1.5rem))]",
           )}
         >
         <DialogHeader

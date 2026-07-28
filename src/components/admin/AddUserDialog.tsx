@@ -304,7 +304,7 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-3xl p-0">
+      <DialogContent className="max-h-dialog-safe max-w-2xl overflow-y-auto rounded-3xl p-0">
         <div className="relative flex items-center gap-5 border-b border-slate-100 bg-gradient-to-r from-primary/5 to-transparent p-6">
           <div
             className="group relative shrink-0 cursor-pointer"

@@ -258,7 +258,7 @@ const InstallPrompt = () => {
 
   if (installEvent) {
     return (
-      <div className="fixed bottom-4 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/20 bg-card p-4 shadow-xl">
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-4 z-50 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/20 bg-card p-4 shadow-xl">
         <div className="flex items-start gap-3">
           <div className="rounded-xl bg-primary/10 p-2 text-primary">
             <Download className="h-5 w-5" />
@@ -300,7 +300,7 @@ const InstallPrompt = () => {
 
   if (showIosHint) {
     return (
-      <div className="fixed bottom-4 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/20 bg-card p-4 shadow-xl">
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-4 z-50 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/20 bg-card p-4 shadow-xl">
         <div className="flex items-start gap-3">
           <div className="rounded-xl bg-primary/10 p-2 text-primary">
             <Share2 className="h-5 w-5" />

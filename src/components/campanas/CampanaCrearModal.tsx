@@ -49,7 +49,7 @@ export default function CampanaCrearModal({
 
   return (
     <Dialog open={abierto} onOpenChange={(open) => !open && !guardando && onCerrar()}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-dialog-safe overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">Nueva campaña</DialogTitle>
         </DialogHeader>

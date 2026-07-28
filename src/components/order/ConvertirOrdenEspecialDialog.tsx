@@ -253,7 +253,7 @@ export default function ConvertirOrdenEspecialDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "!flex h-[min(94dvh,calc(100dvh-1rem))] max-h-[min(94dvh,calc(100dvh-1rem))] flex-col !gap-0 overflow-hidden bg-white !p-0",
+          "!flex h-[min(94dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] max-h-[min(94dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem))] flex-col !gap-0 overflow-hidden bg-white !p-0",
           "w-[calc(100vw-1rem)] max-w-[min(1080px,calc(100vw-1rem))]",
           "sm:h-[86vh] sm:max-h-[86vh] sm:w-[calc(100vw-1.25rem)] sm:max-w-[min(1080px,calc(100vw-1.25rem))]",
         )}

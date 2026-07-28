@@ -299,7 +299,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] overflow-y-auto rounded-3xl p-0 sm:max-w-3xl">
+      <DialogContent className="max-h-dialog-safe w-[calc(100vw-1.5rem)] overflow-y-auto rounded-3xl p-0 sm:max-w-3xl">
         <div className="border-b border-slate-100 bg-gradient-to-r from-primary/5 to-transparent p-5 pr-14 sm:p-6">
           <div className="flex items-start gap-4">
             <div

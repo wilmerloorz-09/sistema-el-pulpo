@@ -46,7 +46,8 @@ import { getOrderRef } from "@/lib/orderPresentation";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { 
   buildCashClosureReportHtml, 
-  openCashClosureReportWindow, 
+  openCashClosureReportWindow,
+  shouldAutoPrintCashReport,
   scopeReportToOpening,
   formatMoney,
   formatDateTime,
@@ -1069,10 +1070,11 @@ const Caja = () => {
 <html lang="es">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Generando reporte</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 0; display:flex; align-items:center; justify-content:center; min-height:100vh; color:#1f2937; background:#fff7ed; }
-      .card { border:1px solid #fed7aa; border-radius:16px; padding:24px 28px; background:white; box-shadow:0 20px 40px -30px rgba(249,115,22,0.35); text-align:center; }
+      body { font-family: Arial, sans-serif; margin: 0; display:flex; align-items:center; justify-content:center; min-height:100vh; color:#1f2937; background:#fff7ed; padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
+      .card { border:1px solid #fed7aa; border-radius:16px; padding:24px 28px; background:white; box-shadow:0 20px 40px -30px rgba(249,115,22,0.35); text-align:center; max-width: 28rem; }
       h1 { margin:0 0 8px; font-size:22px; }
       p { margin:0; color:#6b7280; }
     </style>
@@ -1144,9 +1146,11 @@ const Caja = () => {
         );
       reportWindow.document.close();
       reportWindow.focus();
-      window.setTimeout(() => {
-        reportWindow.print();
-      }, 350);
+      if (shouldAutoPrintCashReport()) {
+        window.setTimeout(() => {
+          reportWindow.print();
+        }, 350);
+      }
     } catch (error) {
       reportWindow.close();
       throw error;

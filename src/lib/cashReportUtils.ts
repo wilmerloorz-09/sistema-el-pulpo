@@ -1,5 +1,15 @@
+import { Capacitor } from "@capacitor/core";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { Database } from "@/integrations/supabase/types";
+
+/** En móvil/tablet/nativo el diálogo de impresión atrapa al usuario; el reporte ya tiene botón Imprimir. */
+export const shouldAutoPrintCashReport = (): boolean => {
+  if (typeof window === "undefined") return false;
+  if (Capacitor.isNativePlatform()) return false;
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const narrowViewport = window.matchMedia("(max-width: 1024px)").matches;
+  return !(coarsePointer || narrowViewport);
+};
 
 export type CashShiftSnapshot = {
   id: string;
@@ -322,18 +332,38 @@ export const buildCashClosureReportHtml = (params: {
 <html lang="es">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Reporte de cierre de caja</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+      html, body { margin: 0; padding: 0; background: #fff; color: #1f2937; }
+      body { font-family: Arial, sans-serif; padding: 16px; padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
       h1, h2, h3, p { margin: 0; }
-      .header { display:flex; justify-content:space-between; gap:16px; margin-bottom:20px; }
-      .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px; margin:16px 0; }
+      .toolbar {
+        position: sticky; top: 0; z-index: 40;
+        display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center;
+        margin: -16px -16px 16px; padding: 12px 16px;
+        padding-top: max(12px, env(safe-area-inset-top, 0px));
+        background: rgba(255,255,255,0.97); border-bottom: 1px solid #e5e7eb;
+        box-shadow: 0 8px 20px -18px rgba(15,23,42,0.45);
+      }
+      .toolbar button {
+        appearance: none; border-radius: 999px; border: 1px solid #fdba74;
+        background: #fff7ed; color: #9a3412; font-weight: 700; font-size: 14px;
+        padding: 10px 16px; min-height: 44px; cursor: pointer;
+      }
+      .toolbar button.primary { background: #ea580c; border-color: #ea580c; color: #fff; }
+      .header { display:flex; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap: wrap; }
+      .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; margin:16px 0; }
+      @media (min-width: 900px) {
+        .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      }
       .card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fafafa; }
       .label { font-size:12px; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
       .value { font-size:24px; font-weight:700; }
       .sub { font-size:13px; color:#4b5563; margin-top:4px; }
       .section { margin-top:24px; }
-      table { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
+      .table-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling: touch; }
+      table { width:100%; min-width: 520px; border-collapse:collapse; margin-top:10px; font-size:12px; }
       th, td { border:1px solid #e5e7eb; padding:8px; text-align:left; vertical-align:top; }
       th { background:#f3f4f6; }
       tbody tr:nth-child(odd) { background:#ffffff; }
@@ -343,11 +373,17 @@ export const buildCashClosureReportHtml = (params: {
       .notes { white-space:pre-wrap; margin-top:8px; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fafafa; }
       .page-break { page-break-before: always; break-before: page; }
       @media print {
-        body { margin: 12px; }
+        body { margin: 12px; padding: 12px; }
+        .toolbar { display: none !important; }
+        .page-break { page-break-before: always; break-before: page; }
       }
     </style>
   </head>
   <body>
+    <div class="toolbar">
+      <button type="button" class="primary" onclick="window.print()">Imprimir</button>
+      <button type="button" onclick="window.close()">Cerrar</button>
+    </div>
     <div class="header">
       <div>
         <h1>${escapeHtml(reportTitle)}</h1>
@@ -383,43 +419,51 @@ export const buildCashClosureReportHtml = (params: {
 
     <div class="section">
       <h2>Cobro por método</h2>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr><th>Método</th><th>Cobros</th><th class="num">Monto</th></tr>
         </thead>
         <tbody>${methodRows || '<tr><td colspan="3" class="muted">Sin cobros registrados.</td></tr>'}</tbody>
       </table>
+      </div>
     </div>
 
     <div class="section">
       <h2>${escapeHtml(paymentsSectionTitle)}</h2>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr><th>Fecha</th><th>Orden</th><th>Mesa</th><th>Método</th><th>Estado</th><th>Cajero</th><th class="num">Monto</th></tr>
         </thead>
         <tbody>${paymentRows || '<tr><td colspan="7" class="muted">Sin pagos registrados.</td></tr>'}</tbody>
       </table>
+      </div>
     </div>
 
     <div class="section">
       <h2>${escapeHtml(movementsSectionTitle)}</h2>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr><th>Fecha</th><th>Tipo</th><th>Registrado por</th><th>Motivo</th><th class="num">Monto</th></tr>
         </thead>
         <tbody>${movementRows}</tbody>
       </table>
+      </div>
     </div>
 
     ${!isOpeningReport ? `
       <div class="section">
         <h2>Historial de aperturas</h2>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>Apertura</th><th>Estado</th><th>Cajero</th><th>Monto inicial</th><th>Cierre</th></tr>
           </thead>
           <tbody>${openingRows || '<tr><td colspan="5" class="muted">Sin aperturas registradas.</td></tr>'}</tbody>
         </table>
+        </div>
       </div>
     ` : ""}
 
@@ -448,6 +492,7 @@ export const buildCashClosureReportHtml = (params: {
       ${hasDenominationSnapshot ? `
       <div class="section">
         <h2>Detalle de denominaciones</h2>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>Denominación</th><th>Tipo</th><th class="num">Valor</th><th class="num">Cantidad</th><th class="num">Subtotal</th></tr>
@@ -459,6 +504,7 @@ export const buildCashClosureReportHtml = (params: {
               <td class="num"><strong>${escapeHtml(formatMoney(totalCurrent))}</strong></td>
             </tr>` : '<tr><td colspan="5" class="muted">Sin denominaciones registradas al cierre.</td></tr>'}</tbody>
         </table>
+        </div>
       </div>
     ` : `
       <div class="section">
@@ -483,19 +529,24 @@ export const openCashClosureReportWindow = (params: {
     initial: number;
     current: number;
   };
+  /** Por defecto: solo en escritorio. En móvil el usuario usa el botón Imprimir del reporte. */
+  autoPrint?: boolean;
 }) => {
+  const { autoPrint = shouldAutoPrintCashReport(), ...reportParams } = params;
   const reportWindow = window.open("", "_blank", "width=1024,height=900");
   if (!reportWindow) {
     return null;
   }
 
   reportWindow.document.open();
-  reportWindow.document.write(buildCashClosureReportHtml(params));
+  reportWindow.document.write(buildCashClosureReportHtml(reportParams));
   reportWindow.document.close();
   reportWindow.focus();
-  window.setTimeout(() => {
-    reportWindow.print();
-  }, 350);
+  if (autoPrint) {
+    window.setTimeout(() => {
+      reportWindow.print();
+    }, 350);
+  }
 
   return reportWindow;
 };

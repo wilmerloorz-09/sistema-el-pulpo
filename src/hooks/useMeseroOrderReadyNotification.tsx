@@ -320,7 +320,7 @@ export function OrderReadyNotificationBanner({
     : notification.split_code?.trim() || notification.table_name?.trim() || "Orden Especial";
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[5.75rem] z-50 px-3 sm:bottom-6 sm:right-4 sm:left-auto sm:max-w-md">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))] z-50 px-3 sm:bottom-6 sm:right-4 sm:left-auto sm:max-w-md">
       <Alert className="pointer-events-auto border-green-700 bg-green-600 text-white shadow-lg">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -402,7 +402,7 @@ export function OrderReadyAlertCenter() {
   return (
     <>
       {enabled && !audioEnabled && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[9rem] z-50 px-3 sm:bottom-24 sm:right-4 sm:left-auto sm:max-w-md">
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(9rem+env(safe-area-inset-bottom,0px))] z-50 px-3 sm:bottom-24 sm:right-4 sm:left-auto sm:max-w-md">
           <Alert className="pointer-events-auto border-orange-300 bg-white text-foreground shadow-lg">
             <div className="flex items-start gap-3">
               <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" />

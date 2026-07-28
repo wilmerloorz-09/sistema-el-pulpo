@@ -200,15 +200,15 @@ export default function ShiftSummary({
       </div>
 
       <Dialog open={showTotals} onOpenChange={setShowTotals}>
-        <DialogContent className="font-sans flex max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.45)] sm:max-w-[1180px] xl:max-w-[1320px]">
-          <DialogHeader>
+        <DialogContent className="font-sans flex max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden border-orange-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] shadow-[0_32px_80px_-44px_rgba(249,115,22,0.45)] sm:max-w-[1180px] sm:p-6 sm:pb-6 xl:max-w-[1320px]">
+          <DialogHeader className="shrink-0 pr-8">
             <DialogTitle className="flex items-center gap-2 text-xl font-bold">
               <DollarSign className="h-5 w-5 text-primary" /> Resumen de caja
             </DialogTitle>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <div className="grid h-full gap-2.5 lg:grid-cols-[1.18fr_0.92fr]">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="grid gap-2.5 lg:grid-cols-[1.18fr_0.92fr]">
               <div className="flex min-h-0 flex-col gap-2.5">
                 <div className="rounded-xl border border-border bg-muted/20 p-2.5">
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -394,14 +394,14 @@ export default function ShiftSummary({
       </Dialog>
 
       <Dialog open={showDenoms} onOpenChange={setShowDenoms}>
-        <DialogContent className="font-sans scrollbar-none max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] xl:max-w-6xl">
-          <DialogHeader>
+        <DialogContent className="font-sans flex max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden border-orange-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] sm:p-6 sm:pb-6 xl:max-w-6xl">
+          <DialogHeader className="shrink-0 pr-8">
             <DialogTitle className="flex items-center gap-2 text-xl font-bold">
               <Coins className="h-5 w-5 text-primary" /> Desglose de caja
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
             <div className="space-y-2 rounded-2xl border border-sky-200 bg-sky-50/50 p-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold text-foreground">Apertura</span>
@@ -469,11 +469,11 @@ export default function ShiftSummary({
 
       {!readOnly && (
         <Dialog open={showClose} onOpenChange={setShowClose}>
-          <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-md">
-            <DialogHeader>
+          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:max-w-md sm:p-6 sm:pb-6">
+            <DialogHeader className="shrink-0 pr-8">
               <DialogTitle className="">Cerrar Caja</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-muted/50 p-3 text-center">
                   <p className="text-xs text-muted-foreground">Apertura</p>
@@ -503,7 +503,7 @@ export default function ShiftSummary({
                 />
               </div>
             </div>
-            <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <DialogFooter className="footer-safe-bottom shrink-0 flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:pb-0">
               <Button variant="outline" onClick={() => setShowClose(false)} className="w-full rounded-xl sm:w-auto">
                 Cancelar
               </Button>
@@ -521,7 +521,7 @@ export default function ShiftSummary({
       )}
 
       <Dialog open={showAnnul} onOpenChange={setShowAnnul}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className=" flex items-center gap-2 text-rose-700">
               <ShieldAlert className="h-5 w-5" />

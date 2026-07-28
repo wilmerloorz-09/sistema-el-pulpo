@@ -993,7 +993,7 @@ export default function CompletedPaymentsList({
       >
         <DialogContent
           className={cn(
-            "max-h-[min(92dvh,720px)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-[24px]",
+            "max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-0.75rem),720px)] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-[24px]",
             changeDetailState.transferDetails.length > 0 ? "sm:max-w-lg" : "sm:max-w-md",
           )}
         >

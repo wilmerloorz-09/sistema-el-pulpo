@@ -407,7 +407,7 @@ export default function CashRegisterMovementsDialog({
         }
       }}
     >
-      <DialogContent className="font-sans scrollbar-none max-h-[92dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] lg:max-w-6xl">
+      <DialogContent className="font-sans scrollbar-none max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto border-orange-200 bg-white shadow-[0_32px_80px_-44px_rgba(249,115,22,0.55)] sm:max-w-[96vw] lg:max-w-6xl">
         <DialogHeader>
           <div className="flex flex-col gap-3 pr-10 sm:flex-row sm:items-start sm:justify-between">
             <div>

@@ -22,7 +22,7 @@ export default function OrderDetailDrawer({
 }: OrderDetailDrawerProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-dialog-safe max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
             {getOrderRef(order?.order_code, order?.order_number)}
