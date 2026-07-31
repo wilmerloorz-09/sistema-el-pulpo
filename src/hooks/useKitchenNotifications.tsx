@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { X } from "lucide-react";
@@ -16,12 +16,8 @@ export interface KitchenNotification {
 type NotificationCallback = (notification: KitchenNotification) => void;
 
 export function useKitchenNotifications(onNotification: NotificationCallback) {
-  const channel = useCallback(() => {
-    return supabase.channel("kitchen-notifications");
-  }, []);
-
   useEffect(() => {
-    const kitchenChannel = channel();
+    const kitchenChannel = supabase.channel(`kitchen-notifications:${crypto.randomUUID()}`);
 
     kitchenChannel
       .on(
@@ -46,18 +42,12 @@ export function useKitchenNotifications(onNotification: NotificationCallback) {
           onNotification(notification);
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log("[KitchenNotifications] Conectado a notificaciones");
-        } else if (status === "CLOSED") {
-          console.log("[KitchenNotifications] Desconectado");
-        }
-      });
+      .subscribe();
 
     return () => {
       void supabase.removeChannel(kitchenChannel);
     };
-  }, [channel, onNotification]);
+  }, [onNotification]);
 }
 
 interface KitchenNotificationBannerProps {

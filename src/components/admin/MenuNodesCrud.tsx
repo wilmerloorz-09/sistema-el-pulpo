@@ -161,7 +161,7 @@ const MenuNodesCrud = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("menu_nodes" as any)
-        .select("*")
+        .select("id, branch_id, parent_id, name, node_type, menu_scope, depth, display_order, price, manual_price_enabled, is_active, is_tray_category, legacy_product_id, image_url, icon, description, created_at, updated_at")
         .eq("branch_id", activeBranchId!)
         .eq("menu_scope", menuScope)
         .order("depth", { ascending: true })
@@ -612,7 +612,7 @@ const MenuNodesCrud = ({
                 ? currentLegacyProductId
                 : null,
           } as any)
-          .select("*")
+          .select("id")
           .single();
         if (menuNodeError) throw menuNodeError;
 

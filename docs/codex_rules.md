@@ -443,7 +443,10 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Cobro DF:** `ready_to_collect`, `computeUndispatchedQuantity`, `PayableOrdersList` rojo/verde.
 - **QR promocion:** condicional en `promocionesRecibo.ts`; triggers Jul 9.
 - **Cocina:** envio desde `KITCHEN_DISPATCHED`, ids `temp-*`, aumentos → DRAFT.
-- **Monitoreo Global:** no colgar hooks; realtime acotado; polling 60 s.
+- **Monitoreo Global:** no colgar hooks; realtime acotado; polling de respaldo 5 min.
+
+### Actualizacion Jul 30, 2026
+- **Egress:** un canal Realtime por sucursal (`queryEgress.ts`); filtrar `order_items` por `sucursal_id`; preferir `get_orders_operational_snapshots_lite`; aplicar `20260730230000` en remoto.
 
 ### Actualizacion Jul 8, 2026
 - **Cocina pendiente (Despacho primero):** `kitchenPendingChanges.ts`, staging `kitchenBaselineItems`/`stagedItems`, `applyKitchenPendingItemChanges`, boton con delta monetario.

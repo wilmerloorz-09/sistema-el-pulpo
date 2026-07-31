@@ -59,6 +59,7 @@ import {
   type CashMovement
 } from "@/lib/cashReportUtils";
 import { hideCashReport, showCashReport } from "@/lib/cashReportViewerStore";
+import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
@@ -196,7 +197,7 @@ const Caja = () => {
       const methodNameById = Object.fromEntries((methods ?? []).map((m: any) => [m.id, m.name]));
       return buildMethodSummaryFromPayments(payments ?? [], methodNameById);
     },
-    refetchInterval: 20000,
+    staleTime: OPERATIONAL_STALE_MS,
   });
 
   const shiftSummaryMethodSummary = cashierMethodSummaryQuery.data ?? [];

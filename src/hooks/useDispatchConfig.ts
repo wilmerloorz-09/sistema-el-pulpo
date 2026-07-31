@@ -85,7 +85,7 @@ async function loadAssignmentsForConfig(configId: string): Promise<DispatchAssig
 
   const result = await (supabase
     .from("dispatch_assignments" as any)
-    .select("*")
+    .select("id, dispatch_config_id, user_id, dispatch_type, created_at")
     .eq("dispatch_config_id", configId) as any);
 
   if (result.error) {

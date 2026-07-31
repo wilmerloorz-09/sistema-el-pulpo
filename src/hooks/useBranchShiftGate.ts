@@ -1,10 +1,17 @@
 import { useRef } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
 import { usuarioPuedeRegistrarPromociones } from "@/services/prediccionesClientesDb";
+import {
+  SHIFT_GATE_BACKUP_POLL_MS,
+  SHIFT_GATE_STALE_MS,
+  useAdaptiveRefetchInterval,
+  useOperationalOrdersRealtime,
+} from "@/lib/queryEgress";
+import { qk } from "@/lib/queryKeys";
 
 export const TAB_SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36);
 
@@ -71,11 +78,18 @@ export interface BranchShiftGate {
 export function useBranchShiftGate() {
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
+  const qc = useQueryClient();
   /** Ultimo gate leido de verdad; se reutiliza si una lectura falla o expira. */
   const lastResolvedGateRef = useRef<BranchShiftGate | null>(null);
 
-  return useQuery({
-    queryKey: ["branch-shift-gate", activeBranchId, user?.id ?? null],
+  const adaptiveGatePoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    SHIFT_GATE_BACKUP_POLL_MS,
+    Boolean(activeBranchId && user?.id),
+  );
+
+  const query = useQuery({
+    queryKey: [qk.branchShiftGate[0], activeBranchId, user?.id ?? null],
     queryFn: async (): Promise<BranchShiftGate> => {
       const defaultValue: BranchShiftGate = {
         shiftId: null,
@@ -326,12 +340,23 @@ export function useBranchShiftGate() {
     }
   },
     enabled: !!activeBranchId && !!user?.id,
-    staleTime: 0,
-    // Cada corrida son ~5 consultas. Los cambios de turno propios ya invalidan
-    // esta query, asi que el intervalo solo cubre cambios hechos en otro equipo.
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true,
+    staleTime: SHIFT_GATE_STALE_MS,
+    // Realtime SUBSCRIBED → sin poll; si el hub cae → respaldo lento.
+    refetchInterval: adaptiveGatePoll,
+    refetchOnWindowFocus: false,
     // Conserva el gate previo mientras cambia sucursal/usuario o hay un refetch en curso.
     placeholderData: keepPreviousData,
   });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "branch-shift-gate-rt",
+    enabled: Boolean(activeBranchId && user?.id),
+    queryKeys: [qk.branchShiftGate, qk.currentShift, qk.openCashShift],
+    includeShiftGate: true,
+    shiftId: query.data?.shiftId ?? null,
+  });
+
+  return query;
 }

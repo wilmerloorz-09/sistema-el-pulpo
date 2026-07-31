@@ -14,6 +14,10 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
 import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
+import {
+  OPERATIONAL_STALE_MS,
+  useOperationalOrdersRealtime,
+} from "@/lib/queryEgress";
 
 export type DispatchOrdersModule = "dispatch" | "servir";
 
@@ -97,8 +101,6 @@ type DispatchOrdersCache = {
   orders: DispatchOrder[];
   counts: { ALL: number; TABLE: number; TAKEOUT: number; SPECIAL: number };
 };
-
-let deferredDispatchInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
 
 function recountDispatchCards(cards: DispatchOrder[]): DispatchOrdersCache["counts"] {
   return {
@@ -197,22 +199,9 @@ function applyOptimisticDispatchAll(orders: DispatchOrder[], orderId: string): D
 }
 
 function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
+  // Pantallas hermanas se refrescan por branch-ops-hub; aquí solo Despacho/Servir.
   void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
   void qc.invalidateQueries({ queryKey: ["servir-orders"] });
-  scheduleDeferredDispatchInvalidation(qc);
-}
-
-function scheduleDeferredDispatchInvalidation(qc: ReturnType<typeof useQueryClient>) {
-  if (deferredDispatchInvalidationTimer) clearTimeout(deferredDispatchInvalidationTimer);
-  deferredDispatchInvalidationTimer = setTimeout(() => {
-    deferredDispatchInvalidationTimer = null;
-    qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-    qc.invalidateQueries({ queryKey: ["payable-orders"] });
-    qc.invalidateQueries({ queryKey: ["orders"] });
-    qc.invalidateQueries({ queryKey: ["express-orders"] });
-    qc.invalidateQueries({ queryKey: ["extra-orders"] });
-    qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-  }, 2500);
 }
 
 function reconcileDispatchOrdersInBackground(qc: ReturnType<typeof useQueryClient>, queryKey: readonly unknown[]) {
@@ -590,9 +579,23 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const splitIds = Array.from(splitIdSet);
 
       const [tables, splits, items] = await Promise.all([
-        tableIds.length > 0 ? dbSelectStrict("restaurant_tables", { filters: [{ column: "id", op: "in", value: tableIds }] }) : Promise.resolve([]),
-        splitIds.length > 0 ? dbSelectStrict("table_splits", { filters: [{ column: "id", op: "in", value: splitIds }] }) : Promise.resolve([]),
-        dbSelectStrict("order_items", { filters: [{ column: "order_id", op: "in", value: orderIdsToFetch }] })
+        tableIds.length > 0
+          ? dbSelectStrict("restaurant_tables", {
+              select: "id, name",
+              filters: [{ column: "id", op: "in", value: tableIds }],
+            })
+          : Promise.resolve([]),
+        splitIds.length > 0
+          ? dbSelectStrict("table_splits", {
+              select: "id, split_code",
+              filters: [{ column: "id", op: "in", value: splitIds }],
+            })
+          : Promise.resolve([]),
+        dbSelectStrict("order_items", {
+          select:
+            "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, tray_item_type, tray_container_cost, item_note, sent_to_kitchen_at, paid_at, created_at, cantidad_especial",
+          filters: [{ column: "order_id", op: "in", value: orderIdsToFetch }],
+        }),
       ]);
 
       const tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
@@ -679,9 +682,21 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       };
     },
     enabled: !!activeBranchId && !!user && !configLoading,
-    staleTime: 8_000,
+    staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchInterval: 5000,
+    // Actualización vía Realtime (useOperationalOrdersRealtime); sin polling 5s.
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: isServirModule ? "servir-orders-rt" : "dispatch-orders-rt",
+    enabled: Boolean(activeBranchId && user && !configLoading),
+    queryKeys: [
+      [isServirModule ? "servir-orders" : "dispatch-orders"],
+    ],
+    includePayments: true,
+    shiftId: shiftGate?.shiftId ?? null,
   });
 
   const applyReadyOperation = useMutation({
@@ -795,7 +810,6 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     onSuccess: () => {
       toast.success("Item despachado");
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
-      scheduleDeferredDispatchInvalidation(qc);
     },
     onError: (error: any, _vars, context) => {
       if (context?.previous) {
@@ -835,11 +849,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     },
     onSuccess: () => {
       toast.success("Orden despachada");
-      qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
-      qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false });
-      qc.invalidateQueries({ queryKey: ["reportes-pagos"], exact: false });
+      // Caja/pagos se actualizan vía hub Realtime (payments + orders).
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
-      scheduleDeferredDispatchInvalidation(qc);
     },
     onError: (error: any, _vars, context) => {
       if (context?.previous) {

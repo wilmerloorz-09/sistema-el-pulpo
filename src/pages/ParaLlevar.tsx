@@ -19,6 +19,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
+import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 const seedTakeoutOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -78,11 +79,20 @@ const ParaLlevar = () => {
     queryKey: ["takeout-orders", activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"],
     queryFn: () => fetchTakeoutSiblingOrders(activeBranchId!),
     enabled: !!activeBranchId,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchInterval: 10_000,
+    staleTime: OPERATIONAL_STALE_MS,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
     gcTime: 2 * 60_000,
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "takeout-orders-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [["takeout-orders"]],
+    includePayments: true,
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
   const orders = (takeoutOrdersQuery.data ?? []).filter((order) =>
@@ -145,7 +155,6 @@ const ParaLlevar = () => {
 
       toast.success("Abriendo nueva orden para llevar...");
       navigate(`/ordenes?order=${orderId}&origin=para-llevar`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["takeout-orders", activeBranchId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       warmTakeoutOrder(orderId);

@@ -26,6 +26,7 @@ import {
   type SiblingOrder,
 } from "@/hooks/useOrder";
 import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
+import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 const seedExtraOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -92,11 +93,20 @@ const Extra = () => {
     queryKey: ["extra-orders", activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_", user?.id ?? "_"],
     queryFn: () => fetchExtraSiblingOrders(activeBranchId!, user!.id),
     enabled: !!activeBranchId && !!user?.id,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchInterval: 10_000,
+    staleTime: OPERATIONAL_STALE_MS,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
     gcTime: 2 * 60_000,
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "extra-orders-rt",
+    enabled: Boolean(activeBranchId && user?.id),
+    queryKeys: [["extra-orders"]],
+    includePayments: true,
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
   const homeOrders = useMemo(
@@ -148,8 +158,6 @@ const Extra = () => {
       qc.invalidateQueries({
         queryKey: ["extra-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_", user.id],
       });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       void extraOrdersQuery.refetch();
     } catch (err: unknown) {
       toast.error(getExtraOrderCloseErrorMessage(err));
@@ -197,7 +205,6 @@ const Extra = () => {
       seedExtraOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
       navigate(`/ordenes?order=${orderId}&origin=extra`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["extra-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_", user.id] });
       void qc.prefetchQuery({
         queryKey: getOrderQueryKey(orderId),

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 interface NetworkContextType {
   isOnline: boolean;
@@ -11,7 +11,8 @@ const NetworkContext = createContext<NetworkContextType>({
   lastOnlineAt: null,
 });
 
-const PING_INTERVAL_MS = 30_000; // Check every 30s
+/** HEAD a rest/v1 cuenta como tráfico; 3 min basta para detectar caídas. */
+const PING_INTERVAL_MS = 3 * 60_000;
 
 export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -35,7 +36,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateOnline(navigator.onLine);
         return;
       }
-      const res = await fetch(`${url}/rest/v1/`, {
+      await fetch(`${url}/rest/v1/`, {
         method: "HEAD",
         signal: controller.signal,
         cache: "no-store",
@@ -52,7 +53,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     const handleOnline = () => {
       updateOnline(true);
-      checkConnectivity(); // Verify with real request
+      void checkConnectivity();
     };
     const handleOffline = () => updateOnline(false);
 
@@ -68,8 +69,13 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [updateOnline, checkConnectivity]);
 
+  const value = useMemo(
+    () => ({ isOnline, lastOnlineAt }),
+    [isOnline, lastOnlineAt],
+  );
+
   return (
-    <NetworkContext.Provider value={{ isOnline, lastOnlineAt }}>
+    <NetworkContext.Provider value={value}>
       {children}
     </NetworkContext.Provider>
   );

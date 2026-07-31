@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
 import { allowedModulesFromPermissions, type PermissionMap } from "@/lib/permissions";
@@ -91,7 +91,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     void fetchAccess();
   }, [fetchAccess]);
 
-  const setActiveBranch = async (branch: Branch | null) => {
+  const setActiveBranch = useCallback(async (branch: Branch | null) => {
     if (!user) return;
 
     if (!branch) {
@@ -126,7 +126,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setAccess((prev) => ({ ...prev, active_branch_id: prevBranchId }));
       if (prevBranchId) localStorage.setItem("activeBranchId", prevBranchId);
     }
-  };
+  }, [user, access.active_branch_id, fetchAccess]);
 
   const activeBranch = access.branches.find((branch) => branch.id === access.active_branch_id) ?? null;
 
@@ -148,23 +148,37 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [activeBranch]);
 
-  return (
-    <BranchContext.Provider
-      value={{
-        branches: access.branches,
-        activeBranch,
-        activeBranchId: access.active_branch_id,
-        allowedModules: allowedModulesFromPermissions(access.permissions),
-        permissions: access.permissions,
-        isGlobalAdmin: access.is_global_admin,
-        setActiveBranch,
-        refreshAccess: fetchAccess,
-        loading,
-      }}
-    >
-      {children}
-    </BranchContext.Provider>
+  const allowedModules = useMemo(
+    () => allowedModulesFromPermissions(access.permissions),
+    [access.permissions],
   );
+
+  const value = useMemo(
+    () => ({
+      branches: access.branches,
+      activeBranch,
+      activeBranchId: access.active_branch_id,
+      allowedModules,
+      permissions: access.permissions,
+      isGlobalAdmin: access.is_global_admin,
+      setActiveBranch,
+      refreshAccess: fetchAccess,
+      loading,
+    }),
+    [
+      access.branches,
+      access.active_branch_id,
+      access.permissions,
+      access.is_global_admin,
+      activeBranch,
+      allowedModules,
+      setActiveBranch,
+      fetchAccess,
+      loading,
+    ],
+  );
+
+  return <BranchContext.Provider value={value}>{children}</BranchContext.Provider>;
 };
 
 export const useBranch = () => {

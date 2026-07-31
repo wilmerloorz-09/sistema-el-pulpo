@@ -16,6 +16,7 @@ import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
+import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 type SpecialOrderCard = {
   id: string;
@@ -142,11 +143,20 @@ const OrdenEspecial = () => {
     queryKey: ["special-orders", activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"],
     queryFn: () => fetchActiveSpecialOrders(activeBranchId!),
     enabled: !!activeBranchId,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchInterval: 10_000,
+    staleTime: OPERATIONAL_STALE_MS,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
     gcTime: 2 * 60_000,
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "special-orders-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [["special-orders"]],
+    includePayments: true,
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
   const orders = specialOrdersQuery.data ?? [];
@@ -210,7 +220,6 @@ const OrdenEspecial = () => {
 
       toast.success("Abriendo orden especial...");
       navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["special-orders", activeBranchId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       warmSpecialOrder(orderId);

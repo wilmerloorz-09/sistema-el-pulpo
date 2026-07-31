@@ -58,9 +58,6 @@ export function useTrayOrder() {
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: ["order", variables.orderId] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });

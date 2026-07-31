@@ -175,6 +175,18 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
 
   const uniqueOrderIds = Array.from(new Set(orderIds));
 
+  // Preferir RPC ligera (sin description/status/price) — menos Egress en listas.
+  try {
+    const { data, error } = await (supabase as any).rpc("get_orders_operational_snapshots_lite", {
+      p_order_ids: uniqueOrderIds,
+    });
+    if (!error) {
+      return buildOperationalMapsFromSnapshotRows((data ?? []) as OrderOperationalSnapshotRow[]);
+    }
+  } catch {
+    // Migración aún no aplicada: caer a la RPC completa.
+  }
+
   try {
     const { data, error } = await (supabase as any).rpc("get_orders_operational_snapshots", {
       p_order_ids: uniqueOrderIds,
@@ -211,7 +223,7 @@ function warnBatchSnapshotUnavailable(error: unknown) {
   batchSnapshotWarningShown = true;
   console.warn(
     "[orderOperational] `get_orders_operational_snapshots` no respondio; se consultara una orden a la vez. " +
-      "Revisa que la migracion 20260602140000_batch_operational_snapshots.sql este aplicada.",
+      "Revisa migraciones 20260602140000 y 20260730230000 (snapshots lite).",
     error,
   );
 }

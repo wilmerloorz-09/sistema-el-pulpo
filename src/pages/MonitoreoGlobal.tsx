@@ -467,6 +467,8 @@ function BranchCard({ branch, data }: { branch: Branch; data: BranchMonitorData 
 
 function useGlobalMonitor(branches: Branch[]) {
   const [state, setState] = useState<MonitorState>({});
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const branchIdsKey = useMemo(
     () => branches.map((branch) => branch.id).join(","),
@@ -609,29 +611,60 @@ function useGlobalMonitor(branches: Branch[]) {
       }, 2000);
     };
 
-    const handleOrderEvent = (payload: any) => {
+    const handleBranchScopedEvent = (payload: any) => {
       const branchId = payload.new?.branch_id ?? payload.old?.branch_id;
       if (!branchId) return;
       scheduleReload(branchId);
     };
 
+    const handleShiftUserEvent = (payload: any) => {
+      const shiftId = payload.new?.shift_id ?? payload.old?.shift_id;
+      if (!shiftId) {
+        branches.forEach((branch) => scheduleReload(branch.id));
+        return;
+      }
+      const matched = Object.entries(stateRef.current).find(
+        ([, data]) => data.shift?.id === shiftId,
+      );
+      if (matched) {
+        scheduleReload(matched[0]);
+        return;
+      }
+      branches.forEach((branch) => scheduleReload(branch.id));
+    };
+
     const uniqueChannelName = `global-monitor:${branchIdsKey || "all"}`;
+    let backupInterval: ReturnType<typeof setInterval> | null = null;
+
+    const startBackup = () => {
+      if (backupInterval) return;
+      backupInterval = setInterval(() => {
+        branches.forEach((branch) => scheduleReload(branch.id));
+      }, 5 * 60_000);
+    };
+    const stopBackup = () => {
+      if (!backupInterval) return;
+      clearInterval(backupInterval);
+      backupInterval = null;
+    };
+
     const channel = supabase
       .channel(uniqueChannelName)
-      // cash_shifts / cash_shift_users no estan en supabase_realtime; el fallback
-      // de 60s cubre esos cambios. Solo escuchamos tablas publicadas.
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, handleOrderEvent)
-      .subscribe();
+      // Requiere migración 20260730230000 (cash_shifts / cash_shift_users en Realtime).
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, handleBranchScopedEvent)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cash_shifts" }, handleBranchScopedEvent)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cash_shift_users" }, handleShiftUserEvent)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") stopBackup();
+        else startBackup();
+      });
 
     channelRef.current = channel;
-
-    const fallbackInterval = setInterval(() => {
-      branches.forEach((branch) => scheduleReload(branch.id));
-    }, 60000);
+    startBackup();
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      clearInterval(fallbackInterval);
+      stopBackup();
       void supabase.removeChannel(channel);
       channelRef.current = null;
     };

@@ -17,6 +17,16 @@ import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/op
 import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
 import { cleanOrderCode } from "@/lib/orderPresentation";
 import {
+  CATALOG_GC_MS,
+  CATALOG_STALE_MS,
+  OPERATIONAL_STALE_MS,
+  OPERATIONAL_BACKUP_POLL_MS,
+  invalidateOperationalOrderQueries,
+  useAdaptiveRefetchInterval,
+  useOperationalOrdersRealtime,
+} from "@/lib/queryEgress";
+import { qk } from "@/lib/queryKeys";
+import {
   existeTransferenciaDuplicada,
   mensajeErrorPago,
   MENSAJE_TRANSFERENCIA_DUPLICADA,
@@ -259,7 +269,7 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
 export async function fetchShiftSnapshot(shiftId: string): Promise<CashShiftSnapshot> {
   const { data: shiftData, error: shiftError } = await supabase
     .from("cash_shifts")
-    .select("*")
+    .select("id, branch_id, status, caja_status, cashier_id, opened_at, closed_at, notes, active_tables_count")
     .eq("id", shiftId)
     .single();
   
@@ -1304,8 +1314,14 @@ export function useCaja(params?: {
   const qc = useQueryClient();
   const activeWorkflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
 
+  const adaptiveShiftPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_BACKUP_POLL_MS,
+    Boolean(activeBranchId && user?.id),
+  );
+
   const denomsQuery = useQuery({
-    queryKey: ["denominations"],
+    queryKey: qk.denominations,
     queryFn: () =>
       dbSelect<Denomination>("denominations", {
         select: "id, label, denomination_type, value, display_order, image_url",
@@ -1313,6 +1329,8 @@ export function useCaja(params?: {
         orderBy: { column: "display_order" },
       }),
     enabled: true,
+    staleTime: CATALOG_STALE_MS,
+    gcTime: CATALOG_GC_MS,
   });
 
   const branchTableSettingsQuery = useQuery({
@@ -1331,6 +1349,8 @@ export function useCaja(params?: {
       };
     },
     enabled: !!activeBranchId,
+    staleTime: CATALOG_STALE_MS,
+    gcTime: CATALOG_GC_MS,
   });
 
   const shiftQuery = useQuery({
@@ -1426,10 +1446,10 @@ export function useCaja(params?: {
       } as CashShift;
     },
     enabled: !!activeBranchId && !!user?.id && !!denomsQuery.data,
-    // Autocuración en dispositivos que quedan con datos viejos (p. ej. tablet
-    // que nunca pierde el foco): si la caja se abre desde otro equipo o una
-    // lectura fallo, el polling recupera las denominaciones sin recargar.
-    refetchInterval: 20000,
+    // Realtime del hub invalida current-shift; poll solo si el hub no está SUBSCRIBED.
+    // Mutaciones de apertura/cierre/denoms invalidan explícitamente.
+    staleTime: OPERATIONAL_STALE_MS,
+    refetchInterval: adaptiveShiftPoll,
     placeholderData: (prev: any) => prev,
   });
 
@@ -1582,7 +1602,8 @@ export function useCaja(params?: {
       });
     },
     enabled: !!shiftQuery.data?.id && !!user?.id,
-    refetchInterval: ({ state }) => (state.data && state.data.length > 0 ? 3000 : 5000),
+    staleTime: OPERATIONAL_STALE_MS,
+    // Sin polling 3–5s: se invalida en mutaciones de captura y al cobrar.
   });
 
   const openCaptureRequest = useMutation({
@@ -2082,11 +2103,22 @@ export function useCaja(params?: {
             : order.items.some((item) => item.quantity_pending > 0),
         );
     },
-    refetchInterval: 10000,
+    staleTime: OPERATIONAL_STALE_MS,
+    // Actualización vía Realtime (useOperationalOrdersRealtime); sin polling 10s.
     enabled: !!activeBranchId,
     // Al cambiar de sucursal o de turno se conserva la lista previa en lugar de
     // mostrar el vacio de carga.
     placeholderData: keepPreviousData,
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "caja-payable-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [qk.payableOrders, qk.completedPayments, qk.currentShift],
+    includePayments: true,
+    shiftId: shiftGate?.shiftId ?? null,
   });
 
   const methodsQuery = useQuery({
@@ -2121,6 +2153,8 @@ export function useCaja(params?: {
       return dedupePaymentMethods(methods);
     },
     enabled: !!activeBranchId,
+    staleTime: CATALOG_STALE_MS,
+    gcTime: CATALOG_GC_MS,
   });
 
   const cashierReverseWindowQuery = useQuery({
@@ -2144,6 +2178,8 @@ export function useCaja(params?: {
       return Math.max(0, Math.floor(resolved));
     },
     enabled: !!activeBranchId,
+    staleTime: CATALOG_STALE_MS,
+    gcTime: CATALOG_GC_MS,
   });
 
   const completedPaymentsQuery = useQuery({
@@ -2626,13 +2662,16 @@ export function useCaja(params?: {
       return { rows, total: allPaymentsInRange.length, methodSummary, collectedTotal };
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
-    refetchInterval: 20000,
+    staleTime: OPERATIONAL_STALE_MS,
+    // Actualización vía Realtime de payments + invalidación post-cobro.
     placeholderData: (prev: any) => prev,
   });
 
   const cashRegisterTemplatesQuery = useQuery({
     queryKey: ["cash-register-templates", activeBranchId],
     enabled: !!activeBranchId,
+    staleTime: CATALOG_STALE_MS,
+    gcTime: CATALOG_GC_MS,
     queryFn: async (): Promise<CashRegisterTemplate[]> => {
       if (!activeBranchId) return [];
 
@@ -3188,18 +3227,15 @@ export function useCaja(params?: {
     onSuccess: (_data, variables) => {
       /** Deferir invalidaciones para que la UI pueda cerrar "Cobrando" y pintar el resultado antes de los refetch. */
       queueMicrotask(() => {
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["current-shift"] });
-        qc.invalidateQueries({ queryKey: ["payable-orders"] });
-        qc.invalidateQueries({ queryKey: ["express-orders"] });
-        qc.invalidateQueries({ queryKey: ["extra-orders"] });
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-        qc.invalidateQueries({ queryKey: ["completed-payments"] });
-        qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
-        qc.invalidateQueries({ queryKey: ["promociones-ordenes-elegibles"] });
-        qc.invalidateQueries({ queryKey: getOrderQueryKey(variables.orderId) });
+        invalidateOperationalOrderQueries(qc, {
+          includeCompletedPayments: true,
+          includeTables: true,
+          includePromotions: true,
+          includeCurrentShift: true,
+          includeCashMovements: true,
+          includeShiftGate: false,
+          orderId: variables.orderId,
+        });
         toast.success("Pago registrado");
       });
     },

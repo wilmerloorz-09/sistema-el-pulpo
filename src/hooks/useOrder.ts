@@ -1202,8 +1202,6 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       qc.invalidateQueries({ queryKey: ["table-orders"] });
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"], exact: false });
-      qc.invalidateQueries({ queryKey: ["reportes-pagos"], exact: false });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
       if (order?.order_type === "EXTRA" && order.branch_id) {

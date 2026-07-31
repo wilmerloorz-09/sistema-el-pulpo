@@ -262,6 +262,23 @@ export function useMeseroOrderReadyNotification(
 
     // Camino rapido: la base avisa al registrarse el evento de "orden lista",
     // en lugar de que cada tablet pregunte cada 2 segundos.
+    let realtimeOk = false;
+    let backupInterval: number | null = null;
+
+    const startBackupPoll = () => {
+      if (backupInterval != null) return;
+      backupInterval = window.setInterval(() => {
+        if (document.hidden) return;
+        void pollNotificationTable();
+      }, 60_000);
+    };
+
+    const stopBackupPoll = () => {
+      if (backupInterval == null) return;
+      window.clearInterval(backupInterval);
+      backupInterval = null;
+    };
+
     const channel = supabase
       .channel(`mesero-ready-alerts:${activeBranchId}:${currentUserId}`)
       .on(
@@ -271,13 +288,14 @@ export function useMeseroOrderReadyNotification(
           void pollNotificationTable();
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        realtimeOk = status === "SUBSCRIBED";
+        if (realtimeOk) stopBackupPoll();
+        else startBackupPoll();
+      });
 
-    // Respaldo por si Realtime se cae o la tablet estuvo suspendida.
-    const interval = window.setInterval(() => {
-      if (document.hidden) return;
-      void pollNotificationTable();
-    }, 20000);
+    // Mientras conecta, arrancar respaldo; se detiene al SUBSCRIBED.
+    startBackupPoll();
 
     const handleVisibilityChange = () => {
       if (!document.hidden) void pollNotificationTable();
@@ -286,9 +304,10 @@ export function useMeseroOrderReadyNotification(
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      stopBackupPoll();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       void supabase.removeChannel(channel);
+      void realtimeOk;
     };
   }, [activeBranchId, currentUserId, enabled]);
 }

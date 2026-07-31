@@ -14,6 +14,8 @@ import { useBranch } from "@/contexts/BranchContext";
 import type { CancellationData } from "@/types/cancellation";
 import { generateUUID } from "@/lib/uuid";
 import { applyCancellationToOrderCache } from "@/lib/orderCancellationCache";
+import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
+import { qk } from "@/lib/queryKeys";
 
 interface CancelItemParams {
   itemId: string;
@@ -597,16 +599,18 @@ export function useCancellation() {
         toast.success("Item cancelado");
       }
       if (data.isRequest) {
-        qc.invalidateQueries({ queryKey: ["order", data.orderId] });
-        qc.invalidateQueries({ queryKey: ["payable-orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+        invalidateOperationalOrderQueries(qc, {
+          orderId: data.orderId,
+          includeCompletedPayments: false,
+          includeTables: true,
+        });
       } else {
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["payable-orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-        await qc.refetchQueries({ queryKey: ["orders"] });
+        invalidateOperationalOrderQueries(qc, {
+          orderId: data.orderId,
+          includeCompletedPayments: false,
+          includeTables: true,
+        });
+        await qc.refetchQueries({ queryKey: qk.orders });
       }
     },
     onError: (error: any) => {
@@ -760,19 +764,18 @@ export function useCancellation() {
         toast.success("Cancelacion aplicada");
       }
       if (data.isRequest) {
-        qc.invalidateQueries({ queryKey: ["order", data.orderId] });
-        qc.invalidateQueries({ queryKey: ["payable-orders"] });
-        qc.invalidateQueries({ queryKey: ["completed-payments"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+        invalidateOperationalOrderQueries(qc, {
+          orderId: data.orderId,
+          includeCompletedPayments: true,
+          includeTables: true,
+        });
       } else {
-        qc.invalidateQueries({ queryKey: ["order", data.orderId] });
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["payable-orders"] });
-        qc.invalidateQueries({ queryKey: ["completed-payments"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-        await qc.refetchQueries({ queryKey: ["orders"] });
+        invalidateOperationalOrderQueries(qc, {
+          orderId: data.orderId,
+          includeCompletedPayments: true,
+          includeTables: true,
+        });
+        await qc.refetchQueries({ queryKey: qk.orders });
       }
     },
     onError: (error: any) => {
@@ -798,12 +801,13 @@ export function useCancellation() {
           cancel_requested_at: null,
         };
       });
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      await qc.refetchQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: qk.order(orderId) });
+      invalidateOperationalOrderQueries(qc, {
+        orderId,
+        includeCompletedPayments: false,
+        includeTables: true,
+      });
+      await qc.refetchQueries({ queryKey: qk.orders });
       toast.success("Solicitud de anulacion negada");
     },
     onError: (error: any) => {
@@ -1026,13 +1030,12 @@ export function useCancellation() {
         if (!Array.isArray(current)) return current;
         return current.filter((order: any) => !(order?.id === data.orderId && order?.status === "PENDING_CANCELLATION"));
       });
-      qc.invalidateQueries({ queryKey: ["order", data.orderId] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      await qc.refetchQueries({ queryKey: ["orders"] });
+      invalidateOperationalOrderQueries(qc, {
+        orderId: data.orderId,
+        includeCompletedPayments: true,
+        includeTables: true,
+      });
+      await qc.refetchQueries({ queryKey: qk.orders });
       toast.success("Anulacion autorizada");
     },
     onError: (error: any) => {

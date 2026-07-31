@@ -7,6 +7,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 export interface KitchenOrderItem {
   id: string;
@@ -231,7 +232,17 @@ export function useKitchenOrders() {
 
       return sortBySentAt(cards).filter((order) => order.pending_prepare_count > 0) as KitchenOrder[];
     },
-    refetchInterval: 10000,
+    staleTime: OPERATIONAL_STALE_MS,
+    // Actualización vía Realtime; sin polling 10s.
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "kitchen-orders-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [["kitchen-orders"]],
+    shiftId: shiftGate?.shiftId ?? null,
   });
 
   const applyReadyOperation = useMutation({
@@ -252,8 +263,6 @@ export function useKitchenOrders() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
       toast.success("Operacion de listo aplicada");
     },
     onError: (err: any) => toast.error(err.message || "No se pudo aplicar la operacion de listo"),

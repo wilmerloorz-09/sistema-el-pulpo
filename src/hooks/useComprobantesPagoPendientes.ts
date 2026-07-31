@@ -9,6 +9,7 @@ import {
   subirComprobantePagoPendiente,
   type ComprobantePagoPendienteLocal,
 } from "@/lib/comprobantePagoPendienteLocal";
+import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 
 export function useComprobantesPagoPendientes() {
   const { activeBranchId } = useBranch();
@@ -19,8 +20,8 @@ export function useComprobantesPagoPendientes() {
     queryKey: [COMPROBANTES_PENDIENTES_QUERY_KEY, activeBranchId ?? "_"],
     queryFn: () => listarComprobantesPagoPendientes(activeBranchId),
     enabled: Boolean(activeBranchId),
-    refetchInterval: 15_000,
-    staleTime: 5_000,
+    staleTime: OPERATIONAL_STALE_MS,
+    // Lista local + invalidación en mutaciones; sin polling 15s.
   });
 
   const reintentar = useMutation({

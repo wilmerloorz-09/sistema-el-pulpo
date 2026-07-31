@@ -19,6 +19,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
+import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 const seedExpressOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -75,11 +76,20 @@ const Express = () => {
     queryKey: ["express-orders", activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"],
     queryFn: () => fetchExpressSiblingOrders(activeBranchId!),
     enabled: !!activeBranchId,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchInterval: 10_000,
+    staleTime: OPERATIONAL_STALE_MS,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
     gcTime: 2 * 60_000,
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "express-orders-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [["express-orders"]],
+    includePayments: true,
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
   const orders = (expressOrdersQuery.data ?? []).filter((order) => {
@@ -147,7 +157,6 @@ const Express = () => {
 
       toast.success("Abriendo nueva orden Express...");
       navigate(`/ordenes?order=${orderId}&origin=express`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["express-orders", activeBranchId] });
       warmExpressOrder(orderId);
     } catch (err: any) {

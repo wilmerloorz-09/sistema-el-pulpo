@@ -1543,6 +1543,8 @@ export type Database = {
           tray_container_cost: number
           tray_item_type: string | null
           unit_price: number
+          /** Denormalizado desde orders.branch_id (Realtime por sucursal). */
+          sucursal_id: string | null
         }
         Insert: {
           cancellation_reason?: string | null
@@ -1567,6 +1569,7 @@ export type Database = {
           tray_container_cost?: number
           tray_item_type?: string | null
           unit_price: number
+          sucursal_id?: string | null
         }
         Update: {
           cancellation_reason?: string | null
@@ -1591,6 +1594,7 @@ export type Database = {
           tray_container_cost?: number
           tray_item_type?: string | null
           unit_price?: number
+          sucursal_id?: string | null
         }
         Relationships: [
           {
@@ -1612,6 +1616,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
             referencedColumns: ["id"]
           },
         ]
@@ -3692,6 +3703,25 @@ export type Database = {
           quantity_ready_available: number
           quantity_ready_total: number
           unit_price: number
+        }[]
+      }
+      /** Solo cantidades; no reemplaza get_orders_operational_snapshots. */
+      get_orders_operational_snapshots_lite: {
+        Args: { p_order_ids: string[] }
+        Returns: {
+          order_id: string
+          order_item_id: string
+          quantity_cancelled_dispatched: number
+          quantity_cancelled_pending: number
+          quantity_cancelled_ready: number
+          quantity_cancelled_total: number
+          quantity_dispatched_available: number
+          quantity_dispatched_total: number
+          quantity_ordered: number
+          quantity_paid: number
+          quantity_pending_prepare: number
+          quantity_ready_available: number
+          quantity_ready_total: number
         }[]
       }
       get_table_products_by_root_orders: {

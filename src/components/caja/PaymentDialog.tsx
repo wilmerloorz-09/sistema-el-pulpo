@@ -912,7 +912,7 @@ export default function PaymentDialog({
     };
 
     void refresh();
-    const intervalId = window.setInterval(() => void refresh(), 3000);
+    const intervalId = window.setInterval(() => void refresh(), 15_000);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);

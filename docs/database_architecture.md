@@ -66,6 +66,7 @@
 ### 3. Operacion de ordenes
 - `orders`
 - `order_items`
+  - `sucursal_id` (uuid FK → `branches`, nullable): denormalizado desde `orders.branch_id` para filtrar Realtime por sucursal (`20260730230000_realtime_turnos_y_snapshots_lite.sql`). Triggers: `trg_order_items_set_sucursal_id`, `trg_orders_sync_items_sucursal_id`.
 - `order_item_modifiers`
 - `order_cancellations`
 - `order_item_cancellations`
@@ -292,6 +293,8 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `orders.is_tray_order` sigue modelando `Orden Bandeja`.
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas en pantallas que clasifican despachos y listos (Cocina, Despacho, listados complejos).
+- **Batch ligero (2026-07-30):** `get_orders_operational_snapshots_lite(p_order_ids)` devuelve solo cantidades (sin description/status/price). El cliente (`orderOperational.ts`) la prefiere y cae a `get_orders_operational_snapshots` / N× unitaria si la migración no está aplicada. Migración: `20260730230000_realtime_turnos_y_snapshots_lite.sql`.
+- **Realtime operativo:** publicación `supabase_realtime` incluye `cash_shifts`, `cash_shift_users`, `payments`, `order_dispatch_events`, `order_items`. Frontend: un canal compartido `branch-ops-hub:{branchId}` (`src/lib/queryEgress.ts`) con filtro `orders.branch_id` y `order_items.sucursal_id`; `payments` filtrado por `shift_id` cuando hay turno.
 - En el **cobro en caja** (`useCaja.payOrder`), con flujo `CASH_THEN_DISPATCH`, la validación de cantidad cobrable puede basarse en `order_items` + cancelaciones aplicadas (`order_item_cancellations` / `order_cancellations`) **sin** llamar a `get_order_operational_snapshot` por orden, reduciendo latencia.
 - **Autopedidos QR (2026-07-16):** órdenes con `es_autopedido_qr = true` y `estado_aprobacion_qr = 'PENDIENTE'` no deben aparecer en pestañas operativas hasta aprobarse. Tras `aprobar_autopedido_qr`, integran flujo normal. `created_by` NULL en creación; se asigna al aprobar.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`. Impide el cobro en Caja mientras la orden está siendo modificada.
@@ -604,6 +607,7 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 ### Autopedidos QR en mesa (2026-07-16)
 - `20260716000000_autopedidos_qr.sql` — tabla `tokens_qr_mesas`, columnas QR en `orders`, RLS anon, RPCs cliente/staff.
 - `20260716010000_fix_gen_random_bytes_tokens_qr.sql` — `token_seguro` con `gen_random_uuid()` (sin `pgcrypto`).
+- `20260730230000_realtime_turnos_y_snapshots_lite.sql` — Realtime turnos/pagos/despacho/`order_items`; `order_items.sucursal_id`; RPC `get_orders_operational_snapshots_lite`.
 
 ### Perfiles y alias (2026-06-28)
 - `20260628120000_add_profile_alias.sql`

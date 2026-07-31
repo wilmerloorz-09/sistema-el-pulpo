@@ -7,6 +7,7 @@ import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, type OpenCashShift } from "@/lib/openCashShift";
+import { useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -213,58 +214,16 @@ export function useTablesWithStatus() {
     ? "shift-gate-pending"
     : (shiftGateQuery.data?.shiftId ?? "no-open-shift");
 
-  useEffect(() => {
-    if (!activeBranchId) return;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const invalidateTables = () => {
-      // Un solo cambio operativo puede disparar varios eventos seguidos
-      // (orders + order_items + ready). Agrupar evita refetch en cascada.
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["tables-with-status", activeBranchId], exact: false });
-      }, 250);
-    };
-
-    // Solo tablas publicadas en supabase_realtime. Suscribirse a tablas no
-    // publicadas abre canales muertos sin beneficio y suma carga al cliente.
-    const channel = supabase
-      .channel(`tables-overview:${activeBranchId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-          filter: `branch_id=eq.${activeBranchId}`,
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_items",
-        },
-        invalidateTables,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_ready_events" as any,
-        },
-        invalidateTables,
-      )
-      .subscribe();
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      void supabase.removeChannel(channel);
-    };
-  }, [activeBranchId, qc]);
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "tables-overview-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [["tables-with-status"]],
+    includePayments: true,
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
+    debounceMs: 250,
+  });
 
   const query = useQuery({
     queryKey: getTablesWithStatusQueryKey(activeBranchId, tablesShiftKeyPart),

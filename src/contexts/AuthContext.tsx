@@ -1,9 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { dbSelect } from "@/services/DatabaseService";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
+import { AUTH_SESSION_POLL_MS } from "@/lib/queryEgress";
 
 interface Profile {
   id: string;
@@ -43,7 +44,7 @@ const SESSION_ACTIVITY_STORAGE_KEY = "authSessionActivity";
 const OWNED_SESSION_STORAGE_KEY = "authOwnedSingleSession";
 const SESSION_ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
 const SESSION_EXPIRY_CHECK_INTERVAL_MS = 30 * 1000;
-const SINGLE_SESSION_CHECK_INTERVAL_MS = 15000;
+const SINGLE_SESSION_CHECK_INTERVAL_MS = AUTH_SESSION_POLL_MS;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -456,7 +457,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [clearSessionTracking, expireSession, state.user?.id, touchSessionActivity]);
 
-  const signIn = async (identifier: string, password: string) => {
+  const signIn = useCallback(async (identifier: string, password: string) => {
     const normalized = identifier.trim();
 
     const res = await supabase.functions.invoke("login-with-identifier", {
@@ -487,9 +488,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (setSessionError) throw setSessionError;
-  };
+  }, []);
 
-  return <AuthContext.Provider value={{ ...state, signIn, signOut, refreshProfile }}>{children}</AuthContext.Provider>;
+  const value = useMemo(
+    () => ({ ...state, signIn, signOut, refreshProfile }),
+    [state, signIn, signOut, refreshProfile],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

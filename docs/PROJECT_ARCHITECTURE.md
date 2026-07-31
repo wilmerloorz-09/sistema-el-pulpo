@@ -522,9 +522,10 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 - **Cobro bloqueado hasta despacho completo (DF):** `PayableOrdersList`, `useCaja`, `computeUndispatchedQuantity`.
 - **QR ticket condicional:** `promocionesRecibo.ts`, `campanasValidacion.ts`, migraciones token promocion Jul 9.
 - **Cocina post-despacho y staging:** `20260709220000`, `reconcileKitchenStagedItems`, diff de cantidad en lineas enviadas.
-- **Monitoreo Global:** hooks/realtime/polling 60 s.
+- **Monitoreo Global:** hooks/realtime; polling de respaldo 5 min (`20260730230000`).
 
-### Actualizacion Jul 8, 2026
+### Actualizacion Jul 30, 2026
+- **Egress / Realtime:** hub `branch-ops-hub` en `queryEgress.ts`; `order_items.sucursal_id`; RPC `get_orders_operational_snapshots_lite`; publicación Realtime de turnos/pagos/despacho; gate con backup 5 min.
 - **Staging cocina en Despacho primero:** Ediciones locales no afectan Despacho hasta **Enviar a cocina**; boton con delta monetario vs ultimo envio.
 - **Secciones En despacho / Despachados:** `OrderItemsList.splitDispatchSections` en vista de orden.
 - **Editar orden en `DISPATCH_THEN_CASH`:** opcion visible con cantidades despachadas; buffer hasta confirmar y anulacion/ajuste auditable al reducir o eliminar.

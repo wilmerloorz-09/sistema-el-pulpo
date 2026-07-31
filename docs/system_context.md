@@ -152,7 +152,7 @@
     - Muestra usuarios de turno conectados/desconectados en tiempo real (🟢 basado en `profiles.current_app_session_id`).
     - Muestra estado de operacion de caja en tiempo real (etiqueta "En Caja" basada en `last_session_id` o `secondary_session_id`).
     - Embudo de ordenes consolidado para cada sucursal (Generadas, En Caja, Pagadas, Despachadas, Anuladas).
-    - Mecanismos de robustez: nombre de canal dinamico (`global-monitor-${hash}`), polling de respaldo cada **60 s** y boton **Actualizar** manual. Hooks de React deben declararse antes de cualquier `return` condicional en `MonitoreoGlobal.tsx`.
+    - Mecanismos de robustez: nombre de canal dinamico (`global-monitor:...`), Realtime sobre `orders`/`cash_shifts`/`cash_shift_users` (migración `20260730230000`), polling de respaldo cada **5 min** y boton **Actualizar** manual. Hooks de React deben declararse antes de cualquier `return` condicional en `MonitoreoGlobal.tsx`.
   - `open_cash_register(...)` retorna `uuid` de la apertura creada; `close_cash_register(...)` cierra solo la apertura del cajero autenticado.
 - `profiles.current_app_session_id` y `cash_shift_users.last_session_id` sostienen el session lock principal de la app.
 - Si un usuario del turno tiene `cash_shift_users.can_double_session = true` (checkbox **Sesión doble** en la tarjeta de `Admin > Turno`), puede conservar una segunda sesion simultanea en otro dispositivo mediante:
@@ -652,7 +652,7 @@ Módulo que permite al comensal escanear un QR físico en la mesa, ver el menú 
 #### POS — aprobación
 - Badge discreto en header móvil (`AppLayout`) y sidebar desktop (`SidebarNav`) cuando `contar_autopedidos_pendientes > 0`.
 - Panel lateral: `AutopedidosQrPanel.tsx`; datos: `useAutopedidosQrPendientes.ts`.
-- Listado agrupado por mesa; polling ~15 s mientras hay turno abierto.
+- Listado agrupado por mesa; actualización vía hub Realtime operativo (`useOperationalOrdersRealtime`); sin polling agresivo.
 - Quien puede gestionar: `usuario_puede_gestionar_autopedidos_qr` (mesero, caja, supervisor o admin en turno `OPEN`).
 
 #### Base de datos (nomenclatura en español)

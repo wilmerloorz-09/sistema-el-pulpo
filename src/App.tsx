@@ -41,7 +41,18 @@ import Turno from "./pages/Turno";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Evita refetch automático masivo (staleTime 0 por defecto de React Query).
+      staleTime: 15_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      retry: 1,
+    },
+  },
+});
 
 const GlobalSystemAlert = () => {
   const [open, setOpen] = useState(false);

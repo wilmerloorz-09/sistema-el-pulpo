@@ -6,6 +6,8 @@ import { useBranch } from '@/contexts/BranchContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { buildUserDisplayMap } from '@/lib/userDisplay';
+import { OPERATIONAL_BACKUP_POLL_MS, useAdaptiveRefetchInterval } from '@/lib/queryEgress';
+import { qk } from '@/lib/queryKeys';
 
 export interface OrderWithStatus {
   id: string;
@@ -30,10 +32,15 @@ const REMOTE_ORDERS_LIMIT = 300;
 export function useReportesData() {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
+  const adaptiveRemotePoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_BACKUP_POLL_MS,
+    navigator.onLine && !!activeBranchId,
+  );
 
   // Ordenes locales (IndexedDB) — no golpea Supabase
   const localOrders = useQuery({
-    queryKey: ['reports-local-orders'],
+    queryKey: qk.reportsLocalOrders,
     queryFn: async () => {
       const orders = await localDb.orders.toArray();
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
@@ -73,12 +80,13 @@ export function useReportesData() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     },
-    refetchInterval: 30_000,
+    staleTime: 60_000,
+    // IndexedDB local; sin polling periódico.
   });
 
   // Ordenes remotas (Supabase): ventana corta + limite duro
   const remoteOrders = useQuery({
-    queryKey: ['reports-remote-orders', activeBranchId, REMOTE_ORDERS_LOOKBACK_DAYS, REMOTE_ORDERS_LIMIT],
+    queryKey: [qk.reportsRemoteOrders[0], activeBranchId, REMOTE_ORDERS_LOOKBACK_DAYS, REMOTE_ORDERS_LIMIT],
     queryFn: async () => {
       if (!navigator.onLine || !activeBranchId) {
         return [];
@@ -124,18 +132,19 @@ export function useReportesData() {
         return [];
       }
     },
-    refetchInterval: 60_000,
-    staleTime: 30_000,
+    // Con hub Realtime activo no hace falta refrescar cada 5 min.
+    refetchInterval: adaptiveRemotePoll,
+    staleTime: 60_000,
     enabled: navigator.onLine && !!activeBranchId,
   });
 
   // Contador de pendientes (IndexedDB local)
   const pendingCount = useQuery({
-    queryKey: ['sync-pending-count'],
+    queryKey: qk.syncPendingCount,
     queryFn: async () => {
       return await getPendingSyncCount();
     },
-    refetchInterval: 15_000,
+    staleTime: 30_000,
   });
 
   // Mutacion para sincronizar
@@ -146,9 +155,9 @@ export function useReportesData() {
     },
     onSuccess: (result) => {
       toast.success(`Sincronizacion completada: ${result.processed} registros`);
-      qc.invalidateQueries({ queryKey: ['reports-local-orders'] });
-      qc.invalidateQueries({ queryKey: ['reports-remote-orders'] });
-      qc.invalidateQueries({ queryKey: ['sync-pending-count'] });
+      qc.invalidateQueries({ queryKey: qk.reportsLocalOrders });
+      qc.invalidateQueries({ queryKey: qk.reportsRemoteOrders });
+      qc.invalidateQueries({ queryKey: qk.syncPendingCount });
     },
     onError: (error: any) => {
       toast.error('Error en sincronizacion: ' + error.message);

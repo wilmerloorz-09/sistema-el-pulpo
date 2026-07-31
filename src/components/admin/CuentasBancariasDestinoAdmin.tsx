@@ -75,7 +75,7 @@ export default function CuentasBancariasDestinoAdmin() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("cuentas_bancarias_destino")
-        .select("*")
+        .select("id, banco_id, numero_cuenta, numero_cuenta_normalizado, tipo_cuenta, titular, identificacion_titular, alias, sucursal_id, activa, creada_en")
         .order("creada_en", { ascending: true });
       if (error) throw error;
       return (data ?? []) as CuentaBancariaDestino[];

@@ -6,12 +6,14 @@ import {
   contarAutopedidosPendientes,
   listarAutopedidosPendientes,
 } from "@/services/autopedidosQrDb";
+import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 const QUERY_KEY = "autopedidos-qr-pendientes";
 
 export function useAutopedidosQrPendientes(options?: { enabled?: boolean }) {
   const { activeBranchId } = useBranch();
   const shiftGate = useBranchShiftGate();
+  const qc = useQueryClient();
   const enabled =
     (options?.enabled ?? true) &&
     !!activeBranchId &&
@@ -20,7 +22,7 @@ export function useAutopedidosQrPendientes(options?: { enabled?: boolean }) {
   const countQuery = useQuery({
     queryKey: [QUERY_KEY, "count", activeBranchId],
     enabled,
-    refetchInterval: 15_000,
+    staleTime: OPERATIONAL_STALE_MS,
     queryFn: async () => {
       if (!activeBranchId) return 0;
       return contarAutopedidosPendientes(activeBranchId);
@@ -30,11 +32,20 @@ export function useAutopedidosQrPendientes(options?: { enabled?: boolean }) {
   const listQuery = useQuery({
     queryKey: [QUERY_KEY, "list", activeBranchId],
     enabled: enabled && (countQuery.data ?? 0) >= 0,
-    refetchInterval: 15_000,
+    staleTime: OPERATIONAL_STALE_MS,
     queryFn: async () => {
       if (!activeBranchId) return [];
       return listarAutopedidosPendientes(activeBranchId);
     },
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "autopedidos-qr-rt",
+    enabled,
+    queryKeys: [[QUERY_KEY]],
+    shiftId: shiftGate.data?.shiftId ?? null,
   });
 
   const pendientes = listQuery.data ?? [];
@@ -88,9 +99,7 @@ export function useAutopedidosQrMutations() {
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: [QUERY_KEY] });
-    void qc.invalidateQueries({ queryKey: ["orders"] });
     void qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-    void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
     if (activeBranchId) {
       void qc.invalidateQueries({ queryKey: [QUERY_KEY, "count", activeBranchId] });
       void qc.invalidateQueries({ queryKey: [QUERY_KEY, "list", activeBranchId] });

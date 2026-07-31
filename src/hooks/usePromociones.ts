@@ -6,6 +6,7 @@ import { listarCampanasActivas } from "@/services/campanasPromocionalesDb";
 import { listarOrdenesElegiblesPromociones, registrarPrediccionCliente } from "@/services/prediccionesClientesDb";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { PROMOCIONES_ORDENES_QUERY_KEY } from "@/hooks/usePromocionesKeys";
+import { CATALOG_STALE_MS, OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 function mensajeError(error: unknown): string {
   const msg = error instanceof Error ? error.message : String(error ?? "");
@@ -32,7 +33,7 @@ export function usePromociones() {
   const campanasQuery = useQuery({
     queryKey: ["campanas-promocionales-activas"],
     queryFn: listarCampanasActivas,
-    staleTime: 20_000,
+    staleTime: CATALOG_STALE_MS,
   });
 
   const campanasActivas = campanasQuery.data ?? [];
@@ -59,8 +60,17 @@ export function usePromociones() {
       return listarOrdenesElegiblesPromociones(campanaSeleccionada, shiftId, activeBranchId);
     },
     enabled: Boolean(shiftId && campanaSeleccionada),
-    staleTime: 8_000,
-    refetchInterval: 12_000,
+    staleTime: OPERATIONAL_STALE_MS,
+  });
+
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "promociones-elegibles-rt",
+    enabled: Boolean(shiftId && campanaSeleccionada && activeBranchId),
+    queryKeys: [[PROMOCIONES_ORDENES_QUERY_KEY]],
+    includePayments: true,
+    shiftId,
   });
 
   const registrarMutation = useMutation({

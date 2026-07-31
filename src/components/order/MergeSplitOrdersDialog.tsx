@@ -580,9 +580,8 @@ export default function MergeSplitOrdersDialog({
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["order"] });
       qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      // Cocina/Despacho/Caja: hub Realtime invalida si esas pantallas están montadas.
       onOpenChange(false);
     },
     onError: (error: any) => {

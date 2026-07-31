@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useCancellation } from "@/hooks/useCancellation";
 import { canManage } from "@/lib/permissions";
@@ -13,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getOrderRef } from "@/lib/orderPresentation";
+import { useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 type TabType = "sent" | "draft" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
 
@@ -91,57 +91,16 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
     || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
-  useEffect(() => {
-    if (!activeBranchId) return;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const invalidateOrders = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["orders", activeBranchId] });
-        qc.invalidateQueries({ queryKey: ["order"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      }, 250);
-    };
-
-    // Solo tablas publicadas en supabase_realtime.
-    const channel = supabase
-      .channel(`orders-live-sync:${activeBranchId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-          filter: `branch_id=eq.${activeBranchId}`,
-        },
-        invalidateOrders,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_items",
-        },
-        invalidateOrders,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "order_ready_events",
-        },
-        invalidateOrders,
-      )
-      .subscribe();
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      void supabase.removeChannel(channel);
-    };
-  }, [activeBranchId, qc]);
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "orders-list-rt",
+    enabled: Boolean(activeBranchId),
+    queryKeys: [["orders"], ["order"], ["tables-with-status"]],
+    includePayments: true,
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
+    debounceMs: 250,
+  });
 
   /** Todas las pestañas cargan en paralelo: bombillas correctas y cambio de pestaña instantaneo con caché. */
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
