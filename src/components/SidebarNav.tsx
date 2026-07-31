@@ -353,7 +353,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
       </div>
 
       <Dialog open={isVersionOpen} onOpenChange={setIsVersionOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="z-[70] max-w-sm" overlayClassName="z-[70]">
           <DialogHeader>
             <DialogTitle>Version instalada</DialogTitle>
             <DialogDescription>
