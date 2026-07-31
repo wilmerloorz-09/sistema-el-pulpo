@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { MobileMenuSheet } from "./MobileMenuSheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getUserDisplayName, getUserRealName } from "@/lib/userDisplay";
+import { CashReportViewer } from "@/components/caja/CashReportViewer";
 
 const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -243,6 +244,7 @@ const AppLayout = () => {
           </div>
         </DialogContent>
       </Dialog>
+      <CashReportViewer />
     </>
   );
 };

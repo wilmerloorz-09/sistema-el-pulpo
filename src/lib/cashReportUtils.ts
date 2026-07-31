@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { Database } from "@/integrations/supabase/types";
+import { hideCashReport, showCashReport } from "@/lib/cashReportViewerStore";
 
 /** En móvil/tablet/nativo el diálogo de impresión atrapa al usuario; el reporte ya tiene botón Imprimir. */
 export const shouldAutoPrintCashReport = (): boolean => {
@@ -205,7 +206,10 @@ export const buildCashClosureReportHtml = (params: {
     initial: number;
     current: number;
   };
+  /** Toolbar HTML (Imprimir/Cerrar). En visor in-app debe ser false. */
+  includeToolbar?: boolean;
 }) => {
+  const includeToolbar = params.includeToolbar !== false;
   const sortedDenoms = [...params.shift.denoms]
     .filter((denomination) => denomination.value > 0)
     .sort((a, b) => {
@@ -378,9 +382,9 @@ export const buildCashClosureReportHtml = (params: {
         .page-break { page-break-before: always; break-before: page; }
       }
     </style>
+    ${includeToolbar ? `
     <script>
       function cerrarReporteCaja() {
-        // Pedir al opener que cierre esta ventana (más fiable en WebView/móvil).
         try {
           if (window.opener && !window.opener.closed) {
             try {
@@ -397,7 +401,6 @@ export const buildCashClosureReportHtml = (params: {
           try { sigueAbierta = !window.closed; } catch (_e) { sigueAbierta = true; }
           if (!sigueAbierta) return;
 
-          // En móvil/WebView el reporte a menudo sustituye la vista: volver a Caja.
           try {
             if (window.history.length > 1) {
               window.history.back();
@@ -412,12 +415,15 @@ export const buildCashClosureReportHtml = (params: {
         }, 120);
       }
     </script>
+    ` : ""}
   </head>
   <body>
+    ${includeToolbar ? `
     <div class="toolbar">
       <button type="button" class="primary" onclick="window.print()">Imprimir</button>
       <button type="button" onclick="cerrarReporteCaja()">Cerrar</button>
     </div>
+    ` : ""}
     <div class="header">
       <div>
         <h1>${escapeHtml(reportTitle)}</h1>
@@ -553,40 +559,15 @@ export const buildCashClosureReportHtml = (params: {
 
 export const CASH_REPORT_CLOSE_MESSAGE = "el-pulpo-cerrar-reporte-caja";
 
-/** Escucha el botón Cerrar del reporte y cierra la ventana desde el opener (más fiable en móvil/WebView). */
-export const attachCashReportCloseBridge = (reportWindow: Window) => {
-  const onMessage = (event: MessageEvent) => {
-    const type = (event.data as { type?: string } | null)?.type;
-    if (type !== CASH_REPORT_CLOSE_MESSAGE) return;
-    // No exigir event.source === reportWindow: algunos WebView lo proxyan y fallaría el cierre.
-
-    try {
-      if (!reportWindow.closed) {
-        reportWindow.close();
-      }
-    } catch {
-      // ignore
-    }
-
-    window.removeEventListener("message", onMessage);
-  };
-
-  window.addEventListener("message", onMessage);
-
-  // Limpieza si el usuario cierra la ventana por otra vía.
-  const poll = window.setInterval(() => {
-    if (reportWindow.closed) {
-      window.clearInterval(poll);
-      window.removeEventListener("message", onMessage);
-    }
-  }, 1000);
-
-  return () => {
-    window.clearInterval(poll);
-    window.removeEventListener("message", onMessage);
-  };
+/** @deprecated El reporte ahora se cierra desde el visor in-app. */
+export const attachCashReportCloseBridge = (_reportWindow: Window) => {
+  return () => {};
 };
 
+/**
+ * Abre el reporte de cierre de caja en un visor in-app (pantalla completa).
+ * Evita window.open en tablet/Capacitor, donde Imprimir/Cerrar no responden.
+ */
 export const openCashClosureReportWindow = (params: {
   branchName: string;
   shift: CashShiftSnapshot;
@@ -603,21 +584,24 @@ export const openCashClosureReportWindow = (params: {
   autoPrint?: boolean;
 }) => {
   const { autoPrint = shouldAutoPrintCashReport(), ...reportParams } = params;
-  const reportWindow = window.open("", "_blank", "width=1024,height=900");
-  if (!reportWindow) {
-    return null;
-  }
+  const html = buildCashClosureReportHtml({
+    ...reportParams,
+    includeToolbar: false,
+  });
 
-  attachCashReportCloseBridge(reportWindow);
-  reportWindow.document.open();
-  reportWindow.document.write(buildCashClosureReportHtml(reportParams));
-  reportWindow.document.close();
-  reportWindow.focus();
-  if (autoPrint) {
-    window.setTimeout(() => {
-      reportWindow.print();
-    }, 350);
-  }
+  showCashReport(html, { autoPrint });
 
-  return reportWindow;
+  return {
+    closed: false,
+    close: () => {
+      hideCashReport();
+    },
+    focus: () => {},
+    print: () => {},
+    document: {
+      open: () => {},
+      write: () => {},
+      close: () => {},
+    },
+  } as unknown as Window;
 };

@@ -45,7 +45,6 @@ import { prepareProofImage } from "@/lib/prepareProofImage";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { 
-  attachCashReportCloseBridge,
   buildCashClosureReportHtml, 
   openCashClosureReportWindow,
   shouldAutoPrintCashReport,
@@ -59,6 +58,7 @@ import {
   type CompletedPayment,
   type CashMovement
 } from "@/lib/cashReportUtils";
+import { hideCashReport, showCashReport } from "@/lib/cashReportViewerStore";
 import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
@@ -764,7 +764,7 @@ const Caja = () => {
       ? await fetchCashRegisterMovementsForShift(shift.id)
       : cashRegisterMovements;
 
-    const reportWindow = openCashClosureReportWindow({
+    openCashClosureReportWindow({
       branchName: activeBranch?.name ?? "Sucursal",
       shift,
       completedPayments,
@@ -773,10 +773,6 @@ const Caja = () => {
       closureNotes: shift.notes ?? undefined,
       reportMode: "shift",
     });
-
-    if (!reportWindow) {
-      toast.warning("El navegador bloqueo la ventana del reporte. Permite ventanas emergentes para Caja.");
-    }
   };
 
   const handleReprintOpeningReport = async (opening: CashOpeningSnapshot) => {
@@ -784,7 +780,7 @@ const Caja = () => {
       ? await fetchCashRegisterMovementsForShift(shift.id)
       : cashRegisterMovements;
 
-    const reportWindow = openCashClosureReportWindow({
+    openCashClosureReportWindow({
       ...scopeReportToOpening({
         branchName: activeBranch?.name ?? "Sucursal",
         shift,
@@ -795,10 +791,6 @@ const Caja = () => {
       }),
       reportMode: "opening",
     });
-
-    if (!reportWindow) {
-      toast.warning("El navegador bloqueo la ventana del reporte. Permite ventanas emergentes para Caja.");
-    }
   };
 
   if (!userCajaIsOpen) {
@@ -1060,15 +1052,7 @@ const Caja = () => {
   const shiftElapsed = formatElapsedSince(shift.opened_at);
 
   const handleCloseCashRegister = async (notes?: string) => {
-    const reportWindow = window.open("", "_blank", "width=1024,height=900");
-    if (!reportWindow) {
-      toast.warning("El navegador bloqueo la ventana del reporte. Permite ventanas emergentes para Caja.");
-      return;
-    }
-
-    attachCashReportCloseBridge(reportWindow);
-    reportWindow.document.open();
-    reportWindow.document.write(`<!doctype html>
+    showCashReport(`<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8" />
@@ -1088,7 +1072,6 @@ const Caja = () => {
     </div>
   </body>
 </html>`);
-    reportWindow.document.close();
 
     const closedAtIso = new Date().toISOString();
     const closedOpening: CashOpeningSnapshot | null =
@@ -1127,34 +1110,28 @@ const Caja = () => {
     try {
       await closeCashRegister.mutateAsync(notes);
 
-        reportWindow.document.open();
-        reportWindow.document.write(
-          buildCashClosureReportHtml(
-            closedOpening
-              ? {
-                  ...scopeReportToOpening({
-                    ...reportSnapshot,
-                    opening: closedOpening,
-                    denominationSnapshot: shift.denoms,
-                  }),
-                  reportMode: "opening",
-                }
-              : {
-                  ...reportSnapshot,
-                  methodSummary: completedPaymentsMethodSummary,
-                  reportMode: "shift",
-                },
-          ),
-        );
-      reportWindow.document.close();
-      reportWindow.focus();
-      if (shouldAutoPrintCashReport()) {
-        window.setTimeout(() => {
-          reportWindow.print();
-        }, 350);
-      }
+      const reportHtml = buildCashClosureReportHtml(
+        closedOpening
+          ? {
+              ...scopeReportToOpening({
+                ...reportSnapshot,
+                opening: closedOpening,
+                denominationSnapshot: shift.denoms,
+              }),
+              reportMode: "opening",
+              includeToolbar: false,
+            }
+          : {
+              ...reportSnapshot,
+              methodSummary: completedPaymentsMethodSummary,
+              reportMode: "shift",
+              includeToolbar: false,
+            },
+      );
+
+      showCashReport(reportHtml, { autoPrint: shouldAutoPrintCashReport() });
     } catch (error) {
-      reportWindow.close();
+      hideCashReport();
       throw error;
     }
   };
