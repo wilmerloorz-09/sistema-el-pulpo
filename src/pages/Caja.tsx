@@ -45,6 +45,7 @@ import { prepareProofImage } from "@/lib/prepareProofImage";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { 
+  attachCashReportCloseBridge,
   buildCashClosureReportHtml, 
   openCashClosureReportWindow,
   shouldAutoPrintCashReport,
@@ -1065,6 +1066,7 @@ const Caja = () => {
       return;
     }
 
+    attachCashReportCloseBridge(reportWindow);
     reportWindow.document.open();
     reportWindow.document.write(`<!doctype html>
 <html lang="es">

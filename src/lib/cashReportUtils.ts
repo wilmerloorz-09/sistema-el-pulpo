@@ -378,11 +378,45 @@ export const buildCashClosureReportHtml = (params: {
         .page-break { page-break-before: always; break-before: page; }
       }
     </style>
+    <script>
+      function cerrarReporteCaja() {
+        // Pedir al opener que cierre esta ventana (más fiable en WebView/móvil).
+        try {
+          if (window.opener && !window.opener.closed) {
+            try {
+              window.opener.postMessage({ type: "el-pulpo-cerrar-reporte-caja" }, "*");
+            } catch (_e) {}
+            try { window.opener.focus(); } catch (_e) {}
+          }
+        } catch (_e) {}
+
+        try { window.close(); } catch (_e) {}
+
+        window.setTimeout(function () {
+          var sigueAbierta = true;
+          try { sigueAbierta = !window.closed; } catch (_e) { sigueAbierta = true; }
+          if (!sigueAbierta) return;
+
+          // En móvil/WebView el reporte a menudo sustituye la vista: volver a Caja.
+          try {
+            if (window.history.length > 1) {
+              window.history.back();
+              return;
+            }
+          } catch (_e) {}
+
+          document.body.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:Arial,sans-serif;text-align:center;background:#fff;box-sizing:border-box;">' +
+            '<div><p style="font-size:18px;font-weight:700;margin:0 0 8px;color:#1f2937;">Reporte cerrado</p>' +
+            '<p style="margin:0;color:#6b7280;font-size:14px;line-height:1.4;">Use el botón Atrás del dispositivo para volver a Caja.</p></div></div>';
+        }, 120);
+      }
+    </script>
   </head>
   <body>
     <div class="toolbar">
       <button type="button" class="primary" onclick="window.print()">Imprimir</button>
-      <button type="button" onclick="window.close()">Cerrar</button>
+      <button type="button" onclick="cerrarReporteCaja()">Cerrar</button>
     </div>
     <div class="header">
       <div>
@@ -517,6 +551,42 @@ export const buildCashClosureReportHtml = (params: {
 </html>`;
 };
 
+export const CASH_REPORT_CLOSE_MESSAGE = "el-pulpo-cerrar-reporte-caja";
+
+/** Escucha el botón Cerrar del reporte y cierra la ventana desde el opener (más fiable en móvil/WebView). */
+export const attachCashReportCloseBridge = (reportWindow: Window) => {
+  const onMessage = (event: MessageEvent) => {
+    const type = (event.data as { type?: string } | null)?.type;
+    if (type !== CASH_REPORT_CLOSE_MESSAGE) return;
+    // No exigir event.source === reportWindow: algunos WebView lo proxyan y fallaría el cierre.
+
+    try {
+      if (!reportWindow.closed) {
+        reportWindow.close();
+      }
+    } catch {
+      // ignore
+    }
+
+    window.removeEventListener("message", onMessage);
+  };
+
+  window.addEventListener("message", onMessage);
+
+  // Limpieza si el usuario cierra la ventana por otra vía.
+  const poll = window.setInterval(() => {
+    if (reportWindow.closed) {
+      window.clearInterval(poll);
+      window.removeEventListener("message", onMessage);
+    }
+  }, 1000);
+
+  return () => {
+    window.clearInterval(poll);
+    window.removeEventListener("message", onMessage);
+  };
+};
+
 export const openCashClosureReportWindow = (params: {
   branchName: string;
   shift: CashShiftSnapshot;
@@ -538,6 +608,7 @@ export const openCashClosureReportWindow = (params: {
     return null;
   }
 
+  attachCashReportCloseBridge(reportWindow);
   reportWindow.document.open();
   reportWindow.document.write(buildCashClosureReportHtml(reportParams));
   reportWindow.document.close();
