@@ -16,7 +16,7 @@ import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
-import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 type SpecialOrderCard = {
   id: string;
@@ -129,6 +129,12 @@ const OrdenEspecial = () => {
   const shiftGateQuery = useBranchShiftGate();
   const [creating, setCreating] = useState(false);
 
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId),
+  );
+
   const canOperateSpecial =
     canOperate(permissions, "mesas")
     || canOperate(permissions, "ordenes")
@@ -145,7 +151,9 @@ const OrdenEspecial = () => {
     enabled: !!activeBranchId,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
     gcTime: 2 * 60_000,
   });
 

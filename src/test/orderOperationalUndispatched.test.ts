@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeOperationalQuantities, computeUndispatchedQuantity } from "@/lib/orderOperational";
+import {
+  computeOperationalQuantities,
+  computeUndispatchedQuantity,
+  hasOrderItemOperationalProgress,
+} from "@/lib/orderOperational";
 
 describe("computeUndispatchedQuantity", () => {
   it("returns zero when everything is dispatched", () => {
@@ -25,5 +29,43 @@ describe("computeUndispatchedQuantity", () => {
       quantityCancelledPending: 2,
     });
     expect(computeUndispatchedQuantity(quantities)).toBe(1);
+  });
+});
+
+describe("hasOrderItemOperationalProgress", () => {
+  it("no trata un borrador nuevo sin snapshot como progreso (pendingPrepare=0)", () => {
+    expect(
+      hasOrderItemOperationalProgress({
+        activeQuantity: 1,
+        quantityDispatched: 0,
+        quantityReadyAvailable: 0,
+        quantityPendingPrepare: 0,
+        hasOperationalSnapshot: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("con snapshot y pending completo, sigue sin progreso", () => {
+    expect(
+      hasOrderItemOperationalProgress({
+        activeQuantity: 1,
+        quantityDispatched: 0,
+        quantityReadyAvailable: 0,
+        quantityPendingPrepare: 1,
+        hasOperationalSnapshot: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("detecta progreso cuando hay listo o despachado", () => {
+    expect(
+      hasOrderItemOperationalProgress({
+        activeQuantity: 2,
+        quantityDispatched: 1,
+        quantityReadyAvailable: 0,
+        quantityPendingPrepare: 1,
+        hasOperationalSnapshot: true,
+      }),
+    ).toBe(true);
   });
 });

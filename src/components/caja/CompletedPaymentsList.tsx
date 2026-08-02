@@ -110,6 +110,7 @@ interface Props {
     cashRefundDenoms: CashRefundDenomInput[],
     refundAmount: number,
     refundMethod: PaymentRefundMethod,
+    cashChangeReturnDenoms?: CashRefundDenomInput[],
   ) => Promise<{ requestId: string }>;
   onVoidWithSupervisor: (
     paymentId: string,
@@ -119,6 +120,7 @@ interface Props {
     supervisorPassword: string,
     paymentSelections: PaymentVoidSelectionInput[],
     cashRefundDenoms: CashRefundDenomInput[],
+    cashChangeReturnDenoms?: CashRefundDenomInput[],
   ) => Promise<void>;
   /** Re-cobrar la orden de la fila (misma orden anulada; legacy: sucesora si aplica). */
   onChargeOrder?: (args: { orderId: string; successorOrderId: string | null }) => void;
@@ -254,6 +256,7 @@ export default function CompletedPaymentsList({
       reason: string;
       paymentSelections: PaymentVoidSelectionInput[];
       cashRefundDenoms: CashRefundDenomInput[];
+      cashChangeReturnDenoms?: CashRefundDenomInput[];
       refundMethod?: PaymentRefundMethod | null;
     } | null;
     autoOpenConfirm: boolean;
@@ -279,6 +282,7 @@ export default function CompletedPaymentsList({
     reason: string;
     paymentSelections: PaymentVoidSelectionInput[];
     cashRefundDenoms: CashRefundDenomInput[];
+    cashChangeReturnDenoms: CashRefundDenomInput[];
     selectedAmount: number;
     supervisorIdentifier: string;
     supervisorPassword: string;
@@ -289,6 +293,7 @@ export default function CompletedPaymentsList({
     reason: "",
     paymentSelections: [],
     cashRefundDenoms: [],
+    cashChangeReturnDenoms: [],
     selectedAmount: 0,
     supervisorIdentifier: "",
     supervisorPassword: "",
@@ -304,6 +309,8 @@ export default function CompletedPaymentsList({
   const [changeDetailState, setChangeDetailState] = useState<{
     open: boolean;
     title: string;
+    isVoided: boolean;
+    paidAmount: number;
     showReceived: boolean;
     receivedAmount: number;
     receivedLines: CompletedPayment["cash_received_detail"];
@@ -314,6 +321,8 @@ export default function CompletedPaymentsList({
   }>({
     open: false,
     title: "Detalle de cambio",
+    isVoided: false,
+    paidAmount: 0,
     showReceived: true,
     receivedAmount: 0,
     receivedLines: [],
@@ -560,6 +569,8 @@ export default function CompletedPaymentsList({
         methodsSummary: methods || payment.method_name,
         orderHasDispatchedItems: payment.order_has_dispatched_items,
         requiresSupervisor: isForeignCashier,
+        cashReceivedDetail: payment.cash_received_detail ?? [],
+        cashChangeDetail: payment.cash_change_detail ?? [],
         items: payment.items.map((item) => ({
           id: item.id,
           paymentEntryId: item.paymentEntryId,
@@ -784,7 +795,7 @@ export default function CompletedPaymentsList({
               const hasTransferDetail = groupTransferDetails.length > 0;
               const hasPaymentDetail = hasCashTrace || hasTransferDetail;
               const rowChangeTitle = isVoidedOrReversed
-                ? "Detalle de devolucion"
+                ? "Detalle del cobro y anulacion"
                 : hasCashTrace && hasTransferDetail
                   ? "Detalle de pago (efectivo y transferencia)"
                   : hasTransferDetail
@@ -870,7 +881,11 @@ export default function CompletedPaymentsList({
                             setChangeDetailState({
                               open: true,
                               title: rowChangeTitle,
-                              showReceived: !isVoidedOrReversed && hasCashTrace,
+                              isVoided: isVoidedOrReversed,
+                              paidAmount: payment.amount,
+                              // Siempre mostrar lo recibido si hay rastro de efectivo
+                              // (también en anulados: sin eso el vuelto + devolución parece un solo monto).
+                              showReceived: hasCashTrace,
                               receivedAmount: groupCash.receivedAmount,
                               receivedLines: groupCash.receivedLines,
                               changeLines: groupCash.changeLines,
@@ -1001,6 +1016,17 @@ export default function CompletedPaymentsList({
             <DialogTitle>{changeDetailState.title}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {changeDetailState.isVoided && changeDetailState.paidAmount > 0.005 && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-slate-600">Monto cobrado (anulado)</span>
+                  <span className="text-base font-bold tabular-nums text-slate-950">
+                    {formatCurrency(changeDetailState.paidAmount)}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {changeDetailState.transferDetails.length > 0 && (
               <div className="space-y-3">
                 {changeDetailState.transferDetails.map((transfer) => (
@@ -1067,113 +1093,152 @@ export default function CompletedPaymentsList({
               </div>
             )}
 
-            {changeDetailState.showReceived && (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-950">Total recibido del cliente</span>
-                  <span className="text-lg font-bold text-emerald-700">{formatCurrency(changeDetailState.receivedAmount)}</span>
-                </div>
-                {changeDetailState.receivedLines.length === 0 && (
-                  <p className="mt-1 text-xs font-medium text-emerald-800/70">
-                    {changeDetailState.changeLines.length > 0
-                      ? "Sin efectivo recibido en caja desglosado (p. ej. transferencia). Si hubo cambio en efectivo, se muestra abajo."
-                      : "No se registro desglose de monedas o billetes recibidos."}
+            {(changeDetailState.showReceived
+              || changeDetailState.changeLines.length > 0
+              || changeDetailState.undocumentedChange > 0.005) && (
+              <>
+                {changeDetailState.isVoided && (
+                  <p className="px-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Al cobrar
                   </p>
                 )}
-              </div>
-            )}
 
-            {changeDetailState.showReceived && changeDetailState.receivedLines.length > 0 && (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-950">Monedas y billetes recibidos</span>
-                  <span className="text-lg font-bold text-emerald-700">{formatCurrency(sumDetailLines(changeDetailState.receivedLines))}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {changeDetailState.receivedLines.map((line) => (
-                    <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <DenominationVisual
-                          label={line.label}
-                          imageUrl={line.image_url}
-                          className="h-9 w-9 rounded-xl"
-                          iconClassName="h-4 w-4"
-                        />
-                        <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
-                      </div>
-                      <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                {changeDetailState.showReceived && (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-slate-950">Cliente entrego</span>
+                      <span className="text-lg font-bold text-emerald-700">{formatCurrency(changeDetailState.receivedAmount)}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    {changeDetailState.receivedLines.length === 0 && (
+                      <p className="mt-1 text-xs font-medium text-emerald-800/70">
+                        {changeDetailState.changeLines.length > 0
+                          ? "Sin desglose de efectivo recibido (p. ej. transferencia). Si hubo vuelto en efectivo, se muestra abajo."
+                          : "No se registro desglose de monedas o billetes recibidos."}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-            {changeDetailState.changeLines.length > 0 && (
-              <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-950">Cambio entregado al cliente</span>
-                  <span className="text-lg font-bold text-orange-700">{formatCurrency(sumDetailLines(changeDetailState.changeLines))}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {changeDetailState.changeLines.map((line) => (
-                    <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <DenominationVisual
-                          label={line.label}
-                          imageUrl={line.image_url}
-                          className="h-9 w-9 rounded-xl"
-                          iconClassName="h-4 w-4"
-                        />
-                        <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
-                      </div>
-                      <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                {changeDetailState.showReceived && changeDetailState.receivedLines.length > 0 && (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-slate-950">Monedas y billetes recibidos</span>
+                      <span className="text-lg font-bold text-emerald-700">{formatCurrency(sumDetailLines(changeDetailState.receivedLines))}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    <div className="space-y-1.5">
+                      {changeDetailState.receivedLines.map((line) => (
+                        <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <DenominationVisual
+                              label={line.label}
+                              imageUrl={line.image_url}
+                              className="h-9 w-9 rounded-xl"
+                              iconClassName="h-4 w-4"
+                            />
+                            <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                          </div>
+                          <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-            {changeDetailState.undocumentedChange > 0.005 && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-950">
-                    {changeDetailState.changeLines.length > 0
-                      ? "Cambio adicional sin desglose"
-                      : "Cambio entregado (sin desglose)"}
-                  </span>
-                  <span className="text-lg font-bold text-amber-800">
-                    {formatCurrency(changeDetailState.undocumentedChange)}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-amber-900/75">
-                  Calculado como total recibido menos monto aplicado al cobro (registro previo sin movimientos de cambio en caja).
-                </p>
-              </div>
+                {changeDetailState.changeLines.length > 0 && (
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-sm font-semibold text-slate-950">
+                          {changeDetailState.isVoided ? "Cambio (vuelto al cobrar)" : "Cambio entregado al cliente"}
+                        </span>
+                        {changeDetailState.isVoided && (
+                          <p className="mt-0.5 text-[11px] text-orange-900/70">
+                            Vuelto del cobro original, no es parte de la anulacion.
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-lg font-bold text-orange-700">{formatCurrency(sumDetailLines(changeDetailState.changeLines))}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {changeDetailState.changeLines.map((line) => (
+                        <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <DenominationVisual
+                              label={line.label}
+                              imageUrl={line.image_url}
+                              className="h-9 w-9 rounded-xl"
+                              iconClassName="h-4 w-4"
+                            />
+                            <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                          </div>
+                          <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {changeDetailState.undocumentedChange > 0.005 && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-slate-950">
+                        {changeDetailState.changeLines.length > 0
+                          ? "Cambio adicional sin desglose"
+                          : changeDetailState.isVoided
+                            ? "Cambio al cobrar (sin desglose)"
+                            : "Cambio entregado (sin desglose)"}
+                      </span>
+                      <span className="text-lg font-bold text-amber-800">
+                        {formatCurrency(changeDetailState.undocumentedChange)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-amber-900/75">
+                      Calculado como total recibido menos monto aplicado al cobro (registro previo sin movimientos de cambio en caja).
+                    </p>
+                  </div>
+                )}
+              </>
             )}
 
             {changeDetailState.refundLines.length > 0 && (
-              <div className="rounded-2xl border border-red-200 bg-red-50/60 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-950">Devuelto al cliente</span>
-                  <span className="text-lg font-bold text-red-700">{formatCurrency(sumDetailLines(changeDetailState.refundLines))}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {changeDetailState.refundLines.map((line) => (
-                    <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <DenominationVisual
-                          label={line.label}
-                          imageUrl={line.image_url}
-                          className="h-9 w-9 rounded-xl"
-                          iconClassName="h-4 w-4"
-                        />
-                        <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
-                      </div>
-                      <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+              <>
+                {changeDetailState.isVoided && (
+                  <p className="px-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Al anular
+                  </p>
+                )}
+                <div className="rounded-2xl border border-red-200 bg-red-50/60 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-slate-950">
+                        {changeDetailState.isVoided ? "Devuelto al anular" : "Devuelto al cliente"}
+                      </span>
+                      {changeDetailState.isVoided && (
+                        <p className="mt-0.5 text-[11px] text-red-900/70">
+                          Reembolso del monto cobrado ({formatCurrency(changeDetailState.paidAmount)}).
+                        </p>
+                      )}
                     </div>
-                  ))}
+                    <span className="text-lg font-bold text-red-700">{formatCurrency(sumDetailLines(changeDetailState.refundLines))}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {changeDetailState.refundLines.map((line) => (
+                      <div key={line.denomination_id} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-2 py-1.5 text-sm">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <DenominationVisual
+                            label={line.label}
+                            imageUrl={line.image_url}
+                            className="h-9 w-9 rounded-xl"
+                            iconClassName="h-4 w-4"
+                          />
+                          <span className="truncate text-slate-900">{line.qty}x {line.label}</span>
+                        </div>
+                        <span className="font-semibold text-slate-950">{formatCurrency(line.total)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </DialogContent>
@@ -1197,7 +1262,15 @@ export default function CompletedPaymentsList({
           titleOverride="Anular pago"
           initialDraft={modalState.draft}
           autoOpenConfirm={modalState.autoOpenConfirm}
-          onSubmit={async ({ paymentId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod }) => {
+          onSubmit={async ({
+            paymentId,
+            reason,
+            paymentSelections,
+            cashRefundDenoms,
+            cashChangeReturnDenoms,
+            refundAmount,
+            refundMethod,
+          }) => {
             try {
               const itemList = modalState.payment?.items ?? [];
               const selectedAmount = paymentSelections.reduce((sum, selection) => {
@@ -1214,6 +1287,7 @@ export default function CompletedPaymentsList({
                 cashRefundDenoms,
                 refundAmount,
                 refundMethod,
+                cashChangeReturnDenoms,
               );
               const requestId = requestIdResponse.requestId;
 
@@ -1227,6 +1301,7 @@ export default function CompletedPaymentsList({
                   "",
                   paymentSelections,
                   cashRefundDenoms,
+                  cashChangeReturnDenoms,
                 );
                 setModalState({ open: false, mode: "request", payment: null, draft: null, autoOpenConfirm: false });
                 return;
@@ -1243,6 +1318,7 @@ export default function CompletedPaymentsList({
                   pendingAuthorization.supervisorPassword,
                   paymentSelections,
                   cashRefundDenoms,
+                  cashChangeReturnDenoms,
                 );
                 setModalState({ open: false, mode: "request", payment: null, draft: null, autoOpenConfirm: false });
                 setPendingAuthorization({
@@ -1252,6 +1328,7 @@ export default function CompletedPaymentsList({
                   reason: "",
                   paymentSelections: [],
                   cashRefundDenoms: [],
+                  cashChangeReturnDenoms: [],
                   selectedAmount: 0,
                   supervisorIdentifier: "",
                   supervisorPassword: "",
@@ -1268,6 +1345,7 @@ export default function CompletedPaymentsList({
                   reason,
                   paymentSelections,
                   cashRefundDenoms,
+                  cashChangeReturnDenoms,
                   refundMethod,
                 },
                 autoOpenConfirm: false,
@@ -1279,6 +1357,7 @@ export default function CompletedPaymentsList({
                 reason,
                 paymentSelections,
                 cashRefundDenoms,
+                cashChangeReturnDenoms,
                 selectedAmount,
                 supervisorIdentifier: "",
                 supervisorPassword: "",
@@ -1362,6 +1441,8 @@ export default function CompletedPaymentsList({
                 methodsSummary: methods || payment.method_name,
                 orderHasDispatchedItems: payment.order_has_dispatched_items,
                 requiresSupervisor: true,
+                cashReceivedDetail: payment.cash_received_detail ?? [],
+                cashChangeDetail: payment.cash_change_detail ?? [],
                 items: payment.items.map((item) => ({
                   id: item.id,
                   paymentEntryId: item.paymentEntryId,
@@ -1399,6 +1480,7 @@ export default function CompletedPaymentsList({
                     reason: "",
                     paymentSelections: [],
                     cashRefundDenoms: [],
+                    cashChangeReturnDenoms: [],
                     selectedAmount: 0,
                     supervisorIdentifier: "",
                     supervisorPassword: "",
@@ -1431,6 +1513,7 @@ export default function CompletedPaymentsList({
               password,
               pendingAuthorization.paymentSelections,
               pendingAuthorization.cashRefundDenoms,
+              pendingAuthorization.cashChangeReturnDenoms,
             );
 
             setPendingAuthorization({
@@ -1440,6 +1523,7 @@ export default function CompletedPaymentsList({
               reason: "",
               paymentSelections: [],
               cashRefundDenoms: [],
+              cashChangeReturnDenoms: [],
               selectedAmount: 0,
               supervisorIdentifier: "",
               supervisorPassword: "",

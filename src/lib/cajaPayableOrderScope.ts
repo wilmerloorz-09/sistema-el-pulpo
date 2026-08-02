@@ -5,13 +5,12 @@ export type CajaPayableOrderScope = "all" | "mine" | `user:${string}`;
 export const CAJA_PAYABLE_SCOPE_ALL = "all" as const;
 export const CAJA_PAYABLE_SCOPE_MINE = "mine" as const;
 
+/** Recaudar muestra siempre todas las órdenes por cobrar del turno. */
 export function getDefaultCajaPayableOrderScope(
-  userId: string | undefined,
-  primaryCashierId: string | null | undefined,
+  _userId?: string | undefined,
+  _primaryCashierId?: string | null | undefined,
 ): CajaPayableOrderScope {
-  if (!userId) return CAJA_PAYABLE_SCOPE_ALL;
-  if (primaryCashierId && userId === primaryCashierId) return CAJA_PAYABLE_SCOPE_ALL;
-  return CAJA_PAYABLE_SCOPE_MINE;
+  return CAJA_PAYABLE_SCOPE_ALL;
 }
 
 export function orderMatchesCajaPayableScope(

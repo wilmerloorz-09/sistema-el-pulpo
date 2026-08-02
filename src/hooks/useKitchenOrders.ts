@@ -7,7 +7,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
-import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 export interface KitchenOrderItem {
   id: string;
@@ -58,6 +58,12 @@ export function useKitchenOrders() {
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
   const { data: shiftGate } = useBranchShiftGate();
+
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId),
+  );
 
   const query = useQuery({
     queryKey: ["kitchen-orders", activeBranchId, shiftGate?.shiftId ?? "_"],
@@ -233,7 +239,9 @@ export function useKitchenOrders() {
       return sortBySentAt(cards).filter((order) => order.pending_prepare_count > 0) as KitchenOrder[];
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Actualización vía Realtime; sin polling 10s.
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
   });
 
   useOperationalOrdersRealtime({
@@ -261,8 +269,10 @@ export function useKitchenOrders() {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      invalidateOperationalOrderQueries(qc, {
+        includeTables: true,
+        includeCompletedPayments: false,
+      });
       toast.success("Operacion de listo aplicada");
     },
     onError: (err: any) => toast.error(err.message || "No se pudo aplicar la operacion de listo"),

@@ -26,7 +26,7 @@ import {
   type SiblingOrder,
 } from "@/hooks/useOrder";
 import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
-import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 const seedExtraOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -75,6 +75,12 @@ const Extra = () => {
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const isDispatchFirstWorkflow = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
 
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId && user?.id),
+  );
+
   useEffect(() => {
     if (isDispatchFirstWorkflow) {
       navigate("/mesas", { replace: true });
@@ -95,7 +101,9 @@ const Extra = () => {
     enabled: !!activeBranchId && !!user?.id,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
     gcTime: 2 * 60_000,
   });
 

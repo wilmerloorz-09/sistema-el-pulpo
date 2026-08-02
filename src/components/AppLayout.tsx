@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { purgeEmptyDineInTableDraftOnLeave } from "@/hooks/useOrder";
-import { Building2, KeyRound, LogOut, UserRound, WifiOff, Menu } from "lucide-react";
+import { Building2, KeyRound, LogOut, RefreshCw, UserRound, WifiOff, Menu } from "lucide-react";
 import BottomNav from "./BottomNav";
 import SidebarNav from "./SidebarNav";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -13,6 +13,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { useTheme } from "@/hooks/useTheme";
+import { useHubRealtimeStatus } from "@/lib/queryEgress";
 import { OrderReadyAlertCenter } from "@/hooks/useMeseroOrderReadyNotification";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -69,6 +70,8 @@ const AppLayout = () => {
   }, [location.pathname, location.search, qc]);
   const { activeBranch, activeBranchId, branches, setActiveBranch, loading } = useBranch();
   const { isOnline } = useNetwork();
+  const hubStatus = useHubRealtimeStatus(activeBranchId);
+  const hubDegraded = isOnline && hubStatus !== "idle" && hubStatus !== "subscribed" && hubStatus !== "connecting";
   const { isDesktop } = useBreakpoint();
   const { isDark, toggle } = useTheme();
   const accountAlias = getUserDisplayName(profile);
@@ -101,6 +104,15 @@ const AppLayout = () => {
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                   <AutopedidosQrBadgeButton onClick={() => setAutopedidosOpen(true)} />
+                  {hubDegraded && (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800 shadow-sm"
+                      title="La sincronizacion en vivo no esta activa; se refresca cada ~25s"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span className="hidden xs:inline">Sync lenta</span>
+                    </span>
+                  )}
                   {!isOnline && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
                       <WifiOff className="h-3 w-3" />
@@ -133,6 +145,11 @@ const AppLayout = () => {
                 </div>
               </div>
             </header>
+          )}
+          {isDesktop && hubDegraded && (
+            <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold text-amber-900">
+              Sincronizacion en vivo interrumpida — las listas se refrescan cada ~25 s
+            </div>
           )}
           {isDesktop && !isOnline && (
             <header className="sticky top-0 z-40 h-0 overflow-hidden bg-white dark:bg-card">

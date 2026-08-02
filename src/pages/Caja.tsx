@@ -25,15 +25,6 @@ import ShiftSummary from "@/components/caja/ShiftSummary";
 import PayableOrdersList from "@/components/caja/PayableOrdersList";
 import PaymentDialog from "@/components/caja/PaymentDialog";
 import PaymentDialogV2 from "@/components/caja/PaymentDialogV2";
-import CajaPayableOrderScopeSelect from "@/components/caja/CajaPayableOrderScopeSelect";
-import {
-  buildPayableOrderCreatorOptions,
-  getDefaultCajaPayableOrderScope,
-  loadPersistedCajaPayableScope,
-  orderMatchesCajaPayableScope,
-  persistCajaPayableScope,
-  type CajaPayableOrderScope,
-} from "@/lib/cajaPayableOrderScope";
 import { USE_PAYMENT_DIALOG_V2 } from "@/lib/cajaPaymentUi";
 import CompletedPaymentsList from "@/components/caja/CompletedPaymentsList";
 import ComprobantesPagoPendientesPanel from "@/components/caja/ComprobantesPagoPendientesPanel";
@@ -96,7 +87,6 @@ const Caja = () => {
   const [uploadingCaptureRequestId, setUploadingCaptureRequestId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [payableOrderScope, setPayableOrderScope] = useState<CajaPayableOrderScope>("all");
   const [completedChargeOrder, setCompletedChargeOrder] = useState<PayableOrder | null>(null);
   const [completedChargeBlock, setCompletedChargeBlock] = useState<{
     kind: "not_found" | "undispatched" | "locked";
@@ -211,47 +201,15 @@ const Caja = () => {
     [user?.id, captureCandidates],
   );
 
-  useEffect(() => {
-    if (!activeBranch?.id || !shiftGateQuery.data?.shiftId || !user?.id) return;
-    const persisted = loadPersistedCajaPayableScope(activeBranch.id, shiftGateQuery.data.shiftId);
-    setPayableOrderScope(
-      persisted ?? getDefaultCajaPayableOrderScope(user.id, shiftGateQuery.data.primaryCashierId),
-    );
-  }, [activeBranch?.id, shiftGateQuery.data?.shiftId, shiftGateQuery.data?.primaryCashierId, user?.id]);
-
   const isDispatchThenCash = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
 
-  const payableCreatorOptions = useMemo(
-    () =>
-      buildPayableOrderCreatorOptions(
-        isDispatchThenCash
-          ? payableOrders.filter((order) => order.ready_to_collect)
-          : payableOrders,
-      ),
-    [payableOrders, isDispatchThenCash],
-  );
-
+  // Recaudar: todas las órdenes por cobrar del turno (sin filtrar por cajero/creador).
   const filteredPayableOrders = useMemo(() => {
-    let orders = payableOrders;
-    if (user?.id) {
-      orders = orders.filter((order) =>
-        orderMatchesCajaPayableScope(order, payableOrderScope, user.id),
-      );
-    }
-    // Despacho primero: solo órdenes 100% despachadas (sin botón rojo de bloqueo).
     if (isDispatchThenCash) {
-      orders = orders.filter((order) => order.ready_to_collect);
+      return payableOrders.filter((order) => order.ready_to_collect);
     }
-    return orders;
-  }, [payableOrders, payableOrderScope, user?.id, isDispatchThenCash]);
-
-  const handlePayableOrderScopeChange = useCallback(
-    (scope: CajaPayableOrderScope) => {
-      setPayableOrderScope(scope);
-      persistCajaPayableScope(activeBranch?.id, shiftGateQuery.data?.shiftId, scope);
-    },
-    [activeBranch?.id, shiftGateQuery.data?.shiftId],
-  );
+    return payableOrders;
+  }, [payableOrders, isDispatchThenCash]);
 
   const activeCaptureRequest = useMemo(
     () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
@@ -718,7 +676,7 @@ const Caja = () => {
               currentUserId={user?.id ?? null}
               actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
               onFiltersChange={setCompletedFilters}
-              onRequestVoid={(paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod) =>
+              onRequestVoid={(paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod, cashChangeReturnDenoms) =>
                 requestPaymentVoid.mutateAsync({
                   paymentId,
                   orderId,
@@ -727,9 +685,10 @@ const Caja = () => {
                   cashRefundDenoms,
                   refundAmount,
                   refundMethod,
+                  cashChangeReturnDenoms,
                 })
               }
-              onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms) =>
+              onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms, cashChangeReturnDenoms) =>
                 voidPaymentWithSupervisor.mutateAsync({
                   paymentId,
                   requestId,
@@ -738,6 +697,7 @@ const Caja = () => {
                   supervisorPassword,
                   paymentSelections,
                   cashRefundDenoms,
+                  cashChangeReturnDenoms,
                 })
               }
             />
@@ -1191,14 +1151,6 @@ const Caja = () => {
           {activeTab === "pending" ? (
             <div className="space-y-3 sm:space-y-4">
               <ComprobantesPagoPendientesPanel />
-              <div>
-                <CajaPayableOrderScopeSelect
-                  scope={payableOrderScope}
-                  creatorOptions={payableCreatorOptions}
-                  disabled={cajaPanelReadOnly}
-                  onScopeChange={handlePayableOrderScopeChange}
-                />
-              </div>
               <PayableOrdersList
                 orders={filteredPayableOrders}
                 paymentMethods={paymentMethods}
@@ -1236,7 +1188,7 @@ const Caja = () => {
                 currentUserId={user?.id ?? null}
                 actionLoading={requestPaymentVoid.isPending || voidPaymentWithSupervisor.isPending}
                 onFiltersChange={setCompletedFilters}
-                onRequestVoid={(paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod) =>
+                onRequestVoid={(paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod, cashChangeReturnDenoms) =>
                   requestPaymentVoid.mutateAsync({
                     paymentId,
                     orderId,
@@ -1245,9 +1197,10 @@ const Caja = () => {
                     cashRefundDenoms,
                     refundAmount,
                     refundMethod,
+                    cashChangeReturnDenoms,
                   })
                 }
-                onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms) =>
+                onVoidWithSupervisor={(paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms, cashChangeReturnDenoms) =>
                   voidPaymentWithSupervisor.mutateAsync({
                     paymentId,
                     requestId,
@@ -1256,6 +1209,7 @@ const Caja = () => {
                     supervisorPassword,
                     paymentSelections,
                     cashRefundDenoms,
+                    cashChangeReturnDenoms,
                   })
                 }
                 onChargeOrder={handleChargeOrderFromCompleted}

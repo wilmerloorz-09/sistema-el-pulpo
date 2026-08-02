@@ -5,7 +5,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { Button } from "@/components/ui/button";
-import { hasPermission, type AccessLevel } from "@/lib/permissions";
+import { hasPermission, canManage, type AccessLevel } from "@/lib/permissions";
 
 interface Props {
   children: React.ReactNode;
@@ -91,7 +91,12 @@ const ProtectedRoute = ({
   if (!user) return <Navigate to="/login" replace />;
 
   /** Solo turno: no esperar `usePreferredHomePath` (incluye config despacho) para montar la pantalla. */
-  if (requiresOpenShift && !isGlobalAdmin && shiftGateQuery.isLoading) {
+  const isBranchAdmin =
+    Boolean(isGlobalAdmin)
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
+
+  if (requiresOpenShift && !isBranchAdmin && shiftGateQuery.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -106,7 +111,7 @@ const ProtectedRoute = ({
   const canAccessTurno = canAccessAdmin || hasPermission(permissions, "turno", "VIEW");
   const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
   const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
-  const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor);
+  const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || isBranchAdmin;
   const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
   
   const hasBlockedShiftRole = !hasSupervisorBypass && blockedShiftRoles && blockedShiftRoles.length > 0
@@ -175,7 +180,7 @@ const ProtectedRoute = ({
     );
   }
 
-  if (requiresOpenShift && !isGlobalAdmin) {
+  if (requiresOpenShift && !isBranchAdmin) {
     if (!shiftOpen || !userEnabled) {
       if (canAccessTurno) {
         return <Navigate to={canAccessAdmin ? "/admin" : "/turno"} replace />;

@@ -58,6 +58,30 @@ export function computeUndispatchedQuantity(quantities: OperationalQuantitySnaps
   return Math.max(0, activeOrdered - quantities.quantityDispatchedAvailable);
 }
 
+/**
+ * Detecta progreso real de cocina/despacho para reescribir DRAFT → SENT/DISPATCHED.
+ * Si no hay snapshot operacional, pendingPrepare=0 NO cuenta como progreso
+ * (un borrador nuevo sin tickets quedaría mal marcado como SENT y "Enviar a cocina" no lo envía).
+ */
+export function hasOrderItemOperationalProgress(input: {
+  activeQuantity: number;
+  quantityDispatched: number;
+  quantityReadyAvailable: number;
+  quantityPendingPrepare: number;
+  hasOperationalSnapshot: boolean;
+}): boolean {
+  const activeQuantity = Math.max(0, Number(input.activeQuantity ?? 0));
+  const quantityDispatched = Math.max(0, Number(input.quantityDispatched ?? 0));
+  const quantityReadyAvailable = Math.max(0, Number(input.quantityReadyAvailable ?? 0));
+  const quantityPendingPrepare = Math.max(0, Number(input.quantityPendingPrepare ?? 0));
+
+  if (quantityDispatched > 0 || quantityReadyAvailable > 0) return true;
+
+  if (!input.hasOperationalSnapshot) return false;
+
+  return activeQuantity > 0 && quantityPendingPrepare < activeQuantity;
+}
+
 export function sumRowsByItem<Row extends Record<string, unknown>>(
   rows: Row[],
   itemIdKey: keyof Row,

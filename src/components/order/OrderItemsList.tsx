@@ -30,6 +30,7 @@ interface OrderItem {
   quantity_remaining?: number;
   quantity_cancelled?: number;
   quantity_cancellable?: number;
+  quantity_paid?: number;
   unit_price: number;
   total: number;
   status: string;
@@ -287,11 +288,13 @@ function splitItemsForDispatchFirstSections(items: OrderItem[], editDispatchedIt
         }, remainingQty));
       }
       if (dispatchedQty > 0) {
+        // Copia solo de la porcion despachada: remaining=0 para que no quede
+        // editable como "En despacho" dentro de la seccion Despachados.
         dispatched.push(buildSectionItemTotals({
           ...item,
           quantity: dispatchedQty,
           quantity_dispatched: dispatchedQty,
-          quantity_remaining: remainingQty,
+          quantity_remaining: 0,
         }, dispatchedQty));
       }
       continue;
@@ -417,8 +420,12 @@ const OrderItemsList = ({
           || item.status === "DRAFT"
         );
       const canShowControlsForItem = !listHideControls || editableById;
+      // En seccion Despachados solo se edita con "Editar orden" (editableById).
       const freelyEditableInDispatchFirst =
-        allowSentStageEditing && !listAlwaysShowControls && isOrderItemFreelyEditableInDispatchFirst(item);
+        allowSentStageEditing
+        && !listAlwaysShowControls
+        && section !== "dispatched"
+        && isOrderItemFreelyEditableInDispatchFirst(item);
       const showControls =
         canShowControlsForItem &&
         !isTemporaryItem &&
@@ -432,7 +439,12 @@ const OrderItemsList = ({
       const trimmedItemNote = String(item.item_note ?? "").trim();
       const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
       const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
-      const itemStage = getOrderItemStage(item);
+      // Pagados → Pagado; seccion Despachados → Despachado (aunque la linea original sea parcial).
+      const itemStage = isPaidGroup
+        ? "paid"
+        : section === "dispatched"
+          ? "dispatched"
+          : getOrderItemStage(item);
       const itemStageStyles = getOrderItemStageStyles(itemStage);
 
       return (
@@ -741,6 +753,28 @@ const OrderItemsList = ({
 
     const displayOrderTotal = isSpecial ? specialOrderChargeTotal : orderTotal;
 
+    // Despacho primero + Editar orden: lo pendiente despachado debe editarse;
+    // lo pagado nunca. El layout Pendiente/Pagado no usaba section="dispatched",
+    // así que los controles no aparecían.
+    const renderPendingEditable = () => {
+      if (!editDispatchedItemsOnly) {
+        return renderList(pendingItems, false);
+      }
+
+      const { draft, inDispatch, dispatched } = splitItemsForDispatchFirstSections(
+        pendingItems,
+        true,
+      );
+
+      return (
+        <>
+          {draft.length > 0 ? renderList(draft, false, "inDispatch") : null}
+          {inDispatch.length > 0 ? renderList(inDispatch, false, "inDispatch") : null}
+          {dispatched.length > 0 ? renderList(dispatched, false, "dispatched") : null}
+        </>
+      );
+    };
+
     return (
       <div className="flex flex-col gap-4">
         {pendingItems.length > 0 && (
@@ -749,7 +783,7 @@ const OrderItemsList = ({
               Productos Pendientes
             </h3>
             <div className="flex flex-col gap-3">
-              {renderList(pendingItems, false)}
+              {renderPendingEditable()}
             </div>
           </div>
         )}

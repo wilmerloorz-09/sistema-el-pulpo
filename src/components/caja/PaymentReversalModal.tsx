@@ -11,6 +11,7 @@ import type {
   PaymentVoidSelectionInput,
   ShiftDenom,
 } from "@/hooks/useCaja";
+import { buildVoidCashPlan, type VoidDenomLine } from "@/lib/voidCashPlan";
 import { cn } from "@/lib/utils";
 import { roundMoney } from "@/lib/paymentQuantity";
 import { isTransferPaymentMethodName } from "@/lib/paymentMethods";
@@ -31,6 +32,8 @@ export interface ReversalPaymentData {
   methodsSummary: string;
   orderHasDispatchedItems: boolean;
   requiresSupervisor?: boolean;
+  cashReceivedDetail?: VoidDenomLine[];
+  cashChangeDetail?: VoidDenomLine[];
   items: {
     id: string;
     paymentEntryId: string;
@@ -57,6 +60,7 @@ interface Props {
     reason: string;
     paymentSelections: PaymentVoidSelectionInput[];
     cashRefundDenoms?: CashRefundDenomInput[];
+    cashChangeReturnDenoms?: CashRefundDenomInput[];
     refundMethod?: PaymentRefundMethod | null;
   } | null;
   autoOpenConfirm?: boolean;
@@ -65,6 +69,7 @@ interface Props {
     reason: string;
     paymentSelections: PaymentVoidSelectionInput[];
     cashRefundDenoms: CashRefundDenomInput[];
+    cashChangeReturnDenoms: CashRefundDenomInput[];
     refundAmount: number;
     refundMethod: PaymentRefundMethod;
   }) => Promise<void> | void;
@@ -180,51 +185,34 @@ export default function PaymentReversalModal({
   const isTransferPayment = payment ? isTransferPaymentMethodName(payment.methodsSummary) : false;
   const refundUsesCash = refundMethod === "CASH";
 
-  const refundBreakdown = useMemo(() => {
-    if (selectedTotal <= 0 || !refundUsesCash) return [];
-
-    const sorted = [...shiftDenoms]
-      .filter((denomination) => denomination.value > 0)
-      .sort((a, b) => b.value - a.value || a.display_order - b.display_order);
-
-    const result: Array<{
-      denomination_id: string;
-      label: string;
-      value: number;
-      qty: number;
-      total: number;
-      image_url?: string | null;
-    }> = [];
-
-    let remaining = selectedTotal;
-
-    for (const denomination of sorted) {
-      if (remaining <= 0.001) break;
-      const available = Math.max(0, Number(denomination.qty_current ?? 0));
-      if (available <= 0) continue;
-
-      const maxQty = Math.floor(remaining / denomination.value);
-      const qty = Math.min(maxQty, available);
-      if (qty <= 0) continue;
-
-      result.push({
-        denomination_id: denomination.denomination_id,
-        label: denomination.label,
-        value: denomination.value,
-        qty,
-        total: roundMoney(qty * denomination.value),
-        image_url: denomination.image_url ?? null,
-      });
-
-      remaining = roundMoney(remaining - qty * denomination.value);
+  const voidCashPlan = useMemo(() => {
+    if (selectedTotal <= 0 || !refundUsesCash || !payment) {
+      return {
+        mode: "greedy" as const,
+        cashOut: [] as VoidDenomLine[],
+        cashIn: [] as VoidDenomLine[],
+        outTotal: 0,
+        inTotal: 0,
+        netTotal: 0,
+      };
     }
 
-    return result;
-  }, [selectedTotal, shiftDenoms, refundUsesCash]);
+    return buildVoidCashPlan({
+      refundAmount: selectedTotal,
+      paymentAmount: payment.amount,
+      receivedLines: payment.cashReceivedDetail ?? [],
+      changeLines: payment.cashChangeDetail ?? [],
+      shiftDenoms,
+    });
+  }, [selectedTotal, refundUsesCash, payment, shiftDenoms]);
+
+  const refundBreakdown = voidCashPlan.cashOut;
+  const changeReturnBreakdown = voidCashPlan.cashIn;
+  const isExactTenderPlan = voidCashPlan.mode === "exact_tender";
 
   const cashRefundTotal = useMemo(
-    () => roundMoney(refundBreakdown.reduce((sum, denomination) => sum + denomination.total, 0)),
-    [refundBreakdown],
+    () => roundMoney(voidCashPlan.netTotal),
+    [voidCashPlan.netTotal],
   );
   const refundTotal = refundMethod === "TRANSFER" ? selectedTotal : cashRefundTotal;
   const refundDifference = roundMoney(selectedTotal - cashRefundTotal);
@@ -263,6 +251,10 @@ export default function PaymentReversalModal({
       denomination_id: denomination.denomination_id,
       qty: denomination.qty,
     }));
+    const cashChangeReturnDenoms = changeReturnBreakdown.map((denomination) => ({
+      denomination_id: denomination.denomination_id,
+      qty: denomination.qty,
+    }));
 
     setConfirmSubmitting(true);
     setSubmitError(null);
@@ -272,6 +264,7 @@ export default function PaymentReversalModal({
         reason: reason.trim() || "Sin motivo especificado",
         paymentSelections,
         cashRefundDenoms: refundUsesCash ? cashRefundDenoms : [],
+        cashChangeReturnDenoms: refundUsesCash ? cashChangeReturnDenoms : [],
         refundAmount: selectedTotal,
         refundMethod: refundMethod ?? "CASH",
       });
@@ -387,10 +380,12 @@ export default function PaymentReversalModal({
           )}>
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-sm font-semibold text-foreground">
-                {refundUsesCash ? "Devolucion a entregar desde caja" : "Devolucion por transferencia"}
+                {refundUsesCash
+                  ? (isExactTenderPlan ? "Entregar al cliente (billete/moneda original)" : "Devolucion a entregar desde caja")
+                  : "Devolucion por transferencia"}
               </p>
               <p className={cn("font-display text-xl font-bold", refundUsesCash ? "text-red-600" : "text-blue-700")}>
-                ${refundTotal.toFixed(2)}
+                ${isExactTenderPlan ? voidCashPlan.outTotal.toFixed(2) : refundTotal.toFixed(2)}
               </p>
             </div>
             {!refundUsesCash ? (
@@ -418,6 +413,41 @@ export default function PaymentReversalModal({
               <p className="text-sm text-muted-foreground">No hay detalle de devolucion disponible todavia.</p>
             )}
           </div>
+
+          {refundUsesCash && isExactTenderPlan && changeReturnBreakdown.length > 0 && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Recuperar en caja (vuelto del cliente)</p>
+                  <p className="mt-0.5 text-[11px] text-emerald-900/70">
+                    El cliente regresa el vuelto del cobro; entra a caja con las mismas denominaciones.
+                  </p>
+                </div>
+                <p className="font-display text-xl font-bold text-emerald-700">
+                  ${voidCashPlan.inTotal.toFixed(2)}
+                </p>
+              </div>
+              <div className="space-y-1">
+                {changeReturnBreakdown.map((denomination) => (
+                  <div key={denomination.denomination_id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <DenominationVisual
+                        label={denomination.label}
+                        imageUrl={denomination.image_url}
+                        className="h-9 w-9 rounded-xl"
+                        iconClassName="h-4 w-4"
+                      />
+                      <span className="truncate text-foreground">{denomination.qty}x {denomination.label}</span>
+                    </div>
+                    <span className="font-medium text-foreground">${denomination.total.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs font-medium text-emerald-900/80">
+                Neto de caja: ${voidCashPlan.netTotal.toFixed(2)} (anulado).
+              </p>
+            </div>
+          )}
 
           {refundUsesCash && Math.abs(refundDifference) >= 0.001 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">

@@ -71,6 +71,9 @@ Deno.serve(async (req) => {
     const cashRefundDetail = Array.isArray(payload.cash_refund_detail)
       ? payload.cash_refund_detail
       : [];
+    const cashChangeReturnDetail = Array.isArray((payload as any).cash_change_return_detail)
+      ? (payload as any).cash_change_return_detail
+      : [];
 
     if (!paymentId) return toJson({ error: "El pago no existe" }, 400);
     if (!requestId) return toJson({ error: "La solicitud de anulacion no existe" }, 400);
@@ -225,6 +228,7 @@ Deno.serve(async (req) => {
       p_terminal_id: terminalId,
       p_payment_item_selections: paymentItemSelections,
       p_cash_refund_detail: cashRefundDetail,
+      p_cash_change_return_detail: cashChangeReturnDetail,
     });
 
     if (approveError) {

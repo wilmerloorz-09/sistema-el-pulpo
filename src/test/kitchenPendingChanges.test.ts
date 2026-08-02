@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   computeKitchenSendMoneyDelta,
+  computeKitchenSendMoneyDeltaForSend,
   formatKitchenSendMoneyDelta,
   hasKitchenPendingChanges,
+  hasKitchenPendingSendChanges,
   reconcileKitchenStagedItems,
 } from "@/lib/kitchenPendingChanges";
 
@@ -37,6 +39,65 @@ describe("kitchenPendingChanges", () => {
   it("no marca cambios cuando la vista coincide con la base", () => {
     expect(hasKitchenPendingChanges(baseline, baseline)).toBe(false);
     expect(computeKitchenSendMoneyDelta(baseline, baseline)).toBe(0);
+  });
+
+  it("ignora bajas de lineas ya despachadas para Enviar a cocina", () => {
+    const dispatchedBaseline = [
+      {
+        id: "d1",
+        quantity: 3,
+        unit_price: 3.5,
+        tray_container_cost: 0,
+        quantity_dispatched: 3,
+        quantity_remaining: 0,
+        status: "SENT_TO_KITCHEN",
+      },
+      {
+        id: "e1",
+        quantity: 2,
+        unit_price: 1.25,
+        tray_container_cost: 0,
+        quantity_dispatched: 0,
+        quantity_remaining: 2,
+        status: "SENT_TO_KITCHEN",
+      },
+    ];
+    const pending = [
+      { ...dispatchedBaseline[0], quantity: 0, total: 0 },
+      dispatchedBaseline[1],
+    ];
+
+    expect(hasKitchenPendingChanges(dispatchedBaseline, pending)).toBe(true);
+    expect(hasKitchenPendingSendChanges(dispatchedBaseline, pending)).toBe(false);
+    expect(computeKitchenSendMoneyDeltaForSend(dispatchedBaseline, pending)).toBe(0);
+  });
+
+  it("si incluye baja en En despacho, si cuenta para Enviar a cocina", () => {
+    const mixBaseline = [
+      {
+        id: "d1",
+        quantity: 3,
+        unit_price: 3.5,
+        tray_container_cost: 0,
+        quantity_dispatched: 3,
+        quantity_remaining: 0,
+      },
+      {
+        id: "e1",
+        quantity: 2,
+        unit_price: 1.25,
+        tray_container_cost: 0,
+        quantity_dispatched: 0,
+        quantity_remaining: 2,
+      },
+    ];
+    const pending = [
+      { ...mixBaseline[0], quantity: 0, total: 0 },
+      { ...mixBaseline[1], quantity: 1, total: 1.25 },
+    ];
+
+    expect(hasKitchenPendingSendChanges(mixBaseline, pending)).toBe(true);
+    expect(computeKitchenSendMoneyDeltaForSend(mixBaseline, pending)).toBe(-1.25);
   });
 
   it("reemplaza ids temp-* con lineas reales del servidor", () => {

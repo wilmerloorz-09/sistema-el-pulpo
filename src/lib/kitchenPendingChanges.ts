@@ -1,9 +1,14 @@
+import { isOrderItemFullyDispatched } from "@/lib/orderFlow";
+
 export type KitchenPendingItem = {
   id: string;
   quantity: number;
   unit_price: number;
   tray_container_cost?: number | null;
   total?: number;
+  status?: string | null;
+  quantity_dispatched?: number | null;
+  quantity_remaining?: number | null;
 };
 
 export function computeItemChargeTotal(item: KitchenPendingItem): number {
@@ -23,6 +28,11 @@ function effectiveQuantity(item: KitchenPendingItem): number {
   return Math.max(0, Number(item.quantity ?? 0));
 }
 
+function isDispatchedLine(item: KitchenPendingItem): boolean {
+  if (String(item.status ?? "") === "DISPATCHED") return true;
+  return isOrderItemFullyDispatched(item);
+}
+
 export function hasKitchenPendingChanges(
   baseline: KitchenPendingItem[],
   pending: KitchenPendingItem[],
@@ -39,6 +49,67 @@ export function hasKitchenPendingChanges(
   }
 
   return false;
+}
+
+/**
+ * Cambios que sí deben confirmarse con "Enviar a cocina".
+ * Reducir/eliminar líneas ya despachadas NO aplica: eso va por "Editar orden".
+ */
+export function hasKitchenPendingSendChanges(
+  baseline: KitchenPendingItem[],
+  pending: KitchenPendingItem[],
+): boolean {
+  const pendingById = new Map(pending.map((item) => [item.id, item]));
+  const baselineById = new Map(baseline.map((item) => [item.id, item]));
+
+  for (const [id, base] of baselineById) {
+    const pend = pendingById.get(id);
+    const baseQty = effectiveQuantity(base);
+    const pendQty = pend ? effectiveQuantity(pend) : 0;
+    if (pendQty === baseQty) continue;
+
+    // Baja o baja a 0 de una línea despachada: ignorar para Enviar a cocina.
+    if (pendQty < baseQty && isDispatchedLine(base)) {
+      continue;
+    }
+
+    return true;
+  }
+
+  for (const [id, pend] of pendingById) {
+    if (baselineById.has(id)) continue;
+    if (effectiveQuantity(pend) > 0) return true;
+  }
+
+  return false;
+}
+
+/** Delta monetario solo de cambios que aplican a Enviar a cocina. */
+export function computeKitchenSendMoneyDeltaForSend(
+  baseline: KitchenPendingItem[],
+  pending: KitchenPendingItem[],
+): number {
+  const pendingById = new Map(pending.map((item) => [item.id, item]));
+  let delta = 0;
+
+  for (const base of baseline) {
+    const pend = pendingById.get(base.id);
+    const baseQty = effectiveQuantity(base);
+    const pendQty = pend ? effectiveQuantity(pend) : 0;
+    if (pendQty === baseQty) continue;
+    if (pendQty < baseQty && isDispatchedLine(base)) continue;
+
+    const baseCharge = computeItemChargeTotal(base);
+    const pendCharge = pend ? computeItemChargeTotal({ ...pend, quantity: pendQty }) : 0;
+    delta += pendCharge - baseCharge;
+  }
+
+  for (const pend of pending) {
+    if (baseline.some((b) => b.id === pend.id)) continue;
+    delta += computeItemChargeTotal(pend);
+  }
+
+  return Math.round(delta * 100) / 100;
 }
 
 export function computeKitchenSendMoneyDelta(

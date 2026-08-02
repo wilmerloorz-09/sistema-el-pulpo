@@ -21,6 +21,7 @@ import {
   CATALOG_STALE_MS,
   OPERATIONAL_STALE_MS,
   OPERATIONAL_BACKUP_POLL_MS,
+  OPERATIONAL_LIST_BACKUP_POLL_MS,
   invalidateOperationalOrderQueries,
   useAdaptiveRefetchInterval,
   useOperationalOrdersRealtime,
@@ -1319,6 +1320,11 @@ export function useCaja(params?: {
     OPERATIONAL_BACKUP_POLL_MS,
     Boolean(activeBranchId && user?.id),
   );
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId),
+  );
 
   const denomsQuery = useQuery({
     queryKey: qk.denominations,
@@ -2104,7 +2110,10 @@ export function useCaja(params?: {
         );
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Actualización vía Realtime (useOperationalOrdersRealtime); sin polling 10s.
+    // Realtime SUBSCRIBED → sin poll; si el hub cae → respaldo 25s.
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
     enabled: !!activeBranchId,
     // Al cambiar de sucursal o de turno se conserva la lista previa en lugar de
     // mostrar el vacio de carga.
@@ -2424,6 +2433,23 @@ export function useCaja(params?: {
         }
         return Array.from(map.values()).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
       };
+      /** Quita del vuelto las denominaciones de una anulación (también se guardan como CHANGE_OUT). */
+      const subtractDetailLines = (
+        base: CashMovementDetailLine[],
+        subtract: CashMovementDetailLine[],
+      ): CashMovementDetailLine[] => {
+        if (base.length === 0) return [];
+        if (subtract.length === 0) return base;
+        const qtyById = new Map(base.map((line) => [line.denomination_id, line.qty]));
+        for (const line of subtract) {
+          const remaining = Math.max(0, (qtyById.get(line.denomination_id) ?? 0) - line.qty);
+          if (remaining > 0) qtyById.set(line.denomination_id, remaining);
+          else qtyById.delete(line.denomination_id);
+        }
+        return compactDetailLines(
+          Array.from(qtyById.entries()).map(([denominationId, qty]) => buildDetailLine(denominationId, qty)),
+        );
+      };
       const cashChangeDetailByPayment: Record<string, CashMovementDetailLine[]> = {};
       const cashReceivedDetailByPayment: Record<string, CashMovementDetailLine[]> = {};
       for (const row of cashMovementRows ?? []) {
@@ -2446,12 +2472,29 @@ export function useCaja(params?: {
       }
       for (const payment of allPaymentsInRange) {
         const meta = parsePaymentNotes(payment.notes);
-        if ((cashReceivedDetailByPayment[payment.id] ?? []).length === 0 && meta.cashReceivedDenoms.length > 0) {
+        // Preferir notas del cobro: tras anulación exacta hay PAYMENT_IN del vuelto
+        // que no debe mezclarse con lo que el cliente entregó originalmente.
+        if (meta.cashReceivedDenoms.length > 0) {
           cashReceivedDetailByPayment[payment.id] = compactDetailLines(
             meta.cashReceivedDenoms.map((entry) => buildDetailLine(entry.denomination_id, entry.qty)),
           );
+        } else if ((cashReceivedDetailByPayment[payment.id] ?? []).length === 0) {
+          // sin notas ni movimientos
         }
-        if ((cashChangeDetailByPayment[payment.id] ?? []).length === 0 && meta.cashChangeDenoms.length > 0) {
+
+        const refundLines = cashRefundDetailByPayment[payment.id] ?? [];
+        const hasRefund = refundLines.length > 0;
+        // La anulación también inserta CHANGE_OUT: no mezclarlo con el vuelto del cobro.
+        if (hasRefund && meta.cashChangeDenoms.length > 0) {
+          cashChangeDetailByPayment[payment.id] = compactDetailLines(
+            meta.cashChangeDenoms.map((entry) => buildDetailLine(entry.denomination_id, entry.qty)),
+          );
+        } else if (hasRefund && (cashChangeDetailByPayment[payment.id] ?? []).length > 0) {
+          cashChangeDetailByPayment[payment.id] = subtractDetailLines(
+            cashChangeDetailByPayment[payment.id] ?? [],
+            refundLines,
+          );
+        } else if ((cashChangeDetailByPayment[payment.id] ?? []).length === 0 && meta.cashChangeDenoms.length > 0) {
           cashChangeDetailByPayment[payment.id] = compactDetailLines(
             meta.cashChangeDenoms.map((entry) => buildDetailLine(entry.denomination_id, entry.qty)),
           );
@@ -2663,6 +2706,9 @@ export function useCaja(params?: {
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
     staleTime: OPERATIONAL_STALE_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
     // Actualización vía Realtime de payments + invalidación post-cobro.
     placeholderData: (prev: any) => prev,
   });
@@ -3243,7 +3289,7 @@ export function useCaja(params?: {
   });
 
   const requestPaymentVoid = useMutation({
-    mutationFn: async ({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod }: {
+    mutationFn: async ({ paymentId, orderId, reason, paymentSelections, cashRefundDenoms, refundAmount, refundMethod, cashChangeReturnDenoms }: {
       paymentId: string;
       orderId: string;
       reason: string;
@@ -3251,6 +3297,7 @@ export function useCaja(params?: {
       cashRefundDenoms: CashRefundDenomInput[];
       refundAmount: number;
       refundMethod: PaymentRefundMethod;
+      cashChangeReturnDenoms?: CashRefundDenomInput[];
     }) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
@@ -3268,11 +3315,6 @@ export function useCaja(params?: {
         throw new Error(validation?.error_message || "Este pago no se puede anular");
       }
 
-      // La solicitud de anulacion se crea via RPC SECURITY DEFINER (request_void_payment)
-      // en lugar de un upsert directo a payment_void_requests, que fallaba con RLS
-      // ("new row violates row-level security policy (USING expression)") cuando ya
-      // existia una solicitud pending creada por otro usuario. La RPC resuelve el
-      // ON CONFLICT internamente, reasigna el solicitante y persiste refund_method.
       void orderId;
       void refundAmount;
       const { data: requestId, error } = await supabase.rpc("request_void_payment", {
@@ -3286,6 +3328,7 @@ export function useCaja(params?: {
         })),
         p_cash_refund_detail: cashRefundDenoms,
         p_refund_method: refundMethod,
+        p_cash_change_return_detail: cashChangeReturnDenoms ?? [],
       });
 
       if (error) throw error;
@@ -3300,7 +3343,7 @@ export function useCaja(params?: {
   });
 
   const voidPaymentWithSupervisor = useMutation({
-    mutationFn: async ({ paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms }: {
+    mutationFn: async ({ paymentId, requestId, reason, supervisorIdentifier, supervisorPassword, paymentSelections, cashRefundDenoms, cashChangeReturnDenoms }: {
       paymentId: string;
       requestId?: string;
       reason: string;
@@ -3308,6 +3351,7 @@ export function useCaja(params?: {
       supervisorPassword: string;
       paymentSelections: PaymentVoidSelectionInput[];
       cashRefundDenoms: CashRefundDenomInput[];
+      cashChangeReturnDenoms?: CashRefundDenomInput[];
     }) => {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
@@ -3326,6 +3370,7 @@ export function useCaja(params?: {
             quantity: sel.quantity,
           })),
           cash_refund_detail: cashRefundDenoms,
+          cash_change_return_detail: cashChangeReturnDenoms ?? [],
         },
       });
 

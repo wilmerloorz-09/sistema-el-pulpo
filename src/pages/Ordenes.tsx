@@ -59,11 +59,11 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
 import { getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
-import { getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isSpecialOrderExplicitZeroTotal } from "@/lib/orderFlow";
+import { getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal } from "@/lib/orderFlow";
 import {
-  computeKitchenSendMoneyDelta,
+  computeKitchenSendMoneyDeltaForSend,
   formatKitchenSendMoneyDelta,
-  hasKitchenPendingChanges,
+  hasKitchenPendingSendChanges,
   reconcileKitchenStagedItems,
 } from "@/lib/kitchenPendingChanges";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -1139,6 +1139,26 @@ const OrdenesContent = () => {
     });
   }, [useKitchenStaging, stagedDirty, orderItems, isLoading, kitchenBaselineItems]);
 
+  // Bajas de items ya despachados no van por Enviar a cocina: revertir staging.
+  useEffect(() => {
+    if (!useKitchenStaging || fromEditar || isLoading || !stagedDirty) return;
+
+    setStagedItems((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const base = kitchenBaselineItems.find((b) => b.id === item.id);
+        if (!base) return item;
+        if (!(isOrderItemFullyDispatched(base) || base.status === "DISPATCHED")) return item;
+        if (Math.max(0, Number(item.quantity ?? 0)) === Math.max(0, Number(base.quantity ?? 0))) {
+          return item;
+        }
+        changed = true;
+        return { ...base };
+      });
+      return changed ? next : prev;
+    });
+  }, [useKitchenStaging, fromEditar, isLoading, kitchenBaselineItems, stagedDirty]);
+
   const tableOrdersQuery = useQuery({
     queryKey: isExpressOrder
       ? ["express-orders", order?.branch_id ?? null]
@@ -1896,7 +1916,7 @@ const OrdenesContent = () => {
 
   const total = itemsToUse.reduce((s, i) => s + i.total, 0);
   const draftItemsTotal = itemsToUse
-    .filter((item) => item.status === "DRAFT")
+    .filter((item) => item.status === "DRAFT" && Math.max(0, Number(item.quantity ?? 0)) > 0)
     .reduce((sum, item) => sum + item.total, 0);
   const effectiveSpecialTotalManual = useMemo((): number | null => {
     if (!order.is_special) return null;
@@ -1982,25 +2002,30 @@ const OrdenesContent = () => {
   const finalButtonTotal = order.is_special
     ? (effectiveSpecialTotalManual ?? draftItemsTotal)
     : draftItemsTotal;
-  const hasDraftItems = itemsToUse.some((i) => i.status === "DRAFT");
-  const hasTemporaryDraftItems = itemsToUse.some((i) => i.status === "DRAFT" && isTemporaryOrderItemId(i.id));
+  const hasDraftItems = itemsToUse.some(
+    (i) => i.status === "DRAFT" && Math.max(0, Number(i.quantity ?? 0)) > 0,
+  );
+  const hasTemporaryDraftItems = itemsToUse.some(
+    (i) =>
+      i.status === "DRAFT"
+      && isTemporaryOrderItemId(i.id)
+      && Math.max(0, Number(i.quantity ?? 0)) > 0,
+  );
   const hasSentItems = itemsToUse.some((i) => i.status !== "DRAFT");
-  const hasPendingKitchenChanges = useKitchenStaging
-    && hasKitchenPendingChanges(kitchenBaselineItems, stagedItems);
+  const hasPendingKitchenSendChanges = useKitchenStaging
+    && hasKitchenPendingSendChanges(kitchenBaselineItems, stagedItems);
   const kitchenSendDelta = useKitchenStaging
-    ? computeKitchenSendMoneyDelta(kitchenBaselineItems, stagedItems)
+    ? computeKitchenSendMoneyDeltaForSend(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
-  // En despacho-primero los borradores se persisten al instante: cualquier DRAFT
-  // representa trabajo sin enviar, aunque la linea base ya lo incluya (p. ej. al
-  // reabrir la orden con un borrador atascado de una sesion anterior).
+  // Borradores qty>0 o cambios de "En despacho". Bajas de despachados → Editar orden.
   const showKitchenSendButton = useKitchenStaging
-    ? (hasPendingKitchenChanges || hasDraftItems)
+    ? (hasPendingKitchenSendChanges || hasDraftItems)
     : hasDraftItems;
   const kitchenSendButtonLabel = isMixedSpecial
     ? `$${draftItemsTotal.toFixed(2)}`
     : order.is_special
     ? `$${finalButtonTotal.toFixed(2)}`
-    : useKitchenStaging && hasPendingKitchenChanges
+    : useKitchenStaging && hasPendingKitchenSendChanges
       ? formatKitchenSendMoneyDelta(kitchenSendDelta)
       : `$${finalButtonTotal.toFixed(2)}`;
   const hasPendingCancellationItems = itemsToUse.some((item) =>
@@ -2994,6 +3019,33 @@ const OrdenesContent = () => {
     }
   };
 
+  /** Elimina borradores del staging y de BD (qty 0 o papelera). */
+  const removeStagedDraftItems = (draftIds: string[]) => {
+    if (draftIds.length === 0) return;
+    const draftIdSet = new Set(draftIds);
+    const removedSnapshots = stagedItems.filter((i) => draftIdSet.has(i.id));
+    setStagedItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
+    setKitchenBaselineItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
+    void (async () => {
+      try {
+        for (const itemId of draftIds) {
+          await removeItem.mutateAsync(itemId);
+        }
+      } catch {
+        setStagedItems((prev) => {
+          const present = new Set(prev.map((i) => i.id));
+          const missing = removedSnapshots.filter((i) => !present.has(i.id));
+          return missing.length === 0 ? prev : [...prev, ...missing];
+        });
+        setKitchenBaselineItems((prev) => {
+          const present = new Set(prev.map((i) => i.id));
+          const missing = removedSnapshots.filter((i) => !present.has(i.id));
+          return missing.length === 0 ? prev : [...prev, ...missing];
+        });
+      }
+    })();
+  };
+
   const handleRequestInlineCancel = (
       item: {
         id: string;
@@ -3329,28 +3381,7 @@ const OrdenesContent = () => {
                       }
 
                       if (draftIds.length > 0) {
-                        const draftIdSet = new Set(draftIds);
-                        const removedSnapshots = stagedItems.filter((i) => draftIdSet.has(i.id));
-                        setStagedItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
-                        setKitchenBaselineItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
-                        void (async () => {
-                          try {
-                            for (const itemId of draftIds) {
-                              await removeItem.mutateAsync(itemId);
-                            }
-                          } catch {
-                            setStagedItems((prev) => {
-                              const present = new Set(prev.map((i) => i.id));
-                              const missing = removedSnapshots.filter((i) => !present.has(i.id));
-                              return missing.length === 0 ? prev : [...prev, ...missing];
-                            });
-                            setKitchenBaselineItems((prev) => {
-                              const present = new Set(prev.map((i) => i.id));
-                              const missing = removedSnapshots.filter((i) => !present.has(i.id));
-                              return missing.length === 0 ? prev : [...prev, ...missing];
-                            });
-                          }
-                        })();
+                        removeStagedDraftItems(draftIds);
                       }
                       return;
                     }
@@ -3394,6 +3425,10 @@ const OrdenesContent = () => {
                         );
 
                       if (stagedItem?.status === "DRAFT") {
+                        if (fullQty <= 0) {
+                          removeStagedDraftItems([id]);
+                          return;
+                        }
                         setStagedItems(patchItem);
                         setKitchenBaselineItems(patchItem);
                         updateQuantity.mutate({ itemId: id, quantity: fullQty, unit_price: price });
@@ -3402,6 +3437,11 @@ const OrdenesContent = () => {
 
                       setStagedDirty(true);
                       setStagedItems(patchItem);
+                      return;
+                    }
+
+                    if (fullQty <= 0) {
+                      void removeItem.mutateAsync(id);
                       return;
                     }
 
@@ -3476,19 +3516,31 @@ const OrdenesContent = () => {
             // lineas ya enviadas quedan pendientes hasta "Enviar a cocina".
             if (useKitchenStaging) {
               const draftIds: string[] = [];
-              const sentIds: string[] = [];
+              const enDespachoIds: string[] = [];
+              let blockedDispatched = false;
               for (const itemId of ids) {
                 const item = stagedItems.find((i) => i.id === itemId);
                 if (!item) continue;
-                if (item.status === "DRAFT") draftIds.push(itemId);
-                else sentIds.push(itemId);
+                if (item.status === "DRAFT") {
+                  draftIds.push(itemId);
+                  continue;
+                }
+                if (isOrderItemFullyDispatched(item) || item.status === "DISPATCHED") {
+                  blockedDispatched = true;
+                  continue;
+                }
+                enDespachoIds.push(itemId);
               }
 
-              if (sentIds.length > 0) {
+              if (blockedDispatched) {
+                toast.error("Los items despachados se editan con la opcion Editar orden.");
+              }
+
+              if (enDespachoIds.length > 0) {
                 setStagedDirty(true);
                 setStagedItems((prev) => {
                   const next = [...prev];
-                  for (const itemId of sentIds) {
+                  for (const itemId of enDespachoIds) {
                     const idx = next.findIndex((i) => i.id === itemId);
                     if (idx >= 0) {
                       next[idx] = { ...next[idx], quantity: 0, total: 0 };
@@ -3499,29 +3551,7 @@ const OrdenesContent = () => {
               }
 
               if (draftIds.length > 0) {
-                const draftIdSet = new Set(draftIds);
-                const removedSnapshots = stagedItems.filter((i) => draftIdSet.has(i.id));
-                setStagedItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
-                setKitchenBaselineItems((prev) => prev.filter((i) => !draftIdSet.has(i.id)));
-                void (async () => {
-                  try {
-                    for (const itemId of draftIds) {
-                      await removeItem.mutateAsync(itemId);
-                    }
-                  } catch {
-                    // removeItem ya restaura el cache de la orden; reponer staging/baseline.
-                    setStagedItems((prev) => {
-                      const ids = new Set(prev.map((i) => i.id));
-                      const missing = removedSnapshots.filter((i) => !ids.has(i.id));
-                      return missing.length === 0 ? prev : [...prev, ...missing];
-                    });
-                    setKitchenBaselineItems((prev) => {
-                      const ids = new Set(prev.map((i) => i.id));
-                      const missing = removedSnapshots.filter((i) => !ids.has(i.id));
-                      return missing.length === 0 ? prev : [...prev, ...missing];
-                    });
-                  }
-                })();
+                removeStagedDraftItems(draftIds);
               }
               return;
             }
@@ -3567,16 +3597,34 @@ const OrdenesContent = () => {
                     : i
                 );
 
-              // Borradores: persistir ya (misma regla que para llevar / agregar producto).
+              // Borradores: persistir ya. qty 0 = eliminar (no dejar DRAFT fantasma).
               if (stagedItem?.status === "DRAFT") {
+                if (qty <= 0) {
+                  removeStagedDraftItems([id]);
+                  return;
+                }
                 setStagedItems(patchItem);
                 setKitchenBaselineItems(patchItem);
                 updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
                 return;
               }
 
+              if (
+                stagedItem
+                && (isOrderItemFullyDispatched(stagedItem) || stagedItem.status === "DISPATCHED")
+                && qty < Math.max(0, Number(stagedItem.quantity ?? 0))
+              ) {
+                toast.error("Los items despachados se editan con la opcion Editar orden.");
+                return;
+              }
+
               setStagedDirty(true);
               setStagedItems(patchItem);
+              return;
+            }
+
+            if (qty <= 0) {
+              void removeItem.mutateAsync(id);
               return;
             }
 
@@ -3599,12 +3647,15 @@ const OrdenesContent = () => {
                 await flushPendingSpecialTotalSave();
               }
 
-              const hadKitchenPending = useKitchenStaging && hasPendingKitchenChanges;
+              const hadKitchenPending = useKitchenStaging && hasPendingKitchenSendChanges;
+              let createdDraftDelta = 0;
               if (hadKitchenPending) {
                 // Si este paso falla, los borradores quedarian sin enviarse: avisar siempre.
                 try {
-                  await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
+                  const applied = await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
+                  createdDraftDelta = Math.max(0, Number(applied?.createdDraftDelta ?? 0));
                 } catch (error: any) {
+                  console.error("[Enviar a cocina] applyKitchenPendingItemChanges", error);
                   toast.error(
                     `No se pudieron aplicar los cambios antes de enviar: ${error?.message || "error desconocido"}. Intenta de nuevo.`,
                   );
@@ -3626,8 +3677,11 @@ const OrdenesContent = () => {
               const draftsToSend = (freshOrder?.items ?? []).some(
                 (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
               );
+              // Si el diff creo borradores (p.ej. +1 a linea En despacho), siempre enviar
+              // aunque algun enriquecimiento oculte el DRAFT en la vista.
+              const shouldSubmitDrafts = draftsToSend || createdDraftDelta > 0;
 
-              if (draftsToSend) {
+              if (shouldSubmitDrafts) {
                 if (isExpressOrder) {
                   await sendToDispatch.mutateAsync();
                 } else {
@@ -3698,8 +3752,8 @@ const OrdenesContent = () => {
               } else if (isDispatchFirstFlow && mobile) {
                 setShowCart(false);
               }
-            } catch {
-              // error handled by hook
+            } catch (error) {
+              console.error("[Enviar a cocina]", error);
             } finally {
               setSendingKitchenChanges(false);
             }

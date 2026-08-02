@@ -16,7 +16,10 @@ import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPla
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
   OPERATIONAL_STALE_MS,
+  OPERATIONAL_LIST_BACKUP_POLL_MS,
+  useAdaptiveRefetchInterval,
   useOperationalOrdersRealtime,
+  invalidateOperationalOrderQueries,
 } from "@/lib/queryEgress";
 
 export type DispatchOrdersModule = "dispatch" | "servir";
@@ -199,9 +202,10 @@ function applyOptimisticDispatchAll(orders: DispatchOrder[], orderId: string): D
 }
 
 function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
-  // Pantallas hermanas se refrescan por branch-ops-hub; aquí solo Despacho/Servir.
-  void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-  void qc.invalidateQueries({ queryKey: ["servir-orders"] });
+  invalidateOperationalOrderQueries(qc, {
+    includeTables: true,
+    includeCompletedPayments: true,
+  });
 }
 
 function reconcileDispatchOrdersInBackground(qc: ReturnType<typeof useQueryClient>, queryKey: readonly unknown[]) {
@@ -441,6 +445,12 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   const { config, assignments, isLoading: configLoading } = useDispatchConfig();
   const { data: shiftGate } = useBranchShiftGate();
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
+
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId && user && !configLoading),
+  );
 
   const dispatchOrdersQueryKey = [
     isServirModule ? "servir-orders" : "dispatch-orders",
@@ -684,7 +694,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     enabled: !!activeBranchId && !!user && !configLoading,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    // Actualización vía Realtime (useOperationalOrdersRealtime); sin polling 5s.
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    // Realtime SUBSCRIBED → sin poll; si el hub cae → respaldo 25s.
+    refetchInterval: adaptiveListPoll,
   });
 
   useOperationalOrdersRealtime({

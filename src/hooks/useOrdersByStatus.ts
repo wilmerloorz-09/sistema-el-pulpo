@@ -8,6 +8,11 @@ import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import {
+  OPERATIONAL_STALE_MS,
+  OPERATIONAL_LIST_BACKUP_POLL_MS,
+  useAdaptiveRefetchInterval,
+} from "@/lib/queryEgress";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED" | "PENDING_CANCELLATION";
 
@@ -97,12 +102,22 @@ export function useOrdersByStatus(
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
   const { data: shiftGate } = useBranchShiftGate();
+  const queryEnabled = options?.enabled ?? true;
+
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId) && queryEnabled,
+  );
 
   return useQuery({
     queryKey: ["orders", activeBranchId, status, shiftGate?.shiftId ?? "_"],
-    staleTime: 30_000,
+    staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
+    enabled: Boolean(activeBranchId) && queryEnabled,
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
 
@@ -875,6 +890,5 @@ export function useOrdersByStatus(
           return true;
         });
     },
-    enabled: Boolean(activeBranchId) && (options?.enabled ?? true),
   });
 }

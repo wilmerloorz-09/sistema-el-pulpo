@@ -19,7 +19,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
-import { OPERATIONAL_STALE_MS, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 
 const seedExpressOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -65,6 +65,12 @@ const Express = () => {
   const shiftGateQuery = useBranchShiftGate();
   const [creating, setCreating] = useState(false);
 
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId),
+  );
+
   const canOperateExpress =
     canOperate(permissions, "mesas")
     || canOperate(permissions, "ordenes")
@@ -78,7 +84,9 @@ const Express = () => {
     enabled: !!activeBranchId,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
     gcTime: 2 * 60_000,
   });
 

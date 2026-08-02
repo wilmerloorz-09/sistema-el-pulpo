@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
+import { canManage } from "@/lib/permissions";
 import { usuarioPuedeRegistrarPromociones } from "@/services/prediccionesClientesDb";
 import {
   SHIFT_GATE_BACKUP_POLL_MS,
@@ -76,11 +77,15 @@ export interface BranchShiftGate {
 }
 
 export function useBranchShiftGate() {
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const { user } = useAuth();
   const qc = useQueryClient();
   /** Ultimo gate leido de verdad; se reutiliza si una lectura falla o expira. */
   const lastResolvedGateRef = useRef<BranchShiftGate | null>(null);
+  const isBranchAdmin =
+    Boolean(isGlobalAdmin)
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
 
   const adaptiveGatePoll = useAdaptiveRefetchInterval(
     activeBranchId,
@@ -89,7 +94,7 @@ export function useBranchShiftGate() {
   );
 
   const query = useQuery({
-    queryKey: [qk.branchShiftGate[0], activeBranchId, user?.id ?? null],
+    queryKey: [qk.branchShiftGate[0], activeBranchId, user?.id ?? null, isBranchAdmin],
     queryFn: async (): Promise<BranchShiftGate> => {
       const defaultValue: BranchShiftGate = {
         shiftId: null,
@@ -279,7 +284,7 @@ export function useBranchShiftGate() {
         puedeRegistrarPromociones = false;
       }
 
-      return {
+      const gate: BranchShiftGate = {
         shiftId,
         shiftOpen: Boolean(row?.shift_open),
         userEnabled: hasDirectShiftRow ? directUserEnabled : Boolean(row?.user_enabled),
@@ -321,6 +326,31 @@ export function useBranchShiftGate() {
         isStaleShift,
         puedeRegistrarPromociones,
       };
+
+      // Admin: no depender de cash_shift_users (la lectura directa puede pisar la RPC).
+      if (isBranchAdmin && gate.shiftOpen) {
+        return {
+          ...gate,
+          userEnabled: true,
+          canServeTables: true,
+          canAccessOrders: true,
+          canEditOrders: true,
+          canDispatchOrders: true,
+          canManageProducts: true,
+          canUseCaja: true,
+          canServePlates: true,
+          canPackOrders: true,
+          canAuthorizeOrderCancel: true,
+          canDoubleSession: true,
+          isSupervisor: true,
+          isSecondaryCashier: false,
+          secondaryCajaTakeoutEnabled: false,
+          secondaryCajaExpressEnabled: false,
+          puedeRegistrarPromociones: true,
+        };
+      }
+
+      return gate;
     };
 
     try {

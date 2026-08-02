@@ -6,6 +6,7 @@ import { computeLineTotalWithContainer } from "@/lib/paymentQuantity";
 import {
   buildOperationalMapsFromSnapshotRows,
   EMPTY_OPERATIONAL_MAPS,
+  hasOrderItemOperationalProgress,
   normalizeSnapshotRows,
   type OrderOperationalSnapshotRow,
 } from "@/lib/orderOperational";
@@ -250,8 +251,9 @@ export async function applyKitchenPendingItemChanges(
   orderId: string,
   serverItems: KitchenPendingServerItem[],
   pendingItems: KitchenPendingTargetItem[],
-): Promise<void> {
+): Promise<{ createdDraftDelta: number }> {
   const pendingById = new Map(pendingItems.map((item) => [item.id, item]));
+  let createdDraftDelta = 0;
 
   for (const server of serverItems) {
     const pending = pendingById.get(server.id);
@@ -267,7 +269,9 @@ export async function applyKitchenPendingItemChanges(
 
     const isSent = String(server.status ?? "") !== "DRAFT";
     if (isSent && pendingQty > serverQty) {
-      await addDraftKitchenItemDelta(orderId, pending ?? server, pendingQty - serverQty);
+      const delta = pendingQty - serverQty;
+      await addDraftKitchenItemDelta(orderId, pending ?? server, delta);
+      createdDraftDelta += delta;
       continue;
     }
 
@@ -279,6 +283,8 @@ export async function applyKitchenPendingItemChanges(
       server.status,
     );
   }
+
+  return { createdDraftDelta };
 }
 
 /** Cache de borrador de mesa (optimista o recien creado) para mostrar UI sin esperar al servidor. */
@@ -828,10 +834,13 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
         0,
         Number(operationalMaps.dispatchedTotalMap[item.id] ?? 0) - Number(operationalMaps.cancelledDispatchedMap[item.id] ?? 0),
       );
-      const hasOperationalProgress =
-        quantityDispatched > 0 ||
-        quantityReadyAvailable > 0 ||
-        (activeQuantity > 0 && quantityPendingPrepare < activeQuantity);
+      const hasOperationalProgress = hasOrderItemOperationalProgress({
+        activeQuantity,
+        quantityDispatched,
+        quantityReadyAvailable,
+        quantityPendingPrepare,
+        hasOperationalSnapshot: Boolean(snapshotRow),
+      });
       const effectiveStatus = activeQuantity <= 0
         ? "CANCELLED"
         : item.status === "DRAFT" && hasOperationalProgress
@@ -1178,10 +1187,22 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontró la orden");
       }
 
-      const draftItems = freshOrder.items.filter(
+      const enrichedDrafts = freshOrder.items.some(
         (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
       );
-      if (draftItems.length === 0) {
+      // Fallback a BD: el enriquecimiento no debe impedir enviar borradores reales.
+      let hasDbDrafts = enrichedDrafts;
+      if (!hasDbDrafts) {
+        const rawDrafts = await dbSelect<{ id: string; quantity: number }>("order_items", {
+          select: "id, quantity",
+          filters: [
+            { column: "order_id", op: "eq", value: orderId },
+            { column: "status", op: "eq", value: "DRAFT" },
+          ],
+        });
+        hasDbDrafts = (rawDrafts ?? []).some((item) => Number(item.quantity ?? 0) > 0);
+      }
+      if (!hasDbDrafts) {
         throw new Error("No hay productos pendientes por enviar");
       }
 
@@ -1204,6 +1225,7 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["payable-orders"] });
       qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["servir-orders"] });
       if (order?.order_type === "EXTRA" && order.branch_id) {
         qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
       }
@@ -1237,10 +1259,21 @@ export function useOrder(orderId: string | null) {
         throw new Error("Solo las ordenes Express pueden enviarse a despacho desde aqui");
       }
 
-      const draftItems = freshOrder.items.filter(
+      const enrichedDrafts = freshOrder.items.some(
         (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
       );
-      if (draftItems.length === 0) {
+      let hasDbDrafts = enrichedDrafts;
+      if (!hasDbDrafts) {
+        const rawDrafts = await dbSelect<{ id: string; quantity: number }>("order_items", {
+          select: "id, quantity",
+          filters: [
+            { column: "order_id", op: "eq", value: orderId },
+            { column: "status", op: "eq", value: "DRAFT" },
+          ],
+        });
+        hasDbDrafts = (rawDrafts ?? []).some((item) => Number(item.quantity ?? 0) > 0);
+      }
+      if (!hasDbDrafts) {
         throw new Error("No hay productos pendientes por enviar");
       }
 
@@ -1258,6 +1291,9 @@ export function useOrder(orderId: string | null) {
       qc.invalidateQueries({ queryKey: ["order", orderId] });
       qc.invalidateQueries({ queryKey: ["express-orders"] });
       qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      qc.invalidateQueries({ queryKey: ["servir-orders"] });
+      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      qc.invalidateQueries({ queryKey: ["payable-orders"] });
 
       const message = hadSentItems
         ? "Nuevos items enviados a despacho"

@@ -7,9 +7,10 @@ import {
 } from "@/lib/cajaPayableOrderScope";
 
 describe("cajaPayableOrderScope", () => {
-  it("default: principal todas, secundario solo mías", () => {
+  it("default: siempre todas las órdenes del turno", () => {
     expect(getDefaultCajaPayableOrderScope("u1", "u1")).toBe(CAJA_PAYABLE_SCOPE_ALL);
-    expect(getDefaultCajaPayableOrderScope("u2", "u1")).toBe(CAJA_PAYABLE_SCOPE_MINE);
+    expect(getDefaultCajaPayableOrderScope("u2", "u1")).toBe(CAJA_PAYABLE_SCOPE_ALL);
+    expect(getDefaultCajaPayableOrderScope(undefined, null)).toBe(CAJA_PAYABLE_SCOPE_ALL);
   });
 
   it("filtra por alcance", () => {

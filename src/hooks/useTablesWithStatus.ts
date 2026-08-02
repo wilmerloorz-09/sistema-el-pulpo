@@ -7,7 +7,7 @@ import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, type OpenCashShift } from "@/lib/openCashShift";
-import { useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { useOperationalOrdersRealtime, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval } from "@/lib/queryEgress";
 
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -214,6 +214,12 @@ export function useTablesWithStatus() {
     ? "shift-gate-pending"
     : (shiftGateQuery.data?.shiftId ?? "no-open-shift");
 
+  const adaptiveListPoll = useAdaptiveRefetchInterval(
+    activeBranchId,
+    OPERATIONAL_LIST_BACKUP_POLL_MS,
+    Boolean(activeBranchId),
+  );
+
   useOperationalOrdersRealtime({
     branchId: activeBranchId,
     queryClient: qc,
@@ -235,6 +241,9 @@ export function useTablesWithStatus() {
     enabled: !!activeBranchId,
     staleTime: 5_000,
     gcTime: 10 * 60_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: adaptiveListPoll,
   });
 
   useEffect(() => {

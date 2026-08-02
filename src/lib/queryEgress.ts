@@ -23,8 +23,14 @@ export const MONITOR_BACKUP_POLL_MS = 5 * 60_000;
 /** Auth session lock: validación menos agresiva. */
 export const AUTH_SESSION_POLL_MS = 60_000;
 
-/** Respaldo operativo genérico cuando el hub no está SUBSCRIBED. */
+/** Respaldo de turno/caja cuando el hub no está SUBSCRIBED. */
 export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
+
+/**
+ * Respaldo de listas operativas (Despacho, Servir, Recaudar, Cocina, etc.)
+ * solo si Realtime no está suscrito. Con hub sano → sin poll (0 carga extra).
+ */
+export const OPERATIONAL_LIST_BACKUP_POLL_MS = 25_000;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 

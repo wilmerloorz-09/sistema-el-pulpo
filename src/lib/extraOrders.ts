@@ -78,8 +78,8 @@ export interface ExtraCajaVisibilityScope {
 }
 
 /**
- * @deprecated La visibilidad de Extra en Recaudar se controla con el combo de alcance
- * (`cajaPayableOrderScope`). Mantenido por compatibilidad con llamadas legacy.
+ * @deprecated Recaudar ya no filtra por cajero/creador; se muestran todas las
+ * órdenes por cobrar. Mantenido por compatibilidad con llamadas legacy.
  */
 export function extraOrderVisibleInCaja(
   order: {
