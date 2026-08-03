@@ -13,6 +13,7 @@ import {
   getDispatchedEditTargetQuantity,
   getSentItemStageLabel,
   isOrderItemFreelyEditableInDispatchFirst,
+  redistributeGroupedItemQuantities,
 } from "@/lib/orderFlow";
 import { useBranch } from "@/contexts/BranchContext";
 
@@ -364,26 +365,31 @@ const OrderItemsList = ({
     const listHideControls = isPaidGroup ? true : hideItemControls;
     const listAlwaysShowControls = isPaidGroup ? false : alwaysShowControls;
 
-    const groups: Record<string, OrderItem & { groupItemIds: string[]; modifierQuantities: Array<{ mod: any; qty: number }> }> = {};
+    const groups: Record<string, OrderItem & {
+      groupItemIds: string[];
+      groupItemQuantities: number[];
+      modifierQuantities: Array<{ mod: any; qty: number }>;
+    }> = {};
     for (const item of subItems) {
       const modKey = (item.modifiers || [])
         .map((m) => m.description.trim().toLowerCase())
         .sort()
         .join("|");
       const isDraft = item.status === "DRAFT";
-      const editLineKey = editDispatchedItemsOnly && section === "dispatched" ? `_${item.id}` : "";
-      const key = `${item.description_snapshot}_${item.unit_price}_${isDraft ? "draft" : "non-draft"}_${modKey}${editLineKey}`;
-      const itemQty = item.quantity || item.quantity_ordered || 0;
+      const key = `${item.description_snapshot}_${item.unit_price}_${isDraft ? "draft" : "non-draft"}_${modKey}`;
+      const itemQty = Math.max(0, Number(item.quantity || item.quantity_ordered || 0));
       if (!groups[key]) {
         groups[key] = {
           ...item,
           groupItemIds: [item.id],
+          groupItemQuantities: [itemQty],
           modifierQuantities: item.modifiers.map((m) => ({ mod: m, qty: itemQty })),
         };
       } else {
         groups[key].quantity += item.quantity;
         groups[key].total += item.total;
         groups[key].groupItemIds.push(item.id);
+        groups[key].groupItemQuantities.push(itemQty);
         groups[key].modifierQuantities.push(...item.modifiers.map((m) => ({ mod: m, qty: itemQty })));
       }
     }
@@ -436,6 +442,15 @@ const OrderItemsList = ({
         item.status === "DRAFT"
           ? Math.max(item.quantity, Number(item.quantity_ordered ?? 0))
           : item.quantity;
+      const dispatchedEditOnly = editDispatchedItemsOnly && section === "dispatched";
+      // En editar despachados: techo = unidades ya despachadas (no pedir más por aquí).
+      const dispatchedEditMaxQty = dispatchedEditOnly
+        ? Math.max(
+            displayQuantity,
+            Math.max(0, Number(item.quantity_dispatched ?? 0)),
+            Math.max(0, Number(item.quantity_ordered ?? 0)),
+          )
+        : null;
       const trimmedItemNote = String(item.item_note ?? "").trim();
       const isDeliveryInstruction = trimmedItemNote.toLowerCase().startsWith("entregar:");
       const isBulkItem = item.tray_item_type === "C" || isDeliveryInstruction;
@@ -446,6 +461,35 @@ const OrderItemsList = ({
           ? "dispatched"
           : getOrderItemStage(item);
       const itemStageStyles = getOrderItemStageStyles(itemStage);
+
+      const applyVisibleQuantity = (nextVisibleQty: number) => {
+        const updates = redistributeGroupedItemQuantities(
+          item.groupItemIds,
+          item.groupItemQuantities,
+          Math.max(0, nextVisibleQty),
+        );
+
+        updates.forEach((update, index) => {
+          const prevQty = Math.max(0, Number(item.groupItemQuantities[index] ?? 0));
+          if (update.quantity === prevQty) return;
+
+          // En editar despachados la cantidad visible es la porcion despachada de cada linea.
+          const targetQty =
+            editDispatchedItemsOnly && section === "dispatched"
+              ? getDispatchedEditTargetQuantity(
+                {
+                  quantity: prevQty,
+                  quantity_dispatched: prevQty,
+                  // Cada linea del grupo se ajusta sola; no reutilizar remanente del consolidado.
+                  quantity_remaining: 0,
+                },
+                update.quantity,
+              )
+              : update.quantity;
+
+          onUpdateQty(update.id, targetQty, item.unit_price);
+        });
+      };
 
       return (
         <div
@@ -610,11 +654,7 @@ const OrderItemsList = ({
                     disabled={controlsDisabled}
                     onClick={() => {
                       if (editDispatchedItemsOnly && section === "dispatched") {
-                        onUpdateQty(
-                          item.id,
-                          getDispatchedEditTargetQuantity(item, 0),
-                          item.unit_price,
-                        );
+                        applyVisibleQuantity(0);
                         return;
                       }
                       const ids = item.groupItemIds.length > 1 ? item.groupItemIds : item.id;
@@ -634,10 +674,7 @@ const OrderItemsList = ({
                         disabled={controlsDisabled || displayQuantity === 0}
                         onClick={() => {
                           if (displayQuantity > 0) {
-                            const nextQuantity = editDispatchedItemsOnly && section === "dispatched"
-                              ? getDispatchedEditTargetQuantity(item, displayQuantity - 1)
-                              : displayQuantity - 1;
-                            onUpdateQty(item.id, nextQuantity, item.unit_price);
+                            applyVisibleQuantity(displayQuantity - 1);
                           }
                         }}
                       >
@@ -648,23 +685,24 @@ const OrderItemsList = ({
                         key={`${item.id}-draft-${displayQuantity}`}
                         initialQuantity={displayQuantity}
                         min={0}
-                        max={listAlwaysShowControls || allowSentStageEditing ? 9999 : Math.max(1, item.quantity)}
+                        max={
+                          dispatchedEditOnly && dispatchedEditMaxQty != null
+                            ? dispatchedEditMaxQty
+                            : listAlwaysShowControls || allowSentStageEditing
+                              ? 9999
+                              : Math.max(1, item.quantity)
+                        }
                         disabled={controlsDisabled}
                         updateOnChange={false}
                         onUpdate={(newQty) => {
-                          const targetQuantity = editDispatchedItemsOnly && section === "dispatched"
-                            ? getDispatchedEditTargetQuantity(item, newQty)
-                            : newQty;
-                          if (newQty < 0) {
-                            onUpdateQty(
-                              item.id,
-                              editDispatchedItemsOnly && section === "dispatched"
-                                ? getDispatchedEditTargetQuantity(item, 0)
-                                : 0,
-                              item.unit_price,
-                            );
-                          } else if (newQty !== displayQuantity) {
-                            onUpdateQty(item.id, targetQuantity, item.unit_price);
+                          const cappedQty =
+                            dispatchedEditOnly && dispatchedEditMaxQty != null
+                              ? Math.min(newQty, dispatchedEditMaxQty)
+                              : newQty;
+                          if (cappedQty < 0) {
+                            applyVisibleQuantity(0);
+                          } else if (cappedQty !== displayQuantity) {
+                            applyVisibleQuantity(cappedQty);
                           }
                         }}
                       />
@@ -673,15 +711,15 @@ const OrderItemsList = ({
                         variant="ghost"
                         size="icon"
                         className="!h-6 !w-6 !min-h-6 !min-w-6 rounded-md border-border bg-background !p-0 [&_svg]:!h-2.5 [&_svg]:!w-2.5 sm:!h-8 sm:!w-8 sm:!min-h-8 sm:!min-w-8 sm:rounded-xl sm:[&_svg]:!h-3.5 sm:[&_svg]:!w-3.5"
-                        disabled={controlsDisabled}
-                        onClick={() =>
-                          onUpdateQty(
-                            item.id,
-                            editDispatchedItemsOnly && section === "dispatched"
-                              ? getDispatchedEditTargetQuantity(item, displayQuantity + 1)
-                              : displayQuantity + 1,
-                            item.unit_price,
-                          )
+                        disabled={controlsDisabled || dispatchedEditOnly}
+                        onClick={() => {
+                          if (dispatchedEditOnly) return;
+                          applyVisibleQuantity(displayQuantity + 1);
+                        }}
+                        title={
+                          dispatchedEditOnly
+                            ? "No se puede aumentar items ya despachados"
+                            : "Aumentar cantidad"
                         }
                       >
                         <Plus />

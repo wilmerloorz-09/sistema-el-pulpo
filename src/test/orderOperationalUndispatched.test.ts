@@ -45,7 +45,19 @@ describe("hasOrderItemOperationalProgress", () => {
     ).toBe(false);
   });
 
-  it("con snapshot y pending completo, sigue sin progreso", () => {
+  it("con snapshot vacio (pendingPrepare=0) no trata borrador nuevo como progreso", () => {
+    expect(
+      hasOrderItemOperationalProgress({
+        activeQuantity: 1,
+        quantityDispatched: 0,
+        quantityReadyAvailable: 0,
+        quantityPendingPrepare: 0,
+        hasOperationalSnapshot: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("con snapshot y pending completo, sigue sin progreso de avance", () => {
     expect(
       hasOrderItemOperationalProgress({
         activeQuantity: 1,

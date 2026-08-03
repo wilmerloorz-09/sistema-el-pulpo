@@ -60,8 +60,9 @@ export function computeUndispatchedQuantity(quantities: OperationalQuantitySnaps
 
 /**
  * Detecta progreso real de cocina/despacho para reescribir DRAFT → SENT/DISPATCHED.
- * Si no hay snapshot operacional, pendingPrepare=0 NO cuenta como progreso
- * (un borrador nuevo sin tickets quedaría mal marcado como SENT y "Enviar a cocina" no lo envía).
+ * - Sin snapshot: no hay progreso (borrador nuevo).
+ * - Snapshot con pending/ready/dispatched en 0: tampoco (fila vacía de un DRAFT recién creado).
+ * - pendingPrepare=0 NO implica progreso solo por ser menor que activeQuantity.
  */
 export function hasOrderItemOperationalProgress(input: {
   activeQuantity: number;
@@ -78,6 +79,9 @@ export function hasOrderItemOperationalProgress(input: {
   if (quantityDispatched > 0 || quantityReadyAvailable > 0) return true;
 
   if (!input.hasOperationalSnapshot) return false;
+
+  // Snapshot sin tickets reales: típico de un DRAFT recién insertado.
+  if (quantityPendingPrepare <= 0) return false;
 
   return activeQuantity > 0 && quantityPendingPrepare < activeQuantity;
 }

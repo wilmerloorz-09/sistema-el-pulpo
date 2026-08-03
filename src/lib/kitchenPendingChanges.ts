@@ -29,7 +29,8 @@ function effectiveQuantity(item: KitchenPendingItem): number {
 }
 
 function isDispatchedLine(item: KitchenPendingItem): boolean {
-  if (String(item.status ?? "") === "DISPATCHED") return true;
+  // Solo cantidades operativas: el status legacy puede decir DISPATCHED
+  // mientras la linea aun tenga remanente en EN DESPACHO.
   return isOrderItemFullyDispatched(item);
 }
 

@@ -518,6 +518,41 @@ export function useReportesProductos(filters: ReportesFilters) {
         return orderTypes.includes(effectiveType);
       });
 
+      // Anulaciones parciales (p.ej. bajar despachado 4→3): restar del reporte lo que ya no se cobra.
+      const itemIds = itemsRaw.map((item: any) => item.id).filter(Boolean);
+      const cancelledQtyByItemId: Record<string, number> = {};
+      if (itemIds.length > 0) {
+        const { data: itemCancellations, error: cancelItemsError } = await supabase
+          .from('order_item_cancellations')
+          .select('order_item_id, quantity_cancelled, order_cancellation_id')
+          .in('order_item_id', itemIds);
+        if (cancelItemsError) throw cancelItemsError;
+
+        const cancellationIds = Array.from(
+          new Set((itemCancellations ?? []).map((row: any) => row.order_cancellation_id).filter(Boolean)),
+        );
+        const appliedCancellationIds = new Set<string>();
+        if (cancellationIds.length > 0) {
+          const { data: cancellationHeaders, error: cancelHeadersError } = await supabase
+            .from('order_cancellations')
+            .select('id, status')
+            .in('id', cancellationIds)
+            .eq('status', 'APPLIED');
+          if (cancelHeadersError) throw cancelHeadersError;
+          for (const header of cancellationHeaders ?? []) {
+            if (header?.id) appliedCancellationIds.add(header.id);
+          }
+        }
+
+        for (const row of itemCancellations ?? []) {
+          if (!appliedCancellationIds.has(row.order_cancellation_id)) continue;
+          const itemId = String(row.order_item_id ?? '');
+          if (!itemId) continue;
+          cancelledQtyByItemId[itemId] =
+            (cancelledQtyByItemId[itemId] ?? 0) + Math.max(0, Number(row.quantity_cancelled ?? 0));
+        }
+      }
+
       // Agrupamiento en cliente por product_id + unit_price (y fallback a description_snapshot si no hay product)
       const groupedMap = new Map<string, {
         productId: string;
@@ -536,8 +571,16 @@ export function useReportesProductos(filters: ReportesFilters) {
       const timeDataMap: Record<string, { dateStr: string; ventas: number; ordersCount: number }> = {};
 
       itemsRaw.forEach((item: any) => {
-        const qty = Number(item.quantity || 0);
-        const itemTotal = round2(Number(item.total || 0));
+        const orderedQty = Math.max(0, Number(item.quantity || 0));
+        const cancelledQty = Math.max(0, Number(cancelledQtyByItemId[item.id] ?? 0));
+        const qty = Math.max(0, orderedQty - cancelledQty);
+        if (qty <= 0) return;
+
+        const rawTotal = Number(item.total || 0);
+        // Proporcional al neto activo (alineado con lo cobrable tras anulacion parcial).
+        const itemTotal = orderedQty > 0
+          ? round2(rawTotal * (qty / orderedQty))
+          : 0;
         const price = Number(item.unit_price || 0);
 
         totalUnidadesSum += qty;

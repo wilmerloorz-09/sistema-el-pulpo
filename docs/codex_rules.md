@@ -404,7 +404,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - **Caja unificada:** no documentar ni depender de flags `secondary_caja_*` para alcance de cobro.
 9. Si se toco flujo de ordenes, validar el comportamiento en base al `workflow_mode` configurado en la sucursal activa.
 10. Si se toca el diálogo de pago (V1, V2 o Secondary), validar apertura de caja, redondeo, recibo/vuelto; confirmar migraciones `20260509180000` y `20260528130000` en BD.
-11. Si se toca Caja/Recaudar, validar el filtro de alcance (todas / mías / por usuario) y que el cobro siga unificado.
+11. Si se toca Caja/Recaudar, validar que la lista de por cobrar sea de **toda la sucursal** (sin filtro de alcance por cajero) y que el cobro siga unificado.
 12. Si se toca Extra, validar `order_type = EXTRA`, menú sin PLATOS, mesa obligatoria (`table_id`), RPC `create_extra_order`, flujo caja → `PAID` → despacho manual, visibilidad creador/cajero principal y aparicion en Despacho (Mesa/Todos).
 13. Si se toca productos frecuentes, validar migraciones `20260531130000` y `20260531140000`, contexto correcto y layout 1–2 filas en `FrequentProductCards`.
 14. En `Ordenes.tsx`, no asumir `order.items` definido tras mutaciones; usar arreglo vacío por defecto donde se haga `.map`/`.reduce`.
@@ -414,7 +414,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 18. Si se toca identidad de usuario, validar `profiles.alias` (unico case-insensitive), login con correo/usuario/alias, `src/lib/userDisplay.ts` en reportes/caja/turnos y nombre real solo en admin.
 19. Si se toca modal de agregar producto o catalogo de modificadores, validar herencia desde categorias, seleccion desde **Mas frecuentes**, doble toque rapido en movil e invalidacion de `branch-modifiers-catalog` tras cambios en admin.
 20. Si se toca auth/sesion en tablet, validar que aborts benignos de Web Locks no muestren banner; conservar `auth.lock` no-op y `benignAsyncErrors.ts`.
-21. Si se toca Despacho primero en mesa, validar staging de cocina, delta en **Enviar a cocina**, secciones En despacho/Despachados y **Editar orden** solo cuando haya unidades despachadas; ningun ajuste debe persistir antes de confirmar.
+21. Si se toca Despacho primero en mesa, validar staging de cocina, delta en **Enviar a cocina**, secciones En despacho/Despachados y **Editar orden** solo cuando haya unidades despachadas; ningun ajuste debe persistir antes de confirmar. Aumentos = misma fila; bajas sin exigir borrador; consolidar visualmente grupos.
 22. Si se toca consolidacion en Despacho, validar `dispatchItemConsolidation.ts` y despacho parcial con multiples `order_items` fuente.
 23. Si se toca Extra, validar ademas visibilidad segun `workflow_mode` (oculto en `DISPATCH_THEN_CASH`).
 24. Si se toca Caja en Despacho primero, validar `ready_to_collect`, boton rojo/verde, `AlertDialog` y guard en `payOrder`.
@@ -425,6 +425,13 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 29. Si se toca **anulación de pagos**, validar cierre de orden (`VOIDED_PAYMENT_CLOSED`, fuera de Recaudar), una sola anulación por orden (`can_void_payment`) y `refund_method` CASH/TRANSFER; migraciones `20260718225000`, `20260719010000`, `20260719012000`, `20260719013000`.
 30. Si se toca **cancelación/ajuste en Despacho primero**, validar `order_type::text` en `cancel_order_quantities` / `set_draft_order_item_quantity` (migración `20260718230000`) y que no se silencien errores de `applyKitchenPendingItemChanges`.
 31. Si se toca **lectura de denominaciones en cobro**, validar query directa (no cache local), guardia de consistencia y `refetchInterval` para tablets/PWA.
+32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll; si cae → `OPERATIONAL_LIST_BACKUP_POLL_MS` (25 s) + badge Sync lenta; doc `docs/operational-module-refresh.md`.
+33. Si se toca **reportes de productos**, restar anulaciones `APPLIED` (`order_item_cancellations`); el neto debe coincidir con lo cobrable en Caja.
+34. Si se toca **gate de turno / admin**, validar bypass de admins (`20260802190000`) sin exigir `cash_shift_users`.
+
+### Actualizacion Ago 2, 2026
+- **Refresco módulos:** `docs/operational-module-refresh.md`; Fase 1.5 en auditoría phase2; `OPERATIONAL_LIST_BACKUP_POLL_MS`, Sync lenta.
+- **Staging / Editar / Reportes / Admin bypass:** checklist 21, 32–34; migraciones `20260802190000`, `20260803010000`.
 
 ### Actualizacion Jul 18–19, 2026
 - **Validación IA de comprobantes + fecha fin de semana:** reglas en sección 11.1; checklist item 28. Migración `20260718100000`; helper `fechasAceptadasComprobante`.
@@ -442,11 +449,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### Actualizacion Jul 9–10, 2026
 - **Cobro DF:** `ready_to_collect`, `computeUndispatchedQuantity`, `PayableOrdersList` rojo/verde.
 - **QR promocion:** condicional en `promocionesRecibo.ts`; triggers Jul 9.
-- **Cocina:** envio desde `KITCHEN_DISPATCHED`, ids `temp-*`, aumentos → DRAFT.
+- **Cocina:** envio desde `KITCHEN_DISPATCHED`, ids `temp-*`; (aumentos in-place desde Ago 2026).
 - **Monitoreo Global:** no colgar hooks; realtime acotado; polling de respaldo 5 min.
 
 ### Actualizacion Jul 30, 2026
 - **Egress:** un canal Realtime por sucursal (`queryEgress.ts`); filtrar `order_items` por `sucursal_id`; preferir `get_orders_operational_snapshots_lite`; aplicar `20260730230000` en remoto.
+- **Latencia (complemento Ago 2):** poll listas 25 s si hub cae — ver `docs/operational-module-refresh.md`.
 
 ### Actualizacion Jul 8, 2026
 - **Cocina pendiente (Despacho primero):** `kitchenPendingChanges.ts`, staging `kitchenBaselineItems`/`stagedItems`, `applyKitchenPendingItemChanges`, boton con delta monetario.

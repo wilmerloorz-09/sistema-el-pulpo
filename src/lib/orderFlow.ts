@@ -167,6 +167,68 @@ export function getDispatchedEditTargetQuantity(
   return remainingQuantity + Math.max(0, Number(dispatchedQuantity ?? 0));
 }
 
+/**
+ * Vista normal (En despacho): el UI puede pasar la cantidad visible de la seccion
+ * (solo remanente si la linea es parcial). Devuelve total activo + remanente objetivo.
+ */
+export function resolveInDispatchStagingQuantities(
+  item: OrderItemEditSurface,
+  sectionVisibleQty: number,
+): { quantity: number; quantity_remaining: number } {
+  const dispatchedQty = Math.max(0, Number(item.quantity_dispatched ?? 0));
+  const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
+  const visibleQty = Math.max(0, Number(sectionVisibleQty ?? 0));
+  const isPartial = dispatchedQty > 0 && remainingQty > 0;
+
+  if (isPartial) {
+    return {
+      quantity: dispatchedQty + visibleQty,
+      quantity_remaining: visibleQty,
+    };
+  }
+
+  return {
+    quantity: visibleQty,
+    quantity_remaining: Math.max(0, visibleQty - dispatchedQty),
+  };
+}
+
+/**
+ * Varias lineas iguales se consolidan en UI (p.ej. 1+1 tras subir y enviar).
+ * Redistribuye la cantidad objetivo entre esas lineas (baja desde el final).
+ */
+export function redistributeGroupedItemQuantities(
+  itemIds: string[],
+  currentQuantities: number[],
+  targetTotal: number,
+): Array<{ id: string; quantity: number }> {
+  if (itemIds.length === 0) return [];
+
+  const qtys = itemIds.map((_, index) => Math.max(0, Number(currentQuantities[index] ?? 0)));
+  const target = Math.max(0, Number(targetTotal ?? 0));
+
+  if (itemIds.length === 1) {
+    return [{ id: itemIds[0], quantity: target }];
+  }
+
+  const currentTotal = qtys.reduce((sum, qty) => sum + qty, 0);
+  let diff = target - currentTotal;
+  const next = [...qtys];
+
+  if (diff < 0) {
+    let remaining = -diff;
+    for (let i = next.length - 1; i >= 0 && remaining > 0; i -= 1) {
+      const take = Math.min(next[i], remaining);
+      next[i] -= take;
+      remaining -= take;
+    }
+  } else if (diff > 0) {
+    next[next.length - 1] += diff;
+  }
+
+  return itemIds.map((id, index) => ({ id, quantity: next[index] }));
+}
+
 export function isDispatchFirstOrder(
   order: {
     order_type?: string | null;

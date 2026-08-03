@@ -100,6 +100,24 @@ describe("kitchenPendingChanges", () => {
     expect(computeKitchenSendMoneyDeltaForSend(mixBaseline, pending)).toBe(-1.25);
   });
 
+  it("status DISPATCHED con remanente sigue contando baja para Enviar a cocina", () => {
+    const baseline = [
+      {
+        id: "e1",
+        quantity: 2,
+        unit_price: 5,
+        tray_container_cost: 0,
+        quantity_dispatched: 0,
+        quantity_remaining: 2,
+        status: "DISPATCHED",
+      },
+    ];
+    const pending = [{ ...baseline[0], quantity: 1 }];
+
+    expect(hasKitchenPendingSendChanges(baseline, pending)).toBe(true);
+    expect(computeKitchenSendMoneyDeltaForSend(baseline, pending)).toBe(-5);
+  });
+
   it("reemplaza ids temp-* con lineas reales del servidor", () => {
     const staged = [
       { id: "line-1", quantity: 1, unit_price: 3 },

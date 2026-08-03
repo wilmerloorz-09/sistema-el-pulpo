@@ -176,10 +176,27 @@ Con Realtime sano y migración aplicada, el perfil de consumo es **prácticament
 
 ---
 
+## Fase 1.5 — Latencia entre módulos (2026-08-02)
+
+Tras Fase 2 se detectó demora de minutos / inconsistencia entre tablets. Se añadió respaldo de listas **sin** volver al poll agresivo permanente:
+
+| Pieza | Detalle |
+|--------|---------|
+| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **25 s**, solo si hub ≠ `SUBSCRIBED` |
+| `refetchOnWindowFocus` / `refetchOnReconnect` | `true` en listas operativas |
+| Invalidaciones | cocina→servir/caja; `sendToKitchen`→servir |
+| UI | Badge **Sync lenta** en `AppLayout` |
+
+Documentación dedicada: [`docs/operational-module-refresh.md`](./operational-module-refresh.md).
+
+Consumidores: `useDispatchOrders`, `useKitchenOrders`, `useCaja`, `useOrdersByStatus`, `useTablesWithStatus`, Extra/Express/ParaLlevar/OrdenEspecial.
+
+---
+
 ## Checklist de verificación manual
 
 - [ ] Aplicar `20260730230000_realtime_turnos_y_snapshots_lite.sql` en remoto.
 - [ ] Abrir Caja / Mesas / Despacho: un solo canal `branch-ops-hub:{id}` en Network/Realtime.
-- [ ] Cortar red o forzar CHANNEL_ERROR: deben reaparecer polls lentos; al reconectar, deben parar.
+- [ ] Cortar red o forzar CHANNEL_ERROR: deben reaparecer polls lentos (listas ~25 s); al reconectar, deben parar; badge **Sync lenta** visible mientras el hub no esté suscrito.
 - [ ] Cobrar / despachar / anular: pantallas hermanas se actualizan igual que antes.
 - [ ] Login / cambio de sucursal / Monitoreo Global / alertas mesero: sin regresiones UX.

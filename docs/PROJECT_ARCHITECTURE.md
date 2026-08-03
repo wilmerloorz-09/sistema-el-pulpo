@@ -40,7 +40,8 @@
 - Cada cajero abre/cierra su propia `cash_register_openings` y mantiene `cash_shift_denoms` separadas por `cashier_id`.
 - Por turno puede configurarse un **cajero principal opcional** (`primary_cashier_id`) solo para defaults de UI; operativamente las cajas son unificadas.
 - En `Recaudar` (Caja) existe un combo para filtrar qué órdenes ver (todas / mías / por usuario); el principal por defecto ve todas.
-- **Monitoreo Global (`/admin/monitoreo-global`)**: Interfaz para Administradores Generales que consolida todos los turnos abiertos en tiempo real usando subscripciones a PostgreSQL (`supabase_realtime`) y un intervalo de respaldo (fallback) de 15s.
+- **Monitoreo Global (`/admin/monitoreo-global`)**: Interfaz para Administradores Generales que consolida todos los turnos abiertos en tiempo real usando subscripciones a PostgreSQL (`supabase_realtime`) y un intervalo de respaldo (fallback) de **5 min** solo si el canal no está `SUBSCRIBED`.
+- **Refresco operativo entre módulos (2026-08-02):** hub `branch-ops-hub` + poll de listas 25 s si Realtime cae + badge Sync lenta. Detalle: `docs/operational-module-refresh.md`.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -119,34 +120,38 @@
   - los items con solicitud pendiente deben mostrar `Pendiente anulacion`
   - si existe al menos un item pendiente, la orden entra en modo bloqueado para agregar/editar items, `Cerrar orden` y `Anular orden`
 - **Agrupamiento Visual de Ítems:**
-  - La UI de `OrderItemsList` agrupa automáticamente los ítems por `description_snapshot` y `unit_price`.
-  - Esta consolidación es solo visual para mejorar la legibilidad; la base de datos conserva los registros individuales para auditoría y trazabilidad.
+  - Agrupa por `description_snapshot` + `unit_price` (+ modificadores) **también en modo Editar orden / Despachados**. No forzar una fila por `order_item_id` en esa sección: 1+1 debe verse como cantidad 2.
+  - El `+/-` sobre un grupo consolidado redistribuye cantidades con `redistributeGroupedItemQuantities` (`src/lib/orderFlow.ts`); no actualizar solo el primer id del grupo.
+  - Esta consolidación es solo visual; la base de datos conserva los registros individuales para auditoría y trazabilidad.
   - Al agrupar, se suman las cantidades y totales, y se combinan los modificadores únicos.
 - `Eliminar orden` en una orden activa es una accion directa con confirmacion simple; no usa el selector de anulacion por cantidades.
 - La accion solo esta disponible si todos los items estan en `DRAFT` o `En caja`.
 - La UI unifica esta acción para evitar duplicados en el menú de acciones, independientemente del origen de los items (borrador o enviados).
 - La eliminacion completa valida nuevamente esa regla antes de ejecutar para evitar borrar ordenes con items despachados, pagados o con anulacion pendiente.
-- **Despacho primero — vista de orden (2026-07-08):**
+- **Despacho primero — vista de orden (actualizado 2026-08-02):**
   - `OrderItemsList` con `splitDispatchSections` muestra bloques **En despacho** y **Despachados** en flujo `DISPATCH_THEN_CASH`.
   - Cambios locales en lineas En despacho quedan en staging (`kitchenBaselineItems` vs `stagedItems`) hasta **Enviar a cocina**; Despacho no se actualiza antes.
-  - Boton **Enviar a cocina** con delta monetario (`formatKitchenSendMoneyDelta`); al confirmar: `applyKitchenPendingItemChanges` + `submit_order_draft_items`.
-  - Aumentos de cantidad en lineas ya enviadas crean borrador con la diferencia (`add_dine_in_order_item`), no actualizan la linea enviada in place.
+  - Boton **Enviar a cocina** con delta monetario (`formatKitchenSendMoneyDelta`); al confirmar: `applyKitchenPendingItemChanges` y, solo si hay borradores nuevos, `submit_order_draft_items`.
+  - **Aumentos** de cantidad en lineas ya enviadas: se aplican **in-place** con `set_draft_order_item_quantity` / `persistOrderItemLineQuantity` (misma fila). **No** crear linea DRAFT paralela ni flash de 1+1 consolidado.
+  - **Bajas** de En despacho: `applyKitchenPendingItemChanges` + reset de baseline; **no** exigir envio de borradores ni mostrar error de “aumento de cantidad”.
+  - Criterio de “ya despachado” (bloquear edicion en vista normal): cantidades operativas (`isOrderItemFullyDispatched`), no solo `status === 'DISPATCHED'`.
   - `reconcileKitchenStagedItems` elimina ids `temp-*` huerfanos tras `addItem` con staging.
-  - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/pages/Ordenes.tsx`, `src/hooks/useOrder.ts`.
+  - Archivos: `src/lib/kitchenPendingChanges.ts`, `src/lib/orderFlow.ts`, `src/pages/Ordenes.tsx`, `src/hooks/useOrder.ts`.
 
 ### 6. Editar Orden
 - `Editar Orden` es una arquitectura buffered y **In-Situ**.
 - En Caja primero (`CASH_THEN_DISPATCH`), el boton se habilita para ordenes editables en `SENT_TO_KITCHEN`/En Caja.
 - En Despacho primero (`DISPATCH_THEN_CASH`), la opcion **Editar orden** aparece en el menu superior cuando existe al menos una unidad despachada. Los controles del modo `from=editar` actuan sobre la porcion **Despachada**; una porcion parcial que siga **En despacho** no se reduce accidentalmente.
+- En **Despachados** (editar): se permite **bajar** / eliminar; el **+** queda deshabilitado (pedir mas va por En despacho → Enviar a cocina).
+- Lineas identicas en Despachados se consolidan visualmente (misma regla que vista normal).
 - En `DRAFT` de Mesa, Para llevar y Orden especial, el menu de productos se mantiene activo mientras la orden siga siendo editable; eliminar un item no debe bloquear el catalogo. En `PAID`, `KITCHEN_DISPATCHED` y `CANCELLED`, el menu puede permanecer visible pero desactivado.
 - El módulo trabaja con `stagedItems` en memoria y mantiene el contexto de navegación original (`origin`).
 - La orden se protege con `orders.locked_for_editing` para evitar carreras con Cocina, Despacho y Caja.
-- En Despacho primero, aumentar, disminuir o eliminar una cantidad despachada solo modifica el buffer hasta **Aceptar cambios**.
+- En Despacho primero, disminuir o eliminar una cantidad despachada solo modifica el buffer hasta **Aceptar cambios** (anulacion `source_stage = 'DISPATCHED'`).
 - Los items nuevos agregados dentro de la sesion si pueden usar `+/-`, eliminar e input de cantidad.
 - Al pulsar `Aceptar cambios`:
   - se comprometen los diffs en batch
   - toda reduccion/eliminacion despachada se registra como anulacion o ajuste de despacho; si la politica exige autorizacion, queda como solicitud pendiente
-  - en Despacho primero, los aumentos generan una diferencia `DRAFT` para enviarla a cocina desde la vista normal
 - El modulo usa `Aceptar cambios` como accion principal; `Enviar` no debe mostrarse ahi.
 - El Sidebar preserva su estado resaltado (ej. "Mesas") mediante el parámetro de URL `origin`.
 
@@ -506,7 +511,7 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 33. **Extra vs workflow:** Ocultar `/extra` en nav cuando `workflow_mode = DISPATCH_THEN_CASH`.
 34. **Caja Despacho primero:** Respetar `ready_to_collect`; no abrir cobro con items sin despachar; validar en `payOrder`.
 35. **QR promocion:** No imprimir sin campaña activa y ofertas registrables; usar `promocionesRecibo.ts` y migraciones `20260709200000` / `20260709210000`.
-36. **Staging cocina:** Reconciliar ids `temp-*`; aumentos en lineas enviadas → DRAFT con diferencia; migracion `20260709220000` para envio post-despacho.
+36. **Staging cocina:** Reconciliar ids `temp-*`; **aumentos in-place** en lineas enviadas (no DRAFT paralelo); bajas sin exigir `submit_order_draft_items`; migracion `20260709220000` para envio post-despacho de borradores nuevos.
 37. **Transferencia bancaria:** Modal con banco/numero/valor; unicidad global; migraciones `20260712220000`, `20260713050000`; sin toasts Sonner.
 39. **Autopedidos QR:** Menú cliente solo TABLE; aprobar vía `aprobar_autopedido_qr`; migraciones `20260716000000` + `20260716010000`; sin Sonner en `/qr-pedido`.
 40. **Validación IA de comprobantes:** Validar contra `cuentas_bancarias_destino` + máscara del banco origen; fecha en `America/Guayaquil` (fin de semana acepta lunes siguiente); aceptar con novedades exige motivo y snapshot inmutable en `validaciones_comprobantes_transferencia`. No almacenar la foto durante el análisis.
@@ -523,6 +528,14 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 - **QR ticket condicional:** `promocionesRecibo.ts`, `campanasValidacion.ts`, migraciones token promocion Jul 9.
 - **Cocina post-despacho y staging:** `20260709220000`, `reconcileKitchenStagedItems`, diff de cantidad en lineas enviadas.
 - **Monitoreo Global:** hooks/realtime; polling de respaldo 5 min (`20260730230000`).
+
+### Actualizacion Ago 2, 2026
+- **Refresco entre módulos:** `OPERATIONAL_LIST_BACKUP_POLL_MS` (25 s si hub ≠ SUBSCRIBED), `refetchOnWindowFocus`/`Reconnect` en listas, badge **Sync lenta**, invalidaciones cocina↔servir/caja. Doc: `docs/operational-module-refresh.md`.
+- **Staging cocina:** aumentos in-place; bajas sin error falso de “aumento”; consolidación visual también en Editar orden → Despachados; `+` deshabilitado en despachados editables.
+- **Reportes productos:** cantidad neta = `quantity −` anulaciones `APPLIED` (`useReportesProductos`), alineado a lo cobrable en Caja.
+- **Admin sin habilitar en turno:** bypass en `get_my_branch_shift_gate` / `open_cash_register` (`20260802190000_admin_bypass_shift_enablement.sql`).
+- **Caja/Recaudar:** sin filtro de alcance por cajero (lista completa de la sucursal en turno).
+- **BD:** `20260803010000_fix_add_dine_in_order_item_vnode.sql` (fix `v_node` NULL); `20260802180000_void_exact_tender_change_return.sql`.
 
 ### Actualizacion Jul 30, 2026
 - **Egress / Realtime:** hub `branch-ops-hub` en `queryEgress.ts`; `order_items.sucursal_id`; RPC `get_orders_operational_snapshots_lite`; publicación Realtime de turnos/pagos/despacho; gate con backup 5 min.

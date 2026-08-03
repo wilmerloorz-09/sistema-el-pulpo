@@ -209,6 +209,7 @@ export async function persistOrderItemLineQuantity(
 type KitchenPendingServerItem = {
   id: string;
   quantity: number;
+  original_quantity?: number | null;
   unit_price: number;
   status: string;
   product_id?: string;
@@ -222,28 +223,9 @@ type KitchenPendingServerItem = {
 
 type KitchenPendingTargetItem = KitchenPendingServerItem;
 
-async function addDraftKitchenItemDelta(
-  orderId: string,
-  source: KitchenPendingServerItem,
-  quantity: number,
-): Promise<void> {
-  if (!source.product_id) {
-    throw new Error(`No se pudo agregar mas cantidad de ${source.description_snapshot ?? "producto"}.`);
-  }
-
-  const { error } = await supabase.rpc("add_dine_in_order_item" as any, {
-    p_order_id: orderId,
-    p_product_id: source.product_id,
-    p_menu_node_id: source.menu_node_id ?? null,
-    p_quantity: quantity,
-    p_unit_price: source.unit_price,
-    p_description_snapshot: source.description_snapshot,
-    p_item_note: source.item_note ?? null,
-    p_modifier_ids: (source.modifiers ?? []).map((modifier) => modifier.modifier_id).filter(Boolean),
-    p_tray_item_type: source.tray_item_type ?? null,
-    p_tray_container_cost: source.tray_container_cost ?? 0,
-  });
-  if (error) throw error;
+function kitchenItemServerQuantity(item: KitchenPendingServerItem): number {
+  // Misma base que el staging (quantity visible / no cobrada).
+  return Math.max(0, Number(item.quantity ?? 0));
 }
 
 /** Aplica en BD las diferencias entre el estado del servidor y la vista pendiente de cocina. */
@@ -252,29 +234,22 @@ export async function applyKitchenPendingItemChanges(
   serverItems: KitchenPendingServerItem[],
   pendingItems: KitchenPendingTargetItem[],
 ): Promise<{ createdDraftDelta: number }> {
+  void orderId;
   const pendingById = new Map(pendingItems.map((item) => [item.id, item]));
-  let createdDraftDelta = 0;
 
   for (const server of serverItems) {
     const pending = pendingById.get(server.id);
     const pendingQty = pending ? Math.max(0, Number(pending.quantity ?? 0)) : 0;
-    const serverQty = Math.max(0, Number(server.quantity ?? 0));
+    const serverQty = kitchenItemServerQuantity(server);
 
-    if (!pending && server.status === "DRAFT") {
+    if (!pending && String(server.status ?? "") === "DRAFT") {
       await persistOrderItemLineQuantity(server.id, 0);
       continue;
     }
 
     if (pendingQty === serverQty) continue;
 
-    const isSent = String(server.status ?? "") !== "DRAFT";
-    if (isSent && pendingQty > serverQty) {
-      const delta = pendingQty - serverQty;
-      await addDraftKitchenItemDelta(orderId, pending ?? server, delta);
-      createdDraftDelta += delta;
-      continue;
-    }
-
+    // Misma fila: aumentar o bajar quantity in-place (sin crear DRAFT paralelo).
     await persistOrderItemLineQuantity(
       server.id,
       pendingQty,
@@ -284,7 +259,8 @@ export async function applyKitchenPendingItemChanges(
     );
   }
 
-  return { createdDraftDelta };
+  // Ya no se crean lineas DRAFT por aumento; se mantiene el campo por compatibilidad.
+  return { createdDraftDelta: 0 };
 }
 
 /** Cache de borrador de mesa (optimista o recien creado) para mostrar UI sin esperar al servidor. */

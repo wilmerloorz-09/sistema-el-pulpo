@@ -75,9 +75,12 @@
 - `order_dispatch_events`
 - `order_item_dispatch_events`
 - `order_ready_notifications`
-- **RPC `remove_order_item_line` (2026-07-07/08):** elimina o reduce cantidad de una linea `order_items` enviada sin flujo de anulacion por dialogo. Usado por `applyKitchenPendingItemChanges` al confirmar cambios de cocina pendientes en Despacho primero. Migraciones: `20260707240000_remove_order_item_line.sql`, fix cantidad `20260707241000_fix_remove_order_item_line_qty.sql`.
+- **RPC `remove_order_item_line` (2026-07-07/08):** elimina o reduce cantidad de una linea `order_items` enviada sin flujo de anulacion por dialogo. Usado por `applyKitchenPendingItemChanges` al confirmar bajas de cocina pendientes en Despacho primero. Migraciones: `20260707240000_remove_order_item_line.sql`, fix cantidad `20260707241000_fix_remove_order_item_line_qty.sql`.
+- **Aumentos in-place en lineas enviadas (2026-08-02):** `applyKitchenPendingItemChanges` usa `persistOrderItemLineQuantity` → `set_draft_order_item_quantity` (UPDATE + `recompute_order_operational_state`). Cocina ve el +N en `quantity_pending_prepare` sin crear linea DRAFT paralela.
+- **Fix `v_node` en `add_dine_in_order_item` (2026-08-03):** no tocar `v_node` si `p_menu_node_id` es NULL. Migracion `20260803010000_fix_add_dine_in_order_item_vnode.sql`.
+- **Admin bypass de habilitacion en turno (2026-08-02):** admins globales / MANAGE `admin_sucursal`|`admin_global` operan sin estar en `cash_shift_users`. RPCs: `get_my_branch_shift_gate`, `open_cash_register`. Migracion `20260802190000_admin_bypass_shift_enablement.sql` (aplicar en remoto).
 - **Fix cast enum `order_type` en cancelaciones (2026-07-18):** `cancel_order_quantities` y `set_draft_order_item_quantity` usaban `COALESCE(v_order.order_type, '')`, lo que hacía que Postgres intentara castear `''` al enum `order_type` (error `22P02 invalid input value for enum`). Esto rompía en silencio las reducciones/eliminaciones de items despachados en "Editar orden" (Despacho primero) y podía impedir que un item nuevo agregado tras un despacho se enviara correctamente. Corregido a `COALESCE(v_order.order_type::text, '')` en `20260718230000_fix_enum_order_type_cast_cancelaciones.sql`.
-- **`submit_order_draft_items` post-despacho (2026-07-09):** permite enviar borradores nuevos cuando la cabecera esta `KITCHEN_DISPATCHED` (regresion corregida en `20260709220000_submit_draft_items_after_dispatch.sql`). Necesario al agregar productos tras despachar todo en Despacho primero.
+- **Reportes de productos vs anulaciones parciales (2026-08-02):** al bajar despachados (Editar orden → `cancel_order_quantities`), `order_items.quantity` puede seguir alto y el neto vivir en `order_item_cancellations` (`APPLIED`). `useReportesProductos` debe restar esas cantidades (mismo criterio que Caja).- **`submit_order_draft_items` post-despacho (2026-07-09):** permite enviar borradores nuevos cuando la cabecera esta `KITCHEN_DISPATCHED` (regresion corregida en `20260709220000_submit_draft_items_after_dispatch.sql`). Necesario al agregar productos tras despachar todo en Despacho primero.
 
 ### 4. Mesas y órdenes
 - `restaurant_tables`
@@ -609,6 +612,11 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `20260716010000_fix_gen_random_bytes_tokens_qr.sql` — `token_seguro` con `gen_random_uuid()` (sin `pgcrypto`).
 - `20260730230000_realtime_turnos_y_snapshots_lite.sql` — Realtime turnos/pagos/despacho/`order_items`; `order_items.sucursal_id`; RPC `get_orders_operational_snapshots_lite`.
 
+### Admin bypass y fixes Ago 2026
+- `20260802190000_admin_bypass_shift_enablement.sql` — admins operan sin estar habilitados en `cash_shift_users`.
+- `20260802180000_void_exact_tender_change_return.sql` — anulación / vuelto exacto.
+- `20260803010000_fix_add_dine_in_order_item_vnode.sql` — fix `v_node` no asignado en `add_dine_in_order_item`.
+
 ### Perfiles y alias (2026-06-28)
 - `20260628120000_add_profile_alias.sql`
   - Columna `profiles.alias` (NOT NULL, unico case-insensitive, check alfanumerico).
@@ -677,8 +685,13 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - **Envio post-despacho:** `20260709220000_submit_draft_items_after_dispatch.sql` — `submit_order_draft_items` no rechaza `KITCHEN_DISPATCHED` cuando hay lineas `DRAFT`.
 - **Caja Despacho primero:** sin migracion SQL; `ready_to_collect` / `undispatched_units` en cliente + guard en `payOrder`.
 
+### Actualizacion Ago 2, 2026
+- **Refresco módulos / Realtime:** ver `docs/operational-module-refresh.md` y Fase 1.5 en `docs/supabase-performance-audit-phase2.md` (`OPERATIONAL_LIST_BACKUP_POLL_MS`, Sync lenta).
+- **Aumentos in-place / reportes netos / admin bypass / fix v_node:** migraciones `20260802190000`, `20260803010000`; cliente `applyKitchenPendingItemChanges`, `useReportesProductos`.
+- **Enviar a cocina — solo reduccion:** Si el operador baja cantidades de lineas ya enviadas (sin borradores nuevos), `applyKitchenPendingItemChanges` persiste el cambio y **no** debe llamar a `submit_order_draft_items`/`sendToKitchen`. Tras aplicar, se actualiza baseline y se invalidan despacho/cocina.
+
 ### Actualizacion Jul 13, 2026
-- **Enviar a cocina — solo reduccion de cantidad:** Si el operador baja cantidades de lineas ya enviadas (sin borradores nuevos), `applyKitchenPendingItemChanges` persiste el cambio y **no** debe llamar a `submit_order_draft_items`/`sendToKitchen` (fallaba con "No hay productos pendientes por enviar" y el baseline no se reseteaba, dejando el boton activo). Tras aplicar, se actualiza `kitchenBaselineItems`/`stagedItems` y se invalidan despacho/cocina.
+- **Enviar a cocina — solo reduccion de cantidad (historial):** documentado arriba; comportamiento reafirmado Ago 2026.
 - **Sesión doble en tarjeta de turno:** checkbox **Sesión doble** en `ShiftSetupAdmin` persiste `cash_shift_users.can_double_session` para cualquier usuario del turno (no solo caja). Migracion `20260713220000_sesion_doble_para_cualquier_usuario.sql` relaja el trigger, `user_has_double_app_session_permission` y deja de borrar el flag en `apply_shift_caja_configuration`.
 
 ### Actualizacion Jul 14, 2026

@@ -3,7 +3,10 @@ import {
   getDispatchedEditQuantity,
   getDispatchedEditTargetQuantity,
   isDispatchFirstOrder,
+  isOrderItemFullyDispatched,
   isPureTakeoutOrder,
+  redistributeGroupedItemQuantities,
+  resolveInDispatchStagingQuantities,
 } from "@/lib/orderFlow";
 
 describe("isPureTakeoutOrder", () => {
@@ -77,5 +80,61 @@ describe("edicion temporal de cantidades despachadas", () => {
 
     expect(getDispatchedEditQuantity(item)).toBe(3);
     expect(getDispatchedEditTargetQuantity(item, 5)).toBe(5);
+  });
+});
+
+describe("resolveInDispatchStagingQuantities", () => {
+  it("baja cantidad en EN DESPACHO de una linea solo enviada", () => {
+    const item = {
+      quantity: 2,
+      quantity_dispatched: 0,
+      quantity_remaining: 2,
+      status: "DISPATCHED",
+    };
+
+    expect(isOrderItemFullyDispatched(item)).toBe(false);
+    expect(resolveInDispatchStagingQuantities(item, 1)).toEqual({
+      quantity: 1,
+      quantity_remaining: 1,
+    });
+  });
+
+  it("al bajar EN DESPACHO de una parcial preserva lo ya despachado", () => {
+    const item = {
+      quantity: 5,
+      quantity_dispatched: 3,
+      quantity_remaining: 2,
+    };
+
+    expect(resolveInDispatchStagingQuantities(item, 1)).toEqual({
+      quantity: 4,
+      quantity_remaining: 1,
+    });
+  });
+});
+
+describe("redistributeGroupedItemQuantities", () => {
+  it("baja unidades desde la ultima linea consolidada", () => {
+    expect(
+      redistributeGroupedItemQuantities(["a", "b"], [1, 1], 1),
+    ).toEqual([
+      { id: "a", quantity: 1 },
+      { id: "b", quantity: 0 },
+    ]);
+  });
+
+  it("sube unidades en la ultima linea consolidada", () => {
+    expect(
+      redistributeGroupedItemQuantities(["a", "b"], [1, 1], 3),
+    ).toEqual([
+      { id: "a", quantity: 1 },
+      { id: "b", quantity: 2 },
+    ]);
+  });
+
+  it("actualiza una sola linea sin redistribuir", () => {
+    expect(
+      redistributeGroupedItemQuantities(["a"], [2], 1),
+    ).toEqual([{ id: "a", quantity: 1 }]);
   });
 });
