@@ -3520,6 +3520,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      force_close_cash_shift: {
+        Args: {
+          p_branch_id: string
+          p_notes?: string
+          p_shift_id: string
+        }
+        Returns: {
+          drafts_deleted: number
+          openings_closed: number
+          ops_closed: number
+          paid_closed: number
+        }[]
+      }
       close_dine_in_order_for_payment: {
         Args: { p_order_id: string }
         Returns: undefined

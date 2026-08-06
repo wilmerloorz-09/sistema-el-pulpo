@@ -38,6 +38,7 @@ import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
+import ForzarCierreTurno from "./pages/ForzarCierreTurno";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 
@@ -491,6 +492,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedModules={["turno", "admin_sucursal", "admin_global"]}>
                       <Turno />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/forzar-cierre-turno"
+                  element={
+                    <ProtectedRoute allowedModules={["turno", "admin_sucursal", "admin_global"]}>
+                      <ForzarCierreTurno />
                     </ProtectedRoute>
                   }
                 />

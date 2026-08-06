@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -243,6 +243,21 @@ const NAV_ITEMS: AppNavItem[] = [
       canView(permissions, "turno") || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
+    to: "/forzar-cierre-turno",
+    label: "Forzar cierre de turno",
+    icon: <PowerOff className="h-5 w-5" />,
+    group: "ADMINISTRACIÓN",
+    tone: {
+      active: "from-red-600 to-rose-500",
+      idle: "hover:border-red-200 hover:bg-red-50/90 hover:text-red-700",
+      iconIdle: "bg-red-50 text-red-600",
+    },
+    visible: (permissions) =>
+      canManage(permissions, "turno")
+      || canManage(permissions, "admin_sucursal")
+      || canManage(permissions, "admin_global"),
+  },
+  {
     to: "/admin",
     label: "Administración",
     icon: <Settings className="h-5 w-5" />,
@@ -325,6 +340,7 @@ export function useVisibleNavItems() {
           || (item.to.startsWith("/clientes") && isGlobalAdmin)
           || (item.to === "/ordenes" && isGlobalAdmin)
           || (item.to === "/turno" && canAccessTurno)
+          || (item.to === "/forzar-cierre-turno" && item.visible(permissions))
           || (item.to === "/reportes" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );

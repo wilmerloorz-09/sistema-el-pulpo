@@ -127,6 +127,7 @@ const ProtectedRoute = ({
   const isStaleShift = Boolean(shiftGateQuery.data?.isStaleShift);
   const isAllowedModulePath = 
     location.pathname.startsWith("/turno") || 
+    location.pathname.startsWith("/forzar-cierre-turno") ||
     location.pathname.startsWith("/admin") ||
     location.pathname.startsWith("/reportes") ||
     location.pathname.startsWith("/monitoreo-global") ||
