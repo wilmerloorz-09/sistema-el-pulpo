@@ -35,6 +35,8 @@ interface Props {
   product: Product | null;
   /** Datos del menú ya en memoria: permite abrir el modal de inmediato */
   resolvingShell?: AddItemResolvingShell | null;
+  /** Si el producto aun se reconcilia en red, espera antes de confirmar el id real */
+  ensureProduct?: () => Promise<Product | null>;
   modifiers: Modifier[];
   open: boolean;
   onClose: () => void;
@@ -59,6 +61,7 @@ interface Props {
 const AddItemDialog = ({
   product,
   resolvingShell = null,
+  ensureProduct,
   modifiers,
   open,
   onClose,
@@ -92,6 +95,7 @@ const AddItemDialog = ({
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   /** Orden especial: precio bloqueado al catálogo hasta pulsar Editar */
   const [specialPriceEditing, setSpecialPriceEditing] = useState(false);
+  const [ensuringProduct, setEnsuringProduct] = useState(false);
   const specialPriceInputRef = useRef<HTMLInputElement>(null);
 
   const dialogOpen = Boolean(open && displayProduct);
@@ -101,6 +105,7 @@ const AddItemDialog = ({
       setQuantity(1);
       setQuantityInput("1");
       setSpecialPriceEditing(false);
+      setEnsuringProduct(false);
       setManualPrice(
         displayProduct?.unit_price != null ? String(displayProduct.unit_price) : "",
       );
@@ -126,19 +131,31 @@ const AddItemDialog = ({
       : 0;
   const effectiveQuantity = hideQuantity ? 1 : quantity;
   const canAdd =
-    Boolean(product) &&
     displayProduct != null &&
+    (Boolean(product) || Boolean(ensureProduct) || !isResolving) &&
     effectiveQuantity > 0 &&
     (!isManual ||
       (isSpecial && !specialPriceEditing ? catalogUnitPrice > 0 : price > 0));
   const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
+  const confirmBusy = Boolean(adding || ensuringProduct);
 
-  const handleConfirm = () => {
-    if (!product || !displayProduct || !canAdd) return;
+  const handleConfirm = async () => {
+    if (!displayProduct || !canAdd || confirmBusy) return;
+
+    let readyProduct = product;
+    if (ensureProduct) {
+      setEnsuringProduct(true);
+      try {
+        readyProduct = await ensureProduct();
+      } finally {
+        setEnsuringProduct(false);
+      }
+    }
+    if (!readyProduct) return;
 
     onConfirm({
-      product_id: product.id,
-      description_snapshot: product.description,
+      product_id: readyProduct.id,
+      description_snapshot: readyProduct.description,
       unit_price: price,
       quantity: effectiveQuantity,
       modifier_ids: selectedMods,
@@ -345,16 +362,16 @@ const AddItemDialog = ({
               <span className="font-display text-2xl font-black text-foreground">${(price * effectiveQuantity).toFixed(2)}</span>
             </span>
             <Button
-              onClick={handleConfirm}
-              disabled={adding || !canAdd || isResolving}
+              onClick={() => void handleConfirm()}
+              disabled={confirmBusy || !canAdd}
               className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
             >
-              {adding ? (
+              {confirmBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <ShoppingBag className="h-4 w-4" />
               )}
-              {adding ? "Agregando..." : confirmLabel}
+              {confirmBusy ? "Agregando..." : confirmLabel}
             </Button>
           </div>
         </div>

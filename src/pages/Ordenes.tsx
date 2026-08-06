@@ -350,6 +350,35 @@ function buildProductLoadingShell(node: MenuNode, isTrayOrder: boolean, trayType
   };
 }
 
+/** Producto provisional desde el nodo de menú: abre el dialog sin esperar red. */
+function buildOptimisticSelectedProduct(
+  node: MenuNode,
+  isTrayOrder: boolean,
+  trayType: TrayItemType,
+): SelectedProduct | null {
+  const legacyId =
+    typeof node.legacy_product_id === "string" && node.legacy_product_id.trim().length > 0
+      ? node.legacy_product_id.trim()
+      : null;
+  const productId =
+    node.menu_scope === "TABLE"
+      ? (node.id || legacyId)
+      : (legacyId || node.id);
+  if (!productId) return null;
+
+  const shell = buildProductLoadingShell(node, isTrayOrder, trayType);
+  return {
+    id: productId,
+    menu_node_id: node.id,
+    description: shell.description,
+    subcategory_id: node.parent_id ?? "",
+    unit_price: shell.unit_price,
+    price_mode: shell.price_mode,
+    icon: shell.icon,
+    image_url: shell.image_url,
+  };
+}
+
 /**
  * Diagnostico de rendimiento (2026-03-30)
  * - Medicion directa disponible desde este entorno: RTT base al endpoint REST de Supabase ~777ms.
@@ -368,17 +397,23 @@ async function fetchMenuProductLookup(params: {
   /** Si viene, los modificadores se resuelven en memoria (sin 3.er round-trip) */
   catalog?: BranchModifiersCatalog | null;
 }): Promise<MenuProductLookupResult> {
-  const { data: freshNode, error: freshNodeError } = await supabase
-    .from("menu_nodes" as any)
-    .select("legacy_product_id")
-    .eq("id", params.node.id)
-    .maybeSingle();
-  if (freshNodeError) throw freshNodeError;
+  // Evitar round-trip a menu_nodes si el arbol ya trae legacy_product_id.
+  let resolvedLegacyProductId =
+    typeof params.node.legacy_product_id === "string" && params.node.legacy_product_id.trim().length > 0
+      ? params.node.legacy_product_id.trim()
+      : null;
 
-  const resolvedLegacyProductId =
-    typeof freshNode?.legacy_product_id === "string" && freshNode.legacy_product_id.trim().length > 0
-      ? freshNode.legacy_product_id
-      : params.node.legacy_product_id;
+  if (!resolvedLegacyProductId) {
+    const { data: freshNode, error: freshNodeError } = await supabase
+      .from("menu_nodes" as any)
+      .select("legacy_product_id")
+      .eq("id", params.node.id)
+      .maybeSingle();
+    if (freshNodeError) throw freshNodeError;
+    if (typeof freshNode?.legacy_product_id === "string" && freshNode.legacy_product_id.trim().length > 0) {
+      resolvedLegacyProductId = freshNode.legacy_product_id.trim();
+    }
+  }
 
   const candidateProductIds = Array.from(
     new Set(
@@ -930,6 +965,8 @@ const OrdenesContent = () => {
   const mobileOrderDetailBootstrappedForIdRef = useRef<string | null>(null);
   /** Ignora respuestas async de selecciones de producto anteriores (doble toque / red lenta en movil). */
   const productSelectSeqRef = useRef(0);
+  /** Lookup en curso: el dialog abre al instante y confirma espera este promise si hace falta. */
+  const productLookupPromiseRef = useRef<Promise<SelectedProduct | null> | null>(null);
   const syncedOrderBranchRef = useRef<string | null>(null);
   const tableOrdersTabsRef = useRef<HTMLDivElement>(null);
   const [tableOrdersTabsOverflow, setTableOrdersTabsOverflow] = useState({
@@ -1624,6 +1661,8 @@ const OrdenesContent = () => {
     setSelectedProductModifiers([]);
     setProductLoadingShell(null);
     setSelectingProductId(null);
+    productSelectSeqRef.current += 1;
+    productLookupPromiseRef.current = null;
     setShowCart(false);
     mobileOrderDetailBootstrappedForIdRef.current = null;
     // Siempre forzamos el cierre del dialogo al cambiar de mesa o refrescar
@@ -2251,47 +2290,72 @@ const OrdenesContent = () => {
     }
 
     const selectSeq = ++productSelectSeqRef.current;
-    setSelectingProductId(node.id);
-    try {
-      const catalog = await qc.fetchQuery({
-        queryKey: ["branch-modifiers-catalog", activeBranchId],
-        queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
-        staleTime: 5 * 60_000,
-        gcTime: 30 * 60_000,
-      });
-      const initialModifiers = buildModifiersForProductNode(node, catalog);
-
-      if (selectSeq !== productSelectSeqRef.current) return;
-
-      setSelectedProduct(null);
-      setSelectedProductModifiers(initialModifiers);
-      setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
-      setProductLoadingShell(buildProductLoadingShell(node, isTrayOrder, effectiveTrayType));
-
-      const lookup = await fetchMenuProductLookup({
-        branchId: activeBranchId,
-        node,
-        isTrayOrder,
-        trayType: effectiveTrayType,
-        catalog,
-      });
-
-      if (selectSeq !== productSelectSeqRef.current) return;
-
-      setSelectedProduct(lookup.product);
-      setSelectedProductModifiers(lookup.modifiers);
-      setProductLoadingShell(null);
-    } catch (error: any) {
-      if (selectSeq !== productSelectSeqRef.current) return;
-      toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
-      setSelectedProduct(null);
-      setSelectedProductRootName(null);
-      setProductLoadingShell(null);
-    } finally {
-      if (selectSeq === productSelectSeqRef.current) {
-        setSelectingProductId(null);
-      }
+    const optimistic = buildOptimisticSelectedProduct(node, isTrayOrder, effectiveTrayType);
+    if (!optimistic) {
+      toast.error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
+      return;
     }
+
+    // Abrir dialog de inmediato con datos del menu (sin esperar red).
+    const cachedCatalog = qc.getQueryData([
+      "branch-modifiers-catalog",
+      activeBranchId,
+    ]) as BranchModifiersCatalog | undefined;
+    const initialModifiers = cachedCatalog
+      ? buildModifiersForProductNode(node, cachedCatalog)
+      : [];
+
+    setSelectingProductId(null);
+    setSelectedProduct(optimistic);
+    setSelectedProductModifiers(initialModifiers);
+    setSelectedProductRootName(resolveRootCategoryName(node, scopeCompositeMenuQuery.data ?? null));
+    setProductLoadingShell(null);
+
+    let lookupPromise!: Promise<SelectedProduct | null>;
+    lookupPromise = (async (): Promise<SelectedProduct | null> => {
+      try {
+        const catalog = cachedCatalog ?? await qc.fetchQuery({
+          queryKey: ["branch-modifiers-catalog", activeBranchId],
+          queryFn: () => fetchBranchModifiersCatalog(activeBranchId!),
+          staleTime: 5 * 60_000,
+          gcTime: 30 * 60_000,
+        });
+
+        if (selectSeq !== productSelectSeqRef.current) return null;
+
+        if (!cachedCatalog) {
+          setSelectedProductModifiers(buildModifiersForProductNode(node, catalog));
+        }
+
+        const lookup = await fetchMenuProductLookup({
+          branchId: activeBranchId!,
+          node,
+          isTrayOrder,
+          trayType: effectiveTrayType,
+          catalog,
+        });
+
+        if (selectSeq !== productSelectSeqRef.current) return null;
+
+        setSelectedProduct(lookup.product);
+        setSelectedProductModifiers(lookup.modifiers);
+        return lookup.product;
+      } catch (error: any) {
+        if (selectSeq !== productSelectSeqRef.current) return null;
+        toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
+        setSelectedProduct(null);
+        setSelectedProductRootName(null);
+        setSelectedProductModifiers([]);
+        setProductLoadingShell(null);
+        return null;
+      } finally {
+        if (productLookupPromiseRef.current === lookupPromise) {
+          productLookupPromiseRef.current = null;
+        }
+      }
+    })();
+
+    productLookupPromiseRef.current = lookupPromise;
   };
   const canShowConvertToSpecial =
     canOperateOrders &&
@@ -4573,6 +4637,13 @@ const OrdenesContent = () => {
       <AddItemDialog
         product={selectedProduct}
         resolvingShell={productLoadingShell}
+        ensureProduct={async () => {
+          const pending = productLookupPromiseRef.current;
+          if (pending) {
+            return await pending;
+          }
+          return selectedProduct;
+        }}
         modifiers={
           (selectedProduct || productLoadingShell) && (!isTrayOrder || effectiveTrayType !== "A")
             ? selectedProductModifiers
@@ -4580,6 +4651,8 @@ const OrdenesContent = () => {
         }
         open={Boolean(selectedProduct || productLoadingShell)}
         onClose={() => {
+          productSelectSeqRef.current += 1;
+          productLookupPromiseRef.current = null;
           setSelectedProduct(null);
           setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
