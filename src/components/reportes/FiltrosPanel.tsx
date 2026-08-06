@@ -21,7 +21,6 @@ interface FiltrosPanelProps {
 }
 
 export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: FiltrosPanelProps) {
-  const { data: filtersData, isLoading } = useReportesFiltros(branchId);
   const { data: shiftGate } = useBranchShiftGate();
   const { isGlobalAdmin, branches } = useBranch();
 
@@ -39,11 +38,15 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const [creatorId, setCreatorId] = useState<string>('ALL');
   const [supervisorId, setSupervisorId] = useState<string>('ALL');
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [selectedOrderType, setSelectedOrderType] = useState<string>('ALL');
 
   // Buscador de productos
   const [productSearch, setProductSearch] = useState<string>('');
   const [isProductsOpen, setIsProductsOpen] = useState(false);
+
+  const effectiveBranchId = localBranchId || branchId;
+  const { data: filtersData, isLoading } = useReportesFiltros(effectiveBranchId);
 
   // Manejar cambios en el Rango Rápido de Tiempo
   useEffect(() => {
@@ -128,18 +131,17 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     const hastaISO = hasta ? new Date(hasta).toISOString() : null;
 
     // Resolver los nodos seleccionados a sus IDs de producto legacy para el backend
-    const resolvedProductIds = new Set<string>();
     const menuNodes = filtersData?.menuNodes || [];
     const legacyProducts = filtersData?.products || [];
-    
-    const collectLegacyIds = (nodeId: string) => {
+
+    const collectLegacyIds = (nodeId: string, into: Set<string>) => {
       const node = menuNodes.find((n: any) => n.id === nodeId);
       if (!node) return;
-      
+
       // Añadimos tanto el ID del nodo como su ID legacy para asegurar compatibilidad total con la tabla de orders_items
-      resolvedProductIds.add(node.id);
+      into.add(node.id);
       if (node.legacy_product_id) {
-        resolvedProductIds.add(node.legacy_product_id);
+        into.add(node.legacy_product_id);
       }
 
       // Fallback: Si un producto antiguo no está enlazado correctamente al árbol, lo buscamos por nombre
@@ -153,20 +155,45 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
           if (nodeNameLower.length >= 4 && descLower.includes(nodeNameLower)) return true;
           return false;
         });
-        matchingLegacy.forEach((p: any) => resolvedProductIds.add(p.id));
+        matchingLegacy.forEach((p: any) => into.add(p.id));
       }
 
       const children = menuNodes.filter((n: any) => n.parent_id === nodeId);
       for (const child of children) {
-        collectLegacyIds(child.id);
+        collectLegacyIds(child.id, into);
       }
     };
 
-    for (const nodeId of selectedNodeIds) {
-      collectLegacyIds(nodeId);
+    const categoryProductIds = new Set<string>();
+    const selectedProductIds = new Set<string>();
+
+    if (selectedCategoryId !== 'ALL') {
+      collectLegacyIds(selectedCategoryId, categoryProductIds);
     }
-    
-    const finalProductIds = Array.from(resolvedProductIds).filter(Boolean);
+    for (const nodeId of selectedNodeIds) {
+      collectLegacyIds(nodeId, selectedProductIds);
+    }
+
+    let finalProductIds: string[] | null = null;
+    const hasCategoryScope = selectedCategoryId !== 'ALL';
+    const hasProductScope = selectedNodeIds.length > 0;
+
+    if (hasCategoryScope && hasProductScope) {
+      // Intersección: productos elegidos que pertenecen a la categoría
+      finalProductIds = Array.from(selectedProductIds).filter((id) => categoryProductIds.has(id));
+    } else if (hasCategoryScope) {
+      finalProductIds = Array.from(categoryProductIds);
+    } else if (hasProductScope) {
+      finalProductIds = Array.from(selectedProductIds);
+    }
+
+    if (finalProductIds) {
+      finalProductIds = finalProductIds.filter(Boolean);
+      // Si eligieron categoría/producto pero no resolvió IDs, forzar vacío (no mostrar todo).
+      if (finalProductIds.length === 0) {
+        finalProductIds = ['00000000-0000-0000-0000-000000000000'];
+      }
+    }
 
     onFilterChange({
       branchId: localBranchId,
@@ -176,7 +203,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
       cashierId: cashierId === 'ALL' ? null : cashierId,
       creatorId: creatorId === 'ALL' ? null : creatorId,
       supervisorId: supervisorId === 'ALL' ? null : supervisorId,
-      productIds: finalProductIds.length === 0 ? null : finalProductIds,
+      productIds: finalProductIds,
       orderTypes: selectedOrderType === 'ALL' ? ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL'] : [selectedOrderType],
     });
   };
@@ -190,6 +217,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     setCreatorId('ALL');
     setSupervisorId('ALL');
     setSelectedNodeIds([]);
+    setSelectedCategoryId('ALL');
     setSelectedOrderType('ALL');
   };
 
@@ -242,6 +270,8 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     : [];
 
   const rootNodes = menuNodes.filter((n: any) => !n.parent_id);
+  const categoryNodes = menuNodes.filter((n: any) => n.node_type === 'category');
+  const showProductFilters = activeTab === 'products' || activeTab === 'payments';
 
   const renderTree = (nodes: any[], depth = 0) => {
     return nodes.map((node) => {
@@ -422,8 +452,34 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
           </div>
         )}
 
+        {/* Categoría de producto (menú) */}
+        {showProductFilters && (
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-muted-foreground">Categoría de producto</Label>
+            <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+              <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
+                <SelectValue placeholder="Todas las categorías" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
+                <SelectItem value="ALL">Todas las categorías</SelectItem>
+                {categoryNodes.length === 0 ? (
+                  <SelectItem value="__empty" disabled>
+                    Sin categorías en el menú
+                  </SelectItem>
+                ) : (
+                  categoryNodes.map((node: any) => (
+                    <SelectItem key={node.id} value={node.id} className="text-xs">
+                      {getPath(node.id)}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* Buscador de Productos Multiselect */}
-        {activeTab === 'items' && (
+        {showProductFilters && (
           <div className="space-y-1.5">
             <Label className="text-xs font-bold text-muted-foreground">Filtrar por Productos</Label>
             <Popover open={isProductsOpen} onOpenChange={setIsProductsOpen}>
@@ -533,8 +589,19 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 mt-5 pt-4">
-        {/* Chips de productos seleccionados */}
+        {/* Chips de categoría / productos seleccionados */}
         <div className="flex flex-wrap gap-1 max-w-[70%]">
+          {selectedCategoryId !== 'ALL' && (
+            <Badge variant="secondary" className="text-[10px] rounded-lg gap-1">
+              <span className="truncate max-w-[120px]">
+                {menuNodes.find((n: any) => n.id === selectedCategoryId)?.name || 'Categoría'}
+              </span>
+              <X
+                className="h-3 w-3 cursor-pointer opacity-60 hover:opacity-100"
+                onClick={() => setSelectedCategoryId('ALL')}
+              />
+            </Badge>
+          )}
           {selectedNodeIds.slice(0, 3).map((id) => {
             const node = menuNodes.find((n: any) => n.id === id);
             return (
