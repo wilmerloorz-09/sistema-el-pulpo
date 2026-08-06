@@ -3727,58 +3727,58 @@ const OrdenesContent = () => {
                 }
               }
 
-              let freshOrder: Awaited<ReturnType<typeof fetchOrderDetail>> | null = null;
-              try {
-                freshOrder = orderId ? await fetchOrderDetail(orderId) : null;
-              } catch {
-                const message = "No se pudo verificar la orden antes de enviar. Revisa tu conexion e intenta de nuevo.";
-                setKitchenSendError(message);
-                toast.error(message);
-                return;
-              }
-              if (freshOrder && orderId) {
-                qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
-              }
-
-              const draftsToSend = (freshOrder?.items ?? []).some(
+              // Decidir con estado local (sin refetch pesado previo).
+              const localItems = useKitchenStaging ? stagedItems : orderItems;
+              const draftsToSend = localItems.some(
+                (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+              ) || orderItems.some(
                 (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
               );
-              // Si el diff creo borradores, siempre enviar
-              // aunque algun enriquecimiento oculte el DRAFT en la vista.
               const shouldSubmitDrafts = draftsToSend || createdDraftDelta > 0;
 
-              if (shouldSubmitDrafts) {
-                if (isExpressOrder) {
-                  await sendToDispatch.mutateAsync();
-                } else {
-                  await sendToKitchen.mutateAsync();
-                }
+              let freshOrder: Order | null =
+                (orderId
+                  ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) ?? null
+                  : null)
+                ?? order
+                ?? null;
+
+              if (shouldSubmitDrafts || !hadKitchenPending) {
+                await (isExpressOrder
+                  ? sendToDispatch.mutateAsync()
+                  : sendToKitchen.mutateAsync());
+
+                // La mutacion ya aplico update optimista en cache.
                 if (orderId) {
-                  freshOrder = await fetchOrderDetail(orderId);
-                  if (freshOrder) {
-                    qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
-                  }
+                  freshOrder =
+                    (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
+                    ?? freshOrder;
                 }
-              } else if (!hadKitchenPending) {
-                if (isExpressOrder) {
-                  await sendToDispatch.mutateAsync();
-                } else {
-                  await sendToKitchen.mutateAsync();
-                }
-                if (orderId) {
-                  freshOrder = await fetchOrderDetail(orderId);
-                  if (freshOrder) {
-                    qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
-                  }
-                }
-              } else {
-                // Habia cambios pendientes solo de baja ($-X): ya se aplicaron en BD
-                // con applyKitchenPendingItemChanges. No hay borrador que enviar.
-                if (orderId) {
-                  freshOrder = await fetchOrderDetail(orderId);
-                  if (freshOrder) {
-                    qc.setQueryData(getOrderQueryKey(orderId), freshOrder);
-                  }
+              } else if (orderId && useKitchenStaging) {
+                // Solo bajas/ajustes ya aplicados en BD: alinear cache con staging.
+                const current =
+                  (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) ?? order;
+                if (current) {
+                  const stagedById = new Map(stagedItems.map((item) => [item.id, item]));
+                  const updated: Order = {
+                    ...current,
+                    items: current.items
+                      .map((item) => {
+                        const staged = stagedById.get(item.id);
+                        if (!staged) return null;
+                        return {
+                          ...item,
+                          quantity: staged.quantity,
+                          unit_price: staged.unit_price,
+                          total: staged.total ?? item.total,
+                          status: staged.status ?? item.status,
+                        };
+                      })
+                      .filter((item): item is NonNullable<typeof item> => item != null),
+                  };
+                  qc.setQueryData(getOrderQueryKey(orderId), updated);
+                  freshOrder = updated;
+                  void qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
                 }
               }
 

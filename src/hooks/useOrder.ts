@@ -236,6 +236,7 @@ export async function applyKitchenPendingItemChanges(
 ): Promise<{ createdDraftDelta: number }> {
   void orderId;
   const pendingById = new Map(pendingItems.map((item) => [item.id, item]));
+  const tasks: Promise<void>[] = [];
 
   for (const server of serverItems) {
     const pending = pendingById.get(server.id);
@@ -243,24 +244,85 @@ export async function applyKitchenPendingItemChanges(
     const serverQty = kitchenItemServerQuantity(server);
 
     if (!pending && String(server.status ?? "") === "DRAFT") {
-      await persistOrderItemLineQuantity(server.id, 0);
+      tasks.push(persistOrderItemLineQuantity(server.id, 0));
       continue;
     }
 
     if (pendingQty === serverQty) continue;
 
     // Misma fila: aumentar o bajar quantity in-place (sin crear DRAFT paralelo).
-    await persistOrderItemLineQuantity(
-      server.id,
-      pendingQty,
-      pending?.unit_price ?? server.unit_price,
-      serverQty,
-      server.status,
+    tasks.push(
+      persistOrderItemLineQuantity(
+        server.id,
+        pendingQty,
+        pending?.unit_price ?? server.unit_price,
+        serverQty,
+        server.status,
+      ),
     );
+  }
+
+  if (tasks.length > 0) {
+    await Promise.all(tasks);
   }
 
   // Ya no se crean lineas DRAFT por aumento; se mantiene el campo por compatibilidad.
   return { createdDraftDelta: 0 };
+}
+
+/** Marca borradores como enviados en cache (UI inmediata tras submit). */
+export function applyOptimisticKitchenSubmit(
+  order: Order,
+  nextStatus?: string | null,
+): Order {
+  const now = new Date().toISOString();
+  const submittedItems = order.items.map((item) => {
+    if (item.status !== "DRAFT" || Number(item.quantity ?? 0) <= 0) return item;
+    const qty = Math.max(0, Number(item.quantity ?? 0));
+    return {
+      ...item,
+      status: "SENT",
+      quantity_sent: Math.max(Number(item.quantity_sent ?? 0), qty),
+      quantity_remaining: Math.max(Number(item.quantity_remaining ?? 0), qty),
+    };
+  });
+
+  const resolvedStatus =
+    nextStatus
+    || (order.status === "DRAFT" || order.status === "KITCHEN_DISPATCHED"
+      ? "SENT_TO_KITCHEN"
+      : order.status);
+
+  return {
+    ...order,
+    status: resolvedStatus as Order["status"],
+    sent_to_kitchen_at: order.sent_to_kitchen_at ?? now,
+    items: submittedItems,
+  };
+}
+
+async function orderHasDraftItemsToSubmit(
+  orderId: string,
+  cached: Order | null | undefined,
+): Promise<{ hasDrafts: boolean; hadSentItems: boolean }> {
+  const cachedItems = cached?.items ?? [];
+  const hadSentItems = cachedItems.some((item) => item.status !== "DRAFT");
+  const cachedHasDrafts = cachedItems.some(
+    (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+  );
+  if (cachedHasDrafts) {
+    return { hasDrafts: true, hadSentItems };
+  }
+
+  const rawDrafts = await dbSelect<{ id: string; quantity: number }>("order_items", {
+    select: "id, quantity",
+    filters: [
+      { column: "order_id", op: "eq", value: orderId },
+      { column: "status", op: "eq", value: "DRAFT" },
+    ],
+  });
+  const hasDrafts = (rawDrafts ?? []).some((item) => Number(item.quantity ?? 0) > 0);
+  return { hasDrafts, hadSentItems };
 }
 
 /** Cache de borrador de mesa (optimista o recien creado) para mostrar UI sin esperar al servidor. */
@@ -1158,27 +1220,12 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontró la orden");
       }
 
-      const freshOrder = await fetchOrderDetail(orderId);
-      if (!freshOrder) {
-        throw new Error("No se encontró la orden");
-      }
-
-      const enrichedDrafts = freshOrder.items.some(
-        (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
-      );
-      // Fallback a BD: el enriquecimiento no debe impedir enviar borradores reales.
-      let hasDbDrafts = enrichedDrafts;
-      if (!hasDbDrafts) {
-        const rawDrafts = await dbSelect<{ id: string; quantity: number }>("order_items", {
-          select: "id, quantity",
-          filters: [
-            { column: "order_id", op: "eq", value: orderId },
-            { column: "status", op: "eq", value: "DRAFT" },
-          ],
-        });
-        hasDbDrafts = (rawDrafts ?? []).some((item) => Number(item.quantity ?? 0) > 0);
-      }
-      if (!hasDbDrafts) {
+      const cached =
+        (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
+        ?? query.data
+        ?? null;
+      const { hasDrafts, hadSentItems } = await orderHasDraftItemsToSubmit(orderId, cached);
+      if (!hasDrafts) {
         throw new Error("No hay productos pendientes por enviar");
       }
 
@@ -1189,21 +1236,29 @@ export function useOrder(orderId: string | null) {
 
       const row = Array.isArray(data) ? data[0] : null;
       return {
-        row: row as { order_status?: string } | null,
-        hadSentItems: freshOrder.items.some((item) => item.status !== "DRAFT"),
+        row: row as { order_status?: string; order_id?: string; submitted_item_count?: number } | null,
+        hadSentItems,
+        orderBefore: cached,
       };
     },
-    onSuccess: ({ row, hadSentItems }) => {
-      const order = query.data;
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["servir-orders"] });
+    onSuccess: ({ row, hadSentItems, orderBefore }) => {
+      const order = orderBefore ?? query.data;
+      if (order && orderId) {
+        qc.setQueryData(
+          getOrderQueryKey(orderId),
+          applyOptimisticKitchenSubmit(order, row?.order_status ?? null),
+        );
+      }
+
+      void qc.invalidateQueries({ queryKey: ["order", orderId] });
+      void qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      void qc.invalidateQueries({ queryKey: ["table-orders"] });
+      void qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      void qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      void qc.invalidateQueries({ queryKey: ["servir-orders"] });
       if (order?.order_type === "EXTRA" && order.branch_id) {
-        qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
+        void qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
       }
 
       if (row?.order_status === "PAID") {
@@ -1226,31 +1281,29 @@ export function useOrder(orderId: string | null) {
         throw new Error("No se encontró la orden");
       }
 
-      const freshOrder = await fetchOrderDetail(orderId);
-      if (!freshOrder) {
-        throw new Error("No se encontró la orden");
-      }
+      const cached =
+        (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
+        ?? query.data
+        ?? null;
 
-      if (freshOrder.order_type !== "EXPRESS") {
+      if (cached && cached.order_type !== "EXPRESS") {
         throw new Error("Solo las ordenes Express pueden enviarse a despacho desde aqui");
       }
 
-      const enrichedDrafts = freshOrder.items.some(
-        (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
-      );
-      let hasDbDrafts = enrichedDrafts;
-      if (!hasDbDrafts) {
-        const rawDrafts = await dbSelect<{ id: string; quantity: number }>("order_items", {
-          select: "id, quantity",
-          filters: [
-            { column: "order_id", op: "eq", value: orderId },
-            { column: "status", op: "eq", value: "DRAFT" },
-          ],
-        });
-        hasDbDrafts = (rawDrafts ?? []).some((item) => Number(item.quantity ?? 0) > 0);
-      }
-      if (!hasDbDrafts) {
+      const { hasDrafts, hadSentItems } = await orderHasDraftItemsToSubmit(orderId, cached);
+      if (!hasDrafts) {
         throw new Error("No hay productos pendientes por enviar");
+      }
+
+      // Si no habia cache, confirmar tipo Express con lectura minima.
+      if (!cached) {
+        const rows = await dbSelect<{ order_type: string }>("orders", {
+          select: "order_type",
+          filters: [{ column: "id", op: "eq", value: orderId }],
+        });
+        if ((rows?.[0] as any)?.order_type !== "EXPRESS") {
+          throw new Error("Solo las ordenes Express pueden enviarse a despacho desde aqui");
+        }
       }
 
       const { error } = await supabase.rpc("submit_express_order_draft_items" as any, {
@@ -1259,17 +1312,25 @@ export function useOrder(orderId: string | null) {
       if (error) throw error;
 
       return {
-        hadSentItems: freshOrder.items.some((item) => item.status !== "DRAFT"),
+        hadSentItems,
+        orderBefore: cached,
       };
     },
-    onSuccess: ({ hadSentItems }) => {
-      const order = query.data;
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["express-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["servir-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+    onSuccess: ({ hadSentItems, orderBefore }) => {
+      const order = orderBefore ?? query.data;
+      if (order && orderId) {
+        qc.setQueryData(
+          getOrderQueryKey(orderId),
+          applyOptimisticKitchenSubmit(order, "SENT_TO_KITCHEN"),
+        );
+      }
+
+      void qc.invalidateQueries({ queryKey: ["order", orderId] });
+      void qc.invalidateQueries({ queryKey: ["express-orders"] });
+      void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      void qc.invalidateQueries({ queryKey: ["servir-orders"] });
+      void qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      void qc.invalidateQueries({ queryKey: ["payable-orders"] });
 
       const message = hadSentItems
         ? "Nuevos items enviados a despacho"
