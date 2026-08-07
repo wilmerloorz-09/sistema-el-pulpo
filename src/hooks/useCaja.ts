@@ -2083,10 +2083,10 @@ export function useCaja(params?: {
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
             table_name:
-              (o.order_type === "DINE_IN" || Boolean((o as { is_special?: boolean | null }).is_special))
+              (o.order_type === "DINE_IN" || isSpecial)
               && o.table_id
                 ? resolveTableName(o.table_id, (o as any).table_name_snapshot)
-                : Boolean((o as { is_special?: boolean | null }).is_special)
+                : isSpecial
                   ? ((o as any).table_name_snapshot
                     || ((o as { special_origin_table_id?: string | null }).special_origin_table_id
                       ? resolveTableName(
