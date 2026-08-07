@@ -185,7 +185,7 @@ async function shouldKeepOrderReadyAlarm(orderId: string, readyNotificationAt: s
   });
 
   if (error) return true;
-  return !Boolean(data);
+  return !data;
 }
 
 export function useMeseroOrderReadyNotification(

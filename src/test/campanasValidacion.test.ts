@@ -35,6 +35,7 @@ describe("campanasValidacion", () => {
   it("acepta campaña con cartelera válida", () => {
     const oferta = nuevaOfertaCartelera();
     oferta.descripcion = "Oferta A";
+    oferta.inicio_at = new Date().toISOString();
     oferta.bloqueo_at = new Date(Date.now() + 86400000).toISOString();
     oferta.cuota = 1.5;
     const errores = validarCampanaFormulario({

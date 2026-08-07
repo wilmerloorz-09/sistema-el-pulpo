@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { dbSelect, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
+import { dbSelect, dbSelectStrict, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -37,6 +37,7 @@ import {
   COMPROBANTES_PENDIENTES_QUERY_KEY,
   iniciarSubidaComprobanteEnSegundoPlano,
 } from "@/lib/comprobantePagoPendienteLocal";
+import { setTransferProofPendingMarker } from "@/lib/paymentNoteMarkers";
 import { obtenerUrlsComprobantesPorPagos } from "@/lib/comprobantePagoTransferencia";
 import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
 import type { ResultadoValidacionComprobante } from "@/lib/validacionComprobanteTransferencia";
@@ -919,11 +920,12 @@ type PaymentItemRow = {
 
 async function fetchActivePaymentItemsForOrderItems(
   orderItemIds: string[],
-  readOpts?: { skipLocalCache?: boolean },
+  readOpts?: { skipLocalCache?: boolean; strict?: boolean },
 ): Promise<PaymentItemRow[]> {
   if (orderItemIds.length === 0) return [];
+  const read = readOpts?.strict ? dbSelectStrict : dbSelect;
 
-  const paymentItems = await dbSelect<any>("payment_items", {
+  const paymentItems = await read<any>("payment_items", {
     select: "id, payment_id, order_item_id, quantity_paid, unit_price, total_amount",
     filters: [{ column: "order_item_id", op: "in", value: orderItemIds }],
     skipLocalCache: readOpts?.skipLocalCache,
@@ -933,7 +935,7 @@ async function fetchActivePaymentItemsForOrderItems(
   const paymentIds = Array.from(paymentIdSet);
   if (paymentIds.length === 0) return [];
 
-  const payments = await dbSelect<any>("payments", {
+  const payments = await read<any>("payments", {
     select: "id, notes, status",
     filters: [{ column: "id", op: "in", value: paymentIds }],
     skipLocalCache: readOpts?.skipLocalCache,
@@ -970,11 +972,12 @@ function aggregatePaidQuantityByOrderItem(rows: PaymentItemRow[]): Record<string
 
 async function fetchActivePaymentsTotalByOrder(
   orderIds: string[],
-  readOpts?: { skipLocalCache?: boolean },
+  readOpts?: { skipLocalCache?: boolean; strict?: boolean },
 ): Promise<Record<string, number>> {
   if (orderIds.length === 0) return {};
+  const read = readOpts?.strict ? dbSelectStrict : dbSelect;
 
-  const payments = await dbSelect<any>("payments", {
+  const payments = await read<any>("payments", {
     select: "order_id, amount, notes, status",
     filters: [{ column: "order_id", op: "in", value: orderIds }],
     skipLocalCache: readOpts?.skipLocalCache,
@@ -1069,7 +1072,7 @@ async function buildPayableOrderById(params: {
 }): Promise<PayableOrder | null> {
   const { orderId, branchId, workflowMode, forRecharge = false } = params;
 
-  const orderRows = await dbSelect<any>("orders", {
+  const orderRows = await dbSelectStrict<any>("orders", {
     select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id",
     branchId,
     filters: [{ column: "id", op: "eq", value: orderId }],
@@ -1080,7 +1083,7 @@ async function buildPayableOrderById(params: {
   if (!forRecharge && String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return null;
   if (!orderIsPayableInCaja(order)) return null;
 
-  const items = await dbSelect<any>("order_items", {
+  const items = await dbSelectStrict<any>("order_items", {
     select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost, cantidad_especial",
     filters: [{ column: "order_id", op: "eq", value: orderId }],
     skipLocalCache: true,
@@ -1175,8 +1178,8 @@ async function buildPayableOrderById(params: {
   }
 
   const [activePaymentItems, activePaymentsTotalByOrder, operationalMaps] = await Promise.all([
-    fetchActivePaymentItemsForOrderItems(orderItemIds, { skipLocalCache: true }),
-    fetchActivePaymentsTotalByOrder([orderId], { skipLocalCache: true }),
+    fetchActivePaymentItemsForOrderItems(orderItemIds, { skipLocalCache: true, strict: true }),
+    fetchActivePaymentsTotalByOrder([orderId], { skipLocalCache: true, strict: true }),
     fetchOperationalMapsForOrders([orderId]),
   ]);
   const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
@@ -1846,7 +1849,7 @@ export function useCaja(params?: {
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const openShift = await getOpenCashShiftForBranch(activeBranchId);
+      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
       if (!openShift) {
         // El gate ya confirmo turno abierto: una lectura vacia aqui es un fallo
         // transitorio, y devolver [] vaciaria la lista de cobro por un instante.
@@ -1857,7 +1860,7 @@ export function useCaja(params?: {
       }
 
       const orders = (
-        await dbSelect<any>("orders", {
+        await dbSelectStrict<any>("orders", {
           select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id",
           branchId: activeBranchId,
           filters: [
@@ -1923,7 +1926,7 @@ export function useCaja(params?: {
         : [];
       const clientesMap = Object.fromEntries(clientesRows.map((cliente) => [cliente.id, cliente]));
 
-      const items = await dbSelect<any>("order_items", {
+      const items = await dbSelectStrict<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost, cantidad_especial",
         filters: [{ column: "order_id", op: "in", value: orderIds }]
       });
@@ -1967,8 +1970,8 @@ export function useCaja(params?: {
       };
 
       const [activePaymentItems, activePaymentsTotalByOrder] = await Promise.all([
-        fetchActivePaymentItemsForOrderItems(orderItemIds),
-        fetchActivePaymentsTotalByOrder(orderIds),
+        fetchActivePaymentItemsForOrderItems(orderItemIds, { strict: true }),
+        fetchActivePaymentsTotalByOrder(orderIds, { strict: true }),
       ]);
       const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
       const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
@@ -2081,10 +2084,10 @@ export function useCaja(params?: {
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
             table_name:
-              (o.order_type === "DINE_IN" || Boolean((o as { is_special?: boolean | null }).is_special))
+              (o.order_type === "DINE_IN" || isSpecial)
               && o.table_id
                 ? resolveTableName(o.table_id, (o as any).table_name_snapshot)
-                : Boolean((o as { is_special?: boolean | null }).is_special)
+                : isSpecial
                   ? ((o as any).table_name_snapshot
                     || ((o as { special_origin_table_id?: string | null }).special_origin_table_id
                       ? resolveTableName(
@@ -3072,7 +3075,7 @@ export function useCaja(params?: {
             transferPaymentId = payment.id;
           }
           
-          const updatedNotes = appendNoteMarker(payment.notes, "TRANSFER_PROOF_PENDING:0");
+          const updatedNotes = setTransferProofPendingMarker(payment.notes, false);
           await dbUpdate("payments", payment.id, { notes: updatedNotes });
 
           await dbInsertMany(

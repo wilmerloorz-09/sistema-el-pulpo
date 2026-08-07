@@ -398,14 +398,10 @@ export function useCancellation() {
   const requestOrderCancellationFallback = async (orderId: string, userId: string) => {
     const now = new Date().toISOString();
 
-    try {
-      await dbUpdate("orders", orderId, {
-        cancel_requested_by: userId,
-        cancel_requested_at: now,
-      });
-    } catch (fallbackError) {
-      throw fallbackError;
-    }
+    await dbUpdate("orders", orderId, {
+      cancel_requested_by: userId,
+      cancel_requested_at: now,
+    });
   };
 
   const ensureOrderCancellationRequested = async (orderId: string, userId: string) => {
