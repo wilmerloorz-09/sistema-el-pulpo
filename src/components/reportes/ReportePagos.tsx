@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useReportesPagos } from '@/hooks/useReportesOnlineData';
 import { getOrderRef } from '@/lib/orderPresentation';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -14,23 +16,82 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card';
-import { FileDown, Printer, Wallet, ArrowUpRight, TrendingUp, ReceiptText, AlertCircle, RefreshCw } from 'lucide-react';
+import { FileDown, Printer, Wallet, ArrowUpRight, TrendingUp, ReceiptText, AlertCircle, RefreshCw, ListTree } from 'lucide-react';
 import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
 
 interface ReportePagosProps {
   filters: any;
 }
 
+function orderTypeLabel(orderType: string) {
+  if (orderType === 'SPECIAL') return 'Especial';
+  if (orderType === 'DINE_IN') return 'Mesa';
+  if (orderType === 'TAKEOUT') return 'Para Llevar';
+  if (orderType === 'EXPRESS') return 'Express';
+  return 'Extra/General';
+}
+
 export default function ReportePagos({ filters }: ReportePagosProps) {
-  const { data, isLoading, error, refetch } = useReportesPagos(filters);
+  const [itemBreakdown, setItemBreakdown] = useState(false);
+  const { data, isLoading, error, refetch } = useReportesPagos(filters, { itemBreakdown });
 
   const payments = data?.payments || [];
+  const itemRows = data?.itemRows || [];
   const kpis = data?.kpis || { totalNeto: 0, desglose: {}, ticketPromedio: 0, transacciones: 0 };
+
+  const tableRows = useMemo(
+    () => (itemBreakdown ? itemRows : payments),
+    [itemBreakdown, itemRows, payments],
+  );
+  const hasRows = tableRows.length > 0;
 
   // Exportar a CSV UTF-8 con BOM para correcta codificación en Excel
   const handleExportCSV = () => {
-    if (payments.length === 0) return;
+    if (!hasRows) return;
+
+    if (itemBreakdown) {
+      const headers = [
+        'Orden Code',
+        'Orden Nro',
+        'Referencia Orden',
+        'Tipo de Orden',
+        'Fecha y Hora',
+        'Cajero',
+        'Usuario Creador',
+        'Metodo de Pago',
+        'Item',
+        'Cantidad',
+        'Precio Unitario ($)',
+        'Total Item ($)',
+      ];
+
+      const rows = itemRows.map((row) => [
+        row.orderCode || '',
+        row.orderNumber || '',
+        getOrderRef(row.orderCode, row.orderNumber),
+        orderTypeLabel(row.orderType),
+        format(new Date(row.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        row.cashierName,
+        row.creatorName,
+        row.methodName,
+        row.itemDescription,
+        row.itemQuantity,
+        row.itemUnitPrice.toFixed(2),
+        row.itemTotal.toFixed(2),
+      ]);
+
+      const csvRows = [headers.join(';'), ...rows.map((r) => r.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(';'))];
+      const csvContent = '\uFEFF' + csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `reporte_pagos_items_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
 
     const headers = [
       'Orden Code',
@@ -47,12 +108,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
     ];
 
     const rows = payments.map((p) => {
-      const typeName = p.orderType === 'SPECIAL' ? 'Especial' : p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra/General';
       return [
         p.orderCode || '',
         p.orderNumber || '',
         getOrderRef(p.orderCode, p.orderNumber),
-        typeName,
+        orderTypeLabel(p.orderType),
         format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm:ss'),
         p.cashierName,
         p.creatorName,
@@ -190,8 +250,23 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
 
       {/* Acciones y Tabla */}
       <div className="space-y-4">
-        <div className="flex justify-between items-center print:hidden">
-          <h4 className="font-display text-sm font-bold text-foreground">Listado Detallado de Transacciones</h4>
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center print:hidden">
+          <div className="space-y-2">
+            <h4 className="font-display text-sm font-bold text-foreground">
+              {itemBreakdown ? 'Listado Detallado por Ítem' : 'Listado Detallado de Transacciones'}
+            </h4>
+            <div className="flex items-center gap-2 rounded-2xl border border-border/70 bg-muted/30 px-3 py-2 w-fit">
+              <ListTree className="h-4 w-4 text-primary" />
+              <Label htmlFor="desglose-por-item" className="text-xs font-bold cursor-pointer">
+                Desglose por ítem
+              </Label>
+              <Switch
+                id="desglose-por-item"
+                checked={itemBreakdown}
+                onCheckedChange={setItemBreakdown}
+              />
+            </div>
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -206,7 +281,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
               variant="outline"
               size="sm"
               onClick={handleExportCSV}
-              disabled={payments.length === 0}
+              disabled={!hasRows}
               className="rounded-xl h-9 text-xs font-bold gap-1.5"
             >
               <FileDown className="h-4 w-4" />
@@ -215,10 +290,12 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
           </div>
         </div>
 
-        {payments.length === 0 ? (
+        {!hasRows ? (
           <div className="rounded-3xl border border-dashed border-border/80 p-12 text-center">
             <ReceiptText className="w-10 h-10 text-muted-foreground/60 mx-auto mb-3" />
-            <h4 className="font-display text-sm font-bold text-foreground">No se encontraron pagos</h4>
+            <h4 className="font-display text-sm font-bold text-foreground">
+              {itemBreakdown ? 'No se encontraron ítems' : 'No se encontraron pagos'}
+            </h4>
             <p className="text-xs text-muted-foreground mt-1">Ajusta los criterios de búsqueda en el panel de filtros superior.</p>
           </div>
         ) : (
@@ -232,45 +309,93 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                   <TableHead className="font-bold text-foreground py-3">Cajero</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Creador Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-center">Método Pago</TableHead>
-                  <TableHead className="font-bold text-foreground py-3 text-right">Monto Recibido</TableHead>
-                  <TableHead className="font-bold text-foreground py-3 text-right">Cambio</TableHead>
-                  <TableHead className="font-bold text-foreground py-3 text-right">Total Neto</TableHead>
+                  {itemBreakdown ? (
+                    <>
+                      <TableHead className="font-bold text-foreground py-3">Ítem</TableHead>
+                      <TableHead className="font-bold text-foreground py-3 text-right">Cant.</TableHead>
+                      <TableHead className="font-bold text-foreground py-3 text-right">P. Unit.</TableHead>
+                      <TableHead className="font-bold text-foreground py-3 text-right">Total Ítem</TableHead>
+                    </>
+                  ) : (
+                    <>
+                      <TableHead className="font-bold text-foreground py-3 text-right">Monto Recibido</TableHead>
+                      <TableHead className="font-bold text-foreground py-3 text-right">Cambio</TableHead>
+                      <TableHead className="font-bold text-foreground py-3 text-right">Total Neto</TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {payments.map((p) => (
-                  <TableRow key={p.id} className="hover:bg-muted/30">
-                    <TableCell className="font-mono font-bold text-xs">
-                      {getOrderRef(p.orderCode, p.orderNumber)}
-                    </TableCell>
-                    <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
-                      {p.orderType === 'SPECIAL' ? 'Especial' : p.orderType === 'DINE_IN' ? 'Mesa' : p.orderType === 'TAKEOUT' ? 'Para Llevar' : p.orderType === 'EXPRESS' ? 'Express' : 'Extra'}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm')}
-                    </TableCell>
-                    <TableCell className="text-xs font-semibold text-foreground">
-                      {p.cashierName}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {p.creatorName}
-                    </TableCell>
-                    <TableCell className="text-xs text-center font-bold">
-                      <span className="inline-block rounded-lg px-2 py-0.5 bg-muted border border-border/40 text-[10px]">
-                        {p.methodName}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                      ${p.amount.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                      ${p.change.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-xs text-right font-bold text-foreground">
-                      ${p.netApplied.toFixed(2)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {itemBreakdown
+                  ? itemRows.map((row) => (
+                      <TableRow key={row.rowKey} className="hover:bg-muted/30">
+                        <TableCell className="font-mono font-bold text-xs">
+                          {getOrderRef(row.orderCode, row.orderNumber)}
+                        </TableCell>
+                        <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
+                          {orderTypeLabel(row.orderType)}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {format(new Date(row.createdAt), 'dd/MM/yyyy HH:mm')}
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-foreground">
+                          {row.cashierName}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {row.creatorName}
+                        </TableCell>
+                        <TableCell className="text-xs text-center font-bold">
+                          <span className="inline-block rounded-lg px-2 py-0.5 bg-muted border border-border/40 text-[10px]">
+                            {row.methodName}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-foreground max-w-[220px]">
+                          <span className="line-clamp-2">{row.itemDescription}</span>
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-medium text-muted-foreground">
+                          {row.itemQuantity}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-medium text-muted-foreground">
+                          ${row.itemUnitPrice.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-bold text-foreground">
+                          ${row.itemTotal.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  : payments.map((p) => (
+                      <TableRow key={p.id} className="hover:bg-muted/30">
+                        <TableCell className="font-mono font-bold text-xs">
+                          {getOrderRef(p.orderCode, p.orderNumber)}
+                        </TableCell>
+                        <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
+                          {orderTypeLabel(p.orderType)}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm')}
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-foreground">
+                          {p.cashierName}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {p.creatorName}
+                        </TableCell>
+                        <TableCell className="text-xs text-center font-bold">
+                          <span className="inline-block rounded-lg px-2 py-0.5 bg-muted border border-border/40 text-[10px]">
+                            {p.methodName}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-medium text-muted-foreground">
+                          ${p.amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-medium text-muted-foreground">
+                          ${p.change.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-bold text-foreground">
+                          ${p.netApplied.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>

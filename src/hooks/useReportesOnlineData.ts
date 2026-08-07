@@ -117,16 +117,48 @@ export function useReportesFiltros(branchId: string) {
   });
 }
 
+export type ReportesPagoItemRow = {
+  rowKey: string;
+  paymentId: string;
+  orderId: string;
+  orderCode: string | null;
+  orderNumber: number | null;
+  createdAt: string;
+  cashierName: string;
+  creatorName: string;
+  methodName: string;
+  amount: number;
+  change: number;
+  netApplied: number;
+  orderType: string;
+  itemId: string;
+  itemDescription: string;
+  itemQuantity: number;
+  itemUnitPrice: number;
+  itemTotal: number;
+};
+
 /**
  * Reporte 1: Pagos Realizados (Ingresos Reales)
+ * Si itemBreakdown=true, también resuelve filas por ítem de cada orden cobrada.
  */
-export function useReportesPagos(filters: ReportesFilters) {
+export function useReportesPagos(
+  filters: ReportesFilters,
+  options?: { itemBreakdown?: boolean },
+) {
   const { branchId, desde, hasta, shiftId, cashierId, creatorId, productIds, orderTypes } = filters;
+  const itemBreakdown = Boolean(options?.itemBreakdown);
 
   return useQuery({
-    queryKey: ['reportes-pagos', branchId, desde, hasta, shiftId, cashierId, creatorId, productIds, orderTypes],
+    queryKey: ['reportes-pagos', branchId, desde, hasta, shiftId, cashierId, creatorId, productIds, orderTypes, itemBreakdown],
     queryFn: async () => {
-      if (!branchId) return { payments: [], kpis: { totalNeto: 0, desglose: {}, ticketPromedio: 0, transacciones: 0 } };
+      if (!branchId) {
+        return {
+          payments: [],
+          itemRows: [] as ReportesPagoItemRow[],
+          kpis: { totalNeto: 0, desglose: {}, ticketPromedio: 0, transacciones: 0 },
+        };
+      }
 
       const dateBounds = resolveReportesDateBounds(desde, hasta);
 
@@ -152,6 +184,7 @@ export function useReportesPagos(filters: ReportesFilters) {
         if (orderIdsFilter.length === 0) {
           return {
             payments: [],
+            itemRows: [] as ReportesPagoItemRow[],
             kpis: { totalNeto: 0, desglose: { Efectivo: 0, Transferencia: 0, Tarjeta: 0 }, ticketPromedio: 0, transacciones: 0 }
           };
         }
@@ -273,8 +306,92 @@ export function useReportesPagos(filters: ReportesFilters) {
       const transacciones = processedPayments.length;
       const ticketPromedio = uniqueOrderIds.size > 0 ? round2(totalNetoSum / uniqueOrderIds.size) : 0;
 
+      let itemRows: ReportesPagoItemRow[] = [];
+      if (itemBreakdown && uniqueOrderIds.size > 0) {
+        const orderIds = Array.from(uniqueOrderIds);
+        const itemsByOrderId = new Map<string, Array<{
+          id: string;
+          description_snapshot: string | null;
+          quantity: number;
+          unit_price: number;
+          total: number;
+          product_id: string | null;
+          status: string | null;
+        }>>();
+
+        for (let index = 0; index < orderIds.length; index += 200) {
+          const chunk = orderIds.slice(index, index + 200);
+          let itemsQuery = supabase
+            .from('order_items')
+            .select('id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, cancelled_at')
+            .in('order_id', chunk)
+            .is('cancelled_at', null)
+            .not('status', 'eq', 'CANCELLED');
+
+          if (productIds && productIds.length > 0) {
+            itemsQuery = itemsQuery.in('product_id', productIds);
+          }
+
+          const { data: itemsData, error: itemsError } = await itemsQuery;
+          if (itemsError) throw itemsError;
+
+          for (const item of itemsData || []) {
+            const orderId = String((item as any).order_id ?? '');
+            if (!orderId) continue;
+            const bucket = itemsByOrderId.get(orderId) ?? [];
+            bucket.push({
+              id: String((item as any).id),
+              description_snapshot: (item as any).description_snapshot ?? null,
+              quantity: Number((item as any).quantity ?? 0),
+              unit_price: Number((item as any).unit_price ?? 0),
+              total: Number((item as any).total ?? 0),
+              product_id: (item as any).product_id ?? null,
+              status: (item as any).status ?? null,
+            });
+            itemsByOrderId.set(orderId, bucket);
+          }
+        }
+
+        // Una fila por ítem de cada orden (sin duplicar si la orden tiene varios pagos).
+        const seenOrderIds = new Set<string>();
+        for (const payment of processedPayments) {
+          const orderId = String(payment.orderId ?? '');
+          if (!orderId || seenOrderIds.has(orderId)) continue;
+          seenOrderIds.add(orderId);
+
+          const orderItems = itemsByOrderId.get(orderId) ?? [];
+          for (const item of orderItems) {
+            const qty = Math.max(0, Number(item.quantity ?? 0));
+            if (qty <= 0) continue;
+            const unitPrice = Number(item.unit_price ?? 0);
+            const lineTotal = Number(item.total ?? 0) || round2(qty * unitPrice);
+            itemRows.push({
+              rowKey: `${payment.id}:${item.id}`,
+              paymentId: payment.id,
+              orderId,
+              orderCode: payment.orderCode ?? null,
+              orderNumber: payment.orderNumber ?? null,
+              createdAt: payment.createdAt,
+              cashierName: payment.cashierName,
+              creatorName: payment.creatorName,
+              methodName: payment.methodName,
+              amount: payment.amount,
+              change: payment.change,
+              netApplied: payment.netApplied,
+              orderType: payment.orderType,
+              itemId: item.id,
+              itemDescription: String(item.description_snapshot || 'Producto').trim() || 'Producto',
+              itemQuantity: qty,
+              itemUnitPrice: unitPrice,
+              itemTotal: lineTotal,
+            });
+          }
+        }
+      }
+
       return {
         payments: processedPayments,
+        itemRows,
         kpis: {
           totalNeto: round2(totalNetoSum),
           desglose: desgloseMap,
