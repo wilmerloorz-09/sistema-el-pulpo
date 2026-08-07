@@ -52,16 +52,16 @@ export function useClientWinningOffer(clienteId: string | null | undefined) {
         ? data.campanas_promocionales[0]
         : data.campanas_promocionales;
 
-      // @ts-ignore (campana could be an object from PostgREST)
+      // @ts-expect-error (campana could be an object from PostgREST)
       if (!campana || campana.activa === false) return null;
 
       return {
         prediccion_id: data.id,
         campana_id: data.campana_id,
         monto_descuento_ganado: Number(data.monto_descuento_ganado || 0),
-        // @ts-ignore
+        // @ts-expect-error (campana could be an object from PostgREST)
         consumo_minimo: Number(campana.consumo_minimo || 0),
-        // @ts-ignore
+        // @ts-expect-error (campana could be an object from PostgREST)
         porcentaje_descuento: Number(campana.porcentaje_descuento || 0),
       };
     },

@@ -80,14 +80,14 @@ export function getOrderRef(
   orderCode: string | null | undefined,
   orderNumber: number | null | undefined,
 ): string {
-  const clean = cleanOrderCode(orderCode);
-  if (clean && clean.trim()) {
-    return clean.trim();
-  }
-
   const n = Number(orderNumber ?? 0);
   if (n > 0) {
     return `#${String(n).padStart(4, "0")}`;
+  }
+
+  const clean = cleanOrderCode(orderCode);
+  if (clean && clean.trim()) {
+    return clean.trim();
   }
 
   return "Borrador";
