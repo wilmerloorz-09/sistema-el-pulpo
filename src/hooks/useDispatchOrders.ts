@@ -100,107 +100,6 @@ export interface OperationPayload {
   items: Array<Record<string, unknown>>;
 }
 
-type DispatchOrdersCache = {
-  orders: DispatchOrder[];
-  counts: { ALL: number; TABLE: number; TAKEOUT: number; SPECIAL: number };
-};
-
-function recountDispatchCards(cards: DispatchOrder[]): DispatchOrdersCache["counts"] {
-  return {
-    ALL: cards.length,
-    TABLE: cards.filter((c) => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
-    TAKEOUT: cards.filter((c) => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS").length,
-    SPECIAL: cards.filter((c) => c.is_special).length,
-  };
-}
-
-function patchDispatchOrdersCache(
-  qc: ReturnType<typeof useQueryClient>,
-  queryKey: readonly unknown[],
-  updater: (orders: DispatchOrder[]) => DispatchOrder[],
-) {
-  qc.setQueryData<DispatchOrdersCache>(queryKey, (current) => {
-    if (!current) return current;
-    const orders = updater(current.orders);
-    return { orders, counts: recountDispatchCards(orders) };
-  });
-}
-
-function applyOptimisticDispatchItem(
-  orders: DispatchOrder[],
-  orderId: string,
-  itemId: string,
-  qty: number,
-): DispatchOrder[] {
-  return orders
-    .map((order) => {
-      if (order.id !== orderId) return order;
-
-      const items = order.items.map((item) => {
-        if (item.id !== itemId) return item;
-        const dispatchQty = Math.min(Math.max(0, qty), item.quantity_dispatchable);
-        if (dispatchQty <= 0) return item;
-
-        const fromReady = Math.min(dispatchQty, item.quantity_ready_available);
-        const fromPending = Math.max(0, dispatchQty - fromReady);
-        const pendingPrepare = Math.max(0, item.quantity_pending_prepare - fromPending);
-        const readyAvailable = Math.max(0, item.quantity_ready_available - fromReady);
-        const dispatchable = Math.max(0, item.quantity_dispatchable - dispatchQty);
-
-        return {
-          ...item,
-          quantity_pending_prepare: pendingPrepare,
-          quantity_ready_available: readyAvailable,
-          quantity_dispatchable: dispatchable,
-          quantity_dispatched: item.quantity_dispatched + dispatchQty,
-        };
-      });
-
-      const pending_prepare_count = items.reduce((sum, item) => sum + item.quantity_pending_prepare, 0);
-      const ready_available_count = items.reduce((sum, item) => sum + item.quantity_ready_available, 0);
-      const dispatchable_count = items.reduce((sum, item) => sum + item.quantity_dispatchable, 0);
-
-      return {
-        ...order,
-        items,
-        pending_prepare_count,
-        ready_available_count,
-        dispatchable_count,
-      };
-    })
-    .filter((card) => dispatchCardHasWork(card));
-}
-
-function applyOptimisticDispatchAll(orders: DispatchOrder[], orderId: string): DispatchOrder[] {
-  return orders
-    .map((order) => {
-      if (order.id !== orderId) return order;
-
-      const items = order.items.map((item) => {
-        const dispatchQty = item.quantity_dispatchable;
-        if (dispatchQty <= 0) return item;
-
-        return {
-          ...item,
-          quantity_pending_prepare: 0,
-          quantity_ready_available: 0,
-          quantity_dispatchable: 0,
-          quantity_dispatched: item.quantity_dispatched + dispatchQty,
-        };
-      });
-
-      return {
-        ...order,
-        items,
-        pending_prepare_count: 0,
-        ready_available_count: 0,
-        dispatchable_count: 0,
-        status: "KITCHEN_DISPATCHED",
-      };
-    })
-    .filter((card) => dispatchCardHasWork(card));
-}
-
 function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
   invalidateOperationalOrderQueries(qc, {
     includeTables: true,
@@ -709,6 +608,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       [isServirModule ? "servir-orders" : "dispatch-orders"],
     ],
     includePayments: true,
+    includeShiftGate: true,
     shiftId: shiftGate?.shiftId ?? null,
   });
 
@@ -812,22 +712,11 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       });
       if (error) throw error;
     },
-    onMutate: async ({ orderId, item, qty }) => {
-      await qc.cancelQueries({ queryKey: dispatchOrdersQueryKey });
-      const previous = qc.getQueryData<DispatchOrdersCache>(dispatchOrdersQueryKey);
-      patchDispatchOrdersCache(qc, dispatchOrdersQueryKey, (orders) =>
-        applyOptimisticDispatchItem(orders, orderId, item.id, qty),
-      );
-      return { previous };
-    },
     onSuccess: () => {
       toast.success("Item despachado");
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
     },
-    onError: (error: any, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(dispatchOrdersQueryKey, context.previous);
-      }
+    onError: (error: any) => {
       toast.error(`Error al despachar item: ${error?.message || "Error desconocido"}`);
     },
   });
@@ -854,21 +743,12 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       });
       if (error) throw error;
     },
-    onMutate: async ({ orderId }) => {
-      await qc.cancelQueries({ queryKey: dispatchOrdersQueryKey });
-      const previous = qc.getQueryData<DispatchOrdersCache>(dispatchOrdersQueryKey);
-      patchDispatchOrdersCache(qc, dispatchOrdersQueryKey, (orders) => applyOptimisticDispatchAll(orders, orderId));
-      return { previous };
-    },
     onSuccess: () => {
       toast.success("Orden despachada");
       // Caja/pagos se actualizan vía hub Realtime (payments + orders).
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
     },
-    onError: (error: any, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(dispatchOrdersQueryKey, context.previous);
-      }
+    onError: (error: any) => {
       toast.error(`Error al despachar orden: ${error?.message || "Error desconocido"}`);
     },
   });
