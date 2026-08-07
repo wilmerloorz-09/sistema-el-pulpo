@@ -37,6 +37,7 @@ import {
   COMPROBANTES_PENDIENTES_QUERY_KEY,
   iniciarSubidaComprobanteEnSegundoPlano,
 } from "@/lib/comprobantePagoPendienteLocal";
+import { setTransferProofPendingMarker } from "@/lib/paymentNoteMarkers";
 import { obtenerUrlsComprobantesPorPagos } from "@/lib/comprobantePagoTransferencia";
 import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
 import type { ResultadoValidacionComprobante } from "@/lib/validacionComprobanteTransferencia";
@@ -3074,7 +3075,7 @@ export function useCaja(params?: {
             transferPaymentId = payment.id;
           }
           
-          const updatedNotes = appendNoteMarker(payment.notes, "TRANSFER_PROOF_PENDING:0");
+          const updatedNotes = setTransferProofPendingMarker(payment.notes, false);
           await dbUpdate("payments", payment.id, { notes: updatedNotes });
 
           await dbInsertMany(
