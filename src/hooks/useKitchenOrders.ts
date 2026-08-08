@@ -1,12 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { dbSelect, supabase } from "@/services/DatabaseService";
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
 import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 export interface KitchenOrderItem {
@@ -67,14 +67,21 @@ export function useKitchenOrders() {
 
   const query = useQuery({
     queryKey: ["kitchen-orders", activeBranchId, shiftGate?.shiftId ?? "_"],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const openShift = await getOpenCashShiftForBranch(activeBranchId);
-      if (!openShift) return [];
+      await repairOpenShiftOrderCashShiftIds(activeBranchId);
+      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      if (!openShift) {
+        if (shiftGate?.shiftId) {
+          throw new Error("No se pudo leer el turno abierto de la sucursal");
+        }
+        return [];
+      }
 
       const orders = (
-        await dbSelect<{
+        await dbSelectStrict<{
         id: string;
         order_number: number | null;
         order_code: string | null;
@@ -87,8 +94,10 @@ export function useKitchenOrders() {
         updated_at: string;
         sent_to_kitchen_at: string | null;
         locked_for_editing?: boolean | null;
+        cash_shift_id?: string | null;
+        created_at?: string | null;
       }>("orders", {
-        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, created_at, updated_at, sent_to_kitchen_at, status, locked_for_editing",
+        select: "id, order_number, order_code, order_type, is_special, is_tray_order, created_by, table_id, split_id, created_at, updated_at, sent_to_kitchen_at, status, locked_for_editing, cash_shift_id",
         branchId: activeBranchId,
         filters: [
           { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY"] },
@@ -102,7 +111,7 @@ export function useKitchenOrders() {
 
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
-        ? await dbSelect<any>("profiles", {
+        ? await dbSelectStrict<any>("profiles", {
             select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
@@ -113,7 +122,7 @@ export function useKitchenOrders() {
       const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
-        const tables = await dbSelect<{ id: string; name: string }>("restaurant_tables", {
+        const tables = await dbSelectStrict<{ id: string; name: string }>("restaurant_tables", {
           select: "id, name",
           filters: [{ column: "id", op: "in", value: tableIds }],
         });
@@ -124,7 +133,7 @@ export function useKitchenOrders() {
       const splitIds = Array.from(splitIdSet);
       let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
-        const splits = await dbSelect<any>("table_splits", {
+        const splits = await dbSelectStrict<any>("table_splits", {
           select: "id, split_code",
           filters: [{ column: "id", op: "in", value: splitIds }]
         });
@@ -132,7 +141,7 @@ export function useKitchenOrders() {
       }
 
       const orderIds = orders.map((o) => o.id);
-      const items = await dbSelect<{
+      const items = await dbSelectStrict<{
         id: string;
         order_id: string;
         description_snapshot: string;
@@ -151,7 +160,7 @@ export function useKitchenOrders() {
       const itemIds = items.map((item) => item.id);
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
-        const mods = await dbSelect<any>("order_item_modifiers", {
+        const mods = await dbSelectStrict<any>("order_item_modifiers", {
           select: "id, order_item_id, modifiers(description)",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });

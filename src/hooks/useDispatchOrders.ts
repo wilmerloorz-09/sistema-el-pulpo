@@ -11,7 +11,7 @@ import { fetchActivePaidQuantityByOrderItemId } from "@/lib/orderItemActivePayme
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
 import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
@@ -370,6 +370,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       // lanza y React Query conserva los ultimos datos buenos y reintenta, en vez
       // de renderizar ordenes/items viejos del cache como si fueran actuales
       // (causa de "el item nuevo no aparece en Despacho hasta varios minutos").
+      await repairOpenShiftOrderCashShiftIds(activeBranchId);
       const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
       if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
@@ -595,7 +596,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     refetchOnMount: true,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
-    // Realtime SUBSCRIBED → sin poll; si el hub cae → respaldo 25s.
+    // Realtime SUBSCRIBED → safety poll 15s; si el hub cae → respaldo 15s.
     refetchInterval: adaptiveListPoll,
   });
 

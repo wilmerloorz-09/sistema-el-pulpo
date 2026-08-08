@@ -13,7 +13,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
 import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
 import { cleanOrderCode } from "@/lib/orderPresentation";
 import {
@@ -1322,6 +1322,7 @@ export function useCaja(params?: {
     activeBranchId,
     OPERATIONAL_BACKUP_POLL_MS,
     Boolean(activeBranchId && user?.id),
+    0, // sin safety poll: el shift se actualiza por hub / acciones locales
   );
   const adaptiveListPoll = useAdaptiveRefetchInterval(
     activeBranchId,
@@ -1859,9 +1860,11 @@ export function useCaja(params?: {
         return [];
       }
 
+      await repairOpenShiftOrderCashShiftIds(activeBranchId);
+
       const orders = (
         await dbSelectStrict<any>("orders", {
-          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id",
+          select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id, cash_shift_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"] },
@@ -2113,7 +2116,7 @@ export function useCaja(params?: {
         );
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Realtime SUBSCRIBED → sin poll; si el hub cae → respaldo 25s.
+    // Realtime SUBSCRIBED → safety poll 15s; si el hub cae → respaldo 15s.
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,

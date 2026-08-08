@@ -12,13 +12,13 @@
 - `SENT_TO_KITCHEN`: En Caja; `submit_order_draft_items(...)` genera `order_code` / `order_number` y deja la orden cobrable.
 - `PAID`: Pagada; `sync_order_payment_state_internal(...)` debe usar este estado cuando Caja cubre la orden completa. **`PAID` es un estado terminal e inmutable**: ninguna operación posterior (despacho, recomputación operativa, etc.) puede revertirlo. Solo una anulación explícita de pago (`void`) puede cambiarlo.
 - `KITCHEN_DISPATCHED`: Despachada; `dispatch_order_quantities(...)` solo puede ejecutarse sobre ordenes `PAID`.
-- `CANCELLED`: anulada o historica. Las historicas por anulacion de pago con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
+- `CANCELLED`: anulada o historica. Tras anular el último pago activo (desde 2026-07-19) la orden queda `CANCELLED` con `VOIDED_PAYMENT_CLOSED` (no vuelve sola a En Caja). Las historicas legacy con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
 - `PAID` y `KITCHEN_DISPATCHED` son estados finales visibles mutuamente excluyentes para clasificacion; una orden no debe aparecer en ambas pestanas.
 - Para clasificacion visual, `Despachada` incluye cabecera `KITCHEN_DISPATCHED` y tambien cabecera `PAID` con despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la sincronizacion final de cabecera no haya corrido.
 - Las lecturas de `Despacho` deben agrupar por `orders.id` / `order_code`; `order_items.sent_to_kitchen_at` no debe crear tarjetas operativas separadas para la misma orden.
 - En Despacho, `TAKEOUT`, `EXPRESS` (pestaña unificada **Para llevar / Express**) y `orders.is_special = true` se procesan como despacho total de la orden; no deben dividirse por botones de item en la UI.
 - Las ordenes `EXTRA` pagadas se agrupan en pestañas **Mesa** y **Todos**; el listado no exige `sent_to_kitchen_at` en lineas Extra (a diferencia de mesa clasica).
-- Cuando se anula un pago (desde 2026-07-14), la misma orden vuelve a `SENT_TO_KITCHEN`/En Caja con el mismo numero (sin sucesora). Las historicas legacy con `VOID_SUCCESSOR_ORDER` siguen sin revivir.
+- Al anular el último pago activo (desde 2026-07-19), la orden queda `CANCELLED` (`VOIDED_PAYMENT_CLOSED`); re-cobro bajo demanda con `preparar_orden_para_recobro`. Las historicas legacy con `VOID_SUCCESSOR_ORDER` siguen sin revivir.
 
 ## Dominios principales
 
@@ -80,7 +80,21 @@
 - **Fix `v_node` en `add_dine_in_order_item` (2026-08-03):** no tocar `v_node` si `p_menu_node_id` es NULL. Migracion `20260803010000_fix_add_dine_in_order_item_vnode.sql`.
 - **Admin bypass de habilitacion en turno (2026-08-02):** admins globales / MANAGE `admin_sucursal`|`admin_global` operan sin estar en `cash_shift_users`. RPCs: `get_my_branch_shift_gate`, `open_cash_register`. Migracion `20260802190000_admin_bypass_shift_enablement.sql` (aplicar en remoto).
 - **Fix cast enum `order_type` en cancelaciones (2026-07-18):** `cancel_order_quantities` y `set_draft_order_item_quantity` usaban `COALESCE(v_order.order_type, '')`, lo que hacía que Postgres intentara castear `''` al enum `order_type` (error `22P02 invalid input value for enum`). Esto rompía en silencio las reducciones/eliminaciones de items despachados en "Editar orden" (Despacho primero) y podía impedir que un item nuevo agregado tras un despacho se enviara correctamente. Corregido a `COALESCE(v_order.order_type::text, '')` en `20260718230000_fix_enum_order_type_cast_cancelaciones.sql`.
-- **Reportes de productos vs anulaciones parciales (2026-08-02):** al bajar despachados (Editar orden → `cancel_order_quantities`), `order_items.quantity` puede seguir alto y el neto vivir en `order_item_cancellations` (`APPLIED`). `useReportesProductos` debe restar esas cantidades (mismo criterio que Caja).- **`submit_order_draft_items` post-despacho (2026-07-09):** permite enviar borradores nuevos cuando la cabecera esta `KITCHEN_DISPATCHED` (regresion corregida en `20260709220000_submit_draft_items_after_dispatch.sql`). Necesario al agregar productos tras despachar todo en Despacho primero.
+- **Reportes de productos vs anulaciones parciales (2026-08-02):** al bajar despachados (Editar orden → `cancel_order_quantities`), `order_items.quantity` puede seguir alto y el neto vivir en `order_item_cancellations` (`APPLIED`). `useReportesProductos` debe restar esas cantidades (mismo criterio que Caja).
+- **`submit_order_draft_items` post-despacho (2026-07-09):** permite enviar borradores nuevos cuando la cabecera esta `KITCHEN_DISPATCHED` (regresion corregida en `20260709220000_submit_draft_items_after_dispatch.sql`). Necesario al agregar productos tras despachar todo en Despacho primero.
+- **Órdenes especiales mixtas (2026-07-25+):**
+  - `orders.special_group_total` (nullable; NULL = especial legacy no mixta).
+  - `order_items.cantidad_especial`.
+  - RPC `convertir_orden_especial_parcial(...)`.
+  - Migraciones: `20260725170000_mixed_special_orders.sql` … `20260725200000_release_table_on_paid_mixed_special.sql`.
+- **Visibilidad operativa / `cash_shift_id` (2026-08-07):**
+  - Trigger `trg_assign_open_cash_shift_to_order` / `assign_open_cash_shift_to_order`: si una orden activa queda con `cash_shift_id` NULL y hay turno `OPEN`, lo asigna.
+  - RPC `repair_open_shift_order_cash_shift_ids(p_branch_id)`.
+  - Migración `20260807121000_stabilize_operational_order_visibility.sql`.
+- **Forzar cierre de turno (2026-08-06):**
+  - RPC `force_close_cash_shift(p_shift_id, p_branch_id, p_notes)`.
+  - Migración `20260806040000_force_close_cash_shift.sql`.
+  - Efectos: borra `DRAFT`; fuerza operativas → `PAID`; cierra aperturas/turno; desactiva mesas.
 
 ### 4. Mesas y órdenes
 - `restaurant_tables`
@@ -393,6 +407,8 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - **Forma de devolución en anulación de transferencia (2026-07-18):** al anular un pago hecho por transferencia el cajero elige `refund_method`. `CASH` afecta caja (descuenta `cash_shift_denoms`, requiere cuadrar denominaciones) y `TRANSFER` no toca caja pero queda registrado. `approve_and_void_payment` lee `refund_method` de la solicitud (o lo infiere si es null), ajusta `cash_refund_detail` y, si es `TRANSFER`, omite el movimiento en `cash_register_movements` y deja un `audit_log` (`payment_refund_by_transfer`). Migración `20260718225000_metodo_devolucion_anulacion_transferencia.sql`.
 - **Anulación cierra la orden (2026-07-19):** el trigger `create_successor_order_after_payment_void` deja la orden `CANCELLED` (marcador `VOIDED_PAYMENT_CLOSED`) cuando no quedan pagos activos: sale de Recaudar/Ordenes y libera la mesa (conserva `table_id` para restaurarla en re-cobro). Si quedan pagos activos (anulación parcial con reemplazo) se reabre a `SENT_TO_KITCHEN` y sync recalcula. `recompute_order_operational_state` no resucita órdenes con `VOIDED_PAYMENT_CLOSED`. Re-cobro bajo demanda: botón "Cobrar orden" en Pagos realizados → `preparar_orden_para_recobro` reabre la misma orden (mismo `order_code`/`order_number`). Migración `20260719010000_anulacion_pago_cierra_orden.sql`.
 - **Una anulación por orden (2026-07-19):** `can_void_payment(...)` serializa la validación por orden y rechaza cualquier nuevo intento si existe otro pago `voided`/`reversed`, `voided_at`, marcador `VOIDED:` o una solicitud ejecutada. Esto también bloquea el nuevo pago creado al re-cobrar una orden previamente anulada. Migración `20260719012000_una_anulacion_pago_por_orden.sql`. Corrección de ambigüedad `order_id` (OUT vs columna) en `20260719013000_fix_ambiguous_order_id_can_void_payment.sql` (usa variable local `v_order_id`).
+- **Vuelto exacto en anulación (2026-08-02):** `cash_change_return_detail` — devolver tender original + reingresar vuelto. Migración `20260802180000_void_exact_tender_change_return.sql`.
+- **Marcadores `TRANSFER_PROOF_PENDING` (2026-08-07):** en `payments.notes`, prefijo `TRANSFER_PROOF_PENDING:1` (pendiente) / `:0` (resuelto). Helper frontend `src/lib/paymentNoteMarkers.ts`. Si coexisten ambos, prevalece `:0` (`20260807124500_normalize_transfer_proof_pending_notes.sql`). Pagos con `:1` se excluyen de cuadre / pagos activos.
 - **Legacy:** ordenes con `VOID_SUCCESSOR_ORDER` siguen fuera de flujo activo; `recalculate_check_balance` las mantiene `CANCELLED`.
 - **Trazabilidad de Anulación:**
   - Cada anulación inserta registro en `order_cancellations` y marca `orders.notes` (`VOIDED_PAYMENT` / `VOIDED_PAYMENT_CLOSED` o `VOIDED_PAYMENT_REOPEN`).
@@ -614,8 +630,19 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 
 ### Admin bypass y fixes Ago 2026
 - `20260802190000_admin_bypass_shift_enablement.sql` — admins operan sin estar habilitados en `cash_shift_users`.
-- `20260802180000_void_exact_tender_change_return.sql` — anulación / vuelto exacto.
+- `20260802180000_void_exact_tender_change_return.sql` — anulación / vuelto exacto (`cash_change_return_detail`).
 - `20260803010000_fix_add_dine_in_order_item_vnode.sql` — fix `v_node` no asignado en `add_dine_in_order_item`.
+- `20260806040000_force_close_cash_shift.sql` — RPC `force_close_cash_shift` (cierre forzado de turno).
+- `20260807121000_stabilize_operational_order_visibility.sql` — trigger `assign_open_cash_shift_to_order` + RPC repair.
+- `20260807124500_normalize_transfer_proof_pending_notes.sql` — normaliza `TRANSFER_PROOF_PENDING` (si coexisten `:1` y `:0`, gana `:0`).
+
+### Órdenes especiales mixtas (2026-07-25)
+- `20260725170000_mixed_special_orders.sql`
+- `20260725180000_ensure_mixed_special_rpcs.sql`
+- `20260725181000_fix_ambiguous_order_id_special_rpc.sql`
+- `20260725182000_sync_mixed_special_total_on_item_change.sql`
+- `20260725190000_editar_orden_especial_mixta.sql`
+- `20260725200000_release_table_on_paid_mixed_special.sql`
 
 ### Perfiles y alias (2026-06-28)
 - `20260628120000_add_profile_alias.sql`

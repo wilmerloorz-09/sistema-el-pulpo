@@ -107,7 +107,7 @@ const AppLayout = () => {
                   {hubDegraded && (
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800 shadow-sm"
-                      title="La sincronizacion en vivo no esta activa; se refresca cada ~25s"
+                      title="La sincronizacion en vivo no esta activa; se refresca cada ~15s"
                     >
                       <RefreshCw className="h-3 w-3" />
                       <span className="hidden xs:inline">Sync lenta</span>
@@ -148,7 +148,7 @@ const AppLayout = () => {
           )}
           {isDesktop && hubDegraded && (
             <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold text-amber-900">
-              Sincronizacion en vivo interrumpida — las listas se refrescan cada ~25 s
+              Sincronizacion en vivo interrumpida — las listas se refrescan cada ~15 s
             </div>
           )}
           {isDesktop && !isOnline && (

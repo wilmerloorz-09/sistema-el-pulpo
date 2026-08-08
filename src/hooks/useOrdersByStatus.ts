@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { dbSelect, supabase } from "@/services/DatabaseService";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
@@ -7,7 +7,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
 import {
   OPERATIONAL_STALE_MS,
   OPERATIONAL_LIST_BACKUP_POLL_MS,
@@ -118,16 +118,23 @@ export function useOrdersByStatus(
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
     enabled: Boolean(activeBranchId) && queryEnabled,
+    placeholderData: keepPreviousData,
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
 
+      await repairOpenShiftOrderCashShiftIds(activeBranchId);
       const openShift = await qc.ensureQueryData({
         queryKey: ["open-cash-shift", activeBranchId],
-        queryFn: () => getOpenCashShiftForBranch(activeBranchId),
+        queryFn: () => getOpenCashShiftForBranch(activeBranchId, { strict: true }),
         staleTime: 0,
         gcTime: 10 * 60_000,
       });
-      if (!openShift) return [];
+      if (!openShift) {
+        if (shiftGate?.shiftId) {
+          throw new Error("No se pudo leer el turno abierto de la sucursal");
+        }
+        return [];
+      }
 
       const cancelledView = status === "CANCELLED";
       const sentView = status === "SENT_TO_KITCHEN";
@@ -149,8 +156,8 @@ export function useOrdersByStatus(
       filters.push({ column: "cash_shift_id", op: "eq", value: openShift.id });
 
       let orders = (
-        await dbSelect<any>("orders", {
-          select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+        await dbSelectStrict<any>("orders", {
+          select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total, cash_shift_id",
           branchId: activeBranchId,
           filters,
           orderBy: { column: "created_at", ascending: false },
@@ -165,7 +172,7 @@ export function useOrdersByStatus(
       if (dispatchedView && orders.length > 0) {
         const candidateDispatchedOrderIds = orders.map((order) => order.id).filter(Boolean);
         const dispatchEvents = candidateDispatchedOrderIds.length > 0
-          ? await dbSelect<any>("order_dispatch_events", {
+          ? await dbSelectStrict<any>("order_dispatch_events", {
               select: "order_id, status",
               filters: [
                 { column: "order_id", op: "in", value: candidateDispatchedOrderIds },
@@ -199,8 +206,8 @@ export function useOrdersByStatus(
         const missingPendingOrderIds = pendingOrderIds.filter((orderId) => !knownOrderIds.has(orderId));
 
         if (missingPendingOrderIds.length > 0) {
-          const pendingOrders = await dbSelect<any>("orders", {
-            select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total",
+          const pendingOrders = await dbSelectStrict<any>("orders", {
+            select: "id, order_number, order_code, status, order_type, is_special, special_total_manual, table_id, table_name_snapshot, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, total, cash_shift_id",
             branchId: activeBranchId,
             filters: [
               { column: "id", op: "in", value: missingPendingOrderIds },
@@ -223,7 +230,7 @@ export function useOrdersByStatus(
         const cancellationHeaders =
           shiftOrderIds.length === 0
             ? []
-            : ((await dbSelect<any>("order_cancellations", {
+            : ((await dbSelectStrict<any>("order_cancellations", {
                 select: "order_id, status, created_at",
                 filters: [
                   { column: "status", op: "eq", value: "APPLIED" },
@@ -314,14 +321,14 @@ export function useOrdersByStatus(
 
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
-        ? await dbSelect<any>("profiles", {
+        ? await dbSelectStrict<any>("profiles", {
             select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
         : [];
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
-      const items = await dbSelect<any>("order_items", {
+      const items = await dbSelectStrict<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, item_note, quantity, unit_price, total, status, paid_at, tray_item_type",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
@@ -343,7 +350,7 @@ export function useOrdersByStatus(
       const activePaidAmountByOrder: Record<string, number> = {};
 
       if (itemIds.length > 0) {
-        const paymentItems = await dbSelect<any>("payment_items", {
+        const paymentItems = await dbSelectStrict<any>("payment_items", {
           select: "id, payment_id, order_item_id, quantity_paid",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
@@ -357,7 +364,7 @@ export function useOrdersByStatus(
         let blockedPaymentIds = new Set<string>();
 
         if (paymentIds.length > 0) {
-          const payments = await dbSelect<any>("payments", {
+          const payments = await dbSelectStrict<any>("payments", {
             select: "id, notes, status",
             filters: [{ column: "id", op: "in", value: paymentIds }]
           });
@@ -378,7 +385,7 @@ export function useOrdersByStatus(
         }
       }
 
-      const paymentsForOrders = await dbSelect<any>("payments", {
+      const paymentsForOrders = await dbSelectStrict<any>("payments", {
         select: "order_id, amount, notes, status",
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
@@ -415,7 +422,7 @@ export function useOrdersByStatus(
 
       const modsMap: Record<string, { description: string }[]> = {};
       if (itemIds.length > 0) {
-        const mods = await dbSelect<any>("order_item_modifiers", {
+        const mods = await dbSelectStrict<any>("order_item_modifiers", {
           select: "id, order_item_id, modifiers(description)",
           filters: [{ column: "order_item_id", op: "in", value: itemIds }]
         });
@@ -454,7 +461,7 @@ export function useOrdersByStatus(
       const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, string> = {};
       if (tableIds.length > 0) {
-        const tables = await dbSelect<any>("restaurant_tables", {
+        const tables = await dbSelectStrict<any>("restaurant_tables", {
           select: "id, name",
           filters: [{ column: "id", op: "in", value: tableIds }]
         });

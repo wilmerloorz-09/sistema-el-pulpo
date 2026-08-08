@@ -66,6 +66,19 @@ proof_capture_frontend_vue/
 - El backend genera el path fijo:
   `branches/{branch_id}/cash-sessions/{cash_session_id}/payments/{payment_id}/{proof_id}.jpg`
 
+## Estado 2026-08-07 — coexistencia POS nativo vs backend auxiliar
+
+El cobro por transferencia en el POS principal ya opera de forma nativa (sin depender del frontend Vue):
+
+- Foto opcional → Storage `comprobantes-pago` + fila `comprobantes_pago`.
+- Análisis IA: Edge Function `analizar-comprobante-transferencia` + auditoría en `validaciones_comprobantes_transferencia`.
+- Marcadores en `payments.notes`: `TRANSFER_PROOF_PENDING:1` (pendiente) / `:0` (resuelto).
+- Helper canónico: `src/lib/paymentNoteMarkers.ts` (`setTransferProofPendingMarker`).
+- Normalización SQL: si coexisten `:1` y `:0`, prevalece `:0` (`20260807124500_normalize_transfer_proof_pending_notes.sql`).
+- Pagos con `:1` se excluyen de cuadre / pagos activos (mismo criterio que VOIDED/REVERSED).
+
+`proof_capture_backend` / `proof_capture_frontend_vue` siguen como módulo auxiliar de captura/OCR; no son el camino principal del cobro en Caja.
+
 ## Maquina De Estados
 
 - `pending -> opened`

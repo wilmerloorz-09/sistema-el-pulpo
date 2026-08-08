@@ -201,15 +201,11 @@ const Caja = () => {
     [user?.id, captureCandidates],
   );
 
-  const isDispatchThenCash = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
-
   // Recaudar: todas las órdenes por cobrar del turno (sin filtrar por cajero/creador).
-  const filteredPayableOrders = useMemo(() => {
-    if (isDispatchThenCash) {
-      return payableOrders.filter((order) => order.ready_to_collect);
-    }
-    return payableOrders;
-  }, [payableOrders, isDispatchThenCash]);
+  // En Despacho primero NO se ocultan las que aún no están listas: PayableOrdersList
+  // las muestra con botón Cobrar rojo + AlertDialog (ready_to_collect=false).
+  // Filtrarlas aquí causaba parpadeo (aparecen/desaparecen) al recalcular
+  // undispatched_units entre refetches.
 
   const activeCaptureRequest = useMemo(
     () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
@@ -1152,7 +1148,7 @@ const Caja = () => {
             <div className="space-y-3 sm:space-y-4">
               <ComprobantesPagoPendientesPanel />
               <PayableOrdersList
-                orders={filteredPayableOrders}
+                orders={payableOrders}
                 paymentMethods={paymentMethods}
                 denominations={denominations}
                 shiftDenoms={shift.denoms}

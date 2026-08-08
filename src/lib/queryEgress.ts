@@ -28,9 +28,15 @@ export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
 
 /**
  * Respaldo de listas operativas (Despacho, Servir, Recaudar, Cocina, etc.)
- * solo si Realtime no está suscrito. Con hub sano → sin poll (0 carga extra).
+ * si Realtime no está suscrito. Con hub caído → poll cada 15s.
  */
-export const OPERATIONAL_LIST_BACKUP_POLL_MS = 25_000;
+export const OPERATIONAL_LIST_BACKUP_POLL_MS = 15_000;
+
+/**
+ * Safety net aunque el hub esté SUBSCRIBED: eventos perdidos en tablet/PWA
+ * no dejan la lista quieta indefinidamente. Alineado al respaldo de hub caído (~15s).
+ */
+export const OPERATIONAL_LIST_SAFETY_POLL_MS = 15_000;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
@@ -154,18 +160,21 @@ export function useHubRealtimeStatus(branchId: string | null | undefined): HubRe
 }
 
 /**
- * Polling adaptativo:
- * - Realtime SUBSCRIBED → sin polling (`false`)
- * - Desconectado / error / idle → `backupMs`
+ * Polling adaptativo de listas operativas:
+ * - Realtime SUBSCRIBED → safety poll (`safetyMs`, default 15s) por si se pierden eventos
+ * - Desconectado / error / idle → `backupMs` (típicamente 15s)
  */
 export function useAdaptiveRefetchInterval(
   branchId: string | null | undefined,
   backupMs: number,
   enabled = true,
+  safetyMs: number = OPERATIONAL_LIST_SAFETY_POLL_MS,
 ): number | false {
   const status = useHubRealtimeStatus(branchId);
   if (!enabled) return false;
-  if (status === "subscribed") return false;
+  if (status === "subscribed") {
+    return safetyMs > 0 ? safetyMs : false;
+  }
   return backupMs;
 }
 

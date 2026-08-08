@@ -1,4 +1,5 @@
 import { dbSelect, dbSelectStrict } from "@/services/DatabaseService";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface OpenCashShift {
   id: string;
@@ -29,6 +30,37 @@ export async function getOpenCashShiftForBranch(
 export async function getOpenCashShiftIdForBranch(branchId: string): Promise<string | null> {
   const shift = await getOpenCashShiftForBranch(branchId);
   return shift?.id ?? null;
+}
+
+const repairThrottleMs = 60_000;
+const lastRepairAtByBranch = new Map<string, number>();
+
+/**
+ * Completa `orders.cash_shift_id` NULL de órdenes activas del turno OPEN.
+ * Throttle por sucursal para no saturar al refrescar listas.
+ * Retorna cuántas filas reparó (0 si throttle / error / nada que hacer).
+ * El throttle solo se marca tras éxito: si el RPC falla, el próximo refresh reintenta.
+ */
+export async function repairOpenShiftOrderCashShiftIds(branchId: string): Promise<number> {
+  if (!branchId) return 0;
+  const now = Date.now();
+  const last = lastRepairAtByBranch.get(branchId) ?? 0;
+  if (now - last < repairThrottleMs) return 0;
+
+  try {
+    const { data, error } = await (supabase as any).rpc("repair_open_shift_order_cash_shift_ids", {
+      p_branch_id: branchId,
+    });
+    if (error) {
+      console.warn("[openCashShift] repair_open_shift_order_cash_shift_ids falló:", error.message ?? error);
+      return 0;
+    }
+    lastRepairAtByBranch.set(branchId, now);
+    return Number(data ?? 0);
+  } catch (err) {
+    console.warn("[openCashShift] repair_open_shift_order_cash_shift_ids excepción:", err);
+    return 0;
+  }
 }
 
 /**

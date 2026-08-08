@@ -209,7 +209,12 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       p_order_ids: uniqueOrderIds,
     });
     if (!error) {
-      return buildOperationalMapsFromSnapshotRows((data ?? []) as OrderOperationalSnapshotRow[]);
+      const rows = (data ?? []) as OrderOperationalSnapshotRow[];
+      // Respuesta vacía con IDs pedidos es sospechosa (RPC mal aplicada / fallo silencioso).
+      // Caer al siguiente método evita tratar "sin datos" como "nada despachado".
+      if (rows.length > 0) {
+        return buildOperationalMapsFromSnapshotRows(rows);
+      }
     }
   } catch {
     // Migración aún no aplicada: caer a la RPC completa.
@@ -220,9 +225,14 @@ export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise
       p_order_ids: uniqueOrderIds,
     });
     if (!error) {
-      return buildOperationalMapsFromSnapshotRows((data ?? []) as OrderOperationalSnapshotRow[]);
+      const rows = (data ?? []) as OrderOperationalSnapshotRow[];
+      if (rows.length > 0) {
+        return buildOperationalMapsFromSnapshotRows(rows);
+      }
+      warnBatchSnapshotUnavailable(new Error("batch snapshots devolvió 0 filas"));
+    } else {
+      warnBatchSnapshotUnavailable(error);
     }
-    warnBatchSnapshotUnavailable(error);
   } catch (error) {
     warnBatchSnapshotUnavailable(error);
   }

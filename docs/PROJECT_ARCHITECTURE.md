@@ -13,7 +13,7 @@
 - `KITCHEN_DISPATCHED`/Despachada: la orden ya fue despachada y deja de ser pendiente de Despacho.
 - `PAID` y `KITCHEN_DISPATCHED` son etapas visibles excluyentes: una orden despachada no debe seguir listada como pagada.
 - En `Despacho`, una orden pagada se muestra una sola vez por `orders.id` / `order_code`; los items enviados en momentos distintos se agregan dentro de la misma tarjeta/fila.
-- La anulacion de pago solo aplica sobre una orden pagada no despachada; al anular, la misma orden se reabre en `SENT_TO_KITCHEN`/En Caja con el mismo numero para re-cobrar (sin sucesora, desde 2026-07-14).
+- La anulacion de pago solo aplica sobre una orden pagada no despachada; al anular el último pago activo, la orden queda `CANCELLED` (`VOIDED_PAYMENT_CLOSED`) y se reabre bajo demanda con **Cobrar orden** / `preparar_orden_para_recobro` (misma orden, mismo número; desde 2026-07-19).
 
 ## Capas funcionales
 
@@ -42,6 +42,8 @@
 - En `Recaudar` (Caja) existe un combo para filtrar qué órdenes ver (todas / mías / por usuario); el principal por defecto ve todas.
 - **Monitoreo Global (`/admin/monitoreo-global`)**: Interfaz para Administradores Generales que consolida todos los turnos abiertos en tiempo real usando subscripciones a PostgreSQL (`supabase_realtime`) y un intervalo de respaldo (fallback) de **5 min** solo si el canal no está `SUBSCRIBED`.
 - **Refresco operativo entre módulos (2026-08-02):** hub `branch-ops-hub` + poll de listas 25 s si Realtime cae + badge Sync lenta. Detalle: `docs/operational-module-refresh.md`.
+- **Forzar cierre de turno (2026-08-06):** `/forzar-cierre-turno` → RPC `force_close_cash_shift` (migración `20260806040000`). Distinto del cierre normal: fuerza estados y cierra aunque haya bloqueantes. Requiere MANAGE + confirmación `FORZAR`.
+- **Visibilidad por `cash_shift_id` (2026-08-07):** trigger `assign_open_cash_shift_to_order` + repair RPC; listas operativas con `dbSelectStrict`. Migración `20260807121000`.
 
 ### 3. Catalogo
 - Fuente visual principal: `menu_nodes`.
@@ -110,6 +112,7 @@
 - Una misma orden no debe aparecer simultaneamente en `Pagada` y `Despachada`.
 - `Orden Especial` es metadata de `orders` (`is_special`, `special_total_manual`), no un `order_type` nuevo.
 - En ordenes especiales, `special_total_manual` es el valor manual visible/cobrable; puede diferir de `orders.total` y de la suma real de `order_items.total`.
+- **Especial mixta (2026-07-25+):** `orders.special_group_total` + `order_items.cantidad_especial`; valor cobrable = grupo especial + precio real del resto (`orderFlow.ts`). RPC `convertir_orden_especial_parcial`. NULL en `special_group_total` = especial legacy no mixta.
 - La pestana `Pagadas` debe incluir ordenes especiales con `status = 'PAID'` aun si no existen cantidades cobradas por item en `payment_items`; la UI debe usar los items reales para poder mostrarlas.
 - La solicitud pendiente de anulacion ya tiene arquitectura propia:
   - escritura: `create_pending_order_cancellation_request(...)`
@@ -178,7 +181,7 @@
   - anulacion de pagos
 - **Ordenes por cobrar — Despacho primero (2026-07-10):**
   - `PayableOrdersList` recibe `PayableOrder` con `ready_to_collect` y `undispatched_units` desde `useCaja`.
-  - Boton **Cobrar** verde solo si `ready_to_collect`; si no, boton rojo + `AlertDialog` sin abrir pago.
+  - Boton **Cobrar** verde solo si `ready_to_collect`; si no, boton rojo + `AlertDialog` sin abrir pago. Las ordenes no listas permanecen en la lista (no filtrarlas en `Caja.tsx`).
   - Regla uniforme para todas las filas de la lista cuando `workflow_mode = DISPATCH_THEN_CASH`.
   - `computeUndispatchedQuantity` en `src/lib/orderOperational.ts`; test `src/test/orderOperationalUndispatched.test.ts`.
 - Si el usuario no tiene caja abierta (`userCajaIsOpen` / `shiftGate.cajaStatus !== OPEN`), la pagina muestra `OpenShiftForm` aunque otro cajero del turno ya haya abierto la suya.
@@ -241,6 +244,13 @@
   - boton global de consolidado
   - boton de reimpresion por apertura cerrada
 
+### 9.1 Reportes admin online (`/reportes`, 2026-08-05+)
+- Página: `src/pages/Reportes.tsx`; hooks: `useReportesOnlineData.ts`; filtros: `FiltrosPanel.tsx`.
+- Filtro **Categoría de producto** (`selectedCategoryId` sobre nodos de menú).
+- En reporte de **Pagos**: toggle **Desglose por ítem** (`itemBreakdown`) → filas por `order_items` de órdenes cobradas (`ReportePagos.tsx` + `useReportesPagos`).
+- Distinto de los reportes imprimibles de Caja (turno/apertura).
+- Productos: `useReportesProductos` resta anulaciones `APPLIED` (neto = lo cobrable).
+
 ### 10. Anulacion de pagos
 - Flujo de dos pasos:
   - solicitud: `request_void_payment(...)`
@@ -280,6 +290,7 @@
 - **Cuentas autorizadas:** Admin > **Cuentas bancarias** gestiona `cuentas_bancarias_destino`; Admin > **Bancos de origen** configura la mascara usada por cada emisor (`#` visible, `X`/`*` oculto).
 - **Decision humana auditada:** la UI compara cuenta/titular/banco destino, fecha de Ecuador y monto. El cajero puede aceptar diferencias, pero debe escribir motivo; `register_payment_with_items` persiste el snapshot en `validaciones_comprobantes_transferencia` junto con el usuario.
 - **Fecha en fin de semana:** entre semana solo vale la fecha de hoy; sábado y domingo también se acepta la del lunes siguiente (`fechasAceptadasComprobante`, zona `America/Guayaquil`), porque los bancos registran transferencias de fin de semana con fecha del lunes.
+- **Marcadores `TRANSFER_PROOF_PENDING` (2026-08-07):** prefijo en `payments.notes` (`:1` pendiente / `:0` resuelto). Helper `src/lib/paymentNoteMarkers.ts`. Pagos `:1` excluidos de cuadre. Normalización SQL si coexisten ambos: gana `:0` (`20260807124500`).
 
 ### 13. Clientes, campañas y promociones (2026-06-11+)
 
@@ -515,8 +526,17 @@ Permite que el comensal escanee un QR en la mesa y pida desde el celular. El ped
 37. **Transferencia bancaria:** Modal con banco/numero/valor; unicidad global; migraciones `20260712220000`, `20260713050000`; sin toasts Sonner.
 39. **Autopedidos QR:** Menú cliente solo TABLE; aprobar vía `aprobar_autopedido_qr`; migraciones `20260716000000` + `20260716010000`; sin Sonner en `/qr-pedido`.
 40. **Validación IA de comprobantes:** Validar contra `cuentas_bancarias_destino` + máscara del banco origen; fecha en `America/Guayaquil` (fin de semana acepta lunes siguiente); aceptar con novedades exige motivo y snapshot inmutable en `validaciones_comprobantes_transferencia`. No almacenar la foto durante el análisis.
-41. **Anulación de pago:** Al anular el último pago activo la orden queda `CANCELLED` (fuera de Recaudar, mesa libre); una sola anulación por orden (`can_void_payment`); en transferencias, `refund_method` decide si afecta caja (CASH) o no (TRANSFER).
+41. **Anulación de pago:** Al anular el último pago activo la orden queda `CANCELLED` (fuera de Recaudar, mesa libre); una sola anulación por orden (`can_void_payment`); en transferencias, `refund_method` decide si afecta caja (CASH) o no (TRANSFER). Anulación en efectivo puede devolver tender + reingresar vuelto (`20260802180000`).
 42. **Denominaciones en cobro:** Leer `cash_shift_denoms` con query directa (no cache local que devuelva `[]` en fallo de red); mantener guardia de consistencia y `refetchInterval` para auto-sanar tablets/PWA.
+43. **Forzar cierre:** `/forzar-cierre-turno` + `force_close_cash_shift`; no confundir con cierre normal; migración `20260806040000`.
+44. **Visibilidad operativa:** órdenes activas necesitan `cash_shift_id`; trigger/repair `20260807121000`; listas con `dbSelectStrict`.
+45. **Marcadores transferencia:** un solo `TRANSFER_PROOF_PENDING` por pago (`paymentNoteMarkers.ts`); normalización `20260807124500`.
+46. **Especial mixta:** `special_group_total` + `cantidad_especial`; RPC `convertir_orden_especial_parcial`.
+47. **Reportes admin:** filtro categoría + desglose por ítem en Pagos (`/reportes`).
+48. **Agregar al instante:** modal abre con shell optimista; no bloquear UI por lookup de producto.
+
+### Actualizacion Ago 5–7, 2026
+- **Forzar cierre, visibilidad `cash_shift_id`, marcadores transferencia, Reportes admin, Agregar al instante, especial mixta documentada.** Ver checklist 43–48 y migraciones `20260806040000`, `20260807121000`, `20260807124500`, `20260725170000`+.
 
 ### Actualizacion Jul 15–16, 2026
 - **Cobro por transferencia:** `TransferenciaPagoSection`, `TransferenciaPagoDialog`, tabla `bancos`, columnas en `payments`, Admin > Bancos.

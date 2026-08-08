@@ -9,7 +9,7 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-07-14)
+## Estado operativo vigente (2026-08-07)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
@@ -20,7 +20,7 @@
 - En `Despacho`, una orden pagada debe representarse como una sola tarjeta/fila por `orders.id` / `order_code`; si sus items fueron enviados en momentos distintos, se agregan dentro de esa misma orden y no se generan tarjetas duplicadas con el mismo numero.
 - Al despachar, la orden pasa a `KITCHEN_DISPATCHED` cuando ya no quedan cantidades activas pendientes de despacho.
 - Los estados principales son exclusivos en las pestanas operativas: una orden `PAID` no debe aparecer como `KITCHEN_DISPATCHED`, y una orden `KITCHEN_DISPATCHED` no debe seguir apareciendo como `PAID`.
-- Al anular un pago (desde 2026-07-14), la **misma orden** se reabre para re-cobro: conserva `order_code` / `order_number`, limpia `paid_at` y vuelve a `SENT_TO_KITCHEN`/En Caja. Ya no se crea orden sucesora ni se marca historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` (salvo ordenes antiguas ya separadas).
+- Al anular el último pago activo (desde 2026-07-19), la orden queda `CANCELLED` con marcador `VOIDED_PAYMENT_CLOSED`: sale de Recaudar, libera la mesa (conserva `table_id`) y **no** vuelve sola a En Caja. El re-cobro es bajo demanda con **Cobrar orden** en Pagos realizados → `preparar_orden_para_recobro` (misma orden / mismo número). Una sola anulación de pago por vida de orden (`can_void_payment`). Históricas legacy con `VOID_SUCCESSOR_ORDER` se preservan.
 
 ### 1. Catalogo y venta
 - `menu_nodes` es la fuente principal de navegacion para `TABLE`, `TAKEOUT` y `BULK`.
@@ -104,6 +104,10 @@
   - Ya no se cachea el lookup del producto 60 s con `menu-product-lookup`; el lookup se ejecuta directo en cada apertura del modal.
   - Orden bandeja tipo **Sin envase** (`tray_item_type = A`): modificadores ocultos por regla de negocio (intencional).
   - Invalidacion: al editar asignaciones en admin (`useNodeModifiers`, `MenuNodesCrud`) se invalida `branch-modifiers-catalog`.
+- **Agregar producto al instante (2026-08-05):**
+  - Al tocar un producto, `AddItemDialog` abre de inmediato con un shell del nodo de menú (`resolvingShell` / producto optimista en `Ordenes.tsx`).
+  - El lookup de `product_id` y modificadores corre en background; `ensureProduct` bloquea confirmar **Agregar** hasta reconciliar.
+  - Archivos: `src/pages/Ordenes.tsx`, `src/components/order/AddItemDialog.tsx`.
 
 ### 2. Turno, caja y acceso operativo
 - `Admin > Turno` sigue siendo la superficie para configurar y abrir el turno.
@@ -185,6 +189,13 @@
   - `SENT_TO_KITCHEN`
   - `READY`
   - `KITCHEN_DISPATCHED` sin `paid_at`
+- **Forzar cierre de turno (Admin, 2026-08-06):**
+  - Ruta `/forzar-cierre-turno` (`ForzarCierreTurno.tsx`); ítem en menú ADMINISTRACIÓN.
+  - Visible con MANAGE en `turno` / `admin_sucursal` / `admin_global` (también sin turno abierto para el actor).
+  - RPC `force_close_cash_shift(p_shift_id, p_branch_id, p_notes)`; migración `20260806040000_force_close_cash_shift.sql`.
+  - Requiere `can_manage_shift_admin`; confirmación tipando `FORZAR`.
+  - Efectos: elimina borradores `DRAFT`; cierra `PAID` pendientes de despacho; fuerza operativas (`SENT_TO_KITCHEN`/`READY`/`KITCHEN_DISPATCHED`) → `PAID`; cierra aperturas y turno; desactiva mesas.
+  - **No** sustituye el cierre normal `close_cash_shift_with_tables` (este sí respeta bloqueantes).
 
 ### 3. Caja y pagos
 - **Apertura por cajero:** Si Ivonne ya abrio su caja, otro cajero habilitado (p. ej. usuario1) debe ver el formulario de arqueo propio en `/caja`, no un bloqueo por "caja ya abierta en el turno".
@@ -202,7 +213,7 @@
 - **Despacho primero — bloqueo de cobro en Caja (2026-07-10):**
   - Solo cuando `branches.workflow_mode = DISPATCH_THEN_CASH`.
   - Cada `PayableOrder` expone `undispatched_units` y `ready_to_collect` (calculados en `useCaja` con `computeUndispatchedQuantity` de `src/lib/orderOperational.ts`).
-  - Si `ready_to_collect = false`, `PayableOrdersList` muestra boton **Cobrar** rojo; al pulsarlo abre `AlertDialog` (“No estan despachados todos los items…”) sin abrir el dialogo de pago.
+  - Si `ready_to_collect = false`, la orden **sigue visible** en Recaudar; `PayableOrdersList` muestra boton **Cobrar** rojo y al pulsarlo abre `AlertDialog` (“No estan despachados todos los items…”) sin abrir el dialogo de pago. No filtrar estas ordenes en `Caja.tsx` (causaba parpadeo).
   - Si todo esta despachado, boton verde como antes.
   - `payOrder` rechaza el cobro en servidor si aun quedan unidades sin despachar (defensa adicional).
   - `orders.locked_for_editing` sigue deshabilitando el boton independientemente del color.
@@ -258,6 +269,19 @@
 - `Pagos del turno` debe consultar desde `cash_shifts.opened_at` hasta `closed_at` o el momento actual, no desde la medianoche del dia calendario. Un turno puede cruzar de dia y sus pagos/anulaciones deben seguir visibles.
 - El detalle de pago debe mostrar, cuando aplique, monto entregado por el cliente, monedas/billetes recibidos, cambio entregado y devolucion.
 - Si el pago esta anulado o reversado, no debe mostrarse lo recibido por el cliente; solo corresponde mostrar la devolucion/anulacion.
+- **Visibilidad operativa y `cash_shift_id` (2026-08-07):**
+  - Listas de Caja/Despacho/Servir filtran por turno abierto; una orden activa sin `cash_shift_id` puede quedar invisible.
+  - Trigger `trg_assign_open_cash_shift_to_order` / función `assign_open_cash_shift_to_order` completa `cash_shift_id` si es NULL y hay turno `OPEN`.
+  - Repair: `repair_open_shift_order_cash_shift_ids(p_branch_id)`.
+  - Migración `20260807121000_stabilize_operational_order_visibility.sql`.
+  - Lecturas de listas operativas usan `dbSelectStrict` (sin fallback Dexie que vacíe la UI).
+- **Marcadores de comprobante de transferencia (`TRANSFER_PROOF_PENDING`):**
+  - Prefijo canónico en `payments.notes`: `TRANSFER_PROOF_PENDING:1` (pendiente) / `:0` (resuelto).
+  - Helper `setTransferProofPendingMarker` en `src/lib/paymentNoteMarkers.ts` (elimina marcadores previos del prefijo y deja uno solo).
+  - Pagos con `:1` se excluyen de cuadre / pagos activos (igual que VOIDED/REVERSED).
+  - Si coexisten `:1` y `:0`, prevalece `:0` (migración `20260807124500_normalize_transfer_proof_pending_notes.sql`).
+- **Caja — nombre de mesa en cobrables:**
+  - `PayableOrder.table_name`: para especiales usar flag `isSpecial` (no solo `order_type === DINE_IN`); si no hay `table_id`, caer a `table_name_snapshot` / `special_origin_table_id`.
 
 ### 4. Anulacion de pagos
 - El sistema soporta anulacion segura de pagos.
@@ -273,13 +297,15 @@
   - desglose de devolucion en efectivo por denominacion
   - `replacement_payment_id` cuando queda saldo activo remanente
   - bloqueo si la apertura de caja del pago ya fue cerrada/anulada o si el pago ya fue anulado
-- Una anulacion de pago puede reabrir el estado operativo de la orden o liberar la mesa visualmente segun el saldo restante.
+- Una anulacion de pago puede reabrir el estado operativo de la orden (si quedan pagos activos) o cerrarla (`CANCELLED`) si era el último pago activo.
 - **Historial de Anulaciones (2026-05-06):** Toda anulación de pago genera un registro de auditoría en la tabla `order_cancellations` y adjunta una nota histórica detallada al pedido (`orders.notes`), garantizando la trazabilidad del supervisor responsable y el motivo.
-- **Re-cobro tras anulación (2026-07-14):**
-  - al anular un pago, la **misma orden** conserva su `order_code` / `order_number`, limpia `paid_at` y vuelve a `SENT_TO_KITCHEN`/En Caja para re-cobrar.
-  - ya no se crea orden sucesora ni se marca la original como historica `CANCELLED` con `VOID_SUCCESSOR_ORDER` (las anulaciones previas a esta fecha pueden conservar ese patrón).
-  - En **Pagos del Turno**, fila anulada → botón **Cobrar** abre el cobro sobre esa misma orden.
-  - Ordenes legacy con `VOID_SUCCESSOR_ORDER` siguen tratadas como historicas; el cobro puede caer en la sucesora si la original ya no está cobrable.
+- **Anulación cierra la orden (2026-07-19, regla vigente):**
+  - al anular el último pago activo, la orden queda `CANCELLED` con marcador `VOIDED_PAYMENT_CLOSED`: sale de Recaudar/Ordenes, libera la mesa (conserva `table_id` para restaurarla en re-cobro).
+  - Si quedan pagos activos (anulación parcial con reemplazo) se reabre a `SENT_TO_KITCHEN` y el sync recalcula.
+  - **Re-cobro bajo demanda:** en Pagos realizados, botón **Cobrar orden** → `preparar_orden_para_recobro` reabre la misma orden (mismo `order_code` / `order_number`).
+  - Una sola anulación de pago por vida de orden (`can_void_payment`); tras re-cobrar, el nuevo pago no se puede anular.
+  - Anulación total en efectivo puede devolver el tender original y reingresar el vuelto (`cash_change_return_detail`; migración `20260802180000`).
+  - Ordenes legacy con `VOID_SUCCESSOR_ORDER` siguen tratadas como historicas; no se reviven.
 
 ### 5. Ordenes y mesas
 - En `Ordenes.tsx`, el detalle usa `orderItems = order?.items ?? []` de forma consistente para evitar errores si la caché devuelve la orden sin arreglo `items` durante refetch (p. ej. tras cobrar); no asumir `order.items` siempre definido en render.
@@ -366,7 +392,7 @@
 
 ### 6.1 Refresco entre módulos (2026-08-02)
 - Hub Realtime `branch-ops-hub:{branchId}`; con `SUBSCRIBED` no hay poll de listas.
-- Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 25s` en Despacho, Cocina, Caja, Mesas, Órdenes, Extra/Express/Para llevar/Especial.
+- Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 15s` en Despacho, Cocina, Caja, Mesas, Órdenes, Extra/Express/Para llevar/Especial.
 - También `refetchOnWindowFocus` / `refetchOnReconnect` en esas listas; badge **Sync lenta** en layout.
 - Doc: `docs/operational-module-refresh.md` y sección Fase 1.5 en `docs/supabase-performance-audit-phase2.md`.
 
@@ -374,10 +400,19 @@
 - Bajar un despachado (ej. 4→3) vía Editar orden **no** reduce `order_items.quantity` crudo: deja anulacion `APPLIED` en `order_item_cancellations`.
 - Caja cobra el neto (3). `useReportesProductos` debe restar cantidades canceladas aplicadas y el monto proporcional; no sumar `quantity` crudo.
 
+### 6.3 Reportes admin (`/reportes`, 2026-08-05+)
+- Distinto de los reportes imprimibles de Caja (turno/apertura).
+- Filtro **Categoría de producto** sobre nodos de menú (`FiltrosPanel.tsx` → `selectedCategoryId`).
+- En **Pagos**, toggle **Desglose por ítem** (`itemBreakdown`) lista filas por `order_items` de órdenes cobradas (`useReportesPagos` + `ReportePagos.tsx`).
+
 ### 7. Orden especial
 - `Orden Especial` sigue siendo metadata sobre `orders`, no un `order_type` nuevo.
 - Usa `orders.is_special` y `orders.special_total_manual`.
 - Para ordenes especiales, `special_total_manual` es el valor manual visible/cobrable aunque `orders.total` o la suma de `order_items.total` difieran.
+- **Órdenes especiales mixtas (2026-07-25+):**
+  - Parte del pedido con valor manual (grupo especial) + resto a precio real; un solo cobro.
+  - `order_items.cantidad_especial`; `orders.special_group_total` (NULL = especial legacy no mixta); `special_total_manual` = total general.
+  - RPC `convertir_orden_especial_parcial(...)`; migraciones `20260725170000` … `20260725200000`.
 - Una orden especial `$0` puede quedar como flujo operativo valido hasta despacho; si bloquea cierre de turno, se resuelve por confirmacion explicita en `Admin > Turno`.
 - En la UI principal se comporta igual que `Para llevar`: grilla de tarjetas, `+` permanente, borradores vacios ocultos, borradores con items visibles y salida automatica al despacho/cancelacion.
 - En `Despacho`, Orden especial se despacha como orden completa; el detalle puede expandirse para consulta, pero no muestra botones por item.
@@ -612,6 +647,20 @@
 26. **Despacho primero — cobro en Caja:** no abrir `PaymentDialog` si `ready_to_collect = false`; mantener validacion en `payOrder` y calculo con `computeUndispatchedQuantity` sobre todos los items no `DRAFT` de la orden.
 27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
 28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
+29. **Forzar cierre:** no confundir con `close_cash_shift_with_tables`; exige confirmación `FORZAR` y permiso MANAGE; migración `20260806040000`.
+30. **Visibilidad operativa:** órdenes activas sin `cash_shift_id` pueden desaparecer de Caja/Despacho; aplicar trigger/repair `20260807121000` y usar `dbSelectStrict`.
+31. **Marcadores transferencia:** no dejar `TRANSFER_PROOF_PENDING:1` y `:0` juntos; usar `paymentNoteMarkers.ts`; normalización `20260807124500`.
+32. **Especial mixta:** respetar `special_group_total` + `cantidad_especial`; no tratar como especial legacy puro si `special_group_total` no es NULL.
+
+### Actualizacion Ago 5–7, 2026
+- **Agregar al instante:** `AddItemDialog` abre con shell optimista; lookup de producto/modificadores en background (`Ordenes.tsx`, `AddItemDialog.tsx`).
+- **Reportes admin:** filtro por categoría de producto; en Pagos, toggle **Desglose por ítem** (`itemBreakdown`).
+- **Forzar cierre de turno:** `/forzar-cierre-turno`, RPC `force_close_cash_shift`, migración `20260806040000`.
+- **Visibilidad operativa:** trigger `assign_open_cash_shift_to_order` + `repair_open_shift_order_cash_shift_ids`; `dbSelectStrict` en listas; migración `20260807121000`.
+- **Marcadores comprobante:** `TRANSFER_PROOF_PENDING` vía `paymentNoteMarkers.ts`; normalización `20260807124500`.
+- **Naming mesa en cobrables:** `isSpecial` + `special_origin_table_id` / `table_name_snapshot` en `useCaja`.
+- **Anulación / vuelto exacto:** `cash_change_return_detail` (`20260802180000`).
+- **Especial mixta (Jul 25, documentada aquí):** `cantidad_especial`, `special_group_total`, `convertir_orden_especial_parcial`.
 
 ### Actualizacion Jul 20, 2026 — Timeout al cerrar turno (Local Principal)
 - **Síntoma:** al cerrar turno aparece `canceling statement due to statement timeout`.

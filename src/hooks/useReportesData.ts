@@ -36,6 +36,7 @@ export function useReportesData() {
     activeBranchId,
     OPERATIONAL_BACKUP_POLL_MS,
     navigator.onLine && !!activeBranchId,
+    0, // reportes: sin safety poll con hub sano
   );
 
   // Ordenes locales (IndexedDB) — no golpea Supabase

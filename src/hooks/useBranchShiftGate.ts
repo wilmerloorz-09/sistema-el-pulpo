@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -80,8 +79,6 @@ export function useBranchShiftGate() {
   const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const { user } = useAuth();
   const qc = useQueryClient();
-  /** Ultimo gate leido de verdad; se reutiliza si una lectura falla o expira. */
-  const lastResolvedGateRef = useRef<BranchShiftGate | null>(null);
   const isBranchAdmin =
     Boolean(isGlobalAdmin)
     || canManage(permissions, "admin_sucursal")
@@ -91,6 +88,7 @@ export function useBranchShiftGate() {
     activeBranchId,
     SHIFT_GATE_BACKUP_POLL_MS,
     Boolean(activeBranchId && user?.id),
+    0, // gate: sin safety poll con hub sano (mismo comportamiento previo)
   );
 
   const query = useQuery({
@@ -360,13 +358,16 @@ export function useBranchShiftGate() {
           setTimeout(() => reject(new Error("Timeout de turno")), 6000)
         ),
       ]);
-      lastResolvedGateRef.current = resolved;
       return resolved;
     } catch (err) {
-      console.warn("[useBranchShiftGate] Query timed out or failed. Returning fallback: ", err);
-      // Inventar capacidades aqui hace que el menu y `ProtectedRoute` salten entre
-      // vista operativa y vista solo-admin en cada reintento.
-      return lastResolvedGateRef.current ?? defaultValue;
+      // No devolver defaultValue (shiftId null): React Query lo trata como éxito,
+      // pisa el caché y cambia las query keys de Despacho/Caja → listas vacías.
+      // Al lanzar, keepPreviousData conserva el último gate válido.
+      console.warn(
+        "[useBranchShiftGate] Query timed out or failed. Re-throwing so React Query keeps cached data:",
+        err,
+      );
+      throw err;
     }
   },
     enabled: !!activeBranchId && !!user?.id,

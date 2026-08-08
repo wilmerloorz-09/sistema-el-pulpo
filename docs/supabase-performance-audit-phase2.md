@@ -182,7 +182,7 @@ Tras Fase 2 se detectó demora de minutos / inconsistencia entre tablets. Se añ
 
 | Pieza | Detalle |
 |--------|---------|
-| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **25 s**, solo si hub ≠ `SUBSCRIBED` |
+| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **15 s**, solo si hub ≠ `SUBSCRIBED` |
 | `refetchOnWindowFocus` / `refetchOnReconnect` | `true` en listas operativas |
 | Invalidaciones | cocina→servir/caja; `sendToKitchen`→servir |
 | UI | Badge **Sync lenta** en `AppLayout` |
@@ -191,12 +191,16 @@ Documentación dedicada: [`docs/operational-module-refresh.md`](./operational-mo
 
 Consumidores: `useDispatchOrders`, `useKitchenOrders`, `useCaja`, `useOrdersByStatus`, `useTablesWithStatus`, Extra/Express/ParaLlevar/OrdenEspecial.
 
+### Nota 2026-08-07 — visibilidad y lecturas strict
+
+Además del hub/poll: órdenes activas sin `cash_shift_id` pueden quedar invisibles en listas filtradas por turno (trigger/repair `20260807121000`). Caja/Despacho usan `dbSelectStrict` para no vaciar la UI con fallback Dexie. El cliente llama `repairOpenShiftOrderCashShiftIds` (throttle 60s) al refrescar listas. Con hub `SUBSCRIBED` hay safety poll de 15s (`OPERATIONAL_LIST_SAFETY_POLL_MS`) para recuperar eventos perdidos.
+
 ---
 
 ## Checklist de verificación manual
 
 - [ ] Aplicar `20260730230000_realtime_turnos_y_snapshots_lite.sql` en remoto.
 - [ ] Abrir Caja / Mesas / Despacho: un solo canal `branch-ops-hub:{id}` en Network/Realtime.
-- [ ] Cortar red o forzar CHANNEL_ERROR: deben reaparecer polls lentos (listas ~25 s); al reconectar, deben parar; badge **Sync lenta** visible mientras el hub no esté suscrito.
+- [ ] Cortar red o forzar CHANNEL_ERROR: deben reaparecer polls lentos (listas ~15 s); al reconectar, deben parar; badge **Sync lenta** visible mientras el hub no esté suscrito.
 - [ ] Cobrar / despachar / anular: pantallas hermanas se actualizan igual que antes.
 - [ ] Login / cambio de sucursal / Monitoreo Global / alertas mesero: sin regresiones UX.

@@ -70,7 +70,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Cliente (`DatabaseService`):** reservar `hotPath` en `dbInsert`/`dbInsertMany` solo cuando el registro lleve `id` (u otros NOT NULL) generados en cliente; reservar `skipLocalCache` en `dbSelect` para lecturas calientes del flujo de cobro donde no haga falta actualizar Dexie en el mismo tick.
 - No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
 - En UI post-cobro (`PaymentDialogV2`, `PaymentReceipt`, detalle en `Ordenes.tsx`), no asumir `items` ni `payments` definidos: usar `?? []` y pasar al recibo el objeto `receipt` completo que devuelve el flujo de pago.
-- **Despacho primero — boton Cobrar (2026-07-10):** en `DISPATCH_THEN_CASH`, `PayableOrdersList` no debe abrir pago si `ready_to_collect = false`. Calcular `undispatched_units` con `computeUndispatchedQuantity` sobre todos los items no `DRAFT`. Duplicar validacion en `payOrder`. Misma regla para todas las ordenes en “Ordenes por cobrar”.
+- **Despacho primero — boton Cobrar (2026-07-10):** en `DISPATCH_THEN_CASH`, `PayableOrdersList` no debe abrir pago si `ready_to_collect = false`. Calcular `undispatched_units` con `computeUndispatchedQuantity` sobre todos los items no `DRAFT`. Duplicar validacion en `payOrder`. Las ordenes no listas **permanecen visibles** con boton rojo (no ocultarlas en `Caja.tsx`). Misma regla para todas las ordenes en “Ordenes por cobrar”.
 
 ### 2.4 Auth, sesion y tablets (Capacitor / WebView, 2026-07-07)
 - Supabase Auth puede usar Web Locks (`navigator.locks`) para `autoRefreshToken` / `getSession`. En tablet, PWA y Capacitor esto produce `AbortError: The lock request is aborted` de forma benigna cuando varias operaciones compiten.
@@ -108,6 +108,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Invalidacion admin:** al agregar/quitar modificadores de un nodo (`useNodeModifiers`, `MenuNodesCrud`), invalidar `branch-modifiers-catalog` ademas de `menu-product-lookup`.
 - **Bandeja tipo A:** en orden bandeja con `tray_item_type = A` (Sin envase), la UI oculta modificadores por regla de negocio; no reportar como bug de catalogo.
 
+### 3.2 Agregar producto al instante (2026-08-05)
+- Al tocar un producto, `AddItemDialog` debe abrirse de inmediato con shell del nodo (`resolvingShell` / producto optimista).
+- Lookup de `product_id` y modificadores en background; `ensureProduct` bloquea confirmar hasta reconciliar.
+- Archivos: `src/pages/Ordenes.tsx`, `src/components/order/AddItemDialog.tsx`.
+- No reintroducir espera bloqueante de red antes de mostrar el modal.
+
 ### 4. Caja y turno no son lo mismo
 - No mezclar cierre de caja con cierre de turno.
 - No asumir una sola caja abierta por turno: cada cajero con `can_use_caja` abre la suya (`cash_register_openings` + `cash_shift_denoms` por `cashier_id`).
@@ -116,6 +122,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - No usar "conectar terminal" como sustituto de segunda apertura: el segundo cajero debe ver `Abrir mi caja` con arqueo propio.
 - `close_cash_register(...)` cierra solo la apertura `abierta` del cajero autenticado.
 - `close_cash_shift_with_tables(...)` es cierre de turno. Si el flujo UI debe resolver ordenes especiales `$0`, debe hacerlo con confirmacion explicita antes de llamar al cierre.
+- **Forzar cierre (2026-08-06):** `force_close_cash_shift` en `/forzar-cierre-turno` es distinto del cierre normal: fuerza estados y cierra aunque haya bloqueantes. Requiere MANAGE + confirmación tipando `FORZAR`. Migración `20260806040000`. No usarlo como atajo del cierre operativo diario.
 - Antes de bloquear cierre por borradores, usar la logica central que cancela borradores no enviados sin cobros ni items operativos.
 - Un `DRAFT` vacio o con solo items `DRAFT` no debe impedir cerrar turno.
 - Para ordenes especiales `$0`, no inflar conteos con borradores vacios ni pagadas historicas: contar solo `SENT_TO_KITCHEN`, `READY` y `KITCHEN_DISPATCHED` sin `paid_at`.
@@ -148,6 +155,12 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - El resumen de caja debe usar efectivo neto aplicado, no monto bruto recibido antes del cambio.
 - Las vistas de pagos del turno deben usar el rango real del turno (`cash_shifts.opened_at` a cierre/ahora), no el inicio del dia calendario.
 
+### 5.1 Reportes admin online (`/reportes`)
+- Distinto de reportes imprimibles de Caja.
+- Filtro por categoría de producto (`FiltrosPanel` → `selectedCategoryId`).
+- En Pagos: toggle **Desglose por ítem** (`itemBreakdown`) vía `useReportesPagos` + `ReportePagos.tsx`.
+- Productos: restar anulaciones `APPLIED` (`useReportesProductos`).
+
 ### 6. Anulacion de pagos
 - El flujo oficial es:
   - solicitud con `request_void_payment(...)`
@@ -162,6 +175,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - En Pagos del Turno: pago activo → Anular; pago anulado → Cobrar (misma orden).
   - `can_void_payment(...)` debe impedir una segunda anulación en la misma orden, incluso si fue reabierta y cobrada otra vez. La UI mantiene visible el botón Anular, pero desactivado.
   - **Forma de devolución en transferencia (2026-07-18):** al anular un pago por transferencia, ofrecer combo `refund_method` (`CASH` afecta caja / `TRANSFER` no la afecta, solo se registra). `approve_and_void_payment` debe respetar el método y no crear movimiento de caja si es `TRANSFER`. Migración `20260718225000_metodo_devolucion_anulacion_transferencia.sql`.
+  - **Vuelto exacto (2026-08-02):** anulación total en efectivo puede devolver el tender original y reingresar el vuelto (`cash_change_return_detail`; migración `20260802180000`).
 - No anular pagos de ordenes `KITCHEN_DISPATCHED` desde el flujo operativo normal.
 - En detalles de pagos anulados/reversados, no mostrar lo recibido por el cliente; mostrar solo anulacion/devolucion.
 - No permitir atajos frontend que marquen un pago como anulado sin pasar por el flujo seguro. En particular, **la solicitud de anulacion se crea via RPC `request_void_payment` (`SECURITY DEFINER`)**, no con un `upsert` directo a `payment_void_requests` (fallaba con RLS `(USING expression)` cuando ya existia una solicitud `pending` de otro usuario). La RPC acepta `p_refund_method` (CASH/TRANSFER) y persiste `refund_method`. Migracion `20260726120000_request_void_payment_persiste_refund_method.sql`.
@@ -256,6 +270,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - **Foto de comprobante (opcional, actualizado 2026-07-18):** boton camara en `TransferenciaPagoDialog`; la foto viaja en memoria hasta `payOrder`; entonces Storage `comprobantes-pago` + fila `comprobantes_pago`. `analizar-comprobante-transferencia` extrae banco origen/destino, titular/cuenta destino, fecha, numero y monto. La copia de analisis no se almacena.
 - Comparar cuenta enmascarada segun la mascara del banco origen, banco/titular contra `cuentas_bancarias_destino`, fecha con `America/Guayaquil` y monto final.
 - **Fecha (fin de semana, 2026-07-19):** entre semana solo vale la fecha de hoy; sabado y domingo tambien la del lunes siguiente (los bancos registran transferencias de fin de semana con fecha del lunes). Usar `fechasAceptadasComprobante` en `src/lib/validacionComprobanteTransferencia.ts`; no hardcodear una sola fecha.
+- **Marcadores `TRANSFER_PROOF_PENDING` (2026-08-07):** usar `setTransferProofPendingMarker` en `src/lib/paymentNoteMarkers.ts`. Un solo marcador por pago (`:1` pendiente / `:0` resuelto). Pagos `:1` fuera de cuadre. Nunca dejar `:1` y `:0` juntos (normalización `20260807124500`).
 - El usuario es el validador final. Si hay diferencias o datos no verificables, permitir continuar solo con motivo (minimo 5 caracteres) y persistir snapshot + novedades + usuario en `validaciones_comprobantes_transferencia`. No permitir editar/borrar esa auditoria.
 - Si falta IA o falla lectura, degradar a ingreso manual con estado `NO_VERIFICABLE`; nunca usar Sonner.
 - Migracion obligatoria adicional: `20260718100000_cuentas_bancarias_y_validacion_comprobantes.sql`.
@@ -428,6 +443,15 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll; si cae → `OPERATIONAL_LIST_BACKUP_POLL_MS` (25 s) + badge Sync lenta; doc `docs/operational-module-refresh.md`.
 33. Si se toca **reportes de productos**, restar anulaciones `APPLIED` (`order_item_cancellations`); el neto debe coincidir con lo cobrable en Caja.
 34. Si se toca **gate de turno / admin**, validar bypass de admins (`20260802190000`) sin exigir `cash_shift_users`.
+35. Si se toca **Forzar cierre**, validar confirmación `FORZAR`, permiso MANAGE, RPC `force_close_cash_shift` y migración `20260806040000`; no confundir con `close_cash_shift_with_tables`.
+36. Si se toca **visibilidad operativa / listas Caja-Despacho**, validar `cash_shift_id` (trigger/repair `20260807121000`) y lecturas con `dbSelectStrict`.
+37. Si se toca **marcadores de transferencia**, validar un solo `TRANSFER_PROOF_PENDING` (`paymentNoteMarkers.ts`) y normalización `20260807124500`.
+38. Si se toca **órdenes especiales mixtas**, validar `special_group_total`, `cantidad_especial` y RPC `convertir_orden_especial_parcial` (migraciones Jul 25).
+39. Si se toca **Reportes admin**, validar filtro categoría y desglose por ítem en Pagos.
+40. Si se toca **AddItemDialog / selección de producto**, validar apertura al instante (shell optimista) sin bloquear UI.
+
+### Actualizacion Ago 5–7, 2026
+- **Forzar cierre, visibilidad `cash_shift_id`, marcadores transferencia, Reportes admin, Agregar al instante, especial mixta:** checklist 35–40; migraciones `20260806040000`, `20260807121000`, `20260807124500`, `20260725170000`+.
 
 ### Actualizacion Ago 2, 2026
 - **Refresco módulos:** `docs/operational-module-refresh.md`; Fase 1.5 en auditoría phase2; `OPERATIONAL_LIST_BACKUP_POLL_MS`, Sync lenta.
