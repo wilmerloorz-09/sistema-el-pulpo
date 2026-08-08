@@ -30,12 +30,19 @@ export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    // No cerrar por swipe si el usuario está eligiendo sucursal en el Select portaleado.
+    if (document.querySelector("[data-radix-select-content][data-state='open']")) {
+      setTouchStartX(null);
+      return;
+    }
+
     if (touchStartX !== null) {
       const touchEndX = e.changedTouches[0].screenX;
-      if (touchStartX - touchEndX > 50) { // Si se desliza a la izquierda más de 50px
+      if (touchStartX - touchEndX > 50) {
         setMobileMenuOpen(false);
       }
     }
+    setTouchStartX(null);
   };
 
   return (
@@ -51,6 +58,25 @@ export function MobileMenuSheet({ onOpenAccount }: MobileMenuSheetProps) {
         overlayClassName="z-[60]"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onInteractOutside={(event) => {
+          // El Select de sucursal se porta a body; no cerrar el sheet al usarlo.
+          const target = event.target as HTMLElement | null;
+          if (target?.closest?.("[data-radix-select-content], [data-radix-popper-content-wrapper]")) {
+            event.preventDefault();
+          }
+        }}
+        onPointerDownOutside={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest?.("[data-radix-select-content], [data-radix-popper-content-wrapper]")) {
+            event.preventDefault();
+          }
+        }}
+        onFocusOutside={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest?.("[data-radix-select-content], [data-radix-popper-content-wrapper]")) {
+            event.preventDefault();
+          }
+        }}
       >
         <SheetTitle className="sr-only">Menu principal</SheetTitle>
         <SidebarNav 

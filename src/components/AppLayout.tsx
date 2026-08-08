@@ -171,7 +171,21 @@ const AppLayout = () => {
       {!isDesktop ? <BottomNav isDark={isDark} onToggleTheme={toggle} onOpenAccount={() => setUserMenuOpen(true)} /> : null}
 
       <Dialog open={userMenuOpen} onOpenChange={setUserMenuOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent
+          className="max-w-sm"
+          onInteractOutside={(event) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest?.("[data-radix-select-content], [data-radix-popper-content-wrapper]")) {
+              event.preventDefault();
+            }
+          }}
+          onPointerDownOutside={(event) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest?.("[data-radix-select-content], [data-radix-popper-content-wrapper]")) {
+              event.preventDefault();
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-display">
               <UserRound className="h-5 w-5 text-primary" />
