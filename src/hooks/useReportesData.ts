@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dbSelect } from '@/services/DatabaseService';
+import { dbSelect, dbSelectStrict } from '@/services/DatabaseService';
 import { localDb } from '@/services/localDb';
 import { processSyncQueue, getPendingSyncCount } from '@/services/SyncService';
 import { useBranch } from '@/contexts/BranchContext';
@@ -108,7 +108,7 @@ export function useReportesData() {
         if (error) throw error;
         const creatorIds = Array.from(new Set((orders || []).map((order: any) => order.created_by).filter(Boolean))) as string[];
         const creatorProfiles = creatorIds.length > 0
-          ? await dbSelect<any>('profiles', {
+          ? await dbSelectStrict<any>('profiles', {
             select: 'id, first_name, full_name, username, alias, email',
             filters: [{ column: 'id', op: 'in', value: creatorIds }],
           })
@@ -130,7 +130,7 @@ export function useReportesData() {
         }));
       } catch (error) {
         console.error('Error fetching remote orders:', error);
-        return [];
+        throw error;
       }
     },
     // Con hub Realtime activo no hace falta refrescar cada 5 min.

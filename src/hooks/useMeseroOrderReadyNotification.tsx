@@ -270,7 +270,7 @@ export function useMeseroOrderReadyNotification(
       backupInterval = window.setInterval(() => {
         if (document.hidden) return;
         void pollNotificationTable();
-      }, 60_000);
+      }, 3 * 60_000);
     };
 
     const stopBackupPoll = () => {

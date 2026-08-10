@@ -507,14 +507,25 @@ function useGlobalMonitor(branches: Branch[]) {
       return { shift: null, users: [], orders: [], primaryCashierName: null, isLoading: false };
     }
 
-    // 2. Shift users — join profiles inline using select syntax
-    const { data: shiftUserRows, error: usersErr } = await supabase
-      .from("cash_shift_users" as any)
-      .select("id,shift_id,user_id,is_enabled,can_use_caja,can_dispatch_orders,can_serve_tables,is_supervisor,last_session_id,secondary_session_id,profiles(id,alias,username,current_app_session_id)")
-      .eq("shift_id", shift.id);
+    // 2–3. Usuarios del turno + órdenes del embudo en paralelo (sin DRAFT).
+    const [{ data: shiftUserRows, error: usersErr }, { data: orderRows, error: ordersErr }] =
+      await Promise.all([
+        supabase
+          .from("cash_shift_users" as any)
+          .select("id,shift_id,user_id,is_enabled,can_use_caja,can_dispatch_orders,can_serve_tables,is_supervisor,last_session_id,secondary_session_id,profiles(id,alias,username,current_app_session_id)")
+          .eq("shift_id", shift.id),
+        supabase
+          .from("orders" as any)
+          .select("id, branch_id, cash_shift_id, order_type, status, notes, order_code, paid_at, is_special")
+          .eq("cash_shift_id", shift.id)
+          .neq("status", "DRAFT"),
+      ]);
 
     if (usersErr) {
       console.warn(`[MonitoreoGlobal] Error loading shift users for branch ${branch.name}:`, usersErr.message);
+    }
+    if (ordersErr) {
+      console.warn(`[MonitoreoGlobal] Error loading orders for branch ${branch.name}:`, ordersErr.message);
     }
 
     const users: ShiftUser[] = ((shiftUserRows as any[]) ?? [])
@@ -553,16 +564,6 @@ function useGlobalMonitor(branches: Branch[]) {
       if (cashier) {
         primaryCashierName = getUserDisplayName(cashier);
       }
-    }
-
-    // 3. Orders for this shift — query directly
-    const { data: orderRows, error: ordersErr } = await supabase
-      .from("orders" as any)
-      .select("id, branch_id, cash_shift_id, order_type, status, notes, order_code, paid_at, is_special")
-      .eq("cash_shift_id", shift.id);
-
-    if (ordersErr) {
-      console.warn(`[MonitoreoGlobal] Error loading orders for branch ${branch.name}:`, ordersErr.message);
     }
 
     return {

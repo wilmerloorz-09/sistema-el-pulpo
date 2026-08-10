@@ -117,73 +117,77 @@ export function useKitchenOrders() {
       if (orders.length === 0) return [];
 
       const creatorIds = Array.from(new Set(orders.map((order) => order.created_by).filter(Boolean))) as string[];
-      const creatorProfiles = creatorIds.length > 0
-        ? await dbSelectStrict<any>("profiles", {
-            select: "id, first_name, full_name, username, alias, email",
-            filters: [{ column: "id", op: "in", value: creatorIds }],
-          })
-        : [];
-      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
-
       const tableIdSet = new Set<string>(orders.map((o: any) => o.table_id).filter(Boolean));
       const tableIds = Array.from(tableIdSet);
-      let tablesMap: Record<string, string> = {};
-      if (tableIds.length > 0) {
-        const tables = await dbSelectStrict<{ id: string; name: string }>("restaurant_tables", {
-          select: "id, name",
-          filters: [{ column: "id", op: "in", value: tableIds }],
-        });
-        tablesMap = Object.fromEntries(tables.map((t) => [t.id, t.name]));
-      }
-
       const splitIdSet = new Set<string>(orders.map((o: any) => o.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
-      let splitsMap: Record<string, string> = {};
-      if (splitIds.length > 0) {
-        const splits = await dbSelectStrict<any>("table_splits", {
-          select: "id, split_code",
-          filters: [{ column: "id", op: "in", value: splitIds }]
-        });
-        splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
-      }
-
       const orderIds = orders.map((o) => o.id);
-      const items = await dbSelectStrict<{
-        id: string;
-        order_id: string;
-        description_snapshot: string;
-        quantity: number;
-        item_note?: string | null;
-        tray_item_type?: "A" | "B" | "C" | null;
-        tray_container_cost?: number | null;
-        sent_to_kitchen_at: string | null;
-        created_at?: string | null;
-      }>("order_items", {
-        select: "id, order_id, description_snapshot, quantity, item_note, tray_item_type, tray_container_cost, status, sent_to_kitchen_at, created_at",
-        filters: [{ column: "order_id", op: "in", value: orderIds }],
-        orderBy: { column: "created_at", ascending: true },
-      });
+
+      const [creatorProfiles, tables, splits, items] = await Promise.all([
+        creatorIds.length > 0
+          ? dbSelectStrict<any>("profiles", {
+              select: "id, first_name, full_name, username, alias, email",
+              filters: [{ column: "id", op: "in", value: creatorIds }],
+            })
+          : Promise.resolve([] as any[]),
+        tableIds.length > 0
+          ? dbSelectStrict<{ id: string; name: string }>("restaurant_tables", {
+              select: "id, name",
+              filters: [{ column: "id", op: "in", value: tableIds }],
+            })
+          : Promise.resolve([] as { id: string; name: string }[]),
+        splitIds.length > 0
+          ? dbSelectStrict<any>("table_splits", {
+              select: "id, split_code",
+              filters: [{ column: "id", op: "in", value: splitIds }],
+            })
+          : Promise.resolve([] as any[]),
+        dbSelectStrict<{
+          id: string;
+          order_id: string;
+          description_snapshot: string;
+          quantity: number;
+          item_note?: string | null;
+          tray_item_type?: "A" | "B" | "C" | null;
+          tray_container_cost?: number | null;
+          sent_to_kitchen_at: string | null;
+          created_at?: string | null;
+        }>("order_items", {
+          select: "id, order_id, description_snapshot, quantity, item_note, tray_item_type, tray_container_cost, status, sent_to_kitchen_at, created_at",
+          filters: [{ column: "order_id", op: "in", value: orderIds }],
+          orderBy: { column: "created_at", ascending: true },
+        }),
+      ]);
+
+      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+      const tablesMap = Object.fromEntries(tables.map((t) => [t.id, t.name]));
+      const splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
 
       const itemIds = items.map((item) => item.id);
       const modsMap: Record<string, { description: string }[]> = {};
-      if (itemIds.length > 0) {
-        const mods = await dbSelectStrict<any>("order_item_modifiers", {
-          select: "id, order_item_id, modifiers(description)",
-          filters: [{ column: "order_item_id", op: "in", value: itemIds }]
-        });
-        for (const modifier of mods ?? []) {
-          const rawDescription = Array.isArray(modifier.modifiers)
-            ? modifier.modifiers[0]?.description
-            : modifier.modifiers?.description;
-          const description = String(rawDescription ?? "").trim();
-          if (!description) continue;
-          if (!modsMap[modifier.order_item_id]) modsMap[modifier.order_item_id] = [];
-          modsMap[modifier.order_item_id].push({ description });
-        }
+
+      const [mods, operationalMaps] = await Promise.all([
+        itemIds.length > 0
+          ? dbSelectStrict<any>("order_item_modifiers", {
+              select: "id, order_item_id, modifiers(description)",
+              filters: [{ column: "order_item_id", op: "in", value: itemIds }],
+            })
+          : Promise.resolve([] as any[]),
+        fetchOperationalMapsForOrders(orderIds),
+      ]);
+
+      for (const modifier of mods ?? []) {
+        const rawDescription = Array.isArray(modifier.modifiers)
+          ? modifier.modifiers[0]?.description
+          : modifier.modifiers?.description;
+        const description = String(rawDescription ?? "").trim();
+        if (!description) continue;
+        if (!modsMap[modifier.order_item_id]) modsMap[modifier.order_item_id] = [];
+        modsMap[modifier.order_item_id].push({ description });
       }
 
       const { readyMap, dispatchedTotalMap, cancelledPendingMap, cancelledReadyMap, cancelledDispatchedMap } =
-        await fetchOperationalMapsForOrders(orderIds);
+        operationalMaps;
 
       const cards = orders.flatMap((order) => {
         const mappedItems = items

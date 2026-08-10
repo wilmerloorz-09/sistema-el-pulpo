@@ -20,8 +20,8 @@ export const SHIFT_GATE_BACKUP_POLL_MS = 5 * 60_000;
 /** Monitoreo global: Realtime primero; respaldo muy lento. */
 export const MONITOR_BACKUP_POLL_MS = 5 * 60_000;
 
-/** Auth session lock: validación menos agresiva. */
-export const AUTH_SESSION_POLL_MS = 60_000;
+/** Auth session lock: validación periódica (foco/visibilidad cubren el resto). */
+export const AUTH_SESSION_POLL_MS = 3 * 60_000;
 
 /** Respaldo de turno/caja cuando el hub no está SUBSCRIBED. */
 export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
