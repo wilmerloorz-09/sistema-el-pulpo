@@ -2,7 +2,6 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
 import { canManage } from "@/lib/permissions";
 import { usuarioPuedeRegistrarPromociones } from "@/services/prediccionesClientesDb";
 import {
@@ -17,8 +16,8 @@ export const TAB_SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36
 
 /**
  * El permiso de promociones se asigna al abrir turno y no cambia dentro de el,
- * pero el gate corre cada pocos segundos en cada tablet. Cachearlo por turno
- * evita repetir la misma consulta cientos de miles de veces al dia.
+ * pero el gate corre en cada tablet. Cachearlo por turno evita repetir la misma
+ * consulta; no bloquea el path crítico del login.
  */
 const PROMO_PERMISSION_TTL_MS = 5 * 60 * 1000;
 const promoPermissionCache = new Map<string, { value: boolean; expiresAt: number }>();
@@ -75,6 +74,114 @@ export interface BranchShiftGate {
   puedeRegistrarPromociones: boolean;
 }
 
+type GateRpcRow = {
+  shift_id?: string | null;
+  shift_open?: boolean | null;
+  user_enabled?: boolean | null;
+  active_tables_count?: number | null;
+  caja_status?: string | null;
+  can_serve_tables?: boolean | null;
+  can_access_orders?: boolean | null;
+  can_edit_orders?: boolean | null;
+  can_dispatch_orders?: boolean | null;
+  can_manage_products?: boolean | null;
+  can_use_caja?: boolean | null;
+  can_pack_orders?: boolean | null;
+  can_serve_plates?: boolean | null;
+  can_authorize_order_cancel?: boolean | null;
+  can_double_session?: boolean | null;
+  is_supervisor?: boolean | null;
+  cashier_id?: string | null;
+  capture_user_id?: string | null;
+  primary_cashier_id?: string | null;
+  opened_at?: string | null;
+  is_stale_shift?: boolean | null;
+  last_session_id?: string | null;
+  secondary_session_id?: string | null;
+  caja_session_slots?: string[] | null;
+  secondary_caja_takeout_enabled?: boolean | null;
+  secondary_caja_express_enabled?: boolean | null;
+  is_secondary_cashier?: boolean | null;
+  max_caja_sessions?: number | null;
+  global_caja_sessions_used?: number | null;
+  legacy_fallback_applied?: boolean | null;
+};
+
+function mapGateRow(
+  row: GateRpcRow | null | undefined,
+  opts?: { forceAdminOpen?: boolean; puedeRegistrarPromociones?: boolean },
+): BranchShiftGate {
+  const shiftId = row?.shift_id ?? null;
+  const slots = Array.isArray(row?.caja_session_slots)
+    ? row!.caja_session_slots!.filter((s) => Boolean(s && String(s).trim()))
+    : [];
+  const cajaSessionSlots =
+    slots.length > 0
+      ? slots
+      : [row?.last_session_id, row?.secondary_session_id].filter(
+          (s): s is string => Boolean(s && String(s).trim()),
+        );
+
+  const base: BranchShiftGate = {
+    shiftId,
+    shiftOpen: Boolean(row?.shift_open),
+    userEnabled: Boolean(row?.user_enabled),
+    lastSessionId: row?.last_session_id ?? null,
+    secondarySessionId: row?.secondary_session_id ?? null,
+    cajaSessionSlots,
+    maxCajaSessions: Math.max(1, Math.min(10, Number(row?.max_caja_sessions ?? 1))),
+    globalCajaSessionsUsed: Math.max(0, Number(row?.global_caja_sessions_used ?? 0)),
+    tabSessionId: TAB_SESSION_ID,
+    cashierId: row?.cashier_id ?? null,
+    captureUserId: row?.capture_user_id ?? null,
+    activeTablesCount: Number(row?.active_tables_count ?? 0),
+    cajaStatus: (row?.caja_status as BranchShiftGate["cajaStatus"]) ?? "UNOPENED",
+    canServeTables: Boolean(row?.can_serve_tables),
+    canAccessOrders: Boolean(row?.can_access_orders ?? row?.can_serve_tables),
+    canEditOrders: Boolean(row?.can_edit_orders),
+    canDispatchOrders: Boolean(row?.can_dispatch_orders),
+    canManageProducts: Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
+    canUseCaja: Boolean(row?.can_use_caja),
+    primaryCashierId: row?.primary_cashier_id ?? null,
+    isSecondaryCashier: Boolean(row?.is_secondary_cashier),
+    secondaryCajaTakeoutEnabled: Boolean(row?.secondary_caja_takeout_enabled),
+    secondaryCajaExpressEnabled: Boolean(row?.secondary_caja_express_enabled),
+    canServePlates: Boolean(row?.can_serve_plates),
+    canPackOrders: Boolean(row?.can_pack_orders),
+    canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
+    canDoubleSession: Boolean(row?.can_double_session),
+    isSupervisor: Boolean(row?.is_supervisor),
+    isCaptureDeviceOnly: false,
+    legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
+    isStaleShift: Boolean(row?.is_stale_shift),
+    puedeRegistrarPromociones: Boolean(opts?.puedeRegistrarPromociones),
+  };
+
+  if (opts?.forceAdminOpen && base.shiftOpen) {
+    return {
+      ...base,
+      userEnabled: true,
+      canServeTables: true,
+      canAccessOrders: true,
+      canEditOrders: true,
+      canDispatchOrders: true,
+      canManageProducts: true,
+      canUseCaja: true,
+      canServePlates: true,
+      canPackOrders: true,
+      canAuthorizeOrderCancel: true,
+      canDoubleSession: true,
+      isSupervisor: true,
+      isSecondaryCashier: false,
+      secondaryCajaTakeoutEnabled: false,
+      secondaryCajaExpressEnabled: false,
+      puedeRegistrarPromociones: true,
+    };
+  }
+
+  return base;
+}
+
 export function useBranchShiftGate() {
   const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const { user } = useAuth();
@@ -88,313 +195,164 @@ export function useBranchShiftGate() {
     activeBranchId,
     SHIFT_GATE_BACKUP_POLL_MS,
     Boolean(activeBranchId && user?.id),
-    0, // gate: sin safety poll con hub sano (mismo comportamiento previo)
+    0, // gate: sin safety poll con hub sano
   );
 
   const query = useQuery({
     queryKey: [qk.branchShiftGate[0], activeBranchId, user?.id ?? null, isBranchAdmin],
     queryFn: async (): Promise<BranchShiftGate> => {
-      const defaultValue: BranchShiftGate = {
-        shiftId: null,
-        shiftOpen: true,
-        userEnabled: true,
-        lastSessionId: null,
-        secondarySessionId: null,
-        cajaSessionSlots: [],
-        maxCajaSessions: 99,
-        globalCajaSessionsUsed: 0,
-        tabSessionId: TAB_SESSION_ID,
-        cashierId: null,
-        captureUserId: null,
-        activeTablesCount: 0,
-        cajaStatus: "OPEN",
-        canServeTables: true,
-        canAccessOrders: true,
-        canEditOrders: true,
-        canDispatchOrders: true,
-        canManageProducts: true,
-        canUseCaja: true,
-        primaryCashierId: null,
-        isSecondaryCashier: false,
-        secondaryCajaTakeoutEnabled: true,
-        secondaryCajaExpressEnabled: true,
-        canServePlates: true,
-        canPackOrders: true,
-        canAuthorizeOrderCancel: true,
-        canDoubleSession: true,
-        isSupervisor: true,
-        isCaptureDeviceOnly: false,
-        legacyFallbackApplied: true,
-        isStaleShift: false,
-        puedeRegistrarPromociones: true,
-      };
-
       if (!activeBranchId || !user?.id) {
-        return {
-          ...defaultValue,
-          shiftOpen: false,
-          userEnabled: false,
-          cajaStatus: "UNOPENED",
-          canServeTables: false,
-          canAccessOrders: false,
-          canEditOrders: false,
-          canDispatchOrders: false,
-          canManageProducts: false,
-          canUseCaja: false,
-          secondaryCajaTakeoutEnabled: false,
-          secondaryCajaExpressEnabled: false,
-          canServePlates: false,
-          canPackOrders: false,
-          canAuthorizeOrderCancel: false,
-          canDoubleSession: false,
-          isSupervisor: false,
-          puedeRegistrarPromociones: false,
-        };
+        return mapGateRow(null);
       }
 
       const runQuery = async (): Promise<BranchShiftGate> => {
+        // Preferir v2 unificada (CREATE sin DROP, segura bajo carga).
+        // Si no existe aún, caer a v1 + enriquecimiento paralelo.
+        let row: GateRpcRow | null = null;
+        let usedV2 = false;
 
-      const { data, error } = await supabase.rpc("get_my_branch_shift_gate" as any, {
-        p_branch_id: activeBranchId,
-      } as any);
-      if (error) throw error;
+        const v2 = await supabase.rpc("get_my_branch_shift_gate_v2" as any, {
+          p_branch_id: activeBranchId,
+        } as any);
 
-      const row = Array.isArray(data) ? data[0] : data;
-      const shiftId = row?.shift_id ?? null;
-
-      if (!shiftId) {
-        return {
-          shiftId: null,
-          shiftOpen: Boolean(row?.shift_open),
-          userEnabled: Boolean(row?.user_enabled),
-          lastSessionId: null,
-          secondarySessionId: null,
-          cajaSessionSlots: [],
-          maxCajaSessions: 1,
-          globalCajaSessionsUsed: 0,
-          tabSessionId: TAB_SESSION_ID,
-          cashierId: null,
-          captureUserId: null,
-          activeTablesCount: Number(row?.active_tables_count ?? 0),
-          cajaStatus: row?.caja_status ?? "UNOPENED",
-          canServeTables: Boolean(row?.can_serve_tables),
-          canAccessOrders: Boolean(row?.can_access_orders ?? row?.can_serve_tables),
-          canEditOrders: Boolean(row?.can_edit_orders),
-          canDispatchOrders: Boolean(row?.can_dispatch_orders),
-          canManageProducts: Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
-          canUseCaja: Boolean(row?.can_use_caja),
-          primaryCashierId: null,
-          isSecondaryCashier: false,
-          secondaryCajaTakeoutEnabled: false,
-          secondaryCajaExpressEnabled: false,
-          canServePlates: false,
-          canPackOrders: false,
-          canAuthorizeOrderCancel: Boolean(row?.can_authorize_order_cancel),
-          canDoubleSession: Boolean(row?.can_double_session),
-          isSupervisor: Boolean(row?.is_supervisor),
-          isCaptureDeviceOnly: false,
-          legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
-          isStaleShift: false,
-          puedeRegistrarPromociones: false,
-        };
-      }
-
-      const shiftUserSelectBase =
-        "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_pack_orders, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots";
-      const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled, can_serve_plates`;
-
-      // Paralelo: meta + usuario + usage (antes era waterfall serial → login lento).
-      // Admin: no necesita cash_shift_users (bypass de roles).
-      // Promociones: no bloquear el gate (nav de promos desactivado; cache async).
-      const shiftMetaPromise = (supabase
-        .from("cash_shifts" as any)
-        .select("cashier_id, capture_user_id, opened_at, primary_cashier_id")
-        .eq("id", shiftId)
-        .maybeSingle() as any);
-
-      const shiftUserPromise = isBranchAdmin
-        ? Promise.resolve({ data: null, error: null })
-        : (supabase
-            .from("cash_shift_users" as any)
-            .select(shiftUserSelectExtended)
-            .eq("shift_id", shiftId)
-            .eq("user_id", user.id)
-            .maybeSingle() as any);
-
-      const usagePromise = supabase.rpc("get_caja_shift_terminal_usage", {
-        p_branch_id: activeBranchId,
-      } as any);
-
-      const [shiftMetaResult, shiftUserFirst, usageResult] = await Promise.all([
-        shiftMetaPromise,
-        shiftUserPromise,
-        usagePromise,
-      ]);
-
-      if (shiftMetaResult.error) throw shiftMetaResult.error;
-      const shiftMetaRow = shiftMetaResult.data;
-
-      let shiftUserRow: Record<string, unknown> | null = null;
-      if (!isBranchAdmin) {
-        if (shiftUserFirst.error && isMissingColumnError(shiftUserFirst.error)) {
-          const baseShiftUserResult = await (supabase
-            .from("cash_shift_users" as any)
-            .select(shiftUserSelectBase)
-            .eq("shift_id", shiftId)
-            .eq("user_id", user.id)
-            .maybeSingle() as any);
-          if (baseShiftUserResult.error) throw baseShiftUserResult.error;
-          shiftUserRow = baseShiftUserResult.data ?? null;
+        if (!v2.error) {
+          row = (Array.isArray(v2.data) ? v2.data[0] : v2.data) as GateRpcRow | null;
+          usedV2 = true;
         } else {
-          if (shiftUserFirst.error) throw shiftUserFirst.error;
-          shiftUserRow = shiftUserFirst.data ?? null;
+          const v1 = await supabase.rpc("get_my_branch_shift_gate" as any, {
+            p_branch_id: activeBranchId,
+          } as any);
+          if (v1.error) throw v1.error;
+          row = (Array.isArray(v1.data) ? v1.data[0] : v1.data) as GateRpcRow | null;
         }
-      }
 
-      const openedDate = shiftMetaRow?.opened_at ? new Date(shiftMetaRow.opened_at) : null;
-      const today = new Date();
-      const isStaleShift = openedDate
-        ? (openedDate.getFullYear() !== today.getFullYear() ||
-           openedDate.getMonth() !== today.getMonth() ||
-           openedDate.getDate() !== today.getDate())
-        : false;
+        const shiftId = row?.shift_id ?? null;
+        const isUnified =
+          usedV2
+          || Boolean(row && Object.prototype.hasOwnProperty.call(row, "max_caja_sessions"));
 
-      const directUserEnabled = Boolean(shiftUserRow?.is_enabled);
-      const hasDirectShiftRow = shiftUserRow != null;
-      const primaryCashierId = (shiftMetaRow?.primary_cashier_id as string | null) ?? null;
-      const isPrimaryCashierForShift =
-        Boolean(primaryCashierId) && primaryCashierId === user.id && directUserEnabled;
-      const resolvedCanUseCaja = hasDirectShiftRow
-        ? Boolean(shiftUserRow?.can_use_caja) || isPrimaryCashierForShift
-        : Boolean(row?.can_use_caja) || isPrimaryCashierForShift;
-      const isSecondaryCashier =
-        resolvedCanUseCaja
-        && Boolean(primaryCashierId)
-        && primaryCashierId !== user.id;
-      const cashierId = shiftMetaRow?.cashier_id ?? null;
-      const captureUserId = shiftMetaRow?.capture_user_id ?? null;
+        let enriched: GateRpcRow | null = row;
 
-      let globalCajaSessionsUsed = 0;
-      let maxCajaSessions = 1;
-      const usageError = usageResult.error;
-      const usageRows = usageResult.data;
-      if (!usageError && Array.isArray(usageRows) && usageRows.length > 0) {
-        const usageRow = usageRows[0] as { global_sessions_used?: number; shift_max?: number };
-        globalCajaSessionsUsed = Math.max(0, Number(usageRow?.global_sessions_used ?? 0));
-        maxCajaSessions = Math.max(1, Math.min(10, Number(usageRow?.shift_max ?? 1)));
-      }
+        if (!isUnified && shiftId) {
+          const [metaRes, userRes, usageRes] = await Promise.all([
+            supabase
+              .from("cash_shifts" as any)
+              .select("cashier_id, capture_user_id, opened_at, primary_cashier_id")
+              .eq("id", shiftId)
+              .maybeSingle() as any,
+            isBranchAdmin
+              ? Promise.resolve({ data: null, error: null })
+              : (supabase
+                  .from("cash_shift_users" as any)
+                  .select(
+                    "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_pack_orders, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots, secondary_caja_takeout_enabled, secondary_caja_express_enabled, can_serve_plates",
+                  )
+                  .eq("shift_id", shiftId)
+                  .eq("user_id", user.id)
+                  .maybeSingle() as any),
+            supabase.rpc("get_caja_shift_terminal_usage", {
+              p_branch_id: activeBranchId,
+            } as any),
+          ]);
 
-      const slotsFromRow = Array.isArray(shiftUserRow?.caja_session_slots)
-        ? (shiftUserRow!.caja_session_slots as string[]).filter((s) => Boolean(s && String(s).trim()))
-        : [];
-      const cajaSessionSlots =
-        slotsFromRow.length > 0
-          ? slotsFromRow
-          : [shiftUserRow?.last_session_id, shiftUserRow?.secondary_session_id].filter(
-              (s): s is string => Boolean(s && String(s).trim()),
-            );
+          if (metaRes.error) throw metaRes.error;
+          if (userRes.error) throw userRes.error;
 
-      // No await: no retrasar login/home por permisos de promociones.
-      const promoCacheKey = `${user.id}:${shiftId}`;
-      const promoCached = promoPermissionCache.get(promoCacheKey);
-      const puedeRegistrarPromociones = promoCached?.value ?? false;
-      void leerPuedeRegistrarPromociones(user.id, shiftId).catch(() => undefined);
+          const meta = metaRes.data as Record<string, unknown> | null;
+          const userRow = userRes.data as Record<string, unknown> | null;
+          const usageRow = Array.isArray(usageRes.data) ? usageRes.data[0] : usageRes.data;
+          const openedAt = meta?.opened_at ? new Date(String(meta.opened_at)) : null;
+          const today = new Date();
+          const isStale = openedAt
+            ? openedAt.getFullYear() !== today.getFullYear()
+              || openedAt.getMonth() !== today.getMonth()
+              || openedAt.getDate() !== today.getDate()
+            : false;
 
-      const gate: BranchShiftGate = {
-        shiftId,
-        shiftOpen: Boolean(row?.shift_open),
-        userEnabled: hasDirectShiftRow ? directUserEnabled : Boolean(row?.user_enabled),
-        lastSessionId: shiftUserRow?.last_session_id ?? null,
-        secondarySessionId: shiftUserRow?.secondary_session_id ?? null,
-        cajaSessionSlots,
-        maxCajaSessions,
-        globalCajaSessionsUsed,
-        tabSessionId: TAB_SESSION_ID,
-        cashierId,
-        captureUserId,
-        activeTablesCount: Number(row?.active_tables_count ?? 0),
-        cajaStatus: row?.caja_status ?? "UNOPENED",
-        canServeTables: hasDirectShiftRow ? Boolean(shiftUserRow?.can_serve_tables) : Boolean(row?.can_serve_tables),
-        canAccessOrders: hasDirectShiftRow
-          ? Boolean(shiftUserRow?.can_access_orders ?? shiftUserRow?.can_serve_tables)
-          : Boolean(row?.can_access_orders ?? row?.can_serve_tables),
-        canEditOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_edit_orders) : Boolean(row?.can_edit_orders),
-        canDispatchOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_dispatch_orders) : Boolean(row?.can_dispatch_orders),
-        canManageProducts: hasDirectShiftRow
-          ? Boolean(shiftUserRow?.can_manage_products ?? shiftUserRow?.can_dispatch_orders)
-          : Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
-        canUseCaja: resolvedCanUseCaja,
-        primaryCashierId,
-        isSecondaryCashier,
-        secondaryCajaTakeoutEnabled: isSecondaryCashier
-          ? Boolean(shiftUserRow?.secondary_caja_takeout_enabled)
-          : false,
-        secondaryCajaExpressEnabled: isSecondaryCashier
-          ? Boolean(shiftUserRow?.secondary_caja_express_enabled)
-          : false,
-        canServePlates: hasDirectShiftRow ? Boolean(shiftUserRow?.can_serve_plates) : false,
-        canPackOrders: hasDirectShiftRow ? Boolean(shiftUserRow?.can_pack_orders) : false,
-        canAuthorizeOrderCancel: hasDirectShiftRow ? Boolean(shiftUserRow?.can_authorize_order_cancel) : Boolean(row?.can_authorize_order_cancel),
-        canDoubleSession: hasDirectShiftRow ? Boolean(shiftUserRow?.can_double_session) : Boolean(row?.can_double_session),
-        isSupervisor: hasDirectShiftRow ? Boolean(shiftUserRow?.is_supervisor) : Boolean(row?.is_supervisor),
-        isCaptureDeviceOnly: false,
-        legacyFallbackApplied: Boolean(row?.legacy_fallback_applied),
-        isStaleShift,
-        puedeRegistrarPromociones,
+          const primaryCashierId = (meta?.primary_cashier_id as string | null) ?? null;
+          const directEnabled = Boolean(userRow?.is_enabled);
+          const canUseCaja =
+            Boolean(userRow?.can_use_caja)
+            || Boolean(row?.can_use_caja)
+            || (Boolean(primaryCashierId) && primaryCashierId === user.id && directEnabled);
+          const isSecondary =
+            canUseCaja && Boolean(primaryCashierId) && primaryCashierId !== user.id;
+
+          enriched = {
+            ...row,
+            can_edit_orders: Boolean(userRow?.can_edit_orders ?? row?.can_edit_orders),
+            can_pack_orders: Boolean(userRow?.can_pack_orders),
+            can_serve_plates: Boolean(userRow?.can_serve_plates),
+            can_double_session: Boolean(userRow?.can_double_session),
+            can_serve_tables: Boolean(userRow?.can_serve_tables ?? row?.can_serve_tables),
+            can_access_orders: Boolean(
+              userRow?.can_access_orders ?? userRow?.can_serve_tables ?? row?.can_access_orders,
+            ),
+            can_dispatch_orders: Boolean(userRow?.can_dispatch_orders ?? row?.can_dispatch_orders),
+            can_manage_products: Boolean(
+              userRow?.can_manage_products ?? userRow?.can_dispatch_orders ?? row?.can_manage_products,
+            ),
+            can_use_caja: canUseCaja,
+            can_authorize_order_cancel: Boolean(
+              userRow?.can_authorize_order_cancel ?? row?.can_authorize_order_cancel,
+            ),
+            is_supervisor: Boolean(userRow?.is_supervisor ?? row?.is_supervisor),
+            user_enabled: userRow != null ? directEnabled : Boolean(row?.user_enabled),
+            cashier_id: (meta?.cashier_id as string | null) ?? null,
+            capture_user_id: (meta?.capture_user_id as string | null) ?? null,
+            primary_cashier_id: primaryCashierId,
+            opened_at: meta?.opened_at ? String(meta.opened_at) : null,
+            is_stale_shift: isStale,
+            last_session_id: (userRow?.last_session_id as string | null) ?? null,
+            secondary_session_id: (userRow?.secondary_session_id as string | null) ?? null,
+            caja_session_slots: Array.isArray(userRow?.caja_session_slots)
+              ? (userRow!.caja_session_slots as string[])
+              : [],
+            secondary_caja_takeout_enabled: isSecondary
+              ? Boolean(userRow?.secondary_caja_takeout_enabled)
+              : false,
+            secondary_caja_express_enabled: isSecondary
+              ? Boolean(userRow?.secondary_caja_express_enabled)
+              : false,
+            is_secondary_cashier: isSecondary,
+            max_caja_sessions: Math.max(1, Math.min(10, Number(usageRow?.shift_max ?? 1))),
+            global_caja_sessions_used: Math.max(0, Number(usageRow?.global_sessions_used ?? 0)),
+            legacy_fallback_applied: true,
+          };
+        }
+
+        let puedeRegistrarPromociones = false;
+        if (shiftId) {
+          const promoCacheKey = `${user.id}:${shiftId}`;
+          puedeRegistrarPromociones = promoPermissionCache.get(promoCacheKey)?.value ?? false;
+          void leerPuedeRegistrarPromociones(user.id, shiftId).catch(() => undefined);
+        }
+
+        return mapGateRow(enriched, {
+          forceAdminOpen: isBranchAdmin,
+          puedeRegistrarPromociones: isBranchAdmin ? true : puedeRegistrarPromociones,
+        });
       };
 
-      // Admin: no depender de cash_shift_users (la lectura directa puede pisar la RPC).
-      if (isBranchAdmin && gate.shiftOpen) {
-        return {
-          ...gate,
-          userEnabled: true,
-          canServeTables: true,
-          canAccessOrders: true,
-          canEditOrders: true,
-          canDispatchOrders: true,
-          canManageProducts: true,
-          canUseCaja: true,
-          canServePlates: true,
-          canPackOrders: true,
-          canAuthorizeOrderCancel: true,
-          canDoubleSession: true,
-          isSupervisor: true,
-          isSecondaryCashier: false,
-          secondaryCajaTakeoutEnabled: false,
-          secondaryCajaExpressEnabled: false,
-          puedeRegistrarPromociones: true,
-        };
+      try {
+        return await Promise.race([
+          runQuery(),
+          new Promise<BranchShiftGate>((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout de turno")), 8_000)
+          ),
+        ]);
+      } catch (err) {
+        console.warn(
+          "[useBranchShiftGate] Query timed out or failed. Re-throwing so React Query keeps cached data:",
+          err,
+        );
+        throw err;
       }
-
-      return gate;
-    };
-
-    try {
-      // 12s con lecturas en paralelo (antes 15s serial).
-      const resolved = await Promise.race([
-        runQuery(),
-        new Promise<BranchShiftGate>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout de turno")), 12_000)
-        ),
-      ]);
-      return resolved;
-    } catch (err) {
-      // No devolver defaultValue (shiftId null): React Query lo trata como éxito,
-      // pisa el caché y cambia las query keys de Despacho/Caja → listas vacías.
-      // Al lanzar, keepPreviousData conserva el último gate válido.
-      console.warn(
-        "[useBranchShiftGate] Query timed out or failed. Re-throwing so React Query keeps cached data:",
-        err,
-      );
-      throw err;
-    }
-  },
+    },
     enabled: !!activeBranchId && !!user?.id,
     staleTime: SHIFT_GATE_STALE_MS,
-    // Realtime SUBSCRIBED → sin poll; si el hub cae → respaldo lento.
     refetchInterval: adaptiveGatePoll,
     refetchOnWindowFocus: false,
-    // Conserva el gate previo mientras cambia sucursal/usuario o hay un refetch en curso.
     placeholderData: keepPreviousData,
     retry: 1,
     retryDelay: 800,

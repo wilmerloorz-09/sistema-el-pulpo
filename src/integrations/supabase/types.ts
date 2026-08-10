@@ -3712,7 +3712,42 @@ export type Database = {
           can_serve_tables: boolean
           can_use_caja: boolean
           is_supervisor: boolean
-          shift_id: string
+          shift_id: string | null
+          shift_open: boolean
+          user_enabled: boolean
+        }[]
+      }
+      get_my_branch_shift_gate_v2: {
+        Args: { p_branch_id: string }
+        Returns: {
+          active_tables_count: number
+          caja_session_slots: string[]
+          caja_status: Database["public"]["Enums"]["caja_status"]
+          can_access_orders: boolean
+          can_authorize_order_cancel: boolean
+          can_dispatch_orders: boolean
+          can_double_session: boolean
+          can_edit_orders: boolean
+          can_manage_products: boolean
+          can_pack_orders: boolean
+          can_serve_plates: boolean
+          can_serve_tables: boolean
+          can_use_caja: boolean
+          capture_user_id: string | null
+          cashier_id: string | null
+          global_caja_sessions_used: number
+          is_secondary_cashier: boolean
+          is_stale_shift: boolean
+          is_supervisor: boolean
+          last_session_id: string | null
+          legacy_fallback_applied: boolean
+          max_caja_sessions: number
+          opened_at: string | null
+          primary_cashier_id: string | null
+          secondary_caja_express_enabled: boolean
+          secondary_caja_takeout_enabled: boolean
+          secondary_session_id: string | null
+          shift_id: string | null
           shift_open: boolean
           user_enabled: boolean
         }[]
