@@ -151,7 +151,7 @@ const OrdenEspecial = () => {
     enabled: !!activeBranchId,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
     gcTime: 2 * 60_000,

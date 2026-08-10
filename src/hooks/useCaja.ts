@@ -2116,8 +2116,8 @@ export function useCaja(params?: {
         );
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Realtime SUBSCRIBED → safety poll 30s; si el hub cae → respaldo 15s.
-    refetchOnWindowFocus: true,
+    // Realtime SUBSCRIBED → sin safety poll; si el hub cae → respaldo.
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
     enabled: !!activeBranchId,
@@ -2712,7 +2712,7 @@ export function useCaja(params?: {
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
     staleTime: OPERATIONAL_STALE_MS,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
     // Actualización vía Realtime de payments + invalidación post-cobro.

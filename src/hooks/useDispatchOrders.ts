@@ -467,12 +467,16 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      // Lecturas estrictas (sin fallback a cache local): si la red falla, la query
-      // lanza y React Query conserva los ultimos datos buenos y reintenta, en vez
-      // de renderizar ordenes/items viejos del cache como si fueran actuales
-      // (causa de "el item nuevo no aparece en Despacho hasta varios minutos").
-      await repairOpenShiftOrderCashShiftIds(activeBranchId);
-      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      // Repair en background (throttle interno); no bloquear el listado.
+      void repairOpenShiftOrderCashShiftIds(activeBranchId);
+
+      // Preferir shiftId del gate (1 RTT menos) cuando ya está resuelto.
+      let openShift = shiftGate?.shiftId
+        ? { id: shiftGate.shiftId, opened_at: "" }
+        : null;
+      if (!openShift) {
+        openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      }
       if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const ordersMerged = (
@@ -485,15 +489,21 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           ],
           orderBy: { column: "updated_at", ascending: true },
         })
-      ).filter((o) => orderBelongsToOpenCashShift(o, openShift));
+      ).filter((o) => orderBelongsToOpenCashShift(o, openShift!));
 
       if (ordersMerged.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const allOrderIds = ordersMerged.map((o) => o.id);
-      const paymentsForOrders = await dbSelectStrict<any>("payments", {
-        select: "order_id, notes, status",
-        filters: [{ column: "order_id", op: "in", value: allOrderIds }],
-      });
+      const [paymentsForOrders, paidLineRows] = await Promise.all([
+        dbSelectStrict<any>("payments", {
+          select: "order_id, notes, status",
+          filters: [{ column: "order_id", op: "in", value: allOrderIds }],
+        }),
+        dbSelectStrict<any>("order_items", {
+          select: "order_id, paid_at",
+          filters: [{ column: "order_id", op: "in", value: allOrderIds }],
+        }),
+      ]);
       const ordersWithActivePayment = new Set<string>();
       const ordersWithAnyPayment = new Set<string>();
       for (const p of paymentsForOrders ?? []) {
@@ -501,10 +511,6 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         if (!paymentRowIsInactive(p.notes, p.status)) ordersWithActivePayment.add(p.order_id);
       }
 
-      const paidLineRows = await dbSelectStrict<any>("order_items", {
-        select: "order_id, paid_at",
-        filters: [{ column: "order_id", op: "in", value: allOrderIds }],
-      });
       const ordersWithPaidLine = new Set(
         (paidLineRows ?? [])
           .filter((row: any) => row.paid_at != null && String(row.paid_at).trim() !== "")
@@ -534,24 +540,25 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
-      const creatorProfiles = creatorIds.length > 0
-        ? await dbSelectStrict<any>("profiles", {
-            select: "id, first_name, full_name, username, alias, email",
-            filters: [{ column: "id", op: "in", value: creatorIds }],
-          })
-        : [];
+      const [creatorProfiles, packerUsers] = await Promise.all([
+        creatorIds.length > 0
+          ? dbSelectStrict<any>("profiles", {
+              select: "id, first_name, full_name, username, alias, email",
+              filters: [{ column: "id", op: "in", value: creatorIds }],
+            })
+          : Promise.resolve([] as any[]),
+        creatorIds.length > 0
+          ? dbSelectStrict<any>("cash_shift_users", {
+              select: "user_id",
+              filters: [
+                { column: "shift_id", op: "eq", value: openShift.id },
+                { column: "user_id", op: "in", value: creatorIds },
+                { column: "can_pack_orders", op: "eq", value: true },
+              ],
+            })
+          : Promise.resolve([] as any[]),
+      ]);
       const creatorNameMap = buildUserDisplayMap(creatorProfiles);
-
-      const packerUsers = creatorIds.length > 0
-        ? await dbSelectStrict<any>("cash_shift_users", {
-            select: "user_id",
-            filters: [
-              { column: "shift_id", op: "eq", value: openShift.id },
-              { column: "user_id", op: "in", value: creatorIds },
-              { column: "can_pack_orders", op: "eq", value: true }
-            ]
-          })
-        : [];
       const packerUserIds = new Set((packerUsers ?? []).map((u: any) => u.user_id));
 
       const dispatchMode = config?.dispatch_mode || "SINGLE";
@@ -614,49 +621,55 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const itemIds = (items ?? []).map((item: any) => item.id);
       const modifiersMap: Record<string, { description: string }[]> = {};
-      if (itemIds.length > 0) {
-        const modifierRows = await dbSelectStrict<any>("order_item_modifiers", {
-          select: "id, order_item_id, modifiers(description)",
-          filters: [{ column: "order_item_id", op: "in", value: itemIds }]
-        });
 
-        for (const row of modifierRows ?? []) {
-          if (!modifiersMap[row.order_item_id]) modifiersMap[row.order_item_id] = [];
-          const rawDescription = Array.isArray(row.modifiers)
-            ? row.modifiers[0]?.description
-            : row.modifiers?.description;
-          const description = String(rawDescription ?? "").trim();
-          if (!description) continue;
-          modifiersMap[row.order_item_id].push({ description });
-        }
+      const platosPromise: Promise<{ platosProductIds?: Set<string>; filterOutPlatos: boolean }> =
+        isServirModule
+          ? fetchPlatosProductIdsForBranch(activeBranchId).then((ids) => ({
+              platosProductIds: ids,
+              filterOutPlatos: false,
+            }))
+          : moduleMode === "dispatch"
+            ? dbSelectStrict<any>("cash_shift_users", {
+                select: "user_id",
+                filters: [
+                  { column: "shift_id", op: "eq", value: openShift.id },
+                  { column: "is_enabled", op: "eq", value: true },
+                  { column: "can_serve_plates", op: "eq", value: true },
+                ],
+              }).then(async (serverUsers) => {
+                if ((serverUsers ?? []).length === 0) {
+                  return { filterOutPlatos: false };
+                }
+                return {
+                  platosProductIds: await fetchPlatosProductIdsForBranch(activeBranchId),
+                  filterOutPlatos: true,
+                };
+              })
+            : Promise.resolve({ filterOutPlatos: false });
+
+      const [modifierRows, operationalMaps, clientPaidQtyByItemId, platosResult] = await Promise.all([
+        itemIds.length > 0
+          ? dbSelectStrict<any>("order_item_modifiers", {
+              select: "id, order_item_id, modifiers(description)",
+              filters: [{ column: "order_item_id", op: "in", value: itemIds }],
+            })
+          : Promise.resolve([] as any[]),
+        fetchOperationalMapsForOrders(orderIdsToFetch),
+        fetchActivePaidQuantityByOrderItemId(itemIds, { strict: true }),
+        platosPromise,
+      ]);
+
+      for (const row of modifierRows ?? []) {
+        if (!modifiersMap[row.order_item_id]) modifiersMap[row.order_item_id] = [];
+        const rawDescription = Array.isArray(row.modifiers)
+          ? row.modifiers[0]?.description
+          : row.modifiers?.description;
+        const description = String(rawDescription ?? "").trim();
+        if (!description) continue;
+        modifiersMap[row.order_item_id].push({ description });
       }
 
-      const operationalMaps = await fetchOperationalMapsForOrders(orderIdsToFetch);
-
-      const clientPaidQtyByItemId = await fetchActivePaidQuantityByOrderItemId(itemIds, {
-        strict: true,
-      });
-
-      let platosProductIds: Set<string> | undefined;
-      let filterOutPlatos = false;
-
-      if (isServirModule) {
-        platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
-      } else if (moduleMode === "dispatch") {
-        const serverUsers = await dbSelectStrict<any>("cash_shift_users", {
-          select: "user_id",
-          filters: [
-            { column: "shift_id", op: "eq", value: openShift.id },
-            { column: "is_enabled", op: "eq", value: true },
-            { column: "can_serve_plates", op: "eq", value: true }
-          ]
-        });
-        const hasAnyServer = (serverUsers ?? []).length > 0;
-        if (hasAnyServer) {
-          platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
-          filterOutPlatos = true;
-        }
-      }
+      const { platosProductIds, filterOutPlatos } = platosResult;
 
       const allCards = allPermittedOrders.flatMap((order) => {
         const orderWithContext = {
@@ -695,9 +708,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     enabled: !!activeBranchId && !!user && !configLoading,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    // Realtime SUBSCRIBED → safety poll 30s; si el hub cae → respaldo 15s.
+    // Realtime SUBSCRIBED → sin safety poll; si el hub cae → respaldo 30s.
     refetchInterval: adaptiveListPoll,
   });
 
@@ -710,7 +723,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       [isServirModule ? "servir-orders" : "dispatch-orders"],
     ],
     includePayments: true,
-    includeShiftGate: true,
+    // El gate tiene su propio consumer; no re-suscribir cash_shifts aquí.
+    includeShiftGate: false,
     shiftId: shiftGate?.shiftId ?? null,
   });
 

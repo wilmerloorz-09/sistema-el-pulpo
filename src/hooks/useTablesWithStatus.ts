@@ -241,7 +241,7 @@ export function useTablesWithStatus() {
     enabled: !!activeBranchId,
     staleTime: 5_000,
     gcTime: 10 * 60_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
   });

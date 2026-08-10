@@ -114,7 +114,7 @@ export function useOrdersByStatus(
     queryKey: ["orders", activeBranchId, status, shiftGate?.shiftId ?? "_"],
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
     enabled: Boolean(activeBranchId) && queryEnabled,

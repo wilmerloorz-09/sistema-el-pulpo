@@ -26,17 +26,15 @@ export const AUTH_SESSION_POLL_MS = 60_000;
 /** Respaldo de turno/caja cuando el hub no está SUBSCRIBED. */
 export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
 
-/**
- * Respaldo de listas operativas (Despacho, Servir, Recaudar, Cocina, etc.)
- * si Realtime no está suscrito. Con hub caído → poll cada 15s.
- */
-export const OPERATIONAL_LIST_BACKUP_POLL_MS = 15_000;
+/** Respaldo de listas si Realtime no está suscrito (hub error/idle): 30s. */
+export const OPERATIONAL_LIST_BACKUP_POLL_MS = 30_000;
 
 /**
- * Safety net aunque el hub esté SUBSCRIBED. Con N sucursales OPEN, 15–30s
- * regeneraba tormenta de refetch; 90s basta como red de seguridad.
+ * Safety net aunque el hub esté SUBSCRIBED.
+ * Con N sucursales OPEN, el poll periódico regeneraba tormenta aunque RT
+ * funcionara. Por defecto 0: confiar en Realtime; si el hub cae, usa backupMs.
  */
-export const OPERATIONAL_LIST_SAFETY_POLL_MS = 90_000;
+export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
 export const HUB_DEFAULT_DEBOUNCE_MS = 1_200;
@@ -176,8 +174,8 @@ export function useHubRealtimeStatus(branchId: string | null | undefined): HubRe
 
 /**
  * Polling adaptativo de listas operativas:
- * - Realtime SUBSCRIBED → safety poll (`safetyMs`, default 15s) por si se pierden eventos
- * - Desconectado / error / idle → `backupMs` (típicamente 15s)
+ * - Realtime SUBSCRIBED → sin poll (safetyMs=0) o safetyMs si se pide explícito
+ * - Desconectado / error / idle → backupMs (default 30s)
  */
 export function useAdaptiveRefetchInterval(
   branchId: string | null | undefined,
