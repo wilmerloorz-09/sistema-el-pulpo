@@ -14,6 +14,12 @@ import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
+import {
+  fetchCajaPayableQueueBundle,
+  operationalMapsFromCajaBundleItems,
+  paidQtyMapFromCajaBundleItems,
+  paymentsTotalMapFromCajaBundle,
+} from "@/lib/cajaPayableQueueBundle";
 import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
 import { cleanOrderCode } from "@/lib/orderPresentation";
 import {
@@ -1868,6 +1874,61 @@ export function useCaja(params?: {
         return [];
       }
 
+      let activeOrders: any[] = [];
+      let items: any[] = [];
+      let tablesMap: Record<string, { name: string; visual_order: number }> = {};
+      let splitsMap: Record<string, string> = {};
+      let creatorNameMap: Record<string, string> = {};
+      let clientesMap: Record<string, PayableOrderCliente> = {};
+      let menuNodeByLegacyProductId: Record<string, { id: string; image_url: string | null; icon: string | null }> = {};
+      let paidQtyMap: Record<string, number> = {};
+      let activePaymentsTotalByOrder: Record<string, number> = {};
+      let operationalMaps = {
+        readyMap: {} as Record<string, number>,
+        readyAvailableMap: {} as Record<string, number>,
+        dispatchedTotalMap: {} as Record<string, number>,
+        dispatchedAvailableMap: {} as Record<string, number>,
+        paidMap: {} as Record<string, number>,
+        cancelledPendingMap: {} as Record<string, number>,
+        cancelledReadyMap: {} as Record<string, number>,
+        cancelledDispatchedMap: {} as Record<string, number>,
+        cancelledTotalMap: {} as Record<string, number>,
+      };
+      let loadedFromBundle = false;
+
+      try {
+        const bundle = await fetchCajaPayableQueueBundle(activeBranchId, openShift.id);
+        activeOrders = (bundle.orders ?? []).filter((order) => orderBelongsToOpenCashShift(order, openShift!));
+        items = bundle.items ?? [];
+        tablesMap = Object.fromEntries(
+          (bundle.tables ?? []).map((t) => [t.id, { name: t.name, visual_order: Number(t.visual_order ?? 0) }]),
+        );
+        splitsMap = Object.fromEntries((bundle.splits ?? []).map((s) => [s.id, s.split_code]));
+        creatorNameMap = buildUserDisplayMap(bundle.profiles);
+        clientesMap = Object.fromEntries(
+          (bundle.clientes ?? []).map((cliente) => [cliente.id, cliente as PayableOrderCliente]),
+        );
+        menuNodeByLegacyProductId = Object.fromEntries(
+          (bundle.menu_nodes ?? [])
+            .filter((node) => Boolean(node.legacy_product_id))
+            .map((node) => [
+              node.legacy_product_id as string,
+              {
+                id: node.id,
+                image_url: node.image_url ?? null,
+                icon: node.icon ?? null,
+              },
+            ]),
+        );
+        paidQtyMap = paidQtyMapFromCajaBundleItems(items);
+        activePaymentsTotalByOrder = paymentsTotalMapFromCajaBundle(bundle.payments_total_by_order);
+        operationalMaps = operationalMapsFromCajaBundleItems(items);
+        loadedFromBundle = true;
+      } catch (bundleError) {
+        console.warn("[useCaja] RPC cola payable no disponible; camino legacy", bundleError);
+      }
+
+      if (!loadedFromBundle) {
       const orders = (
         await dbSelectStrict<any>("orders", {
           select: "id, order_number, order_code, order_type, table_id, split_id, status, is_special, is_tray_order, created_by, created_at, sent_to_kitchen_at, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, locked_for_editing, notes, cliente_id, cash_shift_id",
@@ -1883,7 +1944,7 @@ export function useCaja(params?: {
 
       if (!orders || orders.length === 0) return [];
 
-      const activeOrders = orders.filter((order) => !String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:"));
+      activeOrders = orders.filter((order) => !String(order.notes ?? "").includes("VOID_SUCCESSOR_ORDER:"));
       if (activeOrders.length === 0) return [];
 
       const tableIdSet = new Set<string>();
@@ -1893,7 +1954,6 @@ export function useCaja(params?: {
         if (originTableId) tableIdSet.add(originTableId);
       }
       const tableIds = Array.from(tableIdSet);
-      let tablesMap: Record<string, { name: string; visual_order: number }> = {};
       if (tableIds.length > 0) {
         const tables = await dbSelectStrict<any>("restaurant_tables", {
           select: "id, name, visual_order",
@@ -1904,7 +1964,6 @@ export function useCaja(params?: {
 
       const splitIdSet = new Set<string>(activeOrders.map((o) => o.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
-      let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
         const splits = await dbSelectStrict<any>("table_splits", {
           select: "id, split_code",
@@ -1921,7 +1980,7 @@ export function useCaja(params?: {
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
         : [];
-      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+      creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
       const clienteIds = Array.from(
         new Set(activeOrders.map((order) => order.cliente_id).filter(Boolean)),
@@ -1933,16 +1992,15 @@ export function useCaja(params?: {
             skipLocalCache: true,
           })
         : [];
-      const clientesMap = Object.fromEntries(clientesRows.map((cliente) => [cliente.id, cliente]));
+      clientesMap = Object.fromEntries(clientesRows.map((cliente) => [cliente.id, cliente]));
 
-      const items = await dbSelectStrict<any>("order_items", {
+      items = await dbSelectStrict<any>("order_items", {
         select: "id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, paid_at, tray_item_type, tray_container_cost, cantidad_especial",
         filters: [{ column: "order_id", op: "in", value: orderIds }]
       });
 
       const legacyProductIdSet = new Set<string>((items ?? []).map((item) => item.product_id).filter(Boolean));
       const legacyProductIds = Array.from(legacyProductIdSet);
-      let menuNodeByLegacyProductId: Record<string, { id: string; image_url: string | null; icon: string | null }> = {};
       if (legacyProductIds.length > 0) {
         const menuNodes = await dbSelectStrict<any>("menu_nodes", {
           select: "id, legacy_product_id, image_url, icon",
@@ -1968,6 +2026,17 @@ export function useCaja(params?: {
       }
 
       const orderItemIds = (items ?? []).map((item) => item.id);
+      const [activePaymentItems, paymentsTotal] = await Promise.all([
+        fetchActivePaymentItemsForOrderItems(orderItemIds, { strict: true }),
+        fetchActivePaymentsTotalByOrder(orderIds, { strict: true }),
+      ]);
+      paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
+      activePaymentsTotalByOrder = paymentsTotal;
+      operationalMaps = await fetchOperationalMapsForOrders(orderIds);
+      }
+
+      if (activeOrders.length === 0) return [];
+
       const resolveTableName = (tableId: string | null, snapshotName?: string | null): string | null => {
         if (tableId && (tablesMap as any)[tableId]) {
           const t = (tablesMap as any)[tableId];
@@ -1977,13 +2046,6 @@ export function useCaja(params?: {
         }
         return snapshotName || "Mesa";
       };
-
-      const [activePaymentItems, activePaymentsTotalByOrder] = await Promise.all([
-        fetchActivePaymentItemsForOrderItems(orderItemIds, { strict: true }),
-        fetchActivePaymentsTotalByOrder(orderIds, { strict: true }),
-      ]);
-      const paidQtyMap = aggregatePaidQuantityByOrderItem(activePaymentItems);
-      const operationalMaps = await fetchOperationalMapsForOrders(orderIds);
 
       const payableSourceOrders = activeOrders.filter((o) => orderIsPayableInCaja(o));
 
