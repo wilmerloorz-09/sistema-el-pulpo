@@ -71,8 +71,15 @@ export function useKitchenOrders() {
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      await repairOpenShiftOrderCashShiftIds(activeBranchId);
-      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      // Repair en background (throttle interno); no bloquear el listado.
+      void repairOpenShiftOrderCashShiftIds(activeBranchId);
+
+      let openShift = shiftGate?.shiftId
+        ? { id: shiftGate.shiftId, opened_at: "" }
+        : null;
+      if (!openShift) {
+        openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      }
       if (!openShift) {
         if (shiftGate?.shiftId) {
           throw new Error("No se pudo leer el turno abierto de la sucursal");
@@ -279,6 +286,7 @@ export function useKitchenOrders() {
     },
     onSuccess: () => {
       invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
         includeTables: true,
         includeCompletedPayments: false,
       });

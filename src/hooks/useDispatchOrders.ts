@@ -201,8 +201,12 @@ function applyOptimisticDispatchAll(orders: DispatchOrder[], orderId: string): D
     .filter((card) => dispatchCardHasWork(card));
 }
 
-function invalidateOperationalQueries(qc: ReturnType<typeof useQueryClient>) {
+function invalidateOperationalQueries(
+  qc: ReturnType<typeof useQueryClient>,
+  branchId?: string | null,
+) {
   invalidateOperationalOrderQueries(qc, {
+    branchId,
     includeTables: true,
     includeCompletedPayments: true,
   });
@@ -742,7 +746,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateOperationalQueries(qc);
+      invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de listo aplicada");
     },
     onError: (error: any) => {
@@ -764,7 +768,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateOperationalQueries(qc);
+      invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de despacho aplicada");
     },
     onError: (error: any) => {
@@ -783,7 +787,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateOperationalQueries(qc);
+      invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
     onError: (error: any) => {
@@ -802,7 +806,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateOperationalQueries(qc);
+      invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
     onError: (error: any) => {

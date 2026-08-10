@@ -596,17 +596,24 @@ export function useCancellation() {
       }
       if (data.isRequest) {
         invalidateOperationalOrderQueries(qc, {
+          branchId: activeBranchId,
           orderId: data.orderId,
           includeCompletedPayments: false,
           includeTables: true,
         });
       } else {
         invalidateOperationalOrderQueries(qc, {
+          branchId: activeBranchId,
           orderId: data.orderId,
           includeCompletedPayments: false,
           includeTables: true,
         });
-        await qc.refetchQueries({ queryKey: qk.orders });
+        await qc.refetchQueries({
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+          },
+        });
       }
     },
     onError: (error: any) => {
@@ -761,17 +768,24 @@ export function useCancellation() {
       }
       if (data.isRequest) {
         invalidateOperationalOrderQueries(qc, {
+          branchId: activeBranchId,
           orderId: data.orderId,
           includeCompletedPayments: true,
           includeTables: true,
         });
       } else {
         invalidateOperationalOrderQueries(qc, {
+          branchId: activeBranchId,
           orderId: data.orderId,
           includeCompletedPayments: true,
           includeTables: true,
         });
-        await qc.refetchQueries({ queryKey: qk.orders });
+        await qc.refetchQueries({
+          predicate: (query) => {
+            const key = query.queryKey;
+            return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+          },
+        });
       }
     },
     onError: (error: any) => {
@@ -799,11 +813,17 @@ export function useCancellation() {
       });
       qc.invalidateQueries({ queryKey: qk.order(orderId) });
       invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
         orderId,
         includeCompletedPayments: false,
         includeTables: true,
       });
-      await qc.refetchQueries({ queryKey: qk.orders });
+      await qc.refetchQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+        },
+      });
       toast.success("Solicitud de anulacion negada");
     },
     onError: (error: any) => {
@@ -1027,11 +1047,17 @@ export function useCancellation() {
         return current.filter((order: any) => !(order?.id === data.orderId && order?.status === "PENDING_CANCELLATION"));
       });
       invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
         orderId: data.orderId,
         includeCompletedPayments: true,
         includeTables: true,
       });
-      await qc.refetchQueries({ queryKey: qk.orders });
+      await qc.refetchQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+        },
+      });
       toast.success("Anulacion autorizada");
     },
     onError: (error: any) => {

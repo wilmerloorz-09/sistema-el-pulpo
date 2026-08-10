@@ -56,10 +56,12 @@ function isShiftGateQueryKey(key: QueryKey): boolean {
 /**
  * Invalida queries operativas de órdenes afectadas por un cambio de cobro/despacho.
  * Evita tocar catálogos; el gate/turno solo si se pide explícitamente.
+ * Con `branchId`, solo invalida caches de esa sucursal (keys `[prefix, branchId, ...]`).
  */
 export function invalidateOperationalOrderQueries(
   qc: QueryClient,
   options?: {
+    branchId?: string | null;
     includeCompletedPayments?: boolean;
     includeTables?: boolean;
     includePromotions?: boolean;
@@ -71,6 +73,7 @@ export function invalidateOperationalOrderQueries(
   },
 ) {
   const {
+    branchId = null,
     includeCompletedPayments = true,
     includeTables = true,
     includePromotions = false,
@@ -81,31 +84,45 @@ export function invalidateOperationalOrderQueries(
     orderId = null,
   } = options ?? {};
 
+  const invalidatePrefixed = (prefix: readonly unknown[]) => {
+    const head = prefix[0];
+    if (branchId) {
+      void qc.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return Array.isArray(key) && key[0] === head && key[1] === branchId;
+        },
+      });
+      return;
+    }
+    void qc.invalidateQueries({ queryKey: prefix });
+  };
+
   for (const key of OPERATIONAL_ORDER_LIST_KEYS) {
-    void qc.invalidateQueries({ queryKey: key });
+    invalidatePrefixed(key);
   }
 
   if (includeTables) {
-    void qc.invalidateQueries({ queryKey: qk.tablesWithStatus });
-    void qc.invalidateQueries({ queryKey: qk.tableOrders });
+    invalidatePrefixed(qk.tablesWithStatus);
+    invalidatePrefixed(qk.tableOrders);
   }
   if (includeCompletedPayments) {
-    void qc.invalidateQueries({ queryKey: qk.completedPayments });
+    invalidatePrefixed(qk.completedPayments);
   }
   if (includePromotions) {
-    void qc.invalidateQueries({ queryKey: qk.promocionesOrdenes });
+    invalidatePrefixed(qk.promocionesOrdenes);
   }
   if (includeShiftGate) {
-    void qc.invalidateQueries({ queryKey: qk.branchShiftGate });
+    invalidatePrefixed(qk.branchShiftGate);
   }
   if (includeCurrentShift) {
-    void qc.invalidateQueries({ queryKey: qk.currentShift });
+    invalidatePrefixed(qk.currentShift);
   }
   if (includeCashMovements) {
-    void qc.invalidateQueries({ queryKey: qk.cashRegisterMovements });
+    invalidatePrefixed(qk.cashRegisterMovements);
   }
   if (includeAutopedidos) {
-    void qc.invalidateQueries({ queryKey: qk.autopedidosQr });
+    invalidatePrefixed(qk.autopedidosQr);
   }
   if (orderId) {
     void qc.invalidateQueries({ queryKey: qk.order(orderId) });

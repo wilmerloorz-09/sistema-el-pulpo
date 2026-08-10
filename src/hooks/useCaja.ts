@@ -1850,7 +1850,15 @@ export function useCaja(params?: {
     queryFn: async () => {
       if (!activeBranchId) return [];
 
-      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      // Repair en background; no bloquear cobro.
+      void repairOpenShiftOrderCashShiftIds(activeBranchId);
+
+      let openShift = shiftGate?.shiftId
+        ? { id: shiftGate.shiftId, opened_at: "" }
+        : null;
+      if (!openShift) {
+        openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      }
       if (!openShift) {
         // El gate ya confirmo turno abierto: una lectura vacia aqui es un fallo
         // transitorio, y devolver [] vaciaria la lista de cobro por un instante.
@@ -1859,8 +1867,6 @@ export function useCaja(params?: {
         }
         return [];
       }
-
-      await repairOpenShiftOrderCashShiftIds(activeBranchId);
 
       const orders = (
         await dbSelectStrict<any>("orders", {
@@ -1889,7 +1895,7 @@ export function useCaja(params?: {
       const tableIds = Array.from(tableIdSet);
       let tablesMap: Record<string, { name: string; visual_order: number }> = {};
       if (tableIds.length > 0) {
-        const tables = await dbSelect<any>("restaurant_tables", {
+        const tables = await dbSelectStrict<any>("restaurant_tables", {
           select: "id, name, visual_order",
           filters: [{ column: "id", op: "in", value: tableIds }]
         });
@@ -1900,7 +1906,7 @@ export function useCaja(params?: {
       const splitIds = Array.from(splitIdSet);
       let splitsMap: Record<string, string> = {};
       if (splitIds.length > 0) {
-        const splits = await dbSelect<any>("table_splits", {
+        const splits = await dbSelectStrict<any>("table_splits", {
           select: "id, split_code",
           filters: [{ column: "id", op: "in", value: splitIds }]
         });
@@ -1910,7 +1916,7 @@ export function useCaja(params?: {
       const orderIds = activeOrders.map((o) => o.id);
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
       const creatorProfiles = creatorIds.length > 0
-        ? await dbSelect<any>("profiles", {
+        ? await dbSelectStrict<any>("profiles", {
             select: "id, first_name, full_name, username, alias, email",
             filters: [{ column: "id", op: "in", value: creatorIds }],
           })
@@ -1921,7 +1927,7 @@ export function useCaja(params?: {
         new Set(activeOrders.map((order) => order.cliente_id).filter(Boolean)),
       ) as string[];
       const clientesRows = clienteIds.length > 0
-        ? await dbSelect<PayableOrderCliente>("clientes", {
+        ? await dbSelectStrict<PayableOrderCliente>("clientes", {
             select: "id, cedula, nombres, apellidos",
             filters: [{ column: "id", op: "in", value: clienteIds }],
             skipLocalCache: true,
@@ -1938,7 +1944,7 @@ export function useCaja(params?: {
       const legacyProductIds = Array.from(legacyProductIdSet);
       let menuNodeByLegacyProductId: Record<string, { id: string; image_url: string | null; icon: string | null }> = {};
       if (legacyProductIds.length > 0) {
-        const menuNodes = await dbSelect<any>("menu_nodes", {
+        const menuNodes = await dbSelectStrict<any>("menu_nodes", {
           select: "id, legacy_product_id, image_url, icon",
           branchId: activeBranchId,
           filters: [
@@ -3280,6 +3286,7 @@ export function useCaja(params?: {
       /** Deferir invalidaciones para que la UI pueda cerrar "Cobrando" y pintar el resultado antes de los refetch. */
       queueMicrotask(() => {
         invalidateOperationalOrderQueries(qc, {
+          branchId: activeBranchId,
           includeCompletedPayments: true,
           includeTables: true,
           includePromotions: true,

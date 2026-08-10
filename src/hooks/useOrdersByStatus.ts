@@ -122,13 +122,19 @@ export function useOrdersByStatus(
     queryFn: async (): Promise<OrderSummary[]> => {
       if (!activeBranchId) return [];
 
-      await repairOpenShiftOrderCashShiftIds(activeBranchId);
-      const openShift = await qc.ensureQueryData({
-        queryKey: ["open-cash-shift", activeBranchId],
-        queryFn: () => getOpenCashShiftForBranch(activeBranchId, { strict: true }),
-        staleTime: 0,
-        gcTime: 10 * 60_000,
-      });
+      void repairOpenShiftOrderCashShiftIds(activeBranchId);
+
+      let openShift = shiftGate?.shiftId
+        ? { id: shiftGate.shiftId, opened_at: "" }
+        : null;
+      if (!openShift) {
+        openShift = await qc.ensureQueryData({
+          queryKey: ["open-cash-shift", activeBranchId],
+          queryFn: () => getOpenCashShiftForBranch(activeBranchId, { strict: true }),
+          staleTime: 0,
+          gcTime: 10 * 60_000,
+        });
+      }
       if (!openShift) {
         if (shiftGate?.shiftId) {
           throw new Error("No se pudo leer el turno abierto de la sucursal");
