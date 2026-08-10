@@ -15,6 +15,11 @@ import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShift
 import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
+  fetchDispatchServirQueueBundle,
+  operationalMapsFromBundleItems,
+  paidQtyMapFromBundleItems,
+} from "@/lib/dispatchServirQueueBundle";
+import {
   OPERATIONAL_STALE_MS,
   OPERATIONAL_LIST_BACKUP_POLL_MS,
   useAdaptiveRefetchInterval,
@@ -483,7 +488,167 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       }
       if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      const ordersMerged = (
+      let ordersMerged: any[] = [];
+      let items: any[] = [];
+      let modifiersMap: Record<string, { description: string }[]> = {};
+      let operationalMaps = {
+        readyMap: {} as Record<string, number>,
+        readyAvailableMap: {} as Record<string, number>,
+        dispatchedTotalMap: {} as Record<string, number>,
+        dispatchedAvailableMap: {} as Record<string, number>,
+        paidMap: {} as Record<string, number>,
+        cancelledPendingMap: {} as Record<string, number>,
+        cancelledReadyMap: {} as Record<string, number>,
+        cancelledDispatchedMap: {} as Record<string, number>,
+        cancelledTotalMap: {} as Record<string, number>,
+      };
+      let clientPaidQtyByItemId: Record<string, number> = {};
+      let creatorNameMap: Record<string, string> = {};
+      let packerUserIds = new Set<string>();
+      let tablesMap: Record<string, string> = {};
+      let splitsMap: Record<string, string> = {};
+      let hasPlateServersFromBundle: boolean | null = null;
+      let usedQueueBundle = false;
+
+      try {
+        const bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+        usedQueueBundle = true;
+        ordersMerged = (bundle.orders ?? []).filter((o) => orderBelongsToOpenCashShift(o, openShift!));
+
+        const flagsByOrder = new Map(
+          (bundle.order_payment_flags ?? []).map((f) => [f.order_id, f]),
+        );
+        const ordersWithActivePayment = new Set<string>();
+        const ordersWithAnyPayment = new Set<string>();
+        const ordersWithPaidLine = new Set<string>();
+        for (const [orderId, flags] of flagsByOrder) {
+          if (flags.has_any_payment) ordersWithAnyPayment.add(orderId);
+          if (flags.has_active_payment) ordersWithActivePayment.add(orderId);
+          if (flags.has_paid_line) ordersWithPaidLine.add(orderId);
+        }
+
+        const activeOrders = ordersMerged.filter((o) => {
+          if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
+          const isExpress = o.order_type === "EXPRESS";
+          const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && o.order_type !== "TAKEOUT");
+          if (isDispatchFirst) {
+            return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";
+          }
+          const hasAnyPay = ordersWithAnyPayment.has(o.id);
+          const hasActivePay = ordersWithActivePayment.has(o.id);
+          const hasPaidLine = ordersWithPaidLine.has(o.id);
+          if (o.status === "PAID") {
+            return !!o.paid_at || !hasAnyPay || hasActivePay;
+          }
+          if (o.status === "READY" || o.status === "SENT_TO_KITCHEN") {
+            return hasActivePay || !!o.paid_at || hasPaidLine;
+          }
+          return false;
+        });
+
+        if (activeOrders.length === 0) {
+          return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+        }
+
+        creatorNameMap = buildUserDisplayMap(bundle.profiles);
+        packerUserIds = new Set(bundle.packer_user_ids ?? []);
+        tablesMap = Object.fromEntries((bundle.tables ?? []).map((t) => [t.id, t.name]));
+        splitsMap = Object.fromEntries((bundle.splits ?? []).map((s) => [s.id, s.split_code]));
+        hasPlateServersFromBundle = Boolean(bundle.has_plate_servers);
+
+        const dispatchMode = config?.dispatch_mode || "SINGLE";
+        const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
+        const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
+
+        const getPermittedForView = (v: DispatchView, source: any[]) => {
+          let baseFiltered = source.filter((order) => {
+            if (v === "SPECIAL") return Boolean(order.is_special);
+            if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
+            return matchesScope(order.order_type, v);
+          });
+
+          if (dispatchMode === "SPLIT") {
+            if (userAssignments.length > 0 && !assignedTypes.has("ALL")) {
+              baseFiltered = baseFiltered.filter((order) => {
+                const orderType = order.order_type === "EXPRESS"
+                  ? "EXPRESS"
+                  : order.order_type === "DINE_IN" || order.order_type === "TABLE" || order.order_type === "EXTRA"
+                    ? "TABLE"
+                    : "TAKEOUT";
+                return assignedTypes.has(orderType);
+              });
+            }
+          }
+          return baseFiltered;
+        };
+
+        const allPermittedOrders = getPermittedForView("ALL", activeOrders);
+        if (allPermittedOrders.length === 0) {
+          return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+        }
+
+        const permittedIds = new Set(allPermittedOrders.map((o) => o.id));
+        items = (bundle.items ?? []).filter((item) => permittedIds.has(item.order_id));
+        operationalMaps = operationalMapsFromBundleItems(items);
+        clientPaidQtyByItemId = paidQtyMapFromBundleItems(items);
+
+        for (const row of bundle.modifiers ?? []) {
+          if (!items.some((it) => it.id === row.order_item_id)) continue;
+          if (!modifiersMap[row.order_item_id]) modifiersMap[row.order_item_id] = [];
+          const description = String(row.description ?? "").trim();
+          if (!description) continue;
+          modifiersMap[row.order_item_id].push({ description });
+        }
+
+        let platosProductIds: Set<string> | undefined;
+        let filterOutPlatos = false;
+        if (isServirModule) {
+          platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
+        } else if (moduleMode === "dispatch" && hasPlateServersFromBundle) {
+          platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
+          filterOutPlatos = true;
+        }
+
+        const allCards = allPermittedOrders.flatMap((order) => {
+          const orderWithContext = {
+            ...order,
+            created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
+            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
+            is_packer_order: order.created_by ? packerUserIds.has(order.created_by) : false,
+          };
+          return groupItemsIntoDispatchCards(
+            orderWithContext,
+            items,
+            modifiersMap,
+            operationalMaps,
+            clientPaidQtyByItemId,
+            platosProductIds,
+            filterOutPlatos,
+            workflowMode,
+          );
+        }).filter((card) => dispatchCardHasWork(card));
+
+        const counts = {
+          ALL: allCards.length,
+          TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
+          TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS").length,
+          SPECIAL: allCards.filter(c => c.is_special).length,
+        };
+
+        const filteredCards = sortByBatchArrival(getPermittedForView(scope, allCards)) as DispatchOrder[];
+        return { orders: filteredCards, counts };
+      } catch (bundleError) {
+        if (usedQueueBundle) {
+          // Bundle parse/build falló tras RPC OK: no mezclar con legacy a medias.
+          console.warn("[useDispatchOrders] bundle queue falló; usando camino legacy", bundleError);
+        } else {
+          console.warn("[useDispatchOrders] RPC cola no disponible; camino legacy", bundleError);
+        }
+      }
+
+      // --- Legacy multi-query (fallback si la RPC aún no está migrada) ---
+      ordersMerged = (
         await dbSelectStrict<any>("orders", {
           select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
           branchId: activeBranchId,
@@ -562,8 +727,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
             })
           : Promise.resolve([] as any[]),
       ]);
-      const creatorNameMap = buildUserDisplayMap(creatorProfiles);
-      const packerUserIds = new Set((packerUsers ?? []).map((u: any) => u.user_id));
+      creatorNameMap = buildUserDisplayMap(creatorProfiles);
+      packerUserIds = new Set((packerUsers ?? []).map((u: any) => u.user_id));
 
       const dispatchMode = config?.dispatch_mode || "SINGLE";
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
@@ -600,7 +765,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const splitIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
 
-      const [tables, splits, items] = await Promise.all([
+      const [tables, splits, legacyItems] = await Promise.all([
         tableIds.length > 0
           ? dbSelectStrict("restaurant_tables", {
               select: "id, name",
@@ -620,11 +785,12 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         }),
       ]);
 
-      const tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
-      const splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
+      tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
+      splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
+      items = legacyItems ?? [];
 
       const itemIds = (items ?? []).map((item: any) => item.id);
-      const modifiersMap: Record<string, { description: string }[]> = {};
+      modifiersMap = {};
 
       const platosPromise: Promise<{ platosProductIds?: Set<string>; filterOutPlatos: boolean }> =
         isServirModule
@@ -651,7 +817,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
               })
             : Promise.resolve({ filterOutPlatos: false });
 
-      const [modifierRows, operationalMaps, clientPaidQtyByItemId, platosResult] = await Promise.all([
+      const [modifierRows, maps, paidMap, platosResult] = await Promise.all([
         itemIds.length > 0
           ? dbSelectStrict<any>("order_item_modifiers", {
               select: "id, order_item_id, modifiers(description)",
@@ -673,6 +839,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         modifiersMap[row.order_item_id].push({ description });
       }
 
+      operationalMaps = maps;
+      clientPaidQtyByItemId = paidMap;
       const { platosProductIds, filterOutPlatos } = platosResult;
 
       const allCards = allPermittedOrders.flatMap((order) => {
