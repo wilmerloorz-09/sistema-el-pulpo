@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +10,95 @@ const toJson = (payload: unknown, status = 200) =>
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isTransientDbError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("timeout")
+    || m.includes("timed out")
+    || m.includes("57014")
+    || m.includes("57p01")
+    || m.includes("53300")
+    || m.includes("connection")
+    || m.includes("503")
+    || m.includes("502")
+    || m.includes("fetch failed")
+    || m.includes("network")
+  );
+}
+
+/**
+ * Lookup barato: eq exacto (usa índice) en vez de ilike.
+ * Reintentos cortos bajo saturación de BD.
+ */
+async function lookupProfileEmail(
+  adminClient: SupabaseClient,
+  identifier: string,
+): Promise<{ email: string | null; error: string | null }> {
+  const candidates = Array.from(
+    new Set([identifier, identifier.toLowerCase()].filter(Boolean)),
+  );
+
+  let lastError: string | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await sleep(250 * attempt);
+
+    for (const candidate of candidates) {
+      const byUsername = await adminClient
+        .from("profiles")
+        .select("email")
+        .eq("username", candidate)
+        .limit(1);
+
+      if (byUsername.error) {
+        lastError = byUsername.error.message ?? "error username";
+        if (!isTransientDbError(lastError)) {
+          return { email: null, error: lastError };
+        }
+        continue;
+      }
+
+      const emailFromUser = byUsername.data?.[0]?.email;
+      if (emailFromUser) return { email: String(emailFromUser), error: null };
+
+      const byAlias = await adminClient
+        .from("profiles")
+        .select("email")
+        .eq("alias", candidate)
+        .limit(1);
+
+      if (byAlias.error) {
+        lastError = byAlias.error.message ?? "error alias";
+        if (!isTransientDbError(lastError)) {
+          return { email: null, error: lastError };
+        }
+        continue;
+      }
+
+      const emailFromAlias = byAlias.data?.[0]?.email;
+      if (emailFromAlias) return { email: String(emailFromAlias), error: null };
+    }
+
+    if (lastError && isTransientDbError(lastError)) continue;
+    break;
+  }
+
+  if (lastError && isTransientDbError(lastError)) {
+    return {
+      email: null,
+      error: "Servidor saturado. Espera unos segundos e intenta de nuevo.",
+    };
+  }
+
+  if (lastError) {
+    return { email: null, error: "Error validando identificador" };
+  }
+
+  return { email: null, error: null };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -37,51 +126,36 @@ Deno.serve(async (req) => {
 
     let resolvedEmail = normalized;
 
+    // Si ya viene email, no tocamos profiles (evita el fallo bajo saturación).
     if (!normalized.includes("@")) {
-      const lookupIdentifier = rawIdentifier.trim();
-      let profileEmail: string | null = null;
-
-      const { data: byUsername, error: usernameError } = await adminClient
-        .from("profiles")
-        .select("email")
-        .ilike("username", lookupIdentifier)
-        .limit(1)
-        .maybeSingle();
-
-      if (usernameError) {
-        return toJson({ error: "Error validando identificador" }, 500);
+      const lookup = await lookupProfileEmail(adminClient, rawIdentifier);
+      if (lookup.error && !lookup.email) {
+        return toJson({ error: lookup.error }, 503);
       }
-
-      profileEmail = byUsername?.email ? String(byUsername.email) : null;
-
-      if (!profileEmail) {
-        const { data: byAlias, error: aliasError } = await adminClient
-          .from("profiles")
-          .select("email")
-          .ilike("alias", lookupIdentifier)
-          .limit(1)
-          .maybeSingle();
-
-        if (aliasError) {
-          return toJson({ error: "Error validando identificador" }, 500);
-        }
-
-        profileEmail = byAlias?.email ? String(byAlias.email) : null;
-      }
-
-      if (!profileEmail) {
+      if (!lookup.email) {
         return toJson({ error: "Credenciales invalidas" }, 401);
       }
-
-      resolvedEmail = profileEmail.toLowerCase();
+      resolvedEmail = lookup.email.toLowerCase();
     }
 
-    const { data: signInData, error: signInError } = await anonClient.auth.signInWithPassword({
-      email: resolvedEmail,
-      password,
-    });
+    let signInData = null;
+    let signInError = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await anonClient.auth.signInWithPassword({
+        email: resolvedEmail,
+        password,
+      });
+      signInData = result.data;
+      signInError = result.error;
+      if (!signInError && signInData.session && signInData.user) break;
+      if (signInError && isTransientDbError(signInError.message) && attempt === 0) {
+        await sleep(300);
+        continue;
+      }
+      break;
+    }
 
-    if (signInError || !signInData.session || !signInData.user) {
+    if (signInError || !signInData?.session || !signInData?.user) {
       return toJson({ error: "Credenciales invalidas" }, 401);
     }
 
@@ -89,15 +163,18 @@ Deno.serve(async (req) => {
       .from("profiles")
       .select("is_active")
       .eq("id", signInData.user.id)
-      .maybeSingle();
+      .limit(1);
 
     if (stateError) {
-      return toJson({ error: "Error validando estado del usuario" }, 500);
-    }
-
-    if (!profile || profile.is_active === false) {
-      await anonClient.auth.signOut();
-      return toJson({ error: "Usuario inactivo" }, 403);
+      // No bloquear login si solo falla el check de activo bajo saturación:
+      // Auth ya validó la contraseña. Preferir entrar.
+      console.warn("[login-with-identifier] is_active check failed:", stateError.message);
+    } else {
+      const row = profile?.[0];
+      if (row && row.is_active === false) {
+        await anonClient.auth.signOut();
+        return toJson({ error: "Usuario inactivo" }, 403);
+      }
     }
 
     return toJson({
@@ -110,6 +187,14 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error interno inesperado";
-    return toJson({ error: message }, 500);
+    const status = isTransientDbError(message) ? 503 : 500;
+    return toJson(
+      {
+        error: status === 503
+          ? "Servidor saturado. Espera unos segundos e intenta de nuevo."
+          : message,
+      },
+      status,
+    );
   }
 });

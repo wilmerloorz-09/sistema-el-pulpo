@@ -33,6 +33,15 @@ const getLoginErrorMessage = (rawMessage?: string) => {
     return "No se puede ingresar porque el correo/usuario/alias o la contrasena son incorrectos. Revisa los datos e intenta nuevamente.";
   }
 
+  if (
+    normalized.includes("saturado")
+    || normalized.includes("validando identificador")
+    || normalized.includes("503")
+    || normalized.includes("timeout")
+  ) {
+    return "El servidor esta saturado. Espera 15–30 segundos e intenta de nuevo. Si sigue fallando, ingresa con el correo (email) del usuario en lugar del username.";
+  }
+
   if (normalized.includes("identificador") && normalized.includes("contrasena")) {
     return "No se puede ingresar porque falta el correo/usuario/alias o la contrasena.";
   }
