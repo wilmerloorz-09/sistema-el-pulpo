@@ -88,7 +88,7 @@ const withTablesTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise
   });
 
 async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWithStatusData> {
-  const openShift = await getOpenCashShiftForBranch(branchId);
+  const openShift = await getOpenCashShiftForBranch(branchId, { strict: true });
 
   const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
     p_branch_id: branchId,

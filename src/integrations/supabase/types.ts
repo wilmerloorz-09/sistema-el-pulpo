@@ -1281,6 +1281,7 @@ export type Database = {
       }
       order_dispatch_events: {
         Row: {
+          branch_id: string | null
           created_at: string
           created_by: string
           event_type: string
@@ -1291,6 +1292,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          branch_id?: string | null
           created_at?: string
           created_by: string
           event_type: string
@@ -1301,6 +1303,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          branch_id?: string | null
           created_at?: string
           created_by?: string
           event_type?: string
@@ -1311,6 +1314,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "order_dispatch_events_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "order_dispatch_events_created_by_fkey"
             columns: ["created_by"]
@@ -1629,6 +1639,7 @@ export type Database = {
       }
       order_ready_events: {
         Row: {
+          branch_id: string | null
           created_at: string
           created_by: string
           event_type: string
@@ -1639,6 +1650,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          branch_id?: string | null
           created_at?: string
           created_by: string
           event_type: string
@@ -1649,6 +1661,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          branch_id?: string | null
           created_at?: string
           created_by?: string
           event_type?: string
@@ -1659,6 +1672,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "order_ready_events_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "order_ready_events_created_by_fkey"
             columns: ["created_by"]

@@ -96,10 +96,32 @@ const ProtectedRoute = ({
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
 
-  if (requiresOpenShift && !isBranchAdmin && shiftGateQuery.isLoading) {
+  // Sin data confirmada: loading, error o refetch en frío. Nunca tratar eso como “turno cerrado”.
+  const shiftGateUnresolved =
+    requiresOpenShift
+    && !isBranchAdmin
+    && !shiftGateQuery.data
+    && (shiftGateQuery.isLoading || shiftGateQuery.isPending || shiftGateQuery.isFetching || shiftGateQuery.isError);
+
+  if (shiftGateUnresolved) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center gap-3 p-4">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-center text-sm text-muted-foreground">
+          {shiftGateQuery.isError
+            ? "No se pudo verificar el turno. Reintentando…"
+            : "Verificando estado del turno…"}
+        </p>
+        {shiftGateQuery.isError && (
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl"
+            onClick={() => void shiftGateQuery.refetch()}
+          >
+            Reintentar ahora
+          </Button>
+        )}
       </div>
     );
   }

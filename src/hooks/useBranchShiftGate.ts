@@ -352,10 +352,12 @@ export function useBranchShiftGate() {
     };
 
     try {
+      // 15s: con varias sucursales OPEN el gate encadena varias lecturas;
+      // 6s producía timeouts espurios y la UI interpretaba “turno cerrado”.
       const resolved = await Promise.race([
         runQuery(),
         new Promise<BranchShiftGate>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout de turno")), 6000)
+          setTimeout(() => reject(new Error("Timeout de turno")), 15_000)
         ),
       ]);
       return resolved;
@@ -377,6 +379,8 @@ export function useBranchShiftGate() {
     refetchOnWindowFocus: false,
     // Conserva el gate previo mientras cambia sucursal/usuario o hay un refetch en curso.
     placeholderData: keepPreviousData,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
   });
 
   useOperationalOrdersRealtime({

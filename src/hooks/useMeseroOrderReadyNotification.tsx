@@ -283,7 +283,7 @@ export function useMeseroOrderReadyNotification(
       .channel(`mesero-ready-alerts:${activeBranchId}:${currentUserId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "order_ready_events" },
+        { event: "INSERT", schema: "public", table: "order_ready_events", filter: `branch_id=eq.${activeBranchId}` },
         () => {
           void pollNotificationTable();
         },

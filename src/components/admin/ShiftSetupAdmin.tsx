@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, supabase } from "@/services/DatabaseService";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -618,6 +618,8 @@ const ShiftSetupAdmin = () => {
       return null;
     },
     enabled: !!activeBranchId,
+    placeholderData: keepPreviousData,
+    retry: 2,
   });
 
   const shiftUsersQuery = useQuery({
@@ -838,6 +840,9 @@ const ShiftSetupAdmin = () => {
   });
 
   const referenceCount = branchSettingsQuery.data?.referenceTableCount ?? 0;
+  const shiftStatusUnresolved =
+    !shiftQuery.data
+    && (shiftQuery.isLoading || shiftQuery.isPending || shiftQuery.isFetching || shiftQuery.isError);
   const isOpen = Boolean(shiftQuery.data);
   const isStale = !!(shiftQuery.data as any)?.is_stale && isOpen;
   const isCashThenDispatch =
@@ -2406,12 +2411,20 @@ const ShiftSetupAdmin = () => {
               <Badge
                 variant="outline"
                 className={
-                  isOpen
-                    ? "border-emerald-300 bg-emerald-100 text-emerald-800"
-                    : "border-orange-200 bg-orange-50 text-primary"
+                  shiftStatusUnresolved
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : isOpen
+                      ? "border-emerald-300 bg-emerald-100 text-emerald-800"
+                      : "border-orange-200 bg-orange-50 text-primary"
                 }
               >
-                {isOpen ? "Turno abierto" : "Turno cerrado"}
+                {shiftStatusUnresolved
+                  ? shiftQuery.isError
+                    ? "No se pudo verificar"
+                    : "Verificando turno…"
+                  : isOpen
+                    ? "Turno abierto"
+                    : "Turno cerrado"}
               </Badge>
               {isOpen && (
                 <Badge

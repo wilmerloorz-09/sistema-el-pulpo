@@ -697,7 +697,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     refetchOnMount: true,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
-    // Realtime SUBSCRIBED → safety poll 15s; si el hub cae → respaldo 15s.
+    // Realtime SUBSCRIBED → safety poll 30s; si el hub cae → respaldo 15s.
     refetchInterval: adaptiveListPoll,
   });
 

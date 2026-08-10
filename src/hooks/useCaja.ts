@@ -1368,7 +1368,7 @@ export function useCaja(params?: {
     queryFn: async () => {
       if (!activeBranchId || !user?.id) return null;
 
-      const shifts = await dbSelect<any>("cash_shifts", {
+      const shifts = await dbSelectStrict<any>("cash_shifts", {
         select: "id, branch_id, status, caja_status, cashier_id, capture_user_id, capture_device_label, opened_at, closed_at, notes, active_tables_count",
         branchId: activeBranchId,
         filters: [{ column: "status", op: "eq", value: "OPEN" }],
@@ -2116,7 +2116,7 @@ export function useCaja(params?: {
         );
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Realtime SUBSCRIBED → safety poll 15s; si el hub cae → respaldo 15s.
+    // Realtime SUBSCRIBED → safety poll 30s; si el hub cae → respaldo 15s.
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,

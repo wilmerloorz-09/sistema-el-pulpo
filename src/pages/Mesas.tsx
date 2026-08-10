@@ -215,7 +215,7 @@ const Mesas = () => {
         try {
           const [gateFields, openShift] = await Promise.all([
             fetchOrderShiftGateFields(table.activeOrderId),
-            getOpenCashShiftForBranch(activeBranchId),
+            getOpenCashShiftForBranch(activeBranchId, { strict: true }),
           ]);
           if (gateFields && openShift && orderBelongsToOpenCashShift(gateFields, openShift)) {
             warmOrderId(table.activeOrderId);
@@ -229,7 +229,7 @@ const Mesas = () => {
       if (table.reusableDraftOrderId) {
         try {
           const detail = await fetchOrderDetail(table.reusableDraftOrderId);
-          const openShift = activeBranchId ? await getOpenCashShiftForBranch(activeBranchId) : null;
+          const openShift = activeBranchId ? await getOpenCashShiftForBranch(activeBranchId, { strict: true }) : null;
           const draftInCurrentShift =
             detail
             && detail.status === "DRAFT"
@@ -295,7 +295,7 @@ const Mesas = () => {
         void qc
           .ensureQueryData({
             queryKey: ["open-cash-shift", activeBranchId],
-            queryFn: () => getOpenCashShiftForBranch(activeBranchId),
+            queryFn: () => getOpenCashShiftForBranch(activeBranchId, { strict: true }),
             staleTime: 30_000,
             gcTime: 10 * 60_000,
           })

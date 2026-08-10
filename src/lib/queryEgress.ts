@@ -34,9 +34,10 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 15_000;
 
 /**
  * Safety net aunque el hub esté SUBSCRIBED: eventos perdidos en tablet/PWA
- * no dejan la lista quieta indefinidamente. Alineado al respaldo de hub caído (~15s).
+ * no dejan la lista quieta indefinidamente. 30s reduce presión con N sucursales
+ * OPEN; el hub Realtime sigue siendo la fuente primaria.
  */
-export const OPERATIONAL_LIST_SAFETY_POLL_MS = 15_000;
+export const OPERATIONAL_LIST_SAFETY_POLL_MS = 30_000;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
@@ -261,6 +262,8 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         event: "*",
         schema: "public",
         table: "order_ready_events",
+        // Requiere migración 20260810120000 (branch_id).
+        filter: `branch_id=eq.${hub.branchId}`,
       },
       onEvent,
     )
@@ -270,33 +273,26 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         event: "*",
         schema: "public",
         table: "order_dispatch_events",
+        // Requiere migración 20260810120000 (branch_id).
+        filter: `branch_id=eq.${hub.branchId}`,
       },
       onEvent,
     );
 
-  if (includePayments) {
-    if (hub.shiftId) {
-      channel = channel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "payments",
-          filter: `shift_id=eq.${hub.shiftId}`,
-        },
-        onEvent,
-      );
-    } else {
-      channel = channel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "payments",
-        },
-        onEvent,
-      );
-    }
+  // Sin shiftId no suscribir payments/cash_shift_users globales: con N sucursales
+  // abiertas eso retransmitía el tráfico de todos los locales. La apertura del
+  // turno ya invalida vía cash_shifts (filtro por branch_id) y reconstruye el hub.
+  if (includePayments && hub.shiftId) {
+    channel = channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "payments",
+        filter: `shift_id=eq.${hub.shiftId}`,
+      },
+      onEvent,
+    );
   }
 
   if (includeShiftGate) {
@@ -319,17 +315,6 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
           schema: "public",
           table: "cash_shift_users",
           filter: `shift_id=eq.${hub.shiftId}`,
-        },
-        onEvent,
-      );
-    } else {
-      // Sin turno abierto aún: escuchar altas/bajas de usuarios (apertura).
-      channel = channel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cash_shift_users",
         },
         onEvent,
       );
