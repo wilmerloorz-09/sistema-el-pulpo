@@ -1,9 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import type { DispatchMode, DispatchType } from "@/types/cancellation";
+
+const DISPATCH_BOOTSTRAP_STALE_MS = 5 * 60_000;
+const DISPATCH_BOOTSTRAP_GC_MS = 15 * 60_000;
 
 export interface DispatchConfig {
   id: string;
@@ -102,6 +105,19 @@ async function loadDispatchBootstrap(activeBranchId: string): Promise<DispatchBo
   return { config, assignments };
 }
 
+/** Precarga / reutiliza bootstrap (config + asignaciones) entre pantallas. */
+export async function ensureDispatchBootstrap(
+  qc: QueryClient,
+  branchId: string,
+): Promise<DispatchBootstrap> {
+  return qc.ensureQueryData({
+    queryKey: ["dispatch-bootstrap", branchId],
+    queryFn: () => loadDispatchBootstrap(branchId),
+    staleTime: DISPATCH_BOOTSTRAP_STALE_MS,
+    gcTime: DISPATCH_BOOTSTRAP_GC_MS,
+  });
+}
+
 export function useDispatchConfig() {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
@@ -112,9 +128,9 @@ export function useDispatchConfig() {
     queryFn: () => loadDispatchBootstrap(activeBranchId!),
     enabled: !!activeBranchId,
     retry: 1,
-    staleTime: 5 * 60_000,
+    staleTime: DISPATCH_BOOTSTRAP_STALE_MS,
     refetchOnMount: true,
-    gcTime: 15 * 60_000,
+    gcTime: DISPATCH_BOOTSTRAP_GC_MS,
   });
 
   const config = bootstrapQuery.data?.config;

@@ -21,6 +21,7 @@ import { MobileMenuSheet } from "./MobileMenuSheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getUserDisplayName, getUserRealName } from "@/lib/userDisplay";
 import { CashReportViewer } from "@/components/caja/CashReportViewer";
+import { useWarmDispatchServirCaches } from "@/hooks/useWarmDispatchServirCaches";
 
 const AppLayout = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -30,6 +31,7 @@ const AppLayout = () => {
   const qc = useQueryClient();
   const ordenesLeaveRef = useRef<{ orderId: string; skipPurge: boolean } | null>(null);
   const { signOut, profile } = useAuth();
+  useWarmDispatchServirCaches();
 
   /** En /ordenes solo importa pathname: si la key incluye ?order=…, cada cambio de URL remonta todo y el menú parpadea (mesa libre optimista → id real). */
   const mainOutletKey =

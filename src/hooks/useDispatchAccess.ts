@@ -97,8 +97,11 @@ export function useDispatchAccess() {
 
   return {
     ...access,
-    /** El turno ya resolvió en `ProtectedRoute`; aquí solo config despacho. */
-    isLoading: isDispatchConfigLoading,
+    /**
+     * No bloquear la pantalla si el gate ya da acceso: la config usa defaults
+     * (SINGLE / todo habilitado) hasta que llegue el bootstrap.
+     */
+    isLoading: isDispatchConfigLoading && access.availableViews.length === 0,
     getViewLabel: (view: DispatchView) => DISPATCH_VIEW_LABELS[view],
     canOperateView: (view: DispatchView) => (
       view === "ALL"

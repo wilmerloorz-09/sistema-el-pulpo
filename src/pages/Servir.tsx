@@ -57,7 +57,7 @@ const Servir = () => {
 
   const readOnly = !accessLoading && hasAccess && Boolean(resolvedView) && !canOperateView(scope);
   const canShowMain = !accessLoading && hasAccess && Boolean(resolvedView);
-  const pendingLabel = accessLoading ? "…" : `${orders.length}`;
+  const pendingLabel = accessLoading || isLoading ? "…" : `${orders.length}`;
 
   return (
     <>

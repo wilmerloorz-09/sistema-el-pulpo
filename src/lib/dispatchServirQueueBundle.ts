@@ -1,5 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { OperationalMaps } from "@/lib/orderOperational";
+import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
+import { qk } from "@/lib/queryKeys";
 
 export type DispatchServirQueueBundle = {
   orders: any[];
@@ -93,6 +96,23 @@ export async function fetchDispatchServirQueueBundle(
   });
   if (error) throw error;
   return normalizeDispatchServirQueueBundle(data);
+}
+
+export function dispatchServirQueueBundleQueryKey(branchId: string, shiftId: string) {
+  return [...qk.dispatchServirQueueBundle, branchId, shiftId] as const;
+}
+
+/** Comparte el bundle RPC entre prefetch y la cola de Despacho/Servir. */
+export async function ensureDispatchServirQueueBundle(
+  qc: QueryClient,
+  branchId: string,
+  shiftId: string,
+): Promise<DispatchServirQueueBundle> {
+  return qc.ensureQueryData({
+    queryKey: dispatchServirQueueBundleQueryKey(branchId, shiftId),
+    queryFn: () => fetchDispatchServirQueueBundle(branchId, shiftId),
+    staleTime: OPERATIONAL_STALE_MS,
+  });
 }
 
 export function operationalMapsFromBundleItems(

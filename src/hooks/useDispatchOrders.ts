@@ -1,9 +1,10 @@
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useDispatchConfig } from "./useDispatchConfig";
+import { ensureDispatchBootstrap } from "./useDispatchConfig";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import type { OrderStatus } from "@/types/cancellation";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
@@ -15,7 +16,7 @@ import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShift
 import { ensurePlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
-  fetchDispatchServirQueueBundle,
+  ensureDispatchServirQueueBundle,
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
 } from "@/lib/dispatchServirQueueBundle";
@@ -445,39 +446,52 @@ function buildPartialDispatchItems(order: DispatchOrder) {
   });
 }
 
+function filterDispatchCardsByScope(cards: DispatchOrder[], scope: DispatchView): DispatchOrder[] {
+  if (scope === "ALL") return cards;
+  if (scope === "SPECIAL") return cards.filter((card) => Boolean(card.is_special));
+  if (scope === "TABLE") {
+    return cards.filter((card) => !card.is_special && matchesScope(card.order_type, "TABLE"));
+  }
+  if (scope === "TAKEOUT") {
+    return cards.filter((card) => matchesScope(card.order_type, "TAKEOUT"));
+  }
+  return cards;
+}
+
 export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrdersOptions = {}) {
   const moduleMode: DispatchOrdersModule = options.module ?? "dispatch";
   const isServirModule = moduleMode === "servir";
   const qc = useQueryClient();
   const { activeBranchId, activeBranch } = useBranch();
   const { user } = useAuth();
-  const { config, assignments, isLoading: configLoading } = useDispatchConfig();
   const { data: shiftGate } = useBranchShiftGate();
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
 
   const adaptiveListPoll = useAdaptiveRefetchInterval(
     activeBranchId,
     OPERATIONAL_LIST_BACKUP_POLL_MS,
-    Boolean(activeBranchId && user && !configLoading),
+    Boolean(activeBranchId && user),
   );
 
+  // Sin scope en la key: una sola cola por módulo; el tab filtra en cliente (instantáneo).
   const dispatchOrdersQueryKey = [
     isServirModule ? "servir-orders" : "dispatch-orders",
     activeBranchId,
-    config?.dispatch_mode,
     user?.id,
-    scope,
     shiftGate?.shiftId ?? "_",
   ] as const;
 
   const query = useQuery({
     queryKey: dispatchOrdersQueryKey,
-    placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       // Repair en background (throttle interno); no bloquear el listado.
       void repairOpenShiftOrderCashShiftIds(activeBranchId);
+
+      // Bootstrap + platos en paralelo con la cola (no esperar en cadena).
+      const bootstrapPromise = ensureDispatchBootstrap(qc, activeBranchId);
+      const platosWarmPromise = ensurePlatosProductIdsForBranch(qc, activeBranchId);
 
       // Preferir shiftId del gate (1 RTT menos) cuando ya está resuelto.
       let openShift = shiftGate?.shiftId
@@ -511,8 +525,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       let usedQueueBundle = false;
 
       try {
-        const bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+        const [bootstrap, bundle] = await Promise.all([
+          bootstrapPromise,
+          ensureDispatchServirQueueBundle(qc, activeBranchId, openShift.id),
+        ]);
         usedQueueBundle = true;
+        const config = bootstrap.config;
+        const assignments = bootstrap.assignments;
         ordersMerged = (bundle.orders ?? []).filter((o) => orderBelongsToOpenCashShift(o, openShift!));
 
         const flagsByOrder = new Map(
@@ -603,9 +622,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         let platosProductIds: Set<string> | undefined;
         let filterOutPlatos = false;
         if (isServirModule) {
-          platosProductIds = await ensurePlatosProductIdsForBranch(qc, activeBranchId);
+          platosProductIds = await platosWarmPromise;
         } else if (moduleMode === "dispatch" && hasPlateServersFromBundle) {
-          platosProductIds = await ensurePlatosProductIdsForBranch(qc, activeBranchId);
+          platosProductIds = await platosWarmPromise;
           filterOutPlatos = true;
         }
 
@@ -636,7 +655,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           SPECIAL: allCards.filter(c => c.is_special).length,
         };
 
-        const filteredCards = sortByBatchArrival(getPermittedForView(scope, allCards)) as DispatchOrder[];
+        const filteredCards = sortByBatchArrival(allCards) as DispatchOrder[];
         return { orders: filteredCards, counts };
       } catch (bundleError) {
         if (usedQueueBundle) {
@@ -648,6 +667,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       }
 
       // --- Legacy multi-query (fallback si la RPC aún no está migrada) ---
+      const bootstrap = await bootstrapPromise;
+      const config = bootstrap.config;
+      const assignments = bootstrap.assignments;
+
       ordersMerged = (
         await dbSelectStrict<any>("orders", {
           select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
@@ -794,7 +817,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const platosPromise: Promise<{ platosProductIds?: Set<string>; filterOutPlatos: boolean }> =
         isServirModule
-          ? ensurePlatosProductIdsForBranch(qc, activeBranchId).then((ids) => ({
+          ? platosWarmPromise.then((ids) => ({
               platosProductIds: ids,
               filterOutPlatos: false,
             }))
@@ -811,7 +834,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
                   return { filterOutPlatos: false };
                 }
                 return {
-                  platosProductIds: await ensurePlatosProductIdsForBranch(qc, activeBranchId),
+                  platosProductIds: await platosWarmPromise,
                   filterOutPlatos: true,
                 };
               })
@@ -870,14 +893,14 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         SPECIAL: allCards.filter(c => c.is_special).length,
       };
 
-      const filteredCards = sortByBatchArrival(getPermittedForView(scope, allCards)) as DispatchOrder[];
+      const filteredCards = sortByBatchArrival(allCards) as DispatchOrder[];
 
       return {
         orders: filteredCards,
         counts
       };
     },
-    enabled: !!activeBranchId && !!user && !configLoading,
+    enabled: !!activeBranchId && !!user,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
@@ -890,7 +913,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     branchId: activeBranchId,
     queryClient: qc,
     channelPrefix: isServirModule ? "servir-orders-rt" : "dispatch-orders-rt",
-    enabled: Boolean(activeBranchId && user && !configLoading),
+    enabled: Boolean(activeBranchId && user),
     queryKeys: [
       [isServirModule ? "servir-orders" : "dispatch-orders"],
     ],
@@ -1061,9 +1084,17 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     },
   });
 
+  const allOrders = query.data?.orders || [];
+  const counts = query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 };
+  const orders = useMemo(
+    () => filterDispatchCardsByScope(allOrders, scope),
+    [allOrders, scope],
+  );
+
   return {
-    orders: query.data?.orders || [],
-    counts: query.data?.counts || { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 },
+    orders,
+    counts,
+    // Solo spinner si aún no hay datos de esta cola (no ocultar cache fresco al reentrar).
     isLoading: query.isLoading,
     isError: query.isError,
     applyReadyOperation,

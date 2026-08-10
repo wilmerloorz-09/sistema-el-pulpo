@@ -57,9 +57,35 @@ export const platosProductIdsQueryKey = (branchId: string) =>
 
 /** Catálogo: casi no cambia en el turno; 30 min evita martillar menú en cada refresh de cola. */
 const PLATOS_MEMORY_TTL_MS = CATALOG_STALE_MS;
+const PLATOS_LS_PREFIX = "elpulpo:platos-product-ids:";
 
 type MemoryEntry = { ids: string[]; expiresAt: number };
 const platosMemoryCache = new Map<string, MemoryEntry>();
+
+function readPlatosIdsFromStorage(branchId: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(`${PLATOS_LS_PREFIX}${branchId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as MemoryEntry;
+    if (!parsed || !Array.isArray(parsed.ids) || Number(parsed.expiresAt) <= Date.now()) return null;
+    return parsed.ids.map(String).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function writePlatosIdsToStorage(branchId: string, ids: string[]) {
+  try {
+    const entry: MemoryEntry = {
+      ids,
+      expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
+    };
+    localStorage.setItem(`${PLATOS_LS_PREFIX}${branchId}`, JSON.stringify(entry));
+    platosMemoryCache.set(branchId, entry);
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 async function loadPlatosProductIds(branchId: string): Promise<string[]> {
   const scopeNodes = await Promise.all(
@@ -87,6 +113,11 @@ async function loadPlatosProductIds(branchId: string): Promise<string[]> {
 export function invalidatePlatosProductIdsCache(branchId?: string | null) {
   if (branchId) {
     platosMemoryCache.delete(branchId);
+    try {
+      localStorage.removeItem(`${PLATOS_LS_PREFIX}${branchId}`);
+    } catch {
+      // ignore
+    }
     return;
   }
   platosMemoryCache.clear();
@@ -99,11 +130,17 @@ export async function fetchPlatosProductIdsForBranch(branchId: string): Promise<
     return new Set(cached.ids);
   }
 
+  const fromLs = readPlatosIdsFromStorage(branchId);
+  if (fromLs) {
+    platosMemoryCache.set(branchId, {
+      ids: fromLs,
+      expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
+    });
+    return new Set(fromLs);
+  }
+
   const ids = await loadPlatosProductIds(branchId);
-  platosMemoryCache.set(branchId, {
-    ids,
-    expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
-  });
+  writePlatosIdsToStorage(branchId, ids);
   return new Set(ids);
 }
 
@@ -115,14 +152,36 @@ export async function ensurePlatosProductIdsForBranch(
   qc: QueryClient,
   branchId: string,
 ): Promise<Set<string>> {
+  // Hit rápido memoria / localStorage antes de ensureQueryData (evita esperar al scheduler RQ).
+  const mem = platosMemoryCache.get(branchId);
+  if (mem && mem.expiresAt > Date.now()) {
+    return new Set(mem.ids);
+  }
+  const fromLs = readPlatosIdsFromStorage(branchId);
+  if (fromLs) {
+    platosMemoryCache.set(branchId, {
+      ids: fromLs,
+      expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
+    });
+    // Revalidar en background sin bloquear la cola.
+    void qc.prefetchQuery({
+      queryKey: platosProductIdsQueryKey(branchId),
+      queryFn: async () => {
+        const loaded = await loadPlatosProductIds(branchId);
+        writePlatosIdsToStorage(branchId, loaded);
+        return loaded;
+      },
+      staleTime: CATALOG_STALE_MS,
+      gcTime: CATALOG_GC_MS,
+    });
+    return new Set(fromLs);
+  }
+
   const ids = await qc.ensureQueryData({
     queryKey: platosProductIdsQueryKey(branchId),
     queryFn: async () => {
       const loaded = await loadPlatosProductIds(branchId);
-      platosMemoryCache.set(branchId, {
-        ids: loaded,
-        expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
-      });
+      writePlatosIdsToStorage(branchId, loaded);
       return loaded;
     },
     staleTime: CATALOG_STALE_MS,
