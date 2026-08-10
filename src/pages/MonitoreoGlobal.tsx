@@ -648,16 +648,41 @@ function useGlobalMonitor(branches: Branch[]) {
       backupInterval = null;
     };
 
-    const channel = supabase
-      .channel(uniqueChannelName)
-      // Requiere migración 20260730230000 (cash_shifts / cash_shift_users en Realtime).
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, handleBranchScopedEvent)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cash_shifts" }, handleBranchScopedEvent)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cash_shift_users" }, handleShiftUserEvent)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") stopBackup();
-        else startBackup();
-      });
+    // Un listener filtrado por sucursal (antes: orders/cash_shifts GLOBALES →
+    // con 4 turnos OPEN cada evento de cualquier local despertaba el monitor).
+    let channel = supabase.channel(uniqueChannelName);
+    for (const branch of branches) {
+      channel = channel
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "orders",
+            filter: `branch_id=eq.${branch.id}`,
+          },
+          handleBranchScopedEvent,
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "cash_shifts",
+            filter: `branch_id=eq.${branch.id}`,
+          },
+          handleBranchScopedEvent,
+        );
+    }
+    channel = channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "cash_shift_users" },
+      handleShiftUserEvent,
+    );
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") stopBackup();
+      else startBackup();
+    });
 
     channelRef.current = channel;
     startBackup();

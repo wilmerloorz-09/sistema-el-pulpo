@@ -32,7 +32,7 @@ export async function getOpenCashShiftIdForBranch(branchId: string): Promise<str
   return shift?.id ?? null;
 }
 
-const repairThrottleMs = 60_000;
+const repairThrottleMs = 120_000;
 const lastRepairAtByBranch = new Map<string, number>();
 
 /**

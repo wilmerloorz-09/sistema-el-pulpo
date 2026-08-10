@@ -33,13 +33,27 @@ export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
 export const OPERATIONAL_LIST_BACKUP_POLL_MS = 15_000;
 
 /**
- * Safety net aunque el hub esté SUBSCRIBED: eventos perdidos en tablet/PWA
- * no dejan la lista quieta indefinidamente. 30s reduce presión con N sucursales
- * OPEN; el hub Realtime sigue siendo la fuente primaria.
+ * Safety net aunque el hub esté SUBSCRIBED. Con N sucursales OPEN, 15–30s
+ * regeneraba tormenta de refetch; 90s basta como red de seguridad.
  */
-export const OPERATIONAL_LIST_SAFETY_POLL_MS = 30_000;
+export const OPERATIONAL_LIST_SAFETY_POLL_MS = 90_000;
+
+/** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
+export const HUB_DEFAULT_DEBOUNCE_MS = 1_200;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
+
+type HubInvalidateSource = "operational" | "shift" | "payments";
+
+function isShiftGateQueryKey(key: QueryKey): boolean {
+  const head = Array.isArray(key) ? key[0] : key;
+  return (
+    head === qk.branchShiftGate[0]
+    || head === qk.currentShift[0]
+    || head === qk.openCashShift[0]
+  );
+}
+
 
 /**
  * Invalida queries operativas de órdenes afectadas por un cambio de cobro/despacho.
@@ -201,15 +215,27 @@ function mergeConsumerNeeds(hub: BranchRealtimeHub) {
   return { includePayments, includeShiftGate, shiftId, keys };
 }
 
-function scheduleHubInvalidate(hub: BranchRealtimeHub) {
+function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSource = "operational") {
   if (hub.debounceTimer != null) {
     window.clearTimeout(hub.debounceTimer);
   }
   hub.debounceTimer = window.setTimeout(() => {
     hub.debounceTimer = null;
     const { keys } = mergeConsumerNeeds(hub);
-    for (const key of keys) {
+    // Eventos de órdenes/ítems/listo/despacho NO deben refetch el gate
+    // (antes cada plato listo re-disparaba 4–5 RPCs de turno en cada tablet).
+    const filtered =
+      source === "shift"
+        ? keys
+        : keys.filter((key) => !isShiftGateQueryKey(key));
+    for (const key of filtered) {
       void hub.queryClient.invalidateQueries({ queryKey: key });
+    }
+    if (source === "shift") {
+      // Asegurar gate aunque el consumidor no esté en la merge por timing.
+      void hub.queryClient.invalidateQueries({ queryKey: qk.branchShiftGate });
+      void hub.queryClient.invalidateQueries({ queryKey: qk.currentShift });
+      void hub.queryClient.invalidateQueries({ queryKey: qk.openCashShift });
     }
   }, hub.debounceMs);
 }
@@ -229,7 +255,9 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
 
   const { includePayments, includeShiftGate, shiftId } = mergeConsumerNeeds(hub);
   hub.shiftId = shiftId;
-  const onEvent = () => scheduleHubInvalidate(hub);
+  const onOperational = () => scheduleHubInvalidate(hub, "operational");
+  const onShift = () => scheduleHubInvalidate(hub, "shift");
+  const onPayments = () => scheduleHubInvalidate(hub, "payments");
 
   setHubStatus(hub, "connecting");
 
@@ -243,7 +271,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         table: "orders",
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onEvent,
+      onOperational,
     )
     .on(
       "postgres_changes",
@@ -254,7 +282,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         // Requiere migración 20260730230000 (sucursal_id).
         filter: `sucursal_id=eq.${hub.branchId}`,
       },
-      onEvent,
+      onOperational,
     )
     .on(
       "postgres_changes",
@@ -265,7 +293,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         // Requiere migración 20260810120000 (branch_id).
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onEvent,
+      onOperational,
     )
     .on(
       "postgres_changes",
@@ -276,7 +304,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         // Requiere migración 20260810120000 (branch_id).
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onEvent,
+      onOperational,
     );
 
   // Sin shiftId no suscribir payments/cash_shift_users globales: con N sucursales
@@ -291,7 +319,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         table: "payments",
         filter: `shift_id=eq.${hub.shiftId}`,
       },
-      onEvent,
+      onPayments,
     );
   }
 
@@ -304,7 +332,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         table: "cash_shifts",
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onEvent,
+      onShift,
     );
 
     if (hub.shiftId) {
@@ -316,7 +344,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
           table: "cash_shift_users",
           filter: `shift_id=eq.${hub.shiftId}`,
         },
-        onEvent,
+        onShift,
       );
     }
   }
@@ -429,7 +457,7 @@ export function useOperationalOrdersRealtime({
   channelPrefix,
   enabled = true,
   queryKeys,
-  debounceMs = 400,
+  debounceMs = HUB_DEFAULT_DEBOUNCE_MS,
   includePayments = false,
   includeShiftGate = false,
   shiftId = null,

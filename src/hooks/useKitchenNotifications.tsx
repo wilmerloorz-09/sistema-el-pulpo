@@ -15,9 +15,14 @@ export interface KitchenNotification {
 
 type NotificationCallback = (notification: KitchenNotification) => void;
 
-export function useKitchenNotifications(onNotification: NotificationCallback) {
+export function useKitchenNotifications(
+  onNotification: NotificationCallback,
+  branchId?: string | null,
+) {
   useEffect(() => {
-    const kitchenChannel = supabase.channel(`kitchen-notifications:${crypto.randomUUID()}`);
+    if (!branchId) return;
+
+    const kitchenChannel = supabase.channel(`kitchen-notifications:${branchId}`);
 
     kitchenChannel
       .on(
@@ -26,6 +31,7 @@ export function useKitchenNotifications(onNotification: NotificationCallback) {
           event: "INSERT",
           schema: "public",
           table: "kitchen_notifications",
+          filter: `branch_id=eq.${branchId}`,
         },
         (payload) => {
           const row = payload.new as Record<string, unknown>;
@@ -47,7 +53,7 @@ export function useKitchenNotifications(onNotification: NotificationCallback) {
     return () => {
       void supabase.removeChannel(kitchenChannel);
     };
-  }, [onNotification]);
+  }, [branchId, onNotification]);
 }
 
 interface KitchenNotificationBannerProps {

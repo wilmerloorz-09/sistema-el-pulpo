@@ -57,13 +57,14 @@ export function usePreferredHomePath() {
       firstVisiblePath: visibleItems[0]?.to ?? null,
       canAccessAdmin,
       hasOperationalShift,
-      isLoading: shiftGateQuery.isLoading || dispatchAccess.isLoading,
+      // No esperar config de despacho: bloqueaba el login con otra round-trip.
+      // Si el usuario solo tiene despacho, hasAccess puede resolverse un instante después.
+      isLoading: shiftGateQuery.isLoading && !shiftGateQuery.data,
     };
   }, [
     activeBranch?.workflow_mode,
     branches.length,
     dispatchAccess.hasAccess,
-    dispatchAccess.isLoading,
     isGlobalAdmin,
     permissions,
     shiftGateQuery.data,

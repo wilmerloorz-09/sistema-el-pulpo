@@ -199,46 +199,65 @@ export function useBranchShiftGate() {
         };
       }
 
-      const { data: shiftMetaRow, error: shiftMetaError } = await (supabase
-        .from("cash_shifts" as any)
-        .select("cashier_id, capture_user_id, opened_at, primary_cashier_id")
-        .eq("id", shiftId)
-        .maybeSingle() as any);
-      if (shiftMetaError) throw shiftMetaError;
-
-      const openedDate = shiftMetaRow?.opened_at ? new Date(shiftMetaRow.opened_at) : null;
-      const today = new Date();
-      const isStaleShift = openedDate 
-        ? (openedDate.getFullYear() !== today.getFullYear() ||
-           openedDate.getMonth() !== today.getMonth() ||
-           openedDate.getDate() !== today.getDate())
-        : false;
-
       const shiftUserSelectBase =
         "is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_pack_orders, can_authorize_order_cancel, is_supervisor, can_double_session, last_session_id, secondary_session_id, caja_session_slots";
       const shiftUserSelectExtended = `${shiftUserSelectBase}, secondary_caja_takeout_enabled, secondary_caja_express_enabled, can_serve_plates`;
 
-      let shiftUserRow: Record<string, unknown> | null = null;
-      const extendedShiftUserResult = await (supabase
-        .from("cash_shift_users" as any)
-        .select(shiftUserSelectExtended)
-        .eq("shift_id", shiftId)
-        .eq("user_id", user.id)
+      // Paralelo: meta + usuario + usage (antes era waterfall serial → login lento).
+      // Admin: no necesita cash_shift_users (bypass de roles).
+      // Promociones: no bloquear el gate (nav de promos desactivado; cache async).
+      const shiftMetaPromise = (supabase
+        .from("cash_shifts" as any)
+        .select("cashier_id, capture_user_id, opened_at, primary_cashier_id")
+        .eq("id", shiftId)
         .maybeSingle() as any);
 
-      if (extendedShiftUserResult.error && isMissingColumnError(extendedShiftUserResult.error)) {
-        const baseShiftUserResult = await (supabase
-          .from("cash_shift_users" as any)
-          .select(shiftUserSelectBase)
-          .eq("shift_id", shiftId)
-          .eq("user_id", user.id)
-          .maybeSingle() as any);
-        if (baseShiftUserResult.error) throw baseShiftUserResult.error;
-        shiftUserRow = baseShiftUserResult.data ?? null;
-      } else {
-        if (extendedShiftUserResult.error) throw extendedShiftUserResult.error;
-        shiftUserRow = extendedShiftUserResult.data ?? null;
+      const shiftUserPromise = isBranchAdmin
+        ? Promise.resolve({ data: null, error: null })
+        : (supabase
+            .from("cash_shift_users" as any)
+            .select(shiftUserSelectExtended)
+            .eq("shift_id", shiftId)
+            .eq("user_id", user.id)
+            .maybeSingle() as any);
+
+      const usagePromise = supabase.rpc("get_caja_shift_terminal_usage", {
+        p_branch_id: activeBranchId,
+      } as any);
+
+      const [shiftMetaResult, shiftUserFirst, usageResult] = await Promise.all([
+        shiftMetaPromise,
+        shiftUserPromise,
+        usagePromise,
+      ]);
+
+      if (shiftMetaResult.error) throw shiftMetaResult.error;
+      const shiftMetaRow = shiftMetaResult.data;
+
+      let shiftUserRow: Record<string, unknown> | null = null;
+      if (!isBranchAdmin) {
+        if (shiftUserFirst.error && isMissingColumnError(shiftUserFirst.error)) {
+          const baseShiftUserResult = await (supabase
+            .from("cash_shift_users" as any)
+            .select(shiftUserSelectBase)
+            .eq("shift_id", shiftId)
+            .eq("user_id", user.id)
+            .maybeSingle() as any);
+          if (baseShiftUserResult.error) throw baseShiftUserResult.error;
+          shiftUserRow = baseShiftUserResult.data ?? null;
+        } else {
+          if (shiftUserFirst.error) throw shiftUserFirst.error;
+          shiftUserRow = shiftUserFirst.data ?? null;
+        }
       }
+
+      const openedDate = shiftMetaRow?.opened_at ? new Date(shiftMetaRow.opened_at) : null;
+      const today = new Date();
+      const isStaleShift = openedDate
+        ? (openedDate.getFullYear() !== today.getFullYear() ||
+           openedDate.getMonth() !== today.getMonth() ||
+           openedDate.getDate() !== today.getDate())
+        : false;
 
       const directUserEnabled = Boolean(shiftUserRow?.is_enabled);
       const hasDirectShiftRow = shiftUserRow != null;
@@ -254,11 +273,11 @@ export function useBranchShiftGate() {
         && primaryCashierId !== user.id;
       const cashierId = shiftMetaRow?.cashier_id ?? null;
       const captureUserId = shiftMetaRow?.capture_user_id ?? null;
-      const { data: usageRows, error: usageError } = await supabase.rpc("get_caja_shift_terminal_usage", {
-        p_branch_id: activeBranchId,
-      } as any);
+
       let globalCajaSessionsUsed = 0;
       let maxCajaSessions = 1;
+      const usageError = usageResult.error;
+      const usageRows = usageResult.data;
       if (!usageError && Array.isArray(usageRows) && usageRows.length > 0) {
         const usageRow = usageRows[0] as { global_sessions_used?: number; shift_max?: number };
         globalCajaSessionsUsed = Math.max(0, Number(usageRow?.global_sessions_used ?? 0));
@@ -275,12 +294,11 @@ export function useBranchShiftGate() {
               (s): s is string => Boolean(s && String(s).trim()),
             );
 
-      let puedeRegistrarPromociones = false;
-      try {
-        puedeRegistrarPromociones = await leerPuedeRegistrarPromociones(user.id, shiftId);
-      } catch {
-        puedeRegistrarPromociones = false;
-      }
+      // No await: no retrasar login/home por permisos de promociones.
+      const promoCacheKey = `${user.id}:${shiftId}`;
+      const promoCached = promoPermissionCache.get(promoCacheKey);
+      const puedeRegistrarPromociones = promoCached?.value ?? false;
+      void leerPuedeRegistrarPromociones(user.id, shiftId).catch(() => undefined);
 
       const gate: BranchShiftGate = {
         shiftId,
@@ -352,12 +370,11 @@ export function useBranchShiftGate() {
     };
 
     try {
-      // 15s: con varias sucursales OPEN el gate encadena varias lecturas;
-      // 6s producía timeouts espurios y la UI interpretaba “turno cerrado”.
+      // 12s con lecturas en paralelo (antes 15s serial).
       const resolved = await Promise.race([
         runQuery(),
         new Promise<BranchShiftGate>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout de turno")), 15_000)
+          setTimeout(() => reject(new Error("Timeout de turno")), 12_000)
         ),
       ]);
       return resolved;
@@ -379,8 +396,8 @@ export function useBranchShiftGate() {
     refetchOnWindowFocus: false,
     // Conserva el gate previo mientras cambia sucursal/usuario o hay un refetch en curso.
     placeholderData: keepPreviousData,
-    retry: 2,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+    retry: 1,
+    retryDelay: 800,
   });
 
   useOperationalOrdersRealtime({
