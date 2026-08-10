@@ -1,5 +1,7 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { supabase } from "@/integrations/supabase/client";
+import { CATALOG_GC_MS, CATALOG_STALE_MS } from "@/lib/queryEgress";
 
 export function normalizeMenuCategoryLabel(value?: string | null) {
   return String(value ?? "")
@@ -50,16 +52,24 @@ export function buildPlatosProductIdSet(menuNodes: MenuNode[]) {
 
 const SERVIR_MENU_SCOPES: MenuScope[] = ["TABLE", "TAKEOUT", "BULK"];
 
-export async function fetchPlatosProductIdsForBranch(branchId: string) {
+export const platosProductIdsQueryKey = (branchId: string) =>
+  ["platos-product-ids", branchId] as const;
+
+/** Catálogo: casi no cambia en el turno; 30 min evita martillar menú en cada refresh de cola. */
+const PLATOS_MEMORY_TTL_MS = CATALOG_STALE_MS;
+
+type MemoryEntry = { ids: string[]; expiresAt: number };
+const platosMemoryCache = new Map<string, MemoryEntry>();
+
+async function loadPlatosProductIds(branchId: string): Promise<string[]> {
   const scopeNodes = await Promise.all(
     SERVIR_MENU_SCOPES.map((menuScope) =>
       fetchMenuTreeNodes({ branchId, menuScope, includeInactive: false }),
     ),
   );
-  
+
   const productIds = buildPlatosProductIdSet(scopeNodes.flat());
 
-  // Consultar productos no pertenecientes a la categoría platos pero forzados a Módulo Servir
   const { data: forcedProducts } = await supabase
     .from("products")
     .select("id")
@@ -71,7 +81,54 @@ export async function fetchPlatosProductIdsForBranch(branchId: string) {
     }
   }
 
-  return productIds;
+  return Array.from(productIds);
+}
+
+export function invalidatePlatosProductIdsCache(branchId?: string | null) {
+  if (branchId) {
+    platosMemoryCache.delete(branchId);
+    return;
+  }
+  platosMemoryCache.clear();
+}
+
+/** Lectura con caché en memoria (TTL catálogo). */
+export async function fetchPlatosProductIdsForBranch(branchId: string): Promise<Set<string>> {
+  const cached = platosMemoryCache.get(branchId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return new Set(cached.ids);
+  }
+
+  const ids = await loadPlatosProductIds(branchId);
+  platosMemoryCache.set(branchId, {
+    ids,
+    expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
+  });
+  return new Set(ids);
+}
+
+/**
+ * Comparte el catálogo entre Despacho/Servir vía React Query.
+ * Un refresh de cola no vuelve a bajar 3 árboles de menú si el dato está fresco.
+ */
+export async function ensurePlatosProductIdsForBranch(
+  qc: QueryClient,
+  branchId: string,
+): Promise<Set<string>> {
+  const ids = await qc.ensureQueryData({
+    queryKey: platosProductIdsQueryKey(branchId),
+    queryFn: async () => {
+      const loaded = await loadPlatosProductIds(branchId);
+      platosMemoryCache.set(branchId, {
+        ids: loaded,
+        expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
+      });
+      return loaded;
+    },
+    staleTime: CATALOG_STALE_MS,
+    gcTime: CATALOG_GC_MS,
+  });
+  return new Set(ids);
 }
 
 export function isPlatosOrderItem(

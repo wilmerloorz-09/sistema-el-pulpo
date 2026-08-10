@@ -15,8 +15,22 @@ import { parseDecimalInput, sanitizeDecimalInput, sanitizeIntegerInput } from "@
 import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
 import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
+import { invalidatePlatosProductIdsCache } from "@/lib/menuPlatosCategory";
 import NodeModifiersPanel from "@/components/admin/NodeModifiersPanel";
 import BulkIncludedProductsPanel from "@/components/admin/BulkIncludedProductsPanel";
+
+function invalidateMenuCatalogQueries(queryClient: ReturnType<typeof useQueryClient>, branchId?: string | null) {
+  queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
+  queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
+  queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
+  queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
+  queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
+  queryClient.invalidateQueries({ queryKey: ["menu-products"] });
+  queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+  queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+  queryClient.invalidateQueries({ queryKey: ["platos-product-ids"] });
+  invalidatePlatosProductIdsCache(branchId);
+}
 
 interface AdminMenuNode extends MenuNode {}
 
@@ -761,14 +775,7 @@ const MenuNodesCrud = ({
           upsertMenuNodeInList((current ?? []) as AdminMenuNode[], savedNode),
         );
       }
-      queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
-      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-products"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+      invalidateMenuCatalogQueries(queryClient, activeBranchId);
       resetForm();
     },
     onError: (error: Error) => {
@@ -812,14 +819,7 @@ const MenuNodesCrud = ({
     onSuccess: (_didToggle, node) => {
       if (!_didToggle) return;
       toast.success(node.is_active ? "Nodo desactivado" : "Nodo activado");
-      queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
-      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-products"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+      invalidateMenuCatalogQueries(queryClient, activeBranchId);
       resetForm();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -886,14 +886,7 @@ const MenuNodesCrud = ({
     onSuccess: (didDelete) => {
       if (!didDelete) return;
       toast.success("Nodo eliminado permanentemente");
-      queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
-      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-products"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+      invalidateMenuCatalogQueries(queryClient, activeBranchId);
       resetForm();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -920,14 +913,7 @@ const MenuNodesCrud = ({
     onSuccess: (didCopy) => {
       if (!didCopy) return;
       toast.success("Arbol Para Llevar copiado desde Arbol Menu Mesa");
-      queryClient.invalidateQueries({ queryKey: ["admin-menu-nodes"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["scope-composite-menu-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-product-lookup"] });
-      queryClient.invalidateQueries({ queryKey: ["branch-modifiers-catalog"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-products"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
+      invalidateMenuCatalogQueries(queryClient, activeBranchId);
       resetForm();
     },
     onError: (error: Error) => toast.error(error.message),

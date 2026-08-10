@@ -12,7 +12,7 @@ import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
-import { fetchPlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
+import { ensurePlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
   fetchDispatchServirQueueBundle,
@@ -603,9 +603,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         let platosProductIds: Set<string> | undefined;
         let filterOutPlatos = false;
         if (isServirModule) {
-          platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
+          platosProductIds = await ensurePlatosProductIdsForBranch(qc, activeBranchId);
         } else if (moduleMode === "dispatch" && hasPlateServersFromBundle) {
-          platosProductIds = await fetchPlatosProductIdsForBranch(activeBranchId);
+          platosProductIds = await ensurePlatosProductIdsForBranch(qc, activeBranchId);
           filterOutPlatos = true;
         }
 
@@ -794,7 +794,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const platosPromise: Promise<{ platosProductIds?: Set<string>; filterOutPlatos: boolean }> =
         isServirModule
-          ? fetchPlatosProductIdsForBranch(activeBranchId).then((ids) => ({
+          ? ensurePlatosProductIdsForBranch(qc, activeBranchId).then((ids) => ({
               platosProductIds: ids,
               filterOutPlatos: false,
             }))
@@ -811,7 +811,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
                   return { filterOutPlatos: false };
                 }
                 return {
-                  platosProductIds: await fetchPlatosProductIdsForBranch(activeBranchId),
+                  platosProductIds: await ensurePlatosProductIdsForBranch(qc, activeBranchId),
                   filterOutPlatos: true,
                 };
               })
