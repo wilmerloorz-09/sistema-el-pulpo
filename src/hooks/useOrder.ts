@@ -5,6 +5,8 @@ import type { Database } from "@/integrations/supabase/types";
 import { computeLineTotalWithContainer } from "@/lib/paymentQuantity";
 import {
   buildOperationalMapsFromSnapshotRows,
+  computeOperationalQuantities,
+  computeUndispatchedQuantity,
   EMPTY_OPERATIONAL_MAPS,
   hasOrderItemOperationalProgress,
   normalizeSnapshotRows,
@@ -516,13 +518,18 @@ export async function fetchSiblingOrders(
     .sort(compareSiblingOrderTabs);
 }
 
+/**
+ * Órdenes TAKEOUT del turno OPEN que aún tienen unidades por despachar.
+ * No se ocultan solo porque Servir (platos) ya despachó: la tarjeta permanece
+ * hasta que no quede cantidad pendiente (p. ej. Despacho termina bebidas/extras).
+ */
 export async function fetchTakeoutSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
   const openShift = await getOpenCashShiftForBranch(branchId);
   if (!openShift) return [];
 
   const takeoutOrders = (
     await dbSelect<any>("orders", {
-      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, order_items(id, total)",
+      select: "id, order_number, order_code, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, created_by, order_items(id, quantity, total)",
       filters: [
         { column: "branch_id", op: "eq", value: branchId },
         { column: "order_type", op: "eq", value: "TAKEOUT" },
@@ -538,16 +545,8 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
   if (!takeoutOrders || takeoutOrders.length === 0) return [];
 
   const takeoutOrderIds = takeoutOrders.map((order: any) => order.id).filter(Boolean);
-  const dispatchEvents = takeoutOrderIds.length > 0
-    ? await dbSelect<any>("order_dispatch_events", {
-        select: "order_id",
-        filters: [
-          { column: "order_id", op: "in", value: takeoutOrderIds },
-          { column: "status", op: "eq", value: "APPLIED" },
-        ],
-      })
-    : [];
-  const actuallyDispatchedOrderIds = new Set((dispatchEvents ?? []).map((event: any) => event.order_id));
+  const stillPendingDispatchIds = await resolveTakeoutOrdersPendingDispatch(takeoutOrders, takeoutOrderIds);
+
   const creatorIds = Array.from(new Set(takeoutOrders.map((order: any) => order.created_by).filter(Boolean))) as string[];
   const creatorProfiles = creatorIds.length > 0
     ? await dbSelect<any>("profiles", {
@@ -558,7 +557,7 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
   const creatorNameMap = buildUserDisplayMap(creatorProfiles);
 
   return takeoutOrders
-    .filter((sibling: any) => !actuallyDispatchedOrderIds.has(sibling.id))
+    .filter((sibling: any) => stillPendingDispatchIds.has(sibling.id))
     .map((sibling) => ({
       id: sibling.id,
       order_number: sibling.order_number,
@@ -574,6 +573,66 @@ export async function fetchTakeoutSiblingOrders(branchId: string): Promise<Sibli
         : 0,
     }))
     .sort(compareSiblingOrderTabs);
+}
+
+/** IDs TAKEOUT con unidades aún no despachadas (o sin snapshot = borrador / datos incompletos). */
+async function resolveTakeoutOrdersPendingDispatch(
+  takeoutOrders: any[],
+  takeoutOrderIds: string[],
+): Promise<Set<string>> {
+  const pending = new Set<string>();
+
+  if (takeoutOrderIds.length === 0) return pending;
+
+  try {
+    const { data, error } = await (supabase as any).rpc("get_orders_operational_snapshots_lite", {
+      p_order_ids: takeoutOrderIds,
+    });
+    if (error) throw error;
+
+    const rows = (data ?? []) as OrderOperationalSnapshotRow[];
+    const seenOrderIds = new Set<string>();
+
+    for (const row of rows) {
+      const orderId = String(row.order_id ?? "");
+      if (!orderId) continue;
+      seenOrderIds.add(orderId);
+
+      const snap = computeOperationalQuantities({
+        quantityOrdered: Number(row.quantity_ordered ?? 0),
+        quantityReadyTotal: Number(row.quantity_ready_total ?? 0),
+        quantityDispatchedTotal: Number(
+          row.quantity_dispatched_total ?? row.quantity_dispatched ?? 0,
+        ),
+        quantityCancelledPending: Number(row.quantity_cancelled_pending ?? 0),
+        quantityCancelledReady: Number(row.quantity_cancelled_ready ?? 0),
+        quantityCancelledDispatched: Number(row.quantity_cancelled_dispatched ?? 0),
+      });
+      if (computeUndispatchedQuantity(snap) > 0) {
+        pending.add(orderId);
+      }
+    }
+
+    // Sin filas de snapshot: mantener visibles (p. ej. DRAFT recién creado).
+    for (const order of takeoutOrders) {
+      const id = String(order?.id ?? "");
+      if (!id || seenOrderIds.has(id)) continue;
+      if (String(order.status ?? "") === "KITCHEN_DISPATCHED") continue;
+      pending.add(id);
+    }
+
+    return pending;
+  } catch {
+    // Fallback: no ocultar por “cualquier evento de despacho” (fallaba con Servir parcial).
+    // Solo excluir las ya marcadas como despachadas por completo.
+    for (const order of takeoutOrders) {
+      const id = String(order?.id ?? "");
+      if (!id) continue;
+      if (String(order.status ?? "") === "KITCHEN_DISPATCHED") continue;
+      pending.add(id);
+    }
+    return pending;
+  }
 }
 
 export async function fetchExpressSiblingOrders(branchId: string): Promise<SiblingOrder[]> {
