@@ -99,7 +99,6 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
     queryKeys: [["orders"], ["order"], ["tables-with-status"]],
     includePayments: true,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
-    debounceMs: 250,
   });
 
   /** Todas las pestañas cargan en paralelo: bombillas correctas y cambio de pestaña instantaneo con caché. */

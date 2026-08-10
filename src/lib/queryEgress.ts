@@ -117,12 +117,19 @@ type ConsumerConfig = {
   includePayments: boolean;
   includeShiftGate: boolean;
   shiftId: string | null;
+  debounceMs: number;
+};
+
+type ConsumerEntry = {
+  config: ConsumerConfig;
+  /** Varios hooks pueden compartir el mismo channelPrefix (p.ej. gate). */
+  refCount: number;
 };
 
 type BranchRealtimeHub = {
   branchId: string;
   queryClient: QueryClient;
-  consumers: Map<string, ConsumerConfig>;
+  consumers: Map<string, ConsumerEntry>;
   shiftId: string | null;
   channel: RealtimeChannel | null;
   debounceTimer: number | null;
@@ -195,13 +202,16 @@ function mergeConsumerNeeds(hub: BranchRealtimeHub) {
   let includePayments = false;
   let includeShiftGate = false;
   let shiftId: string | null = null;
+  let debounceMs = HUB_DEFAULT_DEBOUNCE_MS;
   const keys: QueryKey[] = [];
   const seen = new Set<string>();
 
-  for (const consumer of hub.consumers.values()) {
+  for (const entry of hub.consumers.values()) {
+    const consumer = entry.config;
     if (consumer.includePayments) includePayments = true;
     if (consumer.includeShiftGate) includeShiftGate = true;
     if (consumer.shiftId) shiftId = consumer.shiftId;
+    debounceMs = Math.max(debounceMs, consumer.debounceMs);
     for (const key of consumer.queryKeys) {
       const stamp = JSON.stringify(key);
       if (seen.has(stamp)) continue;
@@ -210,7 +220,7 @@ function mergeConsumerNeeds(hub: BranchRealtimeHub) {
     }
   }
 
-  return { includePayments, includeShiftGate, shiftId, keys };
+  return { includePayments, includeShiftGate, shiftId, keys, debounceMs };
 }
 
 function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSource = "operational") {
@@ -251,8 +261,9 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
     return;
   }
 
-  const { includePayments, includeShiftGate, shiftId } = mergeConsumerNeeds(hub);
+  const { includePayments, includeShiftGate, shiftId, debounceMs } = mergeConsumerNeeds(hub);
   hub.shiftId = shiftId;
+  hub.debounceMs = debounceMs;
   const onOperational = () => scheduleHubInvalidate(hub, "operational");
   const onShift = () => scheduleHubInvalidate(hub, "shift");
   const onPayments = () => scheduleHubInvalidate(hub, "payments");
@@ -358,7 +369,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
   });
 }
 
-function getOrCreateHub(branchId: string, queryClient: QueryClient, debounceMs: number): BranchRealtimeHub {
+function getOrCreateHub(branchId: string, queryClient: QueryClient): BranchRealtimeHub {
   let hub = hubsByBranch.get(branchId);
   if (!hub) {
     hub = {
@@ -368,13 +379,12 @@ function getOrCreateHub(branchId: string, queryClient: QueryClient, debounceMs: 
       shiftId: null,
       channel: null,
       debounceTimer: null,
-      debounceMs,
+      debounceMs: HUB_DEFAULT_DEBOUNCE_MS,
       status: "idle",
     };
     hubsByBranch.set(branchId, hub);
   } else {
     hub.queryClient = queryClient;
-    hub.debounceMs = debounceMs;
   }
   return hub;
 }
@@ -384,15 +394,25 @@ function upsertHubConsumer(
   queryClient: QueryClient,
   consumerId: string,
   config: ConsumerConfig,
-  debounceMs: number,
+  /** true = nuevo mount del hook; false = solo actualizar config (deps). */
+  isNewMount: boolean,
 ) {
-  const hub = getOrCreateHub(branchId, queryClient, debounceMs);
-  const prev = hub.consumers.get(consumerId);
-  hub.consumers.set(consumerId, config);
+  const hub = getOrCreateHub(branchId, queryClient);
+  const prevEntry = hub.consumers.get(consumerId);
+  const prev = prevEntry?.config;
+
+  if (!prevEntry) {
+    if (!isNewMount) return;
+    hub.consumers.set(consumerId, { config, refCount: 1 });
+  } else {
+    prevEntry.config = config;
+    if (isNewMount) prevEntry.refCount += 1;
+  }
 
   const merged = mergeConsumerNeeds(hub);
   const shiftChanged = hub.shiftId !== merged.shiftId;
   hub.shiftId = merged.shiftId;
+  hub.debounceMs = merged.debounceMs;
 
   const needsRebuild =
     !hub.channel ||
@@ -411,6 +431,12 @@ function removeHubConsumer(branchId: string, consumerId: string) {
   const hub = hubsByBranch.get(branchId);
   if (!hub) return;
 
+  const entry = hub.consumers.get(consumerId);
+  if (!entry) return;
+
+  entry.refCount -= 1;
+  if (entry.refCount > 0) return;
+
   hub.consumers.delete(consumerId);
   if (hub.consumers.size === 0) {
     if (hub.debounceTimer != null) {
@@ -427,6 +453,9 @@ function removeHubConsumer(branchId: string, consumerId: string) {
     return;
   }
 
+  const merged = mergeConsumerNeeds(hub);
+  hub.shiftId = merged.shiftId;
+  hub.debounceMs = merged.debounceMs;
   rebuildHubChannel(hub);
 }
 
@@ -462,30 +491,36 @@ export function useOperationalOrdersRealtime({
 }: UseOperationalOrdersRealtimeOptions) {
   const keysRef = useRef(queryKeys);
   keysRef.current = queryKeys;
+  // Piso: nunca bajar el hub por debajo del default (Mesas/OrdersList pedían 250ms).
+  const effectiveDebounceMs = Math.max(HUB_DEFAULT_DEBOUNCE_MS, debounceMs);
 
+  const buildConfig = (): ConsumerConfig => ({
+    queryKeys: keysRef.current,
+    includePayments,
+    includeShiftGate,
+    shiftId: shiftId ?? null,
+    debounceMs: effectiveDebounceMs,
+  });
+
+  // Lifecycle: +1 / -1 refCount. Varios callers con el mismo prefix coexisten.
   useEffect(() => {
     if (!enabled || !branchId || queryKeys.length === 0) return;
 
-    upsertHubConsumer(
-      branchId,
-      queryClient,
-      channelPrefix,
-      {
-        queryKeys: keysRef.current,
-        includePayments,
-        includeShiftGate,
-        shiftId: shiftId ?? null,
-      },
-      debounceMs,
-    );
+    upsertHubConsumer(branchId, queryClient, channelPrefix, buildConfig(), true);
 
     return () => {
       removeHubConsumer(branchId, channelPrefix);
     };
+  }, [branchId, channelPrefix, enabled, queryClient, queryKeys.length]);
+
+  // Actualizar needs (shiftId, payments, debounce) sin tocar refCount.
+  useEffect(() => {
+    if (!enabled || !branchId || queryKeys.length === 0) return;
+    upsertHubConsumer(branchId, queryClient, channelPrefix, buildConfig(), false);
   }, [
     branchId,
     channelPrefix,
-    debounceMs,
+    effectiveDebounceMs,
     enabled,
     includePayments,
     includeShiftGate,

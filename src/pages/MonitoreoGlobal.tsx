@@ -475,6 +475,17 @@ function useGlobalMonitor(branches: Branch[]) {
     [branches],
   );
 
+  // Rebuild RT de cash_shift_users cuando cambian los turnos OPEN conocidos.
+  const openShiftIdsKey = useMemo(
+    () =>
+      branches
+        .map((branch) => state[branch.id]?.shift?.id)
+        .filter(Boolean)
+        .sort()
+        .join(","),
+    [branches, state],
+  );
+
   // Load data for a single branch using supabase directly to avoid dbSelect RLS/type issues
   const loadBranchData = async (branch: Branch): Promise<BranchMonitorData> => {
     // 1. Open shift — query directly to ensure cross-branch visibility for global admin
@@ -619,18 +630,14 @@ function useGlobalMonitor(branches: Branch[]) {
 
     const handleShiftUserEvent = (payload: any) => {
       const shiftId = payload.new?.shift_id ?? payload.old?.shift_id;
-      if (!shiftId) {
-        branches.forEach((branch) => scheduleReload(branch.id));
-        return;
-      }
+      if (!shiftId) return;
       const matched = Object.entries(stateRef.current).find(
         ([, data]) => data.shift?.id === shiftId,
       );
       if (matched) {
         scheduleReload(matched[0]);
-        return;
       }
-      branches.forEach((branch) => scheduleReload(branch.id));
+      // Sin match: no reload-all. Un turno nuevo llega por cash_shifts (filtrado).
     };
 
     const uniqueChannelName = `global-monitor:${branchIdsKey || "all"}`;
@@ -650,6 +657,11 @@ function useGlobalMonitor(branches: Branch[]) {
 
     // Un listener filtrado por sucursal (antes: orders/cash_shifts GLOBALES →
     // con 4 turnos OPEN cada evento de cualquier local despertaba el monitor).
+    // cash_shift_users: solo turnos OPEN conocidos (nunca global).
+    const openShiftIds = branches
+      .map((branch) => stateRef.current[branch.id]?.shift?.id)
+      .filter((id): id is string => Boolean(id));
+
     let channel = supabase.channel(uniqueChannelName);
     for (const branch of branches) {
       channel = channel
@@ -674,11 +686,18 @@ function useGlobalMonitor(branches: Branch[]) {
           handleBranchScopedEvent,
         );
     }
-    channel = channel.on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "cash_shift_users" },
-      handleShiftUserEvent,
-    );
+    for (const shiftId of openShiftIds) {
+      channel = channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cash_shift_users",
+          filter: `shift_id=eq.${shiftId}`,
+        },
+        handleShiftUserEvent,
+      );
+    }
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") stopBackup();
       else startBackup();
@@ -693,7 +712,7 @@ function useGlobalMonitor(branches: Branch[]) {
       void supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [branchIdsKey]);
+  }, [branchIdsKey, openShiftIdsKey]);
 
   const forceReloadAll = () => {
     setState(

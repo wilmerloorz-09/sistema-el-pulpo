@@ -228,7 +228,6 @@ export function useTablesWithStatus() {
     queryKeys: [["tables-with-status"]],
     includePayments: true,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
-    debounceMs: 250,
   });
 
   const query = useQuery({
