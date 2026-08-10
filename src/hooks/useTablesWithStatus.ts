@@ -7,6 +7,10 @@ import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, type OpenCashShift } from "@/lib/openCashShift";
+import {
+  fetchTablesOverviewBundle,
+  openCashShiftFromBundle,
+} from "@/lib/tablesOverviewBundle";
 import { useOperationalOrdersRealtime, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval } from "@/lib/queryEgress";
 
 // include CANCELLED since we'll add it to the enum via migration
@@ -87,25 +91,27 @@ const withTablesTimeout = <T,>(promise: Promise<T>, timeoutMs = 15_000): Promise
       .finally(() => globalThis.clearTimeout(timeoutId));
   });
 
-async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWithStatusData> {
-  const openShift = await getOpenCashShiftForBranch(branchId, { strict: true });
-
-  const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
-    p_branch_id: branchId,
-  } as any);
-  if (error) throw error;
-
-  const rows = (data ?? []) as TablesOverviewRow[];
-  const activeOrderIds = Array.from(
-    new Set(rows.map((row) => row.active_order_id).filter((id): id is string => Boolean(id))),
-  );
-
-  const activeOrders = activeOrderIds.length > 0
-    ? ((await supabase
-      .from("orders" as any)
-      .select("id, created_by, created_at, sent_to_kitchen_at, cash_shift_id")
-      .in("id", activeOrderIds) as any).data ?? [])
-    : [];
+function mapTablesFromOverviewSources(input: {
+  rows: TablesOverviewRow[];
+  openShift: OpenCashShift | null;
+  activeOrders: Array<{
+    id: string;
+    created_by?: string | null;
+    created_at?: string | null;
+    sent_to_kitchen_at?: string | null;
+    cash_shift_id?: string | null;
+  }>;
+  profiles: Array<{
+    id: string;
+    first_name?: string | null;
+    full_name?: string | null;
+    username?: string | null;
+    alias?: string | null;
+    email?: string | null;
+  }>;
+  voidedOrderIds: string[];
+}): TableWithStatus[] {
+  const { rows, openShift, activeOrders, profiles, voidedOrderIds } = input;
 
   const activeOrderBelongsToShift = new Map<string, boolean>();
   if (openShift) {
@@ -117,31 +123,11 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
     }
   }
 
-  const activeCreatorIds = Array.from(
-    new Set((activeOrders ?? []).map((order: any) => order.created_by).filter(Boolean)),
-  ) as string[];
+  const activeOrdersMap = Object.fromEntries((activeOrders ?? []).map((order) => [order.id, order]));
+  const activeCreatorNameMap = buildUserDisplayMap(profiles);
+  const voidedOrderIdSet = new Set(voidedOrderIds.map(String));
 
-  const activeCreatorProfiles = activeCreatorIds.length > 0
-    ? ((await supabase
-      .from("profiles" as any)
-      .select("id, first_name, full_name, username, email")
-      .in("id", activeCreatorIds) as any).data ?? [])
-    : [];
-
-  const activeOrdersMap = Object.fromEntries((activeOrders ?? []).map((order: any) => [order.id, order]));
-  const activeCreatorNameMap = buildUserDisplayMap(activeCreatorProfiles);
-  
-  const { data: voidedPayments } = activeOrderIds.length > 0
-    ? await (supabase
-        .from("payments" as any)
-        .select("order_id")
-        .in("order_id", activeOrderIds)
-        .ilike("notes", "%VOIDED%") as any)
-    : { data: [] };
-  
-  const voidedOrderIdSet = new Set<string>((voidedPayments ?? []).map((p: any) => String(p.order_id)));
-
-  const tables = rows.map((row) => {
+  return rows.map((row) => {
     const staleShiftOrder =
       Boolean(row.active_order_id)
       && openShift
@@ -154,9 +140,6 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
 
-    // Una orden KITCHEN_DISPATCHED sin saldo pendiente significa que la mesa ya fue liberada.
-    // El RPC puede devolver 'occupied' en ese caso (bug conocido en get_branch_tables_overview);
-    // este guard corrige el estado en el cliente hasta que el backend lo resuelva en BD.
     const isDispatchedComplete =
       !staleShiftOrder
       && row.active_order_status === "KITCHEN_DISPATCHED"
@@ -191,17 +174,92 @@ async function fetchTablesWithStatusInternal(branchId: string): Promise<TablesWi
       reusableDraftOrderId: isEmptyDraft ? (row.active_order_id ?? undefined) : undefined,
       created_by_name: effectiveStatus !== "free" && effectiveOrderId
         ? (activeOrdersMap[effectiveOrderId]?.created_by
-          ? (activeCreatorNameMap[activeOrdersMap[effectiveOrderId].created_by] ?? "Usuario")
+          ? (activeCreatorNameMap[activeOrdersMap[effectiveOrderId].created_by!] ?? "Usuario")
           : null)
         : null,
     };
+  });
+}
+
+async function fetchTablesWithStatusInternal(
+  branchId: string,
+  preferredShiftId?: string | null,
+): Promise<TablesWithStatusData> {
+  try {
+    const bundle = await fetchTablesOverviewBundle(branchId, preferredShiftId ?? null);
+    const openShift = openCashShiftFromBundle(bundle)
+      ?? (preferredShiftId ? { id: preferredShiftId, opened_at: "" } : null)
+      ?? await getOpenCashShiftForBranch(branchId, { strict: true });
+
+    const tables = mapTablesFromOverviewSources({
+      rows: (bundle.rows ?? []) as TablesOverviewRow[],
+      openShift,
+      activeOrders: bundle.active_orders ?? [],
+      profiles: bundle.profiles ?? [],
+      voidedOrderIds: bundle.voided_order_ids ?? [],
+    });
+
+    return { tables, openCashShift: openShift ?? null };
+  } catch (bundleError) {
+    console.warn("[useTablesWithStatus] RPC bundle no disponible; camino legacy", bundleError);
+  }
+
+  const openShift = preferredShiftId
+    ? { id: preferredShiftId, opened_at: "" }
+    : await getOpenCashShiftForBranch(branchId, { strict: true });
+
+  const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
+    p_branch_id: branchId,
+  } as any);
+  if (error) throw error;
+
+  const rows = (data ?? []) as TablesOverviewRow[];
+  const activeOrderIds = Array.from(
+    new Set(rows.map((row) => row.active_order_id).filter((id): id is string => Boolean(id))),
+  );
+
+  const activeOrders = activeOrderIds.length > 0
+    ? ((await supabase
+      .from("orders" as any)
+      .select("id, created_by, created_at, sent_to_kitchen_at, cash_shift_id")
+      .in("id", activeOrderIds) as any).data ?? [])
+    : [];
+
+  const activeCreatorIds = Array.from(
+    new Set((activeOrders ?? []).map((order: any) => order.created_by).filter(Boolean)),
+  ) as string[];
+
+  const activeCreatorProfiles = activeCreatorIds.length > 0
+    ? ((await supabase
+      .from("profiles" as any)
+      .select("id, first_name, full_name, username, alias, email")
+      .in("id", activeCreatorIds) as any).data ?? [])
+    : [];
+
+  const { data: voidedPayments } = activeOrderIds.length > 0
+    ? await (supabase
+        .from("payments" as any)
+        .select("order_id")
+        .in("order_id", activeOrderIds)
+        .ilike("notes", "%VOIDED%") as any)
+    : { data: [] };
+
+  const tables = mapTablesFromOverviewSources({
+    rows,
+    openShift: openShift ?? null,
+    activeOrders: activeOrders ?? [],
+    profiles: activeCreatorProfiles ?? [],
+    voidedOrderIds: (voidedPayments ?? []).map((p: any) => String(p.order_id)),
   });
 
   return { tables, openCashShift: openShift ?? null };
 }
 
-export async function fetchTablesWithStatus(branchId: string): Promise<TablesWithStatusData> {
-  return withTablesTimeout(fetchTablesWithStatusInternal(branchId));
+export async function fetchTablesWithStatus(
+  branchId: string,
+  preferredShiftId?: string | null,
+): Promise<TablesWithStatusData> {
+  return withTablesTimeout(fetchTablesWithStatusInternal(branchId, preferredShiftId));
 }
 
 export function useTablesWithStatus() {
@@ -233,7 +291,10 @@ export function useTablesWithStatus() {
   const query = useQuery({
     queryKey: getTablesWithStatusQueryKey(activeBranchId, tablesShiftKeyPart),
     queryFn: async () => {
-      const data = await fetchTablesWithStatus(activeBranchId!);
+      const data = await fetchTablesWithStatus(
+        activeBranchId!,
+        shiftGateQuery.data?.shiftId ?? null,
+      );
       qc.setQueryData(["open-cash-shift", activeBranchId], data.openCashShift);
       return data;
     },
