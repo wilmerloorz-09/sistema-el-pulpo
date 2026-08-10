@@ -103,10 +103,13 @@ export function invalidateOperationalOrderQueries(
   }
 
   if (includeTables) {
+    // ["tables-with-status", branchId, ...]
     invalidatePrefixed(qk.tablesWithStatus);
-    invalidatePrefixed(qk.tableOrders);
+    // ["table-orders", tableId] — sin branch en la key
+    void qc.invalidateQueries({ queryKey: qk.tableOrders });
   }
   if (includeCompletedPayments) {
+    // ["completed-payments", branchId, ...]
     invalidatePrefixed(qk.completedPayments);
   }
   if (includePromotions) {
@@ -119,7 +122,8 @@ export function invalidateOperationalOrderQueries(
     invalidatePrefixed(qk.currentShift);
   }
   if (includeCashMovements) {
-    invalidatePrefixed(qk.cashRegisterMovements);
+    // ["cash-register-movements", shiftId] — sin branch en la key
+    void qc.invalidateQueries({ queryKey: qk.cashRegisterMovements });
   }
   if (includeAutopedidos) {
     invalidatePrefixed(qk.autopedidosQr);
