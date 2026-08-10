@@ -252,8 +252,8 @@ function warnBatchSnapshotUnavailable(error: unknown) {
   if (batchSnapshotWarningShown) return;
   batchSnapshotWarningShown = true;
   console.warn(
-    "[orderOperational] `get_orders_operational_snapshots` no respondio; se omite el fallback por orden. " +
-      "Revisa migraciones 20260602140000 y 20260730230000 (snapshots lite).",
+    "[orderOperational] snapshots batch/lite no respondio; se omite el fallback por orden. " +
+      "Revisa migraciones 20260725140000, 20260730230000 y 20260810150000 (lite set-based).",
     error,
   );
 }
