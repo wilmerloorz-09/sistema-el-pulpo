@@ -11,7 +11,7 @@ import { NetworkProvider } from "@/contexts/NetworkContext";
 import { useEffect, useState, useRef } from "react";
 import { initSyncListeners } from "@/services/SyncService";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { useCaja } from "@/hooks/useCaja";
+import { useOpenCashRegister } from "@/hooks/useOpenCashRegister";
 import { Download, Share2, X, AlertTriangle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
@@ -103,7 +103,8 @@ const LoadingScreen = () => (
 
 const CajaAutoOpener = () => {
   const { data: shiftGate } = useBranchShiftGate();
-  const { openCashRegister } = useCaja();
+  // Hook liviano: no monta payable-orders ni Realtime de cobros en toda la app.
+  const openCashRegister = useOpenCashRegister({ silent: true });
   const openingRef = useRef(false);
 
   useEffect(() => {
@@ -112,10 +113,12 @@ const CajaAutoOpener = () => {
       shiftGate?.userEnabled &&
       shiftGate?.canUseCaja &&
       shiftGate?.cajaStatus === "UNOPENED" &&
-      !openingRef.current
+      !openingRef.current &&
+      !openCashRegister.isPending
     ) {
       openingRef.current = true;
-      openCashRegister.mutateAsync({ counts: [] })
+      void openCashRegister
+        .mutateAsync({ counts: [] })
         .then(() => {
           console.log("[CajaAutoOpener] Caja abierta automáticamente.");
         })
@@ -126,7 +129,14 @@ const CajaAutoOpener = () => {
           openingRef.current = false;
         });
     }
-  }, [shiftGate, openCashRegister]);
+  }, [
+    shiftGate?.shiftOpen,
+    shiftGate?.userEnabled,
+    shiftGate?.canUseCaja,
+    shiftGate?.cajaStatus,
+    openCashRegister.isPending,
+    openCashRegister.mutateAsync,
+  ]);
 
   return null;
 };

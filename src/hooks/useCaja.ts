@@ -14,6 +14,7 @@ import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
 import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
+import { openCashRegisterRpc } from "@/hooks/useOpenCashRegister";
 import {
   fetchCajaPayableQueueBundle,
   operationalMapsFromCajaBundleItems,
@@ -2833,20 +2834,12 @@ export function useCaja(params?: {
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
 
-      const normalizedDenomCounts = denomCounts.map((denom) => ({
-        denomination_id: denom.denomination_id,
-        qty: Math.max(0, Math.trunc(denom.qty || 0)),
-      }));
-
-      console.log("RPC Payload:", { p_shift_id: shift.id, p_cashier_id: user.id, p_branch_id: activeBranchId, p_denoms: normalizedDenomCounts });
-      const { data, error } = await supabase.rpc("open_cash_register" as any, {
-        p_shift_id: shift.id,
-        p_cashier_id: user.id,
-        p_branch_id: activeBranchId,
-        p_denoms: normalizedDenomCounts,
+      await openCashRegisterRpc({
+        shiftId: shift.id,
+        cashierId: user.id,
+        branchId: activeBranchId,
+        counts: denomCounts,
       });
-      console.log("RPC Result:", { data, error });
-      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["current-shift"] });
