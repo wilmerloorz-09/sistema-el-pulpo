@@ -495,6 +495,8 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `create_additional_dine_in_order(...)`
 - `delete_dine_in_table_order(...)`
 - `compact_table_order_positions(...)`
+- `begin_deferred_table_compacts()` / `queue_or_compact_table_order_positions(...)` / `flush_deferred_table_compacts()` (cola de compactación fuera del sync crítico; `20260811140000`)
+- `release_dine_in_table_after_paid_dispatch(...)` (liberación de mesa tras despacho de orden ya `PAID`, incl. especial mixta)
 
 ### Caja
 - `sync_order_payment_state(...)` (RPC con comprobación de permisos; expone `sync_order_payment_state_internal`)
@@ -656,6 +658,7 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 
 ### Locks / Disk IO (2026-08-11)
 - `20260811123000_reduce_order_lock_pressure.sql` — snapshot unitario filtrado por orden; sync única al final de `register_payment_with_items`.
+- `20260811140000_defer_compact_and_dispatch_snapshot.sql` — despacho con snapshot único; skip sync si ya `PAID`; compact de mesa diferido al final de cobro/despacho.
 
 ### Órdenes especiales mixtas (2026-07-25)
 - `20260725170000_mixed_special_orders.sql`

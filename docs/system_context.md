@@ -400,7 +400,7 @@
 - Hub Realtime `branch-ops-hub:{branchId}`; invalidación **selectiva por tipo de evento** (ítems no refrescan Caja; pagos sí). Pantallas montadas siempre se invalidan.
 - Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 45s`.
 - Safety global: `OPERATIONAL_LIST_SAFETY_POLL_MS = 0`. **Excepción Despacho/Servir:** `DISPATCH_SERVIR_SAFETY_POLL_MS = 30s` aunque el hub esté `SUBSCRIBED`.
-- Locks cobro/despacho: snapshot unitario filtrado por orden + sync única en `register_payment_with_items` (`20260811123000_reduce_order_lock_pressure.sql`).
+- Locks cobro/despacho: snapshot unitario filtrado por orden + sync única en `register_payment_with_items` (`20260811123000`); despacho con snapshot único (sin N+1), skip sync si ya `PAID`, y `compact_table_order_positions` diferido al final de cobro/despacho (`20260811140000`).
 - También `refetchOnWindowFocus` / `refetchOnReconnect` en esas listas; badge **Sync lenta** en layout.
 - Doc: `docs/operational-module-refresh.md` y sección Fase 1.5 en `docs/supabase-performance-audit-phase2.md`.
 
@@ -668,6 +668,11 @@
 - **BD:** migración `20260811123000_reduce_order_lock_pressure.sql`:
   - `get_order_operational_snapshot` filtra CTEs a ítems de la orden (misma lógica que el batch).
   - `register_payment_with_items` suprime sync de triggers durante inserts y llama `sync_order_payment_state_internal` **una vez** al final.
+- **BD (fase 2):** migración `20260811140000_defer_compact_and_dispatch_snapshot.sql`:
+  - `dispatch_order_quantities` materializa **un** snapshot y valida/despacha contra él (sin N+1).
+  - Si la orden ya entró como `PAID`, despacho solo hace `recompute` + liberación de mesa (no `sync` de pagos).
+  - `compact_table_order_positions` se encola (`begin_deferred_table_compacts` / `queue_or_compact` / `flush`) y corre **después** del sync/recompute en cobro y despacho; sin cola activa sigue siendo inmediato (triggers sueltos).
+  - Efecto UX: casi transparente; posible reorden visual breve de cuentas en la misma mesa justo tras cobro/cierre.
 - Aplicar en remoto: `npx supabase db push` (o SQL Editor) sobre el proyecto activo.
 
 ### Actualizacion Ago 10, 2026
