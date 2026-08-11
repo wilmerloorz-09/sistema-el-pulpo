@@ -26,7 +26,7 @@ import {
   type SiblingOrder,
 } from "@/hooks/useOrder";
 import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
-import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 const seedExtraOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -163,8 +163,10 @@ const Extra = () => {
     try {
       await closeExtraOrder(orderId);
       toast.success("Orden Extra cerrada");
-      qc.invalidateQueries({
-        queryKey: ["extra-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_", user.id],
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        orderId,
+        includeTables: true,
       });
       void extraOrdersQuery.refetch();
     } catch (err: unknown) {
@@ -213,7 +215,11 @@ const Extra = () => {
       seedExtraOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
       navigate(`/ordenes?order=${orderId}&origin=extra`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["extra-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_", user.id] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        orderId,
+        includeTables: true,
+      });
       void qc.prefetchQuery({
         queryKey: getOrderQueryKey(orderId),
         queryFn: () => fetchOrderDetail(orderId),

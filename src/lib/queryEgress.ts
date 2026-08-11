@@ -128,9 +128,11 @@ export function invalidateOperationalOrderQueries(
   if (includeAutopedidos) {
     invalidatePrefixed(qk.autopedidosQr);
   }
+  // Detalle de orden: una concreta y/o el prefijo (splits, siblings, listas).
   if (orderId) {
     void qc.invalidateQueries({ queryKey: qk.order(orderId) });
   }
+  void qc.invalidateQueries({ queryKey: qk.orderPrefix });
 }
 
 type ConsumerConfig = {
@@ -257,14 +259,37 @@ function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSour
       source === "shift"
         ? keys
         : keys.filter((key) => !isShiftGateQueryKey(key));
-    for (const key of filtered) {
+
+    const seen = new Set<string>();
+    const invalidateKey = (key: QueryKey) => {
+      const stamp = JSON.stringify(key);
+      if (seen.has(stamp)) return;
+      seen.add(stamp);
       void hub.queryClient.invalidateQueries({ queryKey: key });
+    };
+
+    // Siempre refrescar el set operativo completo (Mesas/Caja/Express/…),
+    // no solo las keys del módulo montado. Evita caches warm/stale en otras pantallas.
+    if (source === "operational" || source === "payments") {
+      for (const key of OPERATIONAL_ORDER_LIST_KEYS) {
+        invalidateKey(key);
+      }
+      invalidateKey(qk.tablesWithStatus);
+      invalidateKey(qk.tableOrders);
+      invalidateKey(qk.orderPrefix);
+      if (source === "payments") {
+        invalidateKey(qk.completedPayments);
+      }
+    }
+
+    for (const key of filtered) {
+      invalidateKey(key);
     }
     if (source === "shift") {
       // Asegurar gate aunque el consumidor no esté en la merge por timing.
-      void hub.queryClient.invalidateQueries({ queryKey: qk.branchShiftGate });
-      void hub.queryClient.invalidateQueries({ queryKey: qk.currentShift });
-      void hub.queryClient.invalidateQueries({ queryKey: qk.openCashShift });
+      invalidateKey(qk.branchShiftGate);
+      invalidateKey(qk.currentShift);
+      invalidateKey(qk.openCashShift);
     }
   }, hub.debounceMs);
 }

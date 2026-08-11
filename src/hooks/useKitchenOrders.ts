@@ -259,6 +259,7 @@ export function useKitchenOrders() {
       return sortBySentAt(cards).filter((order) => order.pending_prepare_count > 0) as KitchenOrder[];
     },
     staleTime: OPERATIONAL_STALE_MS,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,

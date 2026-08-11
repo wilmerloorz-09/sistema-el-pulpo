@@ -67,6 +67,7 @@ import {
   mapPersistedCajaSetup,
   removeCashierFromSetup,
 } from "@/lib/shiftCajaSetupModel";
+import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 import { getUserAlias } from "@/lib/userDisplay";
 import {
   useDispatchConfig,
@@ -1464,17 +1465,16 @@ const ShiftSetupAdmin = () => {
   };
 
   const invalidateShiftState = async () => {
+    invalidateOperationalOrderQueries(qc, {
+      branchId: activeBranchId,
+      includeTables: true,
+      includeCompletedPayments: true,
+      includeShiftGate: true,
+      includeCurrentShift: true,
+    });
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["shift-admin-current-shift"] }),
       qc.invalidateQueries({ queryKey: ["shift-admin-users"] }),
-      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] }),
-      qc.invalidateQueries({ queryKey: ["tables-with-status"], exact: false }),
-      qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
-      qc.invalidateQueries({ queryKey: ["order"], exact: false }),
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false }),
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false }),
-      qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
-      qc.invalidateQueries({ queryKey: ["current-shift"] }),
       qc.invalidateQueries({ queryKey: ["open-cash-shift"], exact: false }),
       qc.invalidateQueries({ queryKey: ["open-cash-shift-id"], exact: false }),
       qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] }),
@@ -2320,21 +2320,11 @@ const ShiftSetupAdmin = () => {
         if (error) throw error;
       }
 
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["orders"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["order"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false }),
-        qc.invalidateQueries({
-          queryKey: ["completed-payments"],
-          exact: false,
-        }),
-        qc.invalidateQueries({ queryKey: ["dispatch-orders"], exact: false }),
-        qc.invalidateQueries({ queryKey: ["kitchen-orders"], exact: false }),
-        qc.invalidateQueries({
-          queryKey: ["tables-with-status"],
-          exact: false,
-        }),
-      ]);
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        includeTables: true,
+        includeCompletedPayments: true,
+      });
 
       toast.success("Ordenes especiales de $0 marcadas como pagadas");
       setZeroSpecialCloseDialog(false);

@@ -1807,7 +1807,11 @@ export function useCaja(params?: {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pending-payment-capture-requests"], exact: false });
-      qc.invalidateQueries({ queryKey: ["payable-orders"], exact: false });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        includeTables: true,
+        includeCompletedPayments: true,
+      });
     },
   });
 
@@ -3466,13 +3470,14 @@ export function useCaja(params?: {
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["current-shift"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      qc.invalidateQueries({ queryKey: ["cash-register-movements"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        includeTables: true,
+        includeCompletedPayments: true,
+        includeShiftGate: true,
+        includeCurrentShift: true,
+        includeCashMovements: true,
+      });
       toast.success("Pago anulado exitosamente");
     },
     onError: (err: any) => toast.error(err.message),

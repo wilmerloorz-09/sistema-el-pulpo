@@ -19,7 +19,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
-import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 const seedExpressOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -147,8 +147,9 @@ const Express = () => {
       const orderId = String(data);
       seedExpressOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
+      const expressListKey = ["express-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"] as const;
       qc.setQueryData(
-        ["express-orders", activeBranchId],
+        expressListKey,
         [
           ...orders,
           {
@@ -165,7 +166,11 @@ const Express = () => {
 
       toast.success("Abriendo nueva orden Express...");
       navigate(`/ordenes?order=${orderId}&origin=express`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["express-orders", activeBranchId] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        orderId,
+        includeTables: true,
+      });
       warmExpressOrder(orderId);
     } catch (err: any) {
       toast.error(err?.message || "Error al abrir orden Express");

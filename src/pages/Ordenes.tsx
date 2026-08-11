@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
+import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 import MenuNavigator from "@/components/order/MenuNavigator";
 import FrequentProductCards from "@/components/order/FrequentProductCards";
 import type { FrequentProductContext } from "@/hooks/useFrequentProducts";
@@ -798,9 +799,11 @@ const OrdenesContent = () => {
 
         if (realId === orderId) {
           navigate(`/ordenes?order=${realId}&origin=${mesasOriginTag}`, { replace: true });
-          qc.invalidateQueries({ queryKey: ["orders"] });
-          qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-          qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
+          invalidateOperationalOrderQueries(qc, {
+            branchId: activeBranchId,
+            orderId: realId,
+            includeTables: true,
+          });
           void qc.prefetchQuery({
             queryKey: getOrderQueryKey(realId),
             queryFn: () => fetchOrderDetail(realId),
@@ -862,9 +865,11 @@ const OrdenesContent = () => {
         queueMicrotask(() => {
           qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
         });
-        qc.invalidateQueries({ queryKey: ["orders"] });
-        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-        qc.invalidateQueries({ queryKey: ["table-orders", openTableIdForCreate] });
+        invalidateOperationalOrderQueries(qc, {
+          branchId: activeBranchId,
+          orderId: realId,
+          includeTables: true,
+        });
         void qc.prefetchQuery({
           queryKey: getOrderQueryKey(realId),
           queryFn: () => fetchOrderDetail(realId),
@@ -1466,13 +1471,12 @@ const OrdenesContent = () => {
         }
       }
 
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(order.id) });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: order.branch_id,
+        orderId: order.id,
+        includeTables: true,
+        includeCompletedPayments: true,
+      });
       setConfirmDeleteCajaOrderOpen(false);
 
       if (order.table_id) {
@@ -2540,15 +2544,11 @@ const OrdenesContent = () => {
       });
       navigate(`/ordenes?order=${newOrderId}${sourceParamsNoMesaCards}`, { replace: true });
 
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      if (isExpressOrder) {
-        qc.invalidateQueries({ queryKey: ["express-orders", order.branch_id] });
-      } else if (isExtraOrder) {
-        qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
-      } else if (isTakeoutOrder) {
-        qc.invalidateQueries({ queryKey: ["takeout-orders", order.branch_id] });
-      }
+      invalidateOperationalOrderQueries(qc, {
+        branchId: order.branch_id,
+        orderId: newOrderId,
+        includeTables: true,
+      });
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
 
@@ -2573,9 +2573,10 @@ const OrdenesContent = () => {
         try {
           const refreshedTableOrders = await fetchSiblingOrders(order.table_id, order.branch_id, order.id);
           qc.setQueryData(["table-orders", order.table_id], refreshedTableOrders);
-          qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-          qc.invalidateQueries({ queryKey: ["order"] });
-          qc.invalidateQueries({ queryKey: ["orders"] });
+          invalidateOperationalOrderQueries(qc, {
+            branchId: order.branch_id,
+            includeTables: true,
+          });
 
           const fallbackOrderId = refreshedTableOrders[0]?.id ?? null;
           if (fallbackOrderId) {
@@ -2612,8 +2613,10 @@ const OrdenesContent = () => {
           tableOrders.filter((tableOrder) => tableOrder.id !== order.id) satisfies SiblingOrder[],
         );
       }
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: order.branch_id,
+        includeTables: true,
+      });
 
       toast.success("Orden eliminada");
 
@@ -2981,11 +2984,12 @@ const OrdenesContent = () => {
         p_group_total: value,
       });
       if (error) throw error;
-      await qc.invalidateQueries({ queryKey: ["order"] });
-      await qc.invalidateQueries({ queryKey: ["orders"] });
-      await qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      await qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      await qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: order?.branch_id ?? activeBranchId,
+        orderId,
+        includeTables: true,
+        includeCompletedPayments: true,
+      });
     } catch (e: any) {
       toast.error(e?.message ?? "No se pudo actualizar el valor especial");
     }
@@ -3071,13 +3075,12 @@ const OrdenesContent = () => {
         toast.success("Orden convertida en especial. El grupo especial usa el valor manual y el resto conserva su precio real.");
       }
 
-      await qc.invalidateQueries({ queryKey: ["order"] });
-      await qc.invalidateQueries({ queryKey: ["orders"] });
-      await qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      await qc.invalidateQueries({ queryKey: ["table-orders"] });
-      await qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      await qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      await qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: order?.branch_id ?? activeBranchId,
+        orderId: order?.id ?? null,
+        includeTables: true,
+        includeCompletedPayments: true,
+      });
     } catch (err: any) {
       toast.error(err?.message ?? "No se pudo convertir a especial");
       throw err;

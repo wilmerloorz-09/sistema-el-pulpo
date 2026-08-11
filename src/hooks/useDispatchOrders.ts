@@ -16,10 +16,11 @@ import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShift
 import { ensurePlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
-  ensureDispatchServirQueueBundle,
+  fetchDispatchServirQueueBundleFresh,
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
 } from "@/lib/dispatchServirQueueBundle";
+import { qk } from "@/lib/queryKeys";
 import {
   OPERATIONAL_STALE_MS,
   OPERATIONAL_LIST_BACKUP_POLL_MS,
@@ -527,7 +528,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       try {
         const [bootstrap, bundle] = await Promise.all([
           bootstrapPromise,
-          ensureDispatchServirQueueBundle(qc, activeBranchId, openShift.id),
+          fetchDispatchServirQueueBundleFresh(qc, activeBranchId, openShift.id),
         ]);
         usedQueueBundle = true;
         const config = bootstrap.config;
@@ -902,7 +903,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     },
     enabled: !!activeBranchId && !!user,
     staleTime: OPERATIONAL_STALE_MS,
-    refetchOnMount: true,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     // Realtime SUBSCRIBED → sin safety poll; si el hub cae → respaldo 30s.
@@ -915,7 +916,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     channelPrefix: isServirModule ? "servir-orders-rt" : "dispatch-orders-rt",
     enabled: Boolean(activeBranchId && user),
     queryKeys: [
-      [isServirModule ? "servir-orders" : "dispatch-orders"],
+      // Ambos módulos + bundle: un solo evento debe refrescar la fuente compartida.
+      qk.dispatchOrders,
+      qk.servirOrders,
+      qk.dispatchServirQueueBundle,
     ],
     includePayments: true,
     // El gate tiene su propio consumer; no re-suscribir cash_shifts aquí.

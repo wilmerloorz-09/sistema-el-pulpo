@@ -24,6 +24,7 @@ import { getOrderOriginLabel } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronsDown, ChevronsUp, Loader2, X } from "lucide-react";
+import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 interface MergeSplitOrdersDialogProps {
   open: boolean;
@@ -577,11 +578,10 @@ export default function MergeSplitOrdersDialog({
     },
     onSuccess: () => {
       toast.success("Los items se movieron entre mesas correctamente.");
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      // Cocina/Despacho/Caja: hub Realtime invalida si esas pantallas están montadas.
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        includeTables: true,
+      });
       onOpenChange(false);
     },
     onError: (error: any) => {

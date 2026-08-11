@@ -16,7 +16,7 @@ import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
-import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 type SpecialOrderCard = {
   id: string;
@@ -212,7 +212,8 @@ const OrdenEspecial = () => {
       const orderId = String(data);
       seedSpecialDraftOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
-      qc.setQueryData(["special-orders", activeBranchId], [
+      const specialListKey = ["special-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"] as const;
+      qc.setQueryData(specialListKey, [
         ...orders,
         {
           id: orderId,
@@ -228,8 +229,11 @@ const OrdenEspecial = () => {
 
       toast.success("Abriendo orden especial...");
       navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["special-orders", activeBranchId] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        orderId,
+        includeTables: true,
+      });
       warmSpecialOrder(orderId);
     } catch (err: any) {
       toast.error(err?.message || "Error al abrir orden especial");

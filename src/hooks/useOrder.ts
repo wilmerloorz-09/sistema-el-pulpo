@@ -18,8 +18,25 @@ import {
   orderBelongsToOpenCashShift,
   type OpenCashShift,
 } from "@/lib/openCashShift";
+import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
+
+function invalidateOrderOperationalCaches(
+  qc: QueryClient,
+  options?: {
+    branchId?: string | null;
+    orderId?: string | null;
+    includeCompletedPayments?: boolean;
+  },
+) {
+  invalidateOperationalOrderQueries(qc, {
+    branchId: options?.branchId ?? null,
+    orderId: options?.orderId ?? null,
+    includeTables: true,
+    includeCompletedPayments: options?.includeCompletedPayments ?? false,
+  });
+}
 
 interface OrderItem {
   id: string;
@@ -1173,8 +1190,10 @@ export function useOrder(orderId: string | null) {
     },
     onSettled: async () => {
       await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
   });
 
@@ -1204,16 +1223,10 @@ export function useOrder(orderId: string | null) {
       toast.error(err.message);
     },
     onSettled: () => {
-      const branchId = query.data?.branch_id;
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["servir-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      if (branchId) {
-        qc.invalidateQueries({ queryKey: ["takeout-orders", branchId] });
-        qc.invalidateQueries({ queryKey: ["special-orders", branchId] });
-      }
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
   });
 
@@ -1260,16 +1273,10 @@ export function useOrder(orderId: string | null) {
       toast.error(err.message);
     },
     onSettled: () => {
-      const branchId = query.data?.branch_id;
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["servir-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      if (branchId) {
-        qc.invalidateQueries({ queryKey: ["takeout-orders", branchId] });
-        qc.invalidateQueries({ queryKey: ["special-orders", branchId] });
-      }
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
   });
 
@@ -1309,16 +1316,10 @@ export function useOrder(orderId: string | null) {
         );
       }
 
-      void qc.invalidateQueries({ queryKey: ["order", orderId] });
-      void qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      void qc.invalidateQueries({ queryKey: ["table-orders"] });
-      void qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      void qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      void qc.invalidateQueries({ queryKey: ["servir-orders"] });
-      if (order?.order_type === "EXTRA" && order.branch_id) {
-        void qc.invalidateQueries({ queryKey: ["extra-orders", order.branch_id] });
-      }
+      invalidateOrderOperationalCaches(qc, {
+        branchId: order?.branch_id ?? query.data?.branch_id,
+        orderId,
+      });
 
       if (row?.order_status === "PAID") {
         toast.success("Orden especial de $0 marcada como pagada");
@@ -1384,12 +1385,10 @@ export function useOrder(orderId: string | null) {
         );
       }
 
-      void qc.invalidateQueries({ queryKey: ["order", orderId] });
-      void qc.invalidateQueries({ queryKey: ["express-orders"] });
-      void qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      void qc.invalidateQueries({ queryKey: ["servir-orders"] });
-      void qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      void qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: order?.branch_id ?? query.data?.branch_id,
+        orderId,
+      });
 
       const message = hadSentItems
         ? "Nuevos items enviados a despacho"
@@ -1421,13 +1420,10 @@ export function useOrder(orderId: string | null) {
       return row as MoveTableResult;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1437,10 +1433,10 @@ export function useOrder(orderId: string | null) {
       await dbUpdate("orders", orderId!, { menu_scope: menuScope });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1453,12 +1449,11 @@ export function useOrder(orderId: string | null) {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+        includeCompletedPayments: true,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1471,12 +1466,11 @@ export function useOrder(orderId: string | null) {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order", orderId] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
-      qc.invalidateQueries({ queryKey: ["completed-payments"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+        includeCompletedPayments: true,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1502,13 +1496,10 @@ export function useOrder(orderId: string | null) {
       return row;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["payable-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
       toast.success("La orden ahora opera como orden especial");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1528,10 +1519,10 @@ export function useOrder(orderId: string | null) {
       return String(data);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
       toast.success("Nueva orden creada en la mesa");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1551,10 +1542,10 @@ export function useOrder(orderId: string | null) {
       return data ? String(data) : null;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["table-orders"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1581,17 +1572,15 @@ export function useOrder(orderId: string | null) {
     },
     onSuccess: () => {
       const tableId = query.data?.table_id;
-      qc.invalidateQueries({ queryKey: ["order"] });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
+
       if (tableId) {
-        qc.invalidateQueries({ queryKey: ["table-orders", tableId] });
         qc.removeQueries({ queryKey: ["table-orders", tableId] });
       }
-      
+
       toast.success("Orden cerrada y enviada a cobro");
     },
     onError: (err: any) => toast.error(err.message),
@@ -1603,11 +1592,10 @@ export function useOrder(orderId: string | null) {
       await dbUpdate("orders", orderId, { locked_for_editing: true });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -1618,11 +1606,10 @@ export function useOrder(orderId: string | null) {
       await dbUpdate("orders", orderId, { locked_for_editing: false });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["kitchen-orders"] });
-      qc.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      invalidateOrderOperationalCaches(qc, {
+        branchId: query.data?.branch_id,
+        orderId,
+      });
     },
     onError: (err: any) => toast.error(err.message),
   });

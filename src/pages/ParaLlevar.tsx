@@ -19,7 +19,7 @@ import {
   getOrderQueryKey,
   type SiblingOrder,
 } from "@/hooks/useOrder";
-import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 const seedTakeoutOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -148,7 +148,8 @@ const ParaLlevar = () => {
       const orderId = String(data);
       seedTakeoutOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
 
-      qc.setQueryData(["takeout-orders", activeBranchId], [
+      const takeoutListKey = ["takeout-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"] as const;
+      qc.setQueryData(takeoutListKey, [
         ...orders,
         {
           id: orderId,
@@ -163,8 +164,11 @@ const ParaLlevar = () => {
 
       toast.success("Abriendo nueva orden para llevar...");
       navigate(`/ordenes?order=${orderId}&origin=para-llevar`, { replace: true });
-      qc.invalidateQueries({ queryKey: ["takeout-orders", activeBranchId] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        orderId,
+        includeTables: true,
+      });
       warmTakeoutOrder(orderId);
     } catch (err: any) {
       toast.error(err?.message || "Error al abrir orden para llevar");

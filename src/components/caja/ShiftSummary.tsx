@@ -99,11 +99,18 @@ export default function ShiftSummary({
       setNotes("");
     } catch (error: any) {
       const rawMessage = String(error?.message ?? "").trim();
+      const isLastCajaBlock = rawMessage.startsWith(
+        "No puedes cerrar la caja porque es la última abierta",
+      );
+      const isLegacyPending = rawMessage.startsWith(
+        "No puedes cerrar la caja porque aun existen ordenes pendientes",
+      );
       setCloseWarning({
         title: "No se puede cerrar la caja",
-        description: rawMessage.startsWith("No puedes cerrar la caja porque aun existen ordenes pendientes")
-          ? rawMessage
-          : rawMessage || "No se pudo cerrar la caja. Intenta nuevamente.",
+        description:
+          isLastCajaBlock || isLegacyPending
+            ? rawMessage
+            : rawMessage || "No se pudo cerrar la caja. Intenta nuevamente.",
       });
       setShowCloseWarning(true);
     }
@@ -598,13 +605,15 @@ export default function ShiftSummary({
       </AlertDialog>
 
       <AlertDialog open={showCloseWarning} onOpenChange={setShowCloseWarning}>
-        <AlertDialogContent className="max-w-md rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
+        <AlertDialogContent className="max-w-lg rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
           <AlertDialogHeader>
             <AlertDialogTitle className=" text-lg font-bold text-amber-950">
               {closeWarning.title}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-sm leading-6 text-amber-900/80">
-              {closeWarning.description}
+            <AlertDialogDescription asChild>
+              <div className="max-h-[50vh] overflow-y-auto whitespace-pre-line text-sm leading-6 text-amber-900/80">
+                {closeWarning.description}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

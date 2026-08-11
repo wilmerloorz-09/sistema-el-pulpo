@@ -115,6 +115,24 @@ export async function ensureDispatchServirQueueBundle(
   });
 }
 
+/**
+ * Lectura de cola en vivo: siempre refetch del bundle.
+ * No usar ensureQueryData aquí — un prefetch vacío “fresco” (staleTime 15s)
+ * envenenaba Servir/Despacho tras invalidar solo dispatch-orders/servir-orders
+ * y, con Realtime SUBSCRIBED (sin poll), la cola podía quedarse vacía minutos.
+ */
+export async function fetchDispatchServirQueueBundleFresh(
+  qc: QueryClient,
+  branchId: string,
+  shiftId: string,
+): Promise<DispatchServirQueueBundle> {
+  return qc.fetchQuery({
+    queryKey: dispatchServirQueueBundleQueryKey(branchId, shiftId),
+    queryFn: () => fetchDispatchServirQueueBundle(branchId, shiftId),
+    staleTime: 0,
+  });
+}
+
 export function operationalMapsFromBundleItems(
   items: DispatchServirQueueBundle["items"],
 ): OperationalMaps {

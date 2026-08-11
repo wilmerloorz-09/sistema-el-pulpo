@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
+import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 export type TrayItemType = "A" | "B" | "C";
 
@@ -35,8 +36,10 @@ export function useTrayOrder() {
       return String(data);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["orders"] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        includeTables: true,
+      });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -56,8 +59,11 @@ export function useTrayOrder() {
       return String(data);
     },
     onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: ["order", variables.orderId] });
-      qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        orderId: variables.orderId,
+        includeTables: true,
+      });
     },
     onError: (error: Error) => toast.error(error.message),
   });
