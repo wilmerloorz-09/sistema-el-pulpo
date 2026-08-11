@@ -35,6 +35,8 @@ async function leerPuedeRegistrarPromociones(userId: string, shiftId: string): P
 export interface BranchShiftGate {
   shiftId: string | null;
   shiftOpen: boolean;
+  /** Apertura del turno OPEN (para filtrar órdenes del turno). */
+  openedAt: string | null;
   userEnabled: boolean;
   lastSessionId: string | null;
   secondarySessionId: string | null;
@@ -125,6 +127,7 @@ function mapGateRow(
   const base: BranchShiftGate = {
     shiftId,
     shiftOpen: Boolean(row?.shift_open),
+    openedAt: row?.opened_at ?? null,
     userEnabled: Boolean(row?.user_enabled),
     lastSessionId: row?.last_session_id ?? null,
     secondarySessionId: row?.secondary_session_id ?? null,

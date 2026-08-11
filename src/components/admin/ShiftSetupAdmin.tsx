@@ -68,6 +68,7 @@ import {
   removeCashierFromSetup,
 } from "@/lib/shiftCajaSetupModel";
 import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
+import { resetRepairOpenShiftThrottle } from "@/lib/openCashShift";
 import { getUserAlias } from "@/lib/userDisplay";
 import {
   useDispatchConfig,
@@ -1465,13 +1466,14 @@ const ShiftSetupAdmin = () => {
   };
 
   const invalidateShiftState = async () => {
-    invalidateOperationalOrderQueries(qc, {
-      branchId: activeBranchId,
-      includeTables: true,
-      includeCompletedPayments: true,
-      includeShiftGate: true,
-      includeCurrentShift: true,
-    });
+      invalidateOperationalOrderQueries(qc, {
+        branchId: activeBranchId,
+        includeTables: true,
+        includeCompletedPayments: true,
+        includeShiftGate: true,
+        includeCurrentShift: true,
+      });
+      resetRepairOpenShiftThrottle(activeBranchId);
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["shift-admin-current-shift"] }),
       qc.invalidateQueries({ queryKey: ["shift-admin-users"] }),

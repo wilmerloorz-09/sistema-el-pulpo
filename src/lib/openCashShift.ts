@@ -35,17 +35,29 @@ export async function getOpenCashShiftIdForBranch(branchId: string): Promise<str
 const repairThrottleMs = 120_000;
 const lastRepairAtByBranch = new Map<string, number>();
 
+/** Fuerza el próximo repair (p. ej. al cambiar de turno). */
+export function resetRepairOpenShiftThrottle(branchId?: string | null) {
+  if (branchId) {
+    lastRepairAtByBranch.delete(branchId);
+    return;
+  }
+  lastRepairAtByBranch.clear();
+}
+
 /**
- * Completa `orders.cash_shift_id` NULL de órdenes activas del turno OPEN.
+ * Completa / reetiqueta `orders.cash_shift_id` al turno OPEN.
  * Throttle por sucursal para no saturar al refrescar listas.
  * Retorna cuántas filas reparó (0 si throttle / error / nada que hacer).
  * El throttle solo se marca tras éxito: si el RPC falla, el próximo refresh reintenta.
  */
-export async function repairOpenShiftOrderCashShiftIds(branchId: string): Promise<number> {
+export async function repairOpenShiftOrderCashShiftIds(
+  branchId: string,
+  opts?: { force?: boolean },
+): Promise<number> {
   if (!branchId) return 0;
   const now = Date.now();
   const last = lastRepairAtByBranch.get(branchId) ?? 0;
-  if (now - last < repairThrottleMs) return 0;
+  if (!opts?.force && now - last < repairThrottleMs) return 0;
 
   try {
     const { data, error } = await (supabase as any).rpc("repair_open_shift_order_cash_shift_ids", {

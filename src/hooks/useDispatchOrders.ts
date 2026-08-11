@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
@@ -12,7 +12,12 @@ import { fetchActivePaidQuantityByOrderItemId } from "@/lib/orderItemActivePayme
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
+import {
+  getOpenCashShiftForBranch,
+  orderBelongsToOpenCashShift,
+  repairOpenShiftOrderCashShiftIds,
+  resetRepairOpenShiftThrottle,
+} from "@/lib/openCashShift";
 import { ensurePlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
@@ -24,6 +29,7 @@ import { qk } from "@/lib/queryKeys";
 import {
   OPERATIONAL_STALE_MS,
   OPERATIONAL_LIST_BACKUP_POLL_MS,
+  DISPATCH_SERVIR_SAFETY_POLL_MS,
   useAdaptiveRefetchInterval,
   useOperationalOrdersRealtime,
   invalidateOperationalOrderQueries,
@@ -472,6 +478,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     activeBranchId,
     OPERATIONAL_LIST_BACKUP_POLL_MS,
     Boolean(activeBranchId && user),
+    // Techo duro: aunque RT esté SUBSCRIBED, no dejar la cola congelada minutos.
+    DISPATCH_SERVIR_SAFETY_POLL_MS,
   );
 
   // Sin scope en la key: una sola cola por módulo; el tab filtra en cliente (instantáneo).
@@ -482,26 +490,35 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     shiftGate?.shiftId ?? "_",
   ] as const;
 
+  const lastShiftIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextShiftId = shiftGate?.shiftId ?? null;
+    if (activeBranchId && nextShiftId && lastShiftIdRef.current && lastShiftIdRef.current !== nextShiftId) {
+      // Cambio de turno: forzar repair + refetch de colas (evitar órdenes del turno nuevo invisibles).
+      resetRepairOpenShiftThrottle(activeBranchId);
+      void qc.invalidateQueries({ queryKey: qk.dispatchOrders });
+      void qc.invalidateQueries({ queryKey: qk.servirOrders });
+      void qc.invalidateQueries({ queryKey: qk.dispatchServirQueueBundle });
+    }
+    lastShiftIdRef.current = nextShiftId;
+  }, [activeBranchId, shiftGate?.shiftId, qc]);
+
   const query = useQuery({
     queryKey: dispatchOrdersQueryKey,
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      // Repair en background (throttle interno); no bloquear el listado.
-      void repairOpenShiftOrderCashShiftIds(activeBranchId);
+      // Siempre resolver turno OPEN desde DB (fuente de verdad tras cerrar/abrir).
+      // El gate puede ir atrasado unos segundos y vaciar la cola con un shiftId viejo.
+      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
+
+      // Antes del bundle: reetiqueta huérfanas del turno cerrado (throttle; se resetea al cambiar turno).
+      await repairOpenShiftOrderCashShiftIds(activeBranchId);
 
       // Bootstrap + platos en paralelo con la cola (no esperar en cadena).
       const bootstrapPromise = ensureDispatchBootstrap(qc, activeBranchId);
       const platosWarmPromise = ensurePlatosProductIdsForBranch(qc, activeBranchId);
-
-      // Preferir shiftId del gate (1 RTT menos) cuando ya está resuelto.
-      let openShift = shiftGate?.shiftId
-        ? { id: shiftGate.shiftId, opened_at: "" }
-        : null;
-      if (!openShift) {
-        openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
-      }
-      if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       let ordersMerged: any[] = [];
       let items: any[] = [];
@@ -904,9 +921,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     enabled: !!activeBranchId && !!user,
     staleTime: OPERATIONAL_STALE_MS,
     refetchOnMount: "always",
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     refetchOnReconnect: true,
-    // Realtime SUBSCRIBED → sin safety poll; si el hub cae → respaldo 30s.
+    // RT + safety 15s: peor caso de demora acotado (no minutos).
     refetchInterval: adaptiveListPoll,
   });
 

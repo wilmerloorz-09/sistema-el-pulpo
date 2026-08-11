@@ -33,8 +33,14 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 30_000;
  * Safety net aunque el hub esté SUBSCRIBED.
  * Con N sucursales OPEN, el poll periódico regeneraba tormenta aunque RT
  * funcionara. Por defecto 0: confiar en Realtime; si el hub cae, usa backupMs.
+ *
+ * Excepción: colas críticas (Despacho/Servir) deben pasar un safetyMs > 0
+ * para que un fallo de invalidación/caché no deje la UI vacía minutos.
  */
 export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
+
+/** Techo duro de frescura para Despacho/Servir (aunque Realtime diga SUBSCRIBED). */
+export const DISPATCH_SERVIR_SAFETY_POLL_MS = 15_000;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
 export const HUB_DEFAULT_DEBOUNCE_MS = 1_200;
