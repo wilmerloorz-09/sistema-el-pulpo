@@ -2,9 +2,11 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { dbSelect } from "@/services/DatabaseService";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { AUTH_SESSION_POLL_MS } from "@/lib/queryEgress";
+
+const PROFILE_SELECT =
+  "id, full_name, first_name, last_name, username, alias, email, is_active, active_branch_id, is_protected_superadmin, avatar_url, current_app_session_id, current_app_session_started_at, current_app_session_device, current_app_secondary_session_id, current_app_secondary_session_started_at, current_app_secondary_session_device";
 
 interface Profile {
   id: string;
@@ -159,11 +161,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const validatingSingleSessionRef = useRef(false);
   const lastWriteAtRef = useRef(0);
 
-  const fetchProfile = useCallback(async (userId: string) => {
-    const profiles = await dbSelect<any>("profiles", {
-      filters: [{ column: "id", op: "eq", value: userId }]
-    });
-    return (profiles?.[0] ?? null) as Profile | null;
+  /**
+   * Lectura directa de perfil (sin dbSelect): un timeout/fallo debe LANZAR,
+   * no devolver [] y apagar el alias a "Usuario".
+   */
+  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(PROFILE_SELECT)
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return (data as Profile | null) ?? null;
   }, []);
 
   /** Lectura fresca solo de slots de sesion (sin cache offline / sin dbSelect). */
@@ -222,8 +232,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = useCallback(async () => {
     if (!state.user) return;
-    const profile = await fetchProfile(state.user.id);
-    setState((prev) => ({ ...prev, profile }));
+    try {
+      const profile = await fetchProfile(state.user.id);
+      if (!profile) return;
+      setState((prev) => ({ ...prev, profile }));
+    } catch (error) {
+      logBackgroundTaskError("AuthContext.refreshProfile", error);
+    }
   }, [fetchProfile, state.user]);
 
   const registerOwnedSingleSession = useCallback(async (userId: string, sessionId?: string) => {
@@ -276,6 +291,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      // TOKEN_REFRESHED: solo actualizar session/user. No refetch de perfil
+      // (bajo Disk IO satura y un fallo apagaba el alias a "Usuario").
+      if (event === "TOKEN_REFRESHED" && session?.user) {
+        setState((prev) => ({
+          ...prev,
+          session,
+          user: session.user,
+          loading: false,
+        }));
+        return;
+      }
+
       // Prevent flipping the global "loading" switch if we already have a session and profile.
       // This stops the whole app from unmounting (flashing white) when the browser refocuses or tokens refresh.
       setState((prev) => ({
@@ -286,12 +313,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }));
 
       if (session?.user) {
+        const userId = session.user.id;
         setTimeout(async () => {
           try {
-            const profile = await fetchProfile(session.user.id);
-            setState((prev) => ({ ...prev, profile, loading: false }));
-          } catch {
-            setState((prev) => ({ ...prev, profile: null, loading: false }));
+            const profile = await fetchProfile(userId);
+            setState((prev) => ({
+              ...prev,
+              // Conservar perfil previo si la lectura viene vacia/fallida.
+              profile: profile ?? prev.profile,
+              loading: false,
+            }));
+          } catch (error) {
+            logBackgroundTaskError("AuthContext.fetchProfile", error);
+            setState((prev) => ({ ...prev, loading: false }));
           }
         }, 0);
       } else {
@@ -305,9 +339,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session?.user) {
         try {
           const profile = await fetchProfile(session.user.id);
-          setState((prev) => ({ ...prev, session, user: session.user, profile, loading: false }));
-        } catch {
-          setState((prev) => ({ ...prev, session, user: session.user, profile: null, loading: false }));
+          setState((prev) => ({
+            ...prev,
+            session,
+            user: session.user,
+            profile: profile ?? prev.profile,
+            loading: false,
+          }));
+        } catch (error) {
+          logBackgroundTaskError("AuthContext.getSession.fetchProfile", error);
+          setState((prev) => ({
+            ...prev,
+            session,
+            user: session.user,
+            loading: false,
+          }));
         }
       } else {
         setState((prev) => ({ ...prev, session: null, user: null, loading: false }));

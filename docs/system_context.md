@@ -396,10 +396,11 @@
 - Al aceptar cambios se registran y aplican automaticamente las anulaciones derivadas del buffer.
 - La accion principal del modulo es `Aceptar cambios`, no `Enviar`.
 
-### 6.1 Refresco entre módulos (2026-08-02 → 2026-08-10)
-- Hub Realtime `branch-ops-hub:{branchId}`; al evento operational/payments invalida **todo** `OPERATIONAL_ORDER_LIST_KEYS`.
-- Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 30s`.
-- Safety global: `OPERATIONAL_LIST_SAFETY_POLL_MS = 0`. **Excepción Despacho/Servir:** `DISPATCH_SERVIR_SAFETY_POLL_MS = 15s` aunque el hub esté `SUBSCRIBED`.
+### 6.1 Refresco entre módulos (2026-08-02 → 2026-08-11)
+- Hub Realtime `branch-ops-hub:{branchId}`; invalidación **selectiva por tipo de evento** (ítems no refrescan Caja; pagos sí). Pantallas montadas siempre se invalidan.
+- Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 45s`.
+- Safety global: `OPERATIONAL_LIST_SAFETY_POLL_MS = 0`. **Excepción Despacho/Servir:** `DISPATCH_SERVIR_SAFETY_POLL_MS = 30s` aunque el hub esté `SUBSCRIBED`.
+- Locks cobro/despacho: snapshot unitario filtrado por orden + sync única en `register_payment_with_items` (`20260811123000_reduce_order_lock_pressure.sql`).
 - También `refetchOnWindowFocus` / `refetchOnReconnect` en esas listas; badge **Sync lenta** en layout.
 - Doc: `docs/operational-module-refresh.md` y sección Fase 1.5 en `docs/supabase-performance-audit-phase2.md`.
 
@@ -662,12 +663,18 @@
 34. **Cobro atómico:** `register_payment_with_items` con `FOR UPDATE` + tope de cantidades + idempotencia (`20260810230000`).
 35. **CajaAutoOpener:** usar `useOpenCashRegister` liviano; no montar `useCaja` global al arrancar.
 
+### Actualizacion Ago 11, 2026 — presión Disk IO / locks
+- **Cliente:** invalidación Realtime selectiva por tabla/evento (`queryEgress.keysForHubSource`); alertas mesero desmontadas del layout; polls backup 45 s / Despacho-Servir safety 30 s / debounce hub 2.5 s.
+- **BD:** migración `20260811123000_reduce_order_lock_pressure.sql`:
+  - `get_order_operational_snapshot` filtra CTEs a ítems de la orden (misma lógica que el batch).
+  - `register_payment_with_items` suprime sync de triggers durante inserts y llama `sync_order_payment_state_internal` **una vez** al final.
+- Aplicar en remoto: `npx supabase db push` (o SQL Editor) sobre el proyecto activo.
+
 ### Actualizacion Ago 10, 2026
-- **Cola Despacho/Servir:** RPC bundle + self-heal (`20260810160000`, `20260810250000`); cliente sin cache RQ del bundle; repair forzado si vacía; safety poll 15 s solo en esas colas.
+- **Cola Despacho/Servir:** RPC bundle + self-heal (`20260810160000`, `20260810250000`); cliente sin cache RQ del bundle; repair forzado si vacía; safety poll (valor vigente Ago 11: 30 s).
 - **Retag post-turno:** trigger/repair reasignan `cash_shift_id` de turnos `CLOSED` al OPEN (`20260810240000` / `…250000`).
 - **Separación PLATOS:** `has_plate_servers` OR `gate.canServePlates`; no persistir catálogo platos vacío.
-- **Hub:** invalida `OPERATIONAL_ORDER_LIST_KEYS` completo; `branch_id` en ready/dispatch events (`20260810120000`).
-- **Polls:** backup listas 30 s; safety global 0; Despacho/Servir 15 s.
+- **Hub:** invalidación por evento (Ago 11); `branch_id` en ready/dispatch events (`20260810120000`).
 - **P0 caja:** `useOpenCashRegister` / `CajaAutoOpener`; cobro atómico `20260810230000`.
 - **Cierre turno:** detalle bloqueantes, admin sin cobros, última caja (`20260810200000`–`20260810220000`).
 - **Bundles:** Caja payable + mesas overview (`20260810170000`, `20260810180000`); gate v2 (`20260810140000`); snapshots lite set-based (`20260810150000`).

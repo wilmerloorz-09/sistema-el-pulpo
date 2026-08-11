@@ -182,9 +182,9 @@ Tras Fase 2 se detectó demora de minutos / inconsistencia entre tablets. Se añ
 
 | Pieza | Detalle |
 |--------|---------|
-| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **30 s**, solo si hub ≠ `SUBSCRIBED` |
+| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **45 s**, solo si hub ≠ `SUBSCRIBED` |
 | `OPERATIONAL_LIST_SAFETY_POLL_MS` | **0** (sin safety global) |
-| `DISPATCH_SERVIR_SAFETY_POLL_MS` | **15 s** solo Despacho/Servir aunque hub = `SUBSCRIBED` |
+| `DISPATCH_SERVIR_SAFETY_POLL_MS` | **30 s** solo Despacho/Servir aunque hub = `SUBSCRIBED` |
 | Hub invalidate | Todo `OPERATIONAL_ORDER_LIST_KEYS` (+ tables / order prefix) |
 | Cola Despacho/Servir | RPC bundle + fetch directo (sin cache RQ); self-heal/retag `20260810250000` |
 | `refetchOnWindowFocus` / `refetchOnReconnect` | `true` en listas operativas |

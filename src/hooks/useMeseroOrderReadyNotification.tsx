@@ -232,10 +232,13 @@ export function useMeseroOrderReadyNotification(
 
     let cancelled = false;
     let inFlight = false;
+    let pollDebounceTimer: number | null = null;
+    let lastPollAt = 0;
 
     const pollNotificationTable = async () => {
       if (inFlight) return;
       inFlight = true;
+      lastPollAt = Date.now();
       try {
         const data = await fetchMeseroReadyAlerts(activeBranchId, currentUserId);
         if (cancelled || data.length === 0) return;
@@ -260,6 +263,19 @@ export function useMeseroOrderReadyNotification(
       }
     };
 
+    /** Agrupa ráfagas de INSERT ready + focus en una sola RPC. */
+    const schedulePoll = (force = false) => {
+      if (cancelled) return;
+      if (!force && Date.now() - lastPollAt < 4_000) return;
+      if (pollDebounceTimer != null) {
+        window.clearTimeout(pollDebounceTimer);
+      }
+      pollDebounceTimer = window.setTimeout(() => {
+        pollDebounceTimer = null;
+        void pollNotificationTable();
+      }, force ? 0 : 800);
+    };
+
     // Camino rapido: la base avisa al registrarse el evento de "orden lista",
     // en lugar de que cada tablet pregunte cada 2 segundos.
     let realtimeOk = false;
@@ -269,8 +285,8 @@ export function useMeseroOrderReadyNotification(
       if (backupInterval != null) return;
       backupInterval = window.setInterval(() => {
         if (document.hidden) return;
-        void pollNotificationTable();
-      }, 3 * 60_000);
+        schedulePoll(true);
+      }, 5 * 60_000);
     };
 
     const stopBackupPoll = () => {
@@ -285,7 +301,7 @@ export function useMeseroOrderReadyNotification(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "order_ready_events", filter: `branch_id=eq.${activeBranchId}` },
         () => {
-          void pollNotificationTable();
+          schedulePoll();
         },
       )
       .subscribe((status) => {
@@ -298,13 +314,14 @@ export function useMeseroOrderReadyNotification(
     startBackupPoll();
 
     const handleVisibilityChange = () => {
-      if (!document.hidden) void pollNotificationTable();
+      if (!document.hidden) schedulePoll();
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       cancelled = true;
       stopBackupPoll();
+      if (pollDebounceTimer != null) window.clearTimeout(pollDebounceTimer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       void supabase.removeChannel(channel);
       void realtimeOk;
@@ -410,7 +427,7 @@ export function OrderReadyAlertCenter() {
     void tickAlarm();
     const interval = window.setInterval(() => {
       void tickAlarm();
-    }, 3500);
+    }, 15_000);
 
     return () => {
       cancelled = true;

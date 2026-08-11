@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
 import { allowedModulesFromPermissions, type PermissionMap } from "@/lib/permissions";
@@ -44,20 +44,25 @@ const emptyAccess: AccessContextPayload = {
 
 export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [access, setAccess] = useState<AccessContextPayload>(emptyAccess);
   const [loading, setLoading] = useState(true);
+  const hasBranchesRef = useRef(false);
+
+  useEffect(() => {
+    hasBranchesRef.current = access.branches.length > 0;
+  }, [access.branches.length]);
 
   const fetchAccess = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setAccess(emptyAccess);
       setLoading(false);
       return;
     }
 
     // Only set global loading true if we don't have branch data yet.
-    // This allows background refreshes (e.g. when tokens update or tab is refocused) 
-    // to happen without unmounting the whole app and closing modals.
-    if (access.branches.length === 0) {
+    // This allows background refreshes to happen without unmounting the app.
+    if (!hasBranchesRef.current) {
       setLoading(true);
     }
     try {
@@ -65,15 +70,33 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (error) throw error;
 
       const next = (data ?? emptyAccess) as unknown as AccessContextPayload;
+      const branches = next.branches ?? [];
+      const permissions = next.permissions ?? {};
+      const isGlobalAdmin = Boolean(next.is_global_admin);
+      const activeBranchId = next.active_branch_id ?? null;
+
+      // Respuesta "vacia" bajo saturacion no debe tumbar sucursal/permisos buenos.
+      const usable =
+        branches.length > 0
+        || isGlobalAdmin
+        || Boolean(activeBranchId && Object.keys(permissions).length > 0);
+
+      if (!usable) {
+        setAccess((prev) =>
+          prev.branches.length > 0 || prev.is_global_admin ? prev : emptyAccess,
+        );
+        return;
+      }
+
       setAccess({
-        active_branch_id: next.active_branch_id,
-        branches: next.branches ?? [],
-        permissions: next.permissions ?? {},
-        is_global_admin: Boolean(next.is_global_admin),
+        active_branch_id: activeBranchId,
+        branches,
+        permissions,
+        is_global_admin: isGlobalAdmin,
       });
 
-      if (next.active_branch_id) {
-        localStorage.setItem("activeBranchId", next.active_branch_id);
+      if (activeBranchId) {
+        localStorage.setItem("activeBranchId", activeBranchId);
       } else {
         localStorage.removeItem("activeBranchId");
       }
@@ -81,18 +104,18 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Un fallo transitorio no debe vaciar sucursal activa ni permisos: eso cambia
       // la queryKey del gate de turno y colapsa el menu lateral a la vista solo-admin.
       console.warn("[BranchContext] get_my_access_context fallo; se conserva el acceso previo", error);
-      setAccess((prev) => (prev.branches.length > 0 ? prev : emptyAccess));
+      setAccess((prev) => (prev.branches.length > 0 || prev.is_global_admin ? prev : emptyAccess));
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   useEffect(() => {
     void fetchAccess();
   }, [fetchAccess]);
 
   const setActiveBranch = useCallback(async (branch: Branch | null) => {
-    if (!user) return;
+    if (!userId) return;
 
     if (!branch) {
       setAccess((prev) => ({ ...prev, active_branch_id: null, permissions: {} }));
@@ -126,7 +149,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setAccess((prev) => ({ ...prev, active_branch_id: prevBranchId }));
       if (prevBranchId) localStorage.setItem("activeBranchId", prevBranchId);
     }
-  }, [user, access.active_branch_id, fetchAccess]);
+  }, [userId, access.active_branch_id, fetchAccess]);
 
   const activeBranch = access.branches.find((branch) => branch.id === access.active_branch_id) ?? null;
 

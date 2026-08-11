@@ -14,7 +14,6 @@ import { useNetwork } from "@/contexts/NetworkContext";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { useTheme } from "@/hooks/useTheme";
 import { useHubRealtimeStatus } from "@/lib/queryEgress";
-import { OrderReadyAlertCenter } from "@/hooks/useMeseroOrderReadyNotification";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MobileMenuSheet } from "./MobileMenuSheet";
@@ -109,7 +108,7 @@ const AppLayout = () => {
                   {hubDegraded && (
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800 shadow-sm"
-                      title="La sincronizacion en vivo no esta activa; se refresca cada ~15s"
+                      title="La sincronizacion en vivo no esta activa; se refresca cada ~45s"
                     >
                       <RefreshCw className="h-3 w-3" />
                       <span className="hidden xs:inline">Sync lenta</span>
@@ -150,7 +149,7 @@ const AppLayout = () => {
           )}
           {isDesktop && hubDegraded && (
             <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold text-amber-900">
-              Sincronizacion en vivo interrumpida — las listas se refrescan cada ~15 s
+              Sincronizacion en vivo interrumpida — las listas se refrescan cada ~45 s
             </div>
           )}
           {isDesktop && !isOnline && (
@@ -168,7 +167,7 @@ const AppLayout = () => {
         </div>
       </div>
 
-      <OrderReadyAlertCenter />
+      {/* Alertas mesero desactivadas temporalmente (presión Disk IO / get_mesero_ready_alerts). */}
       <AutopedidosQrPanel open={autopedidosOpen} onOpenChange={setAutopedidosOpen} />
       {!isDesktop ? <BottomNav isDark={isDark} onToggleTheme={toggle} onOpenAccount={() => setUserMenuOpen(true)} /> : null}
 

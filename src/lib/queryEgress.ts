@@ -26,8 +26,8 @@ export const AUTH_SESSION_POLL_MS = 3 * 60_000;
 /** Respaldo de turno/caja cuando el hub no está SUBSCRIBED. */
 export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
 
-/** Respaldo de listas si Realtime no está suscrito (hub error/idle): 30s. */
-export const OPERATIONAL_LIST_BACKUP_POLL_MS = 30_000;
+/** Respaldo de listas si Realtime no está suscrito (hub error/idle): 45s. */
+export const OPERATIONAL_LIST_BACKUP_POLL_MS = 45_000;
 
 /**
  * Safety net aunque el hub esté SUBSCRIBED.
@@ -40,14 +40,76 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 30_000;
 export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
 
 /** Techo duro de frescura para Despacho/Servir (aunque Realtime diga SUBSCRIBED). */
-export const DISPATCH_SERVIR_SAFETY_POLL_MS = 15_000;
+export const DISPATCH_SERVIR_SAFETY_POLL_MS = 30_000;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
-export const HUB_DEFAULT_DEBOUNCE_MS = 1_200;
+export const HUB_DEFAULT_DEBOUNCE_MS = 2_500;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
-type HubInvalidateSource = "operational" | "shift" | "payments";
+type HubInvalidateSource =
+  | "order_items"
+  | "orders"
+  | "ready"
+  | "dispatch"
+  | "payments"
+  | "shift";
+
+/**
+ * Sets de invalidación por tipo de evento Realtime.
+ * Antes: cada order_items invalidaba TODO el set operativo (Caja incluida).
+ * Ahora: solo módulos afectados; las pantallas montadas siguen vía consumer keys.
+ */
+function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
+  const kitchenQueue: QueryKey[] = [
+    qk.kitchenOrders,
+    qk.dispatchOrders,
+    qk.servirOrders,
+    qk.dispatchServirQueueBundle,
+  ];
+  const tables: QueryKey[] = [qk.tablesWithStatus, qk.tableOrders];
+  const channelCards: QueryKey[] = [
+    qk.orders,
+    qk.takeoutOrders,
+    qk.expressOrders,
+    qk.extraOrders,
+    qk.specialOrders,
+  ];
+
+  switch (source) {
+    case "order_items":
+      // Alta frecuencia: no tocar Recaudar/pagos completados.
+      return [...kitchenQueue, ...tables, qk.orderPrefix, ...channelCards];
+    case "orders":
+      // Cambio de cabecera/estado: Caja por cobrar sí importa.
+      return [...kitchenQueue, ...tables, qk.orderPrefix, ...channelCards, qk.payableOrders];
+    case "ready":
+      return [...kitchenQueue, qk.orderPrefix];
+    case "dispatch":
+      return [
+        ...kitchenQueue,
+        ...tables,
+        qk.orderPrefix,
+        qk.payableOrders,
+        qk.orders,
+      ];
+    case "payments":
+      return [
+        qk.payableOrders,
+        qk.completedPayments,
+        ...tables,
+        qk.orderPrefix,
+        ...channelCards,
+        qk.dispatchOrders,
+        qk.servirOrders,
+        qk.dispatchServirQueueBundle,
+      ];
+    case "shift":
+      return [qk.branchShiftGate, qk.currentShift, qk.openCashShift];
+    default:
+      return [...OPERATIONAL_ORDER_LIST_KEYS];
+  }
+}
 
 function isShiftGateQueryKey(key: QueryKey): boolean {
   const head = Array.isArray(key) ? key[0] : key;
@@ -252,7 +314,7 @@ function mergeConsumerNeeds(hub: BranchRealtimeHub) {
   return { includePayments, includeShiftGate, shiftId, keys, debounceMs };
 }
 
-function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSource = "operational") {
+function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSource = "order_items") {
   if (hub.debounceTimer != null) {
     window.clearTimeout(hub.debounceTimer);
   }
@@ -274,25 +336,16 @@ function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSour
       void hub.queryClient.invalidateQueries({ queryKey: key });
     };
 
-    // Siempre refrescar el set operativo completo (Mesas/Caja/Express/…),
-    // no solo las keys del módulo montado. Evita caches warm/stale en otras pantallas.
-    if (source === "operational" || source === "payments") {
-      for (const key of OPERATIONAL_ORDER_LIST_KEYS) {
-        invalidateKey(key);
-      }
-      invalidateKey(qk.tablesWithStatus);
-      invalidateKey(qk.tableOrders);
-      invalidateKey(qk.orderPrefix);
-      if (source === "payments") {
-        invalidateKey(qk.completedPayments);
-      }
+    // Set acotado por tipo de evento (en lugar del set operativo completo).
+    for (const key of keysForHubSource(source)) {
+      invalidateKey(key);
     }
 
+    // Pantallas montadas: invalidar sus keys aunque no estén en el set del evento.
     for (const key of filtered) {
       invalidateKey(key);
     }
     if (source === "shift") {
-      // Asegurar gate aunque el consumidor no esté en la merge por timing.
       invalidateKey(qk.branchShiftGate);
       invalidateKey(qk.currentShift);
       invalidateKey(qk.openCashShift);
@@ -316,7 +369,10 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
   const { includePayments, includeShiftGate, shiftId, debounceMs } = mergeConsumerNeeds(hub);
   hub.shiftId = shiftId;
   hub.debounceMs = debounceMs;
-  const onOperational = () => scheduleHubInvalidate(hub, "operational");
+  const onOrderItems = () => scheduleHubInvalidate(hub, "order_items");
+  const onOrders = () => scheduleHubInvalidate(hub, "orders");
+  const onReady = () => scheduleHubInvalidate(hub, "ready");
+  const onDispatchEvt = () => scheduleHubInvalidate(hub, "dispatch");
   const onShift = () => scheduleHubInvalidate(hub, "shift");
   const onPayments = () => scheduleHubInvalidate(hub, "payments");
 
@@ -332,7 +388,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         table: "orders",
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onOperational,
+      onOrders,
     )
     .on(
       "postgres_changes",
@@ -343,7 +399,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         // Requiere migración 20260730230000 (sucursal_id).
         filter: `sucursal_id=eq.${hub.branchId}`,
       },
-      onOperational,
+      onOrderItems,
     )
     .on(
       "postgres_changes",
@@ -354,7 +410,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         // Requiere migración 20260810120000 (branch_id).
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onOperational,
+      onReady,
     )
     .on(
       "postgres_changes",
@@ -365,7 +421,7 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
         // Requiere migración 20260810120000 (branch_id).
         filter: `branch_id=eq.${hub.branchId}`,
       },
-      onOperational,
+      onDispatchEvt,
     );
 
   // Sin shiftId no suscribir payments/cash_shift_users globales: con N sucursales

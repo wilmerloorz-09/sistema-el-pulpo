@@ -654,6 +654,9 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `20260810240000_retag_orders_to_open_shift_on_send.sql` — retag CLOSED→OPEN en trigger/repair.
 - `20260810250000_dispatch_queue_self_heal_on_shift.sql` — self-heal cola + huérfanas + retag consolidado.
 
+### Locks / Disk IO (2026-08-11)
+- `20260811123000_reduce_order_lock_pressure.sql` — snapshot unitario filtrado por orden; sync única al final de `register_payment_with_items`.
+
 ### Órdenes especiales mixtas (2026-07-25)
 - `20260725170000_mixed_special_orders.sql`
 - `20260725180000_ensure_mixed_special_rpcs.sql`

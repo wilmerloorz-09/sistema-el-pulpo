@@ -442,7 +442,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 29. Si se toca **anulación de pagos**, validar cierre de orden (`VOIDED_PAYMENT_CLOSED`, fuera de Recaudar), una sola anulación por orden (`can_void_payment`) y `refund_method` CASH/TRANSFER; migraciones `20260718225000`, `20260719010000`, `20260719012000`, `20260719013000`.
 30. Si se toca **cancelación/ajuste en Despacho primero**, validar `order_type::text` en `cancel_order_quantities` / `set_draft_order_item_quantity` (migración `20260718230000`) y que no se silencien errores de `applyKitchenPendingItemChanges`.
 31. Si se toca **lectura de denominaciones en cobro**, validar query directa (no cache local), guardia de consistencia y `refetchInterval` para tablets/PWA.
-32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll global; backup `OPERATIONAL_LIST_BACKUP_POLL_MS` (**30 s**) si cae; Despacho/Servir con `DISPATCH_SERVIR_SAFETY_POLL_MS` (**15 s**); badge Sync lenta; doc `docs/operational-module-refresh.md`.
+32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll global; backup `OPERATIONAL_LIST_BACKUP_POLL_MS` (**45 s**) si cae; Despacho/Servir con `DISPATCH_SERVIR_SAFETY_POLL_MS` (**30 s**); badge Sync lenta; doc `docs/operational-module-refresh.md`.
+33. Si se toca **Auth/perfil bajo carga**, no borrar `profile` ni acceso de sucursal ante timeout; no refetch de perfil en `TOKEN_REFRESHED`.
 33. Si se toca **reportes de productos**, restar anulaciones `APPLIED` (`order_item_cancellations`); el neto debe coincidir con lo cobrable en Caja.
 34. Si se toca **gate de turno / admin**, validar bypass de admins (`20260802190000`) sin exigir `cash_shift_users`; preferir gate v2 (`20260810140000`).
 35. Si se toca **Forzar cierre**, validar confirmación `FORZAR`, permiso MANAGE, RPC `force_close_cash_shift` y migración `20260806040000`; no confundir con `close_cash_shift_with_tables`.
