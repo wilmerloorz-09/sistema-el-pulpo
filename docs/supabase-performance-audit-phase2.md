@@ -142,7 +142,7 @@ Escenario: **8 tablets** × turno de **12 h**, sucursal activa con hub SUBSCRIBE
 ## Riesgos encontrados
 
 1. **Migración `20260730230000` no aplicada** → filtro `order_items.sucursal_id` y publicación de turnos fallan; el poll adaptativo se mantiene activo (comportamiento seguro, más Egress).
-2. **`order_ready_events` / `order_dispatch_events` sin `sucursal_id`** → el hub sigue recibiendo eventos globales de esas tablas (ruido entre sucursales). Mitigación futura: denormalizar sucursal (como `order_items`) sin cambiar UX.
+2. **`order_ready_events` / `order_dispatch_events`:** denormalización de `branch_id` aplicada en `20260810120000_branch_id_ready_dispatch_events.sql` (filtro Realtime por sucursal en el hub).
 3. **`setQueryData` agresivo** en listas grandes no se generalizó: riesgo de desync UX; se priorizó invalidación acotada + cache optimista solo donde ya existía (anulaciones).
 4. **Reportes remotos** dejan de refrescarse solos mientras el hub esté SUBSCRIBED: al abrir la pantalla, `staleTime` 60 s + focus defaults siguen aplicando; si se necesita frescura al entrar, `refetchOnMount` ya es el default de RQ cuando stale.
 5. **CloneBranchCatalog** conserva `select("*")` a propósito (one-shot).
@@ -176,15 +176,18 @@ Con Realtime sano y migración aplicada, el perfil de consumo es **prácticament
 
 ---
 
-## Fase 1.5 — Latencia entre módulos (2026-08-02)
+## Fase 1.5 — Latencia entre módulos (2026-08-02 → 2026-08-10)
 
-Tras Fase 2 se detectó demora de minutos / inconsistencia entre tablets. Se añadió respaldo de listas **sin** volver al poll agresivo permanente:
+Tras Fase 2 se detectó demora de minutos / inconsistencia entre tablets. Se añadió respaldo de listas **sin** volver al poll agresivo permanente. Valores vigentes:
 
 | Pieza | Detalle |
 |--------|---------|
-| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **15 s**, solo si hub ≠ `SUBSCRIBED` |
+| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **30 s**, solo si hub ≠ `SUBSCRIBED` |
+| `OPERATIONAL_LIST_SAFETY_POLL_MS` | **0** (sin safety global) |
+| `DISPATCH_SERVIR_SAFETY_POLL_MS` | **15 s** solo Despacho/Servir aunque hub = `SUBSCRIBED` |
+| Hub invalidate | Todo `OPERATIONAL_ORDER_LIST_KEYS` (+ tables / order prefix) |
+| Cola Despacho/Servir | RPC bundle + fetch directo (sin cache RQ); self-heal/retag `20260810250000` |
 | `refetchOnWindowFocus` / `refetchOnReconnect` | `true` en listas operativas |
-| Invalidaciones | cocina→servir/caja; `sendToKitchen`→servir |
 | UI | Badge **Sync lenta** en `AppLayout` |
 
 Documentación dedicada: [`docs/operational-module-refresh.md`](./operational-module-refresh.md).
@@ -193,14 +196,22 @@ Consumidores: `useDispatchOrders`, `useKitchenOrders`, `useCaja`, `useOrdersBySt
 
 ### Nota 2026-08-07 — visibilidad y lecturas strict
 
-Además del hub/poll: órdenes activas sin `cash_shift_id` pueden quedar invisibles en listas filtradas por turno (trigger/repair `20260807121000`). Caja/Despacho usan `dbSelectStrict` para no vaciar la UI con fallback Dexie. El cliente llama `repairOpenShiftOrderCashShiftIds` (throttle 60s) al refrescar listas. Con hub `SUBSCRIBED` hay safety poll de 15s (`OPERATIONAL_LIST_SAFETY_POLL_MS`) para recuperar eventos perdidos.
+Órdenes activas sin `cash_shift_id` (o con tag de turno `CLOSED`) pueden quedar invisibles. Trigger/repair + self-heal de cola: `20260807121000`, `20260810240000`, `20260810250000`. Listas con `dbSelectStrict` / turno OPEN strict. Throttle de repair en cliente: 120 s tras éxito (se resetea al cambiar turno).
+
+### Nota 2026-08-10 — bundles y P0 caja
+
+- Bundles RPC: Despacho/Servir, Caja payable, mesas overview; gate v2; snapshots lite set-based.
+- Cobro atómico `20260810230000`; `CajaAutoOpener` con `useOpenCashRegister` (sin `useCaja` global).
+- No cachear catálogo PLATOS vacío ni el bundle de cola en React Query.
 
 ---
 
 ## Checklist de verificación manual
 
-- [ ] Aplicar `20260730230000_realtime_turnos_y_snapshots_lite.sql` en remoto.
+- [ ] Aplicar `20260730230000_realtime_turnos_y_snapshots_lite.sql` y migraciones `20260810120000`–`20260810250000` relevantes en remoto.
 - [ ] Abrir Caja / Mesas / Despacho: un solo canal `branch-ops-hub:{id}` en Network/Realtime.
-- [ ] Cortar red o forzar CHANNEL_ERROR: deben reaparecer polls lentos (listas ~15 s); al reconectar, deben parar; badge **Sync lenta** visible mientras el hub no esté suscrito.
+- [ ] Cortar red o forzar CHANNEL_ERROR: deben reaparecer polls de backup (listas ~**30 s**); Despacho/Servir siguen con safety ~**15 s** aunque el hub esté sano; badge **Sync lenta** visible mientras el hub no esté suscrito.
+- [ ] Cerrar/abrir turno → crear/enviar orden: debe aparecer en Despacho/Servir en segundos (no minutos).
+- [ ] Con Servir habilitado: platos solo en Servir; bebidas/porciones en Despacho.
 - [ ] Cobrar / despachar / anular: pantallas hermanas se actualizan igual que antes.
 - [ ] Login / cambio de sucursal / Monitoreo Global / alertas mesero: sin regresiones UX.

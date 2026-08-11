@@ -11,7 +11,7 @@
 - `DRAFT`: borrador con al menos un item agregado y no enviado a Caja.
 - `SENT_TO_KITCHEN`: En Caja; `submit_order_draft_items(...)` genera `order_code` / `order_number` y deja la orden cobrable.
 - `PAID`: Pagada; `sync_order_payment_state_internal(...)` debe usar este estado cuando Caja cubre la orden completa. **`PAID` es un estado terminal e inmutable**: ninguna operación posterior (despacho, recomputación operativa, etc.) puede revertirlo. Solo una anulación explícita de pago (`void`) puede cambiarlo.
-- `KITCHEN_DISPATCHED`: Despachada; `dispatch_order_quantities(...)` solo puede ejecutarse sobre ordenes `PAID`.
+- `KITCHEN_DISPATCHED`: Despachada. La RPC `dispatch_order_quantities(...)` opera sobre cantidades despachables; la **elegibilidad de listado** en Despacho/Servir depende de `workflow_mode` / Express (`PAID` en caja-primero; tambien `SENT_TO_KITCHEN`/`READY` en despacho-primero).
 - `CANCELLED`: anulada o historica. Tras anular el último pago activo (desde 2026-07-19) la orden queda `CANCELLED` con `VOIDED_PAYMENT_CLOSED` (no vuelve sola a En Caja). Las historicas legacy con `VOID_SUCCESSOR_ORDER` nunca deben volver a `SENT_TO_KITCHEN`, `PAID` ni `KITCHEN_DISPATCHED`.
 - `PAID` y `KITCHEN_DISPATCHED` son estados finales visibles mutuamente excluyentes para clasificacion; una orden no debe aparecer en ambas pestanas.
 - Para clasificacion visual, `Despachada` incluye cabecera `KITCHEN_DISPATCHED` y tambien cabecera `PAID` con despacho aplicado (`order_dispatch_events.status = 'APPLIED'`) mientras la sincronizacion final de cabecera no haya corrido.
@@ -87,10 +87,14 @@
   - `order_items.cantidad_especial`.
   - RPC `convertir_orden_especial_parcial(...)`.
   - Migraciones: `20260725170000_mixed_special_orders.sql` … `20260725200000_release_table_on_paid_mixed_special.sql`.
-- **Visibilidad operativa / `cash_shift_id` (2026-08-07):**
-  - Trigger `trg_assign_open_cash_shift_to_order` / `assign_open_cash_shift_to_order`: si una orden activa queda con `cash_shift_id` NULL y hay turno `OPEN`, lo asigna.
-  - RPC `repair_open_shift_order_cash_shift_ids(p_branch_id)`.
-  - Migración `20260807121000_stabilize_operational_order_visibility.sql`.
+- **Visibilidad operativa / `cash_shift_id` (2026-08-07 → 2026-08-10):**
+  - Trigger `assign_open_cash_shift_to_order`: NULL → OPEN; desde `20260810240000`/`20260810250000` tambien reetiqueta si el turno taggeado esta `CLOSED`.
+  - RPC `repair_open_shift_order_cash_shift_ids(p_branch_id)` (NULL o CLOSED → OPEN actual si pertenece al turno).
+  - Cola: `get_dispatch_servir_queue_bundle` (VOLATILE) autorrepara e incluye huerfanas del turno OPEN (`20260810160000` + `20260810250000`).
+  - Migración base: `20260807121000_stabilize_operational_order_visibility.sql`.
+- **Cobro atómico (2026-08-10):**
+  - `register_payment_with_items` con `FOR UPDATE`, validacion de cantidades e idempotencia.
+  - Migración `20260810230000_register_payment_atomic_lock.sql`.
 - **Forzar cierre de turno (2026-08-06):**
   - RPC `force_close_cash_shift(p_shift_id, p_branch_id, p_notes)`.
   - Migración `20260806040000_force_close_cash_shift.sql`.
@@ -311,7 +315,7 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `order_items.tray_item_type` distingue `A/B/C`.
 - `get_order_operational_snapshot(...)` sigue siendo la lectura principal de cantidades operativas en pantallas que clasifican despachos y listos (Cocina, Despacho, listados complejos).
 - **Batch ligero (2026-07-30):** `get_orders_operational_snapshots_lite(p_order_ids)` devuelve solo cantidades (sin description/status/price). El cliente (`orderOperational.ts`) la prefiere y cae a `get_orders_operational_snapshots` / N× unitaria si la migración no está aplicada. Migración: `20260730230000_realtime_turnos_y_snapshots_lite.sql`.
-- **Realtime operativo:** publicación `supabase_realtime` incluye `cash_shifts`, `cash_shift_users`, `payments`, `order_dispatch_events`, `order_items`. Frontend: un canal compartido `branch-ops-hub:{branchId}` (`src/lib/queryEgress.ts`) con filtro `orders.branch_id` y `order_items.sucursal_id`; `payments` filtrado por `shift_id` cuando hay turno.
+- **Realtime operativo:** publicación `supabase_realtime` incluye `cash_shifts`, `cash_shift_users`, `payments`, `order_dispatch_events`, `order_ready_events`, `order_items`. Frontend: un canal compartido `branch-ops-hub:{branchId}` (`src/lib/queryEgress.ts`) con filtro `orders.branch_id`, `order_items.sucursal_id` y `branch_id` en ready/dispatch (`20260810120000`); `payments` filtrado por `shift_id` cuando hay turno. Eventos operational/payments invalidan todo `OPERATIONAL_ORDER_LIST_KEYS`.
 - En el **cobro en caja** (`useCaja.payOrder`), con flujo `CASH_THEN_DISPATCH`, la validación de cantidad cobrable puede basarse en `order_items` + cancelaciones aplicadas (`order_item_cancellations` / `order_cancellations`) **sin** llamar a `get_order_operational_snapshot` por orden, reduciendo latencia.
 - **Autopedidos QR (2026-07-16):** órdenes con `es_autopedido_qr = true` y `estado_aprobacion_qr = 'PENDIENTE'` no deben aparecer en pestañas operativas hasta aprobarse. Tras `aprobar_autopedido_qr`, integran flujo normal. `created_by` NULL en creación; se asigna al aprobar.
 - `orders.locked_for_editing` modela exclusividad transaccional para `Editar Orden`. Impide el cobro en Caja mientras la orden está siendo modificada.
@@ -633,8 +637,22 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 - `20260802180000_void_exact_tender_change_return.sql` — anulación / vuelto exacto (`cash_change_return_detail`).
 - `20260803010000_fix_add_dine_in_order_item_vnode.sql` — fix `v_node` no asignado en `add_dine_in_order_item`.
 - `20260806040000_force_close_cash_shift.sql` — RPC `force_close_cash_shift` (cierre forzado de turno).
-- `20260807121000_stabilize_operational_order_visibility.sql` — trigger `assign_open_cash_shift_to_order` + RPC repair.
+- `20260807121000_stabilize_operational_order_visibility.sql` — trigger `assign_open_cash_shift_to_order` + RPC repair (NULL→OPEN).
 - `20260807124500_normalize_transfer_proof_pending_notes.sql` — normaliza `TRANSFER_PROOF_PENDING` (si coexisten `:1` y `:0`, gana `:0`).
+
+### Colas, turno y cobro (2026-08-10)
+- `20260810120000_branch_id_ready_dispatch_events.sql` — `branch_id` en ready/dispatch events (filtro Realtime).
+- `20260810140000_unify_branch_shift_gate_rpc.sql` — gate `get_my_branch_shift_gate_v2` (CREATE sin DROP bajo carga).
+- `20260810150000_optimize_operational_snapshots_lite_setbased.sql` — snapshots lite set-based.
+- `20260810160000_dispatch_servir_queue_bundle_rpc.sql` — `get_dispatch_servir_queue_bundle`.
+- `20260810170000_caja_payable_queue_bundle_rpc.sql` — bundle cola Caja.
+- `20260810180000_tables_overview_bundle_rpc.sql` — bundle overview mesas.
+- `20260810200000_shift_closure_blockers_detail.sql` — detalle bloqueantes de cierre.
+- `20260810210000_admin_caja_sin_cobros_no_bloquea_cierre.sql` — admin sin cobros no bloquea cierre.
+- `20260810220000_last_caja_blocks_if_unpaid_orders.sql` — última caja + órdenes impagas.
+- `20260810230000_register_payment_atomic_lock.sql` — cobro atómico (`FOR UPDATE` + tope + idempotencia).
+- `20260810240000_retag_orders_to_open_shift_on_send.sql` — retag CLOSED→OPEN en trigger/repair.
+- `20260810250000_dispatch_queue_self_heal_on_shift.sql` — self-heal cola + huérfanas + retag consolidado.
 
 ### Órdenes especiales mixtas (2026-07-25)
 - `20260725170000_mixed_special_orders.sql`

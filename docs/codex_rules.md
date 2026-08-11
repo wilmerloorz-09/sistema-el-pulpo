@@ -8,8 +8,8 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 ### 0. Estado canonico de orden
 - No reinterpretar `READY` ni `KITCHEN_DISPATCHED` como "pagado".
 - El flujo correcto es `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
-- `Despacho` solo debe listar y operar ordenes `PAID` con cantidades activas pendientes de despacho.
-- `Despacho` debe mostrar una sola tarjeta/fila por orden pagada (`orders.id` / `order_code`). Nunca separar la misma orden en varias tarjetas por `sent_to_kitchen_at` de sus items.
+- `Despacho` lista ordenes elegibles segun `workflow_mode` / Express (`PAID` tipico en caja-primero; tambien `SENT_TO_KITCHEN`/`READY` en despacho-primero) con cantidades activas pendientes.
+- `Despacho` debe mostrar una sola tarjeta/fila por orden (`orders.id` / `order_code`). Nunca separar la misma orden en varias tarjetas por `sent_to_kitchen_at` de sus items.
 - `dispatch_order_quantities(...)` debe rechazar cualquier orden que no este `PAID`.
 - `PAID` y `KITCHEN_DISPATCHED` son clasificaciones visibles excluyentes. Una orden no puede aparecer simultaneamente en `Pagada` y `Despachada`.
 - Al anular el último pago activo, la orden queda `CANCELLED`; solo se reabre bajo demanda al usar **Cobrar orden** en Pagos realizados.
@@ -285,7 +285,9 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### 12.2 Despacho
 - Pestañas: `Todos`, `Mesa` (incluye `EXTRA`), `Para llevar / Express` (unifica `TAKEOUT`+`EXPRESS`), `Orden especial`.
-- Si el turno habilita `can_serve_plates`, los productos de la categoría raíz PLATOS se despachan en el módulo independiente **Servir** y Despacho los oculta.
+- Si el turno habilita `can_serve_plates` (o el gate del usuario tiene `canServePlates`), los productos de la categoría raíz PLATOS se despachan en el módulo independiente **Servir** y Despacho los oculta.
+- Señal cliente: `bundle.has_plate_servers` **OR** `shiftGate.canServePlates`. **No cachear** catálogo PLATOS vacío (`menuPlatosCategory.ts`).
+- Cola: `get_dispatch_servir_queue_bundle` con fetch directo (sin cache RQ del bundle); self-heal/retag en `20260810250000`.
 - No reintroducir pestaña Express separada; normalizar `localStorage` `EXPRESS` → `TAKEOUT`.
 - Modo SPLIT: asignacion `TAKEOUT` o `EXPRESS` habilita la pestaña unificada; `EXTRA` se evalua como `TABLE`.
 - Conservar una tarjeta por `order_code`; usar `get_batch_order_operational_snapshots` si existe (`20260602140000`).
@@ -440,15 +442,20 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 29. Si se toca **anulación de pagos**, validar cierre de orden (`VOIDED_PAYMENT_CLOSED`, fuera de Recaudar), una sola anulación por orden (`can_void_payment`) y `refund_method` CASH/TRANSFER; migraciones `20260718225000`, `20260719010000`, `20260719012000`, `20260719013000`.
 30. Si se toca **cancelación/ajuste en Despacho primero**, validar `order_type::text` en `cancel_order_quantities` / `set_draft_order_item_quantity` (migración `20260718230000`) y que no se silencien errores de `applyKitchenPendingItemChanges`.
 31. Si se toca **lectura de denominaciones en cobro**, validar query directa (no cache local), guardia de consistencia y `refetchInterval` para tablets/PWA.
-32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll; si cae → `OPERATIONAL_LIST_BACKUP_POLL_MS` (25 s) + badge Sync lenta; doc `docs/operational-module-refresh.md`.
+32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll global; backup `OPERATIONAL_LIST_BACKUP_POLL_MS` (**30 s**) si cae; Despacho/Servir con `DISPATCH_SERVIR_SAFETY_POLL_MS` (**15 s**); badge Sync lenta; doc `docs/operational-module-refresh.md`.
 33. Si se toca **reportes de productos**, restar anulaciones `APPLIED` (`order_item_cancellations`); el neto debe coincidir con lo cobrable en Caja.
-34. Si se toca **gate de turno / admin**, validar bypass de admins (`20260802190000`) sin exigir `cash_shift_users`.
+34. Si se toca **gate de turno / admin**, validar bypass de admins (`20260802190000`) sin exigir `cash_shift_users`; preferir gate v2 (`20260810140000`).
 35. Si se toca **Forzar cierre**, validar confirmación `FORZAR`, permiso MANAGE, RPC `force_close_cash_shift` y migración `20260806040000`; no confundir con `close_cash_shift_with_tables`.
-36. Si se toca **visibilidad operativa / listas Caja-Despacho**, validar `cash_shift_id` (trigger/repair `20260807121000`) y lecturas con `dbSelectStrict`.
+36. Si se toca **visibilidad operativa / listas Caja-Despacho**, validar `cash_shift_id` (retag CLOSED→OPEN + repair `20260807121000`/`…240000`/`…250000`) y lecturas con `dbSelectStrict` / bundle self-heal.
 37. Si se toca **marcadores de transferencia**, validar un solo `TRANSFER_PROOF_PENDING` (`paymentNoteMarkers.ts`) y normalización `20260807124500`.
 38. Si se toca **órdenes especiales mixtas**, validar `special_group_total`, `cantidad_especial` y RPC `convertir_orden_especial_parcial` (migraciones Jul 25).
 39. Si se toca **Reportes admin**, validar filtro categoría y desglose por ítem en Pagos.
 40. Si se toca **AddItemDialog / selección de producto**, validar apertura al instante (shell optimista) sin bloquear UI.
+41. Si se toca **cola Despacho/Servir**, no precachear bundle en RQ; no cachear PLATOS vacío; aplicar `20260810160000` + `20260810250000`.
+42. Si se toca **cobro / CajaAutoOpener**, validar lock atómico `20260810230000` y no montar `useCaja` global en auto-opener.
+
+### Actualizacion Ago 10, 2026
+- **Colas Despacho/Servir, retag turno, cobro atómico, polls 30/0/15, separación PLATOS:** checklist 32, 36, 41–42; migraciones `20260810120000`–`20260810250000`. Doc: `docs/operational-module-refresh.md`.
 
 ### Actualizacion Ago 5–7, 2026
 - **Forzar cierre, visibilidad `cash_shift_id`, marcadores transferencia, Reportes admin, Agregar al instante, especial mixta:** checklist 35–40; migraciones `20260806040000`, `20260807121000`, `20260807124500`, `20260725170000`+.
@@ -478,7 +485,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 
 ### Actualizacion Jul 30, 2026
 - **Egress:** un canal Realtime por sucursal (`queryEgress.ts`); filtrar `order_items` por `sucursal_id`; preferir `get_orders_operational_snapshots_lite`; aplicar `20260730230000` en remoto.
-- **Latencia (complemento Ago 2):** poll listas 25 s si hub cae — ver `docs/operational-module-refresh.md`.
+- **Latencia (complemento Ago 10):** backup listas **30 s** si hub cae; safety **15 s** solo Despacho/Servir — ver `docs/operational-module-refresh.md`.
 
 ### Actualizacion Jul 8, 2026
 - **Cocina pendiente (Despacho primero):** `kitchenPendingChanges.ts`, staging `kitchenBaselineItems`/`stagedItems`, `applyKitchenPendingItemChanges`, boton con delta monetario.

@@ -9,14 +9,17 @@
 - La operacion diaria sigue gobernada por permisos efectivos por modulo/sucursal y, cuando aplica, por `cash_shift_users`.
 - La navegacion del catalogo ya usa `menu_nodes`, pero la persistencia operativa de venta sigue dependiendo de `products`.
 
-## Estado operativo vigente (2026-08-07)
+## Estado operativo vigente (2026-08-10)
 
 ### Regla canonica de estado de orden
 - El flujo base queda fijado como `DRAFT`/Borrador -> `SENT_TO_KITCHEN`/En Caja -> `PAID`/Pagada -> `KITCHEN_DISPATCHED`/Despachada.
 - Una orden pasa a Borrador cuando tiene al menos un item agregado y todavia no se envio a Caja.
 - Al enviar a Caja se genera `order_code` / `order_number` y la orden queda en `SENT_TO_KITCHEN`; ese estado significa `En Caja`, no despacho.
 - Al cobrar en Caja, si la orden queda cubierta, `sync_order_payment_state_internal(...)` debe dejarla en `PAID`. **`PAID` es un estado terminal**: ninguna operación posterior puede revertirlo excepto una anulación explícita de pago.
-- El modulo `Despacho` solo debe listar y permitir despachar ordenes `PAID` con cantidades activas pendientes de despacho.
+- El modulo `Despacho` lista ordenes elegibles segun `workflow_mode` / tipo:
+  - `CASH_THEN_DISPATCH` (mesa/para llevar/especial/extra): tipicamente `PAID` (o enviadas con linea/pago activo segun flags del bundle).
+  - `DISPATCH_THEN_CASH` y Express: tambien `SENT_TO_KITCHEN` / `READY` (despacho antes de cobro).
+  - Siempre con cantidades activas pendientes de despacho/servir y `cash_shift_id` del turno OPEN.
 - En `Despacho`, una orden pagada debe representarse como una sola tarjeta/fila por `orders.id` / `order_code`; si sus items fueron enviados en momentos distintos, se agregan dentro de esa misma orden y no se generan tarjetas duplicadas con el mismo numero.
 - Al despachar, la orden pasa a `KITCHEN_DISPATCHED` cuando ya no quedan cantidades activas pendientes de despacho.
 - Los estados principales son exclusivos en las pestanas operativas: una orden `PAID` no debe aparecer como `KITCHEN_DISPATCHED`, y una orden `KITCHEN_DISPATCHED` no debe seguir apareciendo como `PAID`.
@@ -70,10 +73,12 @@
   - Lecturas: RPC batch `get_batch_order_operational_snapshots(...)` (`20260602140000`) con fallback a `get_order_operational_snapshot` por orden.
   - Tras despachar: actualizacion optimista en cliente e invalidacion diferida de queries secundarias (~2,5 s).
 - **Servir (Platos) y Despacho:**
-  - Si un turno tiene al menos un usuario habilitado con el permiso `can_serve_plates` (Servir):
-    - El módulo **Despacho** filtra y oculta todos los productos de la categoría raíz PLATOS.
-    - El módulo **Servir** (`/servir`) muestra *exclusivamente* los productos de la categoría raíz PLATOS.
-  - Si ningún usuario en el turno tiene el permiso `can_serve_plates`, el módulo **Despacho** vuelve a mostrar todos los productos (comportamiento tradicional).
+  - Si el turno tiene al menos un usuario habilitado con `can_serve_plates`, **o** el gate del usuario actual tiene `canServePlates`:
+    - El módulo **Despacho** oculta productos de la categoría raíz PLATOS (y `force_servir_module`).
+    - El módulo **Servir** (`/servir`) muestra *exclusivamente* esos productos.
+  - Señal de servidores de platos: `bundle.has_plate_servers` **OR** `shiftGate.canServePlates` (`useDispatchOrders`).
+  - Catálogo: `ensurePlatosProductIdsForBranch` / `menuPlatosCategory.ts`. **No cachear** un set vacío (envenena la separación: todos los ítems quedan en Despacho).
+  - Si ningún usuario en el turno tiene el permiso y el gate no lo tiene, **Despacho** muestra todos los productos (comportamiento tradicional).
 - **Clientes (comensales) y cobro (2026-06-11+):**
   - Tabla `clientes` (cédula única, sexo, contacto); no son usuarios de `auth`.
   - `orders.cliente_id` opcional: se asigna al cobrar (`PaymentDialogV2` + `usePaymentClienteSelection`) o al registrar promoción.
@@ -269,12 +274,13 @@
 - `Pagos del turno` debe consultar desde `cash_shifts.opened_at` hasta `closed_at` o el momento actual, no desde la medianoche del dia calendario. Un turno puede cruzar de dia y sus pagos/anulaciones deben seguir visibles.
 - El detalle de pago debe mostrar, cuando aplique, monto entregado por el cliente, monedas/billetes recibidos, cambio entregado y devolucion.
 - Si el pago esta anulado o reversado, no debe mostrarse lo recibido por el cliente; solo corresponde mostrar la devolucion/anulacion.
-- **Visibilidad operativa y `cash_shift_id` (2026-08-07):**
-  - Listas de Caja/Despacho/Servir filtran por turno abierto; una orden activa sin `cash_shift_id` puede quedar invisible.
-  - Trigger `trg_assign_open_cash_shift_to_order` / función `assign_open_cash_shift_to_order` completa `cash_shift_id` si es NULL y hay turno `OPEN`.
-  - Repair: `repair_open_shift_order_cash_shift_ids(p_branch_id)`.
-  - Migración `20260807121000_stabilize_operational_order_visibility.sql`.
-  - Lecturas de listas operativas usan `dbSelectStrict` (sin fallback Dexie que vacíe la UI).
+- **Visibilidad operativa y `cash_shift_id` (2026-08-07 → 2026-08-10):**
+  - Listas de Caja/Despacho/Servir filtran por turno abierto; una orden activa sin `cash_shift_id` o con tag de turno `CLOSED` puede quedar invisible.
+  - Trigger `assign_open_cash_shift_to_order`: completa NULL → OPEN; desde `20260810240000` / `20260810250000` **reetiqueta** si el turno taggeado está `CLOSED`.
+  - Repair: `repair_open_shift_order_cash_shift_ids(p_branch_id)` (NULL o CLOSED → OPEN actual si pertenece temporalmente al turno).
+  - Cola Despacho/Servir: RPC `get_dispatch_servir_queue_bundle` autorrepara al leer e incluye huérfanas del turno OPEN (`20260810160000` + `20260810250000`).
+  - Cliente: fetch directo del bundle (sin cache RQ); repair forzado si cola vacía; `removeQueries` al cambiar turno. Doc: `docs/operational-module-refresh.md`.
+  - Lecturas de listas operativas usan `dbSelectStrict` / `getOpenCashShiftForBranch(..., { strict: true })`.
 - **Marcadores de comprobante de transferencia (`TRANSFER_PROOF_PENDING`):**
   - Prefijo canónico en `payments.notes`: `TRANSFER_PROOF_PENDING:1` (pendiente) / `:0` (resuelto).
   - Helper `setTransferProofPendingMarker` en `src/lib/paymentNoteMarkers.ts` (elimina marcadores previos del prefijo y deja uno solo).
@@ -390,9 +396,10 @@
 - Al aceptar cambios se registran y aplican automaticamente las anulaciones derivadas del buffer.
 - La accion principal del modulo es `Aceptar cambios`, no `Enviar`.
 
-### 6.1 Refresco entre módulos (2026-08-02)
-- Hub Realtime `branch-ops-hub:{branchId}`; con `SUBSCRIBED` no hay poll de listas.
-- Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 15s` en Despacho, Cocina, Caja, Mesas, Órdenes, Extra/Express/Para llevar/Especial.
+### 6.1 Refresco entre módulos (2026-08-02 → 2026-08-10)
+- Hub Realtime `branch-ops-hub:{branchId}`; al evento operational/payments invalida **todo** `OPERATIONAL_ORDER_LIST_KEYS`.
+- Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 30s`.
+- Safety global: `OPERATIONAL_LIST_SAFETY_POLL_MS = 0`. **Excepción Despacho/Servir:** `DISPATCH_SERVIR_SAFETY_POLL_MS = 15s` aunque el hub esté `SUBSCRIBED`.
 - También `refetchOnWindowFocus` / `refetchOnReconnect` en esas listas; badge **Sync lenta** en layout.
 - Doc: `docs/operational-module-refresh.md` y sección Fase 1.5 en `docs/supabase-performance-audit-phase2.md`.
 
@@ -648,15 +655,28 @@
 27. **Cocina pendiente — ids temp:** tras `addItem` con staging, reconciliar `stagedItems` con servidor; no dejar `temp-*` huerfanos que bloqueen el boton Enviar a cocina.
 28. **Migraciones Jul 9 pendientes en Supabase:** `20260709200000`, `20260709210000`, `20260709220000` (token/QR promocion y envio post-despacho).
 29. **Forzar cierre:** no confundir con `close_cash_shift_with_tables`; exige confirmación `FORZAR` y permiso MANAGE; migración `20260806040000`.
-30. **Visibilidad operativa:** órdenes activas sin `cash_shift_id` pueden desaparecer de Caja/Despacho; aplicar trigger/repair `20260807121000` y usar `dbSelectStrict`.
+30. **Visibilidad operativa:** órdenes activas sin `cash_shift_id` o con tag de turno `CLOSED` pueden desaparecer de Caja/Despacho; aplicar retag/repair (`20260807121000`, `20260810240000`, `20260810250000`) y usar `dbSelectStrict`.
 31. **Marcadores transferencia:** no dejar `TRANSFER_PROOF_PENDING:1` y `:0` juntos; usar `paymentNoteMarkers.ts`; normalización `20260807124500`.
 32. **Especial mixta:** respetar `special_group_total` + `cantidad_especial`; no tratar como especial legacy puro si `special_group_total` no es NULL.
+33. **Cola Despacho/Servir:** no precachear el bundle en React Query; fetch directo; no cachear catálogo PLATOS vacío; aplicar SQL `20260810250000`.
+34. **Cobro atómico:** `register_payment_with_items` con `FOR UPDATE` + tope de cantidades + idempotencia (`20260810230000`).
+35. **CajaAutoOpener:** usar `useOpenCashRegister` liviano; no montar `useCaja` global al arrancar.
+
+### Actualizacion Ago 10, 2026
+- **Cola Despacho/Servir:** RPC bundle + self-heal (`20260810160000`, `20260810250000`); cliente sin cache RQ del bundle; repair forzado si vacía; safety poll 15 s solo en esas colas.
+- **Retag post-turno:** trigger/repair reasignan `cash_shift_id` de turnos `CLOSED` al OPEN (`20260810240000` / `…250000`).
+- **Separación PLATOS:** `has_plate_servers` OR `gate.canServePlates`; no persistir catálogo platos vacío.
+- **Hub:** invalida `OPERATIONAL_ORDER_LIST_KEYS` completo; `branch_id` en ready/dispatch events (`20260810120000`).
+- **Polls:** backup listas 30 s; safety global 0; Despacho/Servir 15 s.
+- **P0 caja:** `useOpenCashRegister` / `CajaAutoOpener`; cobro atómico `20260810230000`.
+- **Cierre turno:** detalle bloqueantes, admin sin cobros, última caja (`20260810200000`–`20260810220000`).
+- **Bundles:** Caja payable + mesas overview (`20260810170000`, `20260810180000`); gate v2 (`20260810140000`); snapshots lite set-based (`20260810150000`).
 
 ### Actualizacion Ago 5–7, 2026
 - **Agregar al instante:** `AddItemDialog` abre con shell optimista; lookup de producto/modificadores en background (`Ordenes.tsx`, `AddItemDialog.tsx`).
 - **Reportes admin:** filtro por categoría de producto; en Pagos, toggle **Desglose por ítem** (`itemBreakdown`).
 - **Forzar cierre de turno:** `/forzar-cierre-turno`, RPC `force_close_cash_shift`, migración `20260806040000`.
-- **Visibilidad operativa:** trigger `assign_open_cash_shift_to_order` + `repair_open_shift_order_cash_shift_ids`; `dbSelectStrict` en listas; migración `20260807121000`.
+- **Visibilidad operativa:** trigger `assign_open_cash_shift_to_order` + `repair_open_shift_order_cash_shift_ids`; `dbSelectStrict` en listas; migración `20260807121000` (ampliada ago 10 con retag CLOSED).
 - **Marcadores comprobante:** `TRANSFER_PROOF_PENDING` vía `paymentNoteMarkers.ts`; normalización `20260807124500`.
 - **Naming mesa en cobrables:** `isSpecial` + `special_origin_table_id` / `table_name_snapshot` en `useCaja`.
 - **Anulación / vuelto exacto:** `cash_change_return_detail` (`20260802180000`).
@@ -832,7 +852,7 @@ Módulo que permite al comensal escanear un QR físico en la mesa, ver el menú 
 - **Monitoreo Global:** Fix colgado (import `useBranch`, orden de hooks, realtime menos agresivo, polling 60 s).
 
 ### Actualizacion Ago 2, 2026
-- **Refresco entre módulos:** poll de listas 25 s solo si hub Realtime ≠ SUBSCRIBED; focus/reconnect refetch; badge Sync lenta; invalidaciones cocina↔servir/caja. Doc: `docs/operational-module-refresh.md`.
+- **Refresco entre módulos:** poll de listas si hub Realtime ≠ SUBSCRIBED (valor vigente: **30 s**; ver Actualizacion Ago 10); focus/reconnect refetch; badge Sync lenta; invalidaciones cocina↔servir/caja. Doc: `docs/operational-module-refresh.md`.
 - **Staging / Editar orden:** aumentos in-place; bajas sin error de “aumento”; consolidación en Despachados al editar; `+` deshabilitado en despachados.
 - **Reportes:** `useReportesProductos` resta anulaciones `APPLIED` (neto = lo cobrable).
 - **Admin bypass turno:** `20260802190000_admin_bypass_shift_enablement.sql`.
