@@ -1320,6 +1320,10 @@ export function useOrder(orderId: string | null) {
         branchId: order?.branch_id ?? query.data?.branch_id,
         orderId,
       });
+      // Tirar bundle cacheado (prefetch vacío) y forzar refetch de colas activas.
+      qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
+      void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
+      void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });
 
       if (row?.order_status === "PAID") {
         toast.success("Orden especial de $0 marcada como pagada");
@@ -1389,6 +1393,9 @@ export function useOrder(orderId: string | null) {
         branchId: order?.branch_id ?? query.data?.branch_id,
         orderId,
       });
+      qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
+      void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
+      void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });
 
       const message = hadSentItems
         ? "Nuevos items enviados a despacho"

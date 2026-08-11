@@ -1480,6 +1480,9 @@ const ShiftSetupAdmin = () => {
       qc.invalidateQueries({ queryKey: ["open-cash-shift"], exact: false }),
       qc.invalidateQueries({ queryKey: ["open-cash-shift-id"], exact: false }),
       qc.invalidateQueries({ queryKey: ["dispatch-bootstrap", activeBranchId] }),
+      qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] }),
+      qc.removeQueries({ queryKey: ["dispatch-orders"] }),
+      qc.removeQueries({ queryKey: ["servir-orders"] }),
       qc.invalidateQueries({
         queryKey: ["shift-admin-cancel-policy", activeBranchId],
       }),

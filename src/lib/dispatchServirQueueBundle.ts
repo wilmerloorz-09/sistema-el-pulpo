@@ -1,7 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { OperationalMaps } from "@/lib/orderOperational";
-import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 import { qk } from "@/lib/queryKeys";
 
 export type DispatchServirQueueBundle = {
@@ -102,35 +101,30 @@ export function dispatchServirQueueBundleQueryKey(branchId: string, shiftId: str
   return [...qk.dispatchServirQueueBundle, branchId, shiftId] as const;
 }
 
-/** Comparte el bundle RPC entre prefetch y la cola de Despacho/Servir. */
+/**
+ * Comparte el bundle RPC entre prefetch y la cola de Despacho/Servir.
+ * @deprecated No usar para la cola en vivo: un prefetch vacío + dedupe
+ * envenenaba Servir/Despacho tras abrir turno. Preferir fetchDispatchServirQueueBundle.
+ */
 export async function ensureDispatchServirQueueBundle(
   qc: QueryClient,
   branchId: string,
   shiftId: string,
 ): Promise<DispatchServirQueueBundle> {
-  return qc.ensureQueryData({
-    queryKey: dispatchServirQueueBundleQueryKey(branchId, shiftId),
-    queryFn: () => fetchDispatchServirQueueBundle(branchId, shiftId),
-    staleTime: OPERATIONAL_STALE_MS,
-  });
+  // No cachear: siempre ir a red (evita el race del bundle vacío en vuelo).
+  void qc;
+  return fetchDispatchServirQueueBundle(branchId, shiftId);
 }
 
 /**
- * Lectura de cola en vivo: siempre refetch del bundle.
- * No usar ensureQueryData aquí — un prefetch vacío “fresco” (staleTime 15s)
- * envenenaba Servir/Despacho tras invalidar solo dispatch-orders/servir-orders
- * y, con Realtime SUBSCRIBED (sin poll), la cola podía quedarse vacía minutos.
+ * Lectura de cola en vivo: siempre red directa (sin cache RQ del bundle).
  */
 export async function fetchDispatchServirQueueBundleFresh(
-  qc: QueryClient,
+  _qc: QueryClient,
   branchId: string,
   shiftId: string,
 ): Promise<DispatchServirQueueBundle> {
-  return qc.fetchQuery({
-    queryKey: dispatchServirQueueBundleQueryKey(branchId, shiftId),
-    queryFn: () => fetchDispatchServirQueueBundle(branchId, shiftId),
-    staleTime: 0,
-  });
+  return fetchDispatchServirQueueBundle(branchId, shiftId);
 }
 
 export function operationalMapsFromBundleItems(
@@ -138,6 +132,7 @@ export function operationalMapsFromBundleItems(
 ): OperationalMaps {
   const readyMap: Record<string, number> = {};
   const readyAvailableMap: Record<string, number> = {};
+  const pendingPrepareMap: Record<string, number> = {};
   const dispatchedTotalMap: Record<string, number> = {};
   const dispatchedAvailableMap: Record<string, number> = {};
   const paidMap: Record<string, number> = {};
@@ -151,6 +146,7 @@ export function operationalMapsFromBundleItems(
     if (!id) continue;
     readyMap[id] = Number(item.quantity_ready_total ?? 0);
     readyAvailableMap[id] = Number(item.quantity_ready_available ?? 0);
+    pendingPrepareMap[id] = Number(item.quantity_pending_prepare ?? 0);
     dispatchedTotalMap[id] = Number(item.quantity_dispatched_total ?? 0);
     const pending = Number(item.quantity_pending_prepare ?? 0);
     const readyAvail = Number(item.quantity_ready_available ?? 0);
@@ -165,6 +161,7 @@ export function operationalMapsFromBundleItems(
   return {
     readyMap,
     readyAvailableMap,
+    pendingPrepareMap,
     dispatchedTotalMap,
     dispatchedAvailableMap,
     paidMap,

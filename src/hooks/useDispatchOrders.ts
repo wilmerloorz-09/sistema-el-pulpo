@@ -21,7 +21,7 @@ import {
 import { ensurePlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
-  fetchDispatchServirQueueBundleFresh,
+  fetchDispatchServirQueueBundle,
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
 } from "@/lib/dispatchServirQueueBundle";
@@ -355,11 +355,11 @@ function groupItemsIntoDispatchCards(
       const quantityDispatched = Math.min(quantities.quantityDispatchedAvailable, quantityPaid);
       const paidNotYetDispatched = Math.max(0, quantityPaid - quantityDispatched);
       const quantityPendingPrepare = Math.min(
-        pendingPrepareMap[item.id] ?? quantities.quantityPendingPrepare,
+        pendingPrepareMap?.[item.id] ?? quantities.quantityPendingPrepare,
         paidNotYetDispatched,
       );
       const quantityReadyAvailable = Math.min(
-        readyAvailableMap[item.id] ?? quantities.quantityReadyAvailable,
+        readyAvailableMap?.[item.id] ?? quantities.quantityReadyAvailable,
         Math.max(0, paidNotYetDispatched - quantityPendingPrepare),
       );
       const quantityDispatchable = quantityPendingPrepare + quantityReadyAvailable;
@@ -494,11 +494,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   useEffect(() => {
     const nextShiftId = shiftGate?.shiftId ?? null;
     if (activeBranchId && nextShiftId && lastShiftIdRef.current && lastShiftIdRef.current !== nextShiftId) {
-      // Cambio de turno: forzar repair + refetch de colas (evitar órdenes del turno nuevo invisibles).
+      // Cambio de turno: tirar caches (no solo invalidar) para no reusar un bundle vacío en vuelo.
       resetRepairOpenShiftThrottle(activeBranchId);
-      void qc.invalidateQueries({ queryKey: qk.dispatchOrders });
-      void qc.invalidateQueries({ queryKey: qk.servirOrders });
-      void qc.invalidateQueries({ queryKey: qk.dispatchServirQueueBundle });
+      qc.removeQueries({ queryKey: qk.dispatchServirQueueBundle });
+      qc.removeQueries({ queryKey: qk.dispatchOrders });
+      qc.removeQueries({ queryKey: qk.servirOrders });
+      void qc.invalidateQueries({ queryKey: qk.openCashShift });
+      void qc.invalidateQueries({ queryKey: qk.branchShiftGate });
     }
     lastShiftIdRef.current = nextShiftId;
   }, [activeBranchId, shiftGate?.shiftId, qc]);
@@ -526,6 +528,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       let operationalMaps = {
         readyMap: {} as Record<string, number>,
         readyAvailableMap: {} as Record<string, number>,
+        pendingPrepareMap: {} as Record<string, number>,
         dispatchedTotalMap: {} as Record<string, number>,
         dispatchedAvailableMap: {} as Record<string, number>,
         paidMap: {} as Record<string, number>,
@@ -543,10 +546,16 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       let usedQueueBundle = false;
 
       try {
-        const [bootstrap, bundle] = await Promise.all([
-          bootstrapPromise,
-          fetchDispatchServirQueueBundleFresh(qc, activeBranchId, openShift.id),
-        ]);
+        // Red directa: sin React Query del bundle (prefetch vacío + dedupe envenenaba la cola).
+        let bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+
+        // Cola vacía: repair forzado + 1 reintento (cubre tags del turno cerrado y carreras post-apertura).
+        if ((bundle.orders?.length ?? 0) === 0) {
+          await repairOpenShiftOrderCashShiftIds(activeBranchId, { force: true });
+          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+        }
+
+        const [bootstrap] = await Promise.all([bootstrapPromise]);
         usedQueueBundle = true;
         const config = bootstrap.config;
         const assignments = bootstrap.assignments;
