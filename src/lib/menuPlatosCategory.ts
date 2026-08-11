@@ -68,7 +68,10 @@ function readPlatosIdsFromStorage(branchId: string): string[] | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as MemoryEntry;
     if (!parsed || !Array.isArray(parsed.ids) || Number(parsed.expiresAt) <= Date.now()) return null;
-    return parsed.ids.map(String).filter(Boolean);
+    const ids = parsed.ids.map(String).filter(Boolean);
+    // Vacío no cuenta como hit: envenena Despacho (deja todos los ítems ahí).
+    if (ids.length === 0) return null;
+    return ids;
   } catch {
     return null;
   }
@@ -76,6 +79,12 @@ function readPlatosIdsFromStorage(branchId: string): string[] | null {
 
 function writePlatosIdsToStorage(branchId: string, ids: string[]) {
   try {
+    if (ids.length === 0) {
+      // Nunca persistir catálogo vacío (TTL 30 min dejaba platos en Despacho).
+      platosMemoryCache.delete(branchId);
+      localStorage.removeItem(`${PLATOS_LS_PREFIX}${branchId}`);
+      return;
+    }
     const entry: MemoryEntry = {
       ids,
       expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
@@ -126,12 +135,15 @@ export function invalidatePlatosProductIdsCache(branchId?: string | null) {
 /** Lectura con caché en memoria (TTL catálogo). */
 export async function fetchPlatosProductIdsForBranch(branchId: string): Promise<Set<string>> {
   const cached = platosMemoryCache.get(branchId);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (cached && cached.expiresAt > Date.now() && cached.ids.length > 0) {
     return new Set(cached.ids);
+  }
+  if (cached && cached.ids.length === 0) {
+    platosMemoryCache.delete(branchId);
   }
 
   const fromLs = readPlatosIdsFromStorage(branchId);
-  if (fromLs) {
+  if (fromLs && fromLs.length > 0) {
     platosMemoryCache.set(branchId, {
       ids: fromLs,
       expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
@@ -154,11 +166,15 @@ export async function ensurePlatosProductIdsForBranch(
 ): Promise<Set<string>> {
   // Hit rápido memoria / localStorage antes de ensureQueryData (evita esperar al scheduler RQ).
   const mem = platosMemoryCache.get(branchId);
-  if (mem && mem.expiresAt > Date.now()) {
+  if (mem && mem.expiresAt > Date.now() && mem.ids.length > 0) {
     return new Set(mem.ids);
   }
+  if (mem && mem.ids.length === 0) {
+    platosMemoryCache.delete(branchId);
+  }
+
   const fromLs = readPlatosIdsFromStorage(branchId);
-  if (fromLs) {
+  if (fromLs && fromLs.length > 0) {
     platosMemoryCache.set(branchId, {
       ids: fromLs,
       expiresAt: Date.now() + PLATOS_MEMORY_TTL_MS,
@@ -187,6 +203,18 @@ export async function ensurePlatosProductIdsForBranch(
     staleTime: CATALOG_STALE_MS,
     gcTime: CATALOG_GC_MS,
   });
+
+  // RQ pudo cachear [] de un fallo previo: no reutilizar vacío.
+  if (!ids || ids.length === 0) {
+    qc.removeQueries({ queryKey: platosProductIdsQueryKey(branchId) });
+    const reloaded = await loadPlatosProductIds(branchId);
+    writePlatosIdsToStorage(branchId, reloaded);
+    if (reloaded.length > 0) {
+      qc.setQueryData(platosProductIdsQueryKey(branchId), reloaded);
+    }
+    return new Set(reloaded);
+  }
+
   return new Set(ids);
 }
 

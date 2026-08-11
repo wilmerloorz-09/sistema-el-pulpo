@@ -18,7 +18,7 @@ import {
   repairOpenShiftOrderCashShiftIds,
   resetRepairOpenShiftThrottle,
 } from "@/lib/openCashShift";
-import { ensurePlatosProductIdsForBranch, isPlatosOrderItem } from "@/lib/menuPlatosCategory";
+import { ensurePlatosProductIdsForBranch, invalidatePlatosProductIdsCache, isPlatosOrderItem, platosProductIdsQueryKey } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
   fetchDispatchServirQueueBundle,
@@ -646,13 +646,28 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           modifiersMap[row.order_item_id].push({ description });
         }
 
+        // Si el usuario ve Servir en el menú (gate), separar platos aunque el flag del bundle falle.
+        const hasPlateServers =
+          Boolean(hasPlateServersFromBundle) || Boolean(shiftGate?.canServePlates);
+
         let platosProductIds: Set<string> | undefined;
         let filterOutPlatos = false;
-        if (isServirModule) {
+        if (isServirModule || (moduleMode === "dispatch" && hasPlateServers)) {
           platosProductIds = await platosWarmPromise;
-        } else if (moduleMode === "dispatch" && hasPlateServersFromBundle) {
-          platosProductIds = await platosWarmPromise;
-          filterOutPlatos = true;
+          if (platosProductIds.size === 0) {
+            invalidatePlatosProductIdsCache(activeBranchId);
+            qc.removeQueries({ queryKey: platosProductIdsQueryKey(activeBranchId) });
+            platosProductIds = await ensurePlatosProductIdsForBranch(qc, activeBranchId);
+          }
+          filterOutPlatos = moduleMode === "dispatch" && hasPlateServers;
+          // Sin catálogo de platos no filtrar en Despacho (evita inventar clasificación).
+          if (filterOutPlatos && platosProductIds.size === 0) {
+            console.warn("[useDispatchOrders] catálogo PLATOS vacío; no se puede separar Servir/Despacho");
+            platosProductIds = undefined;
+            filterOutPlatos = false;
+          } else if (isServirModule && platosProductIds.size === 0) {
+            console.warn("[useDispatchOrders] catálogo PLATOS vacío; Servir sin ítems clasificables");
+          }
         }
 
         const allCards = allPermittedOrders.flatMap((order) => {
