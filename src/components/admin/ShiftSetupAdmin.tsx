@@ -362,37 +362,33 @@ function showShiftSetupError(
   }
 
   if (
-    rawMessage.startsWith(
+    rawMessage.startsWith("No puedes cerrar el turno. Falta:")
+    || rawMessage.startsWith("No puedes cerrar el turno porque aun existen ordenes o cobros pendientes")
+    || rawMessage.startsWith("No puedes cerrar el turno porque la caja esta abierta")
+  ) {
+    const isDetailed = rawMessage.startsWith("No puedes cerrar el turno. Falta:");
+    const legacyPending = rawMessage.startsWith(
       "No puedes cerrar el turno porque aun existen ordenes o cobros pendientes",
-    )
-  ) {
-    const detail = rawMessage
-      .replace(
-        "No puedes cerrar el turno porque aun existen ordenes o cobros pendientes.",
-        "",
-      )
-      .trim();
+    );
+    const detail = legacyPending
+      ? rawMessage
+          .replace(
+            "No puedes cerrar el turno porque aun existen ordenes o cobros pendientes.",
+            "",
+          )
+          .trim()
+      : "";
 
     setWarningDialog({
       open: true,
       title: "No se puede cerrar el turno",
-      description: detail
-        ? `Todavia quedan ordenes o cobros pendientes en esta sucursal.${detail}`
-        : "Todavia quedan ordenes o cobros pendientes en esta sucursal. Finaliza o cobra esas ordenes primero.",
-    });
-    return;
-  }
-
-  if (
-    rawMessage.startsWith(
-      "No puedes cerrar el turno porque la caja esta abierta",
-    )
-  ) {
-    setWarningDialog({
-      open: true,
-      title: "No se puede cerrar el turno",
-      description:
-        "La caja sigue abierta. Cierra la caja en el modulo Caja y luego vuelve a intentar cerrar el turno.",
+      description: isDetailed
+        ? rawMessage
+        : legacyPending
+          ? (detail
+            ? `Todavia quedan ordenes o cobros pendientes en esta sucursal.\n${detail}`
+            : "Todavia quedan ordenes o cobros pendientes en esta sucursal. Finaliza o cobra esas ordenes primero.")
+          : "La caja sigue abierta. Cierra la caja en el modulo Caja y luego vuelve a intentar cerrar el turno.",
     });
     return;
   }
@@ -3017,13 +3013,15 @@ const ShiftSetupAdmin = () => {
         open={warningDialog.open}
         onOpenChange={(open) => setWarningDialog((prev) => ({ ...prev, open }))}
       >
-        <AlertDialogContent className="max-w-md rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
+        <AlertDialogContent className="max-w-lg rounded-[24px] border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-orange-50 p-5 shadow-[0_30px_80px_-42px_rgba(245,158,11,0.55)]">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display text-lg font-black text-amber-950">
               {warningDialog.title}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-sm leading-6 text-amber-900/80">
-              {warningDialog.description}
+            <AlertDialogDescription asChild>
+              <div className="max-h-[50vh] overflow-y-auto whitespace-pre-line text-sm leading-6 text-amber-900/80">
+                {warningDialog.description}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -3887,6 +3887,14 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_branch_shift_closure_blockers: {
+        Args: { p_branch_id: string }
+        Returns: Json
+      }
+      format_shift_closure_blockers_message: {
+        Args: { p_branch_id: string }
+        Returns: string
+      }
       list_cash_register_movements: {
         Args: { p_turno_id: string }
         Returns: {

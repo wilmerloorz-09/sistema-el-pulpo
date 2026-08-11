@@ -4,13 +4,12 @@ import { useBranchShiftGate } from '@/hooks/useBranchShiftGate';
 import { hasPermission } from '@/lib/permissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Wallet, ShieldAlert, Soup, BarChart4, Lock, AlertCircle } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Wallet, Soup, Lock, AlertCircle } from 'lucide-react';
 
 // Componentes del Módulo
 import FiltrosPanel from '@/components/reportes/FiltrosPanel';
 import ReportePagos from '@/components/reportes/ReportePagos';
-import ReporteAnulaciones from '@/components/reportes/ReporteAnulaciones';
 import ReporteProductos from '@/components/reportes/ReporteProductos';
 import type { ReportesFilters } from '@/hooks/useReportesOnlineData';
 
@@ -33,7 +32,10 @@ const Reportes = () => {
     cashierId: null,
     creatorId: null,
     productIds: null,
-    orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL']
+    orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL'],
+    recordStatus: 'all',
+    sortBy: 'fecha',
+    sortDir: 'desc',
   });
 
   // Mantener sincronizado el branchId del filtro con el branch activo del contexto
@@ -159,14 +161,10 @@ const Reportes = () => {
 
       {/* Tabs de Reportes */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-muted/60 p-1 rounded-2xl print:hidden">
+        <TabsList className="grid w-full grid-cols-2 bg-muted/60 p-1 rounded-2xl print:hidden">
           <TabsTrigger value="payments" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
             <Wallet className="h-4 w-4" />
             Pagos Realizados
-          </TabsTrigger>
-          <TabsTrigger value="voids" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
-            <ShieldAlert className="h-4 w-4" />
-            Anulación de Pagos
           </TabsTrigger>
           <TabsTrigger value="products" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
             <Soup className="h-4 w-4" />
@@ -177,11 +175,6 @@ const Reportes = () => {
         {/* Contenido: Pagos */}
         <TabsContent value="payments" className="mt-6 border-none p-0 outline-none">
           <ReportePagos filters={filters} />
-        </TabsContent>
-
-        {/* Contenido: Anulaciones */}
-        <TabsContent value="voids" className="mt-6 border-none p-0 outline-none">
-          <ReporteAnulaciones filters={filters} />
         </TabsContent>
 
         {/* Contenido: Productos Vendidos */}

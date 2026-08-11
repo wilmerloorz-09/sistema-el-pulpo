@@ -36,14 +36,32 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const [shiftId, setShiftId] = useState<string>('ALL');
   const [cashierId, setCashierId] = useState<string>('ALL');
   const [creatorId, setCreatorId] = useState<string>('ALL');
-  const [supervisorId, setSupervisorId] = useState<string>('ALL');
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [selectedOrderType, setSelectedOrderType] = useState<string>('ALL');
+  const [recordStatus, setRecordStatus] = useState<'all' | 'valid' | 'voided'>('all');
+  const [sortBy, setSortBy] = useState<string>(activeTab === 'products' ? 'cantidad' : 'fecha');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Buscador de productos
   const [productSearch, setProductSearch] = useState<string>('');
   const [isProductsOpen, setIsProductsOpen] = useState(false);
+
+  useEffect(() => {
+    // Al cambiar de pestaña, si el criterio no aplica, usar el default del reporte.
+    if (activeTab === 'products') {
+      setSortBy((prev) => {
+        if (prev === 'cantidad' || prev === 'total' || prev === 'nombre' || prev === 'categoria') return prev;
+        if (prev === 'monto') return 'total';
+        if (prev === 'orden') return 'nombre';
+        return 'cantidad';
+      });
+    } else {
+      setSortBy((prev) => (
+        ['fecha', 'orden', 'monto', 'cajero', 'creador', 'metodo'].includes(prev) ? prev : 'fecha'
+      ));
+    }
+  }, [activeTab]);
 
   const effectiveBranchId = localBranchId || branchId;
   const { data: filtersData, isLoading } = useReportesFiltros(effectiveBranchId);
@@ -202,9 +220,11 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
       shiftId: shiftId === 'ALL' ? null : shiftId,
       cashierId: cashierId === 'ALL' ? null : cashierId,
       creatorId: creatorId === 'ALL' ? null : creatorId,
-      supervisorId: supervisorId === 'ALL' ? null : supervisorId,
       productIds: finalProductIds,
       orderTypes: selectedOrderType === 'ALL' ? ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL'] : [selectedOrderType],
+      recordStatus,
+      sortBy,
+      sortDir,
     });
   };
 
@@ -215,10 +235,12 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     setShiftId('ALL');
     setCashierId('ALL');
     setCreatorId('ALL');
-    setSupervisorId('ALL');
     setSelectedNodeIds([]);
     setSelectedCategoryId('ALL');
     setSelectedOrderType('ALL');
+    setRecordStatus('all');
+    setSortBy(activeTab === 'products' ? 'cantidad' : 'fecha');
+    setSortDir('desc');
   };
 
   const menuNodes = filtersData?.menuNodes || [];
@@ -432,26 +454,6 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
           </Select>
         </div>
 
-        {/* Combo de Supervisor (Solo relevante en Anulaciones) */}
-        {activeTab === 'voids' && (
-          <div className="space-y-1.5">
-            <Label className="text-xs font-bold text-muted-foreground">Supervisor Autorizante</Label>
-            <Select value={supervisorId} onValueChange={setSupervisorId}>
-              <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
-                <SelectValue placeholder="Todos los supervisores" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Todos los supervisores</SelectItem>
-                {(filtersData?.profiles || []).map((p) => (
-                  <SelectItem key={p.id} value={p.id} className="text-xs">
-                    {getUserDisplayName(p)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
         {/* Categoría de producto (menú) */}
         {showProductFilters && (
           <div className="space-y-1.5">
@@ -583,6 +585,64 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
               <SelectItem value="EXPRESS">⚡ Express</SelectItem>
               <SelectItem value="EXTRA">📦 Extra/General</SelectItem>
               <SelectItem value="SPECIAL">🌟 Especial</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Estado: válidos / anulados */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-bold text-muted-foreground">Estado del registro</Label>
+          <Select value={recordStatus} onValueChange={(v) => setRecordStatus(v as 'all' | 'valid' | 'voided')}>
+            <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
+              <SelectValue placeholder="Todos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="valid">Válidos</SelectItem>
+              <SelectItem value="voided">Anulados</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Ordenar por */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-bold text-muted-foreground">Ordenar por</Label>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
+              <SelectValue placeholder="Criterio" />
+            </SelectTrigger>
+            <SelectContent>
+              {activeTab === 'products' ? (
+                <>
+                  <SelectItem value="cantidad">Cantidad</SelectItem>
+                  <SelectItem value="total">Total recaudado</SelectItem>
+                  <SelectItem value="nombre">Nombre de producto</SelectItem>
+                  <SelectItem value="categoria">Categoría</SelectItem>
+                </>
+              ) : (
+                <>
+                  <SelectItem value="fecha">Fecha y hora</SelectItem>
+                  <SelectItem value="orden">Orden / código</SelectItem>
+                  <SelectItem value="monto">Monto neto</SelectItem>
+                  <SelectItem value="cajero">Cajero</SelectItem>
+                  <SelectItem value="creador">Creador de orden</SelectItem>
+                  <SelectItem value="metodo">Método de pago</SelectItem>
+                </>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Dirección */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-bold text-muted-foreground">Dirección</Label>
+          <Select value={sortDir} onValueChange={(v) => setSortDir(v as 'asc' | 'desc')}>
+            <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
+              <SelectValue placeholder="Dirección" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="desc">Descendente</SelectItem>
+              <SelectItem value="asc">Ascendente</SelectItem>
             </SelectContent>
           </Select>
         </div>

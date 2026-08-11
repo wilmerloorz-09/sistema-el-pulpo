@@ -12,7 +12,35 @@ export interface ReportesFilters {
   creatorId: string | null;
   productIds: string[] | null;
   orderTypes: string[] | null;
-  supervisorId?: string | null; // Usado en anulaciones
+  supervisorId?: string | null; // legacy (anulaciones)
+  /** Todos = válidos + anulados; por defecto todos. */
+  recordStatus?: 'all' | 'valid' | 'voided';
+  /** Criterio de orden (cada reporte interpreta el que aplica). */
+  sortBy?: string | null;
+  sortDir?: 'asc' | 'desc';
+}
+
+export type ReportesRecordStatus = NonNullable<ReportesFilters['recordStatus']>;
+
+/** Pago anulado/reversado por status, notas o voided_at. */
+export function isReportPaymentVoided(pay: {
+  status?: string | null;
+  notes?: string | null;
+  voided_at?: string | null;
+}): boolean {
+  const st = String(pay.status ?? '').toLowerCase();
+  if (st === 'voided' || st === 'reversed') return true;
+  if (pay.voided_at) return true;
+  const notes = String(pay.notes ?? '');
+  return notes.includes('VOIDED:') || notes.includes('REVERSED:');
+}
+
+function compareText(a: string, b: string) {
+  return String(a ?? '').localeCompare(String(b ?? ''), 'es', { sensitivity: 'base' });
+}
+
+function applySortDir(cmp: number, dir: 'asc' | 'desc') {
+  return dir === 'asc' ? cmp : -cmp;
 }
 
 /** Tope de seguridad: sin fechas el reporte no debe barrer toda la historia. */
@@ -146,11 +174,37 @@ export function useReportesPagos(
   filters: ReportesFilters,
   options?: { itemBreakdown?: boolean },
 ) {
-  const { branchId, desde, hasta, shiftId, cashierId, creatorId, productIds, orderTypes } = filters;
+  const {
+    branchId,
+    desde,
+    hasta,
+    shiftId,
+    cashierId,
+    creatorId,
+    productIds,
+    orderTypes,
+    recordStatus = 'all',
+    sortBy = 'fecha',
+    sortDir = 'desc',
+  } = filters;
   const itemBreakdown = Boolean(options?.itemBreakdown);
 
   return useQuery({
-    queryKey: ['reportes-pagos', branchId, desde, hasta, shiftId, cashierId, creatorId, productIds, orderTypes, itemBreakdown],
+    queryKey: [
+      'reportes-pagos',
+      branchId,
+      desde,
+      hasta,
+      shiftId,
+      cashierId,
+      creatorId,
+      productIds,
+      orderTypes,
+      recordStatus,
+      sortBy,
+      sortDir,
+      itemBreakdown,
+    ],
     queryFn: async () => {
       if (!branchId) {
         return {
@@ -202,6 +256,8 @@ export function useReportesPagos(
           payment_method_id,
           shift_id,
           notes,
+          status,
+          voided_at,
           payment_methods!inner (id, name, branch_id),
           cashier:profiles!payments_created_by_fkey (id, alias, username),
           order:orders!inner (
@@ -215,7 +271,7 @@ export function useReportesPagos(
             creator:profiles!orders_created_by_fkey (id, alias, username)
           )
         `)
-        .in('status', ['COMPLETED', 'active']); // Solo pagos válidos/pagados (excluyendo anulados que tienen otro status)
+        .in('status', ['COMPLETED', 'active', 'voided', 'VOIDED', 'reversed', 'REVERSED']);
 
       if (branchId !== 'ALL') {
         query = query.eq('order.branch_id', branchId);
@@ -249,11 +305,16 @@ export function useReportesPagos(
       const { data, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
 
-      // Filtrar en memoria por orderType efectivo para abarcar SPECIAL
+      // Filtrar en memoria por orderType efectivo y estado válido/anulado
       const paymentsRaw = (data || []).filter((pay: any) => {
-        if (!orderTypes || orderTypes.length === 0) return true;
-        const effectiveType = pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA');
-        return orderTypes.includes(effectiveType);
+        if (orderTypes && orderTypes.length > 0) {
+          const effectiveType = pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA');
+          if (!orderTypes.includes(effectiveType)) return false;
+        }
+        const voided = isReportPaymentVoided(pay);
+        if (recordStatus === 'valid') return !voided;
+        if (recordStatus === 'voided') return voided;
+        return true;
       });
 
       // Procesar datos y calcular KPIs
@@ -299,8 +360,33 @@ export function useReportesPagos(
           change,
           netApplied,
           orderType: pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA'),
-          notes: pay.notes
+          notes: pay.notes,
+          status: pay.status ?? null,
+          isVoided: isReportPaymentVoided(pay),
         };
+      });
+
+      const sortKey = String(sortBy || 'fecha');
+      const dir = sortDir === 'asc' ? 'asc' : 'desc';
+      processedPayments.sort((a, b) => {
+        let cmp = 0;
+        if (sortKey === 'orden') {
+          cmp = compareText(
+            getOrderRef(a.orderCode, a.orderNumber),
+            getOrderRef(b.orderCode, b.orderNumber),
+          );
+        } else if (sortKey === 'monto') {
+          cmp = a.netApplied - b.netApplied;
+        } else if (sortKey === 'cajero') {
+          cmp = compareText(a.cashierName, b.cashierName);
+        } else if (sortKey === 'creador') {
+          cmp = compareText(a.creatorName, b.creatorName);
+        } else if (sortKey === 'metodo') {
+          cmp = compareText(a.methodName, b.methodName);
+        } else {
+          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        }
+        return applySortDir(cmp, dir);
       });
 
       const transacciones = processedPayments.length;
@@ -324,9 +410,13 @@ export function useReportesPagos(
           let itemsQuery = supabase
             .from('order_items')
             .select('id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, cancelled_at')
-            .in('order_id', chunk)
-            .is('cancelled_at', null)
-            .not('status', 'eq', 'CANCELLED');
+            .in('order_id', chunk);
+
+          if (recordStatus === 'valid') {
+            itemsQuery = itemsQuery.is('cancelled_at', null).not('status', 'eq', 'CANCELLED');
+          } else if (recordStatus === 'voided') {
+            itemsQuery = itemsQuery.or('cancelled_at.not.is.null,status.eq.CANCELLED');
+          }
 
           if (productIds && productIds.length > 0) {
             itemsQuery = itemsQuery.in('product_id', productIds);
@@ -387,6 +477,27 @@ export function useReportesPagos(
             });
           }
         }
+
+        itemRows.sort((a, b) => {
+          let cmp = 0;
+          if (sortKey === 'orden') {
+            cmp = compareText(
+              getOrderRef(a.orderCode, a.orderNumber),
+              getOrderRef(b.orderCode, b.orderNumber),
+            );
+          } else if (sortKey === 'monto') {
+            cmp = a.itemTotal - b.itemTotal;
+          } else if (sortKey === 'cajero') {
+            cmp = compareText(a.cashierName, b.cashierName);
+          } else if (sortKey === 'creador') {
+            cmp = compareText(a.creatorName, b.creatorName);
+          } else if (sortKey === 'metodo') {
+            cmp = compareText(a.methodName, b.methodName);
+          } else {
+            cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          }
+          return applySortDir(cmp, dir);
+        });
       }
 
       return {
@@ -549,10 +660,33 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
  * Reporte 3: Productos Vendidos (Métricas de Cocina/Venta)
  */
 export function useReportesProductos(filters: ReportesFilters) {
-  const { branchId, desde, hasta, shiftId, creatorId, productIds, orderTypes } = filters;
+  const {
+    branchId,
+    desde,
+    hasta,
+    shiftId,
+    creatorId,
+    productIds,
+    orderTypes,
+    recordStatus = 'all',
+    sortBy = 'cantidad',
+    sortDir = 'desc',
+  } = filters;
 
   return useQuery({
-    queryKey: ['reportes-productos-vendidos', branchId, desde, hasta, shiftId, creatorId, productIds, orderTypes],
+    queryKey: [
+      'reportes-productos-vendidos',
+      branchId,
+      desde,
+      hasta,
+      shiftId,
+      creatorId,
+      productIds,
+      orderTypes,
+      recordStatus,
+      sortBy,
+      sortDir,
+    ],
     queryFn: async () => {
       if (!branchId) return { productsSold: [], kpis: { top3: [], totalUnidades: 0 }, rawTimeData: [] };
 
@@ -595,9 +729,13 @@ export function useReportesProductos(filters: ReportesFilters) {
             )
           )
         `)
-        .neq('order.status', 'DRAFT') // Excluir borradores
-        .is('cancelled_at', null) // Excluir anulaciones directas de ítems
-        .not('status', 'eq', 'CANCELLED'); // Excluir ítems con estado cancelado
+        .neq('order.status', 'DRAFT'); // Excluir borradores
+
+      if (recordStatus === 'valid') {
+        query = query.is('cancelled_at', null).not('status', 'eq', 'CANCELLED');
+      } else if (recordStatus === 'voided') {
+        query = query.or('cancelled_at.not.is.null,status.eq.CANCELLED');
+      }
 
       if (branchId !== 'ALL') {
         query = query.eq('order.branch_id', branchId);
@@ -636,9 +774,10 @@ export function useReportesProductos(filters: ReportesFilters) {
       });
 
       // Anulaciones parciales (p.ej. bajar despachado 4→3): restar del reporte lo que ya no se cobra.
+      // En "anulados" no restamos: el ítem ya es la línea cancelada.
       const itemIds = itemsRaw.map((item: any) => item.id).filter(Boolean);
       const cancelledQtyByItemId: Record<string, number> = {};
-      if (itemIds.length > 0) {
+      if (recordStatus !== 'voided' && itemIds.length > 0) {
         const { data: itemCancellations, error: cancelItemsError } = await supabase
           .from('order_item_cancellations')
           .select('order_item_id, quantity_cancelled, order_cancellation_id')
@@ -773,10 +912,27 @@ export function useReportesProductos(filters: ReportesFilters) {
           totalRecaudado: round2(p.totalRecaudado),
           orderTypePredominante
         };
-      }).sort((a, b) => b.quantityTotal - a.quantityTotal);
+      });
+
+      const sortKey = String(sortBy || 'cantidad');
+      const dir = sortDir === 'asc' ? 'asc' : 'desc';
+      productsSold.sort((a, b) => {
+        let cmp = 0;
+        if (sortKey === 'nombre' || sortKey === 'orden') {
+          cmp = compareText(a.name, b.name);
+        } else if (sortKey === 'total' || sortKey === 'monto') {
+          cmp = a.totalRecaudado - b.totalRecaudado;
+        } else if (sortKey === 'categoria') {
+          cmp = compareText(a.category, b.category);
+        } else {
+          cmp = a.quantityTotal - b.quantityTotal;
+        }
+        return applySortDir(cmp, dir);
+      });
 
       // Calcular Top 3 productos
-      const top3 = productsSold.slice(0, 3).map((p, idx) => ({
+      const top3Source = [...productsSold].sort((a, b) => b.quantityTotal - a.quantityTotal);
+      const top3 = top3Source.slice(0, 3).map((p, idx) => ({
         pos: idx + 1,
         name: p.name,
         qty: p.quantityTotal,
