@@ -7,7 +7,7 @@ import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/l
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds, openCashShiftFromGate } from "@/lib/openCashShift";
 import {
   OPERATIONAL_STALE_MS,
   OPERATIONAL_LIST_BACKUP_POLL_MS,
@@ -124,14 +124,12 @@ export function useOrdersByStatus(
 
       void repairOpenShiftOrderCashShiftIds(activeBranchId);
 
-      let openShift = shiftGate?.shiftId
-        ? { id: shiftGate.shiftId, opened_at: "" }
-        : null;
+      let openShift = openCashShiftFromGate(shiftGate);
       if (!openShift) {
         openShift = await qc.ensureQueryData({
           queryKey: ["open-cash-shift", activeBranchId],
           queryFn: () => getOpenCashShiftForBranch(activeBranchId, { strict: true }),
-          staleTime: 0,
+          staleTime: 30_000,
           gcTime: 10 * 60_000,
         });
       }

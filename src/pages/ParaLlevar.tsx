@@ -99,7 +99,7 @@ const ParaLlevar = () => {
     channelPrefix: "takeout-orders-rt",
     enabled: Boolean(activeBranchId),
     queryKeys: [["takeout-orders"]],
-    includePayments: true,
+    includePayments: false,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 

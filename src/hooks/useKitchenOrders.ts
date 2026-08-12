@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds, openCashShiftFromGate } from "@/lib/openCashShift";
 import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 
 export interface KitchenOrderItem {
@@ -74,9 +74,8 @@ export function useKitchenOrders() {
       // Repair en background (throttle interno); no bloquear el listado.
       void repairOpenShiftOrderCashShiftIds(activeBranchId);
 
-      let openShift = shiftGate?.shiftId
-        ? { id: shiftGate.shiftId, opened_at: "" }
-        : null;
+      // Preferir gate con openedAt; sin openedAt hay que leer BD (filtro de turno).
+      let openShift = openCashShiftFromGate(shiftGate);
       if (!openShift) {
         openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
       }
@@ -259,7 +258,7 @@ export function useKitchenOrders() {
       return sortBySentAt(cards).filter((order) => order.pending_prepare_count > 0) as KitchenOrder[];
     },
     staleTime: OPERATIONAL_STALE_MS,
-    refetchOnMount: "always",
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,

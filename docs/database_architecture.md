@@ -659,6 +659,10 @@ Post-aprobación → flujo canónico (Caja → PAID → Despacho)
 ### Locks / Disk IO (2026-08-11)
 - `20260811123000_reduce_order_lock_pressure.sql` — snapshot unitario filtrado por orden; sync única al final de `register_payment_with_items`.
 - `20260811140000_defer_compact_and_dispatch_snapshot.sql` — despacho con snapshot único; skip sync si ya `PAID`; compact de mesa diferido al final de cobro/despacho.
+- `20260811150000_sync_single_snapshot_and_hotspot_indexes.sql` — sync con snapshot materializado único; índices gate / eventos APPLIED / mesa activa.
+- `20260811160000_restore_stable_dispatch_order_quantities.sql` — hotfix: restaura despacho estable y desactiva compact diferido en cola.
+- `20260811161000_restore_stable_register_payment.sql` — hotfix: restaura cobro atómico sin cola diferida (`register_payment_with_items` como en `20260811123000`).
+- `20260811170000_hotspot_indexes_only.sql` — **solo índices** `IF NOT EXISTS` (gate, eventos APPLIED, joins item→evento, mesa activa, order_items/payments). Sin tocar RPCs.
 
 ### Órdenes especiales mixtas (2026-07-25)
 - `20260725170000_mixed_special_orders.sql`

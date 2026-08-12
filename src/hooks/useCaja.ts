@@ -13,7 +13,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap, getUserDisplayName } from "@/lib/userDisplay";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { getOrderQueryKey } from "@/hooks/useOrder";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, repairOpenShiftOrderCashShiftIds, openCashShiftFromGate } from "@/lib/openCashShift";
 import { openCashRegisterRpc } from "@/hooks/useOpenCashRegister";
 import {
   fetchCajaPayableQueueBundle,
@@ -1864,9 +1864,8 @@ export function useCaja(params?: {
       // Repair en background; no bloquear cobro.
       void repairOpenShiftOrderCashShiftIds(activeBranchId);
 
-      let openShift = shiftGate?.shiftId
-        ? { id: shiftGate.shiftId, opened_at: "" }
-        : null;
+      // Preferir gate con openedAt (filtro de turno correcto). Fallback estricto a BD.
+      let openShift = openCashShiftFromGate(shiftGate);
       if (!openShift) {
         openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
       }
@@ -2784,11 +2783,12 @@ export function useCaja(params?: {
       return { rows, total: allPaymentsInRange.length, methodSummary, collectedTotal };
     },
     enabled: !!activeBranchId && !!shiftQuery.data?.id,
-    staleTime: OPERATIONAL_STALE_MS,
+    // Historial: menos fresco que la cola cobrable; no invalidar por cada RT de payments.
+    staleTime: 90_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: adaptiveListPoll,
-    // Actualización vía Realtime de payments + invalidación post-cobro.
+    // Actualización: invalidación post-cobro/anulación (no hub Realtime de payments).
     placeholderData: (prev: any) => prev,
   });
 

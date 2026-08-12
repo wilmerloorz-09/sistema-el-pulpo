@@ -67,7 +67,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
   - BD: `registrar_movimiento_caja_operativo` con `PAYMENT_IN` debe crear fila en `cash_shift_denoms` del cajero si falta (`20260528130000_payment_in_upsert_per_cashier.sql`).
 - No listar solo `shift.denoms` en botones de monedas/billetes del diálogo de cobro.
 - **Base de datos:** cualquier entorno donde se cobre debe tener aplicada la migración `20260509180000_payment_items_sync_once_per_statement.sql`; sin ella, cada fila de `payment_items` dispara una sincronización completa de orden y el POS se siente lento.
-- **Locks cobro/despacho (2026-08-11):** mantener `20260811123000` + `20260811140000` — snapshot filtrado, sync única en cobro, despacho sin N+1, skip sync si ya `PAID`, y compact de mesa diferido (`begin_deferred_table_compacts` / `flush`). No volver a llamar `compact_table_order_positions` dentro de `sync_order_payment_state_internal` en el camino crítico sin cola.
+- **Locks cobro/despacho (2026-08-11):** mantener `20260811123000` + `20260811150000` + hotfix `20260811160000` (despacho estable). No reaplicar el rewrite agresivo de `dispatch_order_quantities` de `20260811140000` sin prueba en staging.
 - **Cliente (`DatabaseService`):** reservar `hotPath` en `dbInsert`/`dbInsertMany` solo cuando el registro lleve `id` (u otros NOT NULL) generados en cliente; reservar `skipLocalCache` en `dbSelect` para lecturas calientes del flujo de cobro donde no haga falta actualizar Dexie en el mismo tick.
 - No reintroducir llamadas redundantes a `sync_order_payment_state` tras un cobro exitoso si los triggers ya actualizaron la orden (salvo flujos de reparación explícitos documentados).
 - En UI post-cobro (`PaymentDialogV2`, `PaymentReceipt`, detalle en `Ordenes.tsx`), no asumir `items` ni `payments` definidos: usar `?? []` y pasar al recibo el objeto `receipt` completo que devuelve el flujo de pago.
@@ -293,7 +293,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 - Modo SPLIT: asignacion `TAKEOUT` o `EXPRESS` habilita la pestaña unificada; `EXTRA` se evalua como `TABLE`.
 - Conservar una tarjeta por `order_code`; usar `get_batch_order_operational_snapshots` si existe (`20260602140000`).
 - **Consolidacion de lineas en tarjeta expandida (2026-07-08):** agrupar items identicos (producto, precio, modificadores, nota) en una sola fila con cantidad sumada (`consolidateDispatchOrderItems` en `dispatchItemConsolidation.ts`). Despacho parcial debe repartir cantidades entre `source_lines` (`buildDispatchAllocations`).
-- **Despachar todo:** `dispatch_order_quantities` con operacion total e items vacios.
+- **Despachar todo:** `dispatch_order_quantities` con items parciales construidos en cliente (`buildPartialDispatchItems`) o operacion total; no romper el flujo estable de `20260811160000`.
 
 ### 13. Integridad Financiera y Caja
 - **Integridad Financiera (2026-05-09):**
@@ -443,7 +443,7 @@ Preservar continuidad tecnica y funcional del POS sin revertir decisiones operat
 29. Si se toca **anulación de pagos**, validar cierre de orden (`VOIDED_PAYMENT_CLOSED`, fuera de Recaudar), una sola anulación por orden (`can_void_payment`) y `refund_method` CASH/TRANSFER; migraciones `20260718225000`, `20260719010000`, `20260719012000`, `20260719013000`.
 30. Si se toca **cancelación/ajuste en Despacho primero**, validar `order_type::text` en `cancel_order_quantities` / `set_draft_order_item_quantity` (migración `20260718230000`) y que no se silencien errores de `applyKitchenPendingItemChanges`.
 31. Si se toca **lectura de denominaciones en cobro**, validar query directa (no cache local), guardia de consistencia y `refetchInterval` para tablets/PWA.
-32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll global; backup `OPERATIONAL_LIST_BACKUP_POLL_MS` (**45 s**) si cae; Despacho/Servir con `DISPATCH_SERVIR_SAFETY_POLL_MS` (**30 s**); badge Sync lenta; doc `docs/operational-module-refresh.md`.
+32. Si se toca **refresco entre módulos**, validar hub SUBSCRIBED → sin poll global; backup `OPERATIONAL_LIST_BACKUP_POLL_MS` (**60 s**) si cae; Despacho/Servir con `DISPATCH_SERVIR_SAFETY_POLL_MS` (**60 s**); sin `refetchOnMount: "always"` / focus en esas colas; badge Sync lenta; doc `docs/operational-module-refresh.md`.
 33. Si se toca **Auth/perfil bajo carga**, no borrar `profile` ni acceso de sucursal ante timeout; no refetch de perfil en `TOKEN_REFRESHED`.
 33. Si se toca **reportes de productos**, restar anulaciones `APPLIED` (`order_item_cancellations`); el neto debe coincidir con lo cobrable en Caja.
 34. Si se toca **gate de turno / admin**, validar bypass de admins (`20260802190000`) sin exigir `cash_shift_users`; preferir gate v2 (`20260810140000`).

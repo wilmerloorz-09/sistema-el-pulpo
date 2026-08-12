@@ -6,6 +6,14 @@ export interface OpenCashShift {
   opened_at: string;
 }
 
+/** Turno OPEN desde el gate en memoria (evita leer cash_shifts en cada poll). */
+export function openCashShiftFromGate(
+  gate: { shiftId: string | null; openedAt: string | null } | null | undefined,
+): OpenCashShift | null {
+  if (!gate?.shiftId || !gate.openedAt) return null;
+  return { id: gate.shiftId, opened_at: gate.openedAt };
+}
+
 /**
  * Turno operativo abierto de la sucursal (el mas reciente por opened_at).
  * Con `strict: true` la lectura no cae al cache local en fallo de red: lanza
@@ -32,7 +40,7 @@ export async function getOpenCashShiftIdForBranch(branchId: string): Promise<str
   return shift?.id ?? null;
 }
 
-const repairThrottleMs = 120_000;
+const repairThrottleMs = 5 * 60_000;
 const lastRepairAtByBranch = new Map<string, number>();
 
 /** Fuerza el próximo repair (p. ej. al cambiar de turno). */

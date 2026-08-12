@@ -9,11 +9,11 @@ export const CATALOG_STALE_MS = 30 * 60_000;
 export const CATALOG_GC_MS = 60 * 60_000;
 
 /** Datos operativos de turno (listas de órdenes): frescos pero sin refetch por foco. */
-export const OPERATIONAL_STALE_MS = 15_000;
+export const OPERATIONAL_STALE_MS = 25_000;
 export const OPERATIONAL_GC_MS = 5 * 60_000;
 
-/** Gate de turno / sesión: Realtime de cash_shifts; staleTime corto. */
-export const SHIFT_GATE_STALE_MS = 30_000;
+/** Gate de turno / sesión: Realtime de cash_shifts; stale generoso (9 tablets). */
+export const SHIFT_GATE_STALE_MS = 60_000;
 /** Respaldo muy lento si Realtime de turnos falla (migración 20260730230000). */
 export const SHIFT_GATE_BACKUP_POLL_MS = 5 * 60_000;
 
@@ -21,13 +21,13 @@ export const SHIFT_GATE_BACKUP_POLL_MS = 5 * 60_000;
 export const MONITOR_BACKUP_POLL_MS = 5 * 60_000;
 
 /** Auth session lock: validación periódica (foco/visibilidad cubren el resto). */
-export const AUTH_SESSION_POLL_MS = 3 * 60_000;
+export const AUTH_SESSION_POLL_MS = 5 * 60_000;
 
 /** Respaldo de turno/caja cuando el hub no está SUBSCRIBED. */
 export const OPERATIONAL_BACKUP_POLL_MS = 60_000;
 
-/** Respaldo de listas si Realtime no está suscrito (hub error/idle): 45s. */
-export const OPERATIONAL_LIST_BACKUP_POLL_MS = 45_000;
+/** Respaldo de listas si Realtime no está suscrito (hub error/idle): 60s. */
+export const OPERATIONAL_LIST_BACKUP_POLL_MS = 60_000;
 
 /**
  * Safety net aunque el hub esté SUBSCRIBED.
@@ -39,11 +39,18 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 45_000;
  */
 export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
 
-/** Techo duro de frescura para Despacho/Servir (aunque Realtime diga SUBSCRIBED). */
-export const DISPATCH_SERVIR_SAFETY_POLL_MS = 30_000;
+/** Techo de frescura Despacho/Servir con hub SUBSCRIBED (antes 30s; 9 tablets). */
+export const DISPATCH_SERVIR_SAFETY_POLL_MS = 60_000;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
-export const HUB_DEFAULT_DEBOUNCE_MS = 2_500;
+export const HUB_DEFAULT_DEBOUNCE_MS = 3_000;
+
+/**
+ * Jitter sticky por hub/sesión (0..N ms) para que N tablets no refetch
+ * en el mismo tick tras el debounce compartido del evento Realtime.
+ * No afecta invalidaciones directas (Cobrar/Despachar/Listo).
+ */
+export const HUB_DEBOUNCE_JITTER_MS = 2_000;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
@@ -78,8 +85,8 @@ function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
 
   switch (source) {
     case "order_items":
-      // Alta frecuencia: no tocar Recaudar/pagos completados.
-      return [...kitchenQueue, ...tables, qk.orderPrefix, ...channelCards];
+      // Alta frecuencia: cocina/despacho/mesas; canales (Extra/Express/…) bastan con `orders`.
+      return [...kitchenQueue, ...tables, qk.orderPrefix];
     case "orders":
       // Cambio de cabecera/estado: Caja por cobrar sí importa.
       return [...kitchenQueue, ...tables, qk.orderPrefix, ...channelCards, qk.payableOrders];
@@ -94,9 +101,10 @@ function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
         qk.orders,
       ];
     case "payments":
+      // Historial (`completed-payments`) NO: es fan-out pesado; se refresca
+      // post-cobro/anulación vía invalidateOperationalOrderQueries / mutations.
       return [
         qk.payableOrders,
-        qk.completedPayments,
         ...tables,
         qk.orderPrefix,
         ...channelCards,
@@ -225,6 +233,8 @@ type BranchRealtimeHub = {
   channel: RealtimeChannel | null;
   debounceTimer: number | null;
   debounceMs: number;
+  /** Offset fijo de esta sesión de hub (no se regenera por evento). */
+  jitterMs: number;
   status: HubRealtimeStatus;
 };
 
@@ -350,7 +360,7 @@ function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSour
       invalidateKey(qk.currentShift);
       invalidateKey(qk.openCashShift);
     }
-  }, hub.debounceMs);
+  }, hub.debounceMs + hub.jitterMs);
 }
 
 function rebuildHubChannel(hub: BranchRealtimeHub) {
@@ -488,6 +498,7 @@ function getOrCreateHub(branchId: string, queryClient: QueryClient): BranchRealt
       channel: null,
       debounceTimer: null,
       debounceMs: HUB_DEFAULT_DEBOUNCE_MS,
+      jitterMs: Math.floor(Math.random() * (HUB_DEBOUNCE_JITTER_MS + 1)),
       status: "idle",
     };
     hubsByBranch.set(branchId, hub);

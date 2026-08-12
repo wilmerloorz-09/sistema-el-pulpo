@@ -6,12 +6,12 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import type { Database } from "@/integrations/supabase/types";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
-import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, type OpenCashShift } from "@/lib/openCashShift";
+import { getOpenCashShiftForBranch, orderBelongsToOpenCashShift, openCashShiftFromGate, type OpenCashShift } from "@/lib/openCashShift";
 import {
   fetchTablesOverviewBundle,
   openCashShiftFromBundle,
 } from "@/lib/tablesOverviewBundle";
-import { useOperationalOrdersRealtime, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval } from "@/lib/queryEgress";
+import { useOperationalOrdersRealtime, OPERATIONAL_LIST_BACKUP_POLL_MS, OPERATIONAL_STALE_MS, useAdaptiveRefetchInterval } from "@/lib/queryEgress";
 
 // include CANCELLED since we'll add it to the enum via migration
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
@@ -183,12 +183,12 @@ function mapTablesFromOverviewSources(input: {
 
 async function fetchTablesWithStatusInternal(
   branchId: string,
-  preferredShiftId?: string | null,
+  preferredShift?: OpenCashShift | null,
 ): Promise<TablesWithStatusData> {
   try {
-    const bundle = await fetchTablesOverviewBundle(branchId, preferredShiftId ?? null);
+    const bundle = await fetchTablesOverviewBundle(branchId, preferredShift?.id ?? null);
     const openShift = openCashShiftFromBundle(bundle)
-      ?? (preferredShiftId ? { id: preferredShiftId, opened_at: "" } : null)
+      ?? preferredShift
       ?? await getOpenCashShiftForBranch(branchId, { strict: true });
 
     const tables = mapTablesFromOverviewSources({
@@ -204,9 +204,8 @@ async function fetchTablesWithStatusInternal(
     console.warn("[useTablesWithStatus] RPC bundle no disponible; camino legacy", bundleError);
   }
 
-  const openShift = preferredShiftId
-    ? { id: preferredShiftId, opened_at: "" }
-    : await getOpenCashShiftForBranch(branchId, { strict: true });
+  const openShift = preferredShift
+    ?? await getOpenCashShiftForBranch(branchId, { strict: true });
 
   const { data, error } = await supabase.rpc("get_branch_tables_overview" as any, {
     p_branch_id: branchId,
@@ -257,9 +256,9 @@ async function fetchTablesWithStatusInternal(
 
 export async function fetchTablesWithStatus(
   branchId: string,
-  preferredShiftId?: string | null,
+  preferredShift?: OpenCashShift | null,
 ): Promise<TablesWithStatusData> {
-  return withTablesTimeout(fetchTablesWithStatusInternal(branchId, preferredShiftId));
+  return withTablesTimeout(fetchTablesWithStatusInternal(branchId, preferredShift));
 }
 
 export function useTablesWithStatus() {
@@ -293,13 +292,13 @@ export function useTablesWithStatus() {
     queryFn: async () => {
       const data = await fetchTablesWithStatus(
         activeBranchId!,
-        shiftGateQuery.data?.shiftId ?? null,
+        openCashShiftFromGate(shiftGateQuery.data),
       );
       qc.setQueryData(["open-cash-shift", activeBranchId], data.openCashShift);
       return data;
     },
     enabled: !!activeBranchId,
-    staleTime: 5_000,
+    staleTime: OPERATIONAL_STALE_MS,
     gcTime: 10 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,

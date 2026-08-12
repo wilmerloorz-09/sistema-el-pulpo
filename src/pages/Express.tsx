@@ -96,7 +96,7 @@ const Express = () => {
     channelPrefix: "express-orders-rt",
     enabled: Boolean(activeBranchId),
     queryKeys: [["express-orders"]],
-    includePayments: true,
+    includePayments: false,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 

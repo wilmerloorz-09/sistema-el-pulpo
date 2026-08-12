@@ -113,7 +113,7 @@ const Extra = () => {
     channelPrefix: "extra-orders-rt",
     enabled: Boolean(activeBranchId && user?.id),
     queryKeys: [["extra-orders"]],
-    includePayments: true,
+    includePayments: false,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 

@@ -20,7 +20,7 @@ En ago 10 se corrigieron además:
 |------|----------------|
 | Hub Realtime | Canal compartido `branch-ops-hub:{branchId}` (`src/lib/queryEgress.ts`). Eventos invalidan un **set acotado por tipo** (`order_items` / `orders` / `ready` / `dispatch` / `payments` / `shift`) más las keys de pantallas montadas — ya no todo `OPERATIONAL_ORDER_LIST_KEYS` en cada ítem. |
 | Poll si hub cae | `OPERATIONAL_LIST_BACKUP_POLL_MS = 45_000` cuando hub ≠ `SUBSCRIBED`. |
-| Safety con hub sano | `OPERATIONAL_LIST_SAFETY_POLL_MS = 0` (sin safety global). **Excepción:** Despacho/Servir usan `DISPATCH_SERVIR_SAFETY_POLL_MS = 30_000`. |
+| Safety con hub sano | `OPERATIONAL_LIST_SAFETY_POLL_MS = 0` (sin safety global). **Excepción:** Despacho/Servir usan `DISPATCH_SERVIR_SAFETY_POLL_MS = 60_000`. |
 | Foco / red | Listas operativas con `refetchOnWindowFocus: true` y `refetchOnReconnect: true` (overrides locales; el default global en `App.tsx` sigue en `false`). |
 | Invalidaciones | Helper `invalidateOperationalOrderQueries`; tras `sendToKitchen` / `sendToDispatch` también `removeQueries` del bundle + `refetchQueries` activos de Despacho/Servir. |
 | Indicador UI | Badge **Sync lenta** en `AppLayout` cuando el hub no está suscrito. |
@@ -53,18 +53,19 @@ En ago 10 se corrigieron además:
 
 | Constante | Valor | Uso |
 |-----------|-------|-----|
-| `OPERATIONAL_STALE_MS` | 15 s | staleTime de listas |
-| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **45 s** | poll si hub ≠ SUBSCRIBED |
+| `OPERATIONAL_STALE_MS` | 20 s | staleTime de listas |
+| `OPERATIONAL_LIST_BACKUP_POLL_MS` | **60 s** | poll si hub ≠ SUBSCRIBED |
 | `OPERATIONAL_LIST_SAFETY_POLL_MS` | **0** | sin safety global |
-| `DISPATCH_SERVIR_SAFETY_POLL_MS` | **30 s** | safety solo Despacho/Servir |
+| `DISPATCH_SERVIR_SAFETY_POLL_MS` | **60 s** | safety solo Despacho/Servir |
+| `HUB_DEFAULT_DEBOUNCE_MS` | **3 s** | debounce / agrupa ráfagas Realtime |
+| `HUB_DEBOUNCE_JITTER_MS` | **0–2 s** sticky por hub | evita refetch sincronizado entre tablets tras el mismo evento RT |
 | `OPERATIONAL_BACKUP_POLL_MS` | 60 s | turno/caja si hub cae |
 | `SHIFT_GATE_BACKUP_POLL_MS` | 5 min | gate de turno |
 | `MONITOR_BACKUP_POLL_MS` | 5 min | Monitoreo Global |
-| `HUB_DEFAULT_DEBOUNCE_MS` | 2,5 s | debounce del hub |
 
 ### Pantallas que usan el poll adaptativo de listas
 
-- Despacho / Servir (`useDispatchOrders` + safety 15 s)
+- Despacho / Servir (`useDispatchOrders` + safety 60 s)
 - Cocina (`useKitchenOrders`)
 - Caja / Recaudar (`useCaja`)
 - Órdenes por estado (`useOrdersByStatus`)

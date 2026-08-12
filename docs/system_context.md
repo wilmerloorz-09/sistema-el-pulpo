@@ -399,8 +399,8 @@
 ### 6.1 Refresco entre módulos (2026-08-02 → 2026-08-11)
 - Hub Realtime `branch-ops-hub:{branchId}`; invalidación **selectiva por tipo de evento** (ítems no refrescan Caja; pagos sí). Pantallas montadas siempre se invalidan.
 - Si el hub cae: poll de respaldo `OPERATIONAL_LIST_BACKUP_POLL_MS = 45s`.
-- Safety global: `OPERATIONAL_LIST_SAFETY_POLL_MS = 0`. **Excepción Despacho/Servir:** `DISPATCH_SERVIR_SAFETY_POLL_MS = 30s` aunque el hub esté `SUBSCRIBED`.
-- Locks cobro/despacho: snapshot unitario filtrado por orden + sync única en `register_payment_with_items` (`20260811123000`); despacho con snapshot único (sin N+1), skip sync si ya `PAID`, y `compact_table_order_positions` diferido al final de cobro/despacho (`20260811140000`).
+- Safety global: `OPERATIONAL_LIST_SAFETY_POLL_MS = 0`. **Excepción Despacho/Servir:** `DISPATCH_SERVIR_SAFETY_POLL_MS = 60s` aunque el hub esté `SUBSCRIBED`.
+- Locks cobro/despacho: snapshot unitario filtrado por orden + sync única en `register_payment_with_items` (`20260811123000`); despacho con snapshot único (sin N+1), skip sync si ya `PAID`, y `compact_table_order_positions` diferido al final de cobro/despacho (`20260811140000`); sync de cobro con **un** snapshot materializado + índices de gate/eventos/mesa (`20260811150000`).
 - También `refetchOnWindowFocus` / `refetchOnReconnect` en esas listas; badge **Sync lenta** en layout.
 - Doc: `docs/operational-module-refresh.md` y sección Fase 1.5 en `docs/supabase-performance-audit-phase2.md`.
 
@@ -664,19 +664,21 @@
 35. **CajaAutoOpener:** usar `useOpenCashRegister` liviano; no montar `useCaja` global al arrancar.
 
 ### Actualizacion Ago 11, 2026 — presión Disk IO / locks
-- **Cliente:** invalidación Realtime selectiva por tabla/evento (`queryEgress.keysForHubSource`); alertas mesero desmontadas del layout; polls backup 45 s / Despacho-Servir safety 30 s / debounce hub 2.5 s.
+- **Cliente (afinados Ago 11 tarde):** repair throttle **5 min**; `openCashShiftFromGate` en Caja/Cocina/Órdenes/Despacho (exige `openedAt`, no inventar `opened_at: ""`); Extra/Express/Para llevar/Especial sin RT de `payments`; auth poll **5 min**; stale listas **25 s**; jitter sticky hub **0–2 s** (`HUB_DEBOUNCE_JITTER_MS`) para dispersar refetch entre tablets.
 - **BD:** migración `20260811123000_reduce_order_lock_pressure.sql`:
   - `get_order_operational_snapshot` filtra CTEs a ítems de la orden (misma lógica que el batch).
   - `register_payment_with_items` suprime sync de triggers durante inserts y llama `sync_order_payment_state_internal` **una vez** al final.
-- **BD (fase 2):** migración `20260811140000_defer_compact_and_dispatch_snapshot.sql`:
-  - `dispatch_order_quantities` materializa **un** snapshot y valida/despacha contra él (sin N+1).
-  - Si la orden ya entró como `PAID`, despacho solo hace `recompute` + liberación de mesa (no `sync` de pagos).
-  - `compact_table_order_positions` se encola (`begin_deferred_table_compacts` / `queue_or_compact` / `flush`) y corre **después** del sync/recompute en cobro y despacho; sin cola activa sigue siendo inmediato (triggers sueltos).
-  - Efecto UX: casi transparente; posible reorden visual breve de cuentas en la misma mesa justo tras cobro/cierre.
-- Aplicar en remoto: `npx supabase db push` (o SQL Editor) sobre el proyecto activo.
+- **BD (fase 2):** migración `20260811140000` (parcialmente revertida en despacho por `20260811160000`).
+- **HOTFIX despacho (`20260811160000`):** restaura `dispatch_order_quantities` estable (como `20260709120000`) y desactiva compact diferido en cola (compact inmediato). El rewrite de despacho en `20260811140000` provocaba rollback del RPC (UI quitaba ítem y volvía).
+- **BD (fase 3):** migración `20260811150000_sync_single_snapshot_and_hotspot_indexes.sql`:
+  - `sync_order_payment_state_internal` materializa el snapshot operativo **una vez** (antes 3–4 llamadas bajo `FOR UPDATE`).
+  - Índices: `cash_shift_users(shift_id,user_id)`, sesiones Caja habilitadas, eventos ready/dispatch/cancel `APPLIED`, órdenes activas por mesa para compact.
+- **Cliente:** `SHIFT_GATE_STALE_MS` 60 s; `OPERATIONAL_STALE_MS` 20 s.
+- **BD (índices seguros, Ago 11 tarde):** `20260811170000_hotspot_indexes_only.sql` — únicamente `CREATE INDEX IF NOT EXISTS` en hotspots (gate, eventos APPLIED, joins, mesa, items/pagos). No modifica funciones de cobro/despacho.
+- Aplicar: `npx supabase db push`. Si un índice ya existe, no-op.
 
 ### Actualizacion Ago 10, 2026
-- **Cola Despacho/Servir:** RPC bundle + self-heal (`20260810160000`, `20260810250000`); cliente sin cache RQ del bundle; repair forzado si vacía; safety poll (valor vigente Ago 11: 30 s).
+- **Cola Despacho/Servir:** RPC bundle + self-heal (`20260810160000`, `20260810250000`); cliente sin cache RQ del bundle; repair forzado si vacía; safety poll (valor vigente Ago 11 tarde: **60 s**).
 - **Retag post-turno:** trigger/repair reasignan `cash_shift_id` de turnos `CLOSED` al OPEN (`20260810240000` / `…250000`).
 - **Separación PLATOS:** `has_plate_servers` OR `gate.canServePlates`; no persistir catálogo platos vacío.
 - **Hub:** invalidación por evento (Ago 11); `branch_id` en ready/dispatch events (`20260810120000`).

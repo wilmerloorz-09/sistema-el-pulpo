@@ -434,18 +434,36 @@ export default function PaymentDialogV2({
   }, []);
 
   const handleCobrar = useCallback(async () => {
-    if (!order) return;
-    if (readOnly || paying || !canPay) return;
-
-    const unpaidItems = (order.items ?? []).filter((item) => (payItemQtys[item.id] ?? 0) > 0);
-    if (unpaidItems.length === 0) {
-      toast.error("Selecciona al menos una linea o unidad para cobrar");
+    if (!order) {
+      toast.error("No hay orden para cobrar");
       return;
+    }
+    if (readOnly) {
+      toast.error("Este cobro es solo consulta");
+      return;
+    }
+    if (paying) return;
+    if (!canPay) {
+      toast.error(payValidationMessage || "No se puede cobrar con los datos actuales");
+      return;
+    }
+
+    // Si el mapa de cantidades no se hidrató aún, reconstruir desde pendientes.
+    let qtyMap = payItemQtys;
+    let unpaidItems = (order.items ?? []).filter((item) => (qtyMap[item.id] ?? 0) > 0);
+    if (unpaidItems.length === 0) {
+      qtyMap = buildPayItemQtysAllPending(order);
+      unpaidItems = (order.items ?? []).filter((item) => (qtyMap[item.id] ?? 0) > 0);
+      if (unpaidItems.length === 0) {
+        toast.error("Selecciona al menos una linea o unidad para cobrar");
+        return;
+      }
+      setPayItemQtys(qtyMap);
     }
 
     const chargeTotalRounded = roundMoney(orderChargeTotal);
     const catalogWeights = unpaidItems.map((item) => {
-      const qty = Number(payItemQtys[item.id] ?? 0);
+      const qty = Number(qtyMap[item.id] ?? 0);
       return roundMoney(computeLineAmount(qty, item.unit_price) + (qty > 0 ? Number(item.tray_container_cost ?? 0) : 0));
     });
     const catalogSum = roundMoney(catalogWeights.reduce((s, w) => s + w, 0));
@@ -458,7 +476,7 @@ export default function PaymentDialogV2({
 
     const itemSelections = unpaidItems.map((item, idx) => ({
       itemId: item.id,
-      quantity: Number(payItemQtys[item.id] ?? 0),
+      quantity: Number(qtyMap[item.id] ?? 0),
       unitPrice: item.unit_price,
       amount: lineChargeAmounts[idx] ?? 0,
     }));
@@ -614,7 +632,7 @@ export default function PaymentDialogV2({
     const isFullyPaid = order.is_special
       ? (chargeTotalRounded >= Number(order.special_pending_amount ?? 0) - 0.005)
       : (order.items ?? []).every((item) => {
-          const selectedQty = payItemQtys[item.id] ?? 0;
+          const selectedQty = qtyMap[item.id] ?? 0;
           return selectedQty >= (item.quantity_pending ?? 0);
         });
 
@@ -654,6 +672,7 @@ export default function PaymentDialogV2({
     readOnly,
     paying,
     canPay,
+    payValidationMessage,
     orderChargeTotal,
     appliedTransfer,
     appliedCash,
@@ -1335,6 +1354,7 @@ export default function PaymentDialogV2({
                     type="button"
                     className="flex-1 rounded-xl sm:flex-none sm:min-w-[140px]"
                     disabled={!canPay || paying}
+                    title={payValidationMessage ?? undefined}
                     onClick={() => void handleCobrar()}
                   >
                     {paying ? (

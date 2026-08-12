@@ -17,6 +17,7 @@ import {
   orderBelongsToOpenCashShift,
   repairOpenShiftOrderCashShiftIds,
   resetRepairOpenShiftThrottle,
+  openCashShiftFromGate,
 } from "@/lib/openCashShift";
 import { ensurePlatosProductIdsForBranch, invalidatePlatosProductIdsCache, isPlatosOrderItem, platosProductIdsQueryKey } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
@@ -510,13 +511,16 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     queryFn: async () => {
       if (!activeBranchId || !user) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      // Siempre resolver turno OPEN desde DB (fuente de verdad tras cerrar/abrir).
-      // El gate puede ir atrasado unos segundos y vaciar la cola con un shiftId viejo.
-      const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      // Preferir gate en memoria (evita cash_shifts en cada poll). Fallback estricto si falta.
+      let openShift = openCashShiftFromGate(shiftGate);
+      if (!openShift) {
+        openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+      }
       if (!openShift) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
-      // Antes del bundle: reetiqueta huérfanas del turno cerrado (throttle; se resetea al cambiar turno).
-      await repairOpenShiftOrderCashShiftIds(activeBranchId);
+      // Repair en background (throttle 5 min); no bloquear el bundle.
+      // Si la cola viene vacía, abajo se fuerza un repair + reintento.
+      void repairOpenShiftOrderCashShiftIds(activeBranchId);
 
       // Bootstrap + platos en paralelo con la cola (no esperar en cadena).
       const bootstrapPromise = ensureDispatchBootstrap(qc, activeBranchId);
@@ -944,10 +948,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     },
     enabled: !!activeBranchId && !!user,
     staleTime: OPERATIONAL_STALE_MS,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    // Solo si stale: Realtime + safety 60s cubren frescura; evita tormenta al montar/foco.
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    // RT + safety 15s: peor caso de demora acotado (no minutos).
     refetchInterval: adaptiveListPoll,
   });
 

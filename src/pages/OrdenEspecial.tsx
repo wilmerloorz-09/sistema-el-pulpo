@@ -163,7 +163,7 @@ const OrdenEspecial = () => {
     channelPrefix: "special-orders-rt",
     enabled: Boolean(activeBranchId),
     queryKeys: [["special-orders"]],
-    includePayments: true,
+    includePayments: false,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
