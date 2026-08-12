@@ -1315,9 +1315,12 @@ async function buildPayableOrderById(params: {
 export function useCaja(params?: { 
   completedPaymentsFilters?: CompletedPaymentsFilters;
   autoOpenOrderId?: string | null;
+  /** Solo montar el historial pesado cuando la UI lo muestra (pestaña Pagos realizados). */
+  loadCompletedPayments?: boolean;
 }) {
   const completedPaymentsFilters = params?.completedPaymentsFilters;
   const autoOpenOrderId = params?.autoOpenOrderId;
+  const loadCompletedPayments = Boolean(params?.loadCompletedPayments);
 
   const { user } = useAuth();
   const { activeBranchId, activeBranch } = useBranch();
@@ -2203,7 +2206,9 @@ export function useCaja(params?: {
     queryClient: qc,
     channelPrefix: "caja-payable-rt",
     enabled: Boolean(activeBranchId),
-    queryKeys: [qk.payableOrders, qk.completedPayments, qk.currentShift],
+    queryKeys: loadCompletedPayments
+      ? [qk.payableOrders, qk.completedPayments, qk.currentShift]
+      : [qk.payableOrders, qk.currentShift],
     includePayments: true,
     shiftId: shiftGate?.shiftId ?? null,
   });
@@ -2782,7 +2787,7 @@ export function useCaja(params?: {
 
       return { rows, total: allPaymentsInRange.length, methodSummary, collectedTotal };
     },
-    enabled: !!activeBranchId && !!shiftQuery.data?.id,
+    enabled: !!activeBranchId && !!shiftQuery.data?.id && loadCompletedPayments,
     // Historial: menos fresco que la cola cobrable; no invalidar por cada RT de payments.
     staleTime: 90_000,
     refetchOnWindowFocus: false,

@@ -664,7 +664,7 @@
 35. **CajaAutoOpener:** usar `useOpenCashRegister` liviano; no montar `useCaja` global al arrancar.
 
 ### Actualizacion Ago 11, 2026 — presión Disk IO / locks
-- **Cliente (afinados Ago 11 tarde):** repair throttle **5 min**; `openCashShiftFromGate` en Caja/Cocina/Órdenes/Despacho (exige `openedAt`, no inventar `opened_at: ""`); Extra/Express/Para llevar/Especial sin RT de `payments`; auth poll **5 min**; stale listas **25 s**; jitter sticky hub **0–2 s** (`HUB_DEBOUNCE_JITTER_MS`) para dispersar refetch entre tablets.
+- **Cliente (afinados Ago 11/12):** repair throttle **5 min**; `openCashShiftFromGate`; Extra/Express/Para llevar/Especial sin RT de `payments` en canales; auth poll **5 min**; stale listas **25 s**; jitter sticky **0–2 s**; gap mínimo hub **10 s**; polls/hub pausados si pestaña oculta; RT `payments` solo Caja cobrable + mesas + Despacho/Servir; historial Caja solo con pestaña Pagos realizados; safety Despacho/Servir **90 s**.
 - **BD:** migración `20260811123000_reduce_order_lock_pressure.sql`:
   - `get_order_operational_snapshot` filtra CTEs a ítems de la orden (misma lógica que el batch).
   - `register_payment_with_items` suprime sync de triggers durante inserts y llama `sync_order_payment_state_internal` **una vez** al final.

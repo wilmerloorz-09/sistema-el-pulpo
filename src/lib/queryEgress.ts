@@ -39,8 +39,8 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 60_000;
  */
 export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
 
-/** Techo de frescura Despacho/Servir con hub SUBSCRIBED (antes 30s; 9 tablets). */
-export const DISPATCH_SERVIR_SAFETY_POLL_MS = 60_000;
+/** Techo de frescura Despacho/Servir con hub SUBSCRIBED (antes 60s; multi-sucursal). */
+export const DISPATCH_SERVIR_SAFETY_POLL_MS = 90_000;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
 export const HUB_DEFAULT_DEBOUNCE_MS = 3_000;
@@ -51,6 +51,12 @@ export const HUB_DEFAULT_DEBOUNCE_MS = 3_000;
  * No afecta invalidaciones directas (Cobrar/Despachar/Listo).
  */
 export const HUB_DEBOUNCE_JITTER_MS = 2_000;
+
+/**
+ * Si la query se actualizó hace menos de este gap, el hub RT no la vuelve a refetch.
+ * Las invalidaciones post-mutación (cobrar/despachar) no usan este techo.
+ */
+export const HUB_MIN_REFETCH_GAP_MS = 10_000;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
@@ -101,13 +107,11 @@ function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
         qk.orders,
       ];
     case "payments":
-      // Historial (`completed-payments`) NO: es fan-out pesado; se refresca
-      // post-cobro/anulación vía invalidateOperationalOrderQueries / mutations.
+      // Solo colas de cobro/despacho/mesas. Sin canales Extra/Express/… ni historial:
+      // cada cobro no debe refrescar media flota de tablets.
       return [
         qk.payableOrders,
         ...tables,
-        qk.orderPrefix,
-        ...channelCards,
         qk.dispatchOrders,
         qk.servirOrders,
         qk.dispatchServirQueueBundle,
@@ -235,16 +239,64 @@ type BranchRealtimeHub = {
   debounceMs: number;
   /** Offset fijo de esta sesión de hub (no se regenera por evento). */
   jitterMs: number;
+  /** Eventos RT llegados con la app/pestaña oculta; se vacían al volver a visible. */
+  pendingSources: Set<HubInvalidateSource>;
   status: HubRealtimeStatus;
 };
 
 const hubsByBranch = new Map<string, BranchRealtimeHub>();
 const statusListeners = new Set<() => void>();
+const visibilityListeners = new Set<() => void>();
+
+let pageVisible =
+  typeof document === "undefined" ? true : document.visibilityState !== "hidden";
 
 function notifyStatusListeners() {
   for (const listener of statusListeners) {
     listener();
   }
+}
+
+function notifyVisibilityListeners() {
+  for (const listener of visibilityListeners) {
+    listener();
+  }
+}
+
+function isPageVisible(): boolean {
+  return pageVisible;
+}
+
+function setPageVisible(next: boolean) {
+  if (pageVisible === next) return;
+  pageVisible = next;
+  notifyVisibilityListeners();
+  if (!next) return;
+  for (const hub of hubsByBranch.values()) {
+    flushPendingHubInvalidates(hub);
+  }
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    setPageVisible(document.visibilityState !== "hidden");
+  });
+}
+
+/**
+ * true si la pestaña/WebView está visible (tablets en segundo plano no refrescan).
+ */
+export function usePageVisible(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      visibilityListeners.add(listener);
+      return () => {
+        visibilityListeners.delete(listener);
+      };
+    },
+    () => pageVisible,
+    () => true,
+  );
 }
 
 function setHubStatus(hub: BranchRealtimeHub, status: HubRealtimeStatus) {
@@ -282,8 +334,9 @@ export function useHubRealtimeStatus(branchId: string | null | undefined): HubRe
 
 /**
  * Polling adaptativo de listas operativas:
+ * - Pestaña/app oculta → sin poll
  * - Realtime SUBSCRIBED → sin poll (safetyMs=0) o safetyMs si se pide explícito
- * - Desconectado / error / idle → backupMs (default 30s)
+ * - Desconectado / error / idle → backupMs
  */
 export function useAdaptiveRefetchInterval(
   branchId: string | null | undefined,
@@ -292,7 +345,8 @@ export function useAdaptiveRefetchInterval(
   safetyMs: number = OPERATIONAL_LIST_SAFETY_POLL_MS,
 ): number | false {
   const status = useHubRealtimeStatus(branchId);
-  if (!enabled) return false;
+  const visible = usePageVisible();
+  if (!enabled || !visible) return false;
   if (status === "subscribed") {
     return safetyMs > 0 ? safetyMs : false;
   }
@@ -324,42 +378,79 @@ function mergeConsumerNeeds(hub: BranchRealtimeHub) {
   return { includePayments, includeShiftGate, shiftId, keys, debounceMs };
 }
 
+function hubInvalidateKey(hub: BranchRealtimeHub, key: QueryKey, seen: Set<string>) {
+  const stamp = JSON.stringify(key);
+  if (seen.has(stamp)) return;
+  seen.add(stamp);
+  const now = Date.now();
+  void hub.queryClient.invalidateQueries({
+    queryKey: key,
+    refetchType: "active",
+    predicate: (query) => {
+      const updatedAt = query.state.dataUpdatedAt;
+      if (!updatedAt) return true;
+      return now - updatedAt >= HUB_MIN_REFETCH_GAP_MS;
+    },
+  });
+}
+
+function runHubInvalidateNow(hub: BranchRealtimeHub, source: HubInvalidateSource) {
+  const { keys } = mergeConsumerNeeds(hub);
+  // Eventos de órdenes/ítems/listo/despacho NO deben refetch el gate
+  // (antes cada plato listo re-disparaba 4–5 RPCs de turno en cada tablet).
+  const filtered =
+    source === "shift"
+      ? keys
+      : keys.filter((key) => !isShiftGateQueryKey(key));
+
+  const seen = new Set<string>();
+
+  for (const key of keysForHubSource(source)) {
+    hubInvalidateKey(hub, key, seen);
+  }
+
+  // payments: sin fan-out a consumidores (Extra/Express/historial); solo set acotado.
+  if (source !== "payments") {
+    for (const key of filtered) {
+      hubInvalidateKey(hub, key, seen);
+    }
+  }
+  if (source === "shift") {
+    hubInvalidateKey(hub, qk.branchShiftGate, seen);
+    hubInvalidateKey(hub, qk.currentShift, seen);
+    hubInvalidateKey(hub, qk.openCashShift, seen);
+  }
+}
+
+function flushPendingHubInvalidates(hub: BranchRealtimeHub) {
+  if (hub.pendingSources.size === 0) return;
+  const sources = Array.from(hub.pendingSources);
+  hub.pendingSources.clear();
+  for (const source of sources) {
+    runHubInvalidateNow(hub, source);
+  }
+}
+
 function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSource = "order_items") {
+  if (!isPageVisible()) {
+    hub.pendingSources.add(source);
+    if (hub.debounceTimer != null) {
+      window.clearTimeout(hub.debounceTimer);
+      hub.debounceTimer = null;
+    }
+    return;
+  }
+
   if (hub.debounceTimer != null) {
     window.clearTimeout(hub.debounceTimer);
   }
   hub.debounceTimer = window.setTimeout(() => {
     hub.debounceTimer = null;
-    const { keys } = mergeConsumerNeeds(hub);
-    // Eventos de órdenes/ítems/listo/despacho NO deben refetch el gate
-    // (antes cada plato listo re-disparaba 4–5 RPCs de turno en cada tablet).
-    const filtered =
-      source === "shift"
-        ? keys
-        : keys.filter((key) => !isShiftGateQueryKey(key));
-
-    const seen = new Set<string>();
-    const invalidateKey = (key: QueryKey) => {
-      const stamp = JSON.stringify(key);
-      if (seen.has(stamp)) return;
-      seen.add(stamp);
-      void hub.queryClient.invalidateQueries({ queryKey: key });
-    };
-
-    // Set acotado por tipo de evento (en lugar del set operativo completo).
-    for (const key of keysForHubSource(source)) {
-      invalidateKey(key);
+    if (!isPageVisible()) {
+      hub.pendingSources.add(source);
+      return;
     }
-
-    // Pantallas montadas: invalidar sus keys aunque no estén en el set del evento.
-    for (const key of filtered) {
-      invalidateKey(key);
-    }
-    if (source === "shift") {
-      invalidateKey(qk.branchShiftGate);
-      invalidateKey(qk.currentShift);
-      invalidateKey(qk.openCashShift);
-    }
+    runHubInvalidateNow(hub, source);
   }, hub.debounceMs + hub.jitterMs);
 }
 
@@ -499,6 +590,7 @@ function getOrCreateHub(branchId: string, queryClient: QueryClient): BranchRealt
       debounceTimer: null,
       debounceMs: HUB_DEFAULT_DEBOUNCE_MS,
       jitterMs: Math.floor(Math.random() * (HUB_DEBOUNCE_JITTER_MS + 1)),
+      pendingSources: new Set(),
       status: "idle",
     };
     hubsByBranch.set(branchId, hub);

@@ -161,7 +161,11 @@ const Caja = () => {
     annulCashOpening,
     registerCashMovement,
     prepareOrderForRecharge,
-  } = useCaja({ completedPaymentsFilters: completedFilters, autoOpenOrderId });
+  } = useCaja({
+    completedPaymentsFilters: completedFilters,
+    autoOpenOrderId,
+    loadCompletedPayments: activeTab === "completed",
+  });
 
   const cashierMethodSummaryQuery = useQuery({
     queryKey: ["cashier-method-summary", activeBranch?.id ?? "_", shift?.id ?? "_", user?.id ?? "_"],

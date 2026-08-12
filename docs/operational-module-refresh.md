@@ -59,6 +59,11 @@ En ago 10 se corrigieron además:
 | `DISPATCH_SERVIR_SAFETY_POLL_MS` | **60 s** | safety solo Despacho/Servir |
 | `HUB_DEFAULT_DEBOUNCE_MS` | **3 s** | debounce / agrupa ráfagas Realtime |
 | `HUB_DEBOUNCE_JITTER_MS` | **0–2 s** sticky por hub | evita refetch sincronizado entre tablets tras el mismo evento RT |
+| `HUB_MIN_REFETCH_GAP_MS` | **10 s** | el hub no refetch si la query aún es fresca |
+| Visibilidad | pausa polls + cola RT pendiente | pestaña/app oculta no golpea BD; al volver aplica pendientes |
+| `DISPATCH_SERVIR_SAFETY_POLL_MS` | **90 s** | safety Despacho/Servir con hub sano |
+| RT `payments` | solo payable + mesas + Despacho/Servir | no Extra/Express/historial |
+| Caja historial | solo pestaña `completed` | `loadCompletedPayments` |
 | `OPERATIONAL_BACKUP_POLL_MS` | 60 s | turno/caja si hub cae |
 | `SHIFT_GATE_BACKUP_POLL_MS` | 5 min | gate de turno |
 | `MONITOR_BACKUP_POLL_MS` | 5 min | Monitoreo Global |
