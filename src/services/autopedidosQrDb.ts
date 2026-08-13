@@ -22,6 +22,7 @@ export type MenuNodeAutopedido = {
   depth: number;
   price: number | null;
   image_url: string | null;
+  icon: string | null;
   is_active: boolean;
   legacy_product_id: string | null;
   manual_price_enabled: boolean;

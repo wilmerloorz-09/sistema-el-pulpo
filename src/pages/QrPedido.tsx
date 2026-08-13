@@ -3,12 +3,16 @@ import { useParams } from "react-router-dom";
 import {
   Check,
   ChevronLeft,
+  GlassWater,
   ImageIcon,
   Loader2,
   Minus,
+  Package,
   Plus,
   ShoppingBag,
   UserRound,
+  UtensilsCrossed,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,13 +56,63 @@ type CartItem = {
   imageUrl: string | null;
 };
 
+function normalizeCategoryLabel(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function fallbackCategoryIcon(name: string): LucideIcon {
+  const normalized = normalizeCategoryLabel(name);
+  if (normalized.includes("PLATO")) return UtensilsCrossed;
+  if (normalized.includes("BEBIDA")) return GlassWater;
+  if (normalized.includes("VARIO")) return Package;
+  return ImageIcon;
+}
+
+function CategoryTabVisual({
+  name,
+  imageUrl,
+  icon,
+}: {
+  name: string;
+  imageUrl?: string | null;
+  icon?: string | null;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const url = imageUrl?.trim() || "";
+  const emoji = icon?.trim() || "";
+
+  if (url && !imageFailed) {
+    return (
+      <img
+        src={url}
+        alt=""
+        className="h-7 w-7 rounded-lg object-cover"
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  if (emoji) {
+    return <span className="text-lg leading-none">{emoji}</span>;
+  }
+
+  const FallbackIcon = fallbackCategoryIcon(name);
+  return <FallbackIcon className="h-5 w-5 shrink-0" aria-hidden />;
+}
+
 function ProductPhoto({
   name,
   imageUrl,
+  icon,
   className,
 }: {
   name: string;
   imageUrl?: string | null;
+  icon?: string | null;
   className?: string;
 }) {
   return (
@@ -70,6 +124,8 @@ function ProductPhoto({
     >
       {imageUrl ? (
         <img src={imageUrl} alt={name} className="h-full w-full object-cover" />
+      ) : icon ? (
+        <span className="text-[1.65rem] leading-none">{icon}</span>
       ) : (
         <ImageIcon className="h-1/2 w-1/2 text-muted-foreground/50" />
       )}
@@ -555,12 +611,17 @@ export default function QrPedido() {
                   type="button"
                   onClick={() => setActiveCategoryId(cat.id)}
                   className={cn(
-                    "h-11 shrink-0 rounded-2xl border px-4 text-sm font-bold",
+                    "flex h-12 shrink-0 items-center gap-2 rounded-2xl border px-3 text-sm font-bold",
                     activeCategoryId === cat.id
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-orange-200 bg-white text-foreground",
                   )}
                 >
+                  <CategoryTabVisual
+                    name={cat.name}
+                    imageUrl={cat.image_url}
+                    icon={cat.icon}
+                  />
                   {cat.name}
                 </button>
               ))}
@@ -577,6 +638,7 @@ export default function QrPedido() {
                   <ProductPhoto
                     name={product.name}
                     imageUrl={product.image_url}
+                    icon={product.icon}
                     className="h-16 w-16 rounded-[1.1rem]"
                   />
                   <div className="min-w-0 flex-1">
@@ -620,6 +682,7 @@ export default function QrPedido() {
                 <ProductPhoto
                   name={selectedProduct.name}
                   imageUrl={null}
+                  icon={selectedProduct.icon}
                   className="mb-4 h-24 w-24"
                 />
               )}
