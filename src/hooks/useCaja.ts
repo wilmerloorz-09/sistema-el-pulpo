@@ -3195,6 +3195,26 @@ export function useCaja(params?: {
           filters: [{ column: "id", op: "in", value: preparedTransferProofSession.paymentIds }],
           skipLocalCache: true,
         });
+
+        // En cobro mixto los montos van por método, pero las líneas de ítem
+        // solo deben asociarse una vez al pago ancla (ITEMS_ANCHOR).
+        let paymentItemsAttached = false;
+        const attachPaymentItems = async (paymentId: string) => {
+          if (paymentItemsAttached) return;
+          await dbInsertMany(
+            "payment_items",
+            itemSelections.map((itemSelection) => ({
+              id: generateUUID(),
+              payment_id: paymentId,
+              order_item_id: itemSelection.itemId,
+              quantity_paid: itemSelection.quantity,
+              unit_price: itemSelection.unitPrice,
+              total_amount: itemSelection.amount,
+            })),
+            { hotPath: true },
+          );
+          paymentItemsAttached = true;
+        };
         
         for (const payment of payments) {
           const meta = parsePaymentNotes(payment.notes);
@@ -3205,19 +3225,13 @@ export function useCaja(params?: {
           
           const updatedNotes = setTransferProofPendingMarker(payment.notes, false);
           await dbUpdate("payments", payment.id, { notes: updatedNotes });
+        }
 
-          await dbInsertMany(
-            "payment_items",
-            itemSelections.map((itemSelection) => ({
-              id: generateUUID(),
-              payment_id: payment.id,
-              order_item_id: itemSelection.itemId,
-              quantity_paid: itemSelection.quantity,
-              unit_price: itemSelection.unitPrice,
-              total_amount: itemSelection.amount,
-            })),
-            { hotPath: true },
-          );
+        if (anchorPaymentId) {
+          await attachPaymentItems(anchorPaymentId);
+        } else if (payments[0]?.id) {
+          anchorPaymentId = payments[0].id;
+          await attachPaymentItems(anchorPaymentId);
         }
 
         for (const split of paymentSplits) {
@@ -3253,20 +3267,10 @@ export function useCaja(params?: {
             { hotPath: true },
           );
 
-          if (!anchorPaymentId) anchorPaymentId = paymentId;
-
-          await dbInsertMany(
-            "payment_items",
-            itemSelections.map((itemSelection) => ({
-              id: generateUUID(),
-              payment_id: paymentId,
-              order_item_id: itemSelection.itemId,
-              quantity_paid: itemSelection.quantity,
-              unit_price: itemSelection.unitPrice,
-              total_amount: itemSelection.amount,
-            })),
-            { hotPath: true },
-          );
+          if (!anchorPaymentId) {
+            anchorPaymentId = paymentId;
+            await attachPaymentItems(paymentId);
+          }
         }
       } else {
         const paymentRows: RegisterPaymentRpcRow[] = [];
@@ -3304,15 +3308,18 @@ export function useCaja(params?: {
               : undefined,
           });
 
-          for (const itemSelection of itemSelections) {
-            paymentItemRows.push({
-              id: generateUUID(),
-              payment_id: paymentId,
-              order_item_id: itemSelection.itemId,
-              quantity_paid: itemSelection.quantity,
-              unit_price: itemSelection.unitPrice,
-              total_amount: itemSelection.amount,
-            });
+          // Solo el pago ancla lleva payment_items; el resto solo aporta monto por método.
+          if (index === 0) {
+            for (const itemSelection of itemSelections) {
+              paymentItemRows.push({
+                id: generateUUID(),
+                payment_id: paymentId,
+                order_item_id: itemSelection.itemId,
+                quantity_paid: itemSelection.quantity,
+                unit_price: itemSelection.unitPrice,
+                total_amount: itemSelection.amount,
+              });
+            }
           }
         }
 
