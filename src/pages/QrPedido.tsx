@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import {
   Check,
   ChevronLeft,
+  ImageIcon,
   Loader2,
   Minus,
   Plus,
@@ -48,7 +49,33 @@ type CartItem = {
   modifierIds: string[];
   modifierNames: string[];
   itemNote: string;
+  imageUrl: string | null;
 };
+
+function ProductPhoto({
+  name,
+  imageUrl,
+  className,
+}: {
+  name: string;
+  imageUrl?: string | null;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-orange-50 ring-1 ring-orange-200/70",
+        className,
+      )}
+    >
+      {imageUrl ? (
+        <img src={imageUrl} alt={name} className="h-full w-full object-cover" />
+      ) : (
+        <ImageIcon className="h-1/2 w-1/2 text-muted-foreground/50" />
+      )}
+    </div>
+  );
+}
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("es-EC", {
@@ -275,6 +302,7 @@ export default function QrPedido() {
           modifierIds: selectedModifiers.slice(),
           modifierNames,
           itemNote: itemNote.trim(),
+          imageUrl: selectedProduct.image_url,
         },
       ];
     });
@@ -544,9 +572,14 @@ export default function QrPedido() {
                   key={product.id}
                   type="button"
                   onClick={() => openProduct(product)}
-                  className="flex min-h-[4.5rem] items-center justify-between gap-3 rounded-3xl border border-orange-200 bg-white p-4 text-left shadow-sm"
+                  className="flex min-h-[4.5rem] items-center gap-3 rounded-3xl border border-orange-200 bg-white p-3 text-left shadow-sm"
                 >
-                  <div className="min-w-0">
+                  <ProductPhoto
+                    name={product.name}
+                    imageUrl={product.image_url}
+                    className="h-16 w-16 rounded-[1.1rem]"
+                  />
+                  <div className="min-w-0 flex-1">
                     <p className="font-display text-base font-black text-foreground">{product.name}</p>
                     <p className="text-sm font-semibold text-primary">
                       {formatMoney(Number(product.price ?? 0))}
@@ -575,6 +608,21 @@ export default function QrPedido() {
             </button>
 
             <div className="rounded-3xl border border-orange-200 bg-white p-5 shadow-sm">
+              {selectedProduct.image_url ? (
+                <div className="mb-4 overflow-hidden rounded-2xl bg-orange-50 ring-1 ring-orange-200/70">
+                  <img
+                    src={selectedProduct.image_url}
+                    alt={selectedProduct.name}
+                    className="aspect-[16/9] w-full object-cover"
+                  />
+                </div>
+              ) : (
+                <ProductPhoto
+                  name={selectedProduct.name}
+                  imageUrl={null}
+                  className="mb-4 h-24 w-24"
+                />
+              )}
               <h2 className="font-display text-xl font-black">{selectedProduct.name}</h2>
               <p className="mt-1 text-lg font-bold text-primary">
                 {formatMoney(Number(selectedProduct.price ?? 0))}
@@ -669,7 +717,12 @@ export default function QrPedido() {
                   {cart.map((item) => (
                     <li key={item.key} className="border-b border-orange-50 pb-3 last:border-0">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
+                        <ProductPhoto
+                          name={item.name}
+                          imageUrl={item.imageUrl}
+                          className="mt-0.5 h-12 w-12 rounded-xl"
+                        />
+                        <div className="min-w-0 flex-1">
                           <p className="font-semibold text-foreground">{item.name}</p>
                           {item.modifierNames.length ? (
                             <p className="text-xs text-muted-foreground">
