@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark, QrCode } from "lucide-react";
+import { CalendarDays, Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark, QrCode } from "lucide-react";
 import BancosCrud from "@/components/admin/BancosCrud";
 import CuentasBancariasDestinoAdmin from "@/components/admin/CuentasBancariasDestinoAdmin";
+import FeriadosAdmin from "@/components/admin/FeriadosAdmin";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
@@ -170,6 +171,13 @@ const TABS: AdminTab[] = [
     label: "Cuentas bancarias",
     icon: <CreditCard className="h-4 w-4" />,
     component: CuentasBancariasDestinoAdmin,
+    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "feriados",
+    label: "Feriados",
+    icon: <CalendarDays className="h-4 w-4" />,
+    component: FeriadosAdmin,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
   },
   {

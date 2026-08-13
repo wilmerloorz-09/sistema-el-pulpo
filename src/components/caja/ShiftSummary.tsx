@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { CashRegisterMovement, CashRegisterMovementDetail, CashShift } from "@/hooks/useCaja";
+import type { CajaCashierDenomGroup } from "@/lib/cajaSummaryScope";
+import type { CashRegisterMovement, CashRegisterMovementDetail, CashShift, ShiftDenom } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +39,66 @@ interface Props {
   registeringMovement?: boolean;
   canAnnulOpen?: boolean;
   readOnly?: boolean;
+  cashierDenomGroups?: CajaCashierDenomGroup[];
+}
+
+function sortDenoms(denoms: ShiftDenom[]) {
+  return [...denoms]
+    .filter((denomination) => denomination.value > 0)
+    .sort((a, b) => {
+      if (a.display_order !== b.display_order) return a.display_order - b.display_order;
+      return a.value - b.value;
+    });
+}
+
+function denomTotal(denoms: ShiftDenom[], field: "qty_initial" | "qty_current") {
+  return denoms.reduce((sum, denomination) => sum + denomination.value * denomination[field], 0);
+}
+
+function DenomBreakdownGrid({
+  denoms,
+  field,
+}: {
+  denoms: ShiftDenom[];
+  field: "qty_initial" | "qty_current";
+}) {
+  const isInitial = field === "qty_initial";
+  const border = isInitial ? "border-sky-100" : "border-emerald-100";
+  const labelBg = isInitial ? "bg-emerald-50" : "bg-emerald-50/80";
+  const qtyBorder = isInitial ? "border-sky-200 bg-sky-50" : "border-emerald-200 bg-emerald-50";
+  const qtyLabel = isInitial ? "text-sky-700" : "text-emerald-700";
+
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
+      {denoms.map((denomination) => (
+        <div
+          key={`${field}-${denomination.denomination_id || denomination.id}`}
+          className={`grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border ${border} bg-white p-1.5`}
+        >
+          <div className={`flex min-w-0 items-center gap-1.5 rounded-lg ${labelBg} px-1.5 py-1`}>
+            <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
+            <span className="truncate text-sm font-bold tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
+          </div>
+          <div className={`rounded-lg border-t ${border} bg-white px-1.5 py-1.5`}>
+            <div className="grid grid-cols-2 items-end gap-1.5">
+              <div>
+                <p className={`text-[9px] font-bold uppercase tracking-wide ${qtyLabel}`}>Cant.</p>
+                <p className={`mt-0.5 rounded-lg border ${qtyBorder} px-2 py-0.5 text-center text-sm font-bold tabular-nums text-slate-950`}>
+                  {denomination[field]}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className={`text-[9px] font-bold uppercase tracking-wide ${qtyLabel}`}>Total</p>
+                <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-800">
+                  ${(denomination[field] * denomination.value).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function ShiftSummary({
@@ -53,6 +114,7 @@ export default function ShiftSummary({
   registeringMovement = false,
   canAnnulOpen = false,
   readOnly = false,
+  cashierDenomGroups = [],
 }: Props) {
   const [showClose, setShowClose] = useState(false);
   const [showDenoms, setShowDenoms] = useState(false);
@@ -66,12 +128,7 @@ export default function ShiftSummary({
   const [notes, setNotes] = useState("");
   const [annulReason, setAnnulReason] = useState("");
 
-  const sortedDenoms = [...shift.denoms]
-    .filter((denomination) => denomination.value > 0)
-    .sort((a, b) => {
-      if (a.display_order !== b.display_order) return a.display_order - b.display_order;
-      return a.value - b.value;
-    });
+  const sortedDenoms = sortDenoms(shift.denoms);
 
   const totalInitial = sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_initial, 0);
   const totalCurrent = sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0);
@@ -409,67 +466,64 @@ export default function ShiftSummary({
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
-            <div className="space-y-2 rounded-2xl border border-sky-200 bg-sky-50/50 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-foreground">Apertura</span>
-                <span className=" text-lg font-bold text-sky-700">${totalInitial.toFixed(2)}</span>
+            {sortedDenoms.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-muted-foreground">
+                No hay desglose de denominaciones para el cajero seleccionado.
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
-                {sortedDenoms.map((denomination) => (
-                  <div key={`initial-${denomination.id}`} className="grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border border-sky-100 bg-white p-1.5">
-                    <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-1.5 py-1">
-                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
-                      <span className="truncate text-sm font-bold tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
-                    </div>
-                    <div className="rounded-lg border-t border-sky-100 bg-white px-1.5 py-1.5">
-                    <div className="grid grid-cols-2 items-end gap-1.5">
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700">Cant.</p>
-                        <p className="mt-0.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-center text-sm font-bold tabular-nums text-slate-950">{denomination.qty_initial}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700">Total</p>
-                        <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-800">
-                          ${(denomination.qty_initial * denomination.value).toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                    </div>
+            ) : (
+              <>
+                <div className="space-y-2 rounded-2xl border border-sky-200 bg-sky-50/50 p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-foreground">
+                      {cashierDenomGroups.length > 1 ? "Apertura total" : "Apertura"}
+                    </span>
+                    <span className=" text-lg font-bold text-sky-700">${totalInitial.toFixed(2)}</span>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <DenomBreakdownGrid denoms={sortedDenoms} field="qty_initial" />
+                </div>
 
-            <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-foreground">Actual</span>
-                <span className=" text-lg font-bold text-primary">${totalCurrent.toFixed(2)}</span>
-              </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
-                {sortedDenoms.map((denomination) => (
-                  <div key={`current-${denomination.id}`} className="grid min-h-[76px] grid-rows-[auto_1fr] gap-1.5 rounded-xl border border-emerald-100 bg-white p-1.5">
-                    <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-emerald-50/80 px-1.5 py-1">
-                      <DenominationVisual label={denomination.label} imageUrl={denomination.image_url} className="h-8 w-8 rounded-lg" iconClassName="h-3.5 w-3.5" />
-                      <span className="truncate text-sm font-bold tabular-nums text-slate-950">${denomination.value.toFixed(2)}</span>
-                    </div>
-                    <div className="rounded-lg border-t border-emerald-100 bg-white px-1.5 py-1.5">
-                    <div className="grid grid-cols-2 items-end gap-1.5">
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-700">Cant.</p>
-                        <p className="mt-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-center text-sm font-bold tabular-nums text-slate-950">{denomination.qty_current}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-700">Total</p>
-                        <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-800">
-                          ${(denomination.qty_current * denomination.value).toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                    </div>
+                <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-foreground">
+                      {cashierDenomGroups.length > 1 ? "Actual total" : "Actual"}
+                    </span>
+                    <span className=" text-lg font-bold text-primary">${totalCurrent.toFixed(2)}</span>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <DenomBreakdownGrid denoms={sortedDenoms} field="qty_current" />
+                </div>
+
+                {cashierDenomGroups.length > 1
+                  ? cashierDenomGroups.map((group) => {
+                      const groupDenoms = sortDenoms(group.denoms);
+                      if (groupDenoms.length === 0) return null;
+                      return (
+                        <div key={group.cashierId} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-foreground">Cajero: {group.cashierName}</span>
+                            <span className="text-sm font-bold tabular-nums text-slate-700">
+                              ${denomTotal(groupDenoms, "qty_current").toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="space-y-2 rounded-xl border border-sky-100 bg-sky-50/40 p-2">
+                            <div className="flex items-center justify-between text-xs font-semibold text-sky-800">
+                              <span>Apertura</span>
+                              <span>${denomTotal(groupDenoms, "qty_initial").toFixed(2)}</span>
+                            </div>
+                            <DenomBreakdownGrid denoms={groupDenoms} field="qty_initial" />
+                          </div>
+                          <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50/40 p-2">
+                            <div className="flex items-center justify-between text-xs font-semibold text-emerald-800">
+                              <span>Actual</span>
+                              <span>${denomTotal(groupDenoms, "qty_current").toFixed(2)}</span>
+                            </div>
+                            <DenomBreakdownGrid denoms={groupDenoms} field="qty_current" />
+                          </div>
+                        </div>
+                      );
+                    })
+                  : null}
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -1,4 +1,7 @@
 import type { AnalisisComprobanteTransferencia } from "@/services/analisisComprobanteTransferencia";
+import { fechasAceptadasComprobante } from "@/lib/feriadosBancarios";
+
+export { fechaActualEcuador, fechasAceptadasComprobante } from "@/lib/feriadosBancarios";
 
 export type EstadoReglaComprobante = "COINCIDE" | "NO_COINCIDE" | "NO_VERIFICABLE";
 export type EstadoValidacionComprobante =
@@ -121,49 +124,15 @@ export function compararCuentaEnmascarada(
   return comparable === expected.digitos ? "COINCIDE" : "NO_COINCIDE";
 }
 
-export function fechaActualEcuador(now = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Guayaquil",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
-function diaSemanaEcuador(now: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Guayaquil",
-    weekday: "short",
-  }).format(now);
-}
-
-/**
- * Fechas que puede traer un comprobante válido según el día actual en Ecuador.
- * Los bancos registran las transferencias de fin de semana con fecha del lunes
- * siguiente, por lo que sábado y domingo también se acepta esa fecha.
- */
-export function fechasAceptadasComprobante(now = new Date()): string[] {
-  const hoy = fechaActualEcuador(now);
-  const diaSemana = diaSemanaEcuador(now);
-  const diasHastaLunes = diaSemana === "Sat" ? 2 : diaSemana === "Sun" ? 1 : 0;
-  if (diasHastaLunes === 0) return [hoy];
-  const lunes = fechaActualEcuador(
-    new Date(now.getTime() + diasHastaLunes * 24 * 60 * 60 * 1000),
-  );
-  return [hoy, lunes];
-}
-
 function validarFecha(
   fechaDetectada: string | null,
   now: Date,
+  feriados: Iterable<string> = [],
 ): EstadoReglaComprobante {
   if (!fechaDetectada) return "NO_VERIFICABLE";
   const isoDate = fechaDetectada.match(/\d{4}-\d{2}-\d{2}/)?.[0];
   if (!isoDate) return "NO_VERIFICABLE";
-  return fechasAceptadasComprobante(now).includes(isoDate)
+  return fechasAceptadasComprobante(now, feriados).includes(isoDate)
     ? "COINCIDE"
     : "NO_COINCIDE";
 }
@@ -191,6 +160,7 @@ export function validarComprobanteContraCuentas(params: {
   bancoOrigenId: string;
   montoEsperado: number;
   now?: Date;
+  feriados?: Iterable<string>;
 }): ResultadoValidacionComprobante {
   const {
     analisis,
@@ -199,6 +169,7 @@ export function validarComprobanteContraCuentas(params: {
     bancoOrigenId,
     montoEsperado,
     now = new Date(),
+    feriados = [],
   } = params;
   const bancoOrigen = bancos.find((banco) => banco.id === bancoOrigenId);
 
@@ -227,7 +198,7 @@ export function validarComprobanteContraCuentas(params: {
     bancoDestino: candidato?.reglas.bancoDestino ?? "NO_VERIFICABLE",
     titularDestino: candidato?.reglas.titularDestino ?? "NO_VERIFICABLE",
     cuentaDestino: candidato?.reglas.cuentaDestino ?? "NO_VERIFICABLE",
-    fecha: validarFecha(analisis.fechaTransferencia, now),
+    fecha: validarFecha(analisis.fechaTransferencia, now, feriados),
     monto: validarMonto(analisis.monto, montoEsperado),
   } satisfies ResultadoValidacionComprobante["reglas"];
 
@@ -235,7 +206,7 @@ export function validarComprobanteContraCuentas(params: {
     bancoDestino: "El banco destino no coincide con una cuenta autorizada",
     titularDestino: "El titular destino no coincide con una cuenta autorizada",
     cuentaDestino: "Los dígitos visibles de la cuenta destino no coinciden",
-    fecha: "La fecha del comprobante no corresponde al día de hoy (en fin de semana también se acepta la del lunes siguiente)",
+    fecha: "La fecha del comprobante no corresponde al día de hoy (en días no hábiles también se acepta el siguiente día hábil bancario)",
     monto: "El valor detectado no coincide con el valor registrado",
   };
   const unverifiable: Record<keyof typeof reglas, string> = {

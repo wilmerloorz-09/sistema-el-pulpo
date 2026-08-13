@@ -162,4 +162,18 @@ describe("validarComprobanteContraCuentas", () => {
     expect(result.estado).toBe("NO_VERIFICABLE");
     expect(result.novedades.length).toBeGreaterThan(0);
   });
+
+  it("en feriado acepta la fecha del siguiente día hábil", () => {
+    const result = validarComprobanteContraCuentas({
+      analisis: { ...analisisBase, fechaTransferencia: "2026-08-11" },
+      cuentas: [cuenta],
+      bancos,
+      bancoOrigenId: "origen-final",
+      montoEsperado: 25.5,
+      now: new Date("2026-08-10T15:00:00Z"),
+      feriados: ["2026-08-10"],
+    });
+
+    expect(result.reglas.fecha).toBe("COINCIDE");
+  });
 });

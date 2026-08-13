@@ -45,6 +45,7 @@ import {
   type AnalisisComprobanteTransferencia,
 } from "@/services/analisisComprobanteTransferencia";
 import { useCuentasBancariasDestinoActivas } from "@/hooks/useCuentasBancariasDestino";
+import { useFeriadosBancariosActivos } from "@/hooks/useFeriadosBancarios";
 import {
   validarComprobanteContraCuentas,
   type ResultadoValidacionComprobante,
@@ -71,6 +72,7 @@ export default function TransferenciaPagoDialog({
 }: Props) {
   const { data: cuentasDestino = [], error: cuentasDestinoError } =
     useCuentasBancariasDestinoActivas(open);
+  const { data: feriados = [] } = useFeriadosBancariosActivos(open);
   const [bancoId, setBancoId] = useState("");
   const [numeroTransferencia, setNumeroTransferencia] = useState("");
   const [montoInput, setMontoInput] = useState("");
@@ -297,6 +299,7 @@ export default function TransferenciaPagoDialog({
         bancos,
         bancoOrigenId: bancoId,
         montoEsperado: montoActual,
+        feriados,
       })
     : null;
   const requiereMotivo = Boolean(

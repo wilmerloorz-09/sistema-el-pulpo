@@ -708,6 +708,9 @@ export default function CompletedPaymentsList({
             >
               <option value="ALL">Todos los cajeros</option>
               {currentUserId && (
+                cashierUsers.some((cashier) => cashier.id === currentUserId)
+                || filters.cashierName === currentUserId
+              ) && (
                 <option value={currentUserId}>Mi caja</option>
               )}
               {cashierUsers

@@ -54,6 +54,7 @@ import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
+import { ALL_CASHIERS, scopeCajaSummary } from "@/lib/cajaSummaryScope";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   scope: "ALL",
@@ -133,6 +134,7 @@ const Caja = () => {
   const {
     denominations,
     shift,
+    shiftRegisterSnapshot,
     isLoadingShift,
     cashRegisterMovements,
     isLoadingCashRegisterMovements,
@@ -167,20 +169,26 @@ const Caja = () => {
     loadCompletedPayments: activeTab === "completed",
   });
 
+  const summaryCashierId = completedFilters.cashierName || ALL_CASHIERS;
+
   const cashierMethodSummaryQuery = useQuery({
-    queryKey: ["cashier-method-summary", activeBranch?.id ?? "_", shift?.id ?? "_", user?.id ?? "_"],
+    queryKey: ["cashier-method-summary", activeBranch?.id ?? "_", shift?.id ?? "_", summaryCashierId],
     enabled: Boolean(activeBranch?.id) && Boolean(shift?.id) && Boolean(user?.id),
     queryFn: async (): Promise<CompletedPaymentsMethodSummary[]> => {
-      if (!activeBranch?.id || !shift?.opened_at || !user?.id) return [];
+      if (!activeBranch?.id || !shift?.opened_at) return [];
+
+      const paymentFilters: any[] = [
+        { column: "created_at", op: "gte", value: shift.opened_at },
+        { column: "created_at", op: "lte", value: new Date().toISOString() },
+      ];
+      if (summaryCashierId !== ALL_CASHIERS) {
+        paymentFilters.unshift({ column: "created_by", op: "eq", value: summaryCashierId });
+      }
 
       const [payments, methods] = await Promise.all([
         dbSelect<any>("payments", {
           select: "id, amount, payment_method_id, created_at, created_by, notes, status",
-          filters: [
-            { column: "created_by", op: "eq", value: user.id },
-            { column: "created_at", op: "gte", value: shift.opened_at },
-            { column: "created_at", op: "lte", value: new Date().toISOString() },
-          ],
+          filters: paymentFilters,
         }),
         dbSelect<any>("payment_methods", {
           select: "id, name",
@@ -195,10 +203,6 @@ const Caja = () => {
   });
 
   const shiftSummaryMethodSummary = cashierMethodSummaryQuery.data ?? [];
-  const shiftSummaryMovements = useMemo(() => {
-    if (!user?.id) return cashRegisterMovements;
-    return (cashRegisterMovements ?? []).filter((m) => m.recordedBy === user.id);
-  }, [cashRegisterMovements, user?.id]);
 
   const currentUserCashierCandidate = useMemo(
     () => (user?.id ? captureCandidates.find((c) => c.id === user.id) ?? null : null),
@@ -239,6 +243,53 @@ const Caja = () => {
   const userCajaIsOpen = userCajaStatus === "OPEN";
   const cajaPanelReadOnly = !canOperateCaja || !userCajaIsOpen;
   const canChargeFromCompleted = canOperateCaja && userCajaIsOpen;
+  const summaryIsOwnCaja = Boolean(user?.id) && summaryCashierId === user.id;
+  const summaryReadOnly = cajaPanelReadOnly || !summaryIsOwnCaja;
+  const canAnnulSelectedOpening = canAnnulOpening && summaryCashierId !== ALL_CASHIERS;
+
+  useEffect(() => {
+    if (!shiftGateQuery.isFetched) return;
+    if (userCajaIsOpen) return;
+    setCompletedFilters((prev) => {
+      if (prev.cashierName === ALL_CASHIERS) return prev;
+      if (user?.id && prev.cashierName !== user.id) return prev;
+      return { ...prev, cashierName: ALL_CASHIERS };
+    });
+  }, [shiftGateQuery.isFetched, userCajaIsOpen, user?.id]);
+
+  const scopedCajaSummary = useMemo(() => {
+    if (shiftRegisterSnapshot) {
+      return scopeCajaSummary({
+        denoms: shiftRegisterSnapshot.denoms,
+        openingHistory: shiftRegisterSnapshot.openingHistory,
+        movements: cashRegisterMovements ?? [],
+        cashierId: summaryCashierId,
+      });
+    }
+    return {
+      denoms: shift?.denoms ?? [],
+      cashierGroups: [],
+      openingHistory: shift?.openingHistory ?? [],
+      movements: (cashRegisterMovements ?? []).filter((movement) => !user?.id || movement.recordedBy === user.id),
+    };
+  }, [
+    shiftRegisterSnapshot,
+    cashRegisterMovements,
+    summaryCashierId,
+    shift?.denoms,
+    shift?.openingHistory,
+    user?.id,
+  ]);
+
+  const summaryShift = useMemo(() => {
+    if (!shift) return shift;
+    return {
+      ...shift,
+      denoms: scopedCajaSummary.denoms,
+      openingHistory: scopedCajaSummary.openingHistory,
+    };
+  }, [shift, scopedCajaSummary.denoms, scopedCajaSummary.openingHistory]);
+
 
   useEffect(() => {
     if (!completedChargeOrder) return;
@@ -754,7 +805,7 @@ const Caja = () => {
     });
   };
 
-  if (!userCajaIsOpen) {
+  if (!userCajaIsOpen && activeTab !== "completed") {
     return (
       <div className="bg-slate-50 px-4 py-2 sm:px-6 lg:px-10">
         <div className="w-full space-y-6">
@@ -1113,8 +1164,10 @@ const Caja = () => {
                   </p>
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[#0f766e]" />
-                    <span className="truncate text-xs text-slate-700 sm:text-sm">Mi caja abierta</span>
-                    {!canOperateCaja && (
+                    <span className="truncate text-xs text-slate-700 sm:text-sm">
+                      {userCajaIsOpen ? "Mi caja abierta" : "Turno abierto"}
+                    </span>
+                    {(!canOperateCaja || !userCajaIsOpen) && (
                       <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 sm:text-xs">
                         Solo consulta
                       </span>
@@ -1124,13 +1177,13 @@ const Caja = () => {
 
                 <div className="shrink-0">
                   <ShiftSummary
-                    shift={shift}
+                    shift={summaryShift ?? shift}
                     methodSummary={shiftSummaryMethodSummary}
-                    movements={shiftSummaryMovements}
+                    movements={scopedCajaSummary.movements}
                     movementsLoading={isLoadingCashRegisterMovements}
                     onClose={handleCloseCashRegister}
                     onAnnulOpen={async (reason) => {
-                      const opening = shift.openingHistory.find((entry) => entry.is_current);
+                      const opening = (summaryShift ?? shift).openingHistory.find((entry) => entry.is_current);
                       if (!opening) throw new Error("No hay apertura activa para anular");
                       await annulCashOpening.mutateAsync({ openingId: opening.id, reason });
                     }}
@@ -1138,8 +1191,9 @@ const Caja = () => {
                     closing={closeCashRegister.isPending}
                     annulling={annulCashOpening.isPending}
                     registeringMovement={registerCashMovement.isPending}
-                    canAnnulOpen={canAnnulOpening}
-                    readOnly={cajaPanelReadOnly}
+                    canAnnulOpen={canAnnulSelectedOpening}
+                    readOnly={summaryReadOnly}
+                    cashierDenomGroups={scopedCajaSummary.cashierGroups}
                   />
                 </div>
               </div>

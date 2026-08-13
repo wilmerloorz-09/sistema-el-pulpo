@@ -33,6 +33,7 @@ import {
   useAdaptiveRefetchInterval,
   useOperationalOrdersRealtime,
 } from "@/lib/queryEgress";
+import type { CajaRegisterDenomRow, CajaRegisterSnapshot } from "@/lib/cajaSummaryScope";
 import { qk } from "@/lib/queryKeys";
 import {
   existeTransferenciaDuplicada,
@@ -133,6 +134,28 @@ export interface CashShiftCaptureCandidate {
   full_name: string;
   username: string;
   alias: string;
+}
+
+function mapCashRegisterOpeningRows(rows: any[] | null | undefined): CashRegisterOpeningHistoryEntry[] {
+  return ((rows ?? []) as any[]).map((row) => ({
+    id: row.id,
+    shift_id: row.shift_id,
+    status: row.status,
+    cashier_id: row.cashier_id,
+    cashier_name: row.cashier_name,
+    cashier_username: row.cashier_username,
+    opened_at: row.opened_at,
+    closed_at: row.closed_at,
+    initial_total: Number(row.initial_total ?? 0),
+    notes: row.notes ?? null,
+    anulada_por: row.anulada_por ?? null,
+    anulada_por_nombre: row.anulada_por_nombre ?? null,
+    anulada_por_username: row.anulada_por_username ?? null,
+    anulada_at: row.anulada_at ?? null,
+    motivo_anulacion: row.motivo_anulacion ?? null,
+    is_current: Boolean(row.is_current),
+    payment_count: Number(row.payment_count ?? 0),
+  })) as CashRegisterOpeningHistoryEntry[];
 }
 
 export interface CashRegisterOpeningHistoryEntry {
@@ -1419,27 +1442,8 @@ export function useCaja(params?: {
         p_shift_id: shiftData.id 
       });
 
-      const openingHistory = ((openingHistoryData ?? []) as any[])
-        .filter((row) => row.cashier_id === user.id)
-        .map((row) => ({
-        id: row.id,
-        shift_id: row.shift_id,
-        status: row.status,
-        cashier_id: row.cashier_id,
-        cashier_name: row.cashier_name,
-        cashier_username: row.cashier_username,
-        opened_at: row.opened_at,
-        closed_at: row.closed_at,
-        initial_total: Number(row.initial_total ?? 0),
-        notes: row.notes ?? null,
-        anulada_por: row.anulada_por ?? null,
-        anulada_por_nombre: row.anulada_por_nombre ?? null,
-        anulada_por_username: row.anulada_por_username ?? null,
-        anulada_at: row.anulada_at ?? null,
-        motivo_anulacion: row.motivo_anulacion ?? null,
-        is_current: Boolean(row.is_current),
-        payment_count: Number(row.payment_count ?? 0),
-      })) as CashRegisterOpeningHistoryEntry[];
+      const openingHistory = mapCashRegisterOpeningRows(openingHistoryData as any[])
+        .filter((row) => row.cashier_id === user.id);
 
       // Guardia de consistencia: si el usuario tiene su caja abierta en este
       // turno, SIEMPRE deben existir denominaciones (la apertura las crea).
@@ -1468,6 +1472,57 @@ export function useCaja(params?: {
     enabled: !!activeBranchId && !!user?.id && !!denomsQuery.data,
     // Realtime del hub invalida current-shift; poll solo si el hub no está SUBSCRIBED.
     // Mutaciones de apertura/cierre/denoms invalidan explícitamente.
+    staleTime: OPERATIONAL_STALE_MS,
+    refetchInterval: adaptiveShiftPoll,
+    placeholderData: (prev: any) => prev,
+  });
+
+  const registerSnapshotQuery = useQuery({
+    queryKey: ["current-shift", "register-snapshot", activeBranchId, shiftQuery.data?.id ?? null],
+    enabled: Boolean(activeBranchId && shiftQuery.data?.id && denomsQuery.data),
+    queryFn: async (): Promise<CajaRegisterSnapshot> => {
+      const shiftId = shiftQuery.data?.id;
+      if (!shiftId) {
+        return { denoms: [], openingHistory: [] };
+      }
+
+      const { data: denomRows, error: denomsError } = await (supabase
+        .from("cash_shift_denoms") as any)
+        .select("id, denomination_id, cashier_id, opening_id, qty_initial, qty_current")
+        .eq("shift_id", shiftId);
+      if (denomsError) throw denomsError;
+
+      const allDenoms = denomsQuery.data ?? [];
+      const denoms: CajaRegisterDenomRow[] = (denomRows ?? []).map((row: any) => {
+        const denom = allDenoms.find((item) => item.id === row.denomination_id);
+        return {
+          id: row.id,
+          denomination_id: row.denomination_id,
+          cashier_id: row.cashier_id ?? null,
+          opening_id: row.opening_id ?? null,
+          label: denom?.label ?? row.label ?? `Valor $${(row.value ?? 0).toFixed(2)}`,
+          denomination_type: denom?.denomination_type ?? row.denomination_type ?? "coin",
+          display_order: denom?.display_order ?? row.display_order ?? 999,
+          value: denom?.value ?? row.value ?? 0,
+          image_url: denom?.image_url ?? row.image_url ?? null,
+          qty_initial: Number(row.qty_initial ?? 0),
+          qty_current: Number(row.qty_current ?? 0),
+        };
+      });
+
+      const { data: openingHistoryData, error: openingHistoryError } = await supabase.rpc(
+        "list_cash_register_openings" as any,
+        { p_shift_id: shiftId },
+      );
+      if (openingHistoryError) {
+        console.warn("[useCaja] No se pudo leer el historial de aperturas para el resumen:", openingHistoryError.message);
+      }
+
+      return {
+        denoms,
+        openingHistory: mapCashRegisterOpeningRows(openingHistoryData as any[]),
+      };
+    },
     staleTime: OPERATIONAL_STALE_MS,
     refetchInterval: adaptiveShiftPoll,
     placeholderData: (prev: any) => prev,
@@ -3618,6 +3673,7 @@ export function useCaja(params?: {
   return {
     denominations: denomsQuery.data ?? [],
     shift: shiftQuery.data,
+    shiftRegisterSnapshot: registerSnapshotQuery.data ?? null,
     isLoadingShift: shiftQuery.isLoading || denomsQuery.isLoading,
     cashRegisterMovements: movementsQuery.data ?? [],
     isLoadingCashRegisterMovements: movementsQuery.isLoading,
