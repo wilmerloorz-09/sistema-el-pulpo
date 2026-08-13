@@ -425,8 +425,13 @@ export default function QrPedido() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-gradient-to-b from-orange-50 via-white to-amber-50 pt-safe">
-      <header className="sticky top-0 z-20 border-b border-orange-100 bg-white/95 px-4 py-3 backdrop-blur">
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-md flex-col bg-gradient-to-b from-orange-50 via-white to-amber-50 pt-safe",
+        step === "producto" ? "h-dvh overflow-hidden" : "min-h-dvh",
+      )}
+    >
+      <header className="sticky top-0 z-20 shrink-0 border-b border-orange-100 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate font-display text-base font-black text-foreground">
@@ -452,7 +457,14 @@ export default function QrPedido() {
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+      <main
+        className={cn(
+          "flex-1 px-4 py-4",
+          step === "producto"
+            ? "flex min-h-0 flex-col pb-0"
+            : "pb-[calc(1rem+env(safe-area-inset-bottom,0px))]",
+        )}
+      >
         {step === "identidad" ? (
           <section className="space-y-4">
             <div className="rounded-3xl border border-orange-200 bg-white p-5 shadow-sm">
@@ -660,86 +672,84 @@ export default function QrPedido() {
         ) : null}
 
         {step === "producto" && selectedProduct ? (
-          <section className="space-y-4">
+          <section className="flex min-h-0 flex-1 flex-col">
             <button
               type="button"
               onClick={() => setStep("menu")}
-              className="inline-flex h-11 items-center gap-1 text-sm font-semibold text-muted-foreground"
+              className="mb-2 inline-flex h-9 shrink-0 items-center gap-1 text-sm font-semibold text-muted-foreground"
             >
               <ChevronLeft className="h-4 w-4" /> Volver al menú
             </button>
 
-            <div className="rounded-3xl border border-orange-200 bg-white p-5 shadow-sm">
-              {selectedProduct.image_url ? (
-                <div className="mb-4 overflow-hidden rounded-2xl bg-orange-50 ring-1 ring-orange-200/70">
-                  <img
-                    src={selectedProduct.image_url}
-                    alt={selectedProduct.name}
-                    className="aspect-[16/9] w-full object-cover"
-                  />
-                </div>
-              ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-orange-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start gap-3">
                 <ProductPhoto
                   name={selectedProduct.name}
-                  imageUrl={null}
+                  imageUrl={selectedProduct.image_url}
                   icon={selectedProduct.icon}
-                  className="mb-4 h-24 w-24"
+                  className="h-14 w-14 rounded-2xl"
                 />
-              )}
-              <h2 className="font-display text-xl font-black">{selectedProduct.name}</h2>
-              <p className="mt-1 text-lg font-bold text-primary">
-                {formatMoney(Number(selectedProduct.price ?? 0))}
-              </p>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-lg font-black leading-tight">{selectedProduct.name}</h2>
+                  <p className="mt-0.5 text-base font-bold text-primary">
+                    {formatMoney(Number(selectedProduct.price ?? 0))}
+                  </p>
+                </div>
+              </div>
 
               {productModifiers.length > 0 ? (
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                <div className="mt-3">
+                  <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
                     Modificaciones
                   </p>
-                  {productModifiers.map((mod) => {
-                    const checked = selectedModifiers.includes(mod.modifier_id);
-                    return (
-                      <button
-                        key={mod.modifier_id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedModifiers((prev) =>
+                  <div className="grid grid-cols-2 gap-2">
+                    {productModifiers.map((mod) => {
+                      const checked = selectedModifiers.includes(mod.modifier_id);
+                      return (
+                        <button
+                          key={mod.modifier_id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedModifiers((prev) =>
+                              checked
+                                ? prev.filter((id) => id !== mod.modifier_id)
+                                : [...prev, mod.modifier_id],
+                            )
+                          }
+                          className={cn(
+                            "flex min-h-10 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold leading-tight",
                             checked
-                              ? prev.filter((id) => id !== mod.modifier_id)
-                              : [...prev, mod.modifier_id],
-                          )
-                        }
-                        className={cn(
-                          "flex h-12 w-full items-center justify-between rounded-2xl border px-4 text-left text-sm font-semibold",
-                          checked
-                            ? "border-primary bg-orange-50 text-primary"
-                            : "border-orange-100 bg-white text-foreground",
-                        )}
-                      >
-                        <span>{mod.modifier_name}</span>
-                        {checked ? <Check className="h-4 w-4" /> : null}
-                      </button>
-                    );
-                  })}
+                              ? "border-primary bg-orange-50 text-primary"
+                              : "border-orange-100 bg-white text-foreground",
+                          )}
+                        >
+                          <span className="line-clamp-2">{mod.modifier_name}</span>
+                          {checked ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : null}
 
-              <div className="mt-4 space-y-2">
+              <div className="mt-3 space-y-1.5">
                 <Label htmlFor="nota">Nota (opcional)</Label>
                 <Input
                   id="nota"
-                  className="h-12 rounded-2xl"
+                  className="h-10 rounded-2xl"
                   value={itemNote}
                   onChange={(e) => setItemNote(e.target.value)}
                   placeholder="Ej. poco picante"
                 />
               </div>
+            </div>
 
-              <div className="mt-4 flex items-center justify-between">
+            <div className="shrink-0 border-t border-orange-100 bg-gradient-to-b from-white to-amber-50/80 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+              <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200"
+                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-white"
                     onClick={() => setProductQty((q) => Math.max(1, q - 1))}
                   >
                     <Minus className="h-4 w-4" />
@@ -747,13 +757,13 @@ export default function QrPedido() {
                   <span className="min-w-8 text-center text-lg font-black">{productQty}</span>
                   <button
                     type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200"
+                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-white"
                     onClick={() => setProductQty((q) => q + 1)}
                   >
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
-                <Button type="button" className="h-12 rounded-2xl px-5 font-bold" onClick={addToCart}>
+                <Button type="button" className="h-11 flex-1 rounded-2xl font-bold" onClick={addToCart}>
                   Agregar
                 </Button>
               </div>
