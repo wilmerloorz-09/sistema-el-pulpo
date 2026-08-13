@@ -693,6 +693,7 @@ export default function QrPedido() {
                   <h2 className="font-display text-lg font-black leading-tight">{selectedProduct.name}</h2>
                   <p className="mt-0.5 text-base font-bold text-primary">
                     {formatMoney(Number(selectedProduct.price ?? 0))}
+                    <span className="ml-1 text-xs font-semibold text-muted-foreground">c/u</span>
                   </p>
                 </div>
               </div>
@@ -764,7 +765,7 @@ export default function QrPedido() {
                   </button>
                 </div>
                 <Button type="button" className="h-11 flex-1 rounded-2xl font-bold" onClick={addToCart}>
-                  Agregar
+                  Agregar {formatMoney(Number(selectedProduct.price ?? 0) * productQty)}
                 </Button>
               </div>
             </div>
