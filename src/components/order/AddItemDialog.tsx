@@ -3,8 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
+import { Check, ImageIcon, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
 import { parseDecimalInput, parseIntegerInput, sanitizeDecimalInput, sanitizeIntegerInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
 
@@ -318,38 +317,26 @@ const AddItemDialog = ({
           )}
 
           {sortedModifiers.length > 0 && (
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <Label className="text-sm font-semibold text-orange-600">Modificaciones</Label>
-              <div className="grid max-h-[35vh] grid-cols-2 gap-x-2 gap-y-1.5 overflow-y-auto pr-1">
+              <div className="grid max-h-[35vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
                 {sortedModifiers.map((modifier) => {
                   const isChecked = selectedMods.includes(modifier.id);
                   return (
-                    <label
+                    <button
                       key={modifier.id}
+                      type="button"
+                      onClick={() => toggleMod(modifier.id)}
                       className={cn(
-                        "flex min-w-0 cursor-pointer items-center gap-2 rounded-[14px] border p-2 transition-all",
+                        "flex min-h-10 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold leading-tight",
                         isChecked
-                          ? "border-orange-200 bg-orange-50 shadow-sm"
-                          : "border-border/60 bg-white/60 hover:border-orange-100 hover:bg-white",
+                          ? "border-primary bg-orange-50 text-primary"
+                          : "border-orange-100 bg-white text-foreground",
                       )}
                     >
-                      <Checkbox
-                        checked={isChecked}
-                        onCheckedChange={() => toggleMod(modifier.id)}
-                        className={cn(
-                          "h-4 w-4 rounded-[4px] border-orange-300",
-                          isChecked && "data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500",
-                        )}
-                      />
-                      <span
-                        className={cn(
-                          "min-w-0 flex-1 truncate text-[12px] font-medium leading-tight",
-                          isChecked ? "text-orange-900" : "text-muted-foreground",
-                        )}
-                      >
-                        {modifier.description}
-                      </span>
-                    </label>
+                      <span className="line-clamp-2">{modifier.description}</span>
+                      {isChecked ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                    </button>
                   );
                 })}
               </div>
