@@ -500,9 +500,9 @@ export default function QrPedido() {
           {step !== "identidad" && step !== "exito" ? (
             <button
               type="button"
-              onClick={() => setStep("carrito")}
+              onClick={() => setStep(step === "carrito" ? "menu" : "carrito")}
               className="relative inline-flex h-11 min-w-11 items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 text-primary"
-              aria-label="Ver carrito"
+              aria-label={step === "carrito" ? "Seguir pidiendo" : "Ver carrito"}
             >
               <ShoppingBag className="h-5 w-5" />
               {cartCount > 0 ? (
