@@ -176,7 +176,7 @@ export default function QrPedido() {
   const [identidadError, setIdentidadError] = useState<string | null>(null);
   const [identidadLoading, setIdentidadLoading] = useState(false);
 
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [pathIds, setPathIds] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<MenuNodeAutopedido | null>(null);
   const [selectedModifiers, setSelectedModifiers] = useState<string[]>([]);
   const [productQty, setProductQty] = useState(1);
@@ -204,7 +204,7 @@ export default function QrPedido() {
         const roots = menu
           .filter((n) => n.node_type === "category" && !n.parent_id)
           .sort((a, b) => a.display_order - b.display_order);
-        setActiveCategoryId(roots[0]?.id ?? null);
+        setPathIds(roots[0]?.id ? [roots[0].id] : []);
       } catch (err) {
         if (!cancelled) {
           setBootError(err instanceof Error ? err.message : "No se pudo abrir el autopedido.");
@@ -225,25 +225,79 @@ export default function QrPedido() {
     return map;
   }, [menuNodes]);
 
+  const nodesById = useMemo(() => {
+    const map = new Map<string, MenuNodeAutopedido>();
+    for (const node of menuNodes) map.set(node.id, node);
+    return map;
+  }, [menuNodes]);
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, MenuNodeAutopedido[]>();
+    for (const node of menuNodes) {
+      if (node.is_active === false) continue;
+      const parentId = node.parent_id;
+      const bucket = map.get(parentId) ?? [];
+      bucket.push(node);
+      map.set(parentId, bucket);
+    }
+    for (const [key, bucket] of map.entries()) {
+      map.set(
+        key,
+        [...bucket].sort(
+          (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name),
+        ),
+      );
+    }
+    return map;
+  }, [menuNodes]);
+
   const categories = useMemo(
     () =>
       menuNodes
-        .filter((n) => n.node_type === "category" && !n.parent_id)
+        .filter((n) => n.node_type === "category" && !n.parent_id && n.is_active !== false)
         .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name)),
     [menuNodes],
   );
 
-  const productsInCategory = useMemo(() => {
-    if (!activeCategoryId) return [];
-    return menuNodes
-      .filter(
-        (n) =>
-          n.node_type === "product" &&
-          (n.parent_id === activeCategoryId ||
-            resolveAncestorIds(n.id, parentByNodeId).includes(activeCategoryId)),
-      )
-      .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name));
-  }, [activeCategoryId, menuNodes, parentByNodeId]);
+  const breadcrumb = useMemo(
+    () => pathIds.map((id) => nodesById.get(id)).filter((n): n is MenuNodeAutopedido => Boolean(n)),
+    [pathIds, nodesById],
+  );
+
+  const activeL1Id = pathIds[0] ?? null;
+  const currentNode = breadcrumb[breadcrumb.length - 1] ?? null;
+
+  const visibleNodes = useMemo(() => {
+    if (!currentNode) return [];
+    return childrenByParent.get(currentNode.id) ?? [];
+  }, [childrenByParent, currentNode]);
+
+  const visibleCategories = useMemo(
+    () => visibleNodes.filter((n) => n.node_type === "category"),
+    [visibleNodes],
+  );
+  const visibleProducts = useMemo(
+    () => visibleNodes.filter((n) => n.node_type === "product"),
+    [visibleNodes],
+  );
+
+  const selectL1 = (nodeId: string) => {
+    setPathIds([nodeId]);
+  };
+
+  const drillDown = (node: MenuNodeAutopedido) => {
+    const kids = childrenByParent.get(node.id) ?? [];
+    if (kids.length === 0) return;
+    setPathIds((prev) => [...prev, node.id]);
+  };
+
+  const goBackLevel = () => {
+    setPathIds((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  };
+
+  const goToBreadcrumbIndex = (index: number) => {
+    setPathIds((prev) => prev.slice(0, index + 1));
+  };
 
   const productModifiers = useMemo(() => {
     if (!selectedProduct) return [];
@@ -621,10 +675,10 @@ export default function QrPedido() {
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => setActiveCategoryId(cat.id)}
+                  onClick={() => selectL1(cat.id)}
                   className={cn(
                     "flex h-12 shrink-0 items-center gap-2 rounded-2xl border px-3 text-sm font-bold",
-                    activeCategoryId === cat.id
+                    activeL1Id === cat.id
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-orange-200 bg-white text-foreground",
                   )}
@@ -639,35 +693,96 @@ export default function QrPedido() {
               ))}
             </div>
 
-            <div className="grid gap-3">
-              {productsInCategory.map((product) => (
+            {pathIds.length > 1 ? (
+              <div className="flex items-center gap-2">
                 <button
-                  key={product.id}
                   type="button"
-                  onClick={() => openProduct(product)}
-                  className="flex min-h-[4.5rem] items-center gap-3 rounded-3xl border border-orange-200 bg-white p-3 text-left shadow-sm"
+                  onClick={goBackLevel}
+                  className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-orange-200 bg-white px-2.5 text-xs font-bold text-muted-foreground"
                 >
-                  <ProductPhoto
-                    name={product.name}
-                    imageUrl={product.image_url}
-                    icon={product.icon}
-                    className="h-16 w-16 rounded-[1.1rem]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-display text-base font-black text-foreground">{product.name}</p>
-                    <p className="text-sm font-semibold text-primary">
-                      {formatMoney(Number(product.price ?? 0))}
-                    </p>
-                  </div>
-                  <Plus className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <ChevronLeft className="h-4 w-4" />
+                  Volver
                 </button>
-              ))}
-              {productsInCategory.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-orange-200 px-4 py-8 text-center text-sm text-muted-foreground">
-                  No hay productos en esta categoría.
-                </p>
-              ) : null}
-            </div>
+                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-xs font-semibold text-muted-foreground">
+                  {breadcrumb.map((node, index) => (
+                    <span key={node.id} className="flex shrink-0 items-center gap-1">
+                      {index > 0 ? <span className="text-orange-300">/</span> : null}
+                      <button
+                        type="button"
+                        onClick={() => goToBreadcrumbIndex(index)}
+                        className={cn(
+                          "rounded-lg px-1.5 py-0.5",
+                          index === breadcrumb.length - 1
+                            ? "bg-orange-50 text-primary"
+                            : "hover:bg-orange-50 hover:text-foreground",
+                        )}
+                      >
+                        {node.name}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {visibleCategories.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {visibleCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => drillDown(category)}
+                    className={cn(
+                      "relative flex min-h-[9.5rem] flex-col items-center justify-center gap-2 rounded-[1.4rem] border border-dashed border-orange-400/95 p-3 text-center",
+                      "bg-gradient-to-br from-orange-200 via-amber-100 to-yellow-200 shadow-sm active:scale-[0.99]",
+                    )}
+                  >
+                    <ProductPhoto
+                      name={category.name}
+                      imageUrl={category.image_url}
+                      icon={category.icon}
+                      className="h-14 w-14 rounded-[1.1rem] bg-white/70"
+                    />
+                    <p className="line-clamp-2 px-1 text-sm font-black leading-snug text-foreground">
+                      {category.name}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {visibleProducts.length > 0 ? (
+              <div className="grid gap-3">
+                {visibleProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => openProduct(product)}
+                    className="flex min-h-[4.5rem] items-center gap-3 rounded-3xl border border-orange-200 bg-white p-3 text-left shadow-sm"
+                  >
+                    <ProductPhoto
+                      name={product.name}
+                      imageUrl={product.image_url}
+                      icon={product.icon}
+                      className="h-16 w-16 rounded-[1.1rem]"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-display text-base font-black text-foreground">{product.name}</p>
+                      <p className="text-sm font-semibold text-primary">
+                        {formatMoney(Number(product.price ?? 0))}
+                      </p>
+                    </div>
+                    <Plus className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {visibleNodes.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-orange-200 px-4 py-8 text-center text-sm text-muted-foreground">
+                No hay opciones en esta categoría.
+              </p>
+            ) : null}
           </section>
         ) : null}
 
