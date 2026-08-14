@@ -160,6 +160,7 @@ export type ReportesPagoItemRow = {
   netApplied: number;
   orderType: string;
   itemId: string;
+  itemProductCode: string;
   itemDescription: string;
   itemQuantity: number;
   itemUnitPrice: number;
@@ -455,6 +456,7 @@ export function useReportesPagos(
             if (qty <= 0) continue;
             const unitPrice = Number(item.unit_price ?? 0);
             const lineTotal = Number(item.total ?? 0) || round2(qty * unitPrice);
+            const snapshotName = String(item.description_snapshot || 'Producto').trim() || 'Producto';
             itemRows.push({
               rowKey: `${payment.id}:${item.id}`,
               paymentId: payment.id,
@@ -470,7 +472,8 @@ export function useReportesPagos(
               netApplied: payment.netApplied,
               orderType: payment.orderType,
               itemId: item.id,
-              itemDescription: String(item.description_snapshot || 'Producto').trim() || 'Producto',
+              itemProductCode: String(item.product_id ?? '').trim() || '—',
+              itemDescription: snapshotName,
               itemQuantity: qty,
               itemUnitPrice: unitPrice,
               itemTotal: lineTotal,

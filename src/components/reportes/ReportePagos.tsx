@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/card';
 import { FileDown, Printer, Wallet, ArrowUpRight, TrendingUp, ReceiptText, AlertCircle, RefreshCw, ListTree } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatReporteMoney, formatReporteNumber } from '@/lib/reportesFormat';
 
 interface ReportePagosProps {
   filters: any;
@@ -59,6 +60,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         'Cajero',
         'Usuario Creador',
         'Metodo de Pago',
+        'Codigo Producto',
         'Item',
         'Cantidad',
         'Precio Unitario ($)',
@@ -74,10 +76,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         row.cashierName,
         row.creatorName,
         row.methodName,
+        row.itemProductCode,
         row.itemDescription,
         row.itemQuantity,
-        row.itemUnitPrice.toFixed(2),
-        row.itemTotal.toFixed(2),
+        formatReporteNumber(row.itemUnitPrice),
+        formatReporteNumber(row.itemTotal),
       ]);
 
       const csvRows = [headers.join(';'), ...rows.map((r) => r.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(';'))];
@@ -117,9 +120,9 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         p.cashierName,
         p.creatorName,
         p.methodName,
-        p.amount.toFixed(2),
-        p.change.toFixed(2),
-        p.netApplied.toFixed(2)
+        formatReporteNumber(p.amount),
+        formatReporteNumber(p.change),
+        formatReporteNumber(p.netApplied)
       ];
     });
 
@@ -182,7 +185,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
             <div className="mt-4">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total General Recaudado</span>
               <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
-                ${kpis.totalNeto.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatReporteMoney(kpis.totalNeto)}
               </h3>
             </div>
           </CardContent>
@@ -202,7 +205,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
             <div className="mt-4">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Ticket Promedio por Orden</span>
               <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
-                ${kpis.ticketPromedio.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatReporteMoney(kpis.ticketPromedio)}
               </h3>
             </div>
           </CardContent>
@@ -239,7 +242,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                 Object.entries(kpis.desglose).map(([method, amount]) => (
                   <div key={method} className="flex justify-between items-center text-xs font-bold">
                     <span className="text-muted-foreground">{method}:</span>
-                    <span className="text-foreground">${(amount as number).toFixed(2)}</span>
+                    <span className="text-foreground">{formatReporteMoney(amount as number)}</span>
                   </div>
                 ))
               )}
@@ -311,6 +314,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                   <TableHead className="font-bold text-foreground py-3 text-center">Método Pago</TableHead>
                   {itemBreakdown ? (
                     <>
+                      <TableHead className="font-bold text-foreground py-3">Código producto</TableHead>
                       <TableHead className="font-bold text-foreground py-3">Ítem</TableHead>
                       <TableHead className="font-bold text-foreground py-3 text-right">Cant.</TableHead>
                       <TableHead className="font-bold text-foreground py-3 text-right">P. Unit.</TableHead>
@@ -349,6 +353,9 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                             {row.methodName}
                           </span>
                         </TableCell>
+                        <TableCell className="text-xs font-mono font-semibold text-foreground whitespace-nowrap">
+                          {row.itemProductCode}
+                        </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground max-w-[220px]">
                           <span className="line-clamp-2">{row.itemDescription}</span>
                         </TableCell>
@@ -356,10 +363,10 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                           {row.itemQuantity}
                         </TableCell>
                         <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                          ${row.itemUnitPrice.toFixed(2)}
+                          {formatReporteMoney(row.itemUnitPrice)}
                         </TableCell>
                         <TableCell className="text-xs text-right font-bold text-foreground">
-                          ${row.itemTotal.toFixed(2)}
+                          {formatReporteMoney(row.itemTotal)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -386,13 +393,13 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                           </span>
                         </TableCell>
                         <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                          ${p.amount.toFixed(2)}
+                          {formatReporteMoney(p.amount)}
                         </TableCell>
                         <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                          ${p.change.toFixed(2)}
+                          {formatReporteMoney(p.change)}
                         </TableCell>
                         <TableCell className="text-xs text-right font-bold text-foreground">
-                          ${p.netApplied.toFixed(2)}
+                          {formatReporteMoney(p.netApplied)}
                         </TableCell>
                       </TableRow>
                     ))}
