@@ -56,7 +56,8 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         'Orden Nro',
         'Referencia Orden',
         'Tipo de Orden',
-        'Fecha y Hora',
+        'Fecha',
+        'Hora',
         'Cajero',
         'Usuario Creador',
         'Metodo de Pago',
@@ -72,7 +73,8 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         row.orderNumber || '',
         getOrderRef(row.orderCode, row.orderNumber),
         orderTypeLabel(row.orderType),
-        format(new Date(row.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        format(new Date(row.createdAt), 'dd/MM/yyyy'),
+        format(new Date(row.createdAt), 'HH:mm:ss'),
         row.cashierName,
         row.creatorName,
         row.methodName,
@@ -101,7 +103,8 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
       'Orden Nro',
       'Referencia Orden',
       'Tipo de Orden',
-      'Fecha y Hora',
+      'Fecha',
+      'Hora',
       'Cajero',
       'Usuario Creador',
       'Metodo de Pago',
@@ -116,7 +119,8 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         p.orderNumber || '',
         getOrderRef(p.orderCode, p.orderNumber),
         orderTypeLabel(p.orderType),
-        format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        format(new Date(p.createdAt), 'dd/MM/yyyy'),
+        format(new Date(p.createdAt), 'HH:mm:ss'),
         p.cashierName,
         p.creatorName,
         p.methodName,
@@ -308,7 +312,8 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="font-bold text-foreground py-3">Código/Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Tipo</TableHead>
-                  <TableHead className="font-bold text-foreground py-3">Fecha y Hora</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Fecha</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Hora</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Cajero</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Creador Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-center">Método Pago</TableHead>
@@ -339,8 +344,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(row.orderType)}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {format(new Date(row.createdAt), 'dd/MM/yyyy HH:mm')}
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(row.createdAt), 'dd/MM/yyyy')}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(row.createdAt), 'HH:mm:ss')}
                         </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground">
                           {row.cashierName}
@@ -378,8 +386,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(p.orderType)}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm')}
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(p.createdAt), 'dd/MM/yyyy')}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(p.createdAt), 'HH:mm:ss')}
                         </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground">
                           {p.cashierName}

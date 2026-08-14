@@ -35,7 +35,7 @@ const Reportes = () => {
     orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL'],
     recordStatus: 'all',
     sortBy: 'fecha',
-    sortDir: 'desc',
+    sortDir: 'asc',
   });
 
   // Mantener sincronizado el branchId del filtro con el branch activo del contexto

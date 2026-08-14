@@ -186,7 +186,7 @@ export function useReportesPagos(
     orderTypes,
     recordStatus = 'all',
     sortBy = 'fecha',
-    sortDir = 'desc',
+    sortDir = 'asc',
   } = filters;
   const itemBreakdown = Boolean(options?.itemBreakdown);
 

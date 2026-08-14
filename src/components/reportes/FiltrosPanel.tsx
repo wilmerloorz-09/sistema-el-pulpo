@@ -41,7 +41,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const [selectedOrderType, setSelectedOrderType] = useState<string>('ALL');
   const [recordStatus, setRecordStatus] = useState<'all' | 'valid' | 'voided'>('all');
   const [sortBy, setSortBy] = useState<string>(activeTab === 'products' ? 'cantidad' : 'fecha');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // Buscador de productos
   const [productSearch, setProductSearch] = useState<string>('');
@@ -641,8 +641,8 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
               <SelectValue placeholder="Dirección" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="desc">Descendente</SelectItem>
               <SelectItem value="asc">Ascendente</SelectItem>
+              <SelectItem value="desc">Descendente</SelectItem>
             </SelectContent>
           </Select>
         </div>
