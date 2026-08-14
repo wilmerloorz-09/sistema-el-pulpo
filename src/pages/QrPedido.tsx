@@ -17,6 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   CLIENTE_FORMULARIO_VACIO,
@@ -42,7 +48,7 @@ import {
   type ModificadorAutopedido,
 } from "@/services/autopedidosQrDb";
 
-type Step = "identidad" | "menu" | "producto" | "carrito" | "exito";
+type Step = "identidad" | "menu" | "carrito" | "exito";
 
 type CartItem = {
   key: string;
@@ -180,7 +186,6 @@ export default function QrPedido() {
   const [selectedProduct, setSelectedProduct] = useState<MenuNodeAutopedido | null>(null);
   const [selectedModifiers, setSelectedModifiers] = useState<string[]>([]);
   const [productQty, setProductQty] = useState(1);
-  const [itemNote, setItemNote] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -379,8 +384,12 @@ export default function QrPedido() {
     setSelectedProduct(product);
     setSelectedModifiers([]);
     setProductQty(1);
-    setItemNote("");
-    setStep("producto");
+  };
+
+  const closeProduct = () => {
+    setSelectedProduct(null);
+    setSelectedModifiers([]);
+    setProductQty(1);
   };
 
   const addToCart = () => {
@@ -393,7 +402,7 @@ export default function QrPedido() {
     const modifierNames = productModifiers
       .filter((m) => selectedModifiers.includes(m.modifier_id))
       .map((m) => m.modifier_name);
-    const key = `${selectedProduct.id}|${selectedModifiers.slice().sort().join(",")}|${itemNote.trim()}`;
+    const key = `${selectedProduct.id}|${selectedModifiers.slice().sort().join(",")}`;
     setCart((prev) => {
       const existing = prev.find((p) => p.key === key);
       if (existing) {
@@ -411,13 +420,13 @@ export default function QrPedido() {
           quantity: productQty,
           modifierIds: selectedModifiers.slice(),
           modifierNames,
-          itemNote: itemNote.trim(),
+          itemNote: "",
           imageUrl: selectedProduct.image_url,
         },
       ];
     });
     setSubmitError(null);
-    setStep("menu");
+    closeProduct();
   };
 
   const updateCartQty = (key: string, delta: number) => {
@@ -479,12 +488,7 @@ export default function QrPedido() {
   }
 
   return (
-    <div
-      className={cn(
-        "mx-auto flex w-full max-w-md flex-col bg-gradient-to-b from-orange-50 via-white to-amber-50 pt-safe",
-        step === "producto" ? "h-dvh overflow-hidden" : "min-h-dvh",
-      )}
-    >
+    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-gradient-to-b from-orange-50 via-white to-amber-50 pt-safe">
       <header className="sticky top-0 z-20 shrink-0 border-b border-orange-100 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -511,14 +515,7 @@ export default function QrPedido() {
         </div>
       </header>
 
-      <main
-        className={cn(
-          "flex-1 px-4 py-4",
-          step === "producto"
-            ? "flex min-h-0 flex-col pb-0"
-            : "pb-[calc(1rem+env(safe-area-inset-bottom,0px))]",
-        )}
-      >
+      <main className="flex-1 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
         {step === "identidad" ? (
           <section className="space-y-4">
             <div className="rounded-3xl border border-orange-200 bg-white p-5 shadow-sm">
@@ -786,106 +783,141 @@ export default function QrPedido() {
           </section>
         ) : null}
 
-        {step === "producto" && selectedProduct ? (
-          <section className="flex min-h-0 flex-1 flex-col">
-            <button
-              type="button"
-              onClick={() => setStep("menu")}
-              className="mb-2 inline-flex h-9 shrink-0 items-center gap-1 text-sm font-semibold text-muted-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" /> Volver al menú
-            </button>
-
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-orange-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <ProductPhoto
-                  name={selectedProduct.name}
-                  imageUrl={selectedProduct.image_url}
-                  icon={selectedProduct.icon}
-                  className="h-14 w-14 rounded-2xl"
-                />
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-lg font-black leading-tight">{selectedProduct.name}</h2>
-                  <p className="mt-0.5 text-base font-bold text-primary">
-                    {formatMoney(Number(selectedProduct.price ?? 0))}
-                    <span className="ml-1 text-xs font-semibold text-muted-foreground">c/u</span>
-                  </p>
-                </div>
-              </div>
-
-              {productModifiers.length > 0 ? (
-                <div className="mt-3">
-                  <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
-                    Modificaciones
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {productModifiers.map((mod) => {
-                      const checked = selectedModifiers.includes(mod.modifier_id);
-                      return (
-                        <button
-                          key={mod.modifier_id}
-                          type="button"
-                          onClick={() =>
-                            setSelectedModifiers((prev) =>
-                              checked
-                                ? prev.filter((id) => id !== mod.modifier_id)
-                                : [...prev, mod.modifier_id],
-                            )
-                          }
-                          className={cn(
-                            "flex min-h-10 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold leading-tight",
-                            checked
-                              ? "border-primary bg-orange-50 text-primary"
-                              : "border-orange-100 bg-white text-foreground",
-                          )}
-                        >
-                          <span className="line-clamp-2">{mod.modifier_name}</span>
-                          {checked ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
-                        </button>
-                      );
-                    })}
+        <Dialog
+          open={Boolean(selectedProduct)}
+          onOpenChange={(open) => {
+            if (!open) closeProduct();
+          }}
+        >
+          {selectedProduct ? (
+            <DialogContent className="max-w-sm rounded-[24px] border-orange-200/40 bg-background p-5 shadow-xl sm:rounded-[28px]">
+              <DialogHeader className="mb-1 text-left">
+                <div className="flex items-start gap-3">
+                  <ProductPhoto
+                    name={selectedProduct.name}
+                    imageUrl={selectedProduct.image_url}
+                    icon={selectedProduct.icon}
+                    className="h-12 w-12 rounded-2xl"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
+                      {selectedProduct.name}
+                    </DialogTitle>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-800">
+                        Precio unitario
+                      </span>
+                      <span className="font-display text-lg font-black text-foreground">
+                        {formatMoney(Number(selectedProduct.price ?? 0))}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ) : null}
+              </DialogHeader>
 
-              <div className="mt-3 space-y-1.5">
-                <Label htmlFor="nota">Nota (opcional)</Label>
-                <Input
-                  id="nota"
-                  className="h-10 rounded-2xl"
-                  value={itemNote}
-                  onChange={(e) => setItemNote(e.target.value)}
-                  placeholder="Ej. poco picante"
-                />
-              </div>
-            </div>
-
-            <div className="shrink-0 border-t border-orange-100 bg-gradient-to-b from-white to-amber-50/80 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-white"
-                    onClick={() => setProductQty((q) => Math.max(1, q - 1))}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-8 text-center text-lg font-black">{productQty}</span>
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-white"
-                    onClick={() => setProductQty((q) => q + 1)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
+              <div className="space-y-5">
+                <div className="mt-2 space-y-1.5">
+                  <Label className="text-sm font-semibold text-muted-foreground">Cantidad</Label>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl shadow-sm"
+                      onClick={() => setProductQty((q) => Math.max(1, q - 1))}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={String(productQty)}
+                      onChange={(event) => {
+                        const digits = event.target.value.replace(/\D/g, "");
+                        if (!digits) {
+                          setProductQty(1);
+                          return;
+                        }
+                        setProductQty(Math.max(1, Number(digits)));
+                      }}
+                      className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl shadow-sm"
+                      onClick={() => setProductQty((q) => q + 1)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <Button type="button" className="h-11 flex-1 rounded-2xl font-bold" onClick={addToCart}>
-                  Agregar {formatMoney(Number(selectedProduct.price ?? 0) * productQty)}
-                </Button>
+
+                {productModifiers.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-orange-600">Modificaciones</Label>
+                    <div className="grid max-h-[35vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
+                      {productModifiers.map((mod) => {
+                        const checked = selectedModifiers.includes(mod.modifier_id);
+                        return (
+                          <button
+                            key={mod.modifier_id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedModifiers((prev) =>
+                                checked
+                                  ? prev.filter((id) => id !== mod.modifier_id)
+                                  : [...prev, mod.modifier_id],
+                              )
+                            }
+                            className={cn(
+                              "flex min-h-10 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold leading-tight",
+                              checked
+                                ? "border-primary bg-orange-50 text-primary"
+                                : "border-orange-100 bg-white text-foreground",
+                            )}
+                          >
+                            <span className="line-clamp-2">{mod.modifier_name}</span>
+                            {checked ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-2 flex items-end justify-between gap-3 border-t border-border/60 pt-4">
+                  <span className="flex flex-col text-[13px] font-medium text-muted-foreground">
+                    Total
+                    <span className="font-display text-2xl font-black text-foreground">
+                      {formatMoney(Number(selectedProduct.price ?? 0) * productQty)}
+                    </span>
+                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={closeProduct}
+                      className="h-11 rounded-xl px-4 font-bold shadow-sm"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={addToCart}
+                      className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
+                    >
+                      <ShoppingBag className="h-4 w-4" />
+                      Agregar
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </section>
-        ) : null}
+            </DialogContent>
+          ) : null}
+        </Dialog>
 
         {step === "carrito" ? (
           <section className="space-y-4">

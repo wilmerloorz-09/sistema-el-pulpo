@@ -343,23 +343,34 @@ const AddItemDialog = ({
             </div>
           )}
 
-          <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-4">
+          <div className="mt-2 flex items-end justify-between gap-3 border-t border-border/60 pt-4">
             <span className="flex flex-col text-[13px] font-medium text-muted-foreground">
               Total
               <span className="font-display text-2xl font-black text-foreground">${(price * effectiveQuantity).toFixed(2)}</span>
             </span>
-            <Button
-              onClick={() => void handleConfirm()}
-              disabled={confirmBusy || !canAdd}
-              className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
-            >
-              {confirmBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ShoppingBag className="h-4 w-4" />
-              )}
-              {confirmBusy ? "Agregando..." : confirmLabel}
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={confirmBusy}
+                className="h-11 rounded-xl px-4 font-bold shadow-sm"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => void handleConfirm()}
+                disabled={confirmBusy || !canAdd}
+                className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
+              >
+                {confirmBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ShoppingBag className="h-4 w-4" />
+                )}
+                {confirmBusy ? "Agregando..." : confirmLabel}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
