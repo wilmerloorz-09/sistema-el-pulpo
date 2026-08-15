@@ -614,7 +614,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
         const getPermittedForView = (v: DispatchView, source: any[]) => {
           if (isPackingModule) {
-            return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !Boolean(order.is_special));
+            return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
           }
 
           let baseFiltered = source.filter((order) => {
@@ -811,7 +811,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const getPermittedForView = (v: DispatchView, source: any[]) => {
         if (isPackingModule) {
-          return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !Boolean(order.is_special));
+          return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
         }
 
         let baseFiltered = source.filter((order) => {
