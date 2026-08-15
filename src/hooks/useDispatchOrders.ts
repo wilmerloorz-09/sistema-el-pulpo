@@ -22,6 +22,10 @@ import {
 import { ensurePlatosProductIdsForBranch, invalidatePlatosProductIdsCache, isPlatosOrderItem, platosProductIdsQueryKey } from "@/lib/menuPlatosCategory";
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
+  isPackingQueueOrderType,
+  shouldExcludeOrderFromDispatchForPackingSplit,
+} from "@/lib/dispatchPackingSplit";
+import {
   fetchDispatchServirQueueBundle,
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
@@ -248,7 +252,7 @@ function matchesScope(orderType: string, scope: DispatchView) {
   if (scope === "ALL") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "TAKEOUT" || orderType === "EXPRESS" || orderType === "EXTRA";
   if (scope === "SPECIAL") return false;
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "EXTRA";
-  if (scope === "TAKEOUT") return orderType === "TAKEOUT" || orderType === "EXPRESS";
+  if (scope === "TAKEOUT") return isPackingQueueOrderType(orderType);
   return false;
 }
 
@@ -258,6 +262,29 @@ function paymentRowIsInactive(notes: string | null | undefined, status: string |
   if (raw.includes("VOIDED:") || raw.includes("REVERSED:") || raw.includes("TRANSFER_PROOF_PENDING:1")) return true;
   const st = String(status ?? "").toLowerCase();
   return st === "voided" || st === "reversed";
+}
+
+async function fetchShiftHasEnabledPackers(shiftId: string): Promise<boolean> {
+  const rpc = await (supabase as any).rpc("has_enabled_packers_for_shift", {
+    p_shift_id: shiftId,
+  });
+
+  if (!rpc.error) return Boolean(rpc.data);
+
+  const { data, error } = await (supabase as any)
+    .from("cash_shift_users")
+    .select("user_id")
+    .eq("shift_id", shiftId)
+    .eq("is_enabled", true)
+    .eq("can_pack_orders", true)
+    .limit(1);
+
+  if (error) {
+    console.warn("[useDispatchOrders] no se pudo detectar empaquetadores del turno", rpc.error ?? error);
+    return false;
+  }
+
+  return (data ?? []).length > 0;
 }
 
 function dispatchCardHasWork(card: DispatchOrder): boolean {
@@ -527,6 +554,9 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       // Bootstrap + platos en paralelo con la cola (no esperar en cadena).
       const bootstrapPromise = ensureDispatchBootstrap(qc, activeBranchId);
       const platosWarmPromise = ensurePlatosProductIdsForBranch(qc, activeBranchId);
+      const enabledPackersPromise = moduleMode === "dispatch"
+        ? fetchShiftHasEnabledPackers(openShift.id)
+        : Promise.resolve(false);
 
       let ordersMerged: any[] = [];
       let items: any[] = [];
@@ -611,10 +641,11 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         const dispatchMode = config?.dispatch_mode || "SINGLE";
         const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
         const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
+        const hasEnabledPackers = await enabledPackersPromise;
 
         const getPermittedForView = (v: DispatchView, source: any[]) => {
           if (isPackingModule) {
-            return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
+            return source.filter((order) => isPackingQueueOrderType(order.order_type));
           }
 
           let baseFiltered = source.filter((order) => {
@@ -622,6 +653,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
             if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
             return matchesScope(order.order_type, v);
           });
+
+          baseFiltered = baseFiltered.filter((order) =>
+            !shouldExcludeOrderFromDispatchForPackingSplit(order, {
+              module: moduleMode,
+              hasEnabledPackers,
+            })
+          );
 
           if (dispatchMode === "SPLIT") {
             if (userAssignments.length > 0 && !assignedTypes.has("ALL")) {
@@ -722,6 +760,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const bootstrap = await bootstrapPromise;
       const config = bootstrap.config;
       const assignments = bootstrap.assignments;
+      const hasEnabledPackers = await enabledPackersPromise;
 
       ordersMerged = (
         await dbSelectStrict<any>("orders", {
@@ -811,7 +850,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const getPermittedForView = (v: DispatchView, source: any[]) => {
         if (isPackingModule) {
-          return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
+          return source.filter((order) => isPackingQueueOrderType(order.order_type));
         }
 
         let baseFiltered = source.filter((order) => {
@@ -819,6 +858,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
           return matchesScope(order.order_type, v);
         });
+
+        baseFiltered = baseFiltered.filter((order) =>
+          !shouldExcludeOrderFromDispatchForPackingSplit(order, {
+            module: moduleMode,
+            hasEnabledPackers,
+          })
+        );
 
         if (dispatchMode === "SPLIT") {
           if (userAssignments.length > 0 && !assignedTypes.has("ALL")) {
