@@ -434,8 +434,16 @@ export function useVisibleNavItems() {
       return true;
     });
 
+    const shouldPrioritizePacking = Boolean(sg?.canPackOrders) && !hasSupervisorBypass;
+    const orderedVisibleItems = shouldPrioritizePacking
+      ? [
+          ...visibleItems.filter((item) => item.to === "/empaquetador"),
+          ...visibleItems.filter((item) => item.to !== "/empaquetador"),
+        ]
+      : visibleItems;
+
     return {
-      visibleItems,
+      visibleItems: orderedVisibleItems,
       canAccessAdmin,
     };
   }, [
