@@ -23,6 +23,7 @@ export function useWarmDispatchServirCaches() {
     const canWarm =
       Boolean(gate.canDispatchOrders)
       || Boolean(gate.canServePlates)
+      || Boolean(gate.canPackOrders)
       || Boolean(gate.isSupervisor);
     if (!canWarm) return;
 
@@ -39,6 +40,7 @@ export function useWarmDispatchServirCaches() {
     gate?.shiftId,
     gate?.canDispatchOrders,
     gate?.canServePlates,
+    gate?.canPackOrders,
     gate?.isSupervisor,
     qc,
   ]);

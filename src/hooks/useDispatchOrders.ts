@@ -36,7 +36,7 @@ import {
   invalidateOperationalOrderQueries,
 } from "@/lib/queryEgress";
 
-export type DispatchOrdersModule = "dispatch" | "servir";
+export type DispatchOrdersModule = "dispatch" | "servir" | "packing";
 
 export interface UseDispatchOrdersOptions {
   module?: DispatchOrdersModule;
@@ -469,6 +469,7 @@ function filterDispatchCardsByScope(cards: DispatchOrder[], scope: DispatchView)
 export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrdersOptions = {}) {
   const moduleMode: DispatchOrdersModule = options.module ?? "dispatch";
   const isServirModule = moduleMode === "servir";
+  const isPackingModule = moduleMode === "packing";
   const qc = useQueryClient();
   const { activeBranchId, activeBranch } = useBranch();
   const { user } = useAuth();
@@ -485,7 +486,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
   // Sin scope en la key: una sola cola por módulo; el tab filtra en cliente (instantáneo).
   const dispatchOrdersQueryKey = [
-    isServirModule ? "servir-orders" : "dispatch-orders",
+    isServirModule ? "servir-orders" : isPackingModule ? "packing-orders" : "dispatch-orders",
     activeBranchId,
     user?.id,
     shiftGate?.shiftId ?? "_",
@@ -500,6 +501,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       qc.removeQueries({ queryKey: qk.dispatchServirQueueBundle });
       qc.removeQueries({ queryKey: qk.dispatchOrders });
       qc.removeQueries({ queryKey: qk.servirOrders });
+      qc.removeQueries({ queryKey: qk.packingOrders });
       void qc.invalidateQueries({ queryKey: qk.openCashShift });
       void qc.invalidateQueries({ queryKey: qk.branchShiftGate });
     }
@@ -611,6 +613,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
 
         const getPermittedForView = (v: DispatchView, source: any[]) => {
+          if (isPackingModule) {
+            return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
+          }
+
           let baseFiltered = source.filter((order) => {
             if (v === "SPECIAL") return Boolean(order.is_special);
             if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
@@ -632,7 +638,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           return baseFiltered;
         };
 
-        const allPermittedOrders = getPermittedForView("ALL", activeOrders);
+        const allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
         if (allPermittedOrders.length === 0) {
           return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
         }
@@ -804,6 +810,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
 
       const getPermittedForView = (v: DispatchView, source: any[]) => {
+        if (isPackingModule) {
+          return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
+        }
+
         let baseFiltered = source.filter((order) => {
           if (v === "SPECIAL") return Boolean(order.is_special);
           if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
@@ -825,7 +835,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         return baseFiltered;
       };
 
-      const allPermittedOrders = getPermittedForView("ALL", activeOrders);
+      const allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
       if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
@@ -958,12 +968,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   useOperationalOrdersRealtime({
     branchId: activeBranchId,
     queryClient: qc,
-    channelPrefix: isServirModule ? "servir-orders-rt" : "dispatch-orders-rt",
+    channelPrefix: isServirModule ? "servir-orders-rt" : isPackingModule ? "packing-orders-rt" : "dispatch-orders-rt",
     enabled: Boolean(activeBranchId && user),
     queryKeys: [
       // Ambos módulos + bundle: un solo evento debe refrescar la fuente compartida.
       qk.dispatchOrders,
       qk.servirOrders,
+      qk.packingOrders,
       qk.dispatchServirQueueBundle,
     ],
     includePayments: true,

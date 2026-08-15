@@ -6,13 +6,12 @@ import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { canView } from "@/lib/permissions";
 
 export function usePreferredHomePath() {
-  const { branches, isGlobalAdmin, permissions, activeBranch } = useBranch();
+  const { branches, isGlobalAdmin, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const dispatchAccess = useDispatchAccess();
   const { visibleItems } = useVisibleNavItems();
 
   return useMemo(() => {
-    const isDispatchFirstWorkflow = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
     const canAccessAdmin = isGlobalAdmin
       || canView(permissions, "admin_sucursal")
       || canView(permissions, "admin_global");
@@ -32,8 +31,8 @@ export function usePreferredHomePath() {
       preferredPath = canAccessAdmin ? "/admin" : (canAccessTurno ? "/turno" : null);
     } else if (gate?.isCaptureDeviceOnly) {
       preferredPath = "/caja";
-    } else if (!hasSupervisorBypass && gate?.canPackOrders && !isDispatchFirstWorkflow) {
-      preferredPath = "/extra";
+    } else if (!hasSupervisorBypass && gate?.canPackOrders) {
+      preferredPath = "/empaquetador";
     } else if (hasSupervisorBypass || gate?.canServeTables) {
       preferredPath = "/mesas";
     } else if (hasSupervisorBypass || gate?.canAccessOrders) {
@@ -62,7 +61,6 @@ export function usePreferredHomePath() {
       isLoading: shiftGateQuery.isLoading && !shiftGateQuery.data,
     };
   }, [
-    activeBranch?.workflow_mode,
     branches.length,
     dispatchAccess.hasAccess,
     isGlobalAdmin,
