@@ -33,6 +33,7 @@ import Campanas from "./pages/Campanas";
 import CampanaDetalle from "./pages/CampanaDetalle";
 import Despacho from "./pages/Despacho";
 import Servir from "./pages/Servir";
+import Empaquetador from "./pages/Empaquetador";
 import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
 import Reportes from "./pages/Reportes";
@@ -470,6 +471,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiresOpenShift requiredShiftRoles={["canServePlates"]}>
                       <Servir />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/empaquetador"
+                  element={
+                    <ProtectedRoute requiresOpenShift requiredShiftRoles={["canPackOrders"]}>
+                      <Empaquetador />
                     </ProtectedRoute>
                   }
                 />
