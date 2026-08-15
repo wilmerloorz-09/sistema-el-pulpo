@@ -319,7 +319,9 @@ export function useVisibleNavItems() {
     const puedeRegistrarPromociones = Boolean(sg?.puedeRegistrarPromociones);
     const hasOperationalShift = Boolean(sg?.shiftOpen) && Boolean(sg?.userEnabled);
     const hasSupervisorBypass = Boolean(sg?.isSupervisor);
-    const visibleItems = navItemsResolved.filter((item) => {
+    const isPackerFlow = !hasSupervisorBypass && Boolean(sg?.canPackOrders);
+    const isDispatchFirstPackerFlow = isPackerFlow && isDispatchFirstWorkflow;
+    const visibleItemsRaw = navItemsResolved.filter((item) => {
       if (
         !SHOW_PROMOCIONES_NAV
         && (item.to.startsWith("/promociones") || item.to.startsWith("/campanas"))
@@ -367,13 +369,11 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
-        if (item.to === "/extra" && isDispatchFirstWorkflow) {
-          return false;
+        if (isPackerFlow) {
+          return isDispatchFirstWorkflow ? item.to === "/ordenes" : item.to === "/extra";
         }
 
-        if (!hasSupervisorBypass && Boolean(sg?.canPackOrders) && !isDispatchFirstWorkflow) {
-          return item.to === "/extra";
-        }
+        if (item.to === "/extra" && isDispatchFirstWorkflow) return false;
         
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
@@ -416,6 +416,20 @@ export function useVisibleNavItems() {
       if (!item.visible(permissions)) return false;
 
       return true;
+    });
+
+    const visibleItems = visibleItemsRaw.map((item) => {
+      if (!isDispatchFirstPackerFlow || item.to !== "/ordenes") return item;
+      return {
+        ...item,
+        label: "Empacador",
+        icon: <PackagePlus className="h-5 w-5" />,
+        tone: {
+          active: "from-teal-500 to-cyan-400",
+          idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
+          iconIdle: "bg-teal-50 text-teal-600",
+        },
+      };
     });
 
     return {
