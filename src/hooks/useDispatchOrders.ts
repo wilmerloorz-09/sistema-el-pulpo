@@ -35,6 +35,7 @@ import {
   useOperationalOrdersRealtime,
   invalidateOperationalOrderQueries,
 } from "@/lib/queryEgress";
+import { orderMatchesDispatchModuleRoute } from "@/lib/dispatchModuleRouting";
 
 export type DispatchOrdersModule = "dispatch" | "servir" | "packing";
 
@@ -250,6 +251,19 @@ function matchesScope(orderType: string, scope: DispatchView) {
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "EXTRA";
   if (scope === "TAKEOUT") return orderType === "TAKEOUT" || orderType === "EXPRESS";
   return false;
+}
+
+async function fetchEnabledPackerUserIds(shiftId: string): Promise<Set<string>> {
+  const rows = await dbSelectStrict<any>("cash_shift_users", {
+    select: "user_id",
+    filters: [
+      { column: "shift_id", op: "eq", value: shiftId },
+      { column: "is_enabled", op: "eq", value: true },
+      { column: "can_pack_orders", op: "eq", value: true },
+    ],
+  });
+
+  return new Set((rows ?? []).map((row: any) => row.user_id).filter(Boolean));
 }
 
 /** Igual criterio que caja / useOrder: pago que no debe contar para “hay cobro activo”. */
@@ -603,7 +617,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         }
 
         creatorNameMap = buildUserDisplayMap(bundle.profiles);
-        packerUserIds = new Set(bundle.packer_user_ids ?? []);
+        packerUserIds = isServirModule
+          ? new Set(bundle.packer_user_ids ?? [])
+          : await fetchEnabledPackerUserIds(openShift.id);
+        const hasEnabledPacker = packerUserIds.size > 0;
         tablesMap = Object.fromEntries((bundle.tables ?? []).map((t) => [t.id, t.name]));
         splitsMap = Object.fromEntries((bundle.splits ?? []).map((s) => [s.id, s.split_code]));
         hasPlateServersFromBundle = Boolean(bundle.has_plate_servers);
@@ -613,11 +630,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
 
         const getPermittedForView = (v: DispatchView, source: any[]) => {
-          if (isPackingModule) {
-            return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
-          }
-
           let baseFiltered = source.filter((order) => {
+            if (!orderMatchesDispatchModuleRoute(order, moduleMode, hasEnabledPacker)) return false;
             if (v === "SPECIAL") return Boolean(order.is_special);
             if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
             return matchesScope(order.order_type, v);
@@ -784,37 +798,26 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
-      const [creatorProfiles, packerUsers] = await Promise.all([
+      const [creatorProfiles, enabledPackerUserIds] = await Promise.all([
         creatorIds.length > 0
           ? dbSelectStrict<any>("profiles", {
               select: "id, first_name, full_name, username, alias, email",
               filters: [{ column: "id", op: "in", value: creatorIds }],
             })
           : Promise.resolve([] as any[]),
-        creatorIds.length > 0
-          ? dbSelectStrict<any>("cash_shift_users", {
-              select: "user_id",
-              filters: [
-                { column: "shift_id", op: "eq", value: openShift.id },
-                { column: "user_id", op: "in", value: creatorIds },
-                { column: "can_pack_orders", op: "eq", value: true },
-              ],
-            })
-          : Promise.resolve([] as any[]),
+        isServirModule ? Promise.resolve(new Set<string>()) : fetchEnabledPackerUserIds(openShift.id),
       ]);
       creatorNameMap = buildUserDisplayMap(creatorProfiles);
-      packerUserIds = new Set((packerUsers ?? []).map((u: any) => u.user_id));
+      packerUserIds = enabledPackerUserIds;
+      const hasEnabledPacker = packerUserIds.size > 0;
 
       const dispatchMode = config?.dispatch_mode || "SINGLE";
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
       const assignedTypes = new Set(userAssignments.map((assignment) => assignment.dispatch_type));
 
       const getPermittedForView = (v: DispatchView, source: any[]) => {
-        if (isPackingModule) {
-          return source.filter((order) => matchesScope(order.order_type, "TAKEOUT") && !order.is_special);
-        }
-
         let baseFiltered = source.filter((order) => {
+          if (!orderMatchesDispatchModuleRoute(order, moduleMode, hasEnabledPacker)) return false;
           if (v === "SPECIAL") return Boolean(order.is_special);
           if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
           return matchesScope(order.order_type, v);
