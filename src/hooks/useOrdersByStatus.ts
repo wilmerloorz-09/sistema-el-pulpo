@@ -3,7 +3,12 @@ import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { useBranch } from "@/contexts/BranchContext";
 import type { Database } from "@/integrations/supabase/types";
 import { computeLineAmount } from "@/lib/paymentQuantity";
-import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import {
+  completeOperationalMapsBatchParticipant,
+  computeOperationalQuantities,
+  fetchOperationalMapsForOrders,
+  type OperationalMapsBatchParticipant,
+} from "@/lib/orderOperational";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { syncOrderPaymentState } from "@/hooks/useCaja";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -97,7 +102,7 @@ export interface OrderSummary {
 
 export function useOrdersByStatus(
   status: OrderStatus | null = null,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; operationalMapsBatch?: OperationalMapsBatchParticipant },
 ) {
   const qc = useQueryClient();
   const { activeBranchId } = useBranch();
@@ -120,10 +125,15 @@ export function useOrdersByStatus(
     enabled: Boolean(activeBranchId) && queryEnabled,
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<OrderSummary[]> => {
-      if (!activeBranchId) return [];
+      if (!activeBranchId) {
+        if (options?.operationalMapsBatch) completeOperationalMapsBatchParticipant(options.operationalMapsBatch);
+        return [];
+      }
 
       void repairOpenShiftOrderCashShiftIds(activeBranchId);
 
+      try {
+      let hasSubmittedOperationalMapsBatch = false;
       let openShift = openCashShiftFromGate(shiftGate);
       if (!openShift) {
         openShift = await qc.ensureQueryData({
@@ -137,6 +147,7 @@ export function useOrdersByStatus(
         if (shiftGate?.shiftId) {
           throw new Error("No se pudo leer el turno abierto de la sucursal");
         }
+        if (options?.operationalMapsBatch) completeOperationalMapsBatchParticipant(options.operationalMapsBatch);
         return [];
       }
 
@@ -298,7 +309,10 @@ export function useOrdersByStatus(
       }
 
       let orderIds = orders.map((order) => order.id);
-      if (orderIds.length === 0) return [];
+      if (orderIds.length === 0) {
+        if (options?.operationalMapsBatch) completeOperationalMapsBatchParticipant(options.operationalMapsBatch);
+        return [];
+      }
 
       if (sentView) {
         const syncedStatuses = await Promise.all(
@@ -319,7 +333,10 @@ export function useOrdersByStatus(
         if (paidOrderIds.size > 0) {
           orders = orders.filter((order) => !paidOrderIds.has(order.id));
           orderIds = orders.map((order) => order.id);
-          if (orderIds.length === 0) return [];
+          if (orderIds.length === 0) {
+            if (options?.operationalMapsBatch) completeOperationalMapsBatchParticipant(options.operationalMapsBatch);
+            return [];
+          }
         }
       }
 
@@ -337,6 +354,7 @@ export function useOrdersByStatus(
         filters: [{ column: "order_id", op: "in", value: orderIds }],
       });
 
+      hasSubmittedOperationalMapsBatch = true;
       const {
         readyMap,
         readyAvailableMap,
@@ -347,7 +365,9 @@ export function useOrdersByStatus(
         cancelledReadyMap,
         cancelledDispatchedMap,
         cancelledTotalMap,
-      } = await fetchOperationalMapsForOrders(orderIds);
+      } = await fetchOperationalMapsForOrders(orderIds, {
+        batch: options?.operationalMapsBatch,
+      });
       const itemIds = items.map((item) => item.id);
       const paidQuantityByItem: Record<string, number> = {};
       const itemIdsWithPaymentRows = new Set<string>();
@@ -900,6 +920,12 @@ export function useOrdersByStatus(
           }
           return true;
         });
+      } catch (error) {
+        if (options?.operationalMapsBatch && !hasSubmittedOperationalMapsBatch) {
+          completeOperationalMapsBatchParticipant(options.operationalMapsBatch);
+        }
+        throw error;
+      }
     },
   });
 }

@@ -5,6 +5,7 @@
 
 export const qk = {
   orders: ["orders"] as const,
+  ordersList: ["orders-list"] as const,
   order: (orderId: string) => ["order", orderId] as const,
   orderPrefix: ["order"] as const,
 
@@ -51,6 +52,7 @@ export const qk = {
 /** Keys operativas típicas tras cobro/despacho/cambio de ítems. */
 export const OPERATIONAL_ORDER_LIST_KEYS = [
   qk.orders,
+  qk.ordersList,
   qk.payableOrders,
   qk.dispatchOrders,
   qk.servirOrders,
