@@ -19,6 +19,7 @@ import {
   type OpenCashShift,
 } from "@/lib/openCashShift";
 import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
+import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
@@ -1321,6 +1322,7 @@ export function useOrder(orderId: string | null) {
         orderId,
       });
       // Tirar bundle cacheado (prefetch vacío) y forzar refetch de colas activas.
+      invalidateDispatchServirQueueBundleCache(order?.branch_id ?? query.data?.branch_id);
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
       void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
       void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });
@@ -1393,6 +1395,7 @@ export function useOrder(orderId: string | null) {
         branchId: order?.branch_id ?? query.data?.branch_id,
         orderId,
       });
+      invalidateDispatchServirQueueBundleCache(order?.branch_id ?? query.data?.branch_id);
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
       void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
       void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });

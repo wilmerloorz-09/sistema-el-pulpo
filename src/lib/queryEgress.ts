@@ -2,6 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
 import { OPERATIONAL_ORDER_LIST_KEYS, qk } from "@/lib/queryKeys";
 
 /** Defaults para catálogos casi estáticos (métodos de pago, denominaciones, plantillas). */
@@ -396,6 +397,11 @@ function hubInvalidateKey(hub: BranchRealtimeHub, key: QueryKey, seen: Set<strin
 
 function runHubInvalidateNow(hub: BranchRealtimeHub, source: HubInvalidateSource) {
   const { keys } = mergeConsumerNeeds(hub);
+  // El bundle no vive en React Query: el hub debe limpiar explícitamente su
+  // cache local antes de que las colas activas se rehidraten.
+  if (source !== "shift") {
+    invalidateDispatchServirQueueBundleCache(hub.branchId);
+  }
   // Eventos de órdenes/ítems/listo/despacho NO deben refetch el gate
   // (antes cada plato listo re-disparaba 4–5 RPCs de turno en cada tablet).
   const filtered =

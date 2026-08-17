@@ -48,6 +48,7 @@ import {
   type MethodSummaryEntry,
 } from "@/lib/cashReportUtils";
 import { toast } from "sonner";
+import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
 import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
 import DispatchConfig from "@/components/admin/DispatchConfig";
 import BranchCancelPolicyEditor, {
@@ -1474,6 +1475,7 @@ const ShiftSetupAdmin = () => {
         includeCurrentShift: true,
       });
       resetRepairOpenShiftThrottle(activeBranchId);
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["shift-admin-current-shift"] }),
       qc.invalidateQueries({ queryKey: ["shift-admin-users"] }),
