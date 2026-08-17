@@ -23,6 +23,7 @@ import { ensurePlatosProductIdsForBranch, invalidatePlatosProductIdsCache, isPla
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
   fetchDispatchServirQueueBundle,
+  invalidateDispatchServirQueueBundleCache,
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
 } from "@/lib/dispatchServirQueueBundle";
@@ -507,11 +508,23 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   ] as const;
 
   const lastShiftIdRef = useRef<string | null>(null);
+  const lastBranchIdRef = useRef<string | null>(null);
   useEffect(() => {
     const nextShiftId = shiftGate?.shiftId ?? null;
-    if (activeBranchId && nextShiftId && lastShiftIdRef.current && lastShiftIdRef.current !== nextShiftId) {
+    const branchChanged =
+      lastBranchIdRef.current !== null
+      && lastBranchIdRef.current !== activeBranchId;
+    const shiftChanged =
+      Boolean(activeBranchId && nextShiftId && lastShiftIdRef.current && lastShiftIdRef.current !== nextShiftId);
+    if (branchChanged || shiftChanged) {
       // Cambio de turno: tirar caches (no solo invalidar) para no reusar un bundle vacío en vuelo.
-      resetRepairOpenShiftThrottle(activeBranchId);
+      if (lastBranchIdRef.current) {
+        invalidateDispatchServirQueueBundleCache(lastBranchIdRef.current);
+      }
+      if (activeBranchId) {
+        invalidateDispatchServirQueueBundleCache(activeBranchId);
+        resetRepairOpenShiftThrottle(activeBranchId);
+      }
       qc.removeQueries({ queryKey: qk.dispatchServirQueueBundle });
       qc.removeQueries({ queryKey: qk.dispatchOrders });
       qc.removeQueries({ queryKey: qk.servirOrders });
@@ -519,6 +532,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       void qc.invalidateQueries({ queryKey: qk.openCashShift });
       void qc.invalidateQueries({ queryKey: qk.branchShiftGate });
     }
+    lastBranchIdRef.current = activeBranchId;
     lastShiftIdRef.current = nextShiftId;
   }, [activeBranchId, shiftGate?.shiftId, qc]);
 
@@ -572,7 +586,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         // Cola vacía: repair forzado + 1 reintento (cubre tags del turno cerrado y carreras post-apertura).
         if ((bundle.orders?.length ?? 0) === 0) {
           await repairOpenShiftOrderCashShiftIds(activeBranchId, { force: true });
-          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id, { force: true });
         }
 
         const [bootstrap] = await Promise.all([bootstrapPromise]);
@@ -1000,6 +1014,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de listo aplicada");
     },
@@ -1022,6 +1037,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de despacho aplicada");
     },
@@ -1041,6 +1057,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
@@ -1060,6 +1077,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
@@ -1095,6 +1113,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       return { previous };
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       toast.success("Item despachado");
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
     },
@@ -1135,6 +1154,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       return { previous };
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       toast.success("Orden despachada");
       // Caja/pagos se actualizan vía hub Realtime (payments + orders).
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
