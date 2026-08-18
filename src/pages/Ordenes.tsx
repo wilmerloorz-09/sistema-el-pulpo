@@ -59,7 +59,7 @@ import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
-import { getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
+import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
 import {
   computeKitchenSendMoneyDeltaForSend,
@@ -3334,7 +3334,7 @@ const OrdenesContent = () => {
                 <p className="font-display text-base font-black text-foreground">Orden Especial</p>
                 {(order.table_name ?? "").trim() ? (
                   <p className="mt-1 text-sm font-semibold text-orange-700">
-                    Mesa: {(order.table_name ?? "").trim()}
+                    {formatTableNameLabel(order.table_name)}
                   </p>
                 ) : null}
               </div>

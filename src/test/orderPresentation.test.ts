@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cleanOrderCode,
+  formatTableNameLabel,
   getOrderMesaHeaderNumber,
   getOrderOriginLabel,
   getOrderRef,
@@ -41,6 +42,16 @@ describe("getOrderOriginLabel", () => {
         isSpecial: true,
       }),
     ).toBe("Orden Especial");
+  });
+});
+
+describe("formatTableNameLabel", () => {
+  it("no duplica Mesa si el nombre ya la incluye", () => {
+    expect(formatTableNameLabel("Mesa 9")).toBe("Mesa 9");
+  });
+
+  it("antepone Mesa cuando el nombre no la trae", () => {
+    expect(formatTableNameLabel("9")).toBe("Mesa 9");
   });
 });
 

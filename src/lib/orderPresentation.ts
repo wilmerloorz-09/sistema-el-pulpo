@@ -37,6 +37,14 @@ export function getOrderOriginLabel(params: {
   return tableName;
 }
 
+/** Etiqueta de mesa sin duplicar "Mesa" si el nombre ya la incluye. */
+export function formatTableNameLabel(name: string | null | undefined): string {
+  const trimmed = String(name ?? "").trim();
+  if (!trimmed) return "";
+  if (/^mesa\b/i.test(trimmed)) return trimmed;
+  return `Mesa ${trimmed}`;
+}
+
 /** Etiqueta en español del tipo de orden (valor enum en BD). */
 export function getOrderTypeLabel(
   orderType: string | null | undefined,

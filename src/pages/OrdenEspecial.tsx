@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
-import { getOrderRef } from "@/lib/orderPresentation";
+import { formatTableNameLabel, getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
@@ -395,7 +395,7 @@ const OrdenEspecial = () => {
                 </div>
                 {order.table_name ? (
                   <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
-                    Mesa {order.table_name}
+                    {formatTableNameLabel(order.table_name)}
                   </div>
                 ) : null}
                 {order.created_by_name && (

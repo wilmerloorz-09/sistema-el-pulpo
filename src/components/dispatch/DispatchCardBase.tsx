@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders";
 import { Button } from "@/components/ui/button";
 import { Clock, Check, Loader2, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
-import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import { formatTableNameLabel, getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import {
   computeDispatchItemCatalogTotal,
   prorateOrderChargeAmount,
@@ -345,7 +345,7 @@ export function DispatchCardBase({
               {order.is_special && order.table_name ? (
                 <span className="flex items-center gap-1 truncate font-semibold text-orange-700">
                   <UtensilsCrossed className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Mesa {order.table_name}</span>
+                  <span className="truncate">{formatTableNameLabel(order.table_name)}</span>
                 </span>
               ) : null}
             </div>
