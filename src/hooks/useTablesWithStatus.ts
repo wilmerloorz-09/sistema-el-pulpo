@@ -24,6 +24,7 @@ export interface TableWithStatus {
   status: "free" | "occupied" | "to_pay";
   activeOrderId?: string;
   orderStatus?: OrderStatus;
+  isSpecial: boolean;
   splitCount: number;
   totalDue: number;
   splitTotals: Array<{
@@ -57,6 +58,7 @@ interface TablesOverviewRow {
   split_totals: unknown;
   item_count: number | null;
   elapsed_minutes: number | null;
+  is_special?: boolean | null;
 }
 
 function parseSplitTotals(rawValue: unknown): TableWithStatus["splitTotals"] {
@@ -134,8 +136,11 @@ function mapTablesFromOverviewSources(input: {
       && activeOrderBelongsToShift.get(row.active_order_id!) === false;
 
     const hasVoidedPayment = row.active_order_id ? voidedOrderIdSet.has(row.active_order_id) : false;
+    const isSpecial = Boolean(row.is_special);
+
     const isEmptyDraft =
-      !staleShiftOrder
+      !isSpecial
+      && !staleShiftOrder
       && row.active_order_status === "DRAFT"
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
@@ -165,6 +170,7 @@ function mapTablesFromOverviewSources(input: {
       status: effectiveStatus,
       activeOrderId: effectiveOrderId,
       orderStatus: effectiveOrderStatus,
+      isSpecial: !isFreeTable && isSpecial,
       splitCount: isFreeTable ? 0 : Number(row.split_count ?? 0),
       totalDue: isFreeTable ? 0 : Number(row.total_due ?? 0),
       splitTotals: effectiveSplitTotals,

@@ -185,6 +185,10 @@ const Mesas = () => {
       navigate(`/ordenes?${mesasOrdenesSearch({ order: orderId, origin: MESAS_ORIGIN_LEGACY, mesaCards: opts?.mesaCards })}`, { replace: true });
     };
 
+    const goOrdenEspecial = (orderId: string) => {
+      navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
+    };
+
     const orderBelongsToCurrentShift = async (orderId: string) => {
       if (!activeBranchId) return false;
       return orderIdBelongsToOpenBranchShift(activeBranchId, orderId, fetchOrderShiftGateFields);
@@ -289,6 +293,10 @@ const Mesas = () => {
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);
+      if (table.isSpecial) {
+        goOrdenEspecial(orderId);
+        return;
+      }
       if (activeBranchId) {
         // Navegar al instante; hermanos/mesaCards en segundo plano.
         goOrdenesMesas(orderId);
