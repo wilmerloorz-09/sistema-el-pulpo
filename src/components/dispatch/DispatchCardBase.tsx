@@ -3,6 +3,11 @@ import type { DispatchOrder, DispatchOrderItem } from "@/hooks/useDispatchOrders
 import { Button } from "@/components/ui/button";
 import { Clock, Check, Loader2, Minus, Plus, ShoppingBag, Truck, UtensilsCrossed, ChevronDown, ChevronUp, CreditCard, Lock, UserRound } from "lucide-react";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
+import {
+  computeDispatchItemCatalogTotal,
+  prorateOrderChargeAmount,
+  resolveDispatchPendingChargeTotal,
+} from "@/lib/orderFlow";
 import { cn, formatElapsedHHMMSS } from "@/lib/utils";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -260,18 +265,18 @@ export function DispatchCardBase({
     () => order.items.filter((item) => item.quantity_dispatchable > 0),
     [order.items],
   );
-  const pendingTotal = useMemo(
-    () => previewableItems.reduce((sum, item) => {
-      const qty = Math.max(0, item.quantity_dispatchable);
-      if (qty <= 0) return sum;
-      if (item.tray_item_type === "C") {
-        return sum + Number(item.total ?? 0);
-      }
-      return sum
-        + Number(item.unit_price ?? 0) * qty
-        + (item.tray_item_type === "B" ? Number(item.tray_container_cost ?? 0) : 0);
-    }, 0),
-    [previewableItems],
+  const {
+    pendingTotal,
+    chargeTotal: specialChargeTotal,
+    catalogOrderTotal,
+  } = useMemo(
+    () => resolveDispatchPendingChargeTotal({
+      is_special: order.is_special,
+      special_total_manual: order.special_total_manual,
+      special_group_total: order.special_group_total,
+      items: order.items,
+    }),
+    [order.is_special, order.items, order.special_group_total, order.special_total_manual],
   );
 
   const summaryParts: string[] = [];
@@ -428,10 +433,10 @@ export function DispatchCardBase({
           const remainingToDispatch = Math.max(0, item.quantity_dispatchable);
           const selectedQty = Math.max(1, Math.min(remainingToDispatch || 1, qtyByItem[item.id] ?? 1));
           const canDispatch = remainingToDispatch > 0;
-          const remainingLineTotal = Number(item.unit_price ?? 0) * remainingToDispatch
-            + (item.tray_item_type === "B" && remainingToDispatch > 0
-              ? Number(item.tray_container_cost ?? 0)
-              : 0);
+          const remainingCatalogTotal = computeDispatchItemCatalogTotal(item, remainingToDispatch);
+          const remainingLineTotal = specialChargeTotal != null && catalogOrderTotal > 0
+            ? prorateOrderChargeAmount(specialChargeTotal, remainingCatalogTotal, catalogOrderTotal)
+            : remainingCatalogTotal;
 
           return (
             <div key={item.id} className="px-4 py-4 lg:px-8">
@@ -482,7 +487,17 @@ export function DispatchCardBase({
 
                     <div className="mt-1 text-sm font-semibold text-slate-800">
                       {isBulkItem ? (
-                        <span>{formatMoney(item.total)}</span>
+                        <span>{formatMoney(remainingLineTotal)}</span>
+                      ) : specialChargeTotal != null ? (
+                        <span>
+                          {formatMoney(remainingLineTotal)}
+                          <span className="ml-1 text-xs font-semibold text-orange-700">cobro manual</span>
+                          {remainingLineTotal !== remainingCatalogTotal ? (
+                            <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                              Ref. {formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingCatalogTotal)}
+                            </span>
+                          ) : null}
+                        </span>
                       ) : (
                         <span>{formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingLineTotal)}</span>
                       )}

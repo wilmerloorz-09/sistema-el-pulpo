@@ -352,3 +352,97 @@ export function resolveOrderChargeTotal(params: {
   }
   return params.itemsTotal;
 }
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Catálogo de una línea para despacho/servir (precio × cantidad + tarrina si aplica). */
+export function computeDispatchItemCatalogTotal(
+  item: {
+    tray_item_type?: string | null;
+    total?: number | null;
+    unit_price?: number | null;
+    tray_container_cost?: number | null;
+  },
+  qty: number,
+): number {
+  const safeQty = Math.max(0, qty);
+  if (safeQty <= 0) return 0;
+  if (item.tray_item_type === "C") {
+    return roundMoney(Number(item.total ?? 0));
+  }
+  return roundMoney(
+    Number(item.unit_price ?? 0) * safeQty
+    + (item.tray_item_type === "B" ? Number(item.tray_container_cost ?? 0) : 0),
+  );
+}
+
+export function prorateOrderChargeAmount(
+  chargeTotal: number,
+  catalogAmount: number,
+  catalogWhole: number,
+): number {
+  if (catalogWhole <= 0 || catalogAmount <= 0) return 0;
+  return roundMoney(chargeTotal * (catalogAmount / catalogWhole));
+}
+
+export function resolveDispatchPendingChargeTotal(params: {
+  is_special?: boolean | null;
+  special_total_manual?: number | null;
+  special_group_total?: number | null;
+  items: Array<{
+    tray_item_type?: string | null;
+    total?: number | null;
+    unit_price?: number | null;
+    tray_container_cost?: number | null;
+    quantity_paid?: number | null;
+    quantity_dispatchable?: number | null;
+    cantidad_especial?: number | null;
+    quantity?: number | null;
+  }>;
+}): {
+  pendingTotal: number;
+  chargeTotal: number | null;
+  catalogOrderTotal: number;
+  catalogPendingTotal: number;
+} {
+  const catalogOrderTotal = params.items.reduce(
+    (sum, item) => sum + computeDispatchItemCatalogTotal(
+      item,
+      Math.max(0, Number(item.quantity_paid ?? item.quantity ?? 0)),
+    ),
+    0,
+  );
+  const catalogPendingTotal = params.items.reduce((sum, item) => {
+    const qty = Math.max(0, Number(item.quantity_dispatchable ?? 0));
+    if (qty <= 0) return sum;
+    return sum + computeDispatchItemCatalogTotal(item, qty);
+  }, 0);
+
+  const chargeTotal = resolveOrderChargeTotal({
+    is_special: params.is_special,
+    special_total_manual: params.special_total_manual,
+    special_group_total: params.special_group_total,
+    items: params.items.map((item) => ({
+      quantity: item.quantity_paid ?? item.quantity,
+      unit_price: item.unit_price,
+      cantidad_especial: item.cantidad_especial,
+    })),
+    itemsTotal: catalogOrderTotal,
+  });
+
+  const hasSpecialCharge = Boolean(params.is_special)
+    && (params.special_total_manual != null || params.special_group_total != null);
+
+  const pendingTotal = hasSpecialCharge
+    ? prorateOrderChargeAmount(chargeTotal, catalogPendingTotal, catalogOrderTotal)
+    : catalogPendingTotal;
+
+  return {
+    pendingTotal,
+    chargeTotal: hasSpecialCharge ? chargeTotal : null,
+    catalogOrderTotal,
+    catalogPendingTotal,
+  };
+}
