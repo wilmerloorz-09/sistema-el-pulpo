@@ -86,11 +86,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
 
     if (itemBreakdown) {
       const headers = [
+        'Sucursal',
         'Orden Code',
         'Orden Nro',
         'Referencia Orden',
         'Tipo de Orden',
-        'Sucursal',
         'Fecha',
         'Hora',
         'Cajero',
@@ -105,11 +105,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
       ];
 
       const rows = itemRows.map((row) => [
+        row.branchName,
         row.orderCode || '',
         row.orderNumber || '',
         getOrderRef(row.orderCode, row.orderNumber),
         orderTypeLabel(row.orderType),
-        row.branchName,
         format(new Date(row.createdAt), 'dd/MM/yyyy'),
         format(new Date(row.createdAt), 'HH:mm:ss'),
         row.cashierName,
@@ -137,11 +137,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
     }
 
     const headers = [
+      'Sucursal',
       'Orden Code',
       'Orden Nro',
       'Referencia Orden',
       'Tipo de Orden',
-      'Sucursal',
       'Fecha',
       'Hora',
       'Cajero',
@@ -154,11 +154,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
 
     const rows = payments.map((p) => {
       return [
+        p.branchName,
         p.orderCode || '',
         p.orderNumber || '',
         getOrderRef(p.orderCode, p.orderNumber),
         orderTypeLabel(p.orderType),
-        p.branchName,
         format(new Date(p.createdAt), 'dd/MM/yyyy'),
         format(new Date(p.createdAt), 'HH:mm:ss'),
         p.cashierName,
@@ -216,7 +216,16 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
           </Select>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage(1)}
+          disabled={safeCurrentPage <= 1}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Primera
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -237,6 +246,15 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
           className="rounded-xl h-8 text-xs font-bold"
         >
           Siguiente
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage(totalPages)}
+          disabled={safeCurrentPage >= totalPages}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Última
         </Button>
       </div>
     </div>
@@ -405,8 +423,8 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead className="font-bold text-foreground py-3">Código/Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Sucursal</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Código/Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Tipo</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Fecha</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Hora</TableHead>
@@ -441,11 +459,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                           !isRowVisibleOnScreen(index, startIndex, endIndex) && 'hidden print:table-row',
                         )}
                       >
-                        <TableCell className="font-mono font-bold text-xs">
-                          {getOrderRef(row.orderCode, row.orderNumber)}
-                        </TableCell>
                         <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
                           {row.branchName}
+                        </TableCell>
+                        <TableCell className="font-mono font-bold text-xs">
+                          {getOrderRef(row.orderCode, row.orderNumber)}
                         </TableCell>
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(row.orderType)}
@@ -495,11 +513,11 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                           !isRowVisibleOnScreen(index, startIndex, endIndex) && 'hidden print:table-row',
                         )}
                       >
-                        <TableCell className="font-mono font-bold text-xs">
-                          {getOrderRef(p.orderCode, p.orderNumber)}
-                        </TableCell>
                         <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
                           {p.branchName}
+                        </TableCell>
+                        <TableCell className="font-mono font-bold text-xs">
+                          {getOrderRef(p.orderCode, p.orderNumber)}
                         </TableCell>
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(p.orderType)}
