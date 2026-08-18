@@ -802,7 +802,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
   
   const startOrders = Date.now();
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_group_total, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_group_total, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, special_origin_table_id, cash_shift_id",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   console.log(`[PERF] Consultar orders tomo: ${Date.now() - startOrders}ms`);
@@ -817,7 +817,15 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     items,
     snapshotResult,
   ] = await Promise.all([
-    withCallTimeout(fetchOrderTableName(order.table_id), 4000, "nombre de mesa"),
+    withCallTimeout(
+      fetchOrderTableName(
+        order.is_special
+          ? (order.special_origin_table_id ?? order.table_id)
+          : order.table_id,
+      ),
+      4000,
+      "nombre de mesa",
+    ),
     order.split_id
       ? withCallTimeout(dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] }), 4000, "divisiones de mesa")
       : Promise.resolve([]),

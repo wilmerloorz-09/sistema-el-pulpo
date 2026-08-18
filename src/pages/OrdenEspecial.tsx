@@ -28,6 +28,7 @@ type SpecialOrderCard = {
   created_by_name: string | null;
   special_total_manual: number | null;
   item_count: number;
+  table_name: string | null;
 };
 
 const seedSpecialDraftOrderCache = (
@@ -72,7 +73,7 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
   if (!openShiftId) return [];
 
   const specialOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, order_items(id)",
+    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, special_origin_table_id, table_name_snapshot, order_items(id)",
     filters: [
       { column: "branch_id", op: "eq", value: branchId },
       { column: "is_special", op: "eq", value: true },
@@ -104,6 +105,18 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
       })
     : [];
   const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+  const originTableIds = Array.from(new Set(
+    specialOrders.map((order: any) => order.special_origin_table_id).filter(Boolean),
+  )) as string[];
+  const originTables = originTableIds.length > 0
+    ? await dbSelect<any>("restaurant_tables", {
+        select: "id, name",
+        filters: [{ column: "id", op: "in", value: originTableIds }],
+      })
+    : [];
+  const originTableNameMap = Object.fromEntries(
+    (originTables ?? []).map((table: any) => [table.id, table.name]),
+  );
 
   return specialOrders
     .filter((order: any) => !dispatchedOrderIds.has(order.id))
@@ -120,6 +133,11 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
       created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
       special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
       item_count: Array.isArray(order.order_items) ? order.order_items.length : 0,
+      table_name: String(order.table_name_snapshot ?? "").trim()
+        || (order.special_origin_table_id
+          ? String(originTableNameMap[order.special_origin_table_id] ?? "").trim()
+          : "")
+        || null,
     }));
 };
 
@@ -277,6 +295,7 @@ const OrdenEspecial = () => {
           special_total_manual: null,
           created_by_name: null,
           item_count: 0,
+          table_name: tableName,
         },
       ] satisfies SpecialOrderCard[]);
 
@@ -374,6 +393,11 @@ const OrdenEspecial = () => {
                   <Sparkles className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 break-all text-center">{orderRef}</span>
                 </div>
+                {order.table_name ? (
+                  <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
+                    Mesa {order.table_name}
+                  </div>
+                ) : null}
                 {order.created_by_name && (
                   <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
                     <span className="flex min-w-0 items-center gap-1">

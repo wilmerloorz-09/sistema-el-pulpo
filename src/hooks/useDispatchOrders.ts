@@ -37,6 +37,65 @@ import {
   invalidateOperationalOrderQueries,
 } from "@/lib/queryEgress";
 import { orderMatchesDispatchModuleRoute } from "@/lib/dispatchModuleRouting";
+import { resolveOrderTableName } from "@/lib/orderPresentation";
+
+async function enrichDispatchOrdersTableContext(
+  orders: any[],
+  tablesMap: Record<string, string>,
+): Promise<{ orders: any[]; tablesMap: Record<string, string> }> {
+  const specialOrders = orders.filter((order) => Boolean(order.is_special));
+  if (specialOrders.length === 0) {
+    return { orders, tablesMap };
+  }
+
+  const specialIds = specialOrders.map((order) => order.id);
+  const metaRows = await dbSelectStrict<any>("orders", {
+    select: "id, special_origin_table_id, table_name_snapshot",
+    filters: [{ column: "id", op: "in", value: specialIds }],
+  });
+  const metaById = Object.fromEntries(
+    (metaRows ?? []).map((row) => [row.id, row]),
+  );
+
+  const nextTablesMap = { ...tablesMap };
+  const originIds = new Set<string>();
+  for (const row of metaRows ?? []) {
+    if (row.special_origin_table_id) originIds.add(row.special_origin_table_id);
+  }
+  const missingOriginIds = Array.from(originIds).filter((id) => !nextTablesMap[id]);
+  if (missingOriginIds.length > 0) {
+    const extraTables = await dbSelectStrict<any>("restaurant_tables", {
+      select: "id, name",
+      filters: [{ column: "id", op: "in", value: missingOriginIds }],
+    });
+    for (const table of extraTables ?? []) {
+      nextTablesMap[table.id] = table.name;
+    }
+  }
+
+  const enrichedOrders = orders.map((order) => {
+    if (!order.is_special) return order;
+    const meta = metaById[order.id];
+    if (!meta) return order;
+    return {
+      ...order,
+      special_origin_table_id: order.special_origin_table_id ?? meta.special_origin_table_id ?? null,
+      table_name_snapshot: order.table_name_snapshot ?? meta.table_name_snapshot ?? null,
+    };
+  });
+
+  return { orders: enrichedOrders, tablesMap: nextTablesMap };
+}
+
+function mapDispatchOrderTableName(order: any, tablesMap: Record<string, string>) {
+  return resolveOrderTableName({
+    is_special: order.is_special,
+    table_id: order.table_id,
+    special_origin_table_id: order.special_origin_table_id,
+    table_name_snapshot: order.table_name_snapshot,
+    tablesMap,
+  });
+}
 
 export type DispatchOrdersModule = "dispatch" | "servir" | "packing";
 
@@ -666,7 +725,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           return baseFiltered;
         };
 
-        const allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
+        let allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
         if (allPermittedOrders.length === 0) {
           return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
         }
@@ -675,6 +734,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         items = (bundle.items ?? []).filter((item) => permittedIds.has(item.order_id));
         operationalMaps = operationalMapsFromBundleItems(items);
         clientPaidQtyByItemId = paidQtyMapFromBundleItems(items);
+
+        const enrichedTableContext = await enrichDispatchOrdersTableContext(allPermittedOrders, tablesMap);
+        allPermittedOrders = enrichedTableContext.orders;
+        tablesMap = enrichedTableContext.tablesMap;
 
         for (const row of bundle.modifiers ?? []) {
           if (!items.some((it) => it.id === row.order_item_id)) continue;
@@ -712,7 +775,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           const orderWithContext = {
             ...order,
             created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
-            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            table_name: mapDispatchOrderTableName(order, tablesMap),
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             is_packer_order: order.created_by ? packerUserIds.has(order.created_by) : false,
           };
@@ -753,7 +816,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       ordersMerged = (
         await dbSelectStrict<any>("orders", {
-          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
+          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["PAID", "READY", "SENT_TO_KITCHEN"] },
@@ -852,11 +915,15 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         return baseFiltered;
       };
 
-      const allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
+      let allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
       if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
-      const tableIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.table_id).filter(Boolean));
+      const tableIdSet = new Set<string>();
+      for (const order of allPermittedOrders) {
+        if (order.table_id) tableIdSet.add(order.table_id);
+        if (order.special_origin_table_id) tableIdSet.add(order.special_origin_table_id);
+      }
       const tableIds = Array.from(tableIdSet);
       const splitIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
@@ -884,6 +951,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
       splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
       items = legacyItems ?? [];
+
+      const enrichedLegacyTableContext = await enrichDispatchOrdersTableContext(allPermittedOrders, tablesMap);
+      allPermittedOrders = enrichedLegacyTableContext.orders;
+      tablesMap = enrichedLegacyTableContext.tablesMap;
 
       const itemIds = (items ?? []).map((item: any) => item.id);
       modifiersMap = {};
@@ -943,7 +1014,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         const orderWithContext = {
           ...order,
           created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
-          table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+          table_name: mapDispatchOrderTableName(order, tablesMap),
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
           is_packer_order: order.created_by ? packerUserIds.has(order.created_by) : false,
         };

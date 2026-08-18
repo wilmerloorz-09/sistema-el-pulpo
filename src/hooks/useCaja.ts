@@ -22,7 +22,7 @@ import {
   paymentsTotalMapFromCajaBundle,
 } from "@/lib/cajaPayableQueueBundle";
 import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
-import { cleanOrderCode } from "@/lib/orderPresentation";
+import { cleanOrderCode, resolveOrderTableName } from "@/lib/orderPresentation";
 import {
   CATALOG_GC_MS,
   CATALOG_STALE_MS,
@@ -2216,19 +2216,13 @@ export function useCaja(params?: {
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
-            table_name:
-              (o.order_type === "DINE_IN" || isSpecial)
-              && o.table_id
-                ? resolveTableName(o.table_id, (o as any).table_name_snapshot)
-                : isSpecial
-                  ? ((o as any).table_name_snapshot
-                    || ((o as { special_origin_table_id?: string | null }).special_origin_table_id
-                      ? resolveTableName(
-                          (o as { special_origin_table_id?: string | null }).special_origin_table_id ?? null,
-                          (o as any).table_name_snapshot,
-                        )
-                      : null))
-                  : null,
+            table_name: resolveOrderTableName({
+              is_special: isSpecial,
+              table_id: o.table_id,
+              special_origin_table_id: (o as { special_origin_table_id?: string | null }).special_origin_table_id,
+              table_name_snapshot: (o as any).table_name_snapshot,
+              tablesMap,
+            }),
             table_name_snapshot: (o as any).table_name_snapshot,
             split_code: o.split_id ? splitsMap[o.split_id] : null,
             total: displayTotal,

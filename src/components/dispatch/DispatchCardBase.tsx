@@ -342,6 +342,12 @@ export function DispatchCardBase({
                   <span className="truncate">{order.created_by_name}</span>
                 </span>
               )}
+              {order.is_special && order.table_name ? (
+                <span className="flex items-center gap-1 truncate font-semibold text-orange-700">
+                  <UtensilsCrossed className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Mesa {order.table_name}</span>
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

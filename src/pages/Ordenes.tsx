@@ -3332,6 +3332,11 @@ const OrdenesContent = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-display text-base font-black text-foreground">Orden Especial</p>
+                {(order.table_name ?? "").trim() ? (
+                  <p className="mt-1 text-sm font-semibold text-orange-700">
+                    Mesa: {(order.table_name ?? "").trim()}
+                  </p>
+                ) : null}
               </div>
               <Badge variant="outline" className="border-orange-300 bg-white/90 text-orange-800">
                 Cobro manual
@@ -4040,10 +4045,11 @@ const OrdenesContent = () => {
       );
     }
     if (order.is_special) {
+      const mesa = (order.table_name ?? "").trim();
       return (
         <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
           <Sparkles className="h-4 w-4" />
-          Orden Especial
+          {mesa ? `${mesa} · Orden Especial` : "Orden Especial"}
         </div>
       );
     }
