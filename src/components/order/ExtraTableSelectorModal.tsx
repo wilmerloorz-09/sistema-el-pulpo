@@ -8,18 +8,27 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSelectTable: (tableId: string | null) => void;
   isCreating: boolean;
+  title?: string;
+  description?: string;
 }
 
-export function ExtraTableSelectorModal({ open, onOpenChange, onSelectTable, isCreating }: Props) {
+export function ExtraTableSelectorModal({
+  open,
+  onOpenChange,
+  onSelectTable,
+  isCreating,
+  title = "Seleccionar Mesa",
+  description = "Selecciona la mesa a la que le pertenece esta orden extra.",
+}: Props) {
   const { data, isLoading, isError } = useTablesWithStatus();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-dialog-safe flex max-w-3xl flex-col overflow-hidden p-0">
         <DialogHeader className="border-b bg-slate-50/80 px-6 py-4">
-          <DialogTitle className="font-display text-xl text-slate-800">Seleccionar Mesa</DialogTitle>
+          <DialogTitle className="font-display text-xl text-slate-800">{title}</DialogTitle>
           <DialogDescription>
-            Selecciona la mesa a la que le pertenece esta orden extra.
+            {description}
           </DialogDescription>
         </DialogHeader>
 
