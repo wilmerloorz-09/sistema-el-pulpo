@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useReportesPagos } from '@/hooks/useReportesOnlineData';
 import { getOrderRef } from '@/lib/orderPresentation';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,14 @@ import {
 import { FileDown, Printer, Wallet, ArrowUpRight, TrendingUp, ReceiptText, AlertCircle, RefreshCw, ListTree } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatReporteMoney, formatReporteNumber } from '@/lib/reportesFormat';
+import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface ReportePagosProps {
   filters: any;
@@ -32,8 +40,17 @@ function orderTypeLabel(orderType: string) {
   return 'Extra/General';
 }
 
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+
+function isRowVisibleOnScreen(index: number, startIndex: number, endIndex: number) {
+  return index >= startIndex && index < endIndex;
+}
+
 export default function ReportePagos({ filters }: ReportePagosProps) {
   const [itemBreakdown, setItemBreakdown] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
   const { data, isLoading, error, refetch } = useReportesPagos(filters, { itemBreakdown });
 
   const payments = data?.payments || [];
@@ -45,6 +62,23 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
     [itemBreakdown, itemRows, payments],
   );
   const hasRows = tableRows.length > 0;
+
+  const totalPages = Math.max(1, Math.ceil(tableRows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const showingFrom = tableRows.length === 0 ? 0 : startIndex + 1;
+  const showingTo = Math.min(endIndex, tableRows.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, itemBreakdown, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // Exportar a CSV UTF-8 con BOM para correcta codificación en Excel
   const handleExportCSV = () => {
@@ -339,8 +373,14 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
               </TableHeader>
               <TableBody>
                 {itemBreakdown
-                  ? itemRows.map((row) => (
-                      <TableRow key={row.rowKey} className="hover:bg-muted/30">
+                  ? itemRows.map((row, index) => (
+                      <TableRow
+                        key={row.rowKey}
+                        className={cn(
+                          'hover:bg-muted/30',
+                          !isRowVisibleOnScreen(index, startIndex, endIndex) && 'hidden print:table-row',
+                        )}
+                      >
                         <TableCell className="font-mono font-bold text-xs">
                           {getOrderRef(row.orderCode, row.orderNumber)}
                         </TableCell>
@@ -384,8 +424,14 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                         </TableCell>
                       </TableRow>
                     ))
-                  : payments.map((p) => (
-                      <TableRow key={p.id} className="hover:bg-muted/30">
+                  : payments.map((p, index) => (
+                      <TableRow
+                        key={p.id}
+                        className={cn(
+                          'hover:bg-muted/30',
+                          !isRowVisibleOnScreen(index, startIndex, endIndex) && 'hidden print:table-row',
+                        )}
+                      >
                         <TableCell className="font-mono font-bold text-xs">
                           {getOrderRef(p.orderCode, p.orderNumber)}
                         </TableCell>
@@ -422,6 +468,57 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                     ))}
               </TableBody>
             </Table>
+            <div className="flex flex-col gap-3 border-t border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">
+                  Mostrando {showingFrom}–{showingTo} de {tableRows.length}
+                </span>
+                <span className="hidden sm:inline">·</span>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="pagos-page-size" className="text-xs font-bold whitespace-nowrap">
+                    Filas por página
+                  </Label>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(value) => setPageSize(Number(value))}
+                  >
+                    <SelectTrigger id="pagos-page-size" className="h-8 w-[88px] rounded-xl text-xs font-bold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={String(option)} className="text-xs font-semibold">
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={safeCurrentPage <= 1}
+                  className="rounded-xl h-8 text-xs font-bold"
+                >
+                  Anterior
+                </Button>
+                <span className="min-w-[88px] text-center text-xs font-bold text-foreground">
+                  Página {safeCurrentPage} de {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  disabled={safeCurrentPage >= totalPages}
+                  className="rounded-xl h-8 text-xs font-bold"
+                >
+                  Siguiente
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
