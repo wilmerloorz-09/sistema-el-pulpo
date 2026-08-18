@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbSelectStrict, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
@@ -2246,10 +2246,10 @@ export function useCaja(params?: {
         );
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Realtime SUBSCRIBED → sin safety poll; si el hub cae → respaldo.
+    // Recaudar: sin polling periódico. Realtime + refetch manual + reconnect.
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    refetchInterval: adaptiveListPoll,
+    refetchInterval: false,
     enabled: !!activeBranchId,
     // Al cambiar de sucursal o de turno se conserva la lista previa en lugar de
     // mostrar el vacio de carga.
@@ -3677,6 +3677,19 @@ export function useCaja(params?: {
     [activeBranchId, activeWorkflowMode, ordersQuery, qc, shiftGate?.shiftId],
   );
 
+  const payableOrdersRefetchInFlightRef = useRef(false);
+  const refetchPayableOrdersQuery = ordersQuery.refetch;
+  const isFetchingPayableOrders = ordersQuery.isFetching;
+  const refetchPayableOrders = useCallback(async () => {
+    if (payableOrdersRefetchInFlightRef.current || isFetchingPayableOrders) return;
+    payableOrdersRefetchInFlightRef.current = true;
+    try {
+      await refetchPayableOrdersQuery();
+    } finally {
+      payableOrdersRefetchInFlightRef.current = false;
+    }
+  }, [isFetchingPayableOrders, refetchPayableOrdersQuery]);
+
   return {
     denominations: denomsQuery.data ?? [],
     shift: shiftQuery.data,
@@ -3685,6 +3698,8 @@ export function useCaja(params?: {
     cashRegisterMovements: movementsQuery.data ?? [],
     isLoadingCashRegisterMovements: movementsQuery.isLoading,
     payableOrders: ordersQuery.data ?? [],
+    isFetchingPayableOrders,
+    refetchPayableOrders,
     paymentMethods: methodsQuery.data ?? [],
     completedPayments: completedPaymentsQuery.data?.rows ?? [],
     completedPaymentsTotal: completedPaymentsQuery.data?.total ?? 0,

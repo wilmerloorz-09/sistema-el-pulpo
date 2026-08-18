@@ -140,6 +140,8 @@ const Caja = () => {
     isLoadingCashRegisterMovements,
     branchReferenceTableCount,
     payableOrders,
+    isFetchingPayableOrders,
+    refetchPayableOrders,
     paymentMethods,
     cashRegisterTemplates,
     completedPayments,
@@ -1218,6 +1220,8 @@ const Caja = () => {
                 readOnly={cajaPanelReadOnly}
                 autoOpenOrderId={autoOpenOrderId}
                 onAutoOpenOrderConsumed={clearAutoOpenOrder}
+                onRefreshPayableOrders={refetchPayableOrders}
+                refreshingPayableOrders={isFetchingPayableOrders}
               />
             </div>
           ) : activeTab === "completed" ? (
