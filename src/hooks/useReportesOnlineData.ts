@@ -159,6 +159,7 @@ export type ReportesPagoItemRow = {
   change: number;
   netApplied: number;
   orderType: string;
+  branchName: string;
   itemId: string;
   itemProductCode: string;
   itemCategory: string;
@@ -179,6 +180,12 @@ function getProductCategoryLabel(item: {
   return item?.product?.subcategory?.category?.description
     || item?.product?.subcategory?.description
     || 'Sin Categoría';
+}
+
+function getBranchName(order: {
+  branch?: { name?: string | null } | null;
+} | null | undefined): string {
+  return String(order?.branch?.name ?? '').trim() || 'Sin Sucursal';
 }
 
 /**
@@ -283,6 +290,10 @@ export function useReportesPagos(
             order_type,
             is_special,
             branch_id,
+            branch:branches (
+              id,
+              name
+            ),
             creator:profiles!orders_created_by_fkey (id, alias, username)
           )
         `)
@@ -375,6 +386,7 @@ export function useReportesPagos(
           change,
           netApplied,
           orderType: pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA'),
+          branchName: getBranchName(pay.order),
           notes: pay.notes,
           status: pay.status ?? null,
           isVoided: isReportPaymentVoided(pay),
@@ -508,6 +520,7 @@ export function useReportesPagos(
               change: payment.change,
               netApplied: payment.netApplied,
               orderType: payment.orderType,
+              branchName: payment.branchName,
               itemId: item.id,
               itemProductCode: String(item.product_id ?? '').trim() || '—',
               itemCategory: item.category,

@@ -90,6 +90,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         'Orden Nro',
         'Referencia Orden',
         'Tipo de Orden',
+        'Sucursal',
         'Fecha',
         'Hora',
         'Cajero',
@@ -108,6 +109,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         row.orderNumber || '',
         getOrderRef(row.orderCode, row.orderNumber),
         orderTypeLabel(row.orderType),
+        row.branchName,
         format(new Date(row.createdAt), 'dd/MM/yyyy'),
         format(new Date(row.createdAt), 'HH:mm:ss'),
         row.cashierName,
@@ -139,6 +141,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
       'Orden Nro',
       'Referencia Orden',
       'Tipo de Orden',
+      'Sucursal',
       'Fecha',
       'Hora',
       'Cajero',
@@ -155,6 +158,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         p.orderNumber || '',
         getOrderRef(p.orderCode, p.orderNumber),
         orderTypeLabel(p.orderType),
+        p.branchName,
         format(new Date(p.createdAt), 'dd/MM/yyyy'),
         format(new Date(p.createdAt), 'HH:mm:ss'),
         p.cashierName,
@@ -183,6 +187,60 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
   const handlePrint = () => {
     window.print();
   };
+
+  const paginationBar = (
+    <div className="flex flex-col gap-3 border-b border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="font-semibold text-foreground">
+          Mostrando {showingFrom}–{showingTo} de {tableRows.length}
+        </span>
+        <span className="hidden sm:inline">·</span>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="pagos-page-size" className="text-xs font-bold whitespace-nowrap">
+            Filas por página
+          </Label>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => setPageSize(Number(value))}
+          >
+            <SelectTrigger id="pagos-page-size" className="h-8 w-[88px] rounded-xl text-xs font-bold">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)} className="text-xs font-semibold">
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+          disabled={safeCurrentPage <= 1}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Anterior
+        </Button>
+        <span className="min-w-[88px] text-center text-xs font-bold text-foreground">
+          Página {safeCurrentPage} de {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+          disabled={safeCurrentPage >= totalPages}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Siguiente
+        </Button>
+      </div>
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -343,10 +401,12 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
           </div>
         ) : (
           <div className="rounded-3xl border border-border/80 bg-card overflow-hidden shadow-none">
+            {paginationBar}
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="font-bold text-foreground py-3">Código/Orden</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Sucursal</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Tipo</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Fecha</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Hora</TableHead>
@@ -383,6 +443,9 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                       >
                         <TableCell className="font-mono font-bold text-xs">
                           {getOrderRef(row.orderCode, row.orderNumber)}
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {row.branchName}
                         </TableCell>
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(row.orderType)}
@@ -435,6 +498,9 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                         <TableCell className="font-mono font-bold text-xs">
                           {getOrderRef(p.orderCode, p.orderNumber)}
                         </TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {p.branchName}
+                        </TableCell>
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(p.orderType)}
                         </TableCell>
@@ -468,57 +534,6 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                     ))}
               </TableBody>
             </Table>
-            <div className="flex flex-col gap-3 border-t border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">
-                  Mostrando {showingFrom}–{showingTo} de {tableRows.length}
-                </span>
-                <span className="hidden sm:inline">·</span>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="pagos-page-size" className="text-xs font-bold whitespace-nowrap">
-                    Filas por página
-                  </Label>
-                  <Select
-                    value={String(pageSize)}
-                    onValueChange={(value) => setPageSize(Number(value))}
-                  >
-                    <SelectTrigger id="pagos-page-size" className="h-8 w-[88px] rounded-xl text-xs font-bold">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAGE_SIZE_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={String(option)} className="text-xs font-semibold">
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                  disabled={safeCurrentPage <= 1}
-                  className="rounded-xl h-8 text-xs font-bold"
-                >
-                  Anterior
-                </Button>
-                <span className="min-w-[88px] text-center text-xs font-bold text-foreground">
-                  Página {safeCurrentPage} de {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                  disabled={safeCurrentPage >= totalPages}
-                  className="rounded-xl h-8 text-xs font-bold"
-                >
-                  Siguiente
-                </Button>
-              </div>
-            </div>
           </div>
         )}
       </div>
