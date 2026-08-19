@@ -41,6 +41,7 @@ import {
   crearOrdenAutopedidoQr,
   obtenerMenuAutopedidoQr,
   obtenerModificadoresAutopedidoQr,
+  nombreVisibleAutopedidoQr,
   registrarClienteAutopedidoQr,
   resolverContextoTokenQr,
   type ContextoTokenQr,
@@ -396,7 +397,7 @@ export default function QrPedido() {
     if (!selectedProduct) return;
     const price = Number(selectedProduct.price ?? 0);
     if (price <= 0 && !selectedProduct.manual_price_enabled) {
-      setSubmitError(`"${selectedProduct.name}" no tiene precio configurado.`);
+      setSubmitError(`"${nombreVisibleAutopedidoQr(selectedProduct)}" no tiene precio configurado.`);
       return;
     }
     const modifierNames = productModifiers
@@ -415,7 +416,7 @@ export default function QrPedido() {
         {
           key,
           menuNodeId: selectedProduct.id,
-          name: selectedProduct.name,
+          name: nombreVisibleAutopedidoQr(selectedProduct),
           unitPrice: price,
           quantity: productQty,
           modifierIds: selectedModifiers.slice(),
@@ -758,13 +759,13 @@ export default function QrPedido() {
                     className="flex min-h-[4.5rem] items-center gap-3 rounded-3xl border border-orange-200 bg-white p-3 text-left shadow-sm"
                   >
                     <ProductPhoto
-                      name={product.name}
+                      name={nombreVisibleAutopedidoQr(product)}
                       imageUrl={product.image_url}
                       icon={product.icon}
                       className="h-16 w-16 rounded-[1.1rem]"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="font-display text-base font-black text-foreground">{product.name}</p>
+                      <p className="font-display text-base font-black text-foreground">{nombreVisibleAutopedidoQr(product)}</p>
                       <p className="text-sm font-semibold text-primary">
                         {formatMoney(Number(product.price ?? 0))}
                       </p>
@@ -794,14 +795,14 @@ export default function QrPedido() {
               <DialogHeader className="mb-1 text-left">
                 <div className="flex items-start gap-3">
                   <ProductPhoto
-                    name={selectedProduct.name}
+                    name={nombreVisibleAutopedidoQr(selectedProduct)}
                     imageUrl={selectedProduct.image_url}
                     icon={selectedProduct.icon}
                     className="h-12 w-12 rounded-2xl"
                   />
                   <div className="min-w-0 flex-1">
                     <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
-                      {selectedProduct.name}
+                      {nombreVisibleAutopedidoQr(selectedProduct)}
                     </DialogTitle>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-800">

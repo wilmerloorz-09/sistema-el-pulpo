@@ -1048,6 +1048,7 @@ export type Database = {
           manual_price_enabled: boolean
           menu_scope: string
           name: string
+          qr_name: string | null
           node_type: string
           parent_id: string | null
           price: number | null
@@ -1068,6 +1069,7 @@ export type Database = {
           manual_price_enabled?: boolean
           menu_scope?: string
           name: string
+          qr_name?: string | null
           node_type: string
           parent_id?: string | null
           price?: number | null
@@ -1088,6 +1090,7 @@ export type Database = {
           manual_price_enabled?: boolean
           menu_scope?: string
           name?: string
+          qr_name?: string | null
           node_type?: string
           parent_id?: string | null
           price?: number | null

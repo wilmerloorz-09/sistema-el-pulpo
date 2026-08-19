@@ -11,6 +11,20 @@ export function isMesasListOrigin(origin: string | null): boolean {
   return origin === MESAS_ORIGIN_LEGACY || origin === MESAS_ORIGIN_V2;
 }
 
+/** Mesa ligada a la orden: `table_id` o, en especial completa, `special_origin_table_id`. */
+export function getOrderBoundTableId(order: {
+  table_id?: string | null;
+  is_special?: boolean | null;
+  special_origin_table_id?: string | null;
+} | null | undefined): string | null {
+  const tableId = order?.table_id ?? null;
+  if (tableId) return tableId;
+  if (order?.is_special) {
+    return order.special_origin_table_id ?? null;
+  }
+  return null;
+}
+
 /** Ruta del listado según el `origin` guardado en la URL de Órdenes. */
 export function mesasListPathForOrigin(origin: string | null): "/mesas" | "/mesas-v2" {
   if (origin === MESAS_ORIGIN_V2) return "/mesas-v2";

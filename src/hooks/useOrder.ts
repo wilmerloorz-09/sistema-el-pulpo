@@ -157,6 +157,7 @@ export interface Order {
   special_marked_at?: string | null;
   branch_id: string;
   table_id: string | null;
+  special_origin_table_id?: string | null;
   table_order_position: number | null;
   split_id: string | null;
   split_code?: string | null;

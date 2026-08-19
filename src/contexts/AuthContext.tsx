@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { AUTH_SESSION_POLL_MS } from "@/lib/queryEgress";
+import { decideSingleSessionAction } from "@/lib/singleSession";
 
 const PROFILE_SELECT =
   "id, full_name, first_name, last_name, username, alias, email, is_active, active_branch_id, is_protected_superadmin, avatar_url, current_app_session_id, current_app_session_started_at, current_app_session_device, current_app_secondary_session_id, current_app_secondary_session_started_at, current_app_secondary_session_device";
@@ -160,6 +161,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const expiringSessionRef = useRef(false);
   const validatingSingleSessionRef = useRef(false);
   const lastWriteAtRef = useRef(0);
+  const claimingSessionRef = useRef(false);
+  const confirmedOwnedSessionRef = useRef<string | null>(null);
 
   /**
    * Lectura directa de perfil (sin dbSelect): un timeout/fallo debe LANZAR,
@@ -205,6 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = useCallback(async () => {
     const ownedSession = readOwnedSingleSession();
+    confirmedOwnedSessionRef.current = null;
     clearSessionTracking();
     clearOwnedSingleSession();
     localStorage.removeItem("activeBranchId");
@@ -254,6 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (error) throw error;
 
+    confirmedOwnedSessionRef.current = resolvedSessionId;
     return resolvedSessionId;
   }, []);
 
@@ -263,6 +268,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const ownedSession = readOwnedSingleSession();
+      confirmedOwnedSessionRef.current = null;
       clearSessionTracking();
       clearOwnedSingleSession();
       localStorage.removeItem("activeBranchId");
@@ -288,6 +294,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // limpiar `user` aqui recalcula el gate de turno con estado vacio y el menu
       // lateral alterna entre la vista operativa y la vista solo-admin.
       if (!session?.user && event !== "SIGNED_OUT") {
+        return;
+      }
+
+      // El signOut local previo al login dispara SIGNED_OUT; no borrar el intento en curso.
+      if (!session?.user && event === "SIGNED_OUT" && claimingSessionRef.current) {
         return;
       }
 
@@ -372,31 +383,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const validateSingleSession = async () => {
+      if (claimingSessionRef.current) return;
       if (validatingSingleSessionRef.current) return;
       validatingSingleSessionRef.current = true;
 
       try {
         const ownedSession = readOwnedSingleSession();
         const sessionSlots = await fetchAppSessionSlots(userId);
-
-        if (!ownedSession || ownedSession.userId !== userId) {
-          await registerOwnedSingleSession(userId);
-          return;
-        }
-
         const activeSessionIds = [
           sessionSlots?.current_app_session_id ?? null,
           sessionSlots?.current_app_secondary_session_id ?? null,
         ].filter((value): value is string => Boolean(value));
 
-        if (activeSessionIds.length === 0) {
-          await registerOwnedSingleSession(userId, ownedSession.sessionId);
+        const action = decideSingleSessionAction({
+          ownedSessionId: ownedSession?.sessionId ?? null,
+          ownedUserId: ownedSession?.userId ?? null,
+          currentUserId: userId,
+          serverSessionIds: activeSessionIds,
+          confirmedSessionId: confirmedOwnedSessionRef.current,
+        });
+
+        if (action === "ok") {
+          if (ownedSession?.sessionId) {
+            confirmedOwnedSessionRef.current = ownedSession.sessionId;
+          }
           return;
         }
 
-        if (!activeSessionIds.includes(ownedSession.sessionId)) {
-          await forceSignOutDueToConcurrentSession();
+        if (action === "register-new") {
+          await registerOwnedSingleSession(userId);
+          return;
         }
+
+        if (action === "claim") {
+          await registerOwnedSingleSession(userId, ownedSession?.sessionId);
+          return;
+        }
+
+        await forceSignOutDueToConcurrentSession();
       } catch (error) {
         logBackgroundTaskError("AuthContext.validateSingleSession", error);
       } finally {
@@ -456,6 +480,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
+        if (claimingSessionRef.current) return;
+
         if (Date.now() - activity.lastActivityAt >= SESSION_TIMEOUT_MS) {
           await expireSession();
         }
@@ -505,36 +531,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = useCallback(async (identifier: string, password: string) => {
     const normalized = identifier.trim();
+    claimingSessionRef.current = true;
 
-    const res = await supabase.functions.invoke("login-with-identifier", {
-      body: {
-        identifier: normalized,
-        password,
-      },
-    });
+    try {
+      // JWT viejo en storage: invoke manda Authorization vencido (401) y un refresh
+      // fallido puede disparar SIGNED_OUT encima de la sesion recien creada.
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch (error) {
+        logBackgroundTaskError("AuthContext.signIn.clearStaleSession", error);
+      }
 
-    if (res.error) {
-      throw new Error(await resolveEdgeError(res.error));
+      const res = await supabase.functions.invoke("login-with-identifier", {
+        body: {
+          identifier: normalized,
+          password,
+        },
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+      });
+
+      if (res.error) {
+        throw new Error(await resolveEdgeError(res.error));
+      }
+
+      if (res.data?.error) {
+        throw new Error(res.data.error);
+      }
+
+      const accessToken = res.data?.access_token;
+      const refreshToken = res.data?.refresh_token;
+
+      if (!accessToken || !refreshToken) {
+        throw new Error("No se recibio sesion valida del servidor");
+      }
+
+      const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+
+      if (setSessionError) throw setSessionError;
+
+      const userId = sessionData.session?.user?.id;
+      if (userId) {
+        touchSessionActivity(userId);
+        try {
+          const ownedSession = readOwnedSingleSession();
+          const reuseId = ownedSession?.userId === userId ? ownedSession.sessionId : undefined;
+          await registerOwnedSingleSession(userId, reuseId);
+        } catch (error) {
+          logBackgroundTaskError("AuthContext.signIn.registerOwnedSingleSession", error);
+        }
+      }
+    } finally {
+      claimingSessionRef.current = false;
     }
-
-    if (res.data?.error) {
-      throw new Error(res.data.error);
-    }
-
-    const accessToken = res.data?.access_token;
-    const refreshToken = res.data?.refresh_token;
-
-    if (!accessToken || !refreshToken) {
-      throw new Error("No se recibio sesion valida del servidor");
-    }
-
-    const { error: setSessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-
-    if (setSessionError) throw setSessionError;
-  }, []);
+  }, [registerOwnedSingleSession, touchSessionActivity]);
 
   const value = useMemo(
     () => ({ ...state, signIn, signOut, refreshProfile }),

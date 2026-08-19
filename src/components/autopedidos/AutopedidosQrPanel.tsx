@@ -39,7 +39,7 @@ function formatTime(iso: string) {
 }
 
 export function AutopedidosQrPanel({ open, onOpenChange }: AutopedidosQrPanelProps) {
-  const { agrupadosPorMesa, isLoading, refetch } = useAutopedidosQrPendientes({ enabled: open });
+  const { agrupadosPorMesa, isLoading } = useAutopedidosQrPendientes({ enabled: open });
   const { aprobar, rechazar } = useAutopedidosQrMutations();
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export function AutopedidosQrPanel({ open, onOpenChange }: AutopedidosQrPanelPro
     setBusyOrderId(ordenId);
     try {
       await aprobar.mutateAsync(ordenId);
-      await refetch();
+      onOpenChange(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "No se pudo aprobar.");
     } finally {
@@ -62,7 +62,7 @@ export function AutopedidosQrPanel({ open, onOpenChange }: AutopedidosQrPanelPro
     setBusyOrderId(ordenId);
     try {
       await rechazar.mutateAsync({ ordenId, motivo: "Rechazado desde panel de autopedidos" });
-      await refetch();
+      onOpenChange(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "No se pudo rechazar.");
     } finally {
@@ -74,9 +74,9 @@ export function AutopedidosQrPanel({ open, onOpenChange }: AutopedidosQrPanelPro
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 pt-safe sm:max-w-md"
       >
-        <SheetHeader className="border-b border-orange-100 px-4 py-4 text-left">
+        <SheetHeader className="border-b border-orange-100 px-4 py-4 pr-16 text-left">
           <SheetTitle className="flex items-center gap-2 font-display">
             <QrCode className="h-5 w-5 text-primary" />
             Autopedidos entrantes
