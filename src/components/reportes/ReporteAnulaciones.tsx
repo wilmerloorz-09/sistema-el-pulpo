@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/card';
 import { FileDown, Printer, AlertTriangle, ShieldCheck, ClipboardX, ShieldAlert, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatReporteMoney, formatReporteNumber } from '@/lib/reportesFormat';
 
 interface ReporteAnulacionesProps {
   filters: any;
@@ -51,7 +52,7 @@ export default function ReporteAnulaciones({ filters }: ReporteAnulacionesProps)
       v.cashierName,
       v.supervisorName,
       v.reason,
-      v.refundAmount.toFixed(2),
+      formatReporteNumber(v.refundAmount),
       v.replacementPaymentId || 'N/A'
     ]);
 
@@ -112,7 +113,7 @@ export default function ReporteAnulaciones({ filters }: ReporteAnulacionesProps)
             <div className="mt-4">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Monto Anulado</span>
               <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
-                ${kpis.totalAnulado.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatReporteMoney(kpis.totalAnulado)}
               </h3>
             </div>
           </CardContent>
@@ -235,7 +236,7 @@ export default function ReporteAnulaciones({ filters }: ReporteAnulacionesProps)
                       {v.reason}
                     </TableCell>
                     <TableCell className="text-xs text-right font-bold text-rose-600">
-                      ${v.refundAmount.toFixed(2)}
+                      {formatReporteMoney(v.refundAmount)}
                     </TableCell>
                     <TableCell className="text-xs text-center font-mono text-[10px] text-muted-foreground">
                       {v.replacementPaymentId ? (

@@ -16,6 +16,7 @@ export type MenuNodeAutopedido = {
   branch_id: string;
   parent_id: string | null;
   name: string;
+  qr_name: string | null;
   node_type: string;
   menu_scope: string;
   display_order: number;
@@ -94,6 +95,14 @@ export async function resolverContextoTokenQr(tokenSeguro: string): Promise<Cont
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error("Código QR inválido o sin turno abierto.");
   return row as ContextoTokenQr;
+}
+
+export function nombreVisibleAutopedidoQr(node: Pick<MenuNodeAutopedido, "name" | "node_type" | "qr_name">): string {
+  if (node.node_type === "product") {
+    const qrName = node.qr_name?.trim();
+    if (qrName) return qrName;
+  }
+  return node.name;
 }
 
 export async function obtenerMenuAutopedidoQr(tokenSeguro: string): Promise<MenuNodeAutopedido[]> {

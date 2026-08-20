@@ -53,13 +53,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu, Truck, Zap } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
-import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM, formatTableBadge } from "@/lib/mesasFlow";
+import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM, formatTableBadge, getOrderBoundTableId } from "@/lib/mesasFlow";
 import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import { useCancellation } from "@/hooks/useCancellation";
-import { getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
+import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
 import {
   computeKitchenSendMoneyDeltaForSend,
@@ -712,9 +712,10 @@ const OrdenesContent = () => {
   const fromEditar = searchParams.get("from") === "editar" && canUseEditarOrden;
   const origin = searchParams.get("origin");
   const originParam = origin ? `&origin=${origin}` : "";
+  const boundTableId = getOrderBoundTableId(order);
   const mesasChromeActive =
     !fromEditar
-    && (isMesasListOrigin(origin) || (order?.order_type === "DINE_IN" && Boolean(order?.table_id)));
+    && (isMesasListOrigin(origin) || (order?.order_type === "DINE_IN" && Boolean(boundTableId)));
   const mesaCardsParam =
     mesasChromeActive && searchParams.get(MESAS_V2_CARDS_PARAM) === "1" ? `&${MESAS_V2_CARDS_PARAM}=1` : "";
   const sourceParams = (fromEditar ? "&from=editar" : "") + originParam + mesaCardsParam;
@@ -952,6 +953,7 @@ const OrdenesContent = () => {
   const [showDeleteSplitConfirm, setShowDeleteSplitConfirm] = useState(false);
   const [showCloseOrderConfirm, setShowCloseOrderConfirm] = useState(false);
   const [showChangeTableDialog, setShowChangeTableDialog] = useState(false);
+  const [reassigningSpecialTable, setReassigningSpecialTable] = useState(false);
   const [cancelOrder, setCancelOrder] = useState<OrderSummary | null>(null);
   const [mergeSplitOpen, setMergeSplitOpen] = useState(false);
   const [inlineCancelOpen, setInlineCancelOpen] = useState(false);
@@ -2097,7 +2099,7 @@ const OrdenesContent = () => {
       : visibleTableOrders;
   const hasSiblings = mergedTableOrders.length > 1;
   const isMesasChromeUi =
-    mesasChromeActive && order.order_type === "DINE_IN" && Boolean(order.table_id);
+    mesasChromeActive && order.order_type === "DINE_IN" && Boolean(boundTableId);
   const mesaCardsMode = isMesasChromeUi && searchParams.get(MESAS_V2_CARDS_PARAM) === "1";
   const showMesasV2CardPicker =
     isMesasChromeUi && mesaCardsMode && Boolean(order.table_id) && mergedTableOrders.length >= 1;
@@ -2191,7 +2193,7 @@ const OrdenesContent = () => {
   const canShowChangeTable =
     canOperateOrders &&
     order.order_type === "DINE_IN" &&
-    !!order.table_id &&
+    !!boundTableId &&
     order.status !== "PAID" &&
     order.status !== "CANCELLED" &&
     !fromEditar;
@@ -2893,6 +2895,35 @@ const OrdenesContent = () => {
   };
 
   const handleChangeTable = (destinationTableId: string) => {
+    if (order.is_special && !order.table_id) {
+      const destinationName = (tables ?? []).find((table) => table.id === destinationTableId)?.name
+        ?? order.table_name
+        ?? "Mesa";
+      setReassigningSpecialTable(true);
+      void (async () => {
+        try {
+          await dbUpdate("orders", order.id, {
+            special_origin_table_id: destinationTableId,
+            table_name_snapshot: destinationName,
+            updated_at: new Date().toISOString(),
+          });
+          setShowChangeTableDialog(false);
+          toast.success("Orden especial reasignada a la mesa destino.");
+          void qc.invalidateQueries({ queryKey: getOrderQueryKey(order.id) });
+          invalidateOperationalOrderQueries(qc, {
+            branchId: order.branch_id,
+            orderId: order.id,
+            includeTables: true,
+          });
+        } catch (error: any) {
+          toast.error(error?.message || "No se pudo cambiar la mesa de la orden especial.");
+        } finally {
+          setReassigningSpecialTable(false);
+        }
+      })();
+      return;
+    }
+
     moveToTable.mutate(destinationTableId, {
       onSuccess: (result) => {
         setShowChangeTableDialog(false);
@@ -3332,6 +3363,11 @@ const OrdenesContent = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-display text-base font-black text-foreground">Orden Especial</p>
+                {(order.table_name ?? "").trim() ? (
+                  <p className="mt-1 text-sm font-semibold text-orange-700">
+                    {formatTableNameLabel(order.table_name)}
+                  </p>
+                ) : null}
               </div>
               <Badge variant="outline" className="border-orange-300 bg-white/90 text-orange-800">
                 Cobro manual
@@ -4040,10 +4076,11 @@ const OrdenesContent = () => {
       );
     }
     if (order.is_special) {
+      const mesa = (order.table_name ?? "").trim();
       return (
         <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-orange-800 dark:text-orange-400">
           <Sparkles className="h-4 w-4" />
-          Orden Especial
+          {mesa ? `${mesa} · Orden Especial` : "Orden Especial"}
         </div>
       );
     }
@@ -4152,9 +4189,9 @@ const OrdenesContent = () => {
                         {canShowChangeTable && (
                           <DropdownMenuItem
                             onClick={() => setShowChangeTableDialog(true)}
-                            disabled={!canChangeTable || moveToTable.isPending}
+                            disabled={!canChangeTable || moveToTable.isPending || reassigningSpecialTable}
                           >
-                            {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
+                            {moveToTable.isPending || reassigningSpecialTable ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
                             Cambiar mesa
                           </DropdownMenuItem>
                         )}
@@ -4349,7 +4386,7 @@ const OrdenesContent = () => {
                       !canChangeTable && "text-muted-foreground",
                     )}
                     onClick={() => setShowChangeTableDialog(true)}
-                    disabled={!canChangeTable || moveToTable.isPending}
+                    disabled={!canChangeTable || moveToTable.isPending || reassigningSpecialTable}
                     title={
                       !canChangeTable
                         ? hasOrderItems
@@ -4358,7 +4395,7 @@ const OrdenesContent = () => {
                         : "Cambiar esta orden de mesa"
                     }
                   >
-                    {moveToTable.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
+                    {moveToTable.isPending || reassigningSpecialTable ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightLeft className="h-3.5 w-3.5" />}
                     Cambiar mesa
                   </Button>
                 )}
@@ -4438,6 +4475,8 @@ const OrdenesContent = () => {
                       ? "La orden actual debe tener al menos un item"
                       : !shiftOkForSiblingOrder
                         ? "Abre turno en caja para crear otra orden"
+                        : order.is_special && !order.table_id
+                          ? "La orden especial no abre cuentas adicionales en la mesa"
                         : !canSplit
                           ? "La mesa debe seguir activa para crear otra orden"
                           : "Nueva orden"
@@ -4489,9 +4528,9 @@ const OrdenesContent = () => {
                   {canShowChangeTable && (
                     <DropdownMenuItem
                       onClick={() => setShowChangeTableDialog(true)}
-                      disabled={!canChangeTable || moveToTable.isPending}
+                      disabled={!canChangeTable || moveToTable.isPending || reassigningSpecialTable}
                     >
-                      {moveToTable.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
+                      {moveToTable.isPending || reassigningSpecialTable ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightLeft className="mr-2 h-4 w-4" />}
                       Cambiar mesa
                     </DropdownMenuItem>
                   )}
@@ -4901,11 +4940,11 @@ const OrdenesContent = () => {
       <ChangeTableDialog
         open={showChangeTableDialog}
         onOpenChange={setShowChangeTableDialog}
-        currentTableId={order.table_id}
+        currentTableId={boundTableId}
         currentTableName={order.table_name}
         currentSplitCode={order.split_code}
         tables={tables}
-        moving={moveToTable.isPending}
+        moving={moveToTable.isPending || reassigningSpecialTable}
         onConfirm={handleChangeTable}
       />
 
@@ -4989,7 +5028,7 @@ const OrdenesContent = () => {
           label: `${order.table_name ?? "Mesa"} (${String(order.order_number ?? 0).padStart(4, "0").slice(-4)})`,
           orderCode: order.order_code,
           tableName: order.table_name ?? "Mesa",
-          tableId: order.table_id,
+          tableId: boundTableId,
           splitCode: order.split_code ?? null,
           splitId: order.split_id,
           status: order.status,

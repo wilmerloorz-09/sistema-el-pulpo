@@ -2,6 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
 import { OPERATIONAL_ORDER_LIST_KEYS, qk } from "@/lib/queryKeys";
 
 /** Defaults para catálogos casi estáticos (métodos de pago, denominaciones, plantillas). */
@@ -60,13 +61,37 @@ export const HUB_MIN_REFETCH_GAP_MS = 10_000;
 
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
-type HubInvalidateSource =
+export type HubInvalidateSource =
   | "order_items"
   | "orders"
   | "ready"
   | "dispatch"
   | "payments"
   | "shift";
+
+function isPayableOrdersQueryKey(key: QueryKey): boolean {
+  return Array.isArray(key) && key[0] === qk.payableOrders[0];
+}
+
+/**
+ * Recaudar: un refetch por alta de orden (todavía no cobrable) no debe bloquear
+ * el refetch inmediato al despachar (HUB_MIN_REFETCH_GAP_MS).
+ * El gap sigue aplicando al resto de queries y al resto de eventos.
+ */
+export function shouldSkipHubMinRefetchGap(source: HubInvalidateSource, key: QueryKey): boolean {
+  return source === "dispatch" && isPayableOrdersQueryKey(key);
+}
+
+export function hubShouldInvalidateQuery(params: {
+  source: HubInvalidateSource;
+  queryKey: QueryKey;
+  updatedAt: number;
+  now?: number;
+}): boolean {
+  if (!params.updatedAt) return true;
+  if (shouldSkipHubMinRefetchGap(params.source, params.queryKey)) return true;
+  return (params.now ?? Date.now()) - params.updatedAt >= HUB_MIN_REFETCH_GAP_MS;
+}
 
 /**
  * Sets de invalidación por tipo de evento Realtime.
@@ -378,7 +403,12 @@ function mergeConsumerNeeds(hub: BranchRealtimeHub) {
   return { includePayments, includeShiftGate, shiftId, keys, debounceMs };
 }
 
-function hubInvalidateKey(hub: BranchRealtimeHub, key: QueryKey, seen: Set<string>) {
+function hubInvalidateKey(
+  hub: BranchRealtimeHub,
+  key: QueryKey,
+  seen: Set<string>,
+  source: HubInvalidateSource,
+) {
   const stamp = JSON.stringify(key);
   if (seen.has(stamp)) return;
   seen.add(stamp);
@@ -386,16 +416,22 @@ function hubInvalidateKey(hub: BranchRealtimeHub, key: QueryKey, seen: Set<strin
   void hub.queryClient.invalidateQueries({
     queryKey: key,
     refetchType: "active",
-    predicate: (query) => {
-      const updatedAt = query.state.dataUpdatedAt;
-      if (!updatedAt) return true;
-      return now - updatedAt >= HUB_MIN_REFETCH_GAP_MS;
-    },
+    predicate: (query) => hubShouldInvalidateQuery({
+      source,
+      queryKey: key,
+      updatedAt: query.state.dataUpdatedAt,
+      now,
+    }),
   });
 }
 
 function runHubInvalidateNow(hub: BranchRealtimeHub, source: HubInvalidateSource) {
   const { keys } = mergeConsumerNeeds(hub);
+  // El bundle no vive en React Query: el hub debe limpiar explícitamente su
+  // cache local antes de que las colas activas se rehidraten.
+  if (source !== "shift") {
+    invalidateDispatchServirQueueBundleCache(hub.branchId);
+  }
   // Eventos de órdenes/ítems/listo/despacho NO deben refetch el gate
   // (antes cada plato listo re-disparaba 4–5 RPCs de turno en cada tablet).
   const filtered =
@@ -406,19 +442,19 @@ function runHubInvalidateNow(hub: BranchRealtimeHub, source: HubInvalidateSource
   const seen = new Set<string>();
 
   for (const key of keysForHubSource(source)) {
-    hubInvalidateKey(hub, key, seen);
+    hubInvalidateKey(hub, key, seen, source);
   }
 
   // payments: sin fan-out a consumidores (Extra/Express/historial); solo set acotado.
   if (source !== "payments") {
     for (const key of filtered) {
-      hubInvalidateKey(hub, key, seen);
+      hubInvalidateKey(hub, key, seen, source);
     }
   }
   if (source === "shift") {
-    hubInvalidateKey(hub, qk.branchShiftGate, seen);
-    hubInvalidateKey(hub, qk.currentShift, seen);
-    hubInvalidateKey(hub, qk.openCashShift, seen);
+    hubInvalidateKey(hub, qk.branchShiftGate, seen, source);
+    hubInvalidateKey(hub, qk.currentShift, seen, source);
+    hubInvalidateKey(hub, qk.openCashShift, seen, source);
   }
 }
 

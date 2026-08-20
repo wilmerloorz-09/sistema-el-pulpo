@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -151,6 +151,18 @@ const NAV_ITEMS: AppNavItem[] = [
       canView(permissions, "despacho_total")
       || canView(permissions, "despacho_mesa")
       || canView(permissions, "despacho_para_llevar"),
+  },
+  {
+    to: "/empaquetador",
+    label: "Empaquetador",
+    icon: <PackageCheck className="h-5 w-5" />,
+    group: "OPERATIVO",
+    tone: {
+      active: "from-amber-500 to-orange-400",
+      idle: "hover:border-amber-200 hover:bg-amber-50/90 hover:text-amber-700",
+      iconIdle: "bg-amber-50 text-amber-600",
+    },
+    visible: () => false,
   },
   {
     to: "/productos",
@@ -409,6 +421,10 @@ export function useVisibleNavItems() {
         return dispatchAccessLoading ? fallbackVisible : hasDispatchAccess;
       }
 
+      if (item.to === "/empaquetador") {
+        return hasSupervisorBypass || Boolean(sg?.canPackOrders);
+      }
+
       if (item.to === "/monitoreo-global") {
         return isGlobalAdmin;
       }
@@ -418,8 +434,16 @@ export function useVisibleNavItems() {
       return true;
     });
 
+    const shouldPrioritizePacking = Boolean(sg?.canPackOrders) && !hasSupervisorBypass;
+    const orderedVisibleItems = shouldPrioritizePacking
+      ? [
+          ...visibleItems.filter((item) => item.to === "/empaquetador"),
+          ...visibleItems.filter((item) => item.to !== "/empaquetador"),
+        ]
+      : visibleItems;
+
     return {
-      visibleItems,
+      visibleItems: orderedVisibleItems,
       canAccessAdmin,
     };
   }, [

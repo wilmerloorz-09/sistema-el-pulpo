@@ -54,6 +54,7 @@ interface ProductRecord {
 interface FormState {
   id: string | null;
   name: string;
+  qr_name: string;
   node_type: "category" | "product";
   parent_id: string | null;
   manual_price_enabled: boolean;
@@ -73,6 +74,7 @@ const getCollapsedNodesStorageKey = (branchId: string) => `adminMenuNodesCollaps
 const emptyForm = (parentId: string | null = null, displayOrder: string = "1"): FormState => ({
   id: null,
   name: "",
+  qr_name: "",
   node_type: "category",
   parent_id: parentId,
   manual_price_enabled: false,
@@ -175,7 +177,7 @@ const MenuNodesCrud = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("menu_nodes" as any)
-        .select("id, branch_id, parent_id, name, node_type, menu_scope, depth, display_order, price, manual_price_enabled, is_active, is_tray_category, legacy_product_id, image_url, icon, description, created_at, updated_at")
+        .select("id, branch_id, parent_id, name, qr_name, node_type, menu_scope, depth, display_order, price, manual_price_enabled, is_active, is_tray_category, legacy_product_id, image_url, icon, description, created_at, updated_at")
         .eq("branch_id", activeBranchId!)
         .eq("menu_scope", menuScope)
         .order("depth", { ascending: true })
@@ -367,6 +369,7 @@ const MenuNodesCrud = ({
     setForm({
       id: node.id,
       name: node.name,
+      qr_name: node.qr_name ?? "",
       node_type: node.node_type,
       parent_id: node.parent_id,
       manual_price_enabled: Boolean(node.manual_price_enabled),
@@ -613,6 +616,7 @@ const MenuNodesCrud = ({
             menu_scope: menuScope,
             parent_id: formData.parent_id,
             name,
+            qr_name: formData.node_type === "product" ? (formData.qr_name.trim() || null) : null,
             node_type: formData.node_type,
             display_order: displayOrder,
             is_active: formData.is_active,
@@ -750,6 +754,8 @@ const MenuNodesCrud = ({
 
         return {
           ...(savedMenuNode as unknown as AdminMenuNode),
+          name,
+          qr_name: formData.node_type === "product" ? (formData.qr_name.trim() || null) : null,
           price: savedMenuNode?.price == null ? null : Number(savedMenuNode.price),
           image_url: normalizeImageUrl(savedMenuNode?.image_url),
         } satisfies AdminMenuNode;
@@ -1112,6 +1118,21 @@ const MenuNodesCrud = ({
                 <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} className="rounded-xl" />
               </div>
 
+              {form.node_type === "product" ? (
+                <div className="space-y-1.5">
+                  <Label>Nombre QR</Label>
+                  <Input
+                    value={form.qr_name}
+                    onChange={(event) => setForm((prev) => ({ ...prev, qr_name: event.target.value }))}
+                    placeholder="Nombre que verá el cliente en el menú QR"
+                    className="rounded-xl"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Si lo dejas vacío, el menú QR muestra el nombre interno.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Tipo</Label>
@@ -1120,13 +1141,19 @@ const MenuNodesCrud = ({
                     onValueChange={(value: "category" | "product") =>
                       setForm((prev) => {
                         if (prev.id) {
-                          return { ...prev, node_type: value, price: value === "product" ? prev.price : "" };
+                          return {
+                            ...prev,
+                            node_type: value,
+                            price: value === "product" ? prev.price : "",
+                            qr_name: value === "product" ? prev.qr_name : "",
+                          };
                         }
 
                         return {
                           ...prev,
                           node_type: value,
                           price: value === "product" ? prev.price : "",
+                          qr_name: value === "product" ? prev.qr_name : "",
                           display_order: getSuggestedDisplayOrder(prev.parent_id, value),
                         };
                       })

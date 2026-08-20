@@ -298,6 +298,10 @@ const MesasV2 = () => {
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);
+      if (table.isSpecial) {
+        navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
+        return;
+      }
       if (activeBranchId) {
         // Navegar al instante; hermanos/mesaCards en segundo plano.
         navigate(`/ordenes?${mesasV2OrdenesSearch({ order: orderId })}`, { replace: true });

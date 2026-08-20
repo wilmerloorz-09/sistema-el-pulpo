@@ -52,6 +52,13 @@ interface ApproveCancellationRequestParams {
   userId: string;
 }
 
+function isOrderListQueryForBranch(queryKey: readonly unknown[], branchId: string | null | undefined) {
+  return (
+    queryKey[1] === branchId
+    && (queryKey[0] === qk.orders[0] || queryKey[0] === qk.ordersList[0])
+  );
+}
+
 interface OperationalSnapshotRow {
   order_item_id: string;
   description_snapshot?: string | null;
@@ -611,7 +618,7 @@ export function useCancellation() {
         await qc.refetchQueries({
           predicate: (query) => {
             const key = query.queryKey;
-            return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+            return Array.isArray(key) && isOrderListQueryForBranch(key, activeBranchId);
           },
         });
       }
@@ -783,7 +790,7 @@ export function useCancellation() {
         await qc.refetchQueries({
           predicate: (query) => {
             const key = query.queryKey;
-            return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+            return Array.isArray(key) && isOrderListQueryForBranch(key, activeBranchId);
           },
         });
       }
@@ -821,7 +828,7 @@ export function useCancellation() {
       await qc.refetchQueries({
         predicate: (query) => {
           const key = query.queryKey;
-          return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+          return Array.isArray(key) && isOrderListQueryForBranch(key, activeBranchId);
         },
       });
       toast.success("Solicitud de anulacion negada");
@@ -1055,7 +1062,7 @@ export function useCancellation() {
       await qc.refetchQueries({
         predicate: (query) => {
           const key = query.queryKey;
-          return Array.isArray(key) && key[0] === qk.orders[0] && key[1] === activeBranchId;
+          return Array.isArray(key) && isOrderListQueryForBranch(key, activeBranchId);
         },
       });
       toast.success("Anulacion autorizada");

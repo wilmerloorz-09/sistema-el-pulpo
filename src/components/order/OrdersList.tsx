@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useOrdersByStatus, OrderSummary } from "@/hooks/useOrdersByStatus";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,6 +13,7 @@ import { Loader2, ClipboardList, Clock, Truck, Ban, CircleDollarSign, ArrowRight
 import { cn } from "@/lib/utils";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { useOperationalOrdersRealtime } from "@/lib/queryEgress";
+import { qk } from "@/lib/queryKeys";
 
 type TabType = "sent" | "draft" | "dispatched" | "pendingCancellation" | "cancelled" | "paid";
 
@@ -84,6 +85,15 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
   const qc = useQueryClient();
   const shiftGateQuery = useBranchShiftGate();
   const { rejectCancellationRequestMutation, approveCancellationRequestMutation } = useCancellation();
+  const operationalMapsBatchKey = useMemo(
+    () => JSON.stringify([...qk.ordersList, activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"]),
+    [activeBranchId, shiftGateQuery.data?.shiftId],
+  );
+  const operationalMapsBatch = (participantId: string) => ({
+    batchKey: operationalMapsBatchKey,
+    participantId,
+    participantCount: 6,
+  });
   const canAuthorizeCancel =
     isGlobalAdmin
     || canManage(permissions, "admin_sucursal")
@@ -96,18 +106,30 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
     queryClient: qc,
     channelPrefix: "orders-list-rt",
     enabled: Boolean(activeBranchId),
-    queryKeys: [["orders"], ["order"], ["tables-with-status"]],
+    queryKeys: [qk.orders, qk.ordersList, qk.orderPrefix, qk.tablesWithStatus],
     includePayments: true,
     shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
   /** Todas las pestañas cargan en paralelo: bombillas correctas y cambio de pestaña instantaneo con caché. */
-  const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN");
-  const draftOrders = useOrdersByStatus("DRAFT");
-  const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED");
-  const pendingCancellationOrders = useOrdersByStatus("PENDING_CANCELLATION");
-  const cancelledOrders = useOrdersByStatus("CANCELLED");
-  const paidOrders = useOrdersByStatus("PAID");
+  const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN", {
+    operationalMapsBatch: operationalMapsBatch("SENT_TO_KITCHEN"),
+  });
+  const draftOrders = useOrdersByStatus("DRAFT", {
+    operationalMapsBatch: operationalMapsBatch("DRAFT"),
+  });
+  const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED", {
+    operationalMapsBatch: operationalMapsBatch("KITCHEN_DISPATCHED"),
+  });
+  const pendingCancellationOrders = useOrdersByStatus("PENDING_CANCELLATION", {
+    operationalMapsBatch: operationalMapsBatch("PENDING_CANCELLATION"),
+  });
+  const cancelledOrders = useOrdersByStatus("CANCELLED", {
+    operationalMapsBatch: operationalMapsBatch("CANCELLED"),
+  });
+  const paidOrders = useOrdersByStatus("PAID", {
+    operationalMapsBatch: operationalMapsBatch("PAID"),
+  });
 
   const getOrdersForTab = (tab: TabType) => {
     switch (tab) {

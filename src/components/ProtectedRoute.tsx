@@ -60,7 +60,7 @@ const SHIFT_ROLE_LABELS: Record<NonNullable<Props["requiredShiftRoles"]>[number]
   canDispatchOrders: "Despacho",
   canManageProducts: "Productos",
   canUseCaja: "Caja",
-  canPackOrders: "Empacador",
+  canPackOrders: "Empaquetador",
   puedeRegistrarPromociones: "Promociones",
   canServePlates: "Servir",
 };

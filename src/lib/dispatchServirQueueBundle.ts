@@ -64,6 +64,52 @@ const EMPTY_BUNDLE: DispatchServirQueueBundle = {
   has_plate_servers: false,
 };
 
+export const DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS = 8_000;
+
+type DispatchServirQueueBundleCacheEntry = {
+  bundle: DispatchServirQueueBundle;
+  storedAt: number;
+};
+
+const bundleCache = new Map<string, DispatchServirQueueBundleCacheEntry>();
+const bundleInflight = new Map<string, Promise<DispatchServirQueueBundle>>();
+const bundleRequestVersions = new Map<string, number>();
+
+function dispatchServirQueueBundleCacheKey(branchId: string, shiftId: string) {
+  return `${branchId}:${shiftId}`;
+}
+
+function nextBundleRequestVersion(key: string) {
+  const next = (bundleRequestVersions.get(key) ?? 0) + 1;
+  bundleRequestVersions.set(key, next);
+  return next;
+}
+
+/**
+ * Invalida el cache/in-flight local del bundle. No cancela el HTTP ya iniciado,
+ * pero su resultado deja de ser elegible para escribir cache.
+ */
+export function invalidateDispatchServirQueueBundleCache(
+  branchId?: string,
+  shiftId?: string,
+) {
+  const keys = new Set([
+    ...bundleCache.keys(),
+    ...bundleInflight.keys(),
+    ...bundleRequestVersions.keys(),
+  ]);
+
+  for (const key of keys) {
+    const [entryBranchId, entryShiftId] = key.split(":");
+    if (branchId && entryBranchId !== branchId) continue;
+    if (shiftId && entryShiftId !== shiftId) continue;
+
+    bundleCache.delete(key);
+    bundleInflight.delete(key);
+    nextBundleRequestVersion(key);
+  }
+}
+
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
@@ -88,13 +134,50 @@ export function normalizeDispatchServirQueueBundle(raw: unknown): DispatchServir
 export async function fetchDispatchServirQueueBundle(
   branchId: string,
   shiftId: string,
+  options?: { force?: boolean },
 ): Promise<DispatchServirQueueBundle> {
-  const { data, error } = await (supabase as any).rpc("get_dispatch_servir_queue_bundle", {
-    p_branch_id: branchId,
-    p_shift_id: shiftId,
-  });
-  if (error) throw error;
-  return normalizeDispatchServirQueueBundle(data);
+  const key = dispatchServirQueueBundleCacheKey(branchId, shiftId);
+  const force = Boolean(options?.force);
+  const now = Date.now();
+  const cached = bundleCache.get(key);
+
+  if (!force && cached && now - cached.storedAt < DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS) {
+    return cached.bundle;
+  }
+
+  if (!force) {
+    const inflight = bundleInflight.get(key);
+    if (inflight) return inflight;
+  }
+
+  const version = nextBundleRequestVersion(key);
+  const request = (async () => {
+    const { data, error } = await (supabase as any).rpc("get_dispatch_servir_queue_bundle", {
+      p_branch_id: branchId,
+      p_shift_id: shiftId,
+    });
+    if (error) throw error;
+
+    const bundle = normalizeDispatchServirQueueBundle(data);
+    if (bundleRequestVersions.get(key) === version) {
+      if (bundle.orders.length > 0) {
+        bundleCache.set(key, { bundle, storedAt: Date.now() });
+      } else {
+        // Nunca convertir una cola vacía transitoria en un hit reutilizable.
+        bundleCache.delete(key);
+      }
+    }
+    return bundle;
+  })();
+
+  bundleInflight.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (bundleInflight.get(key) === request) {
+      bundleInflight.delete(key);
+    }
+  }
 }
 
 export function dispatchServirQueueBundleQueryKey(branchId: string, shiftId: string) {

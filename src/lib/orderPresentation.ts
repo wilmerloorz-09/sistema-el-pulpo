@@ -37,6 +37,14 @@ export function getOrderOriginLabel(params: {
   return tableName;
 }
 
+/** Etiqueta de mesa sin duplicar "Mesa" si el nombre ya la incluye. */
+export function formatTableNameLabel(name: string | null | undefined): string {
+  const trimmed = String(name ?? "").trim();
+  if (!trimmed) return "";
+  if (/^mesa\b/i.test(trimmed)) return trimmed;
+  return `Mesa ${trimmed}`;
+}
+
 /** Etiqueta en español del tipo de orden (valor enum en BD). */
 export function getOrderTypeLabel(
   orderType: string | null | undefined,
@@ -56,6 +64,38 @@ export function getOrderTypeLabel(
     default:
       return orderType?.replace(/_/g, " ").trim() || "Orden";
   }
+}
+
+export function resolveOrderTableName(params: {
+  is_special?: boolean | null;
+  table_id?: string | null;
+  special_origin_table_id?: string | null;
+  table_name_snapshot?: string | null;
+  tablesMap?: Record<string, string | { name?: string | null; visual_order?: number | null }>;
+}): string | null {
+  const snapshot = String(params.table_name_snapshot ?? "").trim() || null;
+
+  const lookupTable = (tableId: string | null | undefined): string | null => {
+    if (!tableId) return null;
+    const entry = params.tablesMap?.[tableId];
+    if (!entry) return null;
+    if (typeof entry === "string") {
+      return entry.trim() || null;
+    }
+    const baseName = String(entry.name ?? "Mesa").trim() || "Mesa";
+    const hasNumber = /\d/.test(baseName);
+    return hasNumber ? baseName : `${baseName} ${Number(entry.visual_order ?? 0) + 1}`;
+  };
+
+  if (params.table_id) {
+    return lookupTable(params.table_id) ?? snapshot;
+  }
+
+  if (params.is_special) {
+    return lookupTable(params.special_origin_table_id) ?? snapshot;
+  }
+
+  return snapshot;
 }
 
 export function getOrderKind(params: {

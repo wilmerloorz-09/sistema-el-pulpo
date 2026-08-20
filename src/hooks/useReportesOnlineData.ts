@@ -159,12 +159,34 @@ export type ReportesPagoItemRow = {
   change: number;
   netApplied: number;
   orderType: string;
+  branchName: string;
   itemId: string;
+  itemProductCode: string;
+  itemCategory: string;
   itemDescription: string;
   itemQuantity: number;
   itemUnitPrice: number;
   itemTotal: number;
 };
+
+function getProductCategoryLabel(item: {
+  product?: {
+    subcategory?: {
+      description?: string | null;
+      category?: { description?: string | null } | null;
+    } | null;
+  } | null;
+} | null | undefined): string {
+  return item?.product?.subcategory?.category?.description
+    || item?.product?.subcategory?.description
+    || 'Sin Categoría';
+}
+
+function getBranchName(order: {
+  branch?: { name?: string | null } | null;
+} | null | undefined): string {
+  return String(order?.branch?.name ?? '').trim() || 'Sin Sucursal';
+}
 
 /**
  * Reporte 1: Pagos Realizados (Ingresos Reales)
@@ -185,7 +207,7 @@ export function useReportesPagos(
     orderTypes,
     recordStatus = 'all',
     sortBy = 'fecha',
-    sortDir = 'desc',
+    sortDir = 'asc',
   } = filters;
   const itemBreakdown = Boolean(options?.itemBreakdown);
 
@@ -268,6 +290,10 @@ export function useReportesPagos(
             order_type,
             is_special,
             branch_id,
+            branch:branches (
+              id,
+              name
+            ),
             creator:profiles!orders_created_by_fkey (id, alias, username)
           )
         `)
@@ -360,6 +386,7 @@ export function useReportesPagos(
           change,
           netApplied,
           orderType: pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA'),
+          branchName: getBranchName(pay.order),
           notes: pay.notes,
           status: pay.status ?? null,
           isVoided: isReportPaymentVoided(pay),
@@ -403,13 +430,35 @@ export function useReportesPagos(
           total: number;
           product_id: string | null;
           status: string | null;
+          category: string;
         }>>();
 
         for (let index = 0; index < orderIds.length; index += 200) {
           const chunk = orderIds.slice(index, index + 200);
           let itemsQuery = supabase
             .from('order_items')
-            .select('id, order_id, product_id, description_snapshot, quantity, unit_price, total, status, cancelled_at')
+            .select(`
+              id,
+              order_id,
+              product_id,
+              description_snapshot,
+              quantity,
+              unit_price,
+              total,
+              status,
+              cancelled_at,
+              product:products (
+                id,
+                subcategory:subcategories (
+                  id,
+                  description,
+                  category:categories (
+                    id,
+                    description
+                  )
+                )
+              )
+            `)
             .in('order_id', chunk);
 
           if (recordStatus === 'valid') {
@@ -437,6 +486,7 @@ export function useReportesPagos(
               total: Number((item as any).total ?? 0),
               product_id: (item as any).product_id ?? null,
               status: (item as any).status ?? null,
+              category: getProductCategoryLabel(item as any),
             });
             itemsByOrderId.set(orderId, bucket);
           }
@@ -455,6 +505,7 @@ export function useReportesPagos(
             if (qty <= 0) continue;
             const unitPrice = Number(item.unit_price ?? 0);
             const lineTotal = Number(item.total ?? 0) || round2(qty * unitPrice);
+            const snapshotName = String(item.description_snapshot || 'Producto').trim() || 'Producto';
             itemRows.push({
               rowKey: `${payment.id}:${item.id}`,
               paymentId: payment.id,
@@ -469,8 +520,11 @@ export function useReportesPagos(
               change: payment.change,
               netApplied: payment.netApplied,
               orderType: payment.orderType,
+              branchName: payment.branchName,
               itemId: item.id,
-              itemDescription: String(item.description_snapshot || 'Producto').trim() || 'Producto',
+              itemProductCode: String(item.product_id ?? '').trim() || '—',
+              itemCategory: item.category,
+              itemDescription: snapshotName,
               itemQuantity: qty,
               itemUnitPrice: unitPrice,
               itemTotal: lineTotal,

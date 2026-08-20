@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getOrderKind, getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
-import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
+import { ChevronDown, ChevronUp, CreditCard, Loader2, ReceiptText, RefreshCw, ShoppingBag, Soup, UtensilsCrossed, UserRound } from "lucide-react";
 import { TrayItemChip } from "@/components/order/TrayItemChip";
 import PaymentDialog from "./PaymentDialog";
 import PaymentDialogV2 from "./PaymentDialogV2";
@@ -46,6 +46,8 @@ interface Props {
   autoOpenOrderId?: string | null;
   onAutoOpenOrderConsumed?: () => void;
   onTakeControl?: () => void;
+  onRefreshPayableOrders?: () => void | Promise<void>;
+  refreshingPayableOrders?: boolean;
 }
 
 function formatCurrency(amount: number) {
@@ -70,6 +72,8 @@ export default function PayableOrdersList({
   autoOpenOrderId,
   onAutoOpenOrderConsumed,
   onTakeControl,
+  onRefreshPayableOrders,
+  refreshingPayableOrders = false,
 }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<PayableOrder | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
@@ -158,6 +162,26 @@ export default function PayableOrdersList({
                 </div>
               )}
             </div>
+            {onRefreshPayableOrders && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (refreshingPayableOrders) return;
+                  void onRefreshPayableOrders();
+                }}
+                disabled={refreshingPayableOrders}
+                className="h-8 shrink-0 rounded-full border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                {refreshingPayableOrders ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Actualizar
+              </Button>
+            )}
           </div>
 
           <div className="sm:overflow-hidden sm:rounded-[28px] sm:border sm:border-slate-200 sm:bg-white sm:shadow-[0_20px_55px_-42px_rgba(15,23,42,0.34)]">

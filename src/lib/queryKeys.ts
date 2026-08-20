@@ -5,6 +5,7 @@
 
 export const qk = {
   orders: ["orders"] as const,
+  ordersList: ["orders-list"] as const,
   order: (orderId: string) => ["order", orderId] as const,
   orderPrefix: ["order"] as const,
 
@@ -18,6 +19,7 @@ export const qk = {
 
   dispatchOrders: ["dispatch-orders"] as const,
   servirOrders: ["servir-orders"] as const,
+  packingOrders: ["packing-orders"] as const,
   /** Bundle RPC crudo compartido por Despacho/Servir (prefetch + cola). */
   dispatchServirQueueBundle: ["dispatch-servir-queue-bundle"] as const,
   kitchenOrders: ["kitchen-orders"] as const,
@@ -50,9 +52,11 @@ export const qk = {
 /** Keys operativas típicas tras cobro/despacho/cambio de ítems. */
 export const OPERATIONAL_ORDER_LIST_KEYS = [
   qk.orders,
+  qk.ordersList,
   qk.payableOrders,
   qk.dispatchOrders,
   qk.servirOrders,
+  qk.packingOrders,
   qk.dispatchServirQueueBundle,
   qk.kitchenOrders,
   qk.expressOrders,

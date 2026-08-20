@@ -19,6 +19,7 @@ import {
   type OpenCashShift,
 } from "@/lib/openCashShift";
 import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
+import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
 // support CANCELLED status even if enum not yet updated locally
 type OrderStatus = Database["public"]["Enums"]["order_status"] | "CANCELLED";
 
@@ -156,6 +157,7 @@ export interface Order {
   special_marked_at?: string | null;
   branch_id: string;
   table_id: string | null;
+  special_origin_table_id?: string | null;
   table_order_position: number | null;
   split_id: string | null;
   split_code?: string | null;
@@ -801,7 +803,7 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
   
   const startOrders = Date.now();
   const orders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_group_total, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, cash_shift_id",
+    select: "id, order_number, order_code, status, order_type, menu_scope, is_special, is_tray_order, special_total_manual, special_group_total, special_reason, special_marked_at, branch_id, table_id, table_order_position, split_id, created_by, created_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, cancel_requested_at, table_name_snapshot, special_origin_table_id, cash_shift_id",
     filters: [{ column: "id", op: "eq", value: orderId }]
   });
   console.log(`[PERF] Consultar orders tomo: ${Date.now() - startOrders}ms`);
@@ -816,7 +818,15 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     items,
     snapshotResult,
   ] = await Promise.all([
-    withCallTimeout(fetchOrderTableName(order.table_id), 4000, "nombre de mesa"),
+    withCallTimeout(
+      fetchOrderTableName(
+        order.is_special
+          ? (order.special_origin_table_id ?? order.table_id)
+          : order.table_id,
+      ),
+      4000,
+      "nombre de mesa",
+    ),
     order.split_id
       ? withCallTimeout(dbSelect("table_splits", { select: "split_code", filters: [{ column: "id", op: "eq", value: order.split_id }] }), 4000, "divisiones de mesa")
       : Promise.resolve([]),
@@ -1328,6 +1338,7 @@ export function useOrder(orderId: string | null) {
         orderId,
       });
       // Tirar bundle cacheado (prefetch vacío) y forzar refetch de colas activas.
+      invalidateDispatchServirQueueBundleCache(order?.branch_id ?? query.data?.branch_id);
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
       void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
       void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });
@@ -1400,6 +1411,7 @@ export function useOrder(orderId: string | null) {
         branchId: order?.branch_id ?? query.data?.branch_id,
         orderId,
       });
+      invalidateDispatchServirQueueBundleCache(order?.branch_id ?? query.data?.branch_id);
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
       void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
       void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });

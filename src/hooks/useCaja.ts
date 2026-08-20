@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelect, dbSelectStrict, dbInsert, dbInsertMany, dbUpdate, dbDelete, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
@@ -22,7 +22,7 @@ import {
   paymentsTotalMapFromCajaBundle,
 } from "@/lib/cajaPayableQueueBundle";
 import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
-import { cleanOrderCode } from "@/lib/orderPresentation";
+import { cleanOrderCode, resolveOrderTableName } from "@/lib/orderPresentation";
 import {
   CATALOG_GC_MS,
   CATALOG_STALE_MS,
@@ -2219,19 +2219,13 @@ export function useCaja(params?: {
             special_real_total: specialRealTotal,
             special_paid_amount: specialPaidAmount,
             special_pending_amount: isSpecial ? specialPendingAmount : roundMoney(mappedItems.reduce((sum, item) => sum + item.pending_total, 0)),
-            table_name:
-              (o.order_type === "DINE_IN" || isSpecial)
-              && o.table_id
-                ? resolveTableName(o.table_id, (o as any).table_name_snapshot)
-                : isSpecial
-                  ? ((o as any).table_name_snapshot
-                    || ((o as { special_origin_table_id?: string | null }).special_origin_table_id
-                      ? resolveTableName(
-                          (o as { special_origin_table_id?: string | null }).special_origin_table_id ?? null,
-                          (o as any).table_name_snapshot,
-                        )
-                      : null))
-                  : null,
+            table_name: resolveOrderTableName({
+              is_special: isSpecial,
+              table_id: o.table_id,
+              special_origin_table_id: (o as { special_origin_table_id?: string | null }).special_origin_table_id,
+              table_name_snapshot: (o as any).table_name_snapshot,
+              tablesMap,
+            }),
             table_name_snapshot: (o as any).table_name_snapshot,
             split_code: o.split_id ? splitsMap[o.split_id] : null,
             total: displayTotal,
@@ -2249,10 +2243,10 @@ export function useCaja(params?: {
         );
     },
     staleTime: OPERATIONAL_STALE_MS,
-    // Realtime SUBSCRIBED → sin safety poll; si el hub cae → respaldo.
+    // Recaudar: sin polling periódico. Realtime + refetch manual + reconnect.
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    refetchInterval: adaptiveListPoll,
+    refetchInterval: false,
     enabled: !!activeBranchId,
     // Al cambiar de sucursal o de turno se conserva la lista previa en lugar de
     // mostrar el vacio de carga.
@@ -3198,6 +3192,26 @@ export function useCaja(params?: {
           filters: [{ column: "id", op: "in", value: preparedTransferProofSession.paymentIds }],
           skipLocalCache: true,
         });
+
+        // En cobro mixto los montos van por método, pero las líneas de ítem
+        // solo deben asociarse una vez al pago ancla (ITEMS_ANCHOR).
+        let paymentItemsAttached = false;
+        const attachPaymentItems = async (paymentId: string) => {
+          if (paymentItemsAttached) return;
+          await dbInsertMany(
+            "payment_items",
+            itemSelections.map((itemSelection) => ({
+              id: generateUUID(),
+              payment_id: paymentId,
+              order_item_id: itemSelection.itemId,
+              quantity_paid: itemSelection.quantity,
+              unit_price: itemSelection.unitPrice,
+              total_amount: itemSelection.amount,
+            })),
+            { hotPath: true },
+          );
+          paymentItemsAttached = true;
+        };
         
         for (const payment of payments) {
           const meta = parsePaymentNotes(payment.notes);
@@ -3208,19 +3222,13 @@ export function useCaja(params?: {
           
           const updatedNotes = setTransferProofPendingMarker(payment.notes, false);
           await dbUpdate("payments", payment.id, { notes: updatedNotes });
+        }
 
-          await dbInsertMany(
-            "payment_items",
-            itemSelections.map((itemSelection) => ({
-              id: generateUUID(),
-              payment_id: payment.id,
-              order_item_id: itemSelection.itemId,
-              quantity_paid: itemSelection.quantity,
-              unit_price: itemSelection.unitPrice,
-              total_amount: itemSelection.amount,
-            })),
-            { hotPath: true },
-          );
+        if (anchorPaymentId) {
+          await attachPaymentItems(anchorPaymentId);
+        } else if (payments[0]?.id) {
+          anchorPaymentId = payments[0].id;
+          await attachPaymentItems(anchorPaymentId);
         }
 
         for (const split of paymentSplits) {
@@ -3256,20 +3264,10 @@ export function useCaja(params?: {
             { hotPath: true },
           );
 
-          if (!anchorPaymentId) anchorPaymentId = paymentId;
-
-          await dbInsertMany(
-            "payment_items",
-            itemSelections.map((itemSelection) => ({
-              id: generateUUID(),
-              payment_id: paymentId,
-              order_item_id: itemSelection.itemId,
-              quantity_paid: itemSelection.quantity,
-              unit_price: itemSelection.unitPrice,
-              total_amount: itemSelection.amount,
-            })),
-            { hotPath: true },
-          );
+          if (!anchorPaymentId) {
+            anchorPaymentId = paymentId;
+            await attachPaymentItems(paymentId);
+          }
         }
       } else {
         const paymentRows: RegisterPaymentRpcRow[] = [];
@@ -3307,15 +3305,18 @@ export function useCaja(params?: {
               : undefined,
           });
 
-          for (const itemSelection of itemSelections) {
-            paymentItemRows.push({
-              id: generateUUID(),
-              payment_id: paymentId,
-              order_item_id: itemSelection.itemId,
-              quantity_paid: itemSelection.quantity,
-              unit_price: itemSelection.unitPrice,
-              total_amount: itemSelection.amount,
-            });
+          // Solo el pago ancla lleva payment_items; el resto solo aporta monto por método.
+          if (index === 0) {
+            for (const itemSelection of itemSelections) {
+              paymentItemRows.push({
+                id: generateUUID(),
+                payment_id: paymentId,
+                order_item_id: itemSelection.itemId,
+                quantity_paid: itemSelection.quantity,
+                unit_price: itemSelection.unitPrice,
+                total_amount: itemSelection.amount,
+              });
+            }
           }
         }
 
@@ -3673,6 +3674,19 @@ export function useCaja(params?: {
     [activeBranchId, activeWorkflowMode, ordersQuery, qc, shiftGate?.shiftId],
   );
 
+  const payableOrdersRefetchInFlightRef = useRef(false);
+  const refetchPayableOrdersQuery = ordersQuery.refetch;
+  const isFetchingPayableOrders = ordersQuery.isFetching;
+  const refetchPayableOrders = useCallback(async () => {
+    if (payableOrdersRefetchInFlightRef.current || isFetchingPayableOrders) return;
+    payableOrdersRefetchInFlightRef.current = true;
+    try {
+      await refetchPayableOrdersQuery();
+    } finally {
+      payableOrdersRefetchInFlightRef.current = false;
+    }
+  }, [isFetchingPayableOrders, refetchPayableOrdersQuery]);
+
   return {
     denominations: denomsQuery.data ?? [],
     shift: shiftQuery.data,
@@ -3681,6 +3695,8 @@ export function useCaja(params?: {
     cashRegisterMovements: movementsQuery.data ?? [],
     isLoadingCashRegisterMovements: movementsQuery.isLoading,
     payableOrders: ordersQuery.data ?? [],
+    isFetchingPayableOrders,
+    refetchPayableOrders,
     paymentMethods: methodsQuery.data ?? [],
     completedPayments: completedPaymentsQuery.data?.rows ?? [],
     completedPaymentsTotal: completedPaymentsQuery.data?.total ?? 0,

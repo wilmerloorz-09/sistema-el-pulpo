@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useReportesPagos } from '@/hooks/useReportesOnlineData';
 import { getOrderRef } from '@/lib/orderPresentation';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,15 @@ import {
 } from '@/components/ui/card';
 import { FileDown, Printer, Wallet, ArrowUpRight, TrendingUp, ReceiptText, AlertCircle, RefreshCw, ListTree } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatReporteMoney, formatReporteNumber } from '@/lib/reportesFormat';
+import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface ReportePagosProps {
   filters: any;
@@ -31,8 +40,17 @@ function orderTypeLabel(orderType: string) {
   return 'Extra/General';
 }
 
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+
+function isRowVisibleOnScreen(index: number, startIndex: number, endIndex: number) {
+  return index >= startIndex && index < endIndex;
+}
+
 export default function ReportePagos({ filters }: ReportePagosProps) {
   const [itemBreakdown, setItemBreakdown] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
   const { data, isLoading, error, refetch } = useReportesPagos(filters, { itemBreakdown });
 
   const payments = data?.payments || [];
@@ -45,20 +63,41 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
   );
   const hasRows = tableRows.length > 0;
 
+  const totalPages = Math.max(1, Math.ceil(tableRows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const showingFrom = tableRows.length === 0 ? 0 : startIndex + 1;
+  const showingTo = Math.min(endIndex, tableRows.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, itemBreakdown, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   // Exportar a CSV UTF-8 con BOM para correcta codificación en Excel
   const handleExportCSV = () => {
     if (!hasRows) return;
 
     if (itemBreakdown) {
       const headers = [
+        'Sucursal',
         'Orden Code',
         'Orden Nro',
         'Referencia Orden',
         'Tipo de Orden',
-        'Fecha y Hora',
+        'Fecha',
+        'Hora',
         'Cajero',
         'Usuario Creador',
         'Metodo de Pago',
+        'Codigo Producto',
+        'Categoria',
         'Item',
         'Cantidad',
         'Precio Unitario ($)',
@@ -66,18 +105,22 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
       ];
 
       const rows = itemRows.map((row) => [
+        row.branchName,
         row.orderCode || '',
         row.orderNumber || '',
         getOrderRef(row.orderCode, row.orderNumber),
         orderTypeLabel(row.orderType),
-        format(new Date(row.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        format(new Date(row.createdAt), 'dd/MM/yyyy'),
+        format(new Date(row.createdAt), 'HH:mm:ss'),
         row.cashierName,
         row.creatorName,
         row.methodName,
+        row.itemProductCode,
+        row.itemCategory,
         row.itemDescription,
         row.itemQuantity,
-        row.itemUnitPrice.toFixed(2),
-        row.itemTotal.toFixed(2),
+        formatReporteNumber(row.itemUnitPrice),
+        formatReporteNumber(row.itemTotal),
       ]);
 
       const csvRows = [headers.join(';'), ...rows.map((r) => r.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(';'))];
@@ -94,11 +137,13 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
     }
 
     const headers = [
+      'Sucursal',
       'Orden Code',
       'Orden Nro',
       'Referencia Orden',
       'Tipo de Orden',
-      'Fecha y Hora',
+      'Fecha',
+      'Hora',
       'Cajero',
       'Usuario Creador',
       'Metodo de Pago',
@@ -109,17 +154,19 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
 
     const rows = payments.map((p) => {
       return [
+        p.branchName,
         p.orderCode || '',
         p.orderNumber || '',
         getOrderRef(p.orderCode, p.orderNumber),
         orderTypeLabel(p.orderType),
-        format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        format(new Date(p.createdAt), 'dd/MM/yyyy'),
+        format(new Date(p.createdAt), 'HH:mm:ss'),
         p.cashierName,
         p.creatorName,
         p.methodName,
-        p.amount.toFixed(2),
-        p.change.toFixed(2),
-        p.netApplied.toFixed(2)
+        formatReporteNumber(p.amount),
+        formatReporteNumber(p.change),
+        formatReporteNumber(p.netApplied)
       ];
     });
 
@@ -140,6 +187,78 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
   const handlePrint = () => {
     window.print();
   };
+
+  const paginationBar = (
+    <div className="flex flex-col gap-3 border-b border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="font-semibold text-foreground">
+          Mostrando {showingFrom}–{showingTo} de {tableRows.length}
+        </span>
+        <span className="hidden sm:inline">·</span>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="pagos-page-size" className="text-xs font-bold whitespace-nowrap">
+            Filas por página
+          </Label>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => setPageSize(Number(value))}
+          >
+            <SelectTrigger id="pagos-page-size" className="h-8 w-[88px] rounded-xl text-xs font-bold">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)} className="text-xs font-semibold">
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage(1)}
+          disabled={safeCurrentPage <= 1}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Primera
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+          disabled={safeCurrentPage <= 1}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Anterior
+        </Button>
+        <span className="min-w-[88px] text-center text-xs font-bold text-foreground">
+          Página {safeCurrentPage} de {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+          disabled={safeCurrentPage >= totalPages}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Siguiente
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage(totalPages)}
+          disabled={safeCurrentPage >= totalPages}
+          className="rounded-xl h-8 text-xs font-bold"
+        >
+          Última
+        </Button>
+      </div>
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -182,7 +301,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
             <div className="mt-4">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total General Recaudado</span>
               <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
-                ${kpis.totalNeto.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatReporteMoney(kpis.totalNeto)}
               </h3>
             </div>
           </CardContent>
@@ -202,7 +321,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
             <div className="mt-4">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Ticket Promedio por Orden</span>
               <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
-                ${kpis.ticketPromedio.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatReporteMoney(kpis.ticketPromedio)}
               </h3>
             </div>
           </CardContent>
@@ -239,7 +358,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                 Object.entries(kpis.desglose).map(([method, amount]) => (
                   <div key={method} className="flex justify-between items-center text-xs font-bold">
                     <span className="text-muted-foreground">{method}:</span>
-                    <span className="text-foreground">${(amount as number).toFixed(2)}</span>
+                    <span className="text-foreground">{formatReporteMoney(amount as number)}</span>
                   </div>
                 ))
               )}
@@ -300,17 +419,22 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
           </div>
         ) : (
           <div className="rounded-3xl border border-border/80 bg-card overflow-hidden shadow-none">
+            {paginationBar}
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="font-bold text-foreground py-3">Sucursal</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Código/Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Tipo</TableHead>
-                  <TableHead className="font-bold text-foreground py-3">Fecha y Hora</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Fecha</TableHead>
+                  <TableHead className="font-bold text-foreground py-3">Hora</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Cajero</TableHead>
                   <TableHead className="font-bold text-foreground py-3">Creador Orden</TableHead>
                   <TableHead className="font-bold text-foreground py-3 text-center">Método Pago</TableHead>
                   {itemBreakdown ? (
                     <>
+                      <TableHead className="font-bold text-foreground py-3">Código producto</TableHead>
+                      <TableHead className="font-bold text-foreground py-3">Categoría</TableHead>
                       <TableHead className="font-bold text-foreground py-3">Ítem</TableHead>
                       <TableHead className="font-bold text-foreground py-3 text-right">Cant.</TableHead>
                       <TableHead className="font-bold text-foreground py-3 text-right">P. Unit.</TableHead>
@@ -327,16 +451,28 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
               </TableHeader>
               <TableBody>
                 {itemBreakdown
-                  ? itemRows.map((row) => (
-                      <TableRow key={row.rowKey} className="hover:bg-muted/30">
+                  ? itemRows.map((row, index) => (
+                      <TableRow
+                        key={row.rowKey}
+                        className={cn(
+                          'hover:bg-muted/30',
+                          !isRowVisibleOnScreen(index, startIndex, endIndex) && 'hidden print:table-row',
+                        )}
+                      >
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {row.branchName}
+                        </TableCell>
                         <TableCell className="font-mono font-bold text-xs">
                           {getOrderRef(row.orderCode, row.orderNumber)}
                         </TableCell>
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(row.orderType)}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {format(new Date(row.createdAt), 'dd/MM/yyyy HH:mm')}
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(row.createdAt), 'dd/MM/yyyy')}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(row.createdAt), 'HH:mm:ss')}
                         </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground">
                           {row.cashierName}
@@ -349,6 +485,12 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                             {row.methodName}
                           </span>
                         </TableCell>
+                        <TableCell className="text-xs font-mono font-semibold text-foreground whitespace-nowrap">
+                          {row.itemProductCode}
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {row.itemCategory}
+                        </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground max-w-[220px]">
                           <span className="line-clamp-2">{row.itemDescription}</span>
                         </TableCell>
@@ -356,23 +498,35 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                           {row.itemQuantity}
                         </TableCell>
                         <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                          ${row.itemUnitPrice.toFixed(2)}
+                          {formatReporteMoney(row.itemUnitPrice)}
                         </TableCell>
                         <TableCell className="text-xs text-right font-bold text-foreground">
-                          ${row.itemTotal.toFixed(2)}
+                          {formatReporteMoney(row.itemTotal)}
                         </TableCell>
                       </TableRow>
                     ))
-                  : payments.map((p) => (
-                      <TableRow key={p.id} className="hover:bg-muted/30">
+                  : payments.map((p, index) => (
+                      <TableRow
+                        key={p.id}
+                        className={cn(
+                          'hover:bg-muted/30',
+                          !isRowVisibleOnScreen(index, startIndex, endIndex) && 'hidden print:table-row',
+                        )}
+                      >
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {p.branchName}
+                        </TableCell>
                         <TableCell className="font-mono font-bold text-xs">
                           {getOrderRef(p.orderCode, p.orderNumber)}
                         </TableCell>
                         <TableCell className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">
                           {orderTypeLabel(p.orderType)}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {format(new Date(p.createdAt), 'dd/MM/yyyy HH:mm')}
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(p.createdAt), 'dd/MM/yyyy')}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(p.createdAt), 'HH:mm:ss')}
                         </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground">
                           {p.cashierName}
@@ -386,13 +540,13 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                           </span>
                         </TableCell>
                         <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                          ${p.amount.toFixed(2)}
+                          {formatReporteMoney(p.amount)}
                         </TableCell>
                         <TableCell className="text-xs text-right font-medium text-muted-foreground">
-                          ${p.change.toFixed(2)}
+                          {formatReporteMoney(p.change)}
                         </TableCell>
                         <TableCell className="text-xs text-right font-bold text-foreground">
-                          ${p.netApplied.toFixed(2)}
+                          {formatReporteMoney(p.netApplied)}
                         </TableCell>
                       </TableRow>
                     ))}

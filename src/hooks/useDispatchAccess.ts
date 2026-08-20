@@ -1,9 +1,12 @@
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { canOperate, canView } from "@/lib/permissions";
 import { useDispatchConfig } from "@/hooks/useDispatchConfig";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { dbSelectStrict } from "@/services/DatabaseService";
+import { qk } from "@/lib/queryKeys";
 
 export type DispatchView = "ALL" | "TABLE" | "SPECIAL" | "TAKEOUT";
 
@@ -14,13 +17,35 @@ export const DISPATCH_VIEW_LABELS: Record<DispatchView, string> = {
   TAKEOUT: "Para llevar / Express",
 };
 
+async function hasEnabledPackerForShift(shiftId: string): Promise<boolean> {
+  const rows = await dbSelectStrict<any>("cash_shift_users", {
+    select: "user_id",
+    filters: [
+      { column: "shift_id", op: "eq", value: shiftId },
+      { column: "is_enabled", op: "eq", value: true },
+      { column: "can_pack_orders", op: "eq", value: true },
+    ],
+  });
+
+  return (rows ?? []).length > 0;
+}
+
 export function useDispatchAccess() {
   const { permissions, isGlobalAdmin } = useBranch();
   const { user } = useAuth();
   const { config, assignments, isLoading: isDispatchConfigLoading } = useDispatchConfig();
   const shiftGateQuery = useBranchShiftGate();
+  const shiftId = shiftGateQuery.data?.shiftId ?? null;
+  const enabledPackerQuery = useQuery({
+    queryKey: shiftId ? [...qk.shiftEnabledUsers(shiftId), "packer-presence"] : ["shift-enabled-users", null, "packer-presence"],
+    queryFn: () => hasEnabledPackerForShift(shiftId!),
+    enabled: Boolean(shiftId),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
 
   const access = useMemo(() => {
+    const takeoutReservedForPacking = Boolean(shiftId) && enabledPackerQuery.data !== false;
     const hasDispatchShiftAccess = Boolean(shiftGateQuery.data?.isSupervisor)
       || Boolean(shiftGateQuery.data?.canDispatchOrders)
       || Boolean(shiftGateQuery.data?.canServePlates);
@@ -39,7 +64,7 @@ export function useDispatchAccess() {
     const takeoutOrExpressEnabled = takeoutEnabled || expressEnabled;
     const baseViews: Array<Extract<DispatchView, "TABLE" | "SPECIAL" | "TAKEOUT">> = [];
     if (hasDispatchShiftAccess && canViewTable && tableEnabled) baseViews.push("TABLE");
-    if (hasDispatchShiftAccess && canViewTakeout && takeoutOrExpressEnabled) baseViews.push("TAKEOUT");
+    if (hasDispatchShiftAccess && canViewTakeout && takeoutOrExpressEnabled && !takeoutReservedForPacking) baseViews.push("TAKEOUT");
     if (hasDispatchShiftAccess && canViewTable && tableEnabled) baseViews.push("SPECIAL");
 
     const userAssignedTypes = new Set(
@@ -76,7 +101,7 @@ export function useDispatchAccess() {
       canViewTakeout,
       canOperateTable: hasDispatchShiftAccess && canOperateTable,
       canOperateTakeout: hasDispatchShiftAccess && canOperateTakeout,
-      canOperateAll: hasDispatchShiftAccess && (canOperateTable || canOperateTakeout),
+      canOperateAll: hasDispatchShiftAccess && (canOperateTable || (canOperateTakeout && !takeoutReservedForPacking)),
       tableEnabled,
       takeoutEnabled,
       fallbackVisible: hasDispatchShiftAccess && (canViewTable || canViewTakeout),
@@ -87,8 +112,10 @@ export function useDispatchAccess() {
     config?.table_enabled,
     config?.takeout_enabled,
     config?.express_enabled,
+    enabledPackerQuery.data,
     isGlobalAdmin,
     permissions,
+    shiftId,
     shiftGateQuery.data?.canDispatchOrders,
     shiftGateQuery.data?.canServePlates,
     shiftGateQuery.data?.isSupervisor,
@@ -101,7 +128,7 @@ export function useDispatchAccess() {
      * No bloquear la pantalla si el gate ya da acceso: la config usa defaults
      * (SINGLE / todo habilitado) hasta que llegue el bootstrap.
      */
-    isLoading: isDispatchConfigLoading && access.availableViews.length === 0,
+    isLoading: (isDispatchConfigLoading || (enabledPackerQuery.isLoading && Boolean(shiftId))) && access.availableViews.length === 0,
     getViewLabel: (view: DispatchView) => DISPATCH_VIEW_LABELS[view],
     canOperateView: (view: DispatchView) => (
       view === "ALL"

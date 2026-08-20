@@ -23,6 +23,7 @@ import { ensurePlatosProductIdsForBranch, invalidatePlatosProductIdsCache, isPla
 import { buildDispatchAllocations, consolidateDispatchOrderItems } from "@/lib/dispatchItemConsolidation";
 import {
   fetchDispatchServirQueueBundle,
+  invalidateDispatchServirQueueBundleCache,
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
 } from "@/lib/dispatchServirQueueBundle";
@@ -35,8 +36,68 @@ import {
   useOperationalOrdersRealtime,
   invalidateOperationalOrderQueries,
 } from "@/lib/queryEgress";
+import { orderMatchesDispatchModuleRoute } from "@/lib/dispatchModuleRouting";
+import { resolveOrderTableName } from "@/lib/orderPresentation";
 
-export type DispatchOrdersModule = "dispatch" | "servir";
+async function enrichDispatchOrdersTableContext(
+  orders: any[],
+  tablesMap: Record<string, string>,
+): Promise<{ orders: any[]; tablesMap: Record<string, string> }> {
+  const specialOrders = orders.filter((order) => Boolean(order.is_special));
+  if (specialOrders.length === 0) {
+    return { orders, tablesMap };
+  }
+
+  const specialIds = specialOrders.map((order) => order.id);
+  const metaRows = await dbSelectStrict<any>("orders", {
+    select: "id, special_origin_table_id, table_name_snapshot",
+    filters: [{ column: "id", op: "in", value: specialIds }],
+  });
+  const metaById = Object.fromEntries(
+    (metaRows ?? []).map((row) => [row.id, row]),
+  );
+
+  const nextTablesMap = { ...tablesMap };
+  const originIds = new Set<string>();
+  for (const row of metaRows ?? []) {
+    if (row.special_origin_table_id) originIds.add(row.special_origin_table_id);
+  }
+  const missingOriginIds = Array.from(originIds).filter((id) => !nextTablesMap[id]);
+  if (missingOriginIds.length > 0) {
+    const extraTables = await dbSelectStrict<any>("restaurant_tables", {
+      select: "id, name",
+      filters: [{ column: "id", op: "in", value: missingOriginIds }],
+    });
+    for (const table of extraTables ?? []) {
+      nextTablesMap[table.id] = table.name;
+    }
+  }
+
+  const enrichedOrders = orders.map((order) => {
+    if (!order.is_special) return order;
+    const meta = metaById[order.id];
+    if (!meta) return order;
+    return {
+      ...order,
+      special_origin_table_id: order.special_origin_table_id ?? meta.special_origin_table_id ?? null,
+      table_name_snapshot: order.table_name_snapshot ?? meta.table_name_snapshot ?? null,
+    };
+  });
+
+  return { orders: enrichedOrders, tablesMap: nextTablesMap };
+}
+
+function mapDispatchOrderTableName(order: any, tablesMap: Record<string, string>) {
+  return resolveOrderTableName({
+    is_special: order.is_special,
+    table_id: order.table_id,
+    special_origin_table_id: order.special_origin_table_id,
+    table_name_snapshot: order.table_name_snapshot,
+    tablesMap,
+  });
+}
+
+export type DispatchOrdersModule = "dispatch" | "servir" | "packing";
 
 export interface UseDispatchOrdersOptions {
   module?: DispatchOrdersModule;
@@ -250,6 +311,19 @@ function matchesScope(orderType: string, scope: DispatchView) {
   if (scope === "TABLE") return orderType === "DINE_IN" || orderType === "TABLE" || orderType === "EXTRA";
   if (scope === "TAKEOUT") return orderType === "TAKEOUT" || orderType === "EXPRESS";
   return false;
+}
+
+async function fetchEnabledPackerUserIds(shiftId: string): Promise<Set<string>> {
+  const rows = await dbSelectStrict<any>("cash_shift_users", {
+    select: "user_id",
+    filters: [
+      { column: "shift_id", op: "eq", value: shiftId },
+      { column: "is_enabled", op: "eq", value: true },
+      { column: "can_pack_orders", op: "eq", value: true },
+    ],
+  });
+
+  return new Set((rows ?? []).map((row: any) => row.user_id).filter(Boolean));
 }
 
 /** Igual criterio que caja / useOrder: pago que no debe contar para “hay cobro activo”. */
@@ -469,6 +543,7 @@ function filterDispatchCardsByScope(cards: DispatchOrder[], scope: DispatchView)
 export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrdersOptions = {}) {
   const moduleMode: DispatchOrdersModule = options.module ?? "dispatch";
   const isServirModule = moduleMode === "servir";
+  const isPackingModule = moduleMode === "packing";
   const qc = useQueryClient();
   const { activeBranchId, activeBranch } = useBranch();
   const { user } = useAuth();
@@ -485,24 +560,38 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
   // Sin scope en la key: una sola cola por módulo; el tab filtra en cliente (instantáneo).
   const dispatchOrdersQueryKey = [
-    isServirModule ? "servir-orders" : "dispatch-orders",
+    isServirModule ? "servir-orders" : isPackingModule ? "packing-orders" : "dispatch-orders",
     activeBranchId,
     user?.id,
     shiftGate?.shiftId ?? "_",
   ] as const;
 
   const lastShiftIdRef = useRef<string | null>(null);
+  const lastBranchIdRef = useRef<string | null>(null);
   useEffect(() => {
     const nextShiftId = shiftGate?.shiftId ?? null;
-    if (activeBranchId && nextShiftId && lastShiftIdRef.current && lastShiftIdRef.current !== nextShiftId) {
+    const branchChanged =
+      lastBranchIdRef.current !== null
+      && lastBranchIdRef.current !== activeBranchId;
+    const shiftChanged =
+      Boolean(activeBranchId && nextShiftId && lastShiftIdRef.current && lastShiftIdRef.current !== nextShiftId);
+    if (branchChanged || shiftChanged) {
       // Cambio de turno: tirar caches (no solo invalidar) para no reusar un bundle vacío en vuelo.
-      resetRepairOpenShiftThrottle(activeBranchId);
+      if (lastBranchIdRef.current) {
+        invalidateDispatchServirQueueBundleCache(lastBranchIdRef.current);
+      }
+      if (activeBranchId) {
+        invalidateDispatchServirQueueBundleCache(activeBranchId);
+        resetRepairOpenShiftThrottle(activeBranchId);
+      }
       qc.removeQueries({ queryKey: qk.dispatchServirQueueBundle });
       qc.removeQueries({ queryKey: qk.dispatchOrders });
       qc.removeQueries({ queryKey: qk.servirOrders });
+      qc.removeQueries({ queryKey: qk.packingOrders });
       void qc.invalidateQueries({ queryKey: qk.openCashShift });
       void qc.invalidateQueries({ queryKey: qk.branchShiftGate });
     }
+    lastBranchIdRef.current = activeBranchId;
     lastShiftIdRef.current = nextShiftId;
   }, [activeBranchId, shiftGate?.shiftId, qc]);
 
@@ -556,7 +645,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         // Cola vacía: repair forzado + 1 reintento (cubre tags del turno cerrado y carreras post-apertura).
         if ((bundle.orders?.length ?? 0) === 0) {
           await repairOpenShiftOrderCashShiftIds(activeBranchId, { force: true });
-          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id, { force: true });
         }
 
         const [bootstrap] = await Promise.all([bootstrapPromise]);
@@ -601,7 +690,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         }
 
         creatorNameMap = buildUserDisplayMap(bundle.profiles);
-        packerUserIds = new Set(bundle.packer_user_ids ?? []);
+        packerUserIds = isServirModule
+          ? new Set(bundle.packer_user_ids ?? [])
+          : await fetchEnabledPackerUserIds(openShift.id);
+        const hasEnabledPacker = packerUserIds.size > 0;
         tablesMap = Object.fromEntries((bundle.tables ?? []).map((t) => [t.id, t.name]));
         splitsMap = Object.fromEntries((bundle.splits ?? []).map((s) => [s.id, s.split_code]));
         hasPlateServersFromBundle = Boolean(bundle.has_plate_servers);
@@ -612,6 +704,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
         const getPermittedForView = (v: DispatchView, source: any[]) => {
           let baseFiltered = source.filter((order) => {
+            if (!orderMatchesDispatchModuleRoute(order, moduleMode, hasEnabledPacker)) return false;
             if (v === "SPECIAL") return Boolean(order.is_special);
             if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
             return matchesScope(order.order_type, v);
@@ -632,7 +725,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           return baseFiltered;
         };
 
-        const allPermittedOrders = getPermittedForView("ALL", activeOrders);
+        let allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
         if (allPermittedOrders.length === 0) {
           return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
         }
@@ -641,6 +734,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         items = (bundle.items ?? []).filter((item) => permittedIds.has(item.order_id));
         operationalMaps = operationalMapsFromBundleItems(items);
         clientPaidQtyByItemId = paidQtyMapFromBundleItems(items);
+
+        const enrichedTableContext = await enrichDispatchOrdersTableContext(allPermittedOrders, tablesMap);
+        allPermittedOrders = enrichedTableContext.orders;
+        tablesMap = enrichedTableContext.tablesMap;
 
         for (const row of bundle.modifiers ?? []) {
           if (!items.some((it) => it.id === row.order_item_id)) continue;
@@ -678,7 +775,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           const orderWithContext = {
             ...order,
             created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
-            table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+            table_name: mapDispatchOrderTableName(order, tablesMap),
             split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
             is_packer_order: order.created_by ? packerUserIds.has(order.created_by) : false,
           };
@@ -719,7 +816,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       ordersMerged = (
         await dbSelectStrict<any>("orders", {
-          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
+          select: "id, order_number, order_code, order_type, is_special, is_tray_order, special_total_manual, special_group_total, special_origin_table_id, table_name_snapshot, created_by, table_id, split_id, status, created_at, updated_at, sent_to_kitchen_at, ready_at, dispatched_at, paid_at, cancelled_at, locked_for_editing, notes, cash_shift_id",
           branchId: activeBranchId,
           filters: [
             { column: "status", op: "in", value: ["PAID", "READY", "SENT_TO_KITCHEN"] },
@@ -778,26 +875,18 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (activeOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const creatorIds = Array.from(new Set(activeOrders.map((order) => order.created_by).filter(Boolean))) as string[];
-      const [creatorProfiles, packerUsers] = await Promise.all([
+      const [creatorProfiles, enabledPackerUserIds] = await Promise.all([
         creatorIds.length > 0
           ? dbSelectStrict<any>("profiles", {
               select: "id, first_name, full_name, username, alias, email",
               filters: [{ column: "id", op: "in", value: creatorIds }],
             })
           : Promise.resolve([] as any[]),
-        creatorIds.length > 0
-          ? dbSelectStrict<any>("cash_shift_users", {
-              select: "user_id",
-              filters: [
-                { column: "shift_id", op: "eq", value: openShift.id },
-                { column: "user_id", op: "in", value: creatorIds },
-                { column: "can_pack_orders", op: "eq", value: true },
-              ],
-            })
-          : Promise.resolve([] as any[]),
+        isServirModule ? Promise.resolve(new Set<string>()) : fetchEnabledPackerUserIds(openShift.id),
       ]);
       creatorNameMap = buildUserDisplayMap(creatorProfiles);
-      packerUserIds = new Set((packerUsers ?? []).map((u: any) => u.user_id));
+      packerUserIds = enabledPackerUserIds;
+      const hasEnabledPacker = packerUserIds.size > 0;
 
       const dispatchMode = config?.dispatch_mode || "SINGLE";
       const userAssignments = (assignments || []).filter((assignment) => assignment.user_id === user.id);
@@ -805,6 +894,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const getPermittedForView = (v: DispatchView, source: any[]) => {
         let baseFiltered = source.filter((order) => {
+          if (!orderMatchesDispatchModuleRoute(order, moduleMode, hasEnabledPacker)) return false;
           if (v === "SPECIAL") return Boolean(order.is_special);
           if (v === "TABLE") return matchesScope(order.order_type, v) && !order.is_special;
           return matchesScope(order.order_type, v);
@@ -825,11 +915,15 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         return baseFiltered;
       };
 
-      const allPermittedOrders = getPermittedForView("ALL", activeOrders);
+      let allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
       if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
-      const tableIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.table_id).filter(Boolean));
+      const tableIdSet = new Set<string>();
+      for (const order of allPermittedOrders) {
+        if (order.table_id) tableIdSet.add(order.table_id);
+        if (order.special_origin_table_id) tableIdSet.add(order.special_origin_table_id);
+      }
       const tableIds = Array.from(tableIdSet);
       const splitIdSet = new Set<string>(allPermittedOrders.map((order: any) => order.split_id).filter(Boolean));
       const splitIds = Array.from(splitIdSet);
@@ -857,6 +951,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       tablesMap = Object.fromEntries((tables ?? []).map((t: any) => [t.id, t.name]));
       splitsMap = Object.fromEntries((splits ?? []).map((s: any) => [s.id, s.split_code]));
       items = legacyItems ?? [];
+
+      const enrichedLegacyTableContext = await enrichDispatchOrdersTableContext(allPermittedOrders, tablesMap);
+      allPermittedOrders = enrichedLegacyTableContext.orders;
+      tablesMap = enrichedLegacyTableContext.tablesMap;
 
       const itemIds = (items ?? []).map((item: any) => item.id);
       modifiersMap = {};
@@ -916,7 +1014,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         const orderWithContext = {
           ...order,
           created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
-          table_name: order.table_id ? tablesMap[order.table_id] ?? null : null,
+          table_name: mapDispatchOrderTableName(order, tablesMap),
           split_code: order.split_id ? splitsMap[order.split_id] ?? null : null,
           is_packer_order: order.created_by ? packerUserIds.has(order.created_by) : false,
         };
@@ -958,12 +1056,13 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   useOperationalOrdersRealtime({
     branchId: activeBranchId,
     queryClient: qc,
-    channelPrefix: isServirModule ? "servir-orders-rt" : "dispatch-orders-rt",
+    channelPrefix: isServirModule ? "servir-orders-rt" : isPackingModule ? "packing-orders-rt" : "dispatch-orders-rt",
     enabled: Boolean(activeBranchId && user),
     queryKeys: [
       // Ambos módulos + bundle: un solo evento debe refrescar la fuente compartida.
       qk.dispatchOrders,
       qk.servirOrders,
+      qk.packingOrders,
       qk.dispatchServirQueueBundle,
     ],
     includePayments: true,
@@ -986,6 +1085,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de listo aplicada");
     },
@@ -1008,6 +1108,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de despacho aplicada");
     },
@@ -1027,6 +1128,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
@@ -1046,6 +1148,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
@@ -1081,6 +1184,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       return { previous };
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       toast.success("Item despachado");
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
     },
@@ -1121,6 +1225,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       return { previous };
     },
     onSuccess: () => {
+      invalidateDispatchServirQueueBundleCache(activeBranchId);
       toast.success("Orden despachada");
       // Caja/pagos se actualizan vía hub Realtime (payments + orders).
       reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);

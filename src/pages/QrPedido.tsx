@@ -17,6 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   CLIENTE_FORMULARIO_VACIO,
@@ -35,6 +41,7 @@ import {
   crearOrdenAutopedidoQr,
   obtenerMenuAutopedidoQr,
   obtenerModificadoresAutopedidoQr,
+  nombreVisibleAutopedidoQr,
   registrarClienteAutopedidoQr,
   resolverContextoTokenQr,
   type ContextoTokenQr,
@@ -42,7 +49,7 @@ import {
   type ModificadorAutopedido,
 } from "@/services/autopedidosQrDb";
 
-type Step = "identidad" | "menu" | "producto" | "carrito" | "exito";
+type Step = "identidad" | "menu" | "carrito" | "exito";
 
 type CartItem = {
   key: string;
@@ -176,11 +183,10 @@ export default function QrPedido() {
   const [identidadError, setIdentidadError] = useState<string | null>(null);
   const [identidadLoading, setIdentidadLoading] = useState(false);
 
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [pathIds, setPathIds] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<MenuNodeAutopedido | null>(null);
   const [selectedModifiers, setSelectedModifiers] = useState<string[]>([]);
   const [productQty, setProductQty] = useState(1);
-  const [itemNote, setItemNote] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -204,7 +210,7 @@ export default function QrPedido() {
         const roots = menu
           .filter((n) => n.node_type === "category" && !n.parent_id)
           .sort((a, b) => a.display_order - b.display_order);
-        setActiveCategoryId(roots[0]?.id ?? null);
+        setPathIds(roots[0]?.id ? [roots[0].id] : []);
       } catch (err) {
         if (!cancelled) {
           setBootError(err instanceof Error ? err.message : "No se pudo abrir el autopedido.");
@@ -225,25 +231,79 @@ export default function QrPedido() {
     return map;
   }, [menuNodes]);
 
+  const nodesById = useMemo(() => {
+    const map = new Map<string, MenuNodeAutopedido>();
+    for (const node of menuNodes) map.set(node.id, node);
+    return map;
+  }, [menuNodes]);
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, MenuNodeAutopedido[]>();
+    for (const node of menuNodes) {
+      if (node.is_active === false) continue;
+      const parentId = node.parent_id;
+      const bucket = map.get(parentId) ?? [];
+      bucket.push(node);
+      map.set(parentId, bucket);
+    }
+    for (const [key, bucket] of map.entries()) {
+      map.set(
+        key,
+        [...bucket].sort(
+          (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name),
+        ),
+      );
+    }
+    return map;
+  }, [menuNodes]);
+
   const categories = useMemo(
     () =>
       menuNodes
-        .filter((n) => n.node_type === "category" && !n.parent_id)
+        .filter((n) => n.node_type === "category" && !n.parent_id && n.is_active !== false)
         .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name)),
     [menuNodes],
   );
 
-  const productsInCategory = useMemo(() => {
-    if (!activeCategoryId) return [];
-    return menuNodes
-      .filter(
-        (n) =>
-          n.node_type === "product" &&
-          (n.parent_id === activeCategoryId ||
-            resolveAncestorIds(n.id, parentByNodeId).includes(activeCategoryId)),
-      )
-      .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name));
-  }, [activeCategoryId, menuNodes, parentByNodeId]);
+  const breadcrumb = useMemo(
+    () => pathIds.map((id) => nodesById.get(id)).filter((n): n is MenuNodeAutopedido => Boolean(n)),
+    [pathIds, nodesById],
+  );
+
+  const activeL1Id = pathIds[0] ?? null;
+  const currentNode = breadcrumb[breadcrumb.length - 1] ?? null;
+
+  const visibleNodes = useMemo(() => {
+    if (!currentNode) return [];
+    return childrenByParent.get(currentNode.id) ?? [];
+  }, [childrenByParent, currentNode]);
+
+  const visibleCategories = useMemo(
+    () => visibleNodes.filter((n) => n.node_type === "category"),
+    [visibleNodes],
+  );
+  const visibleProducts = useMemo(
+    () => visibleNodes.filter((n) => n.node_type === "product"),
+    [visibleNodes],
+  );
+
+  const selectL1 = (nodeId: string) => {
+    setPathIds([nodeId]);
+  };
+
+  const drillDown = (node: MenuNodeAutopedido) => {
+    const kids = childrenByParent.get(node.id) ?? [];
+    if (kids.length === 0) return;
+    setPathIds((prev) => [...prev, node.id]);
+  };
+
+  const goBackLevel = () => {
+    setPathIds((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  };
+
+  const goToBreadcrumbIndex = (index: number) => {
+    setPathIds((prev) => prev.slice(0, index + 1));
+  };
 
   const productModifiers = useMemo(() => {
     if (!selectedProduct) return [];
@@ -325,21 +385,25 @@ export default function QrPedido() {
     setSelectedProduct(product);
     setSelectedModifiers([]);
     setProductQty(1);
-    setItemNote("");
-    setStep("producto");
+  };
+
+  const closeProduct = () => {
+    setSelectedProduct(null);
+    setSelectedModifiers([]);
+    setProductQty(1);
   };
 
   const addToCart = () => {
     if (!selectedProduct) return;
     const price = Number(selectedProduct.price ?? 0);
     if (price <= 0 && !selectedProduct.manual_price_enabled) {
-      setSubmitError(`"${selectedProduct.name}" no tiene precio configurado.`);
+      setSubmitError(`"${nombreVisibleAutopedidoQr(selectedProduct)}" no tiene precio configurado.`);
       return;
     }
     const modifierNames = productModifiers
       .filter((m) => selectedModifiers.includes(m.modifier_id))
       .map((m) => m.modifier_name);
-    const key = `${selectedProduct.id}|${selectedModifiers.slice().sort().join(",")}|${itemNote.trim()}`;
+    const key = `${selectedProduct.id}|${selectedModifiers.slice().sort().join(",")}`;
     setCart((prev) => {
       const existing = prev.find((p) => p.key === key);
       if (existing) {
@@ -352,18 +416,18 @@ export default function QrPedido() {
         {
           key,
           menuNodeId: selectedProduct.id,
-          name: selectedProduct.name,
+          name: nombreVisibleAutopedidoQr(selectedProduct),
           unitPrice: price,
           quantity: productQty,
           modifierIds: selectedModifiers.slice(),
           modifierNames,
-          itemNote: itemNote.trim(),
+          itemNote: "",
           imageUrl: selectedProduct.image_url,
         },
       ];
     });
     setSubmitError(null);
-    setStep("menu");
+    closeProduct();
   };
 
   const updateCartQty = (key: string, delta: number) => {
@@ -425,12 +489,7 @@ export default function QrPedido() {
   }
 
   return (
-    <div
-      className={cn(
-        "mx-auto flex w-full max-w-md flex-col bg-gradient-to-b from-orange-50 via-white to-amber-50 pt-safe",
-        step === "producto" ? "h-dvh overflow-hidden" : "min-h-dvh",
-      )}
-    >
+    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-gradient-to-b from-orange-50 via-white to-amber-50 pt-safe">
       <header className="sticky top-0 z-20 shrink-0 border-b border-orange-100 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -442,9 +501,9 @@ export default function QrPedido() {
           {step !== "identidad" && step !== "exito" ? (
             <button
               type="button"
-              onClick={() => setStep("carrito")}
+              onClick={() => setStep(step === "carrito" ? "menu" : "carrito")}
               className="relative inline-flex h-11 min-w-11 items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 text-primary"
-              aria-label="Ver carrito"
+              aria-label={step === "carrito" ? "Seguir pidiendo" : "Ver carrito"}
             >
               <ShoppingBag className="h-5 w-5" />
               {cartCount > 0 ? (
@@ -457,14 +516,7 @@ export default function QrPedido() {
         </div>
       </header>
 
-      <main
-        className={cn(
-          "flex-1 px-4 py-4",
-          step === "producto"
-            ? "flex min-h-0 flex-col pb-0"
-            : "pb-[calc(1rem+env(safe-area-inset-bottom,0px))]",
-        )}
-      >
+      <main className="flex-1 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
         {step === "identidad" ? (
           <section className="space-y-4">
             <div className="rounded-3xl border border-orange-200 bg-white p-5 shadow-sm">
@@ -621,10 +673,10 @@ export default function QrPedido() {
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => setActiveCategoryId(cat.id)}
+                  onClick={() => selectL1(cat.id)}
                   className={cn(
                     "flex h-12 shrink-0 items-center gap-2 rounded-2xl border px-3 text-sm font-bold",
-                    activeCategoryId === cat.id
+                    activeL1Id === cat.id
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-orange-200 bg-white text-foreground",
                   )}
@@ -639,138 +691,234 @@ export default function QrPedido() {
               ))}
             </div>
 
-            <div className="grid gap-3">
-              {productsInCategory.map((product) => (
+            {pathIds.length > 1 ? (
+              <div className="flex items-center gap-2">
                 <button
-                  key={product.id}
                   type="button"
-                  onClick={() => openProduct(product)}
-                  className="flex min-h-[4.5rem] items-center gap-3 rounded-3xl border border-orange-200 bg-white p-3 text-left shadow-sm"
+                  onClick={goBackLevel}
+                  className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-orange-200 bg-white px-2.5 text-xs font-bold text-muted-foreground"
                 >
+                  <ChevronLeft className="h-4 w-4" />
+                  Volver
+                </button>
+                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-xs font-semibold text-muted-foreground">
+                  {breadcrumb.map((node, index) => (
+                    <span key={node.id} className="flex shrink-0 items-center gap-1">
+                      {index > 0 ? <span className="text-orange-300">/</span> : null}
+                      <button
+                        type="button"
+                        onClick={() => goToBreadcrumbIndex(index)}
+                        className={cn(
+                          "rounded-lg px-1.5 py-0.5",
+                          index === breadcrumb.length - 1
+                            ? "bg-orange-50 text-primary"
+                            : "hover:bg-orange-50 hover:text-foreground",
+                        )}
+                      >
+                        {node.name}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {visibleCategories.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {visibleCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => drillDown(category)}
+                    className={cn(
+                      "relative flex min-h-[9.5rem] flex-col items-center justify-center gap-2 rounded-[1.4rem] border border-dashed border-orange-400/95 p-3 text-center",
+                      "bg-gradient-to-br from-orange-200 via-amber-100 to-yellow-200 shadow-sm active:scale-[0.99]",
+                    )}
+                  >
+                    <ProductPhoto
+                      name={category.name}
+                      imageUrl={category.image_url}
+                      icon={category.icon}
+                      className="h-14 w-14 rounded-[1.1rem] bg-white/70"
+                    />
+                    <p className="line-clamp-2 px-1 text-sm font-black leading-snug text-foreground">
+                      {category.name}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {visibleProducts.length > 0 ? (
+              <div className="grid gap-3">
+                {visibleProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => openProduct(product)}
+                    className="flex min-h-[4.5rem] items-center gap-3 rounded-3xl border border-orange-200 bg-white p-3 text-left shadow-sm"
+                  >
+                    <ProductPhoto
+                      name={nombreVisibleAutopedidoQr(product)}
+                      imageUrl={product.image_url}
+                      icon={product.icon}
+                      className="h-16 w-16 rounded-[1.1rem]"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-display text-base font-black text-foreground">{nombreVisibleAutopedidoQr(product)}</p>
+                      <p className="text-sm font-semibold text-primary">
+                        {formatMoney(Number(product.price ?? 0))}
+                      </p>
+                    </div>
+                    <Plus className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {visibleNodes.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-orange-200 px-4 py-8 text-center text-sm text-muted-foreground">
+                No hay opciones en esta categoría.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
+        <Dialog
+          open={Boolean(selectedProduct)}
+          onOpenChange={(open) => {
+            if (!open) closeProduct();
+          }}
+        >
+          {selectedProduct ? (
+            <DialogContent className="max-w-sm rounded-[24px] border-orange-200/40 bg-background p-5 shadow-xl sm:rounded-[28px]">
+              <DialogHeader className="mb-1 text-left">
+                <div className="flex items-start gap-3">
                   <ProductPhoto
-                    name={product.name}
-                    imageUrl={product.image_url}
-                    icon={product.icon}
-                    className="h-16 w-16 rounded-[1.1rem]"
+                    name={nombreVisibleAutopedidoQr(selectedProduct)}
+                    imageUrl={selectedProduct.image_url}
+                    icon={selectedProduct.icon}
+                    className="h-12 w-12 rounded-2xl"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="font-display text-base font-black text-foreground">{product.name}</p>
-                    <p className="text-sm font-semibold text-primary">
-                      {formatMoney(Number(product.price ?? 0))}
-                    </p>
+                    <DialogTitle className="font-display text-xl font-bold leading-tight text-foreground">
+                      {nombreVisibleAutopedidoQr(selectedProduct)}
+                    </DialogTitle>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-800">
+                        Precio unitario
+                      </span>
+                      <span className="font-display text-lg font-black text-foreground">
+                        {formatMoney(Number(selectedProduct.price ?? 0))}
+                      </span>
+                    </div>
                   </div>
-                  <Plus className="h-5 w-5 shrink-0 text-muted-foreground" />
-                </button>
-              ))}
-              {productsInCategory.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-orange-200 px-4 py-8 text-center text-sm text-muted-foreground">
-                  No hay productos en esta categoría.
-                </p>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
-
-        {step === "producto" && selectedProduct ? (
-          <section className="flex min-h-0 flex-1 flex-col">
-            <button
-              type="button"
-              onClick={() => setStep("menu")}
-              className="mb-2 inline-flex h-9 shrink-0 items-center gap-1 text-sm font-semibold text-muted-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" /> Volver al menú
-            </button>
-
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-orange-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <ProductPhoto
-                  name={selectedProduct.name}
-                  imageUrl={selectedProduct.image_url}
-                  icon={selectedProduct.icon}
-                  className="h-14 w-14 rounded-2xl"
-                />
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-lg font-black leading-tight">{selectedProduct.name}</h2>
-                  <p className="mt-0.5 text-base font-bold text-primary">
-                    {formatMoney(Number(selectedProduct.price ?? 0))}
-                    <span className="ml-1 text-xs font-semibold text-muted-foreground">c/u</span>
-                  </p>
                 </div>
-              </div>
+              </DialogHeader>
 
-              {productModifiers.length > 0 ? (
-                <div className="mt-3">
-                  <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
-                    Modificaciones
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {productModifiers.map((mod) => {
-                      const checked = selectedModifiers.includes(mod.modifier_id);
-                      return (
-                        <button
-                          key={mod.modifier_id}
-                          type="button"
-                          onClick={() =>
-                            setSelectedModifiers((prev) =>
+              <div className="space-y-5">
+                <div className="mt-2 space-y-1.5">
+                  <Label className="text-sm font-semibold text-muted-foreground">Cantidad</Label>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl shadow-sm"
+                      onClick={() => setProductQty((q) => Math.max(1, q - 1))}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={String(productQty)}
+                      onChange={(event) => {
+                        const digits = event.target.value.replace(/\D/g, "");
+                        if (!digits) {
+                          setProductQty(1);
+                          return;
+                        }
+                        setProductQty(Math.max(1, Number(digits)));
+                      }}
+                      className="h-11 w-20 rounded-xl text-center font-display text-xl font-bold shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl shadow-sm"
+                      onClick={() => setProductQty((q) => q + 1)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {productModifiers.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-orange-600">Modificaciones</Label>
+                    <div className="grid max-h-[35vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
+                      {productModifiers.map((mod) => {
+                        const checked = selectedModifiers.includes(mod.modifier_id);
+                        return (
+                          <button
+                            key={mod.modifier_id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedModifiers((prev) =>
+                                checked
+                                  ? prev.filter((id) => id !== mod.modifier_id)
+                                  : [...prev, mod.modifier_id],
+                              )
+                            }
+                            className={cn(
+                              "flex min-h-10 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold leading-tight",
                               checked
-                                ? prev.filter((id) => id !== mod.modifier_id)
-                                : [...prev, mod.modifier_id],
-                            )
-                          }
-                          className={cn(
-                            "flex min-h-10 items-center justify-between gap-1 rounded-xl border px-2.5 py-1.5 text-left text-xs font-semibold leading-tight",
-                            checked
-                              ? "border-primary bg-orange-50 text-primary"
-                              : "border-orange-100 bg-white text-foreground",
-                          )}
-                        >
-                          <span className="line-clamp-2">{mod.modifier_name}</span>
-                          {checked ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
-                        </button>
-                      );
-                    })}
+                                ? "border-primary bg-orange-50 text-primary"
+                                : "border-orange-100 bg-white text-foreground",
+                            )}
+                          >
+                            <span className="line-clamp-2">{mod.modifier_name}</span>
+                            {checked ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-2 flex items-end justify-between gap-3 border-t border-border/60 pt-4">
+                  <span className="flex flex-col text-[13px] font-medium text-muted-foreground">
+                    Total
+                    <span className="font-display text-2xl font-black text-foreground">
+                      {formatMoney(Number(selectedProduct.price ?? 0) * productQty)}
+                    </span>
+                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={closeProduct}
+                      className="h-11 rounded-xl px-4 font-bold shadow-sm"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={addToCart}
+                      className="flex h-11 items-center gap-1.5 rounded-xl px-5 font-bold shadow-sm"
+                    >
+                      <ShoppingBag className="h-4 w-4" />
+                      Agregar
+                    </Button>
                   </div>
                 </div>
-              ) : null}
-
-              <div className="mt-3 space-y-1.5">
-                <Label htmlFor="nota">Nota (opcional)</Label>
-                <Input
-                  id="nota"
-                  className="h-10 rounded-2xl"
-                  value={itemNote}
-                  onChange={(e) => setItemNote(e.target.value)}
-                  placeholder="Ej. poco picante"
-                />
               </div>
-            </div>
-
-            <div className="shrink-0 border-t border-orange-100 bg-gradient-to-b from-white to-amber-50/80 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-white"
-                    onClick={() => setProductQty((q) => Math.max(1, q - 1))}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-8 text-center text-lg font-black">{productQty}</span>
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-white"
-                    onClick={() => setProductQty((q) => q + 1)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-                <Button type="button" className="h-11 flex-1 rounded-2xl font-bold" onClick={addToCart}>
-                  Agregar {formatMoney(Number(selectedProduct.price ?? 0) * productQty)}
-                </Button>
-              </div>
-            </div>
-          </section>
-        ) : null}
+            </DialogContent>
+          ) : null}
+        </Dialog>
 
         {step === "carrito" ? (
           <section className="space-y-4">

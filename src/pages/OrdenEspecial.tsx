@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Loader2, Plus, RefreshCw, Sparkles, UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { dbSelect } from "@/services/DatabaseService";
+import { dbSelect, dbUpdate } from "@/services/DatabaseService";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -14,9 +14,10 @@ import { cn } from "@/lib/utils";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
 import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { Button } from "@/components/ui/button";
-import { getOrderRef } from "@/lib/orderPresentation";
+import { formatTableNameLabel, getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
+import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
 
 type SpecialOrderCard = {
   id: string;
@@ -27,6 +28,7 @@ type SpecialOrderCard = {
   created_by_name: string | null;
   special_total_manual: number | null;
   item_count: number;
+  table_name: string | null;
 };
 
 const seedSpecialDraftOrderCache = (
@@ -35,9 +37,13 @@ const seedSpecialDraftOrderCache = (
   {
     branchId,
     createdAt,
+    tableId,
+    tableName,
   }: {
     branchId: string;
     createdAt: string;
+    tableId: string;
+    tableName: string;
   },
 ) => {
   qc.setQueryData(getOrderQueryKey(orderId), {
@@ -53,7 +59,9 @@ const seedSpecialDraftOrderCache = (
     branch_id: branchId,
     table_id: null,
     split_id: null,
-    table_name: undefined,
+    table_name: tableName,
+    table_name_snapshot: tableName,
+    special_origin_table_id: tableId,
     created_at: createdAt,
     items: [],
     siblings: [],
@@ -65,7 +73,7 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
   if (!openShiftId) return [];
 
   const specialOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, order_items(id)",
+    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, special_origin_table_id, table_name_snapshot, order_items(id)",
     filters: [
       { column: "branch_id", op: "eq", value: branchId },
       { column: "is_special", op: "eq", value: true },
@@ -97,6 +105,18 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
       })
     : [];
   const creatorNameMap = buildUserDisplayMap(creatorProfiles);
+  const originTableIds = Array.from(new Set(
+    specialOrders.map((order: any) => order.special_origin_table_id).filter(Boolean),
+  )) as string[];
+  const originTables = originTableIds.length > 0
+    ? await dbSelect<any>("restaurant_tables", {
+        select: "id, name",
+        filters: [{ column: "id", op: "in", value: originTableIds }],
+      })
+    : [];
+  const originTableNameMap = Object.fromEntries(
+    (originTables ?? []).map((table: any) => [table.id, table.name]),
+  );
 
   return specialOrders
     .filter((order: any) => !dispatchedOrderIds.has(order.id))
@@ -113,6 +133,11 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
       created_by_name: order.created_by ? (creatorNameMap[order.created_by] ?? "Usuario") : null,
       special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
       item_count: Array.isArray(order.order_items) ? order.order_items.length : 0,
+      table_name: String(order.table_name_snapshot ?? "").trim()
+        || (order.special_origin_table_id
+          ? String(originTableNameMap[order.special_origin_table_id] ?? "").trim()
+          : "")
+        || null,
     }));
 };
 
@@ -128,6 +153,7 @@ const OrdenEspecial = () => {
   const { activeBranchId, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const [creating, setCreating] = useState(false);
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
 
   const adaptiveListPoll = useAdaptiveRefetchInterval(
     activeBranchId,
@@ -194,12 +220,46 @@ const OrdenEspecial = () => {
     navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
   };
 
-  const handleCreateOrder = async () => {
-    if (!user || !activeBranchId || creating || !canOperateSpecial) return;
+  const handleCreateOrder = () => {
+    if (!user) {
+      toast.error("Debes iniciar sesión para crear una orden.");
+      return;
+    }
+    if (!activeBranchId) {
+      toast.error("Selecciona una sucursal activa.");
+      return;
+    }
+    if (!canOperateSpecial) {
+      toast.error("No tienes permiso para crear órdenes especiales en este turno.");
+      return;
+    }
+    if (creating) return;
 
+    setTimeout(() => {
+      setIsTableModalOpen(true);
+    }, 100);
+  };
+
+  const resolveTableName = async (tableId: string) => {
+    const tables = await dbSelect<{ name?: string | null }>("restaurant_tables", {
+      select: "name",
+      filters: [{ column: "id", op: "eq", value: tableId }],
+    });
+    return String(tables?.[0]?.name ?? "").trim() || "Mesa";
+  };
+
+  const handleCreateOrderWithTable = async (tableId: string | null) => {
+    if (!user || !activeBranchId || creating || !canOperateSpecial) return;
+    if (!tableId) {
+      toast.error("Selecciona una mesa.");
+      return;
+    }
+
+    setIsTableModalOpen(false);
     setCreating(true);
     try {
       const now = new Date().toISOString();
+      const tableName = await resolveTableName(tableId);
       const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
         p_branch_id: activeBranchId,
         p_created_by: user.id,
@@ -210,7 +270,18 @@ const OrdenEspecial = () => {
       if (error) throw error;
 
       const orderId = String(data);
-      seedSpecialDraftOrderCache(qc, orderId, { branchId: activeBranchId, createdAt: now });
+      await dbUpdate("orders", orderId, {
+        special_origin_table_id: tableId,
+        table_name_snapshot: tableName,
+        updated_at: now,
+      });
+
+      seedSpecialDraftOrderCache(qc, orderId, {
+        branchId: activeBranchId,
+        createdAt: now,
+        tableId,
+        tableName,
+      });
 
       const specialListKey = ["special-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"] as const;
       qc.setQueryData(specialListKey, [
@@ -224,10 +295,11 @@ const OrdenEspecial = () => {
           special_total_manual: null,
           created_by_name: null,
           item_count: 0,
+          table_name: tableName,
         },
       ] satisfies SpecialOrderCard[]);
 
-      toast.success("Abriendo orden especial...");
+      toast.success(`Abriendo orden especial (${tableName})...`);
       navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
       invalidateOperationalOrderQueries(qc, {
         branchId: activeBranchId,
@@ -321,6 +393,11 @@ const OrdenEspecial = () => {
                   <Sparkles className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 break-all text-center">{orderRef}</span>
                 </div>
+                {order.table_name ? (
+                  <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
+                    {formatTableNameLabel(order.table_name)}
+                  </div>
+                ) : null}
                 {order.created_by_name && (
                   <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
                     <span className="flex min-w-0 items-center gap-1">
@@ -365,6 +442,15 @@ const OrdenEspecial = () => {
           </motion.button>
         </div>
       </div>
+
+      <ExtraTableSelectorModal
+        open={isTableModalOpen}
+        onOpenChange={setIsTableModalOpen}
+        onSelectTable={handleCreateOrderWithTable}
+        isCreating={creating}
+        title="Seleccionar mesa"
+        description="Indica a qué mesa pertenece esta orden especial antes de continuar."
+      />
     </div>
   );
 };

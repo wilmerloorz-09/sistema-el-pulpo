@@ -301,7 +301,7 @@ BEGIN
 
     FOR v_depth IN 0..v_max_depth LOOP
       INSERT INTO public.menu_nodes (
-        id, branch_id, parent_id, name, description, node_type, menu_scope,
+        id, branch_id, parent_id, name, qr_name, description, node_type, menu_scope,
         depth, display_order, price, is_active, icon, image_url,
         legacy_product_id, manual_price_enabled, is_tray_category,
         created_at, updated_at
@@ -311,6 +311,7 @@ BEGIN
         v_target_id,
         CASE WHEN mn.parent_id IS NULL THEN NULL ELSE pm.new_id END,
         mn.name,
+        mn.qr_name,
         mn.description,
         mn.node_type,
         mn.menu_scope,

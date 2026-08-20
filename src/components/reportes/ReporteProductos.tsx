@@ -30,6 +30,7 @@ import {
 } from 'recharts';
 import { FileDown, Printer, Award, Soup, TrendingUp, BarChart3, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatReporteMoney, formatReporteNumber } from '@/lib/reportesFormat';
 
 interface ReporteProductosProps {
   filters: any;
@@ -70,8 +71,8 @@ export default function ReporteProductos({ filters }: ReporteProductosProps) {
       p.category,
       p.quantityTotal,
       ORDER_TYPE_LABELS[p.orderTypePredominante] || p.orderTypePredominante,
-      p.unitPriceAverage.toFixed(2),
-      p.totalRecaudado.toFixed(2)
+      formatReporteNumber(p.unitPriceAverage),
+      formatReporteNumber(p.totalRecaudado)
     ]);
 
     const csvRows = [headers.join(';'), ...rows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))];
@@ -163,7 +164,7 @@ export default function ReporteProductos({ filters }: ReporteProductosProps) {
                     {p.name}
                   </span>
                   <h3 className="font-display text-base font-black text-foreground mt-0.5 truncate">
-                    {p.qty} vendidos <span className="text-xs font-normal text-muted-foreground">(${p.total.toFixed(2)})</span>
+                    {p.qty} vendidos <span className="text-xs font-normal text-muted-foreground">({formatReporteMoney(p.total)})</span>
                   </h3>
                 </div>
               </CardContent>
@@ -213,7 +214,7 @@ export default function ReporteProductos({ filters }: ReporteProductosProps) {
                           fontSize: '11px',
                         }}
                         formatter={(value: any, name: string) => {
-                          if (name === 'ventas') return [`$${value.toFixed(2)}`, 'Ventas Netas'];
+                          if (name === 'ventas') return [formatReporteMoney(value), 'Ventas Netas'];
                           if (name === 'ordenes') return [value, 'Cant. Órdenes'];
                           return [value, name];
                         }}
@@ -302,10 +303,10 @@ export default function ReporteProductos({ filters }: ReporteProductosProps) {
                       </span>
                     </TableCell>
                     <TableCell className="text-xs text-right text-muted-foreground">
-                      ${p.unitPriceAverage.toFixed(2)}
+                      {formatReporteMoney(p.unitPriceAverage)}
                     </TableCell>
                     <TableCell className="text-xs text-right font-black text-foreground">
-                      ${p.totalRecaudado.toFixed(2)}
+                      {formatReporteMoney(p.totalRecaudado)}
                     </TableCell>
                   </TableRow>
                 ))}

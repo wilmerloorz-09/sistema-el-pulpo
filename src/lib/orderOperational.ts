@@ -175,6 +175,109 @@ export const EMPTY_OPERATIONAL_MAPS: OperationalMaps = {
   cancelledTotalMap: {},
 };
 
+export type OperationalMapsBatchParticipant = {
+  batchKey: string;
+  participantId: string;
+  participantCount: number;
+};
+
+type PendingOperationalMapsBatch = {
+  participantCount: number;
+  participants: Map<string, string[]>;
+  resolvers: Map<string, { resolve: (maps: OperationalMaps) => void; reject: (error: unknown) => void }>;
+};
+
+export type OperationalMapsBatchCoordinator = {
+  fetch: (
+    orderIds: string[],
+    batch: OperationalMapsBatchParticipant,
+  ) => Promise<OperationalMaps>;
+  complete: (batch: OperationalMapsBatchParticipant) => void;
+};
+
+/**
+ * Agrupa lecturas simultáneas de snapshots pertenecientes a una misma vista.
+ * Cada participante recibe el mapa completo del batch; los consumidores ya
+ * indexan por `order_item_id`, por lo que no cambia su resultado funcional.
+ */
+export function createOperationalMapsBatchCoordinator(
+  fetchOperationalMaps: (orderIds: string[]) => Promise<OperationalMaps>,
+): OperationalMapsBatchCoordinator {
+  const pendingOperationalMapsBatches = new Map<string, PendingOperationalMapsBatch>();
+
+  const fetch = (
+    orderIds: string[],
+    batch: OperationalMapsBatchParticipant,
+  ): Promise<OperationalMaps> => {
+    let pending = pendingOperationalMapsBatches.get(batch.batchKey);
+    if (!pending) {
+      pending = {
+        participantCount: batch.participantCount,
+        participants: new Map(),
+        resolvers: new Map(),
+      };
+      pendingOperationalMapsBatches.set(batch.batchKey, pending);
+    }
+
+    const existing = pending.resolvers.get(batch.participantId);
+    if (existing) {
+      return new Promise((resolve, reject) => {
+        pending!.resolvers.set(batch.participantId, { resolve, reject });
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      pending!.participants.set(batch.participantId, Array.from(new Set(orderIds)));
+      pending!.resolvers.set(batch.participantId, { resolve, reject });
+
+      if (pending!.participants.size !== pending!.participantCount) return;
+
+      pendingOperationalMapsBatches.delete(batch.batchKey);
+      const unionOrderIds = Array.from(
+        new Set(Array.from(pending!.participants.values()).flat()),
+      );
+
+      fetchOperationalMaps(unionOrderIds)
+        .then((maps) => {
+          for (const { resolve: resolveParticipant } of pending!.resolvers.values()) {
+            resolveParticipant(maps);
+          }
+        })
+        .catch((error) => {
+          for (const { reject: rejectParticipant } of pending!.resolvers.values()) {
+            rejectParticipant(error);
+          }
+        });
+    });
+  };
+
+  return {
+    fetch,
+    complete: (batch) => {
+      void fetch([], batch).catch(() => {
+        // El participante no consume snapshots; otro participante recibirá el error.
+      });
+    },
+  };
+}
+
+const operationalMapsBatchCoordinator = createOperationalMapsBatchCoordinator(
+  (orderIds) => fetchOperationalMapsForOrders(orderIds),
+);
+
+function fetchOperationalMapsBatch(
+  orderIds: string[],
+  batch: OperationalMapsBatchParticipant,
+) {
+  return operationalMapsBatchCoordinator.fetch(orderIds, batch);
+}
+
+export function completeOperationalMapsBatchParticipant(
+  batch: OperationalMapsBatchParticipant,
+) {
+  operationalMapsBatchCoordinator.complete(batch);
+}
+
 export function normalizeSnapshotRows(rows: OrderOperationalSnapshotRow[]) {
   return rows.map(normalizeSnapshotRow);
 }
@@ -196,9 +299,16 @@ export function buildOperationalMapsFromSnapshotRows(rows: OrderOperationalSnaps
   };
 }
 
-export async function fetchOperationalMapsForOrders(orderIds: string[]): Promise<OperationalMaps> {
+export async function fetchOperationalMapsForOrders(
+  orderIds: string[],
+  options?: { batch?: OperationalMapsBatchParticipant },
+): Promise<OperationalMaps> {
   if (orderIds.length === 0) {
     return EMPTY_OPERATIONAL_MAPS;
+  }
+
+  if (options?.batch) {
+    return fetchOperationalMapsBatch(orderIds, options.batch);
   }
 
   const uniqueOrderIds = Array.from(new Set(orderIds));
