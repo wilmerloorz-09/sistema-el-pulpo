@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import QRCode from "qrcode";
 import { Loader2, Printer, QrCode, RefreshCw, TableProperties } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { useBranch } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
+import { generateQrDataUrlWithLogo } from "@/lib/qrCodeWithLogo";
 import {
   generarTokensQrMesasSucursal,
   type TokenQrMesaGenerado,
@@ -43,10 +43,9 @@ async function enrichTokensWithQr(tokens: TokenQrMesaGenerado[]): Promise<TokenC
   return Promise.all(
     tokens.map(async (token) => {
       const url = urlAutopedidoQr(token.token_seguro);
-      const qrDataUrl = await QRCode.toDataURL(url, {
+      const qrDataUrl = await generateQrDataUrlWithLogo(url, {
         width: 280,
         margin: 1,
-        errorCorrectionLevel: "M",
       });
       return { ...token, qrDataUrl };
     }),
@@ -308,19 +307,15 @@ const QrMesasAdmin = () => {
                 key={token.token_id}
                 className="flex flex-col items-center rounded-2xl border border-orange-200 bg-white p-4 text-center shadow-sm print:break-inside-avoid"
               >
-                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  Mesa {token.mesa_visual_order || "—"}
+                <p className="mb-3 font-display text-lg font-black text-foreground">
+                  {token.mesa_nombre?.trim() || `Mesa ${token.mesa_visual_order || "—"}`}
                 </p>
-                <p className="mb-3 font-display text-lg font-black text-foreground">{token.mesa_nombre}</p>
                 <img
                   src={token.qrDataUrl}
                   alt={`QR ${token.mesa_nombre}`}
                   className="h-40 w-40 rounded-xl border border-orange-100 bg-white object-contain"
                 />
-                <p className="mt-3 max-w-full truncate text-[10px] text-muted-foreground print:hidden">
-                  {urlAutopedidoQr(token.token_seguro)}
-                </p>
-                <p className="mt-1 text-xs font-semibold text-foreground">Escanea para pedir</p>
+                <p className="mt-3 text-xs font-semibold text-foreground">Escanea para pedir</p>
               </article>
             ))}
           </div>
