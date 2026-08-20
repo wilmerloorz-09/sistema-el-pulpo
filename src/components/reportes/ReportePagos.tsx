@@ -98,6 +98,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         'Metodo de Pago',
         'Codigo Producto',
         'Categoria',
+        'Subcategoria',
         'Item',
         'Cantidad',
         'Precio Unitario ($)',
@@ -117,6 +118,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
         row.methodName,
         row.itemProductCode,
         row.itemCategory,
+        row.itemSubcategory,
         row.itemDescription,
         row.itemQuantity,
         formatReporteNumber(row.itemUnitPrice),
@@ -435,6 +437,7 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                     <>
                       <TableHead className="font-bold text-foreground py-3">Código producto</TableHead>
                       <TableHead className="font-bold text-foreground py-3">Categoría</TableHead>
+                      <TableHead className="font-bold text-foreground py-3">Subcategoría</TableHead>
                       <TableHead className="font-bold text-foreground py-3">Ítem</TableHead>
                       <TableHead className="font-bold text-foreground py-3 text-right">Cant.</TableHead>
                       <TableHead className="font-bold text-foreground py-3 text-right">P. Unit.</TableHead>
@@ -490,6 +493,9 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
                         </TableCell>
                         <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
                           {row.itemCategory}
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                          {row.itemSubcategory}
                         </TableCell>
                         <TableCell className="text-xs font-semibold text-foreground max-w-[220px]">
                           <span className="line-clamp-2">{row.itemDescription}</span>

@@ -163,23 +163,28 @@ export type ReportesPagoItemRow = {
   itemId: string;
   itemProductCode: string;
   itemCategory: string;
+  itemSubcategory: string;
   itemDescription: string;
   itemQuantity: number;
   itemUnitPrice: number;
   itemTotal: number;
 };
 
-function getProductCategoryLabel(item: {
+type ProductCatalogItemShape = {
   product?: {
     subcategory?: {
       description?: string | null;
       category?: { description?: string | null } | null;
     } | null;
   } | null;
-} | null | undefined): string {
-  return item?.product?.subcategory?.category?.description
-    || item?.product?.subcategory?.description
-    || 'Sin Categoría';
+} | null | undefined;
+
+function getProductCategoryLabel(item: ProductCatalogItemShape): string {
+  return String(item?.product?.subcategory?.category?.description ?? '').trim() || 'Sin categoría';
+}
+
+function getProductSubcategoryLabel(item: ProductCatalogItemShape): string {
+  return String(item?.product?.subcategory?.description ?? '').trim() || 'Sin subcategoría';
 }
 
 function getBranchName(order: {
@@ -431,6 +436,7 @@ export function useReportesPagos(
           product_id: string | null;
           status: string | null;
           category: string;
+          subcategory: string;
         }>>();
 
         for (let index = 0; index < orderIds.length; index += 200) {
@@ -487,6 +493,7 @@ export function useReportesPagos(
               product_id: (item as any).product_id ?? null,
               status: (item as any).status ?? null,
               category: getProductCategoryLabel(item as any),
+              subcategory: getProductSubcategoryLabel(item as any),
             });
             itemsByOrderId.set(orderId, bucket);
           }
@@ -524,6 +531,7 @@ export function useReportesPagos(
               itemId: item.id,
               itemProductCode: String(item.product_id ?? '').trim() || '—',
               itemCategory: item.category,
+              itemSubcategory: item.subcategory,
               itemDescription: snapshotName,
               itemQuantity: qty,
               itemUnitPrice: unitPrice,
