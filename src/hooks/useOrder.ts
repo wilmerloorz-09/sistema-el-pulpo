@@ -834,7 +834,11 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
   /** La pantalla de ordenes ya carga hermanos con `table-orders`; evitar segunda llamada aqui. */
   const siblings: SiblingOrder[] = [];
 
-  const tableName = tableResult ?? order.table_name_snapshot;
+  const tableName = order.table_id
+    ? (tableResult ?? order.table_name_snapshot)
+    : order.order_type === "TAKEOUT" || order.order_type === "EXPRESS"
+      ? null
+      : order.table_name_snapshot;
   const splitCode = (splitResult as any[])[0]?.split_code ?? null;
 
   const normalizedSnapshotRows = normalizeSnapshotRows((snapshotResult.data ?? []) as OrderOperationalSnapshotRow[]);
@@ -1011,8 +1015,11 @@ async function fetchOrderDetailInternal(orderId: string): Promise<Order | null> 
     })
     .filter((item) => {
       if (item.status === "CANCELLED") return false;
+      const paidQty = Math.max(0, Number(item.quantity_paid ?? 0));
       return (
         item.quantity > 0 ||
+        paidQty > 0 ||
+        Boolean(item.paid_at) ||
         item.status === "PAID" ||
         (item.status === "DRAFT" && Number(item.original_quantity ?? 0) > 0)
       );

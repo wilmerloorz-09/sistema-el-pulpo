@@ -72,19 +72,22 @@ export const ensureTableSnapshot = async (orderId: string) => {
        if (splits[0]?.table_id) tableId = splits[0].table_id;
     }
     
-    if (tableId) {
-       const tables = await dbSelect("restaurant_tables", {
-         select: "name, visual_order",
-         filters: [{ column: "id", op: "eq", value: tableId }]
-       });
-       const table = tables[0];
-       if (table) {
-          const baseName = (table.name || "Mesa").trim();
-          const hasNumber = /\d/.test(baseName);
-          tableName = hasNumber ? baseName : `${baseName} ${Number(table.visual_order ?? 0) + 1}`;
-       }
+    if (!tableId) {
+      // Para llevar / Express sin mesa: no grabar snapshot genérico "Mesa".
+      return;
     }
-    
+
+    const tables = await dbSelect("restaurant_tables", {
+      select: "name, visual_order",
+      filters: [{ column: "id", op: "eq", value: tableId }]
+    });
+    const table = tables[0];
+    if (table) {
+      const baseName = (table.name || "Mesa").trim();
+      const hasNumber = /\d/.test(baseName);
+      tableName = hasNumber ? baseName : `${baseName} ${Number(table.visual_order ?? 0) + 1}`;
+    }
+
     await dbUpdate("orders", orderId, { table_name_snapshot: tableName });
   } catch (e) {
     console.error("Failed to ensure table snapshot", e);

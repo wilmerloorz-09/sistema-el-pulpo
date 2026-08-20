@@ -4055,6 +4055,14 @@ const OrdenesContent = () => {
         </div>
       );
     }
+    if (isTakeoutOrder) {
+      return (
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-extrabold text-emerald-800 dark:text-emerald-400">
+          <ShoppingBag className="h-4 w-4" />
+          Para llevar
+        </div>
+      );
+    }
     if (order.table_name) {
       return (
         <div className="shrink-0 whitespace-nowrap text-sm font-extrabold text-sky-800 dark:text-sky-400">
