@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getOrderRef } from '@/lib/orderPresentation';
-import { getUserDisplayName } from '@/lib/userDisplay';
+import { getUserDisplayName, getUserRealName } from '@/lib/userDisplay';
 
 export interface ReportesFilters {
   branchId: string;
@@ -80,13 +80,39 @@ export function getProfileLabel(profile: any): string {
 /**
  * Carga inicial de datos para filtros (turnos, perfiles de cajeros/usuarios, productos)
  */
+export type ReportesFiltroProfile = {
+  id: string;
+  alias?: string | null;
+  username?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+};
+
+function mergeProfilesById(
+  ...lists: Array<ReportesFiltroProfile[] | null | undefined>
+): ReportesFiltroProfile[] {
+  const byId = new Map<string, ReportesFiltroProfile>();
+  for (const list of lists) {
+    for (const profile of list ?? []) {
+      if (!profile?.id || byId.has(profile.id)) continue;
+      byId.set(profile.id, profile);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) =>
+    getUserDisplayName(a).localeCompare(getUserDisplayName(b), 'es', { sensitivity: 'base' }),
+  );
+}
+
 export function useReportesFiltros(branchId: string) {
   return useQuery({
-    queryKey: ['reportes-filtros-data', branchId, 'v2'],
+    queryKey: ['reportes-filtros-data', branchId, 'v3'],
     queryFn: async () => {
-      if (!branchId) return { shifts: [], profiles: [], products: [] };
+      if (!branchId) {
+        return { shifts: [], profiles: [], shiftUsers: [], menuNodes: [], products: [] };
+      }
 
-      // 1. Cargar turnos de la sucursal (últimos 100)
+      // 1. Turnos de la sucursal (últimos 100)
       let shiftsQuery = supabase
         .from('cash_shifts')
         .select('id, opened_at, closed_at, shift_number, shift_code')
@@ -98,18 +124,51 @@ export function useReportesFiltros(branchId: string) {
       }
 
       const { data: shiftsData, error: shiftsError } = await shiftsQuery;
-
       if (shiftsError) throw shiftsError;
+      const shifts = shiftsData || [];
 
-      // 2. Cargar perfiles asociados a la sucursal (o globales)
-      const { data: profilesData, error: profilesError } = await supabase
+      // 2. Perfiles activos (no tumbar todo el catálogo si falla)
+      let profilesData: ReportesFiltroProfile[] = [];
+      const { data: profilesRaw, error: profilesError } = await supabase
         .from('profiles')
         .select('id, alias, username, first_name, last_name, full_name')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .order('alias', { ascending: true });
+      if (!profilesError) {
+        profilesData = (profilesRaw || []) as ReportesFiltroProfile[];
+      }
 
-      if (profilesError) throw profilesError;
+      // 3. Usuarios que ya aparecieron en turnos de la sucursal (histórico reciente)
+      let shiftUsersData: ReportesFiltroProfile[] = [];
+      const shiftIds = shifts.map((s) => s.id).filter(Boolean);
+      if (shiftIds.length > 0) {
+        const { data: shiftUserRows, error: shiftUsersError } = await supabase
+          .from('cash_shift_users')
+          .select('user_id, profiles(id, alias, username, first_name, last_name, full_name)')
+          .in('shift_id', shiftIds);
+        if (!shiftUsersError) {
+          shiftUsersData = mergeProfilesById(
+            (shiftUserRows || []).map((row: any) => {
+              const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+              if (profile?.id) return profile as ReportesFiltroProfile;
+              if (row.user_id) {
+                return {
+                  id: row.user_id as string,
+                  alias: null,
+                  username: null,
+                  first_name: null,
+                  last_name: null,
+                  full_name: null,
+                };
+              }
+              return null;
+            }).filter(Boolean) as ReportesFiltroProfile[],
+          );
+        }
+      }
 
-      // 3. Cargar el árbol de menú (categorías y productos)
+      // 4. Árbol de menú (opcional para filtros de productos)
+      let menuNodesData: any[] = [];
       let menuQuery = supabase
         .from('menu_nodes')
         .select('id, parent_id, name, node_type, legacy_product_id, is_active, menu_scope')
@@ -121,23 +180,29 @@ export function useReportesFiltros(branchId: string) {
         menuQuery = menuQuery.eq('branch_id', branchId);
       }
 
-      const { data: menuNodesData, error: menuNodesError } = await menuQuery;
+      const { data: menuRaw, error: menuNodesError } = await menuQuery;
+      if (!menuNodesError) {
+        menuNodesData = menuRaw || [];
+      }
 
-      if (menuNodesError) throw menuNodesError;
-
-      // 4. Cargar productos legacy para fallback de nombres
-      const { data: productsData, error: productsError } = await supabase
+      // 5. Productos legacy (opcional)
+      let productsData: any[] = [];
+      const { data: productsRaw, error: productsError } = await supabase
         .from('products')
         .select('id, description')
         .order('description', { ascending: true });
+      if (!productsError) {
+        productsData = productsRaw || [];
+      }
 
-      if (productsError) throw productsError;
+      const profiles = mergeProfilesById(profilesData, shiftUsersData);
 
       return {
-        shifts: shiftsData || [],
-        profiles: profilesData || [],
-        menuNodes: menuNodesData || [],
-        products: productsData || [],
+        shifts,
+        profiles,
+        shiftUsers: shiftUsersData,
+        menuNodes: menuNodesData,
+        products: productsData,
       };
     },
     enabled: !!branchId,
@@ -1016,6 +1081,259 @@ export function useReportesProductos(filters: ReportesFilters) {
           totalUnidades: totalUnidadesSum
         },
         rawTimeData
+      };
+    },
+    enabled: !!branchId,
+  });
+}
+
+export type ReportesPersonalRoleKey =
+  | 'supervisor'
+  | 'mesas'
+  | 'ordenes'
+  | 'despacho'
+  | 'caja'
+  | 'empaque'
+  | 'servir'
+  | 'productos'
+  | 'autoriza_anulaciones';
+
+export type ReportesPersonalRow = {
+  rowKey: string;
+  dayKey: string;
+  dayLabel: string;
+  shiftId: string;
+  shiftNumber: number | null;
+  shiftCode: string | null;
+  shiftOpenedAt: string;
+  shiftClosedAt: string | null;
+  shiftStatus: string;
+  branchId: string;
+  branchName: string;
+  userId: string;
+  userAlias: string;
+  userRealName: string;
+  isEnabled: boolean;
+  roles: string[];
+  roleKeys: ReportesPersonalRoleKey[];
+  cajaOpenedAt: string | null;
+  cajaClosedAt: string | null;
+  cajaStatus: string | null;
+};
+
+function buildPersonalRoles(row: {
+  is_supervisor?: boolean | null;
+  can_serve_tables?: boolean | null;
+  can_access_orders?: boolean | null;
+  can_dispatch_orders?: boolean | null;
+  can_use_caja?: boolean | null;
+  can_pack_orders?: boolean | null;
+  can_serve_plates?: boolean | null;
+  can_manage_products?: boolean | null;
+  can_authorize_order_cancel?: boolean | null;
+}): { roles: string[]; roleKeys: ReportesPersonalRoleKey[] } {
+  const roles: string[] = [];
+  const roleKeys: ReportesPersonalRoleKey[] = [];
+  const push = (key: ReportesPersonalRoleKey, label: string, enabled: boolean) => {
+    if (!enabled) return;
+    roleKeys.push(key);
+    roles.push(label);
+  };
+  push('supervisor', 'Supervisor', Boolean(row.is_supervisor));
+  push('mesas', 'Mesas', Boolean(row.can_serve_tables));
+  push('ordenes', 'Órdenes', Boolean(row.can_access_orders));
+  push('despacho', 'Despacho', Boolean(row.can_dispatch_orders));
+  push('caja', 'Caja', Boolean(row.can_use_caja));
+  push('empaque', 'Empaque', Boolean(row.can_pack_orders));
+  push('servir', 'Servir', Boolean(row.can_serve_plates));
+  push('productos', 'Productos', Boolean(row.can_manage_products));
+  push('autoriza_anulaciones', 'Autoriza anulaciones', Boolean(row.can_authorize_order_cancel));
+  return { roles, roleKeys };
+}
+
+function formatPersonalDayKey(iso: string): { dayKey: string; dayLabel: string } {
+  const d = new Date(iso);
+  const dayKey = formatLocalDayKey(d);
+  const dayLabel = new Intl.DateTimeFormat('es-EC', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(d);
+  return { dayKey, dayLabel };
+}
+
+function formatLocalDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Personal asignado a turnos en el rango (por día operativo del turno).
+ * Fuente: cash_shifts + cash_shift_users (+ aperturas de caja si existen).
+ */
+export function useReportesPersonal(filters: ReportesFilters) {
+  const {
+    branchId,
+    desde,
+    hasta,
+    shiftId,
+    creatorId,
+    sortBy,
+    sortDir,
+  } = filters;
+
+  return useQuery({
+    queryKey: ['reportes-personal', filters],
+    queryFn: async () => {
+      if (!branchId) {
+        return {
+          rows: [] as ReportesPersonalRow[],
+          kpis: { personas: 0, turnos: 0, dias: 0, habilitados: 0 },
+        };
+      }
+
+      const bounds = resolveReportesDateBounds(desde, hasta);
+
+      let shiftsQuery = supabase
+        .from('cash_shifts')
+        .select('id, branch_id, opened_at, closed_at, status, shift_number, shift_code, branches(name)')
+        .lte('opened_at', bounds.hasta)
+        .or(`closed_at.is.null,closed_at.gte.${bounds.desde}`)
+        .order('opened_at', { ascending: false })
+        .limit(200);
+
+      if (branchId !== 'ALL') {
+        shiftsQuery = shiftsQuery.eq('branch_id', branchId);
+      }
+      if (shiftId) {
+        shiftsQuery = shiftsQuery.eq('id', shiftId);
+      }
+
+      const { data: shiftsData, error: shiftsError } = await shiftsQuery;
+      if (shiftsError) throw shiftsError;
+
+      const shifts = (shiftsData ?? []).filter((shift: any) => {
+        const opened = new Date(shift.opened_at).getTime();
+        const closed = shift.closed_at ? new Date(shift.closed_at).getTime() : Number.POSITIVE_INFINITY;
+        const from = new Date(bounds.desde).getTime();
+        const to = new Date(bounds.hasta).getTime();
+        return opened <= to && closed >= from;
+      });
+
+      if (shifts.length === 0) {
+        return {
+          rows: [] as ReportesPersonalRow[],
+          kpis: { personas: 0, turnos: 0, dias: 0, habilitados: 0 },
+        };
+      }
+
+      const shiftIds = shifts.map((s: any) => s.id as string);
+      const shiftById = new Map(shifts.map((s: any) => [s.id as string, s]));
+
+      const { data: shiftUsers, error: usersError } = await supabase
+        .from('cash_shift_users')
+        .select(
+          'id, shift_id, user_id, is_enabled, is_supervisor, can_serve_tables, can_access_orders, can_dispatch_orders, can_use_caja, can_pack_orders, can_serve_plates, can_manage_products, can_authorize_order_cancel, profiles(id, alias, username, first_name, last_name, full_name)',
+        )
+        .in('shift_id', shiftIds);
+
+      if (usersError) throw usersError;
+
+      const { data: openings, error: openingsError } = await supabase
+        .from('cash_register_openings')
+        .select('id, shift_id, cashier_id, opened_at, closed_at, status')
+        .in('shift_id', shiftIds)
+        .neq('status', 'anulada');
+
+      if (openingsError) throw openingsError;
+
+      const openingByShiftUser = new Map<string, { opened_at: string; closed_at: string | null; status: string }>();
+      for (const opening of openings ?? []) {
+        const key = `${opening.shift_id}:${opening.cashier_id}`;
+        const current = openingByShiftUser.get(key);
+        if (!current || new Date(opening.opened_at).getTime() > new Date(current.opened_at).getTime()) {
+          openingByShiftUser.set(key, {
+            opened_at: opening.opened_at,
+            closed_at: opening.closed_at,
+            status: opening.status,
+          });
+        }
+      }
+
+      let rows: ReportesPersonalRow[] = (shiftUsers ?? [])
+        .filter((row: any) => (creatorId ? row.user_id === creatorId : true))
+        .map((row: any) => {
+          const shift = shiftById.get(row.shift_id);
+          if (!shift) return null;
+          const { dayKey, dayLabel } = formatPersonalDayKey(shift.opened_at);
+          const { roles, roleKeys } = buildPersonalRoles(row);
+          const profile = row.profiles;
+          const caja = openingByShiftUser.get(`${row.shift_id}:${row.user_id}`) ?? null;
+          const branchName = Array.isArray(shift.branches)
+            ? shift.branches[0]?.name
+            : shift.branches?.name;
+
+          return {
+            rowKey: `${row.shift_id}:${row.user_id}`,
+            dayKey,
+            dayLabel,
+            shiftId: row.shift_id,
+            shiftNumber: shift.shift_number ?? null,
+            shiftCode: shift.shift_code ?? null,
+            shiftOpenedAt: shift.opened_at,
+            shiftClosedAt: shift.closed_at ?? null,
+            shiftStatus: shift.status,
+            branchId: shift.branch_id,
+            branchName: branchName || 'Sucursal',
+            userId: row.user_id,
+            userAlias: getProfileLabel(profile),
+            userRealName: getUserRealName(profile) || getProfileLabel(profile),
+            isEnabled: Boolean(row.is_enabled),
+            roles,
+            roleKeys,
+            cajaOpenedAt: caja?.opened_at ?? null,
+            cajaClosedAt: caja?.closed_at ?? null,
+            cajaStatus: caja?.status ?? null,
+          } satisfies ReportesPersonalRow;
+        })
+        .filter(Boolean) as ReportesPersonalRow[];
+
+      const dir = sortDir === 'asc' ? 'asc' : 'desc';
+      const sortKey = String(sortBy ?? 'dia');
+      rows.sort((a, b) => {
+        let cmp = 0;
+        if (sortKey === 'usuario' || sortKey === 'creador') {
+          cmp = compareText(a.userAlias, b.userAlias);
+        } else if (sortKey === 'turno') {
+          cmp = compareText(
+            String(a.shiftNumber ?? a.shiftCode ?? a.shiftId),
+            String(b.shiftNumber ?? b.shiftCode ?? b.shiftId),
+          );
+        } else if (sortKey === 'habilitado') {
+          cmp = Number(a.isEnabled) - Number(b.isEnabled);
+        } else {
+          cmp = compareText(a.dayKey, b.dayKey);
+          if (cmp === 0) {
+            cmp = new Date(a.shiftOpenedAt).getTime() - new Date(b.shiftOpenedAt).getTime();
+          }
+          if (cmp === 0) {
+            cmp = compareText(a.userAlias, b.userAlias);
+          }
+        }
+        return applySortDir(cmp, dir);
+      });
+
+      const personas = new Set(rows.map((r) => r.userId)).size;
+      const turnos = new Set(rows.map((r) => r.shiftId)).size;
+      const dias = new Set(rows.map((r) => r.dayKey)).size;
+      const habilitados = rows.filter((r) => r.isEnabled).length;
+
+      return {
+        rows,
+        kpis: { personas, turnos, dias, habilitados },
       };
     },
     enabled: !!branchId,

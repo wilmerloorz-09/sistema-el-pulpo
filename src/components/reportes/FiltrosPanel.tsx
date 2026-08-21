@@ -56,6 +56,13 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         if (prev === 'orden') return 'nombre';
         return 'cantidad';
       });
+    } else if (activeTab === 'personal') {
+      setSortBy((prev) => {
+        if (prev === 'dia' || prev === 'usuario' || prev === 'turno' || prev === 'habilitado') return prev;
+        if (prev === 'creador' || prev === 'cajero') return 'usuario';
+        if (prev === 'fecha') return 'dia';
+        return 'dia';
+      });
     } else {
       setSortBy((prev) => (
         ['fecha', 'orden', 'monto', 'cajero', 'creador', 'metodo'].includes(prev) ? prev : 'fecha'
@@ -239,7 +246,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     setSelectedCategoryId('ALL');
     setSelectedOrderType('ALL');
     setRecordStatus('all');
-    setSortBy(activeTab === 'products' ? 'cantidad' : 'fecha');
+    setSortBy(activeTab === 'products' ? 'cantidad' : activeTab === 'personal' ? 'dia' : 'fecha');
     setSortDir('desc');
   };
 
@@ -294,6 +301,13 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const rootNodes = menuNodes.filter((n: any) => !n.parent_id);
   const categoryNodes = menuNodes.filter((n: any) => n.node_type === 'category');
   const showProductFilters = activeTab === 'products' || activeTab === 'payments';
+  const showPaymentFilters = activeTab === 'payments' || activeTab === 'products';
+  const isPersonalTab = activeTab === 'personal';
+  // En Personal: priorizar quienes ya estuvieron en turnos; si no hay, todos los perfiles activos.
+  const userFilterOptions =
+    isPersonalTab && (filtersData?.shiftUsers?.length ?? 0) > 0
+      ? filtersData!.shiftUsers!
+      : filtersData?.profiles || [];
 
   const renderTree = (nodes: any[], depth = 0) => {
     return nodes.map((node) => {
@@ -419,13 +433,14 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         </div>
 
         {/* Combo de Cajero */}
+        {showPaymentFilters && (
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Cajero que Cobró</Label>
           <Select value={cashierId} onValueChange={setCashierId}>
             <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
               <SelectValue placeholder="Todos los cajeros" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[min(20rem,70vh)]">
               <SelectItem value="ALL">Todos los cajeros</SelectItem>
               {(filtersData?.profiles || []).map((p) => (
                 <SelectItem key={p.id} value={p.id} className="text-xs">
@@ -435,21 +450,30 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectContent>
           </Select>
         </div>
+        )}
 
-        {/* Combo de Creador de Orden */}
+        {/* Combo de Usuario / Creador */}
         <div className="space-y-1.5">
-          <Label className="text-xs font-bold text-muted-foreground">Usuario Creador de Orden</Label>
+          <Label className="text-xs font-bold text-muted-foreground">
+            {isPersonalTab ? 'Usuario del turno' : 'Usuario Creador de Orden'}
+          </Label>
           <Select value={creatorId} onValueChange={setCreatorId}>
             <SelectTrigger className="h-10 rounded-xl bg-background/80 border-border/80 text-xs">
               <SelectValue placeholder="Todos los usuarios" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Todos los creadores</SelectItem>
-              {(filtersData?.profiles || []).map((p) => (
-                <SelectItem key={p.id} value={p.id} className="text-xs">
-                  {getUserDisplayName(p)}
+            <SelectContent className="max-h-[min(20rem,70vh)]">
+              <SelectItem value="ALL">{isPersonalTab ? 'Todos los usuarios' : 'Todos los creadores'}</SelectItem>
+              {userFilterOptions.length === 0 ? (
+                <SelectItem value="__empty_users" disabled>
+                  {isLoading ? 'Cargando usuarios…' : 'Sin usuarios para filtrar'}
                 </SelectItem>
-              ))}
+              ) : (
+                userFilterOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                    {getUserDisplayName(p)}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -572,6 +596,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         )}
 
         {/* Tipos de Orden */}
+        {showPaymentFilters && (
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Tipo de Orden</Label>
           <Select value={selectedOrderType} onValueChange={setSelectedOrderType}>
@@ -588,8 +613,10 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectContent>
           </Select>
         </div>
+        )}
 
         {/* Estado: válidos / anulados */}
+        {showPaymentFilters && (
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Estado del registro</Label>
           <Select value={recordStatus} onValueChange={(v) => setRecordStatus(v as 'all' | 'valid' | 'voided')}>
@@ -603,6 +630,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectContent>
           </Select>
         </div>
+        )}
 
         {/* Ordenar por */}
         <div className="space-y-1.5">
@@ -618,6 +646,13 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
                   <SelectItem value="total">Total recaudado</SelectItem>
                   <SelectItem value="nombre">Nombre de producto</SelectItem>
                   <SelectItem value="categoria">Categoría</SelectItem>
+                </>
+              ) : activeTab === 'personal' ? (
+                <>
+                  <SelectItem value="dia">Día / turno</SelectItem>
+                  <SelectItem value="usuario">Usuario</SelectItem>
+                  <SelectItem value="turno">Turno</SelectItem>
+                  <SelectItem value="habilitado">Habilitado</SelectItem>
                 </>
               ) : (
                 <>
