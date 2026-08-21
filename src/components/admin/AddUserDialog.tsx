@@ -45,6 +45,28 @@ const extractEdgeFunctionError = async (err: any) => {
   return err.message || "Error desconocido";
 };
 
+/** Token de usuario real (no anon key). Sin esto create-user responde "No autorizado". */
+const getAccessTokenForCreateUser = async () => {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    throw new Error("No se pudo obtener la sesión actual. Vuelve a iniciar sesión.");
+  }
+
+  let accessToken = sessionData.session?.access_token ?? null;
+  const expiresAtMs = (sessionData.session?.expires_at ?? 0) * 1000;
+  const needsRefresh = !accessToken || (expiresAtMs > 0 && expiresAtMs < Date.now() + 60_000);
+
+  if (needsRefresh) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshed.session?.access_token) {
+      throw new Error("Tu sesión expiró. Cierra sesión y vuelve a entrar con admin1.");
+    }
+    accessToken = refreshed.session.access_token;
+  }
+
+  return accessToken as string;
+};
+
 const isAlreadyExistsAssignmentError = (error: any) => {
   const message = String(error?.message ?? "").toLowerCase();
   return (
@@ -204,7 +226,11 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
         global_roles: isAdmin ? ["administrador"] : [],
       };
 
-      const res = await supabase.functions.invoke("create-user", { body: payload });
+      const accessToken = await getAccessTokenForCreateUser();
+      const res = await supabase.functions.invoke("create-user", {
+        body: payload,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (res.error) throw new Error(await extractEdgeFunctionError(res.error));
       if (res.data?.error) throw new Error(res.data.error);
 

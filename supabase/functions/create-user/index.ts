@@ -18,10 +18,15 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return toJson({ error: "No autorizado" }, 401);
+    if (!authHeader) {
+      return toJson({
+        error: "Sesión no enviada. Cierra sesión y vuelve a entrar, luego intenta crear el usuario otra vez.",
+      }, 401);
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
 
     if (!supabaseUrl || !serviceRoleKey) {
       return toJson({ error: "Faltan secretos SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY" }, 500);
@@ -29,13 +34,23 @@ Deno.serve(async (req) => {
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+    // Si el cliente mandó la anon key (fallback de supabase-js sin sesión), no es un usuario.
+    if (anonKey && bearerToken === anonKey) {
+      return toJson({
+        error: "Sesión de usuario no encontrada. Cierra sesión y vuelve a entrar con tu administrador.",
+      }, 401);
+    }
+
     const {
       data: { user: caller },
       error: callerError,
     } = await adminClient.auth.getUser(bearerToken);
 
     if (callerError || !caller) {
-      return toJson({ error: "No autorizado" }, 401);
+      return toJson({
+        error: "Sesión inválida o expirada. Cierra sesión y vuelve a entrar, luego intenta de nuevo.",
+      }, 401);
     }
 
     const { data: isGlobalAdmin } = await adminClient.rpc("is_global_admin", { _user_id: caller.id });
