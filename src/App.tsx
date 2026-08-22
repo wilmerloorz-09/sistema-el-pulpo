@@ -40,6 +40,7 @@ import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
 import ForzarCierreTurno from "./pages/ForzarCierreTurno";
+import Inventario from "./pages/Inventario";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 
@@ -527,6 +528,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
                       <Admin />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/inventario"
+                  element={
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
+                      <Inventario />
                     </ProtectedRoute>
                   }
                 />

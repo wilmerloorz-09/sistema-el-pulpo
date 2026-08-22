@@ -987,6 +987,51 @@ export type Database = {
         }
         Relationships: []
       }
+      inventario_productos: {
+        Row: {
+          id: string
+          producto_id: string
+          sucursal_id: string
+          cantidad_disponible: number
+          activo: boolean
+          creado_en: string
+          actualizado_en: string
+        }
+        Insert: {
+          id?: string
+          producto_id: string
+          sucursal_id: string
+          cantidad_disponible?: number
+          activo?: boolean
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Update: {
+          id?: string
+          producto_id?: string
+          sucursal_id?: string
+          cantidad_disponible?: number
+          activo?: boolean
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventario_productos_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventario_productos_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       menu_node_modifiers: {
         Row: {
           created_at: string
@@ -2434,6 +2479,7 @@ export type Database = {
           is_active: boolean
           price_mode: Database["public"]["Enums"]["price_mode"]
           subcategory_id: string
+          tipo_producto: Database["public"]["Enums"]["tipo_producto"]
           unit_price: number | null
           updated_at: string
           force_servir_module: boolean
@@ -2446,6 +2492,7 @@ export type Database = {
           is_active?: boolean
           price_mode?: Database["public"]["Enums"]["price_mode"]
           subcategory_id: string
+          tipo_producto?: Database["public"]["Enums"]["tipo_producto"]
           unit_price?: number | null
           updated_at?: string
           force_servir_module?: boolean
@@ -2458,6 +2505,7 @@ export type Database = {
           is_active?: boolean
           price_mode?: Database["public"]["Enums"]["price_mode"]
           subcategory_id?: string
+          tipo_producto?: Database["public"]["Enums"]["tipo_producto"]
           unit_price?: number | null
           updated_at?: string
           force_servir_module?: boolean
@@ -4335,6 +4383,7 @@ export type Database = {
         | "executed"
       price_mode: "FIXED" | "MANUAL"
       role_scope: "GLOBAL" | "BRANCH"
+      tipo_producto: "COMPRADO" | "PREPARADO"
     }
     CompositeTypes: {
       shift_user_input: {
@@ -4513,6 +4562,7 @@ export const Constants = {
       ],
       price_mode: ["FIXED", "MANUAL"],
       role_scope: ["GLOBAL", "BRANCH"],
+      tipo_producto: ["COMPRADO", "PREPARADO"],
     },
   },
 } as const

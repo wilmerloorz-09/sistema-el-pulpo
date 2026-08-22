@@ -282,6 +282,22 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
+    to: "/inventario",
+    label: "Inventario",
+    icon: <Package className="h-5 w-5" />,
+    group: "ADMINISTRACIÓN",
+    tone: {
+      active: "from-teal-500 to-emerald-400",
+      idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
+      iconIdle: "bg-teal-50 text-teal-600",
+    },
+    visible: (permissions) =>
+      canManage(permissions, "admin_sucursal")
+      || canManage(permissions, "admin_global")
+      || canView(permissions, "admin_sucursal")
+      || canView(permissions, "admin_global"),
+  },
+  {
     to: "/monitoreo-global",
     label: "Monitoreo Global",
     icon: <MonitorCheck className="h-5 w-5" />,
@@ -346,6 +362,7 @@ export function useVisibleNavItems() {
       if (!hasOperationalShift) {
         return (
           (item.to === "/admin" && canAccessAdmin)
+          || (item.to === "/inventario" && canAccessAdmin)
           || (item.to.startsWith("/campanas") && puedeGestionarCampanas)
           || (item.to.startsWith("/promociones/consulta") && (puedeRegistrarPromociones || puedeGestionarCampanas))
           || (item.to.startsWith("/promociones") && (puedeRegistrarPromociones || isGlobalAdmin))
@@ -359,6 +376,10 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {
+        return true;
+      }
+
+      if (item.to === "/inventario" && isGlobalAdmin) {
         return true;
       }
 
