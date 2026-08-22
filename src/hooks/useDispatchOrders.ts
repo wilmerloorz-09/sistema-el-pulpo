@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dbSelectStrict, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
@@ -1245,12 +1245,27 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     [allOrders, scope],
   );
 
+  const refetchInFlightRef = useRef(false);
+  const isFetchingOrders = query.isFetching;
+  const refetchOrdersQuery = query.refetch;
+  const refetchOrders = useCallback(async () => {
+    if (refetchInFlightRef.current || isFetchingOrders) return;
+    refetchInFlightRef.current = true;
+    try {
+      await refetchOrdersQuery();
+    } finally {
+      refetchInFlightRef.current = false;
+    }
+  }, [isFetchingOrders, refetchOrdersQuery]);
+
   return {
     orders,
     counts,
     // Solo spinner si aún no hay datos de esta cola (no ocultar cache fresco al reentrar).
     isLoading: query.isLoading,
     isError: query.isError,
+    isFetchingOrders,
+    refetchOrders,
     applyReadyOperation,
     applyDispatchOperation,
     markItemReady,

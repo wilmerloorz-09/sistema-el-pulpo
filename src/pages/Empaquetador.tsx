@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useDispatchOrders } from "@/hooks/useDispatchOrders";
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import DispatchCard from "@/components/dispatch/DispatchCard";
-import { AlertCircle, Loader2, Package, ShoppingBag, Zap } from "lucide-react";
+import { AlertCircle, Loader2, Package, RefreshCw, ShoppingBag, Zap } from "lucide-react";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Button } from "@/components/ui/button";
 import { useBranch } from "@/contexts/BranchContext";
 
 const PACKING_SCOPE: DispatchView = "TAKEOUT";
@@ -33,7 +34,7 @@ function getPackingViewIcon(view: PackingView) {
 const Empaquetador = () => {
   const { activeBranchId } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
-  const { orders, isLoading, isError, markItemReady, sendOrderReadyAlert, dispatchItem, dispatchOrder } =
+  const { orders, isLoading, isError, isFetchingOrders, refetchOrders, markItemReady, sendOrderReadyAlert, dispatchItem, dispatchOrder } =
     useDispatchOrders(PACKING_SCOPE, { module: "packing" });
   const [dispatchingOrderId, setDispatchingOrderId] = useState<string | null>(null);
   const storageKey = `packing:last-view:${activeBranchId ?? "global"}`;
@@ -77,9 +78,31 @@ const Empaquetador = () => {
               </p>
             </div>
           </div>
-          <span className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-            Platos y otras categorias
-          </span>
+          <div className="flex items-center gap-2">
+            {hasAccess && !accessLoading && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (isFetchingOrders) return;
+                  void refetchOrders();
+                }}
+                disabled={isFetchingOrders}
+                className="h-8 shrink-0 rounded-full border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                {isFetchingOrders ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Actualizar
+              </Button>
+            )}
+            <span className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+              Platos y otras categorias
+            </span>
+          </div>
         </div>
 
         {accessLoading ? (
