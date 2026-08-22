@@ -342,6 +342,16 @@ const MenuNodesCrud = ({
     return String(nextAvailableOrder(siblingOrders, 1));
   };
 
+  const findSiblingWithDisplayOrder = (
+    parentId: string | null,
+    displayOrder: number,
+    currentNodeId: string,
+  ) => nodes.find((node) =>
+    node.id !== currentNodeId
+    && (node.parent_id ?? null) === parentId
+    && Number(node.display_order ?? 0) === displayOrder
+  ) ?? null;
+
   const renderParentOptionLabel = (node: AdminMenuNode) => (
     <span className="flex items-center gap-2">
       <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -562,12 +572,21 @@ const MenuNodesCrud = ({
         if (!name) throw new Error("El nombre es obligatorio");
 
         const displayOrder = Number.parseInt(formData.display_order, 10);
-        if (Number.isNaN(displayOrder)) throw new Error("El orden debe ser numerico");
+        if (Number.isNaN(displayOrder) || displayOrder <= 0) {
+          throw new Error("El orden debe ser un numero entero mayor a 0");
+        }
 
         if (formData.parent_id) {
           const parent = nodesById.get(formData.parent_id);
           if (!parent) throw new Error("El nodo padre ya no existe");
           if (parent.node_type !== "category") throw new Error("Solo una categoria puede tener hijos");
+        }
+
+        const duplicatedSibling = findSiblingWithDisplayOrder(formData.parent_id, displayOrder, id);
+        if (duplicatedSibling) {
+          throw new Error(
+            `El orden ${displayOrder} ya esta usado por "${duplicatedSibling.name}" en este mismo nivel.`,
+          );
         }
 
         let price: number | null = null;
@@ -630,7 +649,7 @@ const MenuNodesCrud = ({
                 ? currentLegacyProductId
                 : null,
           } as any)
-          .select("id")
+          .select("id, branch_id, parent_id, name, node_type, menu_scope, depth, display_order, price, manual_price_enabled, is_active, is_tray_category, legacy_product_id, image_url, icon, description, created_at, updated_at")
           .single();
         if (menuNodeError) throw menuNodeError;
 
