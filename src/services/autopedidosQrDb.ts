@@ -184,6 +184,25 @@ export async function generarTokensQrMesasSucursal(
   return (data ?? []) as TokenQrMesaGenerado[];
 }
 
+export async function listarTokensQrMesasSucursal(
+  sucursalId: string,
+): Promise<Array<TokenQrMesaGenerado & { activo?: boolean; compartido?: boolean }>> {
+  const { data, error } = await supabase.rpc("listar_tokens_qr_mesas_sucursal" as any, {
+    p_sucursal_id: sucursalId,
+  });
+  if (error) throwRpcError(error, "No se pudieron cargar los códigos QR.");
+  return ((data ?? []) as any[]).map((row) => ({
+    token_id: row.token_id,
+    mesa_id: row.mesa_id,
+    mesa_nombre: row.mesa_nombre,
+    mesa_visual_order: Number(row.mesa_visual_order ?? 0),
+    token_seguro: row.token_seguro,
+    creado: false,
+    activo: Boolean(row.activo),
+    compartido: Boolean(row.compartido),
+  }));
+}
+
 export async function contarAutopedidosPendientes(sucursalId: string): Promise<number> {
   const { data, error } = await supabase.rpc("contar_autopedidos_pendientes" as any, {
     p_sucursal_id: sucursalId,

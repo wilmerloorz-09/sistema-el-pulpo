@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { generateQrDataUrlWithLogo } from "@/lib/qrCodeWithLogo";
 import {
   generarTokensQrMesasSucursal,
+  listarTokensQrMesasSucursal,
   type TokenQrMesaGenerado,
   urlAutopedidoQr,
 } from "@/services/autopedidosQrDb";
@@ -23,6 +24,7 @@ function isMissingSchemaError(message: string): boolean {
     lower.includes("schema cache") ||
     lower.includes("tokens_qr_mesas") ||
     lower.includes("generar_tokens_qr_mesas_sucursal") ||
+    lower.includes("listar_tokens_qr_mesas_sucursal") ||
     lower.includes("could not find the table") ||
     lower.includes("could not find the function")
   );
@@ -104,39 +106,31 @@ const QrMesasAdmin = () => {
     retry: false,
     queryFn: async () => {
       if (!activeBranchId) return [];
-
-      const [{ data: tokens, error: tokensError }, { data: mesas, error: mesasError }] = await Promise.all([
-        supabase
-          .from("tokens_qr_mesas" as any)
-          .select("id, mesa_id, token_seguro, activo")
-          .eq("sucursal_id", activeBranchId)
-          .eq("activo", true),
-        supabase
-          .from("restaurant_tables")
-          .select("id, name, visual_order")
-          .eq("branch_id", activeBranchId),
-      ]);
-
-      if (tokensError) throw new Error(formatSchemaError(tokensError.message));
-      if (mesasError) throw mesasError;
-
-      const mesaById = new Map((mesas ?? []).map((m) => [m.id, m]));
-      const mapped: TokenQrMesaGenerado[] = ((tokens as any[]) ?? []).map((row) => {
-        const mesa = mesaById.get(row.mesa_id);
-        return {
-          token_id: row.id,
+      try {
+        const rows = await listarTokensQrMesasSucursal(activeBranchId);
+        const mapped: TokenQrMesaGenerado[] = rows.map((row) => ({
+          token_id: row.token_id,
           mesa_id: row.mesa_id,
-          mesa_nombre: mesa?.name ?? "Mesa",
-          mesa_visual_order: Number(mesa?.visual_order ?? 0),
+          mesa_nombre: row.mesa_nombre,
+          mesa_visual_order: row.mesa_visual_order,
           token_seguro: row.token_seguro,
           creado: false,
-        };
-      });
-
-      mapped.sort((a, b) => a.mesa_visual_order - b.mesa_visual_order);
-      return enrichTokensWithQr(mapped);
+        }));
+        mapped.sort((a, b) => a.mesa_visual_order - b.mesa_visual_order);
+        return enrichTokensWithQr(mapped);
+      } catch (err) {
+        throw new Error(formatSchemaError(err instanceof Error ? err.message : String(err)));
+      }
     },
   });
+
+  const sharedGroupHint = useMemo(() => {
+    const name = activeBranch?.name ?? "";
+    if (/el pulpo 1/i.test(name) && /(mañana|manana|tarde)/i.test(name)) {
+      return "Esta sucursal comparte QR con El Pulpo 1 (Mañana y Tarde): al escanear se usa el turno abierto más reciente.";
+    }
+    return null;
+  }, [activeBranch?.name]);
 
   const displayTokens = existingQuery.data ?? [];
   const limiteNormalizado = Math.max(1, Math.min(LIMITE_MAX_MESAS, Math.trunc(cantidadMesas || 1)));
@@ -162,11 +156,21 @@ const QrMesasAdmin = () => {
     onSuccess: async (generated) => {
       setInlineError(null);
       const creados = generated.filter((t) => t.creado).length;
+      const reutilizados = generated.length - creados;
       setInlineOk(
-        creados > 0
-          ? `Listo: ${generated.length} mesas con QR (${creados} tokens nuevos).`
-          : `Listo: ${generated.length} códigos QR actualizados (tokens existentes conservados).`,
+        sharedGroupHint
+          ? `Listo: ${generated.length} QR (Mañana/Tarde compartidos). ${creados} nuevos, ${reutilizados} reutilizados. Imprime las ${generated.length} mesas.`
+          : creados > 0
+            ? `Listo: ${generated.length} mesas con QR (${creados} tokens nuevos). Imprime y coloca en las mesas.`
+            : `Listo: ${generated.length} códigos QR listos. Puedes reimprimir.`,
       );
+
+      const sorted = [...generated].sort(
+        (a, b) => a.mesa_visual_order - b.mesa_visual_order || a.mesa_nombre.localeCompare(b.mesa_nombre, "es"),
+      );
+      const enriched = await enrichTokensWithQr(sorted);
+      qc.setQueryData(["tokens-qr-mesas", activeBranchId], enriched);
+
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["tokens-qr-mesas", activeBranchId] }),
         qc.invalidateQueries({ queryKey: ["admin-qr-mesas-capacidad", activeBranchId] }),
@@ -180,8 +184,11 @@ const QrMesasAdmin = () => {
   });
 
   const printTitle = useMemo(
-    () => `Códigos QR — ${activeBranch?.name ?? "Sucursal"}`,
-    [activeBranch?.name],
+    () =>
+      sharedGroupHint
+        ? `Códigos QR — El Pulpo 1 (Mañana / Tarde)`
+        : `Códigos QR — ${activeBranch?.name ?? "Sucursal"}`,
+    [activeBranch?.name, sharedGroupHint],
   );
 
   if (!activeBranchId) {
@@ -206,6 +213,9 @@ const QrMesasAdmin = () => {
                 Genera o actualiza tokens para{" "}
                 <span className="font-semibold text-foreground">{activeBranch?.name}</span>.
               </p>
+              {sharedGroupHint ? (
+                <p className="mt-1 text-xs font-medium text-emerald-700">{sharedGroupHint}</p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -300,11 +310,16 @@ const QrMesasAdmin = () => {
         </div>
       ) : (
         <div className="print-qr-root space-y-3">
+          <div className="flex items-center justify-between gap-2 print:hidden">
+            <p className="text-sm font-semibold text-foreground">
+              {displayTokens.length} código(s) QR
+            </p>
+          </div>
           <h2 className="hidden print:block text-center text-xl font-black">{printTitle}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 print:grid-cols-2">
             {displayTokens.map((token) => (
               <article
-                key={token.token_id}
+                key={`${token.mesa_id}-${token.token_id}-${token.mesa_visual_order}`}
                 className="flex flex-col items-center rounded-2xl border border-orange-200 bg-white p-4 text-center shadow-sm print:break-inside-avoid"
               >
                 <p className="mb-3 font-display text-lg font-black text-foreground">
