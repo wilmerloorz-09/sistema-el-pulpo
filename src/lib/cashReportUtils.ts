@@ -2,6 +2,12 @@ import { Capacitor } from "@capacitor/core";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { Database } from "@/integrations/supabase/types";
 import { hideCashReport, showCashReport } from "@/lib/cashReportViewerStore";
+import { isCashPaymentMethodName } from "@/lib/paymentMethods";
+import { isPaymentExcludedFromCashSummary } from "@/lib/paymentSummary";
+import {
+  computeCashBalance,
+  sumNonCashChangeFromCompletedPayments,
+} from "@/lib/transferCashChange";
 
 /** En móvil/tablet/nativo el diálogo de impresión atrapa al usuario; el reporte ya tiene botón Imprimir. */
 export const shouldAutoPrintCashReport = (): boolean => {
@@ -49,6 +55,7 @@ export type CompletedPayment = {
   payment_opening_status?: string | null;
   notes?: string | null;
   cashier_name?: string | null;
+  cash_change_detail?: Array<{ total?: number | null }> | null;
 };
 
 export type CashMovement = {
@@ -104,6 +111,7 @@ export const translateCashStatus = (value: string | null | undefined) => {
 export const translatePaymentStatus = (value: string | null | undefined) => {
   switch (String(value ?? "").toUpperCase()) {
     case "APPLIED":
+    case "COMPLETED":
     case "PAGADO":
       return "Aplicado";
     case "PARTIAL":
@@ -126,6 +134,8 @@ export const scopeReportToOpening = (params: {
   movements: CashMovement[];
   closureNotes?: string;
   denominationSnapshot?: CashShiftSnapshot["denoms"];
+  /** Fallback si los cobros no traen cash_change_detail (p. ej. cierre desde Resumen). */
+  transferCashChangeTotal?: number;
 }) => {
   const openedAtMs = new Date(params.opening.opened_at).getTime();
   const closedAtMs = new Date(params.opening.closed_at ?? params.opening.opened_at).getTime();
@@ -141,6 +151,7 @@ export const scopeReportToOpening = (params: {
 
   const methodSummaryMap = new Map<string, { methodName: string; amount: number; paymentCount: number }>();
   for (const payment of uniquePayments) {
+    if (isPaymentExcludedFromCashSummary(payment)) continue;
     const current = methodSummaryMap.get(payment.method_name) ?? {
       methodName: payment.method_name,
       amount: 0,
@@ -163,9 +174,14 @@ export const scopeReportToOpening = (params: {
     return sum;
   }, 0);
   const cashMethodTotal = Array.from(methodSummaryMap.values())
-    .filter((entry) => /efectivo/i.test(entry.methodName))
+    .filter((entry) => isCashPaymentMethodName(entry.methodName))
     .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
   const estimatedCurrentTotal = Number(params.opening.initial_total ?? 0) + cashMethodTotal + manualMovementTotal;
+
+  const transferFromPayments = sumNonCashChangeFromCompletedPayments(uniquePayments);
+  const transferCashChangeTotal = transferFromPayments > 0
+    ? transferFromPayments
+    : Math.max(0, Number(params.transferCashChangeTotal ?? 0));
 
   return {
     branchName: params.branchName,
@@ -185,6 +201,7 @@ export const scopeReportToOpening = (params: {
       .sort((left, right) => right.amount - left.amount || left.methodName.localeCompare(right.methodName)),
     movements: filteredMovements,
     closureNotes: params.closureNotes,
+    transferCashChangeTotal,
     openingCashTotals: {
       initial: Number(params.opening.initial_total ?? 0),
       current: scopedDenoms.length > 0
@@ -206,6 +223,8 @@ export const buildCashClosureReportHtml = (params: {
     initial: number;
     current: number;
   };
+  /** Vuelto en efectivo por cobros no efectivo (transferencia de más). */
+  transferCashChangeTotal?: number;
   /** Toolbar HTML (Imprimir/Cerrar). En visor in-app debe ser false. */
   includeToolbar?: boolean;
 }) => {
@@ -221,6 +240,24 @@ export const buildCashClosureReportHtml = (params: {
     ?? sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_initial, 0);
   const totalCurrent = params.openingCashTotals?.current
     ?? sortedDenoms.reduce((sum, denomination) => sum + denomination.value * denomination.qty_current, 0);
+  const physicalDelta = totalCurrent - totalInitial;
+
+  const transferFromPayments = sumNonCashChangeFromCompletedPayments(params.completedPayments);
+  const transferCashChangeTotal = transferFromPayments > 0
+    ? transferFromPayments
+    : Math.max(0, Number(params.transferCashChangeTotal ?? 0));
+
+  const cashCollected = params.methodSummary
+    .filter((entry) => isCashPaymentMethodName(entry.methodName))
+    .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
+  const collectedNet = params.methodSummary.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  const cashBalance = computeCashBalance({
+    physicalDelta,
+    cashCollected,
+    transferCashChangeTotal,
+  });
+  const cashBalanceAbs = Math.abs(cashBalance);
+  const cashBalanced = cashBalanceAbs < 0.01;
   
   const openings = [...params.shift.openingHistory].sort(
     (left, right) => new Date(left.opened_at).getTime() - new Date(right.opened_at).getTime(),
@@ -362,9 +399,11 @@ export const buildCashClosureReportHtml = (params: {
         .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
       }
       .card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fafafa; }
+      .card.warn { border-color:#fecaca; background:#fef2f2; }
+      .card.warn .value { color:#991b1b; }
       .label { font-size:12px; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
       .value { font-size:24px; font-weight:700; }
-      .sub { font-size:13px; color:#4b5563; margin-top:4px; }
+      .sub { font-size:12px; color:#4b5563; margin-top:6px; line-height:1.35; }
       .section { margin-top:24px; }
       .table-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling: touch; }
       table { width:100%; min-width: 520px; border-collapse:collapse; margin-top:10px; font-size:12px; }
@@ -448,8 +487,18 @@ export const buildCashClosureReportHtml = (params: {
     <div class="grid">
       <div class="card"><div class="label">Apertura</div><div class="value">${escapeHtml(formatMoney(totalInitial))}</div></div>
       <div class="card"><div class="label">Caja actual</div><div class="value">${escapeHtml(formatMoney(totalCurrent))}</div></div>
-      <div class="card"><div class="label">Diferencia</div><div class="value">${escapeHtml(formatMoney(totalCurrent - totalInitial))}</div></div>
-      <div class="card"><div class="label">Cobrado neto</div><div class="value">${escapeHtml(formatMoney(params.methodSummary.reduce((sum, row) => sum + row.amount, 0)))}</div></div>
+      <div class="card"><div class="label">Diferencia</div><div class="value">${escapeHtml(formatMoney(physicalDelta))}</div></div>
+      <div class="card"><div class="label">Cobrado neto</div><div class="value">${escapeHtml(formatMoney(collectedNet))}</div></div>
+      <div class="card"><div class="label">Vuelto ef. (transf.)</div><div class="value">${escapeHtml(formatMoney(transferCashChangeTotal))}</div></div>
+      <div class="card ${cashBalanced ? "" : "warn"}"><div class="label">Cuadre</div><div class="value">${escapeHtml(`${cashBalance > 0 ? "+" : cashBalance < 0 ? "-" : ""}$${cashBalanceAbs.toFixed(2)}`)}</div>
+        <div class="sub">${escapeHtml(cashBalanced
+          ? (transferCashChangeTotal > 0
+            ? "Coincide con efectivo − vueltos por transferencia"
+            : "Diferencia física = ventas en efectivo")
+          : (cashBalance > 0
+            ? `Sobran $${cashBalanceAbs.toFixed(2)} vs efectivo − vueltos transf.`
+            : `Faltan $${cashBalanceAbs.toFixed(2)} vs efectivo − vueltos transf.`))}</div>
+      </div>
     </div>
 
     <div class="section">
@@ -580,6 +629,7 @@ export const openCashClosureReportWindow = (params: {
     initial: number;
     current: number;
   };
+  transferCashChangeTotal?: number;
   /** Por defecto: solo en escritorio. En móvil el usuario usa el botón Imprimir del reporte. */
   autoPrint?: boolean;
 }) => {

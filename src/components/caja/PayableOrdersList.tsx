@@ -492,16 +492,29 @@ export default function PayableOrdersList({
           <AlertDialogHeader>
             <AlertDialogTitle>No se puede cobrar</AlertDialogTitle>
             <AlertDialogDescription>
-              No estan despachados todos los items de esta orden.
-              {undispatchedBlockOrder && (undispatchedBlockOrder.undispatched_units ?? 0) > 0 ? (
+              {(undispatchedBlockOrder?.unsent_draft_units ?? 0) > 0 ? (
                 <>
+                  Esta orden para llevar tiene productos agregados que aún no se enviaron a caja.
                   {" "}
-                  Faltan {undispatchedBlockOrder.undispatched_units}{" "}
-                  {undispatchedBlockOrder.undispatched_units === 1 ? "unidad" : "unidades"} por despachar.
+                  Hay {undispatchedBlockOrder!.unsent_draft_units}{" "}
+                  {undispatchedBlockOrder!.unsent_draft_units === 1 ? "unidad" : "unidades"} pendientes de enviar.
+                  {" "}
+                  Envía esos productos a caja antes de registrar el cobro.
                 </>
-              ) : null}
-              {" "}
-              Despacha todo antes de registrar el cobro.
+              ) : (
+                <>
+                  No estan despachados todos los items de esta orden.
+                  {undispatchedBlockOrder && (undispatchedBlockOrder.undispatched_units ?? 0) > 0 ? (
+                    <>
+                      {" "}
+                      Faltan {undispatchedBlockOrder.undispatched_units}{" "}
+                      {undispatchedBlockOrder.undispatched_units === 1 ? "unidad" : "unidades"} por despachar.
+                    </>
+                  ) : null}
+                  {" "}
+                  Despacha todo antes de registrar el cobro.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

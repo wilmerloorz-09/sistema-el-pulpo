@@ -71,13 +71,28 @@ describe("dispatchServirQueueBundle cache", () => {
     await expect(Promise.all([first, second])).resolves.toEqual([bundle(), bundle()]);
   });
 
-  it("reutiliza una respuesta con órdenes durante ocho segundos", async () => {
+  it("reutiliza una respuesta con órdenes durante el TTL (25s)", async () => {
     rpc.mockResolvedValueOnce({ data: bundle(), error: null });
 
     await fetchDispatchServirQueueBundle("branch-a", "shift-a");
     await fetchDispatchServirQueueBundle("branch-a", "shift-a");
+    vi.setSystemTime(new Date(Date.now() + DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS - 1));
+    await fetchDispatchServirQueueBundle("branch-a", "shift-a");
 
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("consulta de nuevo la RPC cuando el TTL del bundle expira", async () => {
+    rpc
+      .mockResolvedValueOnce({ data: bundle("cached"), error: null })
+      .mockResolvedValueOnce({ data: bundle("fresh"), error: null });
+
+    await fetchDispatchServirQueueBundle("branch-a", "shift-a");
+    vi.setSystemTime(new Date(Date.now() + DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS + 1));
+    const fresh = await fetchDispatchServirQueueBundle("branch-a", "shift-a");
+
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(fresh.orders).toEqual([{ id: "fresh" }]);
   });
 
   it("no cachea una respuesta vacía como verdad reutilizable", async () => {

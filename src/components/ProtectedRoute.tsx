@@ -153,6 +153,7 @@ const ProtectedRoute = ({
     location.pathname.startsWith("/admin") ||
     location.pathname.startsWith("/reportes") ||
     location.pathname.startsWith("/monitoreo-global") ||
+    location.pathname.startsWith("/inventario") ||
     location.pathname.startsWith("/promociones") ||
     location.pathname.startsWith("/campanas") ||
     location.pathname.startsWith("/clientes");

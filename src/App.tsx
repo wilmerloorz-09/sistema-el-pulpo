@@ -2,12 +2,19 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
+import {
+  ensureOnlineForAction,
+  isNetworkLikeError,
+  notifyOfflineActionBlocked,
+  asOfflineActionErrorIfNeeded,
+} from "@/lib/offlineAction";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { BranchProvider, useBranch } from "@/contexts/BranchContext";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { NetworkProvider } from "@/contexts/NetworkContext";
+import { setAppOnline } from "@/lib/networkStatus";
 import { useEffect, useState, useRef } from "react";
 import { initSyncListeners } from "@/services/SyncService";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -36,15 +43,30 @@ import Servir from "./pages/Servir";
 import Empaquetador from "./pages/Empaquetador";
 import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
+import CierresCaja from "./pages/CierresCaja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
 import ForzarCierreTurno from "./pages/ForzarCierreTurno";
 import Inventario from "./pages/Inventario";
+import InventarioProductos from "./pages/InventarioProductos";
+import InventarioMovimientos from "./pages/InventarioMovimientos";
+import InventarioHistorial from "./pages/InventarioHistorial";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onMutate: async () => {
+      ensureOnlineForAction();
+    },
+    onError: (error) => {
+      const normalized = asOfflineActionErrorIfNeeded(error);
+      if (isNetworkLikeError(normalized)) {
+        notifyOfflineActionBlocked();
+      }
+    },
+  }),
   defaultOptions: {
     queries: {
       // Evita refetch automático masivo (staleTime 0 por defecto de React Query).
@@ -54,8 +76,15 @@ const queryClient = new QueryClient({
       refetchOnReconnect: true,
       retry: 1,
     },
+    mutations: {
+      // Reintentar una mutación cuando no hay red suele empeorar la UX.
+      retry: false,
+    },
   },
 });
+
+// Alinear el flag global con el navegador al arrancar.
+setAppOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
 
 const GlobalSystemAlert = () => {
   const [open, setOpen] = useState(false);
@@ -500,6 +529,14 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/cierres-caja"
+                  element={
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
+                      <CierresCaja />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/reportes"
                   element={
                     <ProtectedRoute>
@@ -531,11 +568,28 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
+                <Route path="/inventario" element={<Inventario />} />
                 <Route
-                  path="/inventario"
+                  path="/inventario/productos"
                   element={
                     <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
-                      <Inventario />
+                      <InventarioProductos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/inventario/movimientos"
+                  element={
+                    <ProtectedRoute allowedModules={["inventario_movimientos", "admin_sucursal", "admin_global"]}>
+                      <InventarioMovimientos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/inventario/historial"
+                  element={
+                    <ProtectedRoute allowedModules={["inventario_movimientos", "admin_sucursal", "admin_global"]}>
+                      <InventarioHistorial />
                     </ProtectedRoute>
                   }
                 />

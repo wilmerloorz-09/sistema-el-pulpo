@@ -1032,6 +1032,63 @@ export type Database = {
           },
         ]
       }
+      movimientos_inventario: {
+        Row: {
+          id: string
+          producto_id: string
+          sucursal_id: string
+          tipo_movimiento: Database["public"]["Enums"]["tipo_movimiento_inventario"]
+          cantidad_movimiento: number
+          cantidad_anterior: number
+          cantidad_nueva: number
+          motivo: string
+          registrado_por: string
+          registrado_por_nombre: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          producto_id: string
+          sucursal_id: string
+          tipo_movimiento: Database["public"]["Enums"]["tipo_movimiento_inventario"]
+          cantidad_movimiento: number
+          cantidad_anterior: number
+          cantidad_nueva: number
+          motivo: string
+          registrado_por: string
+          registrado_por_nombre?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          producto_id?: string
+          sucursal_id?: string
+          tipo_movimiento?: Database["public"]["Enums"]["tipo_movimiento_inventario"]
+          cantidad_movimiento?: number
+          cantidad_anterior?: number
+          cantidad_nueva?: number
+          motivo?: string
+          registrado_por?: string
+          registrado_por_nombre?: string
+          creado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "movimientos_inventario_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movimientos_inventario_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       menu_node_modifiers: {
         Row: {
           created_at: string
@@ -4125,6 +4182,28 @@ export type Database = {
         Args: { p_device_label?: string; p_session_id: string }
         Returns: undefined
       }
+      registrar_movimiento_inventario: {
+        Args: {
+          p_cantidad: number
+          p_motivo?: string
+          p_producto_id: string
+          p_sucursal_id: string
+          p_tipo_movimiento: Database["public"]["Enums"]["tipo_movimiento_inventario"]
+        }
+        Returns: {
+          cantidad_anterior: number
+          cantidad_movimiento: number
+          cantidad_nueva: number
+          creado_en: string
+          motivo: string
+          movimiento_id: string
+          producto_id: string
+          registrado_por: string
+          registrado_por_nombre: string
+          sucursal_id: string
+          tipo_movimiento: Database["public"]["Enums"]["tipo_movimiento_inventario"]
+        }[]
+      }
       registrar_movimiento_caja: {
         Args: {
           p_detail?: Json
@@ -4383,6 +4462,7 @@ export type Database = {
         | "executed"
       price_mode: "FIXED" | "MANUAL"
       role_scope: "GLOBAL" | "BRANCH"
+      tipo_movimiento_inventario: "INGRESO" | "SALIDA" | "AJUSTE"
       tipo_producto: "COMPRADO" | "PREPARADO"
     }
     CompositeTypes: {
@@ -4562,6 +4642,7 @@ export const Constants = {
       ],
       price_mode: ["FIXED", "MANUAL"],
       role_scope: ["GLOBAL", "BRANCH"],
+      tipo_movimiento_inventario: ["INGRESO", "SALIDA", "AJUSTE"],
       tipo_producto: ["COMPRADO", "PREPARADO"],
     },
   },

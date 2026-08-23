@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  countUnsentDraftUnits,
   getDispatchedEditQuantity,
   getDispatchedEditTargetQuantity,
   isDispatchFirstOrder,
   isOrderItemFullyDispatched,
   isPureTakeoutOrder,
+  orderBlocksCollectForUnsentDrafts,
   redistributeGroupedItemQuantities,
   resolveInDispatchStagingQuantities,
 } from "@/lib/orderFlow";
@@ -20,6 +22,24 @@ describe("isPureTakeoutOrder", () => {
 
   it("excludes orden bandeja", () => {
     expect(isPureTakeoutOrder({ order_type: "TAKEOUT", is_tray_order: true })).toBe(false);
+  });
+});
+
+describe("orderBlocksCollectForUnsentDrafts", () => {
+  it("applies to para llevar and express", () => {
+    expect(orderBlocksCollectForUnsentDrafts({ order_type: "TAKEOUT" })).toBe(true);
+    expect(orderBlocksCollectForUnsentDrafts({ order_type: "EXPRESS" })).toBe(true);
+    expect(orderBlocksCollectForUnsentDrafts({ order_type: "DINE_IN" })).toBe(false);
+  });
+
+  it("counts draft units only", () => {
+    expect(
+      countUnsentDraftUnits([
+        { status: "DRAFT", quantity: 2 },
+        { status: "SENT", quantity: 5 },
+        { status: "DRAFT", quantity: 1 },
+      ]),
+    ).toBe(3);
   });
 });
 

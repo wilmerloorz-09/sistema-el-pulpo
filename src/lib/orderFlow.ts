@@ -49,6 +49,26 @@ export function isPureTakeoutOrder(order: {
   );
 }
 
+/**
+ * Para llevar / Express: si hay ítems DRAFT (agregados y no enviados a caja),
+ * recaudación debe bloquear el cobro (botón rojo), igual que mesa con pendientes de despacho.
+ */
+export function orderBlocksCollectForUnsentDrafts(order: {
+  order_type?: string | null;
+} | null | undefined): boolean {
+  const type = String(order?.order_type ?? "");
+  return type === "TAKEOUT" || type === "EXPRESS";
+}
+
+export function countUnsentDraftUnits(
+  items: Array<{ status?: string | null; quantity?: number | null }> | null | undefined,
+): number {
+  return (items ?? []).reduce((sum, item) => {
+    if (String(item.status ?? "") !== "DRAFT") return sum;
+    return sum + Math.max(0, Number(item.quantity ?? 0));
+  }, 0);
+}
+
 export function getSentItemStageLabel(orderType?: string | null, workflowMode?: string | null): string {
   const isExpress = orderType === "EXPRESS";
   const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && orderType !== "TAKEOUT");

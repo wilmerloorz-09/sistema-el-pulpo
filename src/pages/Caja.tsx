@@ -54,6 +54,7 @@ import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
+import { sumNonCashPaymentChangeOut } from "@/lib/transferCashChange";
 import { ALL_CASHIERS, scopeCajaSummary } from "@/lib/cajaSummaryScope";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
@@ -90,7 +91,7 @@ const Caja = () => {
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [completedChargeOrder, setCompletedChargeOrder] = useState<PayableOrder | null>(null);
   const [completedChargeBlock, setCompletedChargeBlock] = useState<{
-    kind: "not_found" | "undispatched" | "locked";
+    kind: "not_found" | "undispatched" | "unsent_drafts" | "locked";
     orderRef?: string;
   } | null>(null);
   const [rechargeLoading, setRechargeLoading] = useState(false);
@@ -176,8 +177,13 @@ const Caja = () => {
   const cashierMethodSummaryQuery = useQuery({
     queryKey: ["cashier-method-summary", activeBranch?.id ?? "_", shift?.id ?? "_", summaryCashierId],
     enabled: Boolean(activeBranch?.id) && Boolean(shift?.id) && Boolean(user?.id),
-    queryFn: async (): Promise<CompletedPaymentsMethodSummary[]> => {
-      if (!activeBranch?.id || !shift?.opened_at) return [];
+    queryFn: async (): Promise<{
+      methodSummary: CompletedPaymentsMethodSummary[];
+      transferCashChangeTotal: number;
+    }> => {
+      if (!activeBranch?.id || !shift?.opened_at) {
+        return { methodSummary: [], transferCashChangeTotal: 0 };
+      }
 
       const paymentFilters: any[] = [
         { column: "created_at", op: "gte", value: shift.opened_at },
@@ -199,12 +205,49 @@ const Caja = () => {
       ]);
 
       const methodNameById = Object.fromEntries((methods ?? []).map((m: any) => [m.id, m.name]));
-      return buildMethodSummaryFromPayments(payments ?? [], methodNameById);
+      const methodSummary = buildMethodSummaryFromPayments(payments ?? [], methodNameById);
+
+      const paymentIds = (payments ?? []).map((p: any) => p.id).filter(Boolean);
+      if (paymentIds.length === 0) {
+        return { methodSummary, transferCashChangeTotal: 0 };
+      }
+
+      const changeOutRows = await dbSelect<any>("cash_movements", {
+        select: "payment_id, denomination_id, qty_delta, movement_type",
+        filters: [
+          { column: "payment_id", op: "in", value: paymentIds },
+          { column: "movement_type", op: "eq", value: "CHANGE_OUT" },
+        ],
+      });
+
+      const denomIds = Array.from(
+        new Set((changeOutRows ?? []).map((row: any) => row.denomination_id).filter(Boolean)),
+      );
+      const denomRows = denomIds.length > 0
+        ? await dbSelect<any>("denominations", {
+            select: "id, value",
+            filters: [{ column: "id", op: "in", value: denomIds }],
+          })
+        : [];
+      const denominationValueById: Record<string, number> = {
+        ...Object.fromEntries((shift.denoms ?? []).map((d) => [d.denomination_id, d.value])),
+        ...Object.fromEntries((denomRows ?? []).map((d: any) => [d.id, Number(d.value ?? 0)])),
+      };
+
+      const transferCashChangeTotal = sumNonCashPaymentChangeOut({
+        payments: payments ?? [],
+        methodNameById,
+        changeOutMovements: changeOutRows ?? [],
+        denominationValueById,
+      });
+
+      return { methodSummary, transferCashChangeTotal };
     },
     staleTime: OPERATIONAL_STALE_MS,
   });
 
-  const shiftSummaryMethodSummary = cashierMethodSummaryQuery.data ?? [];
+  const shiftSummaryMethodSummary = cashierMethodSummaryQuery.data?.methodSummary ?? [];
+  const shiftSummaryTransferCashChange = cashierMethodSummaryQuery.data?.transferCashChangeTotal ?? 0;
 
   const currentUserCashierCandidate = useMemo(
     () => (user?.id ? captureCandidates.find((c) => c.id === user.id) ?? null : null),
@@ -333,7 +376,7 @@ const Caja = () => {
       }
       if (!order.ready_to_collect) {
         setCompletedChargeBlock({
-          kind: "undispatched",
+          kind: (order.unsent_draft_units ?? 0) > 0 ? "unsent_drafts" : "undispatched",
           orderRef: getOrderRef(order.order_code, order.order_number),
         });
         return;
@@ -786,6 +829,7 @@ const Caja = () => {
       movements: freshMovements,
       closureNotes: shift.notes ?? undefined,
       reportMode: "shift",
+      transferCashChangeTotal: shiftSummaryTransferCashChange,
     });
   };
 
@@ -802,6 +846,7 @@ const Caja = () => {
         completedPayments,
         movements: freshMovements,
         closureNotes: opening.notes ?? undefined,
+        transferCashChangeTotal: shiftSummaryTransferCashChange,
       }),
       reportMode: "opening",
     });
@@ -1131,6 +1176,7 @@ const Caja = () => {
                 ...reportSnapshot,
                 opening: closedOpening,
                 denominationSnapshot: shift.denoms,
+                transferCashChangeTotal: shiftSummaryTransferCashChange,
               }),
               reportMode: "opening",
               includeToolbar: false,
@@ -1138,6 +1184,7 @@ const Caja = () => {
           : {
               ...reportSnapshot,
               methodSummary: completedPaymentsMethodSummary,
+              transferCashChangeTotal: shiftSummaryTransferCashChange,
               reportMode: "shift",
               includeToolbar: false,
             },
@@ -1181,6 +1228,7 @@ const Caja = () => {
                   <ShiftSummary
                     shift={summaryShift ?? shift}
                     methodSummary={shiftSummaryMethodSummary}
+                    transferCashChangeTotal={shiftSummaryTransferCashChange}
                     movements={scopedCajaSummary.movements}
                     movementsLoading={isLoadingCashRegisterMovements}
                     onClose={handleCloseCashRegister}
@@ -1291,7 +1339,9 @@ const Caja = () => {
                 ? "Orden en edición"
                 : completedChargeBlock?.kind === "undispatched"
                   ? "Despacho incompleto"
-                  : "No se puede cobrar"}
+                  : completedChargeBlock?.kind === "unsent_drafts"
+                    ? "Productos sin enviar a caja"
+                    : "No se puede cobrar"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {completedChargeBlock?.kind === "locked" ? (
@@ -1301,6 +1351,10 @@ const Caja = () => {
               ) : completedChargeBlock?.kind === "undispatched" ? (
                 <>
                   La orden{completedChargeBlock.orderRef ? ` ${completedChargeBlock.orderRef}` : ""} aún tiene ítems sin despachar. Despacha todo antes de registrar el cobro.
+                </>
+              ) : completedChargeBlock?.kind === "unsent_drafts" ? (
+                <>
+                  La orden{completedChargeBlock.orderRef ? ` ${completedChargeBlock.orderRef}` : ""} tiene productos agregados que aún no se enviaron a caja. Envía esos productos antes de registrar el cobro.
                 </>
               ) : (
                 <>

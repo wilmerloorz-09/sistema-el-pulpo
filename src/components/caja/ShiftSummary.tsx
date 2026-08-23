@@ -18,12 +18,15 @@ import { AlertTriangle, ArrowRightLeft, BarChart3, Clock, Coins, DollarSign, His
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { isCashPaymentMethodName } from "@/lib/paymentMethods";
+import { computeCashBalance } from "@/lib/transferCashChange";
 import CashRegisterOpeningHistory from "@/components/caja/CashRegisterOpeningHistory";
 import CashRegisterMovementsDialog, { CashRegisterMovementsList } from "@/components/caja/CashRegisterMovementsDialog";
 
 interface Props {
   shift: CashShift;
   methodSummary?: CompletedPaymentsMethodSummary[];
+  /** Vuelto en efectivo entregado en cobros no efectivo (p. ej. transferencia de más). */
+  transferCashChangeTotal?: number;
   movements?: CashRegisterMovement[];
   movementsLoading?: boolean;
   onClose: (notes?: string) => Promise<void> | void;
@@ -104,6 +107,7 @@ function DenomBreakdownGrid({
 export default function ShiftSummary({
   shift,
   methodSummary = [],
+  transferCashChangeTotal = 0,
   movements = [],
   movementsLoading = false,
   onClose,
@@ -138,7 +142,12 @@ export default function ShiftSummary({
     .reduce((sum, method) => sum + method.amount, 0);
   const totalNonCashCollected = totalCollected - totalCashCollected;
   const cashPhysicalDelta = totalCurrent - totalInitial;
-  const cashBalance = cashPhysicalDelta - totalCashCollected;
+  const transferChangeTotal = Math.max(0, Number(transferCashChangeTotal ?? 0));
+  const cashBalance = computeCashBalance({
+    physicalDelta: cashPhysicalDelta,
+    cashCollected: totalCashCollected,
+    transferCashChangeTotal: transferChangeTotal,
+  });
   const opened = new Date(shift.opened_at);
   const elapsed = Math.floor((Date.now() - opened.getTime()) / 60000);
   const hours = Math.floor(elapsed / 60);
@@ -348,10 +357,12 @@ export default function ShiftSummary({
                     </div>
                     <p className="text-xs text-slate-600">
                       {Math.abs(cashBalance) < 0.01
-                        ? "Diferencia fisica coincide con ventas en efectivo"
+                        ? transferChangeTotal > 0
+                          ? "Coincide con efectivo cobrado menos vueltos por transferencia"
+                          : "Diferencia fisica coincide con ventas en efectivo"
                         : cashBalance > 0
-                          ? `Sobran $${Math.abs(cashBalance).toFixed(2)} vs ventas en efectivo`
-                          : `Faltan $${Math.abs(cashBalance).toFixed(2)} vs ventas en efectivo`
+                          ? `Sobran $${Math.abs(cashBalance).toFixed(2)} vs efectivo cobrado − vueltos transf.`
+                          : `Faltan $${Math.abs(cashBalance).toFixed(2)} vs efectivo cobrado − vueltos transf.`
                       }
                     </p>
                   </div>
@@ -363,7 +374,7 @@ export default function ShiftSummary({
                     <span className="text-xs text-muted-foreground">Cobros por metodo</span>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white px-3 py-2.5">
                       <p className="text-[10px] uppercase tracking-[0.22em] text-sky-700">Cobrado total</p>
                       <p className=" mt-1.5 text-[23px] font-bold leading-none text-slate-900">${totalCollected.toFixed(2)}</p>
@@ -378,6 +389,11 @@ export default function ShiftSummary({
                       <p className="text-[10px] uppercase text-amber-700">No efectivo</p>
                       <p className=" mt-1.5 text-[23px] font-bold leading-none text-amber-900">${totalNonCashCollected.toFixed(2)}</p>
                       <p className="mt-1.5 text-xs text-slate-600">Transferencias y otros medios</p>
+                    </div>
+                    <div className="rounded-xl border border-rose-200 bg-gradient-to-r from-rose-50 to-white px-3 py-2.5">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-rose-700">Vuelto ef. (transf.)</p>
+                      <p className=" mt-1.5 text-[23px] font-bold leading-none text-rose-900">${transferChangeTotal.toFixed(2)}</p>
+                      <p className="mt-1.5 text-xs text-slate-600">Salida de caja por exceso en no efectivo</p>
                     </div>
                   </div>
                 </div>

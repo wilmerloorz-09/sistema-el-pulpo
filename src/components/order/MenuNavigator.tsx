@@ -80,7 +80,8 @@ const NodeCard = ({
           }
         }}
         className={cn(
-          "group relative col-span-full flex min-h-[72px] items-center gap-2.5 rounded-[1.15rem] border border-emerald-300/80 bg-white px-3 py-2.5 text-left transition-all md:min-h-[78px] md:gap-3 md:px-4 md:py-3",
+          "group relative col-span-full flex min-h-[72px] items-start gap-2.5 rounded-[1.15rem] border border-emerald-300/80 bg-white px-3 py-2.5 text-left transition-all md:gap-3 md:px-4 md:py-3",
+          hidePrices && nodeAction && "min-h-[120px] md:min-h-[128px]",
           !node.is_active && "opacity-70 saturate-75",
           !isDisabledNode && "cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/40",
           isDisabledNode && "cursor-not-allowed",
@@ -90,9 +91,14 @@ const NodeCard = ({
           {renderNodeVisual(node)}
         </div>
 
-        <div className="min-w-0 flex flex-1 items-center justify-between gap-3">
+        <div className={cn(
+          "min-w-0 flex flex-1",
+          hidePrices && nodeAction ? "flex-col gap-2" : "items-center justify-between gap-3",
+        )}>
           <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
-          {!hidePrices ? (
+          {hidePrices && nodeAction ? (
+            nodeAction
+          ) : !hidePrices ? (
             <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">
               {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
             </p>
@@ -105,7 +111,7 @@ const NodeCard = ({
           </span>
         )}
 
-        {nodeAction ? <div className="shrink-0">{nodeAction}</div> : null}
+        {!hidePrices && nodeAction ? <div className="shrink-0">{nodeAction}</div> : null}
       </div>
     );
   }

@@ -78,6 +78,8 @@ interface OrdersListProps {
 
 export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMergeSplitTool }: OrdersListProps) {
   const [activeTab, setActiveTab] = useState<TabType>("sent");
+  /** Lazy-load: solo consulta pestañas visitadas; la activa inicial es "sent". */
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<TabType>>(() => new Set<TabType>(["sent"]));
   const [approvalTarget, setApprovalTarget] = useState<OrderSummary | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const { user } = useAuth();
@@ -85,14 +87,15 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
   const qc = useQueryClient();
   const shiftGateQuery = useBranchShiftGate();
   const { rejectCancellationRequestMutation, approveCancellationRequestMutation } = useCancellation();
-  const operationalMapsBatchKey = useMemo(
+  const operationalMapsBatchBase = useMemo(
     () => JSON.stringify([...qk.ordersList, activeBranchId ?? null, shiftGateQuery.data?.shiftId ?? "_"]),
     [activeBranchId, shiftGateQuery.data?.shiftId],
   );
+  /** Con lazy-load cada pestaña es un batch de 1 (evita esperar participantes no montados). */
   const operationalMapsBatch = (participantId: string) => ({
-    batchKey: operationalMapsBatchKey,
+    batchKey: `${operationalMapsBatchBase}:${participantId}`,
     participantId,
-    participantCount: 6,
+    participantCount: 1,
   });
   const canAuthorizeCancel =
     isGlobalAdmin
@@ -111,25 +114,42 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
     shiftId: shiftGateQuery.data?.shiftId ?? null,
   });
 
-  /** Todas las pestañas cargan en paralelo: bombillas correctas y cambio de pestaña instantaneo con caché. */
+  const isTabEnabled = (tab: TabType) => visitedTabs.has(tab);
+
   const sentOrders = useOrdersByStatus("SENT_TO_KITCHEN", {
+    enabled: isTabEnabled("sent"),
     operationalMapsBatch: operationalMapsBatch("SENT_TO_KITCHEN"),
   });
   const draftOrders = useOrdersByStatus("DRAFT", {
+    enabled: isTabEnabled("draft"),
     operationalMapsBatch: operationalMapsBatch("DRAFT"),
   });
   const dispatchedOrders = useOrdersByStatus("KITCHEN_DISPATCHED", {
+    enabled: isTabEnabled("dispatched"),
     operationalMapsBatch: operationalMapsBatch("KITCHEN_DISPATCHED"),
   });
   const pendingCancellationOrders = useOrdersByStatus("PENDING_CANCELLATION", {
+    enabled: isTabEnabled("pendingCancellation"),
     operationalMapsBatch: operationalMapsBatch("PENDING_CANCELLATION"),
   });
   const cancelledOrders = useOrdersByStatus("CANCELLED", {
+    enabled: isTabEnabled("cancelled"),
     operationalMapsBatch: operationalMapsBatch("CANCELLED"),
   });
   const paidOrders = useOrdersByStatus("PAID", {
+    enabled: isTabEnabled("paid"),
     operationalMapsBatch: operationalMapsBatch("PAID"),
   });
+
+  const selectTab = (tab: TabType) => {
+    setActiveTab(tab);
+    setVisitedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  };
 
   const getOrdersForTab = (tab: TabType) => {
     switch (tab) {
@@ -150,6 +170,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
 
   const getTabCount = (tab: TabType) => {
     const orders = getOrdersForTab(tab);
+    if (!orders.isFetched) return null;
     return orders.data?.length || 0;
   };
 
@@ -159,10 +180,14 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
 
   const currentOrders = getOrdersForTab(activeTab);
   const currentTab = tabs.find((tab) => tab.key === activeTab)!;
-  const totalOrders = tabs.reduce((sum, tab) => sum + getTabCount(tab.key), 0);
+  const fetchedTabCounts = tabs
+    .map((tab) => getTabCount(tab.key))
+    .filter((count): count is number => count !== null);
+  const totalOrdersFetched = fetchedTabCounts.reduce((sum, count) => sum + count, 0);
+  const allVisibleTabsFetched = tabs.every((tab) => getOrdersForTab(tab.key).isFetched);
   const anyTabStillLoading = tabs.some((tab) => {
     const q = getOrdersForTab(tab.key);
-    return q.isLoading;
+    return visitedTabs.has(tab.key) && q.isLoading;
   });
 
   return (
@@ -175,8 +200,9 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
           <div>
             <h2 className="font-display text-2xl font-bold tracking-tight text-slate-900">Todas las ordenes</h2>
             <p className="text-sm font-medium text-slate-500">
-              {getTabCount(activeTab)} en {currentTab.label}
-              {anyTabStillLoading ? " · …" : ""} · {totalOrders} total
+              {getTabCount(activeTab) ?? "…"} en {currentTab.label}
+              {anyTabStillLoading ? " · …" : ""}
+              {allVisibleTabsFetched ? ` · ${totalOrdersFetched} total` : ""}
             </p>
           </div>
         </div>
@@ -205,15 +231,15 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
           <div className="inline-flex min-w-max flex-nowrap justify-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-1.5 shadow-sm">
             {tabs.map((tab) => {
               const q = getOrdersForTab(tab.key);
-              const count = q.data?.length || 0;
+              const count = getTabCount(tab.key);
               const isActive = activeTab === tab.key;
-              const showBadgeSpinner = q.isLoading;
+              const showBadgeSpinner = visitedTabs.has(tab.key) && q.isLoading;
 
               return (
                 <button
                   key={tab.key}
                   type="button"
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => selectTab(tab.key)}
                   className={cn(
                     "relative h-9 shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-white hover:text-slate-900 sm:h-10 sm:px-4 sm:text-sm",
                     isActive && "bg-white text-slate-900 shadow-sm",
@@ -227,7 +253,7 @@ export default function OrdersList({ onCancelOrder, readOnly = false, onOpenMerg
                       <span className="flex h-4 min-w-[18px] shrink-0 items-center justify-center sm:h-5 sm:min-w-[22px]">
                         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground sm:h-3.5 sm:w-3.5" aria-hidden />
                       </span>
-                    ) : count > 0 ? (
+                    ) : count !== null && count > 0 ? (
                       <span className="ml-1.5 flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-slate-800 px-1 text-[10px] font-bold text-white sm:h-5 sm:min-w-[20px] sm:px-1.5">
                         {count}
                       </span>

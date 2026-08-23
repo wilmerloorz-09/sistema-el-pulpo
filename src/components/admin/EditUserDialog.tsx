@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useRef, useState, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Building2, Camera, Check, KeyRound, Loader2, Shield } from "lucide-react";
+import { Building2, Camera, Check, KeyRound, Loader2, Shield, Package } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { resolveRoleCodeFromCatalog } from "./userRoleUtils";
 import { getUserAlias, getUserRealName } from "@/lib/userDisplay";
 
@@ -95,6 +97,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
 
   const [selectedUserType, setSelectedUserType] = useState(currentUserType);
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId);
+  const [inventarioMovimientosEnabled, setInventarioMovimientosEnabled] = useState(false);
   const displayName = getUserRealName(user) || user.first_name || user.full_name || getUserAlias(user);
 
   const isNewAdmin = selectedUserType === "administrador";
@@ -108,6 +111,47 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const emailValid = EMAIL_PATTERN.test(user.email ?? "");
   const phoneValid = TEN_DIGIT_PATTERN.test(editValues.phone);
   const canSaveProfile = usernameValid && aliasValid && firstNameValid && lastNameValid && identityNumberValid && homeAddressValid && emailValid && phoneValid;
+
+  const inventarioModuleQuery = useQuery({
+    queryKey: ["edit-user-inventario-module", user.id, selectedBranchId],
+    enabled: open && Boolean(selectedBranchId) && !isNewAdmin,
+    queryFn: async () => {
+      const { data: moduleRow, error: moduleError } = await supabase
+        .from("modules")
+        .select("id")
+        .eq("code", "inventario_movimientos")
+        .eq("is_active", true)
+        .maybeSingle();
+      if (moduleError) throw moduleError;
+      if (!moduleRow?.id) return false;
+
+      const { data, error } = await supabase
+        .from("user_branch_modules")
+        .select("is_active")
+        .eq("user_id", user.id)
+        .eq("branch_id", selectedBranchId)
+        .eq("module_id", moduleRow.id)
+        .maybeSingle();
+      if (error) throw error;
+      return Boolean(data?.is_active);
+    },
+  });
+
+  useEffect(() => {
+    if (!open || isNewAdmin || !selectedBranchId) {
+      setInventarioMovimientosEnabled(false);
+      return;
+    }
+    if (!inventarioModuleQuery.isLoading) {
+      setInventarioMovimientosEnabled(Boolean(inventarioModuleQuery.data));
+    }
+  }, [
+    open,
+    isNewAdmin,
+    selectedBranchId,
+    inventarioModuleQuery.data,
+    inventarioModuleQuery.isLoading,
+  ]);
 
   const saveUser = useMutation({
     onMutate: () => {
@@ -241,6 +285,17 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
         p_reason: "Sucursal unica desde administracion",
       });
       if (activeBranchError) throw activeBranchError;
+
+      if (selectedBranchId) {
+        const { error: inventarioModuleError } = await supabase.rpc("upsert_user_branch_module", {
+          p_target_user_id: user.id,
+          p_branch_id: selectedBranchId,
+          p_module_code: "inventario_movimientos",
+          p_is_active: inventarioMovimientosEnabled,
+          p_reason: "Permiso movimientos de inventario desde administracion",
+        });
+        if (inventarioModuleError) throw inventarioModuleError;
+      }
     },
     onSuccess: () => {
       setErrorMsg(null);
@@ -541,6 +596,30 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
               </div>
             )}
           </div>
+
+          {!isNewAdmin && selectedBranchId ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Package className="h-3.5 w-3.5 text-primary" />
+                    <Label htmlFor="inventario-movimientos" className="text-xs font-bold text-slate-800">
+                      Movimientos de inventario
+                    </Label>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Permite registrar ingresos, salidas y ajustes en la sucursal asignada.
+                  </p>
+                </div>
+                <Switch
+                  id="inventario-movimientos"
+                  checked={inventarioMovimientosEnabled}
+                  onCheckedChange={setInventarioMovimientosEnabled}
+                  disabled={isProtected || saveUser.isPending || inventarioModuleQuery.isLoading}
+                />
+              </div>
+            </div>
+          ) : null}
           
           {errorMsg && (
             <div className="rounded-xl bg-destructive/10 p-3 text-xs font-semibold text-destructive border border-destructive/20 animate-in fade-in slide-in-from-bottom-2 duration-200">

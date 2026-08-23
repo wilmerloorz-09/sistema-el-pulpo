@@ -111,13 +111,7 @@ const AppLayout = () => {
                       title="La sincronizacion en vivo no esta activa; se refresca cada ~45s"
                     >
                       <RefreshCw className="h-3 w-3" />
-                      <span className="hidden xs:inline">Sync lenta</span>
-                    </span>
-                  )}
-                  {!isOnline && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-destructive shadow-sm">
-                      <WifiOff className="h-3 w-3" />
-                      <span className="hidden xs:inline">Sin conexion</span>
+                      <span className="hidden sm:inline">Sync lenta</span>
                     </span>
                   )}
                   {accountAlias ? (
@@ -147,15 +141,19 @@ const AppLayout = () => {
               </div>
             </header>
           )}
-          {isDesktop && hubDegraded && (
+          {!isOnline && (
+            <div
+              role="alert"
+              className="sticky top-14 z-40 flex items-center justify-center gap-2 border-b border-rose-300 bg-rose-600 px-3 py-2.5 text-center text-xs font-bold text-white shadow-sm md:top-0 sm:text-sm"
+            >
+              <WifiOff className="h-4 w-4 shrink-0" />
+              <span>Sin conexión a internet — revisa Wi‑Fi o datos móviles</span>
+            </div>
+          )}
+          {isOnline && isDesktop && hubDegraded && (
             <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold text-amber-900">
               Sincronizacion en vivo interrumpida — las listas se refrescan cada ~45 s
             </div>
-          )}
-          {isDesktop && !isOnline && (
-            <header className="sticky top-0 z-40 h-0 overflow-hidden bg-white dark:bg-card">
-              {/* Desktop keeps its invisible placeholder or we just hide it */}
-            </header>
           )}
 
           <main

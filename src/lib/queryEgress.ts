@@ -40,8 +40,8 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 60_000;
  */
 export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
 
-/** Techo de frescura Despacho/Servir con hub SUBSCRIBED (antes 60s; multi-sucursal). */
-export const DISPATCH_SERVIR_SAFETY_POLL_MS = 90_000;
+/** Techo de frescura Despacho/Servir con hub SUBSCRIBED (antes 90s; multi-sucursal). */
+export const DISPATCH_SERVIR_SAFETY_POLL_MS = 300_000;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
 export const HUB_DEFAULT_DEBOUNCE_MS = 3_000;
@@ -59,6 +59,13 @@ export const HUB_DEBOUNCE_JITTER_MS = 2_000;
  */
 export const HUB_MIN_REFETCH_GAP_MS = 10_000;
 
+/**
+ * Gap corto solo para dispatch → payable-orders.
+ * Evita el doble golpe mutación+Realtime sin bloquear ~10s la cola de Recaudar
+ * cuando acaba de refrescarse por un alta de orden.
+ */
+export const HUB_DISPATCH_PAYABLE_MIN_REFETCH_GAP_MS = 4_000;
+
 export type HubRealtimeStatus = "idle" | "connecting" | "subscribed" | "error" | "closed";
 
 export type HubInvalidateSource =
@@ -73,13 +80,47 @@ function isPayableOrdersQueryKey(key: QueryKey): boolean {
   return Array.isArray(key) && key[0] === qk.payableOrders[0];
 }
 
+function queryKeyHead(key: QueryKey): unknown {
+  return Array.isArray(key) ? key[0] : key;
+}
+
 /**
- * Recaudar: un refetch por alta de orden (todavía no cobrable) no debe bloquear
- * el refetch inmediato al despachar (HUB_MIN_REFETCH_GAP_MS).
- * El gap sigue aplicando al resto de queries y al resto de eventos.
+ * Fan-out de consumers montados: en `order_items` (muy frecuente) no refrescar
+ * Recaudar ni turno de caja. Sigue actualizándose en `orders`, `dispatch` y `payments`.
  */
-export function shouldSkipHubMinRefetchGap(source: HubInvalidateSource, key: QueryKey): boolean {
-  return source === "dispatch" && isPayableOrdersQueryKey(key);
+export function shouldFanOutConsumerKeyOnHubSource(
+  source: HubInvalidateSource,
+  key: QueryKey,
+): boolean {
+  if (source !== "order_items") return true;
+  const head = queryKeyHead(key);
+  return (
+    head !== qk.payableOrders[0]
+    && head !== qk.completedPayments[0]
+    && head !== qk.currentShift[0]
+    && head !== qk.openCashShift[0]
+    && head !== qk.cashRegisterMovements[0]
+  );
+}
+
+/**
+ * Gap efectivo del hub por (source, query).
+ * dispatch → payable usa gap corto (no el skip total anterior) para cortar
+ * el doble refetch mutación+RT sin retrasar Recaudar ~10s tras un alta de orden.
+ */
+export function hubMinRefetchGapMs(source: HubInvalidateSource, key: QueryKey): number {
+  if (source === "dispatch" && isPayableOrdersQueryKey(key)) {
+    return HUB_DISPATCH_PAYABLE_MIN_REFETCH_GAP_MS;
+  }
+  return HUB_MIN_REFETCH_GAP_MS;
+}
+
+/**
+ * @deprecated Ya no se salta el gap: dispatch→payable usa
+ * HUB_DISPATCH_PAYABLE_MIN_REFETCH_GAP_MS vía hubMinRefetchGapMs.
+ */
+export function shouldSkipHubMinRefetchGap(_source: HubInvalidateSource, _key: QueryKey): boolean {
+  return false;
 }
 
 export function hubShouldInvalidateQuery(params: {
@@ -89,8 +130,8 @@ export function hubShouldInvalidateQuery(params: {
   now?: number;
 }): boolean {
   if (!params.updatedAt) return true;
-  if (shouldSkipHubMinRefetchGap(params.source, params.queryKey)) return true;
-  return (params.now ?? Date.now()) - params.updatedAt >= HUB_MIN_REFETCH_GAP_MS;
+  const gapMs = hubMinRefetchGapMs(params.source, params.queryKey);
+  return (params.now ?? Date.now()) - params.updatedAt >= gapMs;
 }
 
 /**
@@ -116,7 +157,8 @@ function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
 
   switch (source) {
     case "order_items":
-      // Alta frecuencia: cocina/despacho/mesas; canales (Extra/Express/…) bastan con `orders`.
+      // Alta frecuencia: cocina/despacho/mesas; sin payable (Recaudar en orders/dispatch/payments).
+      // Canales Extra/Express/… bastan con `orders`.
       return [...kitchenQueue, ...tables, qk.orderPrefix];
     case "orders":
       // Cambio de cabecera/estado: Caja por cobrar sí importa.
@@ -448,6 +490,7 @@ function runHubInvalidateNow(hub: BranchRealtimeHub, source: HubInvalidateSource
   // payments: sin fan-out a consumidores (Extra/Express/historial); solo set acotado.
   if (source !== "payments") {
     for (const key of filtered) {
+      if (!shouldFanOutConsumerKeyOnHubSource(source, key)) continue;
       hubInvalidateKey(hub, key, seen, source);
     }
   }

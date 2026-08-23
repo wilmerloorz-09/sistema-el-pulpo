@@ -64,7 +64,13 @@ const EMPTY_BUNDLE: DispatchServirQueueBundle = {
   has_plate_servers: false,
 };
 
-export const DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS = 8_000;
+/**
+ * TTL del cache local del bundle (no React Query).
+ * Alineado por encima del HUB_MIN_REFETCH_GAP_MS (10s) para que Despacho y Servir
+ * compartan una sola RPC tras invalidaciones cercanas; el hub RT sigue limpiando
+ * el cache en invalidateDispatchServirQueueBundleCache.
+ */
+export const DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS = 25_000;
 
 type DispatchServirQueueBundleCacheEntry = {
   bundle: DispatchServirQueueBundle;

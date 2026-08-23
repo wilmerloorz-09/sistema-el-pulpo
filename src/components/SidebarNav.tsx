@@ -124,7 +124,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
       </div>
 
       <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
-        {(["VENTA", "OPERATIVO", "FINANZAS", "PROMOCIONES", "ADMINISTRACIÓN"] as const).map(group => {
+        {(["VENTA", "OPERATIVO", "FINANZAS", "PROMOCIONES", "INVENTARIO", "ADMINISTRACIÓN"] as const).map(group => {
           const items = visibleItems.filter(item => item.group === group);
           if (items.length === 0) return null;
 

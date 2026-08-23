@@ -21,7 +21,7 @@ import {
   paidQtyMapFromCajaBundleItems,
   paymentsTotalMapFromCajaBundle,
 } from "@/lib/cajaPayableQueueBundle";
-import { isDispatchFirstOrder, orderIsPayableInCaja } from "@/lib/orderFlow";
+import { isDispatchFirstOrder, orderIsPayableInCaja, orderBlocksCollectForUnsentDrafts, countUnsentDraftUnits } from "@/lib/orderFlow";
 import { cleanOrderCode, resolveOrderTableName } from "@/lib/orderPresentation";
 import {
   CATALOG_GC_MS,
@@ -392,7 +392,9 @@ export interface PayableOrder {
   tray_container_total?: number;
   /** Unidades de la orden que aún no fueron despachadas (solo relevante en despacho primero). */
   undispatched_units?: number;
-  /** Si la orden puede abrir el diálogo de cobro (todo despachado en despacho primero). */
+  /** Unidades DRAFT aún no enviadas a caja (para llevar / express). */
+  unsent_draft_units?: number;
+  /** Si la orden puede abrir el diálogo de cobro (todo despachado / sin borradores pendientes). */
   ready_to_collect: boolean;
   items: {
     id: string;
@@ -1122,6 +1124,9 @@ async function buildPayableOrderById(params: {
     skipLocalCache: true,
   });
   const orderItems = (items ?? []).filter((i) => i.status !== "DRAFT");
+  const unsentDraftUnits = orderBlocksCollectForUnsentDrafts(order)
+    ? countUnsentDraftUnits(items)
+    : 0;
   if (orderItems.length === 0 && !order.is_special) return null;
 
   let tableName: string | null = null;
@@ -1333,7 +1338,10 @@ async function buildPayableOrderById(params: {
     ),
     tray_container_total: roundMoney(mappedItems.reduce((sum, item) => sum + Number(item.tray_container_cost ?? 0), 0)),
     undispatched_units: requiresDispatchBeforePay && !forRecharge ? undispatchedUnits : 0,
-    ready_to_collect: forRecharge || !requiresDispatchBeforePay || undispatchedUnits === 0,
+    unsent_draft_units: unsentDraftUnits,
+    ready_to_collect:
+      (forRecharge || !requiresDispatchBeforePay || undispatchedUnits === 0)
+      && unsentDraftUnits === 0,
     items: mappedItems,
   };
 }
@@ -2116,7 +2124,8 @@ export function useCaja(params?: {
 
       return payableSourceOrders
         .map((o) => {
-          const orderItems = (items ?? []).filter((i) => i.order_id === o.id && i.status !== "DRAFT");
+          const orderRawItems = (items ?? []).filter((i) => i.order_id === o.id);
+          const orderItems = orderRawItems.filter((i) => i.status !== "DRAFT");
           const requiresDispatchBeforePay = isDispatchFirstOrder(o, activeWorkflowMode);
           let undispatchedUnits = 0;
           if (requiresDispatchBeforePay) {
@@ -2132,7 +2141,12 @@ export function useCaja(params?: {
               undispatchedUnits += computeUndispatchedQuantity(quantities);
             }
           }
-          const readyToCollect = !requiresDispatchBeforePay || undispatchedUnits === 0;
+          const unsentDraftUnits = orderBlocksCollectForUnsentDrafts(o)
+            ? countUnsentDraftUnits(orderRawItems)
+            : 0;
+          const readyToCollect =
+            (!requiresDispatchBeforePay || undispatchedUnits === 0)
+            && unsentDraftUnits === 0;
 
           const mappedItems = orderItems
             .map((i) => {
@@ -2232,6 +2246,7 @@ export function useCaja(params?: {
             tray_products_total: trayProductsTotal,
             tray_container_total: trayContainerTotal,
             undispatched_units: requiresDispatchBeforePay ? undispatchedUnits : 0,
+            unsent_draft_units: unsentDraftUnits,
             ready_to_collect: readyToCollect,
             items: mappedItems,
           } as PayableOrder;
