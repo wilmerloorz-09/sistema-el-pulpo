@@ -60,9 +60,10 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import {
   fetchInventarioProductoMap,
+  mergeInventarioInfo,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
-import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
+import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
 import { useCancellation } from "@/hooks/useCancellation";
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
@@ -2305,6 +2306,14 @@ const OrdenesContent = () => {
     return blocked;
   }, [inventarioMapQuery.data]);
 
+  const addItemMaxStock = useMemo(() => {
+    const productId = selectedProduct?.id ?? null;
+    if (!productId || !inventarioMapQuery.data) return null;
+    const info = mergeInventarioInfo(inventarioMapQuery.data, productId);
+    if (!info.integraConVentas) return null;
+    return info.cantidadDisponible;
+  }, [selectedProduct?.id, inventarioMapQuery.data]);
+
   const isNodeBlockedByInventory = useCallback(
     (node: MenuNode) => {
       if (node.node_type !== "product") return false;
@@ -3863,8 +3872,9 @@ const OrdenesContent = () => {
                   createdDraftDelta = Math.max(0, Number(applied?.createdDraftDelta ?? 0));
                 } catch (error: any) {
                   console.error("[Enviar a cocina] applyKitchenPendingItemChanges", error);
-                  const message =
-                    `No se pudieron aplicar los cambios antes de enviar: ${error?.message || "error desconocido"}. Intenta de nuevo.`;
+                  const message = formatearMensajeStockInventario(
+                    `No se pudieron aplicar los cambios antes de enviar: ${error?.message || "error desconocido"}. Intenta de nuevo.`,
+                  );
                   setKitchenSendError(message);
                   toast.error(message);
                   return;
@@ -3967,7 +3977,11 @@ const OrdenesContent = () => {
               }
             } catch (error: any) {
               console.error("[Enviar a cocina]", error);
-              setKitchenSendError(error?.message || "No se pudo enviar a cocina. Intenta de nuevo.");
+              setKitchenSendError(
+                formatearMensajeStockInventario(
+                  error?.message || "No se pudo enviar a cocina. Intenta de nuevo.",
+                ),
+              );
             } finally {
               setSendingKitchenChanges(false);
             }
@@ -4740,6 +4754,7 @@ const OrdenesContent = () => {
             : []
         }
         open={Boolean(selectedProduct || productLoadingShell)}
+        maxStock={addItemMaxStock}
         onClose={() => {
           productSelectSeqRef.current += 1;
           productLookupPromiseRef.current = null;

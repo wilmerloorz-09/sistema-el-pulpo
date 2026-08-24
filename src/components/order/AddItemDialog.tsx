@@ -53,8 +53,25 @@ interface Props {
   isSpecial?: boolean;
   confirmLabel?: string;
   hideQuantity?: boolean;
+  /**
+   * Si el producto integra con inventario en la sucursal, tope de cantidad (= stock).
+   * null/undefined = sin control de inventario en este diálogo.
+   */
+  maxStock?: number | null;
   extraContent?: ReactNode | ((context: { unitPrice: number; quantity: number; isManual: boolean }) => ReactNode);
   buildItemNote?: (context: { unitPrice: number; quantity: number; isManual: boolean }) => string | null;
+}
+
+function formatStockLabel(stock: number): string {
+  const n = Math.round(Number(stock) * 1000) / 1000;
+  if (!Number.isFinite(n)) return "0";
+  return String(n);
+}
+
+function maxQtyFromStock(stock: number): number {
+  const n = Number(stock);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
 }
 
 const AddItemDialog = ({
@@ -70,6 +87,7 @@ const AddItemDialog = ({
   manualPriceLabel = "Precio",
   confirmLabel = "Agregar",
   hideQuantity = false,
+  maxStock = null,
   extraContent,
   buildItemNote,
   isSpecial = false,
@@ -88,6 +106,9 @@ const AddItemDialog = ({
         }
       : null);
 
+  const controlsInventory = maxStock != null && Number.isFinite(Number(maxStock));
+  const stockCap = controlsInventory ? maxQtyFromStock(Number(maxStock)) : null;
+
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState("1");
   const [manualPrice, setManualPrice] = useState("");
@@ -99,18 +120,38 @@ const AddItemDialog = ({
 
   const dialogOpen = Boolean(open && displayProduct);
 
-  useEffect(() => {
-    if (dialogOpen) {
-      setQuantity(1);
-      setQuantityInput("1");
-      setSpecialPriceEditing(false);
-      setEnsuringProduct(false);
-      setManualPrice(
-        displayProduct?.unit_price != null ? String(displayProduct.unit_price) : "",
-      );
-      setSelectedMods([]);
+  const applyQuantity = (next: number) => {
+    let value = Math.max(0, Math.floor(next));
+    if (stockCap != null) {
+      value = Math.min(value, stockCap);
     }
+    setQuantity(value);
+    setQuantityInput(String(value));
+  };
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const initial = stockCap != null ? Math.min(1, stockCap) : 1;
+    setQuantity(initial);
+    setQuantityInput(String(initial));
+    setSpecialPriceEditing(false);
+    setEnsuringProduct(false);
+    setManualPrice(
+      displayProduct?.unit_price != null ? String(displayProduct.unit_price) : "",
+    );
+    setSelectedMods([]);
   }, [dialogOpen, product?.id, displayProduct?.unit_price, isSpecial]);
+
+  useEffect(() => {
+    if (!dialogOpen || stockCap == null) return;
+    setQuantity((current) => Math.min(Math.max(0, current), stockCap));
+    setQuantityInput((prev) => {
+      if (!prev) return prev;
+      const parsed = parseIntegerInput(prev);
+      if (Number.isNaN(parsed)) return prev;
+      return String(Math.min(Math.max(0, parsed), stockCap));
+    });
+  }, [dialogOpen, stockCap]);
 
   const sortedModifiers = useMemo(
     () => [...modifiers].sort((a, b) => a.description.localeCompare(b.description)),
@@ -129,14 +170,20 @@ const AddItemDialog = ({
         : catalogUnitPrice
       : 0;
   const effectiveQuantity = hideQuantity ? 1 : quantity;
+  const exceedsStock =
+    stockCap != null
+    && !hideQuantity
+    && (effectiveQuantity > stockCap || stockCap <= 0);
   const canAdd =
     displayProduct != null &&
     (Boolean(product) || Boolean(ensureProduct) || !isResolving) &&
     effectiveQuantity > 0 &&
+    !exceedsStock &&
     (!isManual ||
       (isSpecial && !specialPriceEditing ? catalogUnitPrice > 0 : price > 0));
   const dialogContext = { unitPrice: price, quantity: effectiveQuantity, isManual };
   const confirmBusy = Boolean(adding || ensuringProduct);
+  const plusDisabled = stockCap != null && quantity >= stockCap;
 
   const handleConfirm = async () => {
     if (!displayProduct || !canAdd || confirmBusy) return;
@@ -193,7 +240,12 @@ const AddItemDialog = ({
       return;
     }
 
-    setQuantity(Math.max(0, parsed));
+    let next = Math.max(0, parsed);
+    if (stockCap != null) {
+      next = Math.min(next, stockCap);
+      setQuantityInput(String(next));
+    }
+    setQuantity(next);
   };
 
   return (
@@ -222,6 +274,18 @@ const AddItemDialog = ({
                 <span className="font-display text-lg font-black text-foreground">
                   {`$${(displayProduct.unit_price ?? 0).toFixed(2)}`}
                 </span>
+                {controlsInventory ? (
+                  <span
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                      stockCap != null && stockCap > 0
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-red-200 bg-red-50 text-red-700",
+                    )}
+                  >
+                    Stock: {formatStockLabel(Number(maxStock))}
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -282,11 +346,7 @@ const AddItemDialog = ({
                   variant="outline"
                   size="icon"
                   className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
-                  onClick={() => {
-                    const nextQuantity = Math.max(0, quantity - 1);
-                    setQuantity(nextQuantity);
-                    setQuantityInput(String(nextQuantity));
-                  }}
+                  onClick={() => applyQuantity(quantity - 1)}
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
@@ -303,16 +363,20 @@ const AddItemDialog = ({
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted"
-                  onClick={() => {
-                    const nextQuantity = quantity + 1;
-                    setQuantity(nextQuantity);
-                    setQuantityInput(String(nextQuantity));
-                  }}
+                  disabled={plusDisabled}
+                  className="h-11 w-11 rounded-xl shadow-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  onClick={() => applyQuantity(quantity + 1)}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              {exceedsStock ? (
+                <p className="text-xs font-semibold text-red-600">
+                  {stockCap != null && stockCap <= 0
+                    ? "Sin stock disponible"
+                    : `Máximo disponible: ${stockCap}`}
+                </p>
+              ) : null}
             </div>
           )}
 

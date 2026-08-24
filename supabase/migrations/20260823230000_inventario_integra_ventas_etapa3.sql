@@ -113,7 +113,9 @@ BEGIN
   IF p_tipo_movimiento = 'SALIDA' THEN
     IF v_anterior < v_cantidad THEN
       RAISE EXCEPTION 'Stock insuficiente para "%". Disponible: %, solicitado: %',
-        v_label, v_anterior, v_cantidad;
+        v_label,
+        trim(both from to_char(v_anterior, 'FM999999999990.999')),
+        trim(both from to_char(v_cantidad, 'FM999999999990.999'));
     END IF;
     v_nueva := v_anterior - v_cantidad;
     v_motivo := format('Venta (%s)', COALESCE(p_origen_venta, 'SALIDA'));

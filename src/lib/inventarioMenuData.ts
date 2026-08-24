@@ -68,7 +68,7 @@ export function mergeInventarioInfo(
   productId: string,
 ): InventarioProductoInfo {
   return inventarioMap.get(productId) ?? {
-    productoId,
+    productoId: productId,
     inventarioId: null,
     cantidadDisponible: 0,
     tipoProducto: "COMPRADO",

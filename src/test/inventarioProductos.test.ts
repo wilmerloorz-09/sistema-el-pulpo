@@ -7,6 +7,8 @@ import {
   etiquetaTipoProducto,
   etiquetaIntegraConVentas,
   productoBloqueadoPorStockInventario,
+  formatCantidadInventarioDisplay,
+  formatearMensajeStockInventario,
   normalizarCantidadInventario,
   validarMovimientoInventario,
   motivoMovimientoParaRpc,
@@ -33,6 +35,18 @@ describe("inventarioProductos", () => {
     expect(productoBloqueadoPorStockInventario({ integraConVentas: false, cantidadDisponible: 0 })).toBe(false);
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 0 })).toBe(true);
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 2 })).toBe(false);
+  });
+
+  it("formatea cantidades y mensajes de stock sin ceros sobrantes", () => {
+    expect(formatCantidadInventarioDisplay(1)).toBe("1");
+    expect(formatCantidadInventarioDisplay(1.0)).toBe("1");
+    expect(formatCantidadInventarioDisplay("2.000")).toBe("2");
+    expect(formatCantidadInventarioDisplay(1.5)).toBe("1.5");
+    expect(
+      formatearMensajeStockInventario(
+        'Stock insuficiente para "Coca Cola". Disponible: 1.000, solicitado: 2.000',
+      ),
+    ).toBe('Stock insuficiente para "Coca Cola". Disponible: 1, solicitado: 2');
   });
 
   it("normaliza cantidad sin negativos", () => {

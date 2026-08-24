@@ -76,9 +76,29 @@ export function validarMovimientoInventario(
   }
   if (tipo === "AJUSTE" && input < 0) return "La cantidad de ajuste no puede ser negativa";
   if (tipo === "SALIDA" && input > normalizarCantidadInventario(cantidadAnterior)) {
-    return `Stock insuficiente. Disponible: ${normalizarCantidadInventario(cantidadAnterior)}`;
+    return `Stock insuficiente. Disponible: ${formatCantidadInventarioDisplay(cantidadAnterior)}`;
   }
   return null;
+}
+
+/** Muestra 1 en vez de 1.000; conserva decimales útiles (1.5). */
+export function formatCantidadInventarioDisplay(value: number | string): string {
+  const n =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(",", ".").trim());
+  if (!Number.isFinite(n)) return String(value ?? "");
+  const rounded = Math.round(n * 1000) / 1000;
+  return String(rounded);
+}
+
+/** Limpia "Disponible: 1.000, solicitado: 2.000" → "1" y "2" en mensajes de error de inventario. */
+export function formatearMensajeStockInventario(raw: string): string {
+  return String(raw ?? "").replace(
+    /(Disponible:|solicitado:)\s*(\d+(?:[.,]\d+)?)/gi,
+    (_match, label: string, num: string) =>
+      `${label} ${formatCantidadInventarioDisplay(num)}`,
+  );
 }
 
 /** Motivo enviado al RPC. Ingreso sin texto usa valor por defecto. */

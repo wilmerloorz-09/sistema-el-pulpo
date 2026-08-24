@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tansta
 import { dbSelect, dbUpdate, supabase } from "@/services/DatabaseService";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
+import { formatearMensajeStockInventario } from "@/lib/inventarioProductos";
 import { computeLineTotalWithContainer } from "@/lib/paymentQuantity";
 import {
   buildOperationalMapsFromSnapshotRows,
@@ -1359,7 +1360,7 @@ export function useOrder(orderId: string | null) {
 
       toast.success(message);
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any) => toast.error(formatearMensajeStockInventario(err.message)),
   });
 
   const sendToDispatch = useMutation({
@@ -1430,7 +1431,7 @@ export function useOrder(orderId: string | null) {
 
       toast.success(message);
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any) => toast.error(formatearMensajeStockInventario(err.message)),
   });
 
   const moveToTable = useMutation({
