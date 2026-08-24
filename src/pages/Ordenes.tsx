@@ -60,7 +60,6 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import {
   fetchInventarioProductoMap,
-  mergeInventarioInfo,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
 import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
@@ -755,8 +754,10 @@ const OrdenesContent = () => {
   const inventarioMapQuery = useQuery({
     queryKey: ["inventario-producto-map", activeBranchId],
     queryFn: () => fetchInventarioProductoMap(activeBranchId!),
-    enabled: Boolean(activeBranchId),
-    staleTime: 15_000,
+    enabled: Boolean(activeBranchId && orderId),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const canOperateMesasForOpen =
@@ -2294,16 +2295,24 @@ const OrdenesContent = () => {
       !hasPendingCancellationItems &&
       !isLockedFromEditar
     );
+  const productosSinStockInventario = useMemo(() => {
+    const blocked = new Set<string>();
+    const map = inventarioMapQuery.data;
+    if (!map) return blocked;
+    for (const [productoId, info] of map) {
+      if (productoBloqueadoPorStockInventario(info)) blocked.add(productoId);
+    }
+    return blocked;
+  }, [inventarioMapQuery.data]);
+
   const isNodeBlockedByInventory = useCallback(
     (node: MenuNode) => {
       if (node.node_type !== "product") return false;
       const productId = resolveMenuNodeProductId(node);
-      if (!productId || !inventarioMapQuery.data) return false;
-      return productoBloqueadoPorStockInventario(
-        mergeInventarioInfo(inventarioMapQuery.data, productId),
-      );
+      if (!productId) return false;
+      return productosSinStockInventario.has(productId);
     },
-    [inventarioMapQuery.data],
+    [productosSinStockInventario],
   );
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
@@ -3966,13 +3975,12 @@ const OrdenesContent = () => {
           disabled={
             sendingKitchenChanges
             || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending)
-            || addItem.isPending
             || hasTemporaryDraftItems
           }
-          title={addItem.isPending ? "Espera a que el item termine de guardarse" : hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
+          title={hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
           className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
         >
-          {sendingKitchenChanges || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || addItem.isPending ? (
+          {sendingKitchenChanges || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || hasTemporaryDraftItems ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : isExpressOrder ? (
             <>

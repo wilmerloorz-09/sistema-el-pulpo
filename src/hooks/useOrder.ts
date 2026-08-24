@@ -1205,8 +1205,10 @@ export function useOrder(orderId: string | null) {
       }
       toast.error(err.message);
     },
-    onSettled: async () => {
-      await qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
+    onSettled: () => {
+      // No await: el botón "Enviar" no debe esperar el refetch completo de la orden.
+      // onSuccess ya reemplazó el id temp- por el real; el detalle se sincroniza en background.
+      void qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
       invalidateOrderOperationalCaches(qc, {
         branchId: query.data?.branch_id,
         orderId,
