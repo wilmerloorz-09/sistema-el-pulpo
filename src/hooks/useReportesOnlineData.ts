@@ -13,7 +13,7 @@ export interface ReportesFilters {
   productIds: string[] | null;
   orderTypes: string[] | null;
   supervisorId?: string | null; // legacy (anulaciones)
-  /** Todos = válidos + anulados; por defecto todos. */
+  /** Todos = válidos + anulados; por defecto válidos (alineado a cobrado neto / cierre). */
   recordStatus?: 'all' | 'valid' | 'voided';
   /** Criterio de orden (cada reporte interpreta el que aplica). */
   sortBy?: string | null;
@@ -45,6 +45,61 @@ function applySortDir(cmp: number, dir: 'asc' | 'desc') {
 
 /** Tope de seguridad: sin fechas el reporte no debe barrer toda la historia. */
 const REPORTES_MAX_LOOKBACK_DAYS = 31;
+
+/** PostgREST/Supabase trunca en 1000 filas por request si no se pagina. */
+const REPORTES_FETCH_PAGE_SIZE = 1000;
+/** Tope duro de páginas (evita bucles infinitos / rangos absurdos). */
+const REPORTES_FETCH_MAX_PAGES = 50;
+/**
+ * .in(col, ids) va en la URL de PostgREST. Muchos UUID (p.ej. categoría BEBIDAS
+ * expandida a todo el catálogo) provocan HTTP 400 Bad Request.
+ */
+const REPORTES_IN_FILTER_CHUNK = 80;
+
+type ReportesPageResult<T> = {
+  data: T[] | null;
+  error: { message?: string; details?: string; hint?: string; code?: string } | null;
+};
+
+function chunkIds<T>(ids: T[], size = REPORTES_IN_FILTER_CHUNK): T[][] {
+  if (!ids.length) return [];
+  const chunks: T[][] = [];
+  for (let i = 0; i < ids.length; i += size) {
+    chunks.push(ids.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function throwReportesQueryError(error: ReportesPageResult<unknown>['error']): never {
+  const parts = [error?.message, error?.details, error?.hint].filter(Boolean);
+  throw new Error(parts.join(' — ') || 'Error al consultar Supabase');
+}
+
+/**
+ * Trae todas las filas de un query Supabase paginando con .range().
+ * Sin esto, rangos de varios días (p.ej. Pagos) quedan truncados en 1000
+ * y los KPIs (total, ticket promedio, conteo) quedan incorrectos.
+ *
+ * Importante: `runPage` debe construir un query NUEVO en cada llamada
+ * (no reutilizar el mismo builder entre páginas).
+ */
+async function fetchAllReportRows<T>(
+  runPage: (from: number, to: number) => PromiseLike<ReportesPageResult<T>>,
+  pageSize = REPORTES_FETCH_PAGE_SIZE,
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+  for (let page = 0; page < REPORTES_FETCH_MAX_PAGES; page += 1) {
+    const to = from + pageSize - 1;
+    const { data, error } = await runPage(from, to);
+    if (error) throwReportesQueryError(error);
+    const batch = data ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
 
 function resolveReportesDateBounds(desde: string | null, hasta: string | null): { desde: string; hasta: string } {
   const now = new Date();
@@ -104,20 +159,35 @@ function mergeProfilesById(
   );
 }
 
-export function useReportesFiltros(branchId: string) {
+export function useReportesFiltros(
+  branchId: string,
+  desde?: string | null,
+  hasta?: string | null,
+) {
+  const dateBounds = resolveReportesDateBounds(desde ?? null, hasta ?? null);
+
   return useQuery({
-    queryKey: ['reportes-filtros-data', branchId, 'v3'],
+    queryKey: ['reportes-filtros-data', branchId, dateBounds.desde, dateBounds.hasta, 'v4'],
     queryFn: async () => {
       if (!branchId) {
-        return { shifts: [], profiles: [], shiftUsers: [], menuNodes: [], products: [] };
+        return {
+          shifts: [],
+          profiles: [],
+          shiftUsers: [],
+          cashiersInRange: [] as ReportesFiltroProfile[],
+          menuNodes: [],
+          products: [],
+        };
       }
 
-      // 1. Turnos de la sucursal (últimos 100)
+      // 1. Turnos que se solapan con el rango de fechas del reporte
       let shiftsQuery = supabase
         .from('cash_shifts')
-        .select('id, opened_at, closed_at, shift_number, shift_code')
+        .select('id, opened_at, closed_at, shift_number, shift_code, branch_id')
+        .lte('opened_at', dateBounds.hasta)
+        .or(`closed_at.is.null,closed_at.gte.${dateBounds.desde}`)
         .order('opened_at', { ascending: false })
-        .limit(100);
+        .limit(200);
 
       if (branchId !== 'ALL') {
         shiftsQuery = shiftsQuery.eq('branch_id', branchId);
@@ -125,9 +195,16 @@ export function useReportesFiltros(branchId: string) {
 
       const { data: shiftsData, error: shiftsError } = await shiftsQuery;
       if (shiftsError) throw shiftsError;
-      const shifts = shiftsData || [];
 
-      // 2. Perfiles activos (no tumbar todo el catálogo si falla)
+      const fromMs = new Date(dateBounds.desde).getTime();
+      const toMs = new Date(dateBounds.hasta).getTime();
+      const shifts = (shiftsData || []).filter((shift: any) => {
+        const opened = new Date(shift.opened_at).getTime();
+        const closed = shift.closed_at ? new Date(shift.closed_at).getTime() : Number.POSITIVE_INFINITY;
+        return opened <= toMs && closed >= fromMs;
+      });
+
+      // 2. Perfiles activos (creadores / fallbacks)
       let profilesData: ReportesFiltroProfile[] = [];
       const { data: profilesRaw, error: profilesError } = await supabase
         .from('profiles')
@@ -138,33 +215,77 @@ export function useReportesFiltros(branchId: string) {
         profilesData = (profilesRaw || []) as ReportesFiltroProfile[];
       }
 
-      // 3. Usuarios que ya aparecieron en turnos de la sucursal (histórico reciente)
+      // 3. Usuarios de turnos en el rango + cajeros (can_use_caja / aperturas de caja)
       let shiftUsersData: ReportesFiltroProfile[] = [];
+      let cashiersInRange: ReportesFiltroProfile[] = [];
       const shiftIds = shifts.map((s) => s.id).filter(Boolean);
+
       if (shiftIds.length > 0) {
-        const { data: shiftUserRows, error: shiftUsersError } = await supabase
-          .from('cash_shift_users')
-          .select('user_id, profiles(id, alias, username, first_name, last_name, full_name)')
-          .in('shift_id', shiftIds);
-        if (!shiftUsersError) {
-          shiftUsersData = mergeProfilesById(
-            (shiftUserRows || []).map((row: any) => {
-              const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-              if (profile?.id) return profile as ReportesFiltroProfile;
-              if (row.user_id) {
-                return {
-                  id: row.user_id as string,
+        const cashierProfiles: ReportesFiltroProfile[] = [];
+        const shiftUserProfiles: ReportesFiltroProfile[] = [];
+
+        for (const idChunk of chunkIds(shiftIds)) {
+          const { data: shiftUserRows, error: shiftUsersError } = await supabase
+            .from('cash_shift_users')
+            .select(
+              'user_id, can_use_caja, profiles(id, alias, username, first_name, last_name, full_name)',
+            )
+            .in('shift_id', idChunk);
+          if (!shiftUsersError) {
+            for (const row of shiftUserRows || []) {
+              const profile = Array.isArray((row as any).profiles)
+                ? (row as any).profiles[0]
+                : (row as any).profiles;
+              const resolved: ReportesFiltroProfile | null = profile?.id
+                ? (profile as ReportesFiltroProfile)
+                : row.user_id
+                  ? {
+                      id: row.user_id as string,
+                      alias: null,
+                      username: null,
+                      first_name: null,
+                      last_name: null,
+                      full_name: null,
+                    }
+                  : null;
+              if (!resolved) continue;
+              shiftUserProfiles.push(resolved);
+              if ((row as any).can_use_caja) {
+                cashierProfiles.push(resolved);
+              }
+            }
+          }
+
+          const { data: openingRows, error: openingsError } = await supabase
+            .from('cash_register_openings')
+            .select(
+              'cashier_id, cashier:profiles!cash_register_openings_cashier_id_fkey(id, alias, username, first_name, last_name, full_name)',
+            )
+            .in('shift_id', idChunk)
+            .neq('status', 'anulada');
+          if (!openingsError) {
+            for (const row of openingRows || []) {
+              const profile = Array.isArray((row as any).cashier)
+                ? (row as any).cashier[0]
+                : (row as any).cashier;
+              if (profile?.id) {
+                cashierProfiles.push(profile as ReportesFiltroProfile);
+              } else if (row.cashier_id) {
+                cashierProfiles.push({
+                  id: row.cashier_id as string,
                   alias: null,
                   username: null,
                   first_name: null,
                   last_name: null,
                   full_name: null,
-                };
+                });
               }
-              return null;
-            }).filter(Boolean) as ReportesFiltroProfile[],
-          );
+            }
+          }
         }
+
+        shiftUsersData = mergeProfilesById(shiftUserProfiles);
+        cashiersInRange = mergeProfilesById(cashierProfiles);
       }
 
       // 4. Árbol de menú (opcional para filtros de productos)
@@ -201,12 +322,13 @@ export function useReportesFiltros(branchId: string) {
         shifts,
         profiles,
         shiftUsers: shiftUsersData,
+        cashiersInRange,
         menuNodes: menuNodesData,
         products: productsData,
       };
     },
     enabled: !!branchId,
-    staleTime: 5 * 60_000,
+    staleTime: 60_000,
   });
 }
 
@@ -252,6 +374,60 @@ function getProductSubcategoryLabel(item: ProductCatalogItemShape): string {
   return String(item?.product?.subcategory?.description ?? '').trim() || 'Sin subcategoría';
 }
 
+type ReportesOrderItemBucket = {
+  id: string;
+  description_snapshot: string | null;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  product_id: string | null;
+  status: string | null;
+  category: string;
+  subcategory: string;
+};
+
+function lineTotalFromOrderItem(item: Pick<ReportesOrderItemBucket, 'quantity' | 'unit_price' | 'total'>): number {
+  const qty = Math.max(0, Number(item.quantity ?? 0));
+  const unitPrice = Number(item.unit_price ?? 0);
+  const raw = Number(item.total ?? 0);
+  return raw || round2(qty * unitPrice);
+}
+
+/**
+ * Prorratea el total de ítems filtrados entre los pagos de una orden
+ * según el peso de cada pago (netApplied).
+ */
+function allocateFilteredTotalAcrossPayments(
+  payments: Array<{ id: string; netApplied: number }>,
+  filteredItemsTotal: number,
+): Map<string, number> {
+  const attributed = new Map<string, number>();
+  if (payments.length === 0 || filteredItemsTotal <= 0) {
+    for (const pay of payments) attributed.set(pay.id, 0);
+    return attributed;
+  }
+
+  const weightSum = round2(payments.reduce((acc, pay) => acc + Math.max(0, pay.netApplied), 0));
+  if (weightSum <= 0) {
+    // Sin pesos: todo al primer pago
+    attributed.set(payments[0].id, round2(filteredItemsTotal));
+    for (let i = 1; i < payments.length; i += 1) attributed.set(payments[i].id, 0);
+    return attributed;
+  }
+
+  let allocated = 0;
+  for (let i = 0; i < payments.length; i += 1) {
+    const pay = payments[i];
+    const isLast = i === payments.length - 1;
+    const share = isLast
+      ? round2(filteredItemsTotal - allocated)
+      : round2(filteredItemsTotal * (Math.max(0, pay.netApplied) / weightSum));
+    attributed.set(pay.id, Math.max(0, share));
+    allocated = round2(allocated + Math.max(0, share));
+  }
+  return attributed;
+}
+
 function getBranchName(order: {
   branch?: { name?: string | null } | null;
 } | null | undefined): string {
@@ -275,7 +451,7 @@ export function useReportesPagos(
     creatorId,
     productIds,
     orderTypes,
-    recordStatus = 'all',
+    recordStatus = 'valid',
     sortBy = 'fecha',
     sortDir = 'asc',
   } = filters;
@@ -312,19 +488,25 @@ export function useReportesPagos(
       // dentro del mismo rango de fechas (evita escanear order_items historicos completos).
       let orderIdsFilter: string[] | null = null;
       if (productIds && productIds.length > 0) {
-        const { data: itemsData, error: itemsError } = await supabase
-          .from('order_items')
-          .select('order_id, order:orders!inner(id, branch_id, created_at)')
-          .in('product_id', productIds)
-          .gte('order.created_at', dateBounds.desde)
-          .lte('order.created_at', dateBounds.hasta);
-        
-        if (itemsError) throw itemsError;
-        let scoped = itemsData || [];
-        if (branchId !== 'ALL') {
-          scoped = scoped.filter((item: any) => item.order?.branch_id === branchId);
+        const itemsData: Array<{ order_id: string; order?: { branch_id?: string } | null }> = [];
+        for (const productChunk of chunkIds(productIds)) {
+          const chunkRows = await fetchAllReportRows((from, to) =>
+            supabase
+              .from('order_items')
+              .select('order_id, order:orders!inner(id, branch_id, created_at)')
+              .in('product_id', productChunk)
+              .gte('order.created_at', dateBounds.desde)
+              .lte('order.created_at', dateBounds.hasta)
+              .order('id', { ascending: true })
+              .range(from, to),
+          );
+          itemsData.push(...chunkRows);
         }
-        orderIdsFilter = Array.from(new Set(scoped.map((item: any) => item.order_id)));
+        let scoped = itemsData;
+        if (branchId !== 'ALL') {
+          scoped = scoped.filter((item) => item.order?.branch_id === branchId);
+        }
+        orderIdsFilter = Array.from(new Set(scoped.map((item) => item.order_id)));
         
         // Si no hay órdenes con estos productos, devolvemos resultado vacío inmediatamente
         if (orderIdsFilter.length === 0) {
@@ -336,10 +518,11 @@ export function useReportesPagos(
         }
       }
 
-      // Consulta base a payments
-      let query = supabase
-        .from('payments')
-        .select(`
+      // Consulta base a payments (builder nuevo por página: evita corrupción de Range/URL)
+      const data = await fetchAllReportRows((from, to) => {
+        let query = supabase
+          .from('payments')
+          .select(`
           id,
           amount,
           change_amount,
@@ -367,42 +550,39 @@ export function useReportesPagos(
             creator:profiles!orders_created_by_fkey (id, alias, username)
           )
         `)
-        .in('status', ['COMPLETED', 'active', 'voided', 'VOIDED', 'reversed', 'REVERSED']);
+          .in('status', ['COMPLETED', 'active', 'voided', 'VOIDED', 'reversed', 'REVERSED'])
+          .gte('created_at', dateBounds.desde)
+          .lte('created_at', dateBounds.hasta);
 
-      if (branchId !== 'ALL') {
-        query = query.eq('order.branch_id', branchId);
-      }
-
-      // Aplicar filtros de fecha/hora (siempre con tope de seguridad)
-      query = query.gte('created_at', dateBounds.desde).lte('created_at', dateBounds.hasta);
-
-      // Aplicar turno
-      if (shiftId) query = query.eq('shift_id', shiftId);
-
-      // Aplicar cajero (quien cobró el pago)
-      if (cashierId) query = query.eq('created_by', cashierId);
-
-      // Aplicar usuario creador de la orden
-      if (creatorId) query = query.eq('order.created_by', creatorId);
-
-      // Aplicar tipos de orden en DB (excluyendo SPECIAL que no es enum válido en DB)
-      if (orderTypes && orderTypes.length > 0) {
-        const dbTypes = orderTypes.filter(t => t !== 'SPECIAL');
-        if (dbTypes.length > 0) {
-          query = query.in('order.order_type', dbTypes);
+        if (branchId !== 'ALL') {
+          query = query.eq('order.branch_id', branchId);
         }
-      }
+        if (shiftId) query = query.eq('shift_id', shiftId);
+        if (cashierId) query = query.eq('created_by', cashierId);
+        if (creatorId) query = query.eq('order.created_by', creatorId);
+        if (orderTypes && orderTypes.length > 0) {
+          const dbTypes = orderTypes.filter((t) => t !== 'SPECIAL');
+          if (dbTypes.length > 0) {
+            query = query.in('order.order_type', dbTypes);
+          }
+        }
 
-      // Aplicar filtro de productos resuelto anteriormente
+        return query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to);
+      });
+
+      // Filtro de productos: ya resolvimos order_ids; aplicamos en memoria para no
+      // saturar la URL con .in(...) enorme ni encadenar filtros en el builder.
+      let paymentsScoped = data;
       if (orderIdsFilter) {
-        query = query.in('order_id', orderIdsFilter);
+        const allowedOrderIds = new Set(orderIdsFilter);
+        paymentsScoped = data.filter((pay: any) => allowedOrderIds.has(pay.order?.id));
       }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
 
       // Filtrar en memoria por orderType efectivo y estado válido/anulado
-      const paymentsRaw = (data || []).filter((pay: any) => {
+      const paymentsRaw = (paymentsScoped || []).filter((pay: any) => {
         if (orderTypes && orderTypes.length > 0) {
           const effectiveType = pay.order?.is_special ? 'SPECIAL' : (pay.order?.order_type || 'EXTRA');
           if (!orderTypes.includes(effectiveType)) return false;
@@ -413,11 +593,8 @@ export function useReportesPagos(
         return true;
       });
 
-      // Procesar datos y calcular KPIs
-      let totalNetoSum = 0;
-      const desgloseMap: Record<string, number> = {};
-      const uniqueOrderIds = new Set<string>();
-
+      // Procesar pagos (montos brutos de cobro). Si hay filtro de producto, los KPIs
+      // se recalculan después solo con la parte de esos ítems.
       const processedPayments = paymentsRaw.map((pay: any) => {
         let dbAmount = Number(pay.amount || 0);
         let change = Number(pay.change_amount || 0);
@@ -434,21 +611,14 @@ export function useReportesPagos(
           }
         }
 
-        totalNetoSum = round2(totalNetoSum + netApplied);
-
         const methodName = pay.payment_methods?.name || 'Otro';
-        desgloseMap[methodName] = round2((desgloseMap[methodName] || 0) + netApplied);
-
-        if (pay.order?.id) {
-          uniqueOrderIds.add(pay.order.id);
-        }
 
         return {
           id: pay.id,
-          orderId: pay.order?.id,
+          orderId: pay.order?.id as string | undefined,
           orderCode: pay.order?.order_code,
           orderNumber: pay.order?.order_number,
-          createdAt: pay.created_at,
+          createdAt: pay.created_at as string,
           cashierName: getProfileLabel(pay.cashier),
           creatorName: getProfileLabel(pay.order?.creator),
           methodName,
@@ -486,29 +656,25 @@ export function useReportesPagos(
         return applySortDir(cmp, dir);
       });
 
-      const transacciones = processedPayments.length;
-      const ticketPromedio = uniqueOrderIds.size > 0 ? round2(totalNetoSum / uniqueOrderIds.size) : 0;
+      const uniqueOrderIds = new Set(
+        processedPayments.map((p) => p.orderId).filter((id): id is string => Boolean(id)),
+      );
 
-      let itemRows: ReportesPagoItemRow[] = [];
-      if (itemBreakdown && uniqueOrderIds.size > 0) {
+      const allowedProductIds =
+        productIds && productIds.length > 0 ? new Set(productIds) : null;
+      const productFilterActive = Boolean(allowedProductIds);
+      // Con filtro de producto siempre cargamos ítems (KPIs por parte de producto).
+      // Con desglose, también.
+      const shouldLoadItems = (itemBreakdown || productFilterActive) && uniqueOrderIds.size > 0;
+
+      const itemsByOrderId = new Map<string, ReportesOrderItemBucket[]>();
+      if (shouldLoadItems) {
         const orderIds = Array.from(uniqueOrderIds);
-        const itemsByOrderId = new Map<string, Array<{
-          id: string;
-          description_snapshot: string | null;
-          quantity: number;
-          unit_price: number;
-          total: number;
-          product_id: string | null;
-          status: string | null;
-          category: string;
-          subcategory: string;
-        }>>();
-
-        for (let index = 0; index < orderIds.length; index += 200) {
-          const chunk = orderIds.slice(index, index + 200);
-          let itemsQuery = supabase
-            .from('order_items')
-            .select(`
+        for (const orderChunk of chunkIds(orderIds, REPORTES_IN_FILTER_CHUNK)) {
+          const itemsData = await fetchAllReportRows((from, to) => {
+            let itemsQuery = supabase
+              .from('order_items')
+              .select(`
               id,
               order_id,
               product_id,
@@ -530,24 +696,24 @@ export function useReportesPagos(
                 )
               )
             `)
-            .in('order_id', chunk);
+              .in('order_id', orderChunk);
 
-          if (recordStatus === 'valid') {
-            itemsQuery = itemsQuery.is('cancelled_at', null).not('status', 'eq', 'CANCELLED');
-          } else if (recordStatus === 'voided') {
-            itemsQuery = itemsQuery.or('cancelled_at.not.is.null,status.eq.CANCELLED');
-          }
+            if (recordStatus === 'valid') {
+              itemsQuery = itemsQuery.is('cancelled_at', null).not('status', 'eq', 'CANCELLED');
+            } else if (recordStatus === 'voided') {
+              itemsQuery = itemsQuery.or('cancelled_at.not.is.null,status.eq.CANCELLED');
+            }
 
-          if (productIds && productIds.length > 0) {
-            itemsQuery = itemsQuery.in('product_id', productIds);
-          }
+            return itemsQuery.order('id', { ascending: true }).range(from, to);
+          });
 
-          const { data: itemsData, error: itemsError } = await itemsQuery;
-          if (itemsError) throw itemsError;
-
-          for (const item of itemsData || []) {
+          for (const item of itemsData) {
             const orderId = String((item as any).order_id ?? '');
             if (!orderId) continue;
+            const productId = (item as any).product_id ?? null;
+            if (allowedProductIds && (!productId || !allowedProductIds.has(productId))) {
+              continue;
+            }
             const bucket = itemsByOrderId.get(orderId) ?? [];
             bucket.push({
               id: String((item as any).id),
@@ -555,7 +721,7 @@ export function useReportesPagos(
               quantity: Number((item as any).quantity ?? 0),
               unit_price: Number((item as any).unit_price ?? 0),
               total: Number((item as any).total ?? 0),
-              product_id: (item as any).product_id ?? null,
+              product_id: productId,
               status: (item as any).status ?? null,
               category: getProductCategoryLabel(item as any),
               subcategory: getProductSubcategoryLabel(item as any),
@@ -563,10 +729,75 @@ export function useReportesPagos(
             itemsByOrderId.set(orderId, bucket);
           }
         }
+      }
 
+      let totalNetoSum = 0;
+      const desgloseMap: Record<string, number> = {};
+      let paymentsForReport = processedPayments;
+
+      if (productFilterActive) {
+        const filteredTotalByOrder = new Map<string, number>();
+        for (const [orderId, items] of itemsByOrderId.entries()) {
+          const orderTotal = round2(
+            items.reduce((acc, item) => acc + lineTotalFromOrderItem(item), 0),
+          );
+          if (orderTotal > 0) filteredTotalByOrder.set(orderId, orderTotal);
+        }
+
+        const paymentsByOrder = new Map<string, typeof processedPayments>();
+        for (const pay of processedPayments) {
+          const orderId = String(pay.orderId ?? '');
+          if (!orderId || !filteredTotalByOrder.has(orderId)) continue;
+          const bucket = paymentsByOrder.get(orderId) ?? [];
+          bucket.push(pay);
+          paymentsByOrder.set(orderId, bucket);
+        }
+
+        const attributedByPaymentId = new Map<string, number>();
+        for (const [orderId, orderPayments] of paymentsByOrder.entries()) {
+          const filteredTotal = filteredTotalByOrder.get(orderId) ?? 0;
+          const shares = allocateFilteredTotalAcrossPayments(orderPayments, filteredTotal);
+          for (const [payId, share] of shares.entries()) {
+            attributedByPaymentId.set(payId, share);
+          }
+        }
+
+        paymentsForReport = processedPayments
+          .map((pay) => {
+            const attributed = attributedByPaymentId.get(pay.id);
+            if (attributed == null || attributed <= 0) return null;
+            return {
+              ...pay,
+              // Con filtro de producto, el listado refleja la parte atribuida a esos ítems.
+              amount: attributed,
+              change: 0,
+              netApplied: attributed,
+            };
+          })
+          .filter((pay): pay is NonNullable<typeof pay> => pay != null);
+
+        for (const pay of paymentsForReport) {
+          totalNetoSum = round2(totalNetoSum + pay.netApplied);
+          desgloseMap[pay.methodName] = round2((desgloseMap[pay.methodName] || 0) + pay.netApplied);
+        }
+      } else {
+        for (const pay of paymentsForReport) {
+          totalNetoSum = round2(totalNetoSum + pay.netApplied);
+          desgloseMap[pay.methodName] = round2((desgloseMap[pay.methodName] || 0) + pay.netApplied);
+        }
+      }
+
+      const ordersInReport = new Set(
+        paymentsForReport.map((p) => p.orderId).filter((id): id is string => Boolean(id)),
+      );
+      const transacciones = paymentsForReport.length;
+      const ticketPromedio = ordersInReport.size > 0 ? round2(totalNetoSum / ordersInReport.size) : 0;
+
+      let itemRows: ReportesPagoItemRow[] = [];
+      if (itemBreakdown && ordersInReport.size > 0) {
         // Una fila por ítem de cada orden (sin duplicar si la orden tiene varios pagos).
         const seenOrderIds = new Set<string>();
-        for (const payment of processedPayments) {
+        for (const payment of paymentsForReport) {
           const orderId = String(payment.orderId ?? '');
           if (!orderId || seenOrderIds.has(orderId)) continue;
           seenOrderIds.add(orderId);
@@ -576,7 +807,7 @@ export function useReportesPagos(
             const qty = Math.max(0, Number(item.quantity ?? 0));
             if (qty <= 0) continue;
             const unitPrice = Number(item.unit_price ?? 0);
-            const lineTotal = Number(item.total ?? 0) || round2(qty * unitPrice);
+            const lineTotal = lineTotalFromOrderItem(item);
             const snapshotName = String(item.description_snapshot || 'Producto').trim() || 'Producto';
             itemRows.push({
               rowKey: `${payment.id}:${item.id}`,
@@ -628,13 +859,14 @@ export function useReportesPagos(
       }
 
       return {
-        payments: processedPayments,
+        payments: paymentsForReport,
         itemRows,
         kpis: {
           totalNeto: round2(totalNetoSum),
           desglose: desgloseMap,
           ticketPromedio,
-          transacciones
+          transacciones,
+          productScoped: productFilterActive,
         }
       };
     },
@@ -655,9 +887,10 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
 
       const dateBounds = resolveReportesDateBounds(desde, hasta);
 
-      let query = supabase
-        .from('payment_void_requests')
-        .select(`
+      const voidsRaw = await fetchAllReportRows((from, to) => {
+        let query = supabase
+          .from('payment_void_requests')
+          .select(`
           id,
           created_at,
           approved_at,
@@ -678,22 +911,22 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
             notes
           )
         `)
-        .in('status', ['approved', 'executed']);
+          .in('status', ['approved', 'executed'])
+          .gte('created_at', dateBounds.desde)
+          .lte('created_at', dateBounds.hasta);
 
-      if (branchId !== 'ALL') {
-        query = query.eq('order.branch_id', branchId);
-      }
+        if (branchId !== 'ALL') {
+          query = query.eq('order.branch_id', branchId);
+        }
+        if (shiftId) query = query.eq('shift_id', shiftId);
+        if (cashierId) query = query.eq('requested_by_user_id', cashierId);
+        if (supervisorId) query = query.eq('approved_by_supervisor_id', supervisorId);
 
-      // Filtros
-      query = query.gte('created_at', dateBounds.desde).lte('created_at', dateBounds.hasta);
-      if (shiftId) query = query.eq('shift_id', shiftId);
-      if (cashierId) query = query.eq('requested_by_user_id', cashierId);
-      if (supervisorId) query = query.eq('approved_by_supervisor_id', supervisorId);
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
-
-      const voidsRaw = data || [];
+        return query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to);
+      });
 
       // Paso extra: Extraer IDs de sucesoras a partir de las notas de la orden histórica
       const successorOrderIds: string[] = [];
@@ -712,15 +945,17 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
       // Consultar por lotes las órdenes sucesoras para traer sus códigos
       const successorMap: Record<string, { code: string | null; number: number | null }> = {};
       if (successorOrderIds.length > 0) {
-        const { data: succOrders, error: succError } = await supabase
-          .from('orders')
-          .select('id, order_code, order_number')
-          .in('id', successorOrderIds);
+        for (const idChunk of chunkIds(successorOrderIds)) {
+          const { data: succOrders, error: succError } = await supabase
+            .from('orders')
+            .select('id, order_code, order_number')
+            .in('id', idChunk);
 
-        if (!succError && succOrders) {
-          succOrders.forEach((o) => {
-            successorMap[o.id] = { code: o.order_code, number: o.order_number };
-          });
+          if (!succError && succOrders) {
+            succOrders.forEach((o) => {
+              successorMap[o.id] = { code: o.order_code, number: o.order_number };
+            });
+          }
         }
       }
 
@@ -795,7 +1030,7 @@ export function useReportesProductos(filters: ReportesFilters) {
     creatorId,
     productIds,
     orderTypes,
-    recordStatus = 'all',
+    recordStatus = 'valid',
     sortBy = 'cantidad',
     sortDir = 'desc',
   } = filters;
@@ -819,10 +1054,15 @@ export function useReportesProductos(filters: ReportesFilters) {
 
       const dateBounds = resolveReportesDateBounds(desde, hasta);
 
-      // Consulta de order_items con joins
-      let query = supabase
-        .from('order_items')
-        .select(`
+      const productIdChunks =
+        productIds && productIds.length > 0 ? chunkIds(productIds) : [null as string[] | null];
+
+      const data: any[] = [];
+      for (const productChunk of productIdChunks) {
+        const chunkRows = await fetchAllReportRows((from, to) => {
+          let query = supabase
+            .from('order_items')
+            .select(`
           id,
           product_id,
           quantity,
@@ -856,42 +1096,35 @@ export function useReportesProductos(filters: ReportesFilters) {
             )
           )
         `)
-        .neq('order.status', 'DRAFT'); // Excluir borradores
+            .neq('order.status', 'DRAFT')
+            .gte('order.created_at', dateBounds.desde)
+            .lte('order.created_at', dateBounds.hasta);
 
-      if (recordStatus === 'valid') {
-        query = query.is('cancelled_at', null).not('status', 'eq', 'CANCELLED');
-      } else if (recordStatus === 'voided') {
-        query = query.or('cancelled_at.not.is.null,status.eq.CANCELLED');
+          if (recordStatus === 'valid') {
+            query = query.is('cancelled_at', null).not('status', 'eq', 'CANCELLED');
+          } else if (recordStatus === 'voided') {
+            query = query.or('cancelled_at.not.is.null,status.eq.CANCELLED');
+          }
+
+          if (branchId !== 'ALL') {
+            query = query.eq('order.branch_id', branchId);
+          }
+          if (shiftId) query = query.eq('order.cash_shift_id', shiftId);
+          if (creatorId) query = query.eq('order.created_by', creatorId);
+          if (productChunk) {
+            query = query.in('product_id', productChunk);
+          }
+          if (orderTypes && orderTypes.length > 0) {
+            const dbTypes = orderTypes.filter((t) => t !== 'SPECIAL');
+            if (dbTypes.length > 0) {
+              query = query.in('order.order_type', dbTypes);
+            }
+          }
+
+          return query.order('id', { ascending: true }).range(from, to);
+        });
+        data.push(...chunkRows);
       }
-
-      if (branchId !== 'ALL') {
-        query = query.eq('order.branch_id', branchId);
-      }
-
-      // Filtros de fecha en la orden (siempre con tope de seguridad)
-      query = query.gte('order.created_at', dateBounds.desde).lte('order.created_at', dateBounds.hasta);
-
-      // Filtro de turno
-      if (shiftId) query = query.eq('order.cash_shift_id', shiftId);
-
-      // Filtro de creador de la orden
-      if (creatorId) query = query.eq('order.created_by', creatorId);
-
-      // Filtro de producto
-      if (productIds && productIds.length > 0) {
-        query = query.in('product_id', productIds);
-      }
-
-      // Filtro de tipos de orden en DB
-      if (orderTypes && orderTypes.length > 0) {
-        const dbTypes = orderTypes.filter(t => t !== 'SPECIAL');
-        if (dbTypes.length > 0) {
-          query = query.in('order.order_type', dbTypes);
-        }
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
 
       // Filtrar en memoria por orderType efectivo para abarcar SPECIAL
       const itemsRaw = (data || []).filter((item: any) => {
@@ -905,29 +1138,41 @@ export function useReportesProductos(filters: ReportesFilters) {
       const itemIds = itemsRaw.map((item: any) => item.id).filter(Boolean);
       const cancelledQtyByItemId: Record<string, number> = {};
       if (recordStatus !== 'voided' && itemIds.length > 0) {
-        const { data: itemCancellations, error: cancelItemsError } = await supabase
-          .from('order_item_cancellations')
-          .select('order_item_id, quantity_cancelled, order_cancellation_id')
-          .in('order_item_id', itemIds);
-        if (cancelItemsError) throw cancelItemsError;
+        const itemCancellations: Array<{
+          order_item_id: string;
+          quantity_cancelled: number;
+          order_cancellation_id: string;
+        }> = [];
+        for (let index = 0; index < itemIds.length; index += 200) {
+          const chunk = itemIds.slice(index, index + 200);
+          const { data: cancelChunk, error: cancelItemsError } = await supabase
+            .from('order_item_cancellations')
+            .select('order_item_id, quantity_cancelled, order_cancellation_id')
+            .in('order_item_id', chunk);
+          if (cancelItemsError) throw cancelItemsError;
+          itemCancellations.push(...(cancelChunk ?? []));
+        }
 
         const cancellationIds = Array.from(
-          new Set((itemCancellations ?? []).map((row: any) => row.order_cancellation_id).filter(Boolean)),
+          new Set(itemCancellations.map((row) => row.order_cancellation_id).filter(Boolean)),
         );
         const appliedCancellationIds = new Set<string>();
         if (cancellationIds.length > 0) {
-          const { data: cancellationHeaders, error: cancelHeadersError } = await supabase
-            .from('order_cancellations')
-            .select('id, status')
-            .in('id', cancellationIds)
-            .eq('status', 'APPLIED');
-          if (cancelHeadersError) throw cancelHeadersError;
-          for (const header of cancellationHeaders ?? []) {
-            if (header?.id) appliedCancellationIds.add(header.id);
+          for (let index = 0; index < cancellationIds.length; index += 200) {
+            const chunk = cancellationIds.slice(index, index + 200);
+            const { data: cancellationHeaders, error: cancelHeadersError } = await supabase
+              .from('order_cancellations')
+              .select('id, status')
+              .in('id', chunk)
+              .eq('status', 'APPLIED');
+            if (cancelHeadersError) throw cancelHeadersError;
+            for (const header of cancellationHeaders ?? []) {
+              if (header?.id) appliedCancellationIds.add(header.id);
+            }
           }
         }
 
-        for (const row of itemCancellations ?? []) {
+        for (const row of itemCancellations) {
           if (!appliedCancellationIds.has(row.order_cancellation_id)) continue;
           const itemId = String(row.order_item_id ?? '');
           if (!itemId) continue;

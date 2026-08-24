@@ -34,7 +34,7 @@ const Reportes = () => {
     creatorId: null,
     productIds: null,
     orderTypes: ['DINE_IN', 'TAKEOUT', 'EXPRESS', 'EXTRA', 'SPECIAL'],
-    recordStatus: 'all',
+    recordStatus: 'valid',
     sortBy: 'fecha',
     sortDir: 'asc',
   });

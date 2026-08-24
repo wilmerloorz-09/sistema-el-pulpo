@@ -55,7 +55,13 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
 
   const payments = data?.payments || [];
   const itemRows = data?.itemRows || [];
-  const kpis = data?.kpis || { totalNeto: 0, desglose: {}, ticketPromedio: 0, transacciones: 0 };
+  const kpis = data?.kpis || {
+    totalNeto: 0,
+    desglose: {},
+    ticketPromedio: 0,
+    transacciones: 0,
+    productScoped: false,
+  };
 
   const tableRows = useMemo(
     () => (itemBreakdown ? itemRows : payments),
@@ -297,11 +303,13 @@ export default function ReportePagos({ filters }: ReportePagosProps) {
               </div>
               <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-500/10 rounded-full px-2 py-0.5">
                 <TrendingUp className="h-3 w-3" />
-                Ingresos Reales
+                {kpis.productScoped ? 'Solo productos filtrados' : 'Ingresos Reales'}
               </div>
             </div>
             <div className="mt-4">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total General Recaudado</span>
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                {kpis.productScoped ? 'Total de productos filtrados' : 'Total General Recaudado'}
+              </span>
               <h3 className="font-display text-2xl font-black text-foreground mt-0.5">
                 {formatReporteMoney(kpis.totalNeto)}
               </h3>

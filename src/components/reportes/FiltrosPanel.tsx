@@ -39,7 +39,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [selectedOrderType, setSelectedOrderType] = useState<string>('ALL');
-  const [recordStatus, setRecordStatus] = useState<'all' | 'valid' | 'voided'>('all');
+  const [recordStatus, setRecordStatus] = useState<'all' | 'valid' | 'voided'>('valid');
   const [sortBy, setSortBy] = useState<string>(activeTab === 'products' ? 'cantidad' : 'fecha');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -71,7 +71,20 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   }, [activeTab]);
 
   const effectiveBranchId = localBranchId || branchId;
-  const { data: filtersData, isLoading } = useReportesFiltros(effectiveBranchId);
+  const { data: filtersData, isLoading } = useReportesFiltros(
+    effectiveBranchId,
+    desde || null,
+    hasta || null,
+  );
+
+  // Si el cajero elegido ya no está en el rango, volver a "Todos"
+  useEffect(() => {
+    if (cashierId === 'ALL') return;
+    const cashiers = filtersData?.cashiersInRange ?? [];
+    if (!cashiers.some((c) => c.id === cashierId)) {
+      setCashierId('ALL');
+    }
+  }, [filtersData?.cashiersInRange, cashierId]);
 
   // Manejar cambios en el Rango Rápido de Tiempo
   useEffect(() => {
@@ -245,7 +258,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     setSelectedNodeIds([]);
     setSelectedCategoryId('ALL');
     setSelectedOrderType('ALL');
-    setRecordStatus('all');
+    setRecordStatus('valid');
     setSortBy(activeTab === 'products' ? 'cantidad' : activeTab === 'personal' ? 'dia' : 'fecha');
     setSortDir('desc');
   };
@@ -303,11 +316,12 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const showProductFilters = activeTab === 'products' || activeTab === 'payments';
   const showPaymentFilters = activeTab === 'payments' || activeTab === 'products';
   const isPersonalTab = activeTab === 'personal';
-  // En Personal: priorizar quienes ya estuvieron en turnos; si no hay, todos los perfiles activos.
+  // En Personal: priorizar quienes ya estuvieron en turnos del rango; si no hay, todos los perfiles activos.
   const userFilterOptions =
     isPersonalTab && (filtersData?.shiftUsers?.length ?? 0) > 0
       ? filtersData!.shiftUsers!
       : filtersData?.profiles || [];
+  const cashierFilterOptions = filtersData?.cashiersInRange ?? [];
 
   const renderTree = (nodes: any[], depth = 0) => {
     return nodes.map((node) => {
@@ -442,11 +456,17 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectTrigger>
             <SelectContent className="max-h-[min(20rem,70vh)]">
               <SelectItem value="ALL">Todos los cajeros</SelectItem>
-              {(filtersData?.profiles || []).map((p) => (
-                <SelectItem key={p.id} value={p.id} className="text-xs">
-                  {getUserDisplayName(p)}
+              {cashierFilterOptions.length === 0 ? (
+                <SelectItem value="__empty_cashiers" disabled>
+                  {isLoading ? 'Cargando cajeros…' : 'Sin cajeros en el rango de fechas'}
                 </SelectItem>
-              ))}
+              ) : (
+                cashierFilterOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                    {getUserDisplayName(p)}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </div>
