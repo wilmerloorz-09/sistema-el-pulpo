@@ -994,6 +994,7 @@ export type Database = {
           sucursal_id: string
           cantidad_disponible: number
           activo: boolean
+          integra_con_ventas: boolean
           creado_en: string
           actualizado_en: string
         }
@@ -1003,6 +1004,7 @@ export type Database = {
           sucursal_id: string
           cantidad_disponible?: number
           activo?: boolean
+          integra_con_ventas?: boolean
           creado_en?: string
           actualizado_en?: string
         }
@@ -1012,6 +1014,7 @@ export type Database = {
           sucursal_id?: string
           cantidad_disponible?: number
           activo?: boolean
+          integra_con_ventas?: boolean
           creado_en?: string
           actualizado_en?: string
         }
@@ -1045,6 +1048,9 @@ export type Database = {
           registrado_por: string
           registrado_por_nombre: string
           creado_en: string
+          order_id: string | null
+          order_item_id: string | null
+          origen_venta: string | null
         }
         Insert: {
           id?: string
@@ -1058,6 +1064,9 @@ export type Database = {
           registrado_por: string
           registrado_por_nombre?: string
           creado_en?: string
+          order_id?: string | null
+          order_item_id?: string | null
+          origen_venta?: string | null
         }
         Update: {
           id?: string
@@ -1071,6 +1080,9 @@ export type Database = {
           registrado_por?: string
           registrado_por_nombre?: string
           creado_en?: string
+          order_id?: string | null
+          order_item_id?: string | null
+          origen_venta?: string | null
         }
         Relationships: [
           {

@@ -1337,6 +1337,9 @@ export function useOrder(orderId: string | null) {
         branchId: order?.branch_id ?? query.data?.branch_id,
         orderId,
       });
+      void qc.invalidateQueries({
+        queryKey: ["inventario-producto-map", order?.branch_id ?? query.data?.branch_id],
+      });
       // Tirar bundle cacheado (prefetch vacío) y forzar refetch de colas activas.
       invalidateDispatchServirQueueBundleCache(order?.branch_id ?? query.data?.branch_id);
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
@@ -1410,6 +1413,9 @@ export function useOrder(orderId: string | null) {
       invalidateOrderOperationalCaches(qc, {
         branchId: order?.branch_id ?? query.data?.branch_id,
         orderId,
+      });
+      void qc.invalidateQueries({
+        queryKey: ["inventario-producto-map", order?.branch_id ?? query.data?.branch_id],
       });
       invalidateDispatchServirQueueBundleCache(order?.branch_id ?? query.data?.branch_id);
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });

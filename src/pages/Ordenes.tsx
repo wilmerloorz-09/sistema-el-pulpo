@@ -58,6 +58,12 @@ import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
+import {
+  fetchInventarioProductoMap,
+  mergeInventarioInfo,
+  resolveMenuNodeProductId,
+} from "@/lib/inventarioMenuData";
+import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
 import { useCancellation } from "@/hooks/useCancellation";
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
@@ -745,6 +751,13 @@ const OrdenesContent = () => {
     order?.is_special,
     order?.is_tray_order,
   ]);
+
+  const inventarioMapQuery = useQuery({
+    queryKey: ["inventario-producto-map", activeBranchId],
+    queryFn: () => fetchInventarioProductoMap(activeBranchId!),
+    enabled: Boolean(activeBranchId),
+    staleTime: 15_000,
+  });
 
   const canOperateMesasForOpen =
     canOperate(permissions, "mesas")
@@ -2281,6 +2294,17 @@ const OrdenesContent = () => {
       !hasPendingCancellationItems &&
       !isLockedFromEditar
     );
+  const isNodeBlockedByInventory = useCallback(
+    (node: MenuNode) => {
+      if (node.node_type !== "product") return false;
+      const productId = resolveMenuNodeProductId(node);
+      if (!productId || !inventarioMapQuery.data) return false;
+      return productoBloqueadoPorStockInventario(
+        mergeInventarioInfo(inventarioMapQuery.data, productId),
+      );
+    },
+    [inventarioMapQuery.data],
+  );
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
       toast.error("Esta orden no admite agregar productos.");
@@ -2292,6 +2316,10 @@ const OrdenesContent = () => {
     }
     if (hasPendingCancellationItems && !fromEditar) {
       toast.error("No puedes agregar items mientras exista al menos un item con anulacion pendiente.");
+      return;
+    }
+    if (isNodeBlockedByInventory(node)) {
+      toast.error("Sin stock disponible en inventario para este producto.");
       return;
     }
 
@@ -3325,6 +3353,10 @@ const OrdenesContent = () => {
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
               Cargando...
+            </div>
+          ) : isNodeBlockedByInventory(node) ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-bold text-red-700">
+              Sin stock (inventario)
             </div>
           ) : !node.is_active && node.node_type === "product" ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-bold text-red-700">

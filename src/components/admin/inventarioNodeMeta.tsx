@@ -36,22 +36,26 @@ const MetaField = ({ label, children, className }: MetaFieldProps) => (
 
 type InventarioProductosNodeMetaProps = {
   info: InventarioProductoInfo;
-  canEditTipo: boolean;
+  canEdit: boolean;
   savingTipo: boolean;
+  savingIntegra: boolean;
   onTipoChange: (tipo: TipoProducto) => void;
+  onIntegraChange: (integra: boolean) => void;
 };
 
 export const InventarioProductosNodeMeta = ({
   info,
-  canEditTipo,
+  canEdit,
   savingTipo,
+  savingIntegra,
   onTipoChange,
+  onIntegraChange,
 }: InventarioProductosNodeMetaProps) => {
   const estado = estadoInventarioDesdeCantidad(info.cantidadDisponible);
 
   return (
     <div
-      className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4"
+      className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
       onClick={stopTreeClick}
       onKeyDown={stopTreeClick}
     >
@@ -80,7 +84,7 @@ export const InventarioProductosNodeMeta = ({
       </MetaField>
 
       <MetaField label="Tipo">
-        {canEditTipo ? (
+        {canEdit ? (
           <Select
             value={info.tipoProducto}
             onValueChange={(value) => onTipoChange(value as TipoProducto)}
@@ -96,6 +100,28 @@ export const InventarioProductosNodeMeta = ({
           </Select>
         ) : (
           <p className="text-xs font-semibold text-foreground">{etiquetaTipoProducto(info.tipoProducto)}</p>
+        )}
+      </MetaField>
+
+      <MetaField label="Integra ventas">
+        {canEdit ? (
+          <Select
+            value={info.integraConVentas ? "si" : "no"}
+            onValueChange={(value) => onIntegraChange(value === "si")}
+            disabled={savingIntegra}
+          >
+            <SelectTrigger className="h-8 rounded-lg text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="no">No</SelectItem>
+              <SelectItem value="si">Sí</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <Badge variant="outline" className="rounded-lg text-[10px] font-bold">
+            {info.integraConVentas ? "Sí" : "No"}
+          </Badge>
         )}
       </MetaField>
     </div>

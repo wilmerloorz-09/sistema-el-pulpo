@@ -17,6 +17,11 @@ export function etiquetaEstadoInventario(estado: EstadoInventario): string {
   return estado === "DISPONIBLE" ? "Disponible" : "Agotado";
 }
 
+/** Si true, las ventas futuras validarán/descontarán stock en esta sucursal. */
+export function etiquetaIntegraConVentas(integra: boolean): string {
+  return integra ? "Sí" : "No";
+}
+
 export function etiquetaTipoMovimientoInventario(tipo: TipoMovimientoInventario): string {
   if (tipo === "INGRESO") return "Ingreso";
   if (tipo === "SALIDA") return "Salida";
@@ -84,4 +89,12 @@ export function motivoMovimientoParaRpc(
   const limpio = motivo.trim();
   if (tipo === "INGRESO" && !limpio) return "Ingreso";
   return limpio;
+}
+
+/** Producto con integración de ventas activa y stock en cero. */
+export function productoBloqueadoPorStockInventario(params: {
+  integraConVentas: boolean;
+  cantidadDisponible: number;
+}): boolean {
+  return params.integraConVentas && Number(params.cantidadDisponible) <= 0;
 }

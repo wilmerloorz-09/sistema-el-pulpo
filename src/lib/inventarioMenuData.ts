@@ -6,6 +6,8 @@ export type InventarioProductoInfo = {
   cantidadDisponible: number;
   tipoProducto: TipoProducto;
   activoCatalogo: boolean;
+  /** Por sucursal; false si no hay fila en inventario_productos. */
+  integraConVentas: boolean;
   inventarioId: string | null;
 };
 
@@ -31,6 +33,7 @@ export async function fetchInventarioProductoMap(
       id,
       producto_id,
       cantidad_disponible,
+      integra_con_ventas,
       products (
         id,
         tipo_producto,
@@ -53,6 +56,7 @@ export async function fetchInventarioProductoMap(
       cantidadDisponible: Number(row.cantidad_disponible ?? 0),
       tipoProducto: product.tipo_producto === "PREPARADO" ? "PREPARADO" : "COMPRADO",
       activoCatalogo: product.is_active,
+      integraConVentas: Boolean(row.integra_con_ventas),
     });
   }
 
@@ -69,5 +73,6 @@ export function mergeInventarioInfo(
     cantidadDisponible: 0,
     tipoProducto: "COMPRADO",
     activoCatalogo: true,
+    integraConVentas: false,
   };
 }

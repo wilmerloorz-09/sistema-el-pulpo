@@ -5,6 +5,8 @@ import {
   etiquetaCantidadMovimiento,
   etiquetaTipoMovimientoInventario,
   etiquetaTipoProducto,
+  etiquetaIntegraConVentas,
+  productoBloqueadoPorStockInventario,
   normalizarCantidadInventario,
   validarMovimientoInventario,
   motivoMovimientoParaRpc,
@@ -20,6 +22,17 @@ describe("inventarioProductos", () => {
   it("etiqueta tipo de producto", () => {
     expect(etiquetaTipoProducto("COMPRADO")).toBe("Comprado");
     expect(etiquetaTipoProducto("PREPARADO")).toBe("Preparado");
+  });
+
+  it("etiqueta integra con ventas", () => {
+    expect(etiquetaIntegraConVentas(false)).toBe("No");
+    expect(etiquetaIntegraConVentas(true)).toBe("Sí");
+  });
+
+  it("bloquea venta solo si integra con ventas y stock es cero", () => {
+    expect(productoBloqueadoPorStockInventario({ integraConVentas: false, cantidadDisponible: 0 })).toBe(false);
+    expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 0 })).toBe(true);
+    expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 2 })).toBe(false);
   });
 
   it("normaliza cantidad sin negativos", () => {

@@ -17,6 +17,7 @@ const InventarioProductosAdmin = () => {
     || canManage(permissions, "admin_global");
   const qc = useQueryClient();
   const [savingTipoProductoId, setSavingTipoProductoId] = useState<string | null>(null);
+  const [savingIntegraProductoId, setSavingIntegraProductoId] = useState<string | null>(null);
 
   const saveTipoMutation = useMutation({
     mutationFn: async ({ productoId, tipo }: { productoId: string; tipo: TipoProducto }) => {
@@ -30,6 +31,40 @@ const InventarioProductosAdmin = () => {
     },
     onError: (error: Error) => toast.error(error.message || "No se pudo guardar"),
     onSettled: () => setSavingTipoProductoId(null),
+  });
+
+  const saveIntegraMutation = useMutation({
+    mutationFn: async ({
+      productoId,
+      integraConVentas,
+      cantidadActual,
+    }: {
+      productoId: string;
+      integraConVentas: boolean;
+      cantidadActual: number;
+    }) => {
+      if (!activeBranchId) throw new Error("Sucursal no seleccionada");
+      setSavingIntegraProductoId(productoId);
+      const { error } = await supabase
+        .from("inventario_productos")
+        .upsert(
+          {
+            producto_id: productoId,
+            sucursal_id: activeBranchId,
+            cantidad_disponible: cantidadActual,
+            integra_con_ventas: integraConVentas,
+            activo: true,
+          },
+          { onConflict: "producto_id,sucursal_id" },
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["inventario-producto-map", activeBranchId] });
+      toast.success("Integración con ventas actualizada");
+    },
+    onError: (error: Error) => toast.error(error.message || "No se pudo guardar"),
+    onSettled: () => setSavingIntegraProductoId(null),
   });
 
   if (!activeBranchId) {
@@ -56,7 +91,9 @@ const InventarioProductosAdmin = () => {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Cada producto muestra su stock y configuración. La cantidad se modifica solo desde Movimientos.
+        Cada producto muestra su stock y configuración por sucursal. La cantidad se modifica solo desde Movimientos.
+        {" "}
+        <span className="font-semibold">Integra ventas = No</span> significa que las ventas no validarán stock (hasta activarlo).
         {!canEditInventario ? " Modo solo lectura." : null}
       </p>
 
@@ -65,9 +102,17 @@ const InventarioProductosAdmin = () => {
         renderNodeAction={(_node, info) => (
           <InventarioProductosNodeMeta
             info={info}
-            canEditTipo={canEditInventario}
+            canEdit={canEditInventario}
             savingTipo={savingTipoProductoId === info.productoId}
+            savingIntegra={savingIntegraProductoId === info.productoId}
             onTipoChange={(tipo) => saveTipoMutation.mutate({ productoId: info.productoId, tipo })}
+            onIntegraChange={(integra) =>
+              saveIntegraMutation.mutate({
+                productoId: info.productoId,
+                integraConVentas: integra,
+                cantidadActual: info.cantidadDisponible,
+              })
+            }
           />
         )}
       />
