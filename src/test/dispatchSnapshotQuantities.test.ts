@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeDispatchableQtyFromSnapshotItem } from "@/lib/orderOperational";
+import {
+  computeDispatchableQtyFromSnapshotItem,
+  orderTreatAsFullyPaidForDispatch,
+  resolveDispatchLinePaidQty,
+} from "@/lib/orderOperational";
 import { operationalMapsFromBundleItems } from "@/lib/dispatchServirQueueBundle";
 
 describe("computeDispatchableQtyFromSnapshotItem", () => {
@@ -70,6 +74,42 @@ describe("computeDispatchableQtyFromSnapshotItem", () => {
       quantityCancelledDispatched: 0,
       quantityCancelledTotal: 0,
       isDispatchFirst: true,
+    });
+    expect(dispatchable).toBe(2);
+  });
+});
+
+describe("orderTreatAsFullyPaidForDispatch / resolveDispatchLinePaidQty", () => {
+  it("TAKEOUT bandeja en READY con paid_at cuenta como cobrada (Empaquetador)", () => {
+    const order = {
+      paid_at: "2026-08-29T12:00:00Z",
+      status: "READY",
+      order_type: "TAKEOUT",
+      is_tray_order: true,
+    };
+    expect(orderTreatAsFullyPaidForDispatch(order)).toBe(true);
+    expect(
+      resolveDispatchLinePaidQty({ id: "item-1", quantity: 3 }, {}, order),
+    ).toBe(3);
+  });
+
+  it("TAKEOUT PAID sin payment_items en snapshot sigue siendo despachable", () => {
+    const order = {
+      paid_at: "2026-08-29T12:00:00Z",
+      status: "PAID",
+      order_type: "TAKEOUT",
+      is_tray_order: false,
+    };
+    const dispatchable = computeDispatchableQtyFromSnapshotItem({
+      quantityOrdered: 2,
+      quantityPendingPrepare: 2,
+      quantityReadyAvailable: 0,
+      quantityPaid: 0,
+      quantityDispatchedTotal: 0,
+      quantityCancelledDispatched: 0,
+      quantityCancelledTotal: 0,
+      isDispatchFirst: false,
+      orderFullyPaid: orderTreatAsFullyPaidForDispatch(order),
     });
     expect(dispatchable).toBe(2);
   });

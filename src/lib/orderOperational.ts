@@ -97,6 +97,42 @@ export function computeDispatchableQtyFromSnapshotItem(input: {
   return Math.min(workAvailable, maxFromPaid);
 }
 
+export type DispatchOrderPaymentContext = {
+  paid_at?: string | null;
+  status?: string | null;
+  order_type?: string | null;
+  is_tray_order?: boolean | null;
+};
+
+/**
+ * Orden cobrada para efectos de cola de despacho/empaque.
+ * Para llevar y bandejas pueden quedar en READY (no PAID) tras el cobro.
+ */
+export function orderTreatAsFullyPaidForDispatch(order?: DispatchOrderPaymentContext | null): boolean {
+  if (!order?.paid_at) return false;
+  const status = String(order.status ?? "").toUpperCase();
+  if (status === "PAID") return true;
+  if (status === "READY") {
+    const orderType = String(order.order_type ?? "").toUpperCase();
+    return orderType === "TAKEOUT" || orderType === "EXPRESS" || Boolean(order.is_tray_order);
+  }
+  return false;
+}
+
+/** Misma regla que caja / useOrder: payment_items, paid_at de línea u orden cobrada. */
+export function resolveDispatchLinePaidQty(
+  item: { id: string; quantity?: number | null; paid_at?: string | null },
+  clientPaidQtyByItemId: Record<string, number>,
+  order?: DispatchOrderPaymentContext | null,
+): number {
+  const orderedQty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+  const fromPayments = Math.max(0, clientPaidQtyByItemId[item.id] ?? 0);
+  if (fromPayments > 0) return Math.min(orderedQty, fromPayments);
+  if (item.paid_at) return orderedQty;
+  if (orderTreatAsFullyPaidForDispatch(order)) return orderedQty;
+  return 0;
+}
+
 /**
  * Detecta progreso real de cocina/despacho para reescribir DRAFT → SENT/DISPATCHED.
  * - Sin snapshot: no hay progreso (borrador nuevo).

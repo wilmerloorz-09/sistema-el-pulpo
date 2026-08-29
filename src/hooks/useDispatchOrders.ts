@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ensureDispatchBootstrap } from "./useDispatchConfig";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import type { OrderStatus } from "@/types/cancellation";
-import { computeOperationalQuantities, computeDispatchableQtyFromSnapshotItem, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import { computeOperationalQuantities, computeDispatchableQtyFromSnapshotItem, fetchOperationalMapsForOrders, orderTreatAsFullyPaidForDispatch, resolveDispatchLinePaidQty } from "@/lib/orderOperational";
 import { fetchActivePaidQuantityByOrderItemId } from "@/lib/orderItemActivePayments";
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
@@ -327,10 +327,6 @@ async function fetchEnabledPackerUserIds(shiftId: string): Promise<Set<string>> 
 }
 
 /** Igual criterio que caja / useOrder: pago que no debe contar para “hay cobro activo”. */
-function orderIsFullyPaid(order: { paid_at?: string | null; status?: string | null }): boolean {
-  return Boolean(order.paid_at) && String(order.status ?? "").toUpperCase() === "PAID";
-}
-
 function buildDispatchLineQuantities(
   item: any,
   order: any,
@@ -380,9 +376,20 @@ function buildDispatchLineQuantities(
 
   const quantityPaid = isDispatchFirst
     ? Math.max(0, quantityOrdered - (hasBundleSnapshot ? snapshotCancelledTotal : quantities.quantityCancelledTotal))
-    : hasBundleSnapshot && snapshotPaid > 0
-      ? Math.min(quantityOrdered, snapshotPaid)
-      : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
+    : (() => {
+        if (hasBundleSnapshot && snapshotPaid > 0) {
+          return Math.min(quantityOrdered, snapshotPaid);
+        }
+        const resolved = resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
+        if (resolved > 0) return resolved;
+        if (orderTreatAsFullyPaidForDispatch(order)) {
+          return Math.max(
+            0,
+            quantityOrdered - (hasBundleSnapshot ? snapshotCancelledTotal : quantities.quantityCancelledTotal),
+          );
+        }
+        return 0;
+      })();
 
   const quantityDispatchedNet = hasBundleSnapshot
     ? Math.max(0, snapshotDispatchedTotal - snapshotCancelledDispatched)
@@ -398,7 +405,7 @@ function buildDispatchLineQuantities(
         quantityCancelledDispatched: snapshotCancelledDispatched,
         quantityCancelledTotal: hasBundleSnapshot ? snapshotCancelledTotal : quantities.quantityCancelledTotal,
         isDispatchFirst,
-        orderFullyPaid: orderIsFullyPaid(order),
+        orderFullyPaid: orderTreatAsFullyPaidForDispatch(order),
       })
     : (() => {
         const paidNotYetDispatched = Math.max(0, quantityPaid - Math.min(quantityDispatchedNet, quantityPaid));
@@ -459,22 +466,6 @@ function paymentRowIsInactive(notes: string | null | undefined, status: string |
 function dispatchCardHasWork(card: DispatchOrder): boolean {
   if (card.items.length === 0) return false;
   return card.items.some((it) => it.quantity_dispatchable > 0);
-}
-
-/** Misma regla que `useOrder` / caja: `payment_items` activos, `paid_at` de línea, o cobro total de orden PAID. */
-function resolveDispatchLinePaidQty(
-  item: { id: string; quantity?: number | null; paid_at?: string | null },
-  clientPaidQtyByItemId: Record<string, number>,
-  order?: { paid_at?: string | null; status?: string | null },
-): number {
-  const orderedQty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
-  const fromPayments = Math.max(0, clientPaidQtyByItemId[item.id] ?? 0);
-  if (fromPayments > 0) return Math.min(orderedQty, fromPayments);
-  if (item.paid_at) return orderedQty;
-  if (order?.paid_at && String(order.status ?? "").toUpperCase() === "PAID") {
-    return orderedQty;
-  }
-  return 0;
 }
 
 function groupItemsIntoDispatchCards(
