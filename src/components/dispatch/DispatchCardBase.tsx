@@ -372,13 +372,13 @@ export function DispatchCardBase({
         </div>
 
         {/* Mobile Middle Section */}
-        <div className="flex lg:hidden items-center justify-between pl-11">
-          <div>
-             <p className="text-xs font-semibold text-slate-700">{summaryText}</p>
-             <p className="mt-0.5 text-xs font-black text-emerald-700">Total pendiente {formatMoney(pendingTotal)}</p>
+        <div className="flex lg:hidden w-full items-center justify-between gap-2 border-t border-slate-100 pt-3 mt-1">
+          <div className="min-w-0 flex-1">
+             <p className="truncate text-xs font-semibold text-slate-700">{summaryText}</p>
+             <p className="mt-0.5 truncate text-xs font-black text-emerald-700">Total pendiente {formatMoney(pendingTotal)}</p>
           </div>
           <div className={cn(
-            "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold shadow-sm",
+            "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold shadow-sm",
             isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
           )}>
             <Clock className="h-3.5 w-3.5 shrink-0" />
@@ -387,7 +387,7 @@ export function DispatchCardBase({
         </div>
 
         {/* Right Section: Actions */}
-        <div className="flex items-center justify-end gap-2 pl-11 lg:pl-0 shrink-0">
+        <div className="flex w-full lg:w-auto items-center justify-end gap-2 shrink-0">
           {!readOnly ? (
             <>
               <Button

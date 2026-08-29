@@ -71,7 +71,7 @@ describe("dispatchServirQueueBundle cache", () => {
     await expect(Promise.all([first, second])).resolves.toEqual([bundle(), bundle()]);
   });
 
-  it("reutiliza una respuesta con órdenes durante el TTL (25s)", async () => {
+  it("reutiliza una respuesta con órdenes durante el TTL del bundle", async () => {
     rpc.mockResolvedValueOnce({ data: bundle(), error: null });
 
     await fetchDispatchServirQueueBundle("branch-a", "shift-a");

@@ -59,6 +59,45 @@ export function computeUndispatchedQuantity(quantities: OperationalQuantitySnaps
 }
 
 /**
+ * Cantidad despachable alineada con `dispatch_order_quantities` cuando la cola
+ * viene del snapshot del bundle (`get_dispatch_servir_queue_bundle`).
+ */
+export function computeDispatchableQtyFromSnapshotItem(input: {
+  quantityOrdered: number;
+  quantityPendingPrepare: number;
+  quantityReadyAvailable: number;
+  quantityPaid: number;
+  quantityDispatchedTotal: number;
+  quantityCancelledDispatched: number;
+  quantityCancelledTotal: number;
+  isDispatchFirst: boolean;
+  orderFullyPaid?: boolean;
+}): number {
+  const pending = asInt(input.quantityPendingPrepare);
+  const ready = asInt(input.quantityReadyAvailable);
+  const workAvailable = pending + ready;
+  if (workAvailable <= 0) return 0;
+
+  if (input.isDispatchFirst) {
+    return workAvailable;
+  }
+
+  const activeOrdered = Math.max(0, asInt(input.quantityOrdered) - asInt(input.quantityCancelledTotal));
+  const alreadyDispatched = Math.max(
+    0,
+    asInt(input.quantityDispatchedTotal) - asInt(input.quantityCancelledDispatched),
+  );
+  let paidEffective = Math.min(activeOrdered, asInt(input.quantityPaid));
+  if (paidEffective <= 0 && input.orderFullyPaid) {
+    paidEffective = activeOrdered;
+  }
+  if (paidEffective <= 0) return 0;
+
+  const maxFromPaid = Math.max(0, paidEffective - alreadyDispatched);
+  return Math.min(workAvailable, maxFromPaid);
+}
+
+/**
  * Detecta progreso real de cocina/despacho para reescribir DRAFT → SENT/DISPATCHED.
  * - Sin snapshot: no hay progreso (borrador nuevo).
  * - Snapshot con pending/ready/dispatched en 0: tampoco (fila vacía de un DRAFT recién creado).

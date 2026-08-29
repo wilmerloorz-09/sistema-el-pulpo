@@ -70,7 +70,8 @@ const EMPTY_BUNDLE: DispatchServirQueueBundle = {
  * compartan una sola RPC tras invalidaciones cercanas; el hub RT sigue limpiando
  * el cache en invalidateDispatchServirQueueBundleCache.
  */
-export const DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS = 25_000;
+/** Cola operativa: TTL corto para evitar órdenes fantasma tras despacho/cobro. */
+export const DISPATCH_SERVIR_QUEUE_BUNDLE_CACHE_TTL_MS = 8_000;
 
 type DispatchServirQueueBundleCacheEntry = {
   bundle: DispatchServirQueueBundle;
@@ -237,9 +238,10 @@ export function operationalMapsFromBundleItems(
     readyAvailableMap[id] = Number(item.quantity_ready_available ?? 0);
     pendingPrepareMap[id] = Number(item.quantity_pending_prepare ?? 0);
     dispatchedTotalMap[id] = Number(item.quantity_dispatched_total ?? 0);
-    const pending = Number(item.quantity_pending_prepare ?? 0);
-    const readyAvail = Number(item.quantity_ready_available ?? 0);
-    dispatchedAvailableMap[id] = Math.max(0, pending + readyAvail);
+    dispatchedAvailableMap[id] = Math.max(
+      0,
+      Number(item.quantity_dispatched_total ?? 0) - Number(item.quantity_cancelled_dispatched ?? 0),
+    );
     paidMap[id] = Number(item.quantity_paid ?? 0);
     cancelledPendingMap[id] = Number(item.quantity_cancelled_pending ?? 0);
     cancelledReadyMap[id] = Number(item.quantity_cancelled_ready ?? 0);

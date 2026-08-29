@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ensureDispatchBootstrap } from "./useDispatchConfig";
 import { computeLineAmount } from "@/lib/paymentQuantity";
 import type { OrderStatus } from "@/types/cancellation";
-import { computeOperationalQuantities, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
+import { computeOperationalQuantities, computeDispatchableQtyFromSnapshotItem, fetchOperationalMapsForOrders } from "@/lib/orderOperational";
 import { fetchActivePaidQuantityByOrderItemId } from "@/lib/orderItemActivePayments";
 import type { DispatchView } from "@/hooks/useDispatchAccess";
 import { buildUserDisplayMap } from "@/lib/userDisplay";
@@ -327,6 +327,128 @@ async function fetchEnabledPackerUserIds(shiftId: string): Promise<Set<string>> 
 }
 
 /** Igual criterio que caja / useOrder: pago que no debe contar para “hay cobro activo”. */
+function orderIsFullyPaid(order: { paid_at?: string | null; status?: string | null }): boolean {
+  return Boolean(order.paid_at) && String(order.status ?? "").toUpperCase() === "PAID";
+}
+
+function buildDispatchLineQuantities(
+  item: any,
+  order: any,
+  operationalMaps: {
+    readyMap: Record<string, number>;
+    readyAvailableMap: Record<string, number>;
+    pendingPrepareMap: Record<string, number>;
+    dispatchedTotalMap: Record<string, number>;
+    cancelledPendingMap: Record<string, number>;
+    cancelledReadyMap: Record<string, number>;
+    cancelledDispatchedMap: Record<string, number>;
+    cancelledTotalMap: Record<string, number>;
+    paidMap: Record<string, number>;
+  },
+  clientPaidQtyByItemId: Record<string, number>,
+  isDispatchFirst: boolean,
+) {
+  const {
+    readyMap,
+    readyAvailableMap,
+    pendingPrepareMap,
+    dispatchedTotalMap,
+    cancelledPendingMap,
+    cancelledReadyMap,
+    cancelledDispatchedMap,
+    cancelledTotalMap,
+    paidMap,
+  } = operationalMaps;
+
+  const quantityOrdered = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+  const quantities = computeOperationalQuantities({
+    quantityOrdered,
+    quantityReadyTotal: readyMap[item.id] ?? 0,
+    quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
+    quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
+    quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
+    quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
+  });
+
+  const hasBundleSnapshot = item.id in pendingPrepareMap || item.id in readyAvailableMap;
+  const snapshotPending = asInt(pendingPrepareMap[item.id]);
+  const snapshotReady = asInt(readyAvailableMap[item.id]);
+  const snapshotPaid = asInt(paidMap[item.id]);
+  const snapshotDispatchedTotal = asInt(dispatchedTotalMap[item.id]);
+  const snapshotCancelledDispatched = asInt(cancelledDispatchedMap[item.id]);
+  const snapshotCancelledTotal = asInt(cancelledTotalMap[item.id]);
+
+  const quantityPaid = isDispatchFirst
+    ? Math.max(0, quantityOrdered - (hasBundleSnapshot ? snapshotCancelledTotal : quantities.quantityCancelledTotal))
+    : hasBundleSnapshot && snapshotPaid > 0
+      ? Math.min(quantityOrdered, snapshotPaid)
+      : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
+
+  const quantityDispatchedNet = hasBundleSnapshot
+    ? Math.max(0, snapshotDispatchedTotal - snapshotCancelledDispatched)
+    : quantities.quantityDispatchedAvailable;
+
+  const quantityDispatchable = hasBundleSnapshot
+    ? computeDispatchableQtyFromSnapshotItem({
+        quantityOrdered,
+        quantityPendingPrepare: snapshotPending,
+        quantityReadyAvailable: snapshotReady,
+        quantityPaid,
+        quantityDispatchedTotal: snapshotDispatchedTotal,
+        quantityCancelledDispatched: snapshotCancelledDispatched,
+        quantityCancelledTotal: hasBundleSnapshot ? snapshotCancelledTotal : quantities.quantityCancelledTotal,
+        isDispatchFirst,
+        orderFullyPaid: orderIsFullyPaid(order),
+      })
+    : (() => {
+        const paidNotYetDispatched = Math.max(0, quantityPaid - Math.min(quantityDispatchedNet, quantityPaid));
+        const quantityPendingPrepare = Math.min(
+          quantities.quantityPendingPrepare,
+          paidNotYetDispatched,
+        );
+        const quantityReadyAvailable = Math.min(
+          quantities.quantityReadyAvailable,
+          Math.max(0, paidNotYetDispatched - quantityPendingPrepare),
+        );
+        return quantityPendingPrepare + quantityReadyAvailable;
+      })();
+
+  const paidNotYetDispatched = Math.max(0, quantityPaid - Math.min(quantityDispatchedNet, quantityPaid));
+  const quantityPendingPrepare = hasBundleSnapshot
+    ? Math.min(snapshotPending, isDispatchFirst ? snapshotPending : paidNotYetDispatched)
+    : Math.min(quantities.quantityPendingPrepare, paidNotYetDispatched);
+  const quantityReadyAvailable = hasBundleSnapshot
+    ? Math.min(snapshotReady, Math.max(0, (isDispatchFirst ? snapshotPending + snapshotReady : paidNotYetDispatched) - quantityPendingPrepare))
+    : Math.min(
+        quantities.quantityReadyAvailable,
+        Math.max(0, paidNotYetDispatched - quantityPendingPrepare),
+      );
+
+  return {
+    quantityOrdered,
+    quantities,
+    quantityPaid,
+    quantityDispatchedNet,
+    quantityPendingPrepare,
+    quantityReadyAvailable,
+    quantityDispatchable,
+  };
+}
+
+function asInt(value: unknown) {
+  return Math.max(0, Math.floor(Number(value ?? 0)));
+}
+
+function refreshDispatchQueue(
+  qc: ReturnType<typeof useQueryClient>,
+  queryKey: readonly unknown[],
+  branchId?: string | null,
+  shiftId?: string | null,
+) {
+  invalidateDispatchServirQueueBundleCache(branchId ?? undefined, shiftId ?? undefined);
+  void qc.invalidateQueries({ queryKey, exact: true });
+}
+
 function paymentRowIsInactive(notes: string | null | undefined, status: string | null | undefined): boolean {
   const raw = String(notes ?? "");
   if (raw.includes("VOIDED:") || raw.includes("REVERSED:") || raw.includes("TRANSFER_PROOF_PENDING:1")) return true;
@@ -365,16 +487,6 @@ function groupItemsIntoDispatchCards(
   filterOutPlatos?: boolean,
   workflowMode?: string,
 ): DispatchOrder[] {
-  const {
-    readyMap,
-    readyAvailableMap,
-    pendingPrepareMap,
-    dispatchedTotalMap,
-    cancelledPendingMap,
-    cancelledReadyMap,
-    cancelledDispatchedMap,
-  } = operationalMaps;
-
   const isExpressOrder = order.order_type === "EXPRESS";
   const isExtraOrder = order.order_type === "EXTRA";
   const isDispatchFirst = isExpressOrder || (workflowMode === "DISPATCH_THEN_CASH" && order.order_type !== "TAKEOUT");
@@ -392,52 +504,32 @@ function groupItemsIntoDispatchCards(
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
 
-      const quantityOrdered = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
-      const operational = computeOperationalQuantities({
-        quantityOrdered,
-        quantityReadyTotal: readyMap[item.id] ?? 0,
-        quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
-        quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
-        quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
-        quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
-      });
-      const activeQty = Math.max(0, quantityOrdered - operational.quantityCancelledTotal);
-      const remainingWork =
-        operational.quantityPendingPrepare
-        + operational.quantityReadyAvailable
-        + operational.quantityDispatchedAvailable;
-
-      if (isDispatchFirst) {
-        return activeQty > 0 && remainingWork > 0;
-      }
-
-      return resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order) > 0;
+      const line = buildDispatchLineQuantities(
+        item,
+        order,
+        operationalMaps,
+        clientPaidQtyByItemId,
+        isDispatchFirst,
+      );
+      return line.quantityDispatchable > 0;
     })
     .map((item) => {
-      const quantityOrdered = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
-      const quantities = computeOperationalQuantities({
+      const line = buildDispatchLineQuantities(
+        item,
+        order,
+        operationalMaps,
+        clientPaidQtyByItemId,
+        isDispatchFirst,
+      );
+      const {
         quantityOrdered,
-        quantityReadyTotal: readyMap[item.id] ?? 0,
-        quantityDispatchedTotal: dispatchedTotalMap[item.id] ?? 0,
-        quantityCancelledPending: cancelledPendingMap[item.id] ?? 0,
-        quantityCancelledReady: cancelledReadyMap[item.id] ?? 0,
-        quantityCancelledDispatched: cancelledDispatchedMap[item.id] ?? 0,
-      });
-      const quantityPaid = isDispatchFirst
-        ? Math.max(0, quantityOrdered - quantities.quantityCancelledTotal)
-        : resolveDispatchLinePaidQty(item, clientPaidQtyByItemId, order);
-
-      const quantityDispatched = Math.min(quantities.quantityDispatchedAvailable, quantityPaid);
-      const paidNotYetDispatched = Math.max(0, quantityPaid - quantityDispatched);
-      const quantityPendingPrepare = Math.min(
-        pendingPrepareMap?.[item.id] ?? quantities.quantityPendingPrepare,
-        paidNotYetDispatched,
-      );
-      const quantityReadyAvailable = Math.min(
-        readyAvailableMap?.[item.id] ?? quantities.quantityReadyAvailable,
-        Math.max(0, paidNotYetDispatched - quantityPendingPrepare),
-      );
-      const quantityDispatchable = quantityPendingPrepare + quantityReadyAvailable;
+        quantities,
+        quantityPaid,
+        quantityDispatchedNet,
+        quantityPendingPrepare,
+        quantityReadyAvailable,
+        quantityDispatchable,
+      } = line;
       const linePaidAt = item.paid_at ?? null;
       const sentStamp = item.sent_to_kitchen_at ?? order.sent_to_kitchen_at ?? order.updated_at ?? null;
       const trayContainerCost = Number(item.tray_container_cost ?? 0);
@@ -452,7 +544,7 @@ function groupItemsIntoDispatchCards(
         quantity_pending_prepare: quantityPendingPrepare,
         quantity_ready_available: quantityReadyAvailable,
         quantity_dispatchable: quantityDispatchable,
-        quantity_dispatched: quantityDispatched,
+        quantity_dispatched: quantityDispatchedNet,
         quantity_cancelled: Math.min(quantities.quantityCancelledTotal, quantityPaid),
         unit_price: Number(item.unit_price ?? 0),
         tray_item_type: item.tray_item_type ?? null,
@@ -548,6 +640,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
   const { activeBranchId, activeBranch } = useBranch();
   const { user } = useAuth();
   const { data: shiftGate } = useBranchShiftGate();
+  const activeShiftId = shiftGate?.shiftId ?? null;
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
 
   const adaptiveListPoll = useAdaptiveRefetchInterval(
@@ -1085,7 +1178,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateDispatchServirQueueBundleCache(activeBranchId);
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de listo aplicada");
     },
@@ -1108,7 +1201,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateDispatchServirQueueBundleCache(activeBranchId);
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Operacion de despacho aplicada");
     },
@@ -1128,7 +1221,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateDispatchServirQueueBundleCache(activeBranchId);
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
@@ -1148,7 +1241,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateDispatchServirQueueBundleCache(activeBranchId);
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       invalidateOperationalQueries(qc, activeBranchId);
       toast.success("Alerta de listo enviada");
     },
@@ -1175,23 +1268,12 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       });
       if (error) throw error;
     },
-    onMutate: async ({ orderId, item, qty }) => {
-      await qc.cancelQueries({ queryKey: dispatchOrdersQueryKey });
-      const previous = qc.getQueryData<DispatchOrdersCache>(dispatchOrdersQueryKey);
-      patchDispatchOrdersCache(qc, dispatchOrdersQueryKey, (orders) =>
-        applyOptimisticDispatchItem(orders, orderId, item.id, qty),
-      );
-      return { previous };
-    },
     onSuccess: () => {
-      invalidateDispatchServirQueueBundleCache(activeBranchId);
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       toast.success("Item despachado");
-      reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
     },
-    onError: (error: any, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(dispatchOrdersQueryKey, context.previous);
-      }
+    onError: (error: any) => {
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       toast.error(`Error al despachar item: ${error?.message || "Error desconocido"}`);
     },
   });
@@ -1218,22 +1300,12 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       });
       if (error) throw error;
     },
-    onMutate: async ({ orderId }) => {
-      await qc.cancelQueries({ queryKey: dispatchOrdersQueryKey });
-      const previous = qc.getQueryData<DispatchOrdersCache>(dispatchOrdersQueryKey);
-      patchDispatchOrdersCache(qc, dispatchOrdersQueryKey, (orders) => applyOptimisticDispatchAll(orders, orderId));
-      return { previous };
-    },
     onSuccess: () => {
-      invalidateDispatchServirQueueBundleCache(activeBranchId);
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       toast.success("Orden despachada");
-      // Caja/pagos se actualizan vía hub Realtime (payments + orders).
-      reconcileDispatchOrdersInBackground(qc, dispatchOrdersQueryKey);
     },
-    onError: (error: any, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(dispatchOrdersQueryKey, context.previous);
-      }
+    onError: (error: any) => {
+      refreshDispatchQueue(qc, dispatchOrdersQueryKey, activeBranchId, activeShiftId);
       toast.error(`Error al despachar orden: ${error?.message || "Error desconocido"}`);
     },
   });
