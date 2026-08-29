@@ -1130,7 +1130,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
     },
     enabled: !!activeBranchId && !!user,
     staleTime: OPERATIONAL_STALE_MS,
-    // Solo si stale: Realtime + safety 60s cubren frescura; evita tormenta al montar/foco.
+    // Realtime + safety poll (45s) cubren frescura; evita tormenta al montar/foco.
     refetchOnMount: true,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,

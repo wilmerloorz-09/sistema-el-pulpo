@@ -40,8 +40,8 @@ export const OPERATIONAL_LIST_BACKUP_POLL_MS = 60_000;
  */
 export const OPERATIONAL_LIST_SAFETY_POLL_MS = 0;
 
-/** Techo de frescura Despacho/Servir con hub SUBSCRIBED (antes 90s; multi-sucursal). */
-export const DISPATCH_SERVIR_SAFETY_POLL_MS = 300_000;
+/** Techo de frescura Despacho/Servir/Empaquetador con hub SUBSCRIBED (antes 300s). */
+export const DISPATCH_SERVIR_SAFETY_POLL_MS = 45_000;
 
 /** Debounce por defecto del hub: agrupa ráfagas de cocina/ítems en un solo refetch. */
 export const HUB_DEFAULT_DEBOUNCE_MS = 3_000;
@@ -80,6 +80,17 @@ function isPayableOrdersQueryKey(key: QueryKey): boolean {
   return Array.isArray(key) && key[0] === qk.payableOrders[0];
 }
 
+function isDispatchQueueQueryKey(key: QueryKey): boolean {
+  const head = queryKeyHead(key);
+  return (
+    head === qk.dispatchOrders[0]
+    || head === qk.servirOrders[0]
+    || head === qk.packingOrders[0]
+    || head === qk.dispatchServirQueueBundle[0]
+    || head === qk.kitchenOrders[0]
+  );
+}
+
 function queryKeyHead(key: QueryKey): unknown {
   return Array.isArray(key) ? key[0] : key;
 }
@@ -110,6 +121,9 @@ export function shouldFanOutConsumerKeyOnHubSource(
  */
 export function hubMinRefetchGapMs(source: HubInvalidateSource, key: QueryKey): number {
   if (source === "dispatch" && isPayableOrdersQueryKey(key)) {
+    return HUB_DISPATCH_PAYABLE_MIN_REFETCH_GAP_MS;
+  }
+  if (source === "payments" && isDispatchQueueQueryKey(key)) {
     return HUB_DISPATCH_PAYABLE_MIN_REFETCH_GAP_MS;
   }
   return HUB_MIN_REFETCH_GAP_MS;
@@ -144,6 +158,7 @@ function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
     qk.kitchenOrders,
     qk.dispatchOrders,
     qk.servirOrders,
+    qk.packingOrders,
     qk.dispatchServirQueueBundle,
   ];
   const tables: QueryKey[] = [qk.tablesWithStatus, qk.tableOrders];
@@ -174,13 +189,13 @@ function keysForHubSource(source: HubInvalidateSource): readonly QueryKey[] {
         qk.orders,
       ];
     case "payments":
-      // Solo colas de cobro/despacho/mesas. Sin canales Extra/Express/… ni historial:
-      // cada cobro no debe refrescar media flota de tablets.
+      // Colas de cobro/despacho/mesas/empaque. Sin canales Extra/Express/… ni historial.
       return [
         qk.payableOrders,
         ...tables,
         qk.dispatchOrders,
         qk.servirOrders,
+        qk.packingOrders,
         qk.dispatchServirQueueBundle,
       ];
     case "shift":

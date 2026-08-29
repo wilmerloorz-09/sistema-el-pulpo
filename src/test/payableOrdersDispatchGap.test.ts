@@ -73,7 +73,7 @@ describe("Recaudar: gap corto en dispatch → payable-orders", () => {
     expect(afterFullGap).toBe(true);
   });
 
-  it("D. Mesas, cocina y colas de despacho conservan el gap de 10s", () => {
+  it("D. Mesas, cocina y colas de despacho conservan el gap de 10s en dispatch", () => {
     const hot = TWO_SECONDS_AGO;
     const otherKeys = [
       qk.tablesWithStatus,
@@ -81,6 +81,7 @@ describe("Recaudar: gap corto en dispatch → payable-orders", () => {
       qk.kitchenOrders,
       qk.dispatchOrders,
       qk.servirOrders,
+      qk.packingOrders,
       qk.dispatchServirQueueBundle,
       qk.orders,
     ] as const;
@@ -111,5 +112,23 @@ describe("Recaudar: gap corto en dispatch → payable-orders", () => {
       updatedAt: hot,
       now: NOW,
     })).toBe(false);
+  });
+
+  it("E. cobro (payments) refresca Empaquetador con gap corto, no 10s", () => {
+    expect(hubMinRefetchGapMs("payments", qk.packingOrders)).toBe(
+      HUB_DISPATCH_PAYABLE_MIN_REFETCH_GAP_MS,
+    );
+    expect(hubShouldInvalidateQuery({
+      source: "payments",
+      queryKey: qk.packingOrders,
+      updatedAt: TWO_SECONDS_AGO,
+      now: NOW,
+    })).toBe(false);
+    expect(hubShouldInvalidateQuery({
+      source: "payments",
+      queryKey: qk.packingOrders,
+      updatedAt: AFTER_SHORT_GAP,
+      now: NOW,
+    })).toBe(true);
   });
 });
