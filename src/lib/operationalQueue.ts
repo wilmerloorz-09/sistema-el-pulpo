@@ -69,6 +69,40 @@ function isOperationalQueueRpcNotFoundError(error: unknown): boolean {
   return code === "PGRST202" || message.includes("Could not find the function");
 }
 
+async function postOperationalQueueRpc(params: Record<string, unknown>) {
+  const rpcName = "get_dispatch_operational_queue";
+  const { data, error } = await (supabase as any).rpc(rpcName, params);
+  if (!error) return data;
+
+  if (!isOperationalQueueRpcNotFoundError(error)) throw error;
+
+  // Fallback: con JWT de sesión PostgREST a veces devuelve 404; con anon key responde 200.
+  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/$/, "");
+  const apiKey = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
+  if (!supabaseUrl || !apiKey) throw error;
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${rpcName}`, {
+    method: "POST",
+    headers: {
+      apikey: apiKey,
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const rpcError = new Error(
+      String((payload as { message?: string })?.message ?? response.statusText),
+    ) as Error & { code?: string };
+    rpcError.code = String((payload as { code?: string })?.code ?? "");
+    throw rpcError;
+  }
+
+  return response.json();
+}
+
 async function invokeOperationalQueueRpc(
   branchId: string,
   shiftId: string,
@@ -88,10 +122,12 @@ async function invokeOperationalQueueRpc(
 
   let lastError: unknown = null;
   for (const params of attempts) {
-    const { data, error } = await (supabase as any).rpc("get_dispatch_operational_queue", params);
-    if (!error) return data;
-    lastError = error;
-    if (!isOperationalQueueRpcNotFoundError(error)) throw error;
+    try {
+      return await postOperationalQueueRpc(params);
+    } catch (error) {
+      lastError = error;
+      if (!isOperationalQueueRpcNotFoundError(error)) throw error;
+    }
   }
   throw lastError;
 }
