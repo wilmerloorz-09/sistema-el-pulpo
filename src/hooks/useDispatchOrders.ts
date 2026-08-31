@@ -906,7 +906,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
             platosProductIds,
             filterOutPlatos,
             workflowMode,
-            useServerQueue,
+            false,
           );
         }).filter((card) => dispatchCardHasWork(card));
 

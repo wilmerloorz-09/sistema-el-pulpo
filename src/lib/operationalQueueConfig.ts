@@ -1,4 +1,4 @@
-/** Activa RPC `get_dispatch_operational_queue` (quantity_dispatchable en servidor). Rollback: false o quitar env. */
+/** Activa modo cola servidor (usa bundle probado; RPC SQL queda para fase posterior). */
 export function isServerOperationalQueueEnabled(): boolean {
   return String(import.meta.env.VITE_USE_SERVER_OPERATIONAL_QUEUE ?? "")
     .trim()

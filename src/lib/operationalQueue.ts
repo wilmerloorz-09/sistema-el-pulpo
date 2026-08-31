@@ -1,6 +1,5 @@
-import { supabase } from "@/integrations/supabase/client";
 import {
-  normalizeDispatchServirQueueBundle,
+  fetchDispatchServirQueueBundle,
   type DispatchServirQueueBundle,
 } from "@/lib/dispatchServirQueueBundle";
 import { computeOperationalQuantities, orderTreatAsFullyPaidForDispatch } from "@/lib/orderOperational";
@@ -63,75 +62,6 @@ export function rpcUuidOrNull(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isOperationalQueueRpcNotFoundError(error: unknown): boolean {
-  const code = String((error as { code?: string })?.code ?? "");
-  const message = String((error as { message?: string })?.message ?? "");
-  return code === "PGRST202" || message.includes("Could not find the function");
-}
-
-async function postOperationalQueueRpc(params: Record<string, unknown>) {
-  const rpcName = "get_dispatch_operational_queue";
-  const { data, error } = await (supabase as any).rpc(rpcName, params);
-  if (!error) return data;
-
-  if (!isOperationalQueueRpcNotFoundError(error)) throw error;
-
-  // Fallback: con JWT de sesión PostgREST a veces devuelve 404; con anon key responde 200.
-  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/$/, "");
-  const apiKey = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
-  if (!supabaseUrl || !apiKey) throw error;
-
-  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${rpcName}`, {
-    method: "POST",
-    headers: {
-      apikey: apiKey,
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(params),
-  });
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const rpcError = new Error(
-      String((payload as { message?: string })?.message ?? response.statusText),
-    ) as Error & { code?: string };
-    rpcError.code = String((payload as { code?: string })?.code ?? "");
-    throw rpcError;
-  }
-
-  return response.json();
-}
-
-async function invokeOperationalQueueRpc(
-  branchId: string,
-  shiftId: string,
-  module: OperationalQueueModule,
-  runRepair: boolean,
-) {
-  const p_branch_id = rpcUuidOrNull(branchId);
-  const p_shift_id = rpcUuidOrNull(shiftId);
-  const p_run_repair = Boolean(runRepair);
-
-  const attempts: Record<string, unknown>[] = [
-    { p_branch_id, p_shift_id, p_module: module, p_run_repair },
-  ];
-  if (p_shift_id === null) {
-    attempts.push({ p_branch_id, p_module: module, p_run_repair });
-  }
-
-  let lastError: unknown = null;
-  for (const params of attempts) {
-    try {
-      return await postOperationalQueueRpc(params);
-    } catch (error) {
-      lastError = error;
-      if (!isOperationalQueueRpcNotFoundError(error)) throw error;
-    }
-  }
-  throw lastError;
-}
-
 /** Mapeo de ítem RPC servidor → línea de tarjeta Despacho/Servir/Empaquetador. */
 export function mapServerQueueItemToDispatchLine(
   item: Record<string, unknown>,
@@ -174,13 +104,20 @@ export function mapServerQueueItemToDispatchLine(
   };
 }
 
-/** 1 RTT: cola operativa con quantity_dispatchable calculado en SQL. */
+/**
+ * Cola operativa (flag ON): usa el bundle probado en producción.
+ * La RPC get_dispatch_operational_queue queda en BD para más adelante; PostgREST
+ * no la expone de forma fiable con sesión JWT (404).
+ */
 export async function fetchOperationalQueue(
   branchId: string,
   shiftId: string,
   module: OperationalQueueModule,
   options?: { force?: boolean; runRepair?: boolean },
 ): Promise<OperationalQueueBundle> {
+  void module;
+  void options?.runRepair;
+
   const key = operationalQueueCacheKey(branchId, shiftId, module);
   const force = Boolean(options?.force);
   const now = Date.now();
@@ -197,14 +134,7 @@ export async function fetchOperationalQueue(
 
   const version = nextQueueRequestVersion(key);
   const request = (async () => {
-    const data = await invokeOperationalQueueRpc(
-      branchId,
-      shiftId,
-      module,
-      Boolean(options?.runRepair),
-    );
-
-    const bundle = normalizeDispatchServirQueueBundle(data);
+    const bundle = await fetchDispatchServirQueueBundle(branchId, shiftId, { force });
     if (queueRequestVersions.get(key) === version) {
       if (bundle.orders.length > 0) {
         queueCache.set(key, { bundle, storedAt: Date.now() });
