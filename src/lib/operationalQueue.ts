@@ -88,7 +88,7 @@ async function invokeOperationalQueueRpc(
 
   let lastError: unknown = null;
   for (const params of attempts) {
-    const { data, error } = await (supabase as any).rpc("get_operational_queue", params);
+    const { data, error } = await (supabase as any).rpc("get_dispatch_operational_queue", params);
     if (!error) return data;
     lastError = error;
     if (!isOperationalQueueRpcNotFoundError(error)) throw error;

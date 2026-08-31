@@ -83,7 +83,7 @@ describe("operationalQueue cache", () => {
 
     await fetchOperationalQueue("branch-a", "shift-a", "servir", { runRepair: true });
 
-    expect(rpc).toHaveBeenCalledWith("get_operational_queue", {
+    expect(rpc).toHaveBeenCalledWith("get_dispatch_operational_queue", {
       p_branch_id: "branch-a",
       p_shift_id: "shift-a",
       p_module: "servir",
@@ -96,7 +96,7 @@ describe("operationalQueue cache", () => {
 
     await fetchOperationalQueue("branch-a", "", "dispatch");
 
-    expect(rpc).toHaveBeenCalledWith("get_operational_queue", {
+    expect(rpc).toHaveBeenCalledWith("get_dispatch_operational_queue", {
       p_branch_id: "branch-a",
       p_shift_id: null,
       p_module: "dispatch",
