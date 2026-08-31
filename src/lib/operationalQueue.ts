@@ -123,8 +123,9 @@ export async function fetchOperationalQueue(
   const version = nextQueueRequestVersion(key);
   const request = (async () => {
     const { data, error } = await (supabase as any).rpc("get_operational_queue", {
-      p_branch_id: branchId,
-      p_shift_id: shiftId,
+      p_branch_id: branchId ?? null,
+      // PostgREST devuelve 404 si p_shift_id se omite (undefined no se serializa).
+      p_shift_id: shiftId ?? null,
       p_module: module,
       p_run_repair: Boolean(options?.runRepair),
     });
