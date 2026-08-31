@@ -91,6 +91,19 @@ describe("operationalQueue cache", () => {
     });
   });
 
+  it("envía null explícito si el turno viene vacío", async () => {
+    rpc.mockResolvedValue({ data: bundle(), error: null });
+
+    await fetchOperationalQueue("branch-a", "", "dispatch");
+
+    expect(rpc).toHaveBeenCalledWith("get_operational_queue", {
+      p_branch_id: "branch-a",
+      p_shift_id: null,
+      p_module: "dispatch",
+      p_run_repair: false,
+    });
+  });
+
   it("no cachea cola vacía transitoria", async () => {
     rpc.mockResolvedValue({
       data: {

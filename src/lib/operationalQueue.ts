@@ -57,6 +57,45 @@ function asInt(value: unknown) {
   return Math.max(0, Math.floor(Number(value ?? 0)));
 }
 
+/** UUID válido para PostgREST; string vacío rompe el match de la RPC (404). */
+export function rpcUuidOrNull(value: string | null | undefined): string | null {
+  const trimmed = String(value ?? "").trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isOperationalQueueRpcNotFoundError(error: unknown): boolean {
+  const code = String((error as { code?: string })?.code ?? "");
+  const message = String((error as { message?: string })?.message ?? "");
+  return code === "PGRST202" || message.includes("Could not find the function");
+}
+
+async function invokeOperationalQueueRpc(
+  branchId: string,
+  shiftId: string,
+  module: OperationalQueueModule,
+  runRepair: boolean,
+) {
+  const p_branch_id = rpcUuidOrNull(branchId);
+  const p_shift_id = rpcUuidOrNull(shiftId);
+  const p_run_repair = Boolean(runRepair);
+
+  const attempts: Record<string, unknown>[] = [
+    { p_branch_id, p_shift_id, p_module: module, p_run_repair },
+  ];
+  if (p_shift_id === null) {
+    attempts.push({ p_branch_id, p_module: module, p_run_repair });
+  }
+
+  let lastError: unknown = null;
+  for (const params of attempts) {
+    const { data, error } = await (supabase as any).rpc("get_operational_queue", params);
+    if (!error) return data;
+    lastError = error;
+    if (!isOperationalQueueRpcNotFoundError(error)) throw error;
+  }
+  throw lastError;
+}
+
 /** Mapeo de ítem RPC servidor → línea de tarjeta Despacho/Servir/Empaquetador. */
 export function mapServerQueueItemToDispatchLine(
   item: Record<string, unknown>,
@@ -122,14 +161,12 @@ export async function fetchOperationalQueue(
 
   const version = nextQueueRequestVersion(key);
   const request = (async () => {
-    const { data, error } = await (supabase as any).rpc("get_operational_queue", {
-      p_branch_id: branchId ?? null,
-      // PostgREST devuelve 404 si p_shift_id se omite (undefined no se serializa).
-      p_shift_id: shiftId ?? null,
-      p_module: module,
-      p_run_repair: Boolean(options?.runRepair),
-    });
-    if (error) throw error;
+    const data = await invokeOperationalQueueRpc(
+      branchId,
+      shiftId,
+      module,
+      Boolean(options?.runRepair),
+    );
 
     const bundle = normalizeDispatchServirQueueBundle(data);
     if (queueRequestVersions.get(key) === version) {
