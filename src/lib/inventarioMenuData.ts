@@ -15,8 +15,11 @@ export function resolveMenuNodeProductId(node: {
   node_type: string;
   id: string;
   legacy_product_id?: string | null;
+  producto_global_id?: string | null;
 }): string | null {
   if (node.node_type !== "product") return null;
+  const globalId = node.producto_global_id?.trim();
+  if (globalId) return globalId;
   const legacyId = node.legacy_product_id?.trim();
   if (legacyId) return legacyId;
   return node.id;

@@ -152,3 +152,15 @@ export function removeCashierFromSetup(
     cashiers: state.cashiers.filter((row) => row.user_id !== userId),
   };
 }
+
+export function replaceCashierInSetup(
+  state: ShiftCajaSetupState,
+  outgoingUserId: string,
+  incomingUserId: string,
+): ShiftCajaSetupState {
+  return {
+    cashiers: state.cashiers.map((row) =>
+      row.user_id === outgoingUserId ? { ...row, user_id: incomingUserId } : row,
+    ),
+  };
+}

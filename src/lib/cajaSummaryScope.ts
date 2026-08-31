@@ -6,6 +6,71 @@ import type {
 
 export const ALL_CASHIERS = "ALL";
 
+export function getOpenCashierIds(
+  openingHistory: CashRegisterOpeningHistoryEntry[],
+): Set<string> {
+  return new Set(
+    openingHistory
+      .filter((entry) => entry.status === "abierta")
+      .map((entry) => entry.cashier_id),
+  );
+}
+
+export function resolveCashierOpening(
+  openingHistory: CashRegisterOpeningHistoryEntry[],
+  cashierId: string,
+): CashRegisterOpeningHistoryEntry | null {
+  if (cashierId === ALL_CASHIERS) return null;
+
+  const pool = openingHistory.filter((entry) => entry.cashier_id === cashierId);
+  const open = pool.find((entry) => entry.status === "abierta");
+  if (open) return open;
+
+  let latest: CashRegisterOpeningHistoryEntry | null = null;
+  for (const entry of pool) {
+    if (entry.status === "anulada") continue;
+    if (
+      !latest
+      || new Date(entry.opened_at).getTime() > new Date(latest.opened_at).getTime()
+    ) {
+      latest = entry;
+    }
+  }
+  return latest;
+}
+
+/** Cobros/movimientos de la apertura actual, incluidos los del cajero anterior tras un reemplazo. */
+export function belongsToCashierRegisterActivity(params: {
+  actorId: string;
+  activityAt: string;
+  cashierId: string;
+  opening: CashRegisterOpeningHistoryEntry | null;
+  openingHistory: CashRegisterOpeningHistoryEntry[];
+}): boolean {
+  if (params.cashierId === ALL_CASHIERS) return true;
+  if (params.actorId === params.cashierId) return true;
+  if (!params.opening) return false;
+
+  const activityAt = new Date(params.activityAt).getTime();
+  const openedAt = new Date(params.opening.opened_at).getTime();
+  if (activityAt < openedAt) return false;
+
+  if (params.opening.closed_at) {
+    const closedAt = new Date(params.opening.closed_at).getTime();
+    if (activityAt > closedAt) return false;
+  }
+
+  const actorHasOtherOpenRegister = params.openingHistory.some(
+    (entry) =>
+      entry.status === "abierta"
+      && entry.cashier_id === params.actorId
+      && entry.id !== params.opening.id
+      && activityAt >= new Date(entry.opened_at).getTime(),
+  );
+  if (actorHasOtherOpenRegister) return false;
+  return true;
+}
+
 export type CajaRegisterDenomRow = ShiftDenom & {
   cashier_id: string | null;
   opening_id: string | null;
@@ -133,6 +198,17 @@ export function scopeCajaSummary(params: {
     movements:
       cashierId === ALL_CASHIERS
         ? params.movements
-        : params.movements.filter((movement) => movement.recordedBy === cashierId),
+        : (() => {
+            const opening = resolveCashierOpening(params.openingHistory, cashierId);
+            return params.movements.filter((movement) =>
+              belongsToCashierRegisterActivity({
+                actorId: movement.recordedBy,
+                activityAt: movement.createdAt,
+                cashierId,
+                opening,
+                openingHistory: params.openingHistory,
+              }),
+            );
+          })(),
   };
 }

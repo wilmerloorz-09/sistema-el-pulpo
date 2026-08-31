@@ -55,7 +55,9 @@ import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
 import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
 import { sumNonCashPaymentChangeOut } from "@/lib/transferCashChange";
-import { ALL_CASHIERS, scopeCajaSummary } from "@/lib/cajaSummaryScope";
+import { fetchPaymentsForRegisterSummary } from "@/lib/cajaRegisterPayments";
+import { fetchRegisterOpeningCollectedPayments } from "@/lib/cajaRegisterOpeningSummary";
+import { ALL_CASHIERS, scopeCajaSummary, belongsToCashierRegisterActivity, resolveCashierOpening } from "@/lib/cajaSummaryScope";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   scope: "ALL",
@@ -172,42 +174,89 @@ const Caja = () => {
     loadCompletedPayments: activeTab === "completed",
   });
 
+  const userCajaStatus = shiftGateQuery.data?.cajaStatus ?? "UNOPENED";
+  const userCajaIsOpen = userCajaStatus === "OPEN";
   const summaryCashierId = completedFilters.cashierName || ALL_CASHIERS;
+  const registerSummaryCashierId =
+    userCajaIsOpen && user?.id ? user.id : summaryCashierId;
+
+  const registerSummaryOpening = useMemo(() => {
+    const openingHistory =
+      shiftRegisterSnapshot?.openingHistory ?? shift?.openingHistory ?? [];
+    return resolveCashierOpening(openingHistory, registerSummaryCashierId);
+  }, [
+    shiftRegisterSnapshot?.openingHistory,
+    shift?.openingHistory,
+    registerSummaryCashierId,
+  ]);
 
   const cashierMethodSummaryQuery = useQuery({
-    queryKey: ["cashier-method-summary", activeBranch?.id ?? "_", shift?.id ?? "_", summaryCashierId],
+    queryKey: [
+      "cashier-method-summary",
+      activeBranch?.id ?? "_",
+      shift?.id ?? "_",
+      registerSummaryCashierId,
+      registerSummaryOpening?.id ?? "_",
+      registerSummaryOpening?.cashier_id ?? "_",
+    ],
     enabled: Boolean(activeBranch?.id) && Boolean(shift?.id) && Boolean(user?.id),
     queryFn: async (): Promise<{
       methodSummary: CompletedPaymentsMethodSummary[];
       transferCashChangeTotal: number;
     }> => {
-      if (!activeBranch?.id || !shift?.opened_at) {
+      if (!activeBranch?.id || !shift?.id || !shift?.opened_at) {
         return { methodSummary: [], transferCashChangeTotal: 0 };
       }
 
-      const paymentFilters: any[] = [
-        { column: "created_at", op: "gte", value: shift.opened_at },
-        { column: "created_at", op: "lte", value: new Date().toISOString() },
-      ];
-      if (summaryCashierId !== ALL_CASHIERS) {
-        paymentFilters.unshift({ column: "created_by", op: "eq", value: summaryCashierId });
+      const openingHistory =
+        shiftRegisterSnapshot?.openingHistory ?? shift?.openingHistory ?? [];
+      const cashierOpening = registerSummaryOpening
+        ?? resolveCashierOpening(openingHistory, registerSummaryCashierId);
+
+      let paymentsRaw: Awaited<ReturnType<typeof fetchPaymentsForRegisterSummary>> = [];
+      let usedOpeningRpc = false;
+
+      if (cashierOpening?.id) {
+        try {
+          paymentsRaw = await fetchRegisterOpeningCollectedPayments(cashierOpening.id);
+          usedOpeningRpc = true;
+        } catch (rpcError) {
+          console.warn(
+            "[Caja] RPC get_register_opening_collected_payments no disponible, usando respaldo:",
+            rpcError,
+          );
+        }
       }
 
-      const [payments, methods] = await Promise.all([
-        dbSelect<any>("payments", {
-          select: "id, amount, payment_method_id, created_at, created_by, notes, status",
-          filters: paymentFilters,
-        }),
-        dbSelect<any>("payment_methods", {
-          select: "id, name",
-          filters: [{ column: "branch_id", op: "eq", value: activeBranch.id }],
-        }),
-      ]);
+      if (!usedOpeningRpc) {
+        const rangeStart = cashierOpening?.opened_at ?? shift.opened_at;
+        const rangeEnd = shift.closed_at ?? undefined;
+        const fallbackRaw = await fetchPaymentsForRegisterSummary({
+          shiftId: shift.id,
+          branchId: activeBranch.id,
+          rangeStart,
+          rangeEnd,
+        });
+        paymentsRaw = fallbackRaw.filter((payment) =>
+          belongsToCashierRegisterActivity({
+            actorId: payment.created_by,
+            activityAt: payment.created_at,
+            cashierId: registerSummaryCashierId,
+            opening: cashierOpening,
+            openingHistory,
+          }),
+        );
+      }
+
+      const methods = await dbSelect<any>("payment_methods", {
+        select: "id, name",
+        filters: [{ column: "branch_id", op: "eq", value: activeBranch.id }],
+      });
 
       const methodNameById = Object.fromEntries((methods ?? []).map((m: any) => [m.id, m.name]));
-      const methodSummary = buildMethodSummaryFromPayments(payments ?? [], methodNameById);
+      const methodSummary = buildMethodSummaryFromPayments(paymentsRaw, methodNameById);
 
-      const paymentIds = (payments ?? []).map((p: any) => p.id).filter(Boolean);
+      const paymentIds = paymentsRaw.map((p) => p.id).filter(Boolean);
       if (paymentIds.length === 0) {
         return { methodSummary, transferCashChangeTotal: 0 };
       }
@@ -235,7 +284,7 @@ const Caja = () => {
       };
 
       const transferCashChangeTotal = sumNonCashPaymentChangeOut({
-        payments: payments ?? [],
+        payments: paymentsRaw ?? [],
         methodNameById,
         changeOutMovements: changeOutRows ?? [],
         denominationValueById,
@@ -284,8 +333,6 @@ const Caja = () => {
     setPreparingPhoto(false);
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
 
-  const userCajaStatus = shiftGateQuery.data?.cajaStatus ?? "UNOPENED";
-  const userCajaIsOpen = userCajaStatus === "OPEN";
   const cajaPanelReadOnly = !canOperateCaja || !userCajaIsOpen;
   const canChargeFromCompleted = canOperateCaja && userCajaIsOpen;
   const summaryIsOwnCaja = Boolean(user?.id) && summaryCashierId === user.id;
@@ -308,7 +355,7 @@ const Caja = () => {
         denoms: shiftRegisterSnapshot.denoms,
         openingHistory: shiftRegisterSnapshot.openingHistory,
         movements: cashRegisterMovements ?? [],
-        cashierId: summaryCashierId,
+        cashierId: registerSummaryCashierId,
       });
     }
     return {
@@ -320,7 +367,7 @@ const Caja = () => {
   }, [
     shiftRegisterSnapshot,
     cashRegisterMovements,
-    summaryCashierId,
+    registerSummaryCashierId,
     shift?.denoms,
     shift?.openingHistory,
     user?.id,

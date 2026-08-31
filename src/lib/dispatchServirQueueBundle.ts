@@ -30,6 +30,7 @@ export type DispatchServirQueueBundle = {
     quantity_cancelled_total?: number;
     quantity_pending_prepare?: number;
     quantity_ready_available?: number;
+    quantity_dispatchable?: number;
   }>;
   modifiers: Array<{ order_item_id: string; description: string }>;
   order_payment_flags: Array<{

@@ -152,3 +152,16 @@ export function reconcileKitchenStagedItems<T extends { id: string }>(
 
   return [...withoutTemp, ...additions];
 }
+
+/** Incorpora temps del servidor que el staging no tiene aún (add optimista). */
+export function mergeMissingKitchenTempItems<T extends { id: string }>(
+  staged: T[],
+  server: T[],
+): T[] {
+  const seen = new Set(staged.map((item) => item.id));
+  const missingTemps = server.filter(
+    (item) => isTemporaryKitchenItemId(item.id) && !seen.has(item.id),
+  );
+  if (missingTemps.length === 0) return staged;
+  return [...staged, ...missingTemps];
+}

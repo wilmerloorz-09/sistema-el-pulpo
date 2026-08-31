@@ -33,7 +33,9 @@ import {
   useAdaptiveRefetchInterval,
   useOperationalOrdersRealtime,
 } from "@/lib/queryEgress";
+import { fetchRegisterOpeningCollectedPayments } from "@/lib/cajaRegisterOpeningSummary";
 import type { CajaRegisterDenomRow, CajaRegisterSnapshot } from "@/lib/cajaSummaryScope";
+import { belongsToCashierRegisterActivity, resolveCashierOpening } from "@/lib/cajaSummaryScope";
 import { qk } from "@/lib/queryKeys";
 import {
   existeTransferenciaDuplicada,
@@ -2348,6 +2350,12 @@ export function useCaja(params?: {
       shiftQuery.data?.id,
       completedPaymentsFilters?.scope ?? "ALL",
       completedPaymentsFilters?.cashierName ?? "ALL",
+      completedPaymentsFilters?.cashierName === "ALL"
+        ? "_"
+        : resolveCashierOpening(
+            registerSnapshotQuery.data?.openingHistory ?? shiftQuery.data?.openingHistory ?? [],
+            completedPaymentsFilters?.cashierName ?? "ALL",
+          )?.id ?? completedPaymentsFilters?.cashierName ?? "ALL",
     ],
     queryFn: async (): Promise<CompletedPaymentsResult> => {
       if (!activeBranchId) {
@@ -2359,6 +2367,7 @@ export function useCaja(params?: {
       const todayStartIso = today.toISOString();
       const shiftOpenedAt = shiftQuery.data?.opened_at ?? null;
       const scope = completedPaymentsFilters?.scope ?? "ALL";
+      const filterCashierId = completedPaymentsFilters?.cashierName ?? "ALL";
 
       const effectiveStartIso = shiftOpenedAt ?? todayStartIso;
       const effectiveEndIso = shiftQuery.data?.closed_at
@@ -2379,11 +2388,6 @@ export function useCaja(params?: {
         paymentsFilters.push({ column: "created_at", op: "lte", value: effectiveEndIso });
       }
 
-      const filterCashierId = completedPaymentsFilters?.cashierName ?? "ALL";
-      if (filterCashierId !== "ALL") {
-        paymentsFilters.push({ column: "created_by", op: "eq", value: filterCashierId });
-      }
-
       const allPaymentsInRangeRaw = await dbSelect<any>("payments", {
         select: "id, created_at, amount, notes, order_id, payment_method_id, created_by, status, banco_id, numero_transferencia",
         filters: paymentsFilters,
@@ -2394,8 +2398,65 @@ export function useCaja(params?: {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
 
-      // Fetch ONLY the orders corresponding to the payments in range
-      const paymentOrderIds = Array.from(new Set(allPaymentsInRangeRaw.map((p) => p.order_id).filter(Boolean)));
+      let openingHistory =
+        registerSnapshotQuery.data?.openingHistory ?? shiftQuery.data?.openingHistory ?? [];
+      if (openingHistory.length === 0 && shiftQuery.data?.id) {
+        const { data: openingHistoryData, error: openingHistoryError } = await supabase.rpc(
+          "list_cash_register_openings" as any,
+          { p_shift_id: shiftQuery.data.id },
+        );
+        if (openingHistoryError) throw openingHistoryError;
+        openingHistory = mapCashRegisterOpeningRows(openingHistoryData as any[]);
+      }
+
+      const cashierOpening =
+        filterCashierId !== "ALL"
+          ? resolveCashierOpening(openingHistory, filterCashierId)
+          : null;
+
+      let paymentsScopedToRegister = allPaymentsInRangeRaw;
+      if (filterCashierId !== "ALL") {
+        if (cashierOpening?.id) {
+          try {
+            const openingPayments = await fetchRegisterOpeningCollectedPayments(cashierOpening.id);
+            const openingPaymentIds = new Set(openingPayments.map((payment) => payment.id));
+            paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
+              openingPaymentIds.has(payment.id),
+            );
+          } catch (rpcError) {
+            console.warn(
+              "[useCaja] RPC get_register_opening_collected_payments no disponible, usando respaldo:",
+              rpcError,
+            );
+            paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
+              belongsToCashierRegisterActivity({
+                actorId: payment.created_by,
+                activityAt: payment.created_at,
+                cashierId: filterCashierId,
+                opening: cashierOpening,
+                openingHistory,
+              }),
+            );
+          }
+        } else {
+          paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
+            belongsToCashierRegisterActivity({
+              actorId: payment.created_by,
+              activityAt: payment.created_at,
+              cashierId: filterCashierId,
+              opening: cashierOpening,
+              openingHistory,
+            }),
+          );
+        }
+      }
+
+      if (paymentsScopedToRegister.length === 0) {
+        return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
+      }
+
+      // Fetch ONLY the orders corresponding to the scoped payments
+      const paymentOrderIds = Array.from(new Set(paymentsScopedToRegister.map((p) => p.order_id).filter(Boolean)));
       if (paymentOrderIds.length === 0) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }
@@ -2425,7 +2486,7 @@ export function useCaja(params?: {
       }
 
       // Filter the payments to keep only those belonging to valid orders
-      const allPaymentsInRange = allPaymentsInRangeRaw.filter((p) => validOrdersMap.has(p.order_id));
+      const allPaymentsInRange = paymentsScopedToRegister.filter((p) => validOrdersMap.has(p.order_id));
       if (allPaymentsInRange.length === 0) {
         return { rows: [], total: 0, methodSummary: [], collectedTotal: 0 };
       }

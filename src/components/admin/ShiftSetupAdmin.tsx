@@ -18,6 +18,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -67,6 +74,7 @@ import {
   formatCajaSetupSummary as formatCajaSetupSummaryText,
   mapPersistedCajaSetup,
   removeCashierFromSetup,
+  replaceCashierInSetup,
 } from "@/lib/shiftCajaSetupModel";
 import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 import { resetRepairOpenShiftThrottle } from "@/lib/openCashShift";
@@ -529,6 +537,14 @@ const ShiftSetupAdmin = () => {
     useState("");
   const [validatingCashierChangePassword, setValidatingCashierChangePassword] =
     useState(false);
+  const [cashierReplaceDialogOpen, setCashierReplaceDialogOpen] = useState(false);
+  const [cashierReplaceOutgoingId, setCashierReplaceOutgoingId] = useState("");
+  const [cashierReplaceIncomingId, setCashierReplaceIncomingId] = useState("");
+  const [cashierReplacePassword, setCashierReplacePassword] = useState("");
+  const [cashierReplacePasswordError, setCashierReplacePasswordError] =
+    useState("");
+  const [validatingCashierReplacePassword, setValidatingCashierReplacePassword] =
+    useState(false);
   const [showStaleCleanupConfirm, setShowStaleCleanupConfirm] = useState(false);
   const [isPrintingStaleReport, setIsPrintingStaleReport] = useState(false);
 
@@ -750,6 +766,93 @@ const ShiftSetupAdmin = () => {
     enabled: !!activeBranchId,
   });
 
+  const cashierReplaceEligibilityQuery = useQuery({
+    queryKey: [
+      "shift-cashier-replace-eligibility",
+      activeBranchId,
+      shiftQuery.data?.id ?? "closed",
+    ],
+    queryFn: async () => {
+      if (!activeBranchId || !shiftQuery.data?.id) {
+        return [] as Array<{
+          cashier_id: string;
+          opening_id: string;
+          has_activity: boolean;
+          can_replace: boolean;
+        }>;
+      }
+
+      const { data, error } = await supabase.rpc(
+        "get_shift_cashier_replace_eligibility" as any,
+        {
+          p_shift_id: shiftQuery.data.id,
+          p_branch_id: activeBranchId,
+        } as any,
+      );
+
+      if (isMissingFunctionOrSchemaError(error, "get_shift_cashier_replace_eligibility")) {
+        return [];
+      }
+      if (error) throw error;
+
+      return (data ?? []) as Array<{
+        cashier_id: string;
+        opening_id: string;
+        has_activity: boolean;
+        can_replace: boolean;
+      }>;
+    },
+    enabled: Boolean(activeBranchId && shiftQuery.data?.id),
+    refetchInterval: shiftQuery.data?.id ? 30_000 : false,
+  });
+
+  const cashierReplaceAuditQuery = useQuery({
+    queryKey: [
+      "shift-cashier-replacement-audit",
+      activeBranchId,
+      shiftQuery.data?.id ?? "closed",
+    ],
+    queryFn: async () => {
+      if (!activeBranchId || !shiftQuery.data?.id) {
+        return [] as Array<{
+          audit_id: string;
+          event_at: string;
+          actor_name: string;
+          outgoing_cashier_name: string;
+          incoming_cashier_name: string;
+          was_primary: boolean;
+          opening_id: string | null;
+        }>;
+      }
+
+      const { data, error } = await supabase.rpc(
+        "list_shift_cashier_replacement_audit" as any,
+        {
+          p_shift_id: shiftQuery.data.id,
+          p_branch_id: activeBranchId,
+        } as any,
+      );
+
+      if (
+        isMissingFunctionOrSchemaError(error, "list_shift_cashier_replacement_audit")
+      ) {
+        return [];
+      }
+      if (error) throw error;
+
+      return (data ?? []) as Array<{
+        audit_id: string;
+        event_at: string;
+        actor_name: string;
+        outgoing_cashier_name: string;
+        incoming_cashier_name: string;
+        was_primary: boolean;
+        opening_id: string | null;
+      }>;
+    },
+    enabled: Boolean(activeBranchId && shiftQuery.data?.id),
+  });
+
   const latestShiftAuditQuery = useQuery({
     queryKey: ["shift-admin-latest-shift-audit", activeBranchId],
     queryFn: async () => {
@@ -931,6 +1034,26 @@ const ShiftSetupAdmin = () => {
         alias: row.alias ?? row.username,
       })),
     [shiftUsersState],
+  );
+  const replaceEligibleUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of cashierReplaceEligibilityQuery.data ?? []) {
+      if (row.can_replace && row.cashier_id) {
+        ids.add(row.cashier_id);
+      }
+    }
+    return ids;
+  }, [cashierReplaceEligibilityQuery.data]);
+  const cashierReplaceIncomingOptions = useMemo(
+    () =>
+      shiftUsersState.filter(
+        (row) =>
+          row.user_id !== cashierReplaceOutgoingId &&
+          row.is_enabled === true &&
+          hasOperationalCapability(row) &&
+          !row.can_use_caja,
+      ),
+    [cashierReplaceOutgoingId, shiftUsersState],
   );
   const persistedCancelPolicies = useMemo(
     () => cancelPolicyQuery.data ?? [],
@@ -1361,6 +1484,192 @@ const ShiftSetupAdmin = () => {
     }
   };
 
+  const resetCashierReplaceDialog = () => {
+    setCashierReplaceDialogOpen(false);
+    setCashierReplaceOutgoingId("");
+    setCashierReplaceIncomingId("");
+    setCashierReplacePassword("");
+    setCashierReplacePasswordError("");
+  };
+
+  const handleOpenCashierReplace = (outgoingUserId: string) => {
+    setCashierReplaceOutgoingId(outgoingUserId);
+    setCashierReplaceIncomingId("");
+    setCashierReplacePassword("");
+    setCashierReplacePasswordError("");
+    setCashierReplaceDialogOpen(true);
+  };
+
+  const replaceCashierMutation = useMutation({
+    mutationFn: async (params: {
+      outgoingUserId: string;
+      incomingUserId: string;
+    }) => {
+      if (!activeBranchId || !shiftQuery.data?.id) {
+        throw new Error("No hay turno abierto para reemplazar cajero");
+      }
+
+      const incomingRow = shiftUsersState.find(
+        (row) => row.user_id === params.incomingUserId,
+      );
+      if (!incomingRow?.is_enabled || !hasOperationalCapability(incomingRow)) {
+        throw new Error(
+          "El cajero entrante debe estar habilitado en el turno con al menos un permiso operativo.",
+        );
+      }
+
+      if (!persistedEnabledUserIds.includes(params.incomingUserId)) {
+        const sanitized = sanitizeShiftUserCapability({
+          shiftId: shiftQuery.data.id,
+          userId: params.incomingUserId,
+          isEnabled: true,
+          canServeTables: incomingRow.can_serve_tables,
+          canAccessOrders: incomingRow.can_access_orders,
+          canEditOrders: incomingRow.can_edit_orders,
+          canDispatchOrders: incomingRow.can_dispatch_orders,
+          canManageProducts: incomingRow.can_manage_products,
+          canUseCaja: false,
+          canAuthorizeOrderCancel: incomingRow.can_authorize_order_cancel,
+          canDoubleSession: incomingRow.can_double_session,
+          isSupervisor: incomingRow.is_supervisor,
+          canPackOrders: incomingRow.can_pack_orders,
+          canServePlates: incomingRow.can_serve_plates ?? false,
+        });
+        if (!sanitized.isEnabled) {
+          throw new Error(
+            "El cajero entrante debe tener al menos un permiso operativo en el turno.",
+          );
+        }
+        await setShiftUserEnabledCompat({
+          shiftId: shiftQuery.data.id,
+          userId: params.incomingUserId,
+          isEnabled: sanitized.isEnabled,
+          canServeTables: sanitized.canServeTables,
+          canAccessOrders: sanitized.canAccessOrders,
+          canEditOrders: sanitized.canEditOrders,
+          canDispatchOrders: sanitized.canDispatchOrders,
+          canManageProducts: sanitized.canManageProducts,
+          canUseCaja: false,
+          canAuthorizeOrderCancel: sanitized.canAuthorizeOrderCancel,
+          canDoubleSession: sanitized.canDoubleSession,
+          isSupervisor: sanitized.isSupervisor,
+          canPackOrders: sanitized.canPackOrders,
+          canServePlates: sanitized.canServePlates,
+        });
+      }
+
+      const { data, error } = await supabase.rpc("replace_shift_cashier" as any, {
+        p_shift_id: shiftQuery.data.id,
+        p_branch_id: activeBranchId,
+        p_outgoing_cashier_id: params.outgoingUserId,
+        p_incoming_cashier_id: params.incomingUserId,
+      } as any);
+
+      if (error) throw error;
+      return data as {
+        opening_id?: string;
+        outgoing_cashier_id?: string;
+        incoming_cashier_id?: string;
+        was_primary?: boolean;
+      };
+    },
+    onSuccess: async (_data, variables) => {
+      resetCashierReplaceDialog();
+      setShiftCajaSetup((current) =>
+        replaceCashierInSetup(
+          current,
+          variables.outgoingUserId,
+          variables.incomingUserId,
+        ),
+      );
+      setShiftUsersState((current) =>
+        current.map((row) => {
+          if (row.user_id === variables.outgoingUserId) {
+            return { ...row, can_use_caja: false };
+          }
+          if (row.user_id === variables.incomingUserId) {
+            const outgoingRow = current.find(
+              (entry) => entry.user_id === variables.outgoingUserId,
+            );
+            return {
+              ...row,
+              can_use_caja: true,
+              secondary_caja_template_id:
+                outgoingRow?.secondary_caja_template_id ?? row.secondary_caja_template_id,
+              secondary_caja_takeout_enabled:
+                outgoingRow?.secondary_caja_takeout_enabled ?? false,
+              secondary_caja_express_enabled:
+                outgoingRow?.secondary_caja_express_enabled ?? false,
+            };
+          }
+          return row;
+        }),
+      );
+      setBaselineSyncToken((token) => token + 1);
+      await invalidateShiftState();
+      qc.invalidateQueries({ queryKey: ["cashier-method-summary"], exact: false });
+      qc.invalidateQueries({ queryKey: ["current-shift"], exact: false });
+      qc.invalidateQueries({
+        queryKey: ["shift-cashier-replace-eligibility", activeBranchId],
+      });
+      qc.invalidateQueries({
+        queryKey: ["shift-cashier-replacement-audit", activeBranchId],
+      });
+      toast.success("Cajero reemplazado. La caja abierta quedo asignada al nuevo usuario.");
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "No se pudo reemplazar el cajero.");
+    },
+  });
+
+  const handleConfirmCashierReplace = async () => {
+    const password = cashierReplacePassword.trim();
+    const incomingUserId = cashierReplaceIncomingId.trim();
+
+    if (!cashierReplaceOutgoingId) {
+      setCashierReplacePasswordError("No se identifico el cajero saliente.");
+      return;
+    }
+
+    if (!incomingUserId) {
+      setCashierReplacePasswordError("Selecciona el cajero que asumira la caja.");
+      return;
+    }
+
+    if (!password) {
+      setCashierReplacePasswordError(
+        "Ingresa tu contrasena para confirmar el reemplazo.",
+      );
+      return;
+    }
+
+    setValidatingCashierReplacePassword(true);
+    setCashierReplacePasswordError("");
+
+    try {
+      await verifyCurrentUserPassword(password);
+    } catch (error: any) {
+      setCashierReplacePasswordError(
+        error?.message || "No se pudo validar la contrasena.",
+      );
+      setValidatingCashierReplacePassword(false);
+      return;
+    }
+
+    try {
+      await replaceCashierMutation.mutateAsync({
+        outgoingUserId: cashierReplaceOutgoingId,
+        incomingUserId,
+      });
+    } catch (error: any) {
+      setCashierReplacePasswordError(
+        error?.message || "No se pudo reemplazar el cajero.",
+      );
+    } finally {
+      setValidatingCashierReplacePassword(false);
+    }
+  };
+
   const toggleUser = (userId: string, checked: boolean) => {
     markShiftSetupDirty();
     setShiftUsersState((prev) => {
@@ -1490,6 +1799,12 @@ const ShiftSetupAdmin = () => {
       }),
       qc.invalidateQueries({
         queryKey: ["shift-admin-latest-shift-audit", activeBranchId],
+      }),
+      qc.invalidateQueries({
+        queryKey: ["shift-cashier-replace-eligibility", activeBranchId],
+      }),
+      qc.invalidateQueries({
+        queryKey: ["shift-cashier-replacement-audit", activeBranchId],
       }),
     ]);
 
@@ -2803,9 +3118,44 @@ const ShiftSetupAdmin = () => {
           disabled={
             isStale ||
             openShiftMutation.isPending ||
-            saveShiftMutation.isPending
+            saveShiftMutation.isPending ||
+            replaceCashierMutation.isPending
+          }
+          replaceEligibleUserIds={
+            hasCajaConfigChange ? undefined : replaceEligibleUserIds
+          }
+          onReplaceCashier={
+            hasCajaConfigChange ? undefined : handleOpenCashierReplace
           }
         />
+
+        {isOpen && (cashierReplaceAuditQuery.data?.length ?? 0) > 0 ? (
+          <section className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
+            <h4 className="text-sm font-black text-foreground sm:text-base">
+              Auditoria de reemplazos de cajero
+            </h4>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Registro de traspasos de caja abierta en este turno. Los cobros previos
+              siguen a nombre del cajero que los registro.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {(cashierReplaceAuditQuery.data ?? []).map((entry) => (
+                <li
+                  key={entry.audit_id}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                >
+                  <p className="font-semibold text-foreground">
+                    {entry.outgoing_cashier_name} → {entry.incoming_cashier_name}
+                    {entry.was_primary ? " (cajero principal)" : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatDateTime(entry.event_at)} · por {entry.actor_name}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <section className="rounded-[22px] border border-orange-200 bg-gradient-to-r from-white via-orange-50 to-amber-50 p-4 shadow-sm sm:rounded-[26px]">
           <div className="flex flex-col items-stretch gap-2 md:items-end">
@@ -2952,6 +3302,158 @@ const ShiftSetupAdmin = () => {
                 <Save className="h-4 w-4" />
               )}
               Confirmar y guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={cashierReplaceDialogOpen}
+        onOpenChange={(open) => {
+          if (validatingCashierReplacePassword || replaceCashierMutation.isPending) {
+            return;
+          }
+          if (!open) {
+            resetCashierReplaceDialog();
+            return;
+          }
+          setCashierReplaceDialogOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-md rounded-[24px] border border-emerald-200 bg-gradient-to-br from-white via-emerald-50 to-teal-50 p-5 shadow-[0_30px_80px_-42px_rgba(16,185,129,0.45)]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-black text-emerald-950">
+              Reemplazar cajero de la caja abierta
+            </DialogTitle>
+            <DialogDescription className="space-y-2 text-sm leading-6 text-emerald-900/80">
+              <span className="block">
+                La caja abierta (apertura, denominaciones y recaudaciones) pasa al
+                nuevo cajero. El cajero saliente conserva sus otros permisos del
+                turno; los cobros ya hechos siguen registrados a su nombre.
+              </span>
+              <span className="block text-xs">
+                El nuevo cajero debe estar en la lista de usuarios del turno (con
+                Venta u otro permiso) y sin otra caja asignada. Si lo acabas de
+                agregar, se registrara al confirmar.
+              </span>
+              <span className="block font-semibold text-emerald-950">
+                Cajero saliente:{" "}
+                {getUserAlias(
+                  shiftUsersState.find(
+                    (row) => row.user_id === cashierReplaceOutgoingId,
+                  ) ?? { username: "—", alias: "—", full_name: "—" },
+                )}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">
+                Nuevo cajero
+              </Label>
+              <Select
+                value={cashierReplaceIncomingId || undefined}
+                onValueChange={(value) => {
+                  setCashierReplaceIncomingId(value);
+                  setCashierReplacePasswordError("");
+                }}
+                disabled={
+                  validatingCashierReplacePassword ||
+                  replaceCashierMutation.isPending ||
+                  cashierReplaceIncomingOptions.length === 0
+                }
+              >
+                <SelectTrigger className="h-11 rounded-2xl border-emerald-200 bg-white">
+                  <SelectValue
+                    placeholder={
+                      cashierReplaceIncomingOptions.length === 0
+                        ? "No hay usuarios disponibles"
+                        : "Selecciona cajero..."
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {cashierReplaceIncomingOptions.map((row) => (
+                    <SelectItem key={row.user_id} value={row.user_id}>
+                      {getUserAlias(row)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {cashierReplaceIncomingOptions.length === 0 ? (
+                <p className="text-xs font-medium text-amber-800">
+                  Solo pueden asumir la caja usuarios habilitados en el turno que
+                  no tengan otra caja asignada.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label
+                htmlFor="cashier-replace-password"
+                className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800"
+              >
+                Contrasena del usuario logueado
+              </Label>
+              <Input
+                id="cashier-replace-password"
+                type="password"
+                value={cashierReplacePassword}
+                onChange={(event) => {
+                  setCashierReplacePassword(event.target.value);
+                  setCashierReplacePasswordError("");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleConfirmCashierReplace();
+                  }
+                }}
+                autoComplete="current-password"
+                disabled={
+                  validatingCashierReplacePassword ||
+                  replaceCashierMutation.isPending
+                }
+                className="h-11 rounded-2xl border-emerald-200 bg-white"
+              />
+              {cashierReplacePasswordError ? (
+                <p className="text-sm font-medium text-red-700">
+                  {cashierReplacePasswordError}
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                validatingCashierReplacePassword || replaceCashierMutation.isPending
+              }
+              onClick={resetCashierReplaceDialog}
+              className="w-full sm:w-auto"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                validatingCashierReplacePassword ||
+                replaceCashierMutation.isPending ||
+                !cashierReplaceIncomingId
+              }
+              onClick={() => void handleConfirmCashierReplace()}
+              className="w-full bg-emerald-700 text-white hover:bg-emerald-800 sm:w-auto"
+            >
+              {validatingCashierReplacePassword ||
+              replaceCashierMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Confirmar reemplazo
             </Button>
           </DialogFooter>
         </DialogContent>

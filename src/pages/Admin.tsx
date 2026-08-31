@@ -1,11 +1,31 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Sparkles, CreditCard, Coins, Users, Building2, Copy, FolderTree, ChevronDown, Menu, X, AlertTriangle, PlayCircle, UtensilsCrossed, ShoppingBag, Scale, FileStack, PackagePlus, Landmark, QrCode } from "lucide-react";
+import {
+  CalendarDays,
+  Sparkles,
+  CreditCard,
+  Coins,
+  Users,
+  Building2,
+  Copy,
+  ChevronDown,
+  Menu,
+  X,
+  AlertTriangle,
+  UtensilsCrossed,
+  ShoppingBag,
+  Scale,
+  FileStack,
+  PackagePlus,
+  Landmark,
+  QrCode,
+  UserCog,
+  Package,
+} from "lucide-react";
 import BancosCrud from "@/components/admin/BancosCrud";
 import CuentasBancariasDestinoAdmin from "@/components/admin/CuentasBancariasDestinoAdmin";
 import FeriadosAdmin from "@/components/admin/FeriadosAdmin";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
-import PaymentMethodsCrud from "@/components/admin/PaymentMethodsCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
 import CashRegisterTemplatesCrud from "@/components/admin/CashRegisterTemplatesCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
@@ -13,8 +33,9 @@ import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
 import FrequentProductsAdmin from "@/components/admin/FrequentProductsAdmin";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
+import ProductosGlobalesAdmin from "@/components/admin/ProductosGlobalesAdmin";
 import QrMesasAdmin from "@/components/admin/QrMesasAdmin";
-import ShiftSetupAdmin from "@/components/admin/ShiftSetupAdmin";
+import TemporarySupervisorAdmin from "@/components/admin/TemporarySupervisorAdmin";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -24,10 +45,23 @@ interface AdminTab {
   label: string;
   icon: React.ReactNode;
   component: React.ComponentType;
-  visible: (permissions: Record<string, any>, isGlobalAdmin: boolean) => boolean;
+  visible: (
+    permissions: Record<string, unknown>,
+    isGlobalAdmin: boolean,
+    usaCatalogoGlobal: boolean,
+  ) => boolean;
 }
 
-const MENU_TAB_VALUES = ["menu-tree-table", "menu-tree-takeout", "menu-tree-bulk", "menu-tree-extra"] as const;
+interface AdminCategoryDef {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  tabValues: readonly string[];
+}
+
+interface AdminCategory extends AdminCategoryDef {
+  tabs: AdminTab[];
+}
 
 const MenuNodesCrudTable = () => (
   <MenuNodesCrud menuScope="TABLE" title="Menu Mesa" />
@@ -104,6 +138,36 @@ const TABS: AdminTab[] = [
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_global"),
   },
   {
+    value: "users",
+    label: "Usuarios",
+    icon: <Users className="h-4 w-4" />,
+    component: UsersCrud,
+    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "temporary-supervisor",
+    label: "Supervisor temporal",
+    icon: <UserCog className="h-4 w-4" />,
+    component: TemporarySupervisorAdmin,
+    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "productos-globales",
+    label: "Productos generales",
+    icon: <Package className="h-4 w-4" />,
+    component: ProductosGlobalesAdmin,
+    visible: (permissions, isGlobalAdmin, usaCatalogoGlobal) =>
+      (isGlobalAdmin || canManage(permissions, "admin_global") || canManage(permissions, "admin_sucursal"))
+      && (isGlobalAdmin || usaCatalogoGlobal),
+  },
+  {
+    value: "clone",
+    label: "Duplicar menú",
+    icon: <Copy className="h-4 w-4" />,
+    component: CloneBranchCatalog,
+    visible: () => false,
+  },
+  {
     value: "menu-tree-table",
     label: "Menu Mesa",
     icon: <UtensilsCrossed className="h-4 w-4" />,
@@ -145,19 +209,19 @@ const TABS: AdminTab[] = [
     component: ModifiersCrud,
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
-  /* {
-    value: "payment-methods",
-    label: "Metodos de Pago",
-    icon: <CreditCard className="h-4 w-4" />,
-    component: PaymentMethodsCrud,
-    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
-  }, */
   {
     value: "denominations",
     label: "Denominaciones",
     icon: <Coins className="h-4 w-4" />,
     component: DenominationsCrud,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+  },
+  {
+    value: "cash-register-templates",
+    label: "Plantillas de caja",
+    icon: <FileStack className="h-4 w-4" />,
+    component: CashRegisterTemplatesCrud,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
     value: "bancos",
@@ -180,54 +244,100 @@ const TABS: AdminTab[] = [
     component: FeriadosAdmin,
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
   },
+];
+
+const ADMIN_CATEGORIES: AdminCategoryDef[] = [
   {
-    value: "cash-register-templates",
-    label: "Plantillas de caja",
-    icon: <FileStack className="h-4 w-4" />,
-    component: CashRegisterTemplatesCrud,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+    id: "organization",
+    label: "Organización",
+    icon: <Building2 className="h-4 w-4" />,
+    tabValues: ["branches", "users", "temporary-supervisor"],
   },
   {
-    value: "users",
-    label: "Usuarios",
-    icon: <Users className="h-4 w-4" />,
-    component: UsersCrud,
-    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
+    id: "menu-sales",
+    label: "Menú y ventas",
+    icon: <UtensilsCrossed className="h-4 w-4" />,
+    tabValues: [
+      "productos-globales",
+      "menu-tree-table",
+      "menu-tree-takeout",
+      "menu-tree-bulk",
+      "menu-tree-extra",
+      "mesas-qr",
+      "modifiers",
+    ],
   },
   {
-    value: "clone",
-    label: "Duplicar menú",
-    icon: <Copy className="h-4 w-4" />,
-    component: CloneBranchCatalog,
-    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_global"),
+    id: "cash-payments",
+    label: "Caja y pagos",
+    icon: <Coins className="h-4 w-4" />,
+    tabValues: ["denominations", "cash-register-templates", "bancos", "cuentas-bancarias"],
+  },
+  {
+    id: "calendar",
+    label: "Calendario",
+    icon: <CalendarDays className="h-4 w-4" />,
+    tabValues: ["feriados"],
   },
 ];
 
+const categoryButtonClass = (isActive: boolean) =>
+  cn(
+    "h-10 gap-2 whitespace-nowrap rounded-2xl px-4 text-sm font-semibold",
+    isActive
+      ? "shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
+      : "border-transparent bg-white/70 hover:border-orange-200 hover:bg-orange-50",
+  );
+
+const subTabButtonClass = (isActive: boolean) =>
+  cn(
+    "h-9 gap-1.5 rounded-none border-b-2 bg-transparent px-3 text-xs font-medium shadow-none hover:bg-transparent",
+    isActive
+      ? "border-primary text-primary"
+      : "border-transparent text-muted-foreground hover:border-orange-200/80 hover:text-foreground",
+  );
+
 const Admin = () => {
-  const { permissions, branches, isGlobalAdmin } = useBranch();
+  const { permissions, branches, isGlobalAdmin, activeBranch } = useBranch();
+  const usaCatalogoGlobal = Boolean(activeBranch?.usa_catalogo_global);
   const [activeTab, setActiveTab] = useState("");
   const [mobileTabsOpen, setMobileTabsOpen] = useState(false);
-  const [menuTabsOpen, setMenuTabsOpen] = useState(false);
-  const desktopMenuRef = useRef<HTMLDivElement | null>(null);
-  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const visibleTabs = useMemo(
-    () => TABS.filter((tab) => tab.visible(permissions, isGlobalAdmin)),
-    [permissions, isGlobalAdmin],
+    () => TABS.filter((tab) => tab.visible(permissions, isGlobalAdmin, usaCatalogoGlobal)),
+    [permissions, isGlobalAdmin, usaCatalogoGlobal],
   );
-  const visibleMenuTabs = useMemo(
-    () => visibleTabs.filter((tab) => MENU_TAB_VALUES.includes(tab.value as typeof MENU_TAB_VALUES[number])),
+
+  const tabsByValue = useMemo(
+    () => new Map(visibleTabs.map((tab) => [tab.value, tab])),
     [visibleTabs],
   );
-  const visiblePrimaryTabs = useMemo(
-    () => visibleTabs.filter((tab) => !MENU_TAB_VALUES.includes(tab.value as typeof MENU_TAB_VALUES[number])),
-    [visibleTabs],
+
+  const visibleCategories = useMemo<AdminCategory[]>(
+    () =>
+      ADMIN_CATEGORIES.map((category) => ({
+        ...category,
+        tabs: category.tabValues
+          .map((value) => tabsByValue.get(value))
+          .filter((tab): tab is AdminTab => Boolean(tab)),
+      })).filter((category) => category.tabs.length > 0),
+    [tabsByValue],
   );
-  const isMenuActive = MENU_TAB_VALUES.includes(activeTab as typeof MENU_TAB_VALUES[number]);
 
   const defaultTab = isGlobalAdmin && branches.length === 0
     ? (visibleTabs.find((tab) => tab.value === "branches")?.value ?? visibleTabs[0]?.value ?? "branches")
     : (visibleTabs[0]?.value ?? "users");
+
+  const activeCategory = useMemo(
+    () =>
+      visibleCategories.find((category) => category.tabs.some((tab) => tab.value === activeTab))
+      ?? visibleCategories[0]
+      ?? null,
+    [activeTab, visibleCategories],
+  );
+
+  const activeCategoryTabs = activeCategory?.tabs ?? [];
+  const showSubTabs = activeCategoryTabs.length > 1;
 
   useEffect(() => {
     if (!visibleTabs.some((tab) => tab.value === activeTab)) {
@@ -240,30 +350,19 @@ const Admin = () => {
     }
   }, [activeTab, defaultTab, visibleTabs]);
 
-  useEffect(() => {
-    if (visibleMenuTabs.length === 0) {
-      setMenuTabsOpen(false);
-    }
-  }, [visibleMenuTabs.length]);
-
-  useEffect(() => {
-    if (!menuTabsOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const clickedDesktopMenu = desktopMenuRef.current?.contains(target);
-      const clickedMobileMenu = mobileMenuRef.current?.contains(target);
-
-      if (clickedDesktopMenu || clickedMobileMenu) return;
-      setMenuTabsOpen(false);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [menuTabsOpen]);
-
   const selectedTab = visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0] ?? null;
   const SelectedComponent = selectedTab?.component ?? null;
+
+  const handleCategoryClick = (category: AdminCategory) => {
+    const isCurrentCategory = category.tabs.some((tab) => tab.value === activeTab);
+    if (!isCurrentCategory) {
+      setActiveTab(category.tabs[0].value);
+    }
+  };
+
+  const mobileNavLabel = activeCategory && selectedTab
+    ? `${activeCategory.label} · ${selectedTab.label}`
+    : (selectedTab?.label ?? "Secciones");
 
   return (
     <div className="space-y-4 p-2.5 sm:p-4">
@@ -278,18 +377,18 @@ const Admin = () => {
               <p className="text-sm text-muted-foreground">Configura catalogo, accesos y operacion de la sucursal.</p>
             </div>
           </div>
-        {visibleTabs.length > 0 && (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 w-full justify-between gap-2 rounded-2xl sm:hidden"
-            onClick={() => setMobileTabsOpen((open) => !open)}
-          >
-            {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            {isMenuActive ? "Menu" : (selectedTab?.label ?? "Secciones")}
-            <ChevronDown className={cn("h-4 w-4 transition-transform", mobileTabsOpen && "rotate-180")} />
-          </Button>
-        )}
+          {visibleTabs.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full justify-between gap-2 rounded-2xl sm:hidden"
+              onClick={() => setMobileTabsOpen((open) => !open)}
+            >
+              {mobileTabsOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              <span className="truncate">{mobileNavLabel}</span>
+              <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", mobileTabsOpen && "rotate-180")} />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -308,107 +407,14 @@ const Admin = () => {
           <div className="sm:hidden">
             {mobileTabsOpen && (
               <div className="rounded-[24px] border border-orange-200 bg-white/85 p-2 shadow-[0_18px_40px_-34px_rgba(249,115,22,0.55)]">
-                <div className="grid gap-2">
-                  {visiblePrimaryTabs.map((tab) => (
-                    <Button
-                      key={tab.value}
-                      type="button"
-                      variant={tab.value === activeTab ? "default" : "ghost"}
-                      className="h-11 justify-start gap-2 rounded-2xl"
-                      onClick={() => {
-                        setActiveTab(tab.value);
-                        setMobileTabsOpen(false);
-                        setMenuTabsOpen(false);
-                      }}
-                    >
-                      {tab.icon}
-                      <span>{tab.label}</span>
-                    </Button>
-                  ))}
-                  {visibleMenuTabs.length > 0 && (
-                    <div ref={mobileMenuRef} className="rounded-2xl border border-orange-200 bg-orange-50/70 p-2">
-                      <Button
-                        type="button"
-                        variant={isMenuActive ? "default" : "ghost"}
-                        className="h-11 w-full justify-between gap-2 rounded-2xl"
-                        onClick={() => setMenuTabsOpen((open) => !open)}
-                      >
-                        <span className="flex items-center gap-2">
-                          <FolderTree className="h-4 w-4" />
-                          <span>Menu</span>
-                        </span>
-                        <ChevronDown className={cn("h-4 w-4 transition-transform", menuTabsOpen && "rotate-180")} />
-                      </Button>
-                      {menuTabsOpen && (
-                        <div className="mt-2 grid gap-2">
-                          {visibleMenuTabs.map((tab) => (
-                            <Button
-                              key={tab.value}
-                              type="button"
-                              variant={tab.value === activeTab ? "default" : "ghost"}
-                              className="h-11 justify-start gap-2 rounded-2xl"
-                              onClick={() => {
-                                setActiveTab(tab.value);
-                                setMobileTabsOpen(false);
-                                setMenuTabsOpen(false);
-                              }}
-                            >
-                              {tab.icon}
-                              <span>{tab.label}</span>
-                            </Button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="-mx-2 hidden overflow-visible px-2 pb-2 sm:block sm:px-0">
-            <div className="inline-flex overflow-visible gap-2 rounded-[28px] border border-orange-200 bg-white/80 p-2 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
-              {visiblePrimaryTabs.map((tab) => (
-                <Button
-                  key={tab.value}
-                  type="button"
-                  variant={!menuTabsOpen && tab.value === activeTab ? "default" : "outline"}
-                  className={cn(
-                    "gap-2 whitespace-nowrap rounded-2xl px-4 py-2.5 text-xs font-semibold",
-                    !menuTabsOpen && tab.value === activeTab
-                      ? "shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
-                      : "border-transparent bg-white/70 hover:border-orange-200 hover:bg-orange-50",
-                  )}
-                  onClick={() => {
-                    setActiveTab(tab.value);
-                    setMenuTabsOpen(false);
-                  }}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                </Button>
-              ))}
-              {visibleMenuTabs.length > 0 && (
-                <div ref={desktopMenuRef} className="relative">
-                  <Button
-                    type="button"
-                    variant={isMenuActive || menuTabsOpen ? "default" : "outline"}
-                    className={cn(
-                      "gap-2 whitespace-nowrap rounded-2xl px-4 py-2.5 text-xs font-semibold",
-                      isMenuActive || menuTabsOpen
-                        ? "shadow-[0_16px_30px_-22px_rgba(249,115,22,0.95)]"
-                        : "border-transparent bg-white/70 hover:border-orange-200 hover:bg-orange-50",
-                    )}
-                    onClick={() => setMenuTabsOpen((open) => !open)}
-                  >
-                    <FolderTree className="h-4 w-4" />
-                    <span>Menu</span>
-                    <ChevronDown className={cn("h-4 w-4 transition-transform", menuTabsOpen && "rotate-180")} />
-                  </Button>
-                  {menuTabsOpen && (
-                    <div className="absolute left-0 top-full z-20 mt-2 min-w-[220px] rounded-2xl border border-orange-200 bg-white p-2 shadow-[0_18px_40px_-28px_rgba(249,115,22,0.55)]">
-                      <div className="grid gap-2">
-                        {visibleMenuTabs.map((tab) => (
+                <div className="space-y-4">
+                  {visibleCategories.map((category) => (
+                    <div key={category.id} className="space-y-2">
+                      <p className="px-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {category.label}
+                      </p>
+                      <div className="grid gap-1.5">
+                        {category.tabs.map((tab) => (
                           <Button
                             key={tab.value}
                             type="button"
@@ -416,7 +422,7 @@ const Admin = () => {
                             className="h-11 justify-start gap-2 rounded-2xl"
                             onClick={() => {
                               setActiveTab(tab.value);
-                              setMenuTabsOpen(false);
+                              setMobileTabsOpen(false);
                             }}
                           >
                             {tab.icon}
@@ -425,7 +431,57 @@ const Admin = () => {
                         ))}
                       </div>
                     </div>
-                  )}
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="hidden sm:block">
+            <div className="overflow-hidden rounded-[28px] border border-orange-200 bg-white/90 shadow-[0_18px_45px_-36px_rgba(249,115,22,0.5)]">
+              <div className={cn("p-3", showSubTabs && "border-b border-orange-100")}>
+                <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                  Sección
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {visibleCategories.map((category) => {
+                    const isActiveCategory = activeCategory?.id === category.id;
+
+                    return (
+                      <Button
+                        key={category.id}
+                        type="button"
+                        variant={isActiveCategory ? "default" : "outline"}
+                        className={categoryButtonClass(isActiveCategory)}
+                        onClick={() => handleCategoryClick(category)}
+                      >
+                        {category.icon}
+                        <span>{category.label}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {showSubTabs && activeCategory && (
+                <div className="bg-slate-50/90 px-3 pb-1 pt-2.5">
+                  <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    {activeCategory.label}
+                  </p>
+                  <div className="flex flex-wrap gap-x-1 gap-y-0 border-b border-slate-200/80">
+                    {activeCategoryTabs.map((tab) => (
+                      <Button
+                        key={tab.value}
+                        type="button"
+                        variant="ghost"
+                        className={subTabButtonClass(tab.value === activeTab)}
+                        onClick={() => setActiveTab(tab.value)}
+                      >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

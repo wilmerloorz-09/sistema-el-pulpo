@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 import { generateUUID } from "@/lib/uuid";
 import type { MenuNode, MenuScope } from "@/hooks/useMenuTree";
 import { invalidatePlatosProductIdsCache } from "@/lib/menuPlatosCategory";
+import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
+import { invalidateOperationalQueueCache } from "@/lib/operationalQueue";
 import NodeModifiersPanel from "@/components/admin/NodeModifiersPanel";
 import BulkIncludedProductsPanel from "@/components/admin/BulkIncludedProductsPanel";
 
@@ -28,8 +30,17 @@ function invalidateMenuCatalogQueries(queryClient: ReturnType<typeof useQueryCli
   queryClient.invalidateQueries({ queryKey: ["menu-products"] });
   queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
   queryClient.invalidateQueries({ queryKey: ["menu-subcategories"] });
-  queryClient.invalidateQueries({ queryKey: ["platos-product-ids"] });
+  queryClient.removeQueries({ queryKey: ["platos-product-ids", branchId] });
+  queryClient.invalidateQueries({ queryKey: ["producto-sucursal"] });
+  queryClient.invalidateQueries({ queryKey: ["inventario-producto-map"] });
   invalidatePlatosProductIdsCache(branchId);
+  if (branchId) {
+    invalidateDispatchServirQueueBundleCache(branchId);
+    invalidateOperationalQueueCache(branchId);
+    void queryClient.refetchQueries({ queryKey: ["dispatch-orders", branchId], type: "active" });
+    void queryClient.refetchQueries({ queryKey: ["servir-orders", branchId], type: "active" });
+    void queryClient.refetchQueries({ queryKey: ["packing-orders", branchId], type: "active" });
+  }
 }
 
 interface AdminMenuNode extends MenuNode {}
@@ -64,6 +75,7 @@ interface FormState {
   image_url: string;
   is_active: boolean;
   force_servir_module: boolean;
+  producto_global_id: string | null;
 }
 
 const MENU_NODE_IMAGE_BUCKET = "menu-node-images";
@@ -84,6 +96,7 @@ const emptyForm = (parentId: string | null = null, displayOrder: string = "1"): 
   image_url: "",
   is_active: true,
   force_servir_module: false,
+  producto_global_id: null,
 });
 
 const sortedNumbers = (values: number[]) => values.filter((value) => value > 0).sort((a, b) => a - b);
@@ -161,10 +174,12 @@ const MenuNodesCrud = ({
   title = "Arbol de menu",
   showCopyFromTableButton = false,
 }: MenuNodesCrudProps) => {
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, activeBranch } = useBranch();
+  const usaCatalogoGlobal = Boolean(activeBranch?.usa_catalogo_global);
   const queryClient = useQueryClient();
   const isTableScope = menuScope === "TABLE";
   const isBulkScope = menuScope === "BULK";
+  const [formLoading, setFormLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -177,7 +192,7 @@ const MenuNodesCrud = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("menu_nodes" as any)
-        .select("id, branch_id, parent_id, name, qr_name, node_type, menu_scope, depth, display_order, price, manual_price_enabled, is_active, is_tray_category, legacy_product_id, image_url, icon, description, created_at, updated_at")
+        .select("id, branch_id, parent_id, name, qr_name, node_type, menu_scope, depth, display_order, price, manual_price_enabled, is_active, is_tray_category, legacy_product_id, producto_global_id, image_url, icon, description, created_at, updated_at")
         .eq("branch_id", activeBranchId!)
         .eq("menu_scope", menuScope)
         .order("depth", { ascending: true })
@@ -190,8 +205,52 @@ const MenuNodesCrud = ({
     enabled: !!activeBranchId,
   });
 
+  const productosGlobalesMenuQuery = useQuery({
+    queryKey: ["productos-globales-menu"],
+    enabled: Boolean(activeBranchId) && usaCatalogoGlobal,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("productos_globales" as any)
+        .select(
+          "id, nombre_principal, nombre_qr_default, precio_default, force_servir_default, descripcion_default, imagen_default_url",
+        )
+        .eq("activo", true)
+        .order("nombre_principal");
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        nombre_principal: string;
+        nombre_qr_default: string | null;
+        precio_default: number;
+        force_servir_default: boolean;
+        descripcion_default: string | null;
+        imagen_default_url: string | null;
+      }>;
+    },
+  });
+  const productosParaMenu = productosGlobalesMenuQuery.data ?? [];
+  const productosParaMenuById = useMemo(
+    () => new Map(productosParaMenu.map((p) => [p.id, p])),
+    [productosParaMenu],
+  );
+
   const nodes = query.data ?? [];
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  const productosYaEnEsteMenu = useMemo(() => {
+    const used = new Set<string>();
+    for (const node of nodes) {
+      if (
+        node.node_type === "product"
+        && node.menu_scope === menuScope
+        && node.producto_global_id
+        && node.id !== form.id
+      ) {
+        used.add(node.producto_global_id);
+      }
+    }
+    return used;
+  }, [form.id, menuScope, nodes]);
 
   useEffect(() => {
       if (!activeBranchId || nodes.length === 0) return;
@@ -361,10 +420,31 @@ const MenuNodesCrud = ({
     setForm(emptyForm(nextParentId, getSuggestedDisplayOrder(nextParentId, "category")));
   };
 
-  const startEdit = (node: AdminMenuNode) => {
+  const startEdit = async (node: AdminMenuNode) => {
     setSelectedId(node.id);
     setSelectedImageFile(null);
     setRemoveImage(false);
+    setFormLoading(true);
+
+    let forceServir = false;
+    if (node.node_type === "product" && (node.legacy_product_id || node.producto_global_id)) {
+      const productId = node.producto_global_id ?? node.legacy_product_id!;
+      const { data, error } = await supabase
+        .from("products")
+        .select("force_servir_module")
+        .eq("id", productId)
+        .maybeSingle();
+      if (error) {
+        console.error("Error loading product:", error);
+      } else if (data) {
+        forceServir = Boolean(data.force_servir_module);
+      }
+    }
+
+    const catalogImage = node.producto_global_id
+      ? normalizeImageUrl(productosParaMenuById.get(node.producto_global_id)?.imagen_default_url)
+      : "";
+    const nodeImage = normalizeImageUrl(node.image_url);
 
     setForm({
       id: node.id,
@@ -376,32 +456,12 @@ const MenuNodesCrud = ({
       price: node.price == null ? "" : String(node.price),
       display_order: String(node.display_order ?? 0),
       description: node.description ?? "",
-      image_url: node.image_url ?? "",
+      image_url: nodeImage || catalogImage,
       is_active: node.is_active,
-      force_servir_module: false,
+      force_servir_module: forceServir,
+      producto_global_id: node.producto_global_id ?? null,
     });
-
-    if (node.node_type === "product" && node.legacy_product_id) {
-      supabase
-        .from("products")
-        .select("force_servir_module")
-        .eq("id", node.legacy_product_id)
-        .maybeSingle()
-        .then(({ data, error }) => {
-          if (error) {
-            console.error("Error loading product:", error);
-            return;
-          }
-          if (data) {
-            setForm((prev) => {
-              if (prev.id === node.id) {
-                return { ...prev, force_servir_module: Boolean(data.force_servir_module) };
-              }
-              return prev;
-            });
-          }
-        });
-    }
+    setFormLoading(false);
   };
 
   const ensureLegacyCategoryMirror = async (
@@ -586,7 +646,9 @@ const MenuNodesCrud = ({
           }
         }
 
-        let imageUrlToPersist = removeImage ? "" : previousImageUrl;
+        let imageUrlToPersist = removeImage
+          ? ""
+          : normalizeImageUrl(formData.image_url) || previousImageUrl;
 
         if (selectedImageFile) {
           validateImageFile(selectedImageFile);
@@ -603,40 +665,148 @@ const MenuNodesCrud = ({
           imageUrlToPersist = getPublicImageUrl(uploadedImagePath);
         }
 
-        const currentLegacyProductId =
-          formData.node_type === "product" && formData.id
-            ? (nodesById.get(formData.id)?.legacy_product_id ?? (isTableScope ? formData.id : null))
+        // Si eligió producto global y no hay imagen de nodo, heredar la default del catálogo.
+        if (
+          !removeImage
+          && !imageUrlToPersist
+          && formData.producto_global_id
+        ) {
+          const fromCatalog = productosParaMenuById.get(formData.producto_global_id)?.imagen_default_url;
+          imageUrlToPersist = normalizeImageUrl(fromCatalog);
+        }
+
+        const existingNode = formData.id ? nodesById.get(formData.id) : undefined;
+        const isNewMenuNode = !formData.id;
+        const useGlobalPath =
+          usaCatalogoGlobal
+          && formData.node_type === "product"
+          && Boolean(formData.producto_global_id);
+
+        if (usaCatalogoGlobal && formData.node_type === "product" && isNewMenuNode && !formData.producto_global_id) {
+          throw new Error("Selecciona un producto del catálogo global.");
+        }
+
+        if (
+          formData.node_type === "product"
+          && formData.producto_global_id
+        ) {
+          const duplicateInMenu = nodes.find(
+            (node) =>
+              node.id !== id
+              && node.node_type === "product"
+              && node.menu_scope === menuScope
+              && node.producto_global_id === formData.producto_global_id,
+          );
+          if (duplicateInMenu) {
+            throw new Error(
+              `Ese producto ya está en este menú (“${duplicateInMenu.name}”). Puede repetirse en otro menú (mesa / para llevar), pero no dos veces en el mismo.`,
+            );
+          }
+        }
+
+        const currentLegacyProductId = useGlobalPath
+          ? formData.producto_global_id
+          : formData.node_type === "product"
+            ? (existingNode?.legacy_product_id?.trim() || (isTableScope ? id : null))
             : null;
 
-        const { data: savedMenuNode, error: menuNodeError } = await supabase
-          .from("menu_nodes" as any)
-          .upsert({
-            id,
-            branch_id: activeBranchId,
-            menu_scope: menuScope,
-            parent_id: formData.parent_id,
-            name,
-            qr_name: formData.node_type === "product" ? (formData.qr_name.trim() || null) : null,
-            node_type: formData.node_type,
-            display_order: displayOrder,
-            is_active: formData.is_active,
-            icon: null,
-            price,
-            description: formData.description.trim() || null,
-            image_url: imageUrlToPersist || null,
-            manual_price_enabled: formData.node_type === "category" ? formData.manual_price_enabled : false,
-            legacy_product_id:
-              formData.node_type === "product"
-                ? currentLegacyProductId
-                : null,
-          } as any)
-          .select("id")
-          .single();
-        if (menuNodeError) throw menuNodeError;
+        let savedMenuNode: { id: string; legacy_product_id?: string | null; price?: number | null; image_url?: string | null } | null = null;
+        try {
+          const { data, error: menuNodeError } = await supabase
+            .from("menu_nodes" as any)
+            .upsert({
+              id,
+              branch_id: activeBranchId,
+              menu_scope: menuScope,
+              parent_id: formData.parent_id,
+              name,
+              qr_name: formData.node_type === "product" ? (formData.qr_name.trim() || null) : null,
+              node_type: formData.node_type,
+              display_order: displayOrder,
+              is_active: formData.is_active,
+              icon: null,
+              price,
+              description: formData.description.trim() || null,
+              image_url: imageUrlToPersist || null,
+              manual_price_enabled: formData.node_type === "category" ? formData.manual_price_enabled : false,
+              legacy_product_id:
+                formData.node_type === "product"
+                  ? currentLegacyProductId
+                  : null,
+              producto_global_id: useGlobalPath ? formData.producto_global_id : (existingNode?.producto_global_id ?? null),
+            } as any)
+            .select("id, legacy_product_id, price, image_url")
+            .single();
+          if (menuNodeError) throw menuNodeError;
+          savedMenuNode = data as typeof savedMenuNode;
+        } catch (menuSaveError) {
+          // Si es alta nueva y falla (p.ej. trigger de legacy), no dejar basura parcial.
+          if (isNewMenuNode) {
+            await supabase.from("menu_nodes" as any).delete().eq("id", id);
+          }
+          throw menuSaveError;
+        }
 
         if (formData.node_type === "category") {
           if (isTableScope || isBulkScope) {
             await ensureLegacyCategoryMirror(id, name, formData.parent_id, displayOrder > 0 ? displayOrder : 1, formData.is_active);
+          }
+        } else if (useGlobalPath) {
+          // Catálogo global: el product ya existe (mismo id). Solo actualizar force_servir si aplica.
+          const { error: productError } = await supabase
+            .from("products")
+            .update({
+              force_servir_module: formData.force_servir_module,
+              is_active: formData.is_active,
+            })
+            .eq("id", formData.producto_global_id!);
+          if (productError) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw productError;
+          }
+          // Vínculo sucursal + inventario al colgar en el menú (no hace falta “asignar” antes).
+          const { data: existingLink, error: existingLinkError } = await supabase
+            .from("producto_sucursal" as any)
+            .select("id, activo")
+            .eq("sucursal_id", activeBranchId!)
+            .eq("producto_global_id", formData.producto_global_id!)
+            .maybeSingle();
+          if (existingLinkError) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw existingLinkError;
+          }
+          if (!existingLink) {
+            const { error: linkError } = await supabase.from("producto_sucursal" as any).insert({
+              sucursal_id: activeBranchId,
+              producto_global_id: formData.producto_global_id!,
+              cantidad_disponible: 0,
+              integra_con_ventas: false,
+              activo: true,
+            });
+            if (linkError) {
+              if (isNewMenuNode) {
+                await supabase.from("menu_nodes" as any).delete().eq("id", id);
+              }
+              throw linkError;
+            }
+          } else if (!(existingLink as { activo?: boolean }).activo) {
+            const { error: reactivateError } = await supabase
+              .from("producto_sucursal" as any)
+              .update({ activo: true })
+              .eq("id", (existingLink as { id: string }).id);
+            if (reactivateError) {
+              if (isNewMenuNode) {
+                await supabase.from("menu_nodes" as any).delete().eq("id", id);
+              }
+              throw reactivateError;
+            }
+          }
+          if (savedMenuNode) {
+            savedMenuNode.legacy_product_id = formData.producto_global_id;
           }
         } else {
           const nearestCategoryAncestorId = findNearestCategoryAncestorId(formData.parent_id);
@@ -645,19 +815,43 @@ const MenuNodesCrud = ({
           const ancestorCategory = nodesById.get(nearestCategoryAncestorId);
           if (!ancestorCategory) throw new Error("No se pudo resolver la categoria ancestro del producto.");
 
-          const existingLegacyProductId =
-            !isTableScope && formData.id ? currentLegacyProductId : null;
-
-          let legacySubcategoryId: string | null = null;
-          if (!isTableScope && existingLegacyProductId) {
-            const { data: existingLegacyProduct, error: existingLegacyProductError } = await supabase
-              .from("products")
-              .select("subcategory_id")
-              .eq("id", existingLegacyProductId)
-              .maybeSingle();
-            if (existingLegacyProductError) throw existingLegacyProductError;
-            legacySubcategoryId = existingLegacyProduct?.subcategory_id ?? null;
+          // Garantiza enlace válido (mesa exacta / equivalente / alta nueva). El trigger de BD también lo exige.
+          const { data: syncedLegacyId, error: syncLegacyError } = await supabase.rpc(
+            "sync_menu_node_to_legacy_product" as any,
+            { p_menu_node_id: id },
+          );
+          if (syncLegacyError) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw new Error(
+              syncLegacyError.message ||
+                "No se pudo enlazar el producto con el catalogo operativo (products).",
+            );
           }
+
+          const legacyProductId = String(syncedLegacyId ?? savedMenuNode?.legacy_product_id ?? "").trim();
+          if (!legacyProductId) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw new Error("El producto quedo sin enlace valido a products. No se guardo.");
+          }
+
+          const { data: existingLegacyProduct, error: existingLegacyProductError } = await supabase
+            .from("products")
+            .select("id, subcategory_id, display_order, description")
+            .eq("id", legacyProductId)
+            .maybeSingle();
+          if (existingLegacyProductError) throw existingLegacyProductError;
+          if (!existingLegacyProduct) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw new Error("El enlace legacy no apunta a un producto existente.");
+          }
+
+          let legacySubcategoryId: string | null = existingLegacyProduct.subcategory_id ?? null;
 
           if (!legacySubcategoryId) {
             if (isTableScope || isBulkScope) {
@@ -701,16 +895,19 @@ const MenuNodesCrud = ({
             }
           }
 
+          if (!legacySubcategoryId) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw new Error("No se pudo resolver la subcategoria operativa del producto.");
+          }
+
           const { data: siblingProducts, error: siblingProductsError } = await supabase
             .from("products")
             .select("id, display_order")
             .eq("subcategory_id", legacySubcategoryId);
           if (siblingProductsError) throw siblingProductsError;
 
-          const legacyProductId =
-            isTableScope
-              ? (currentLegacyProductId ?? id)
-              : (currentLegacyProductId ?? generateUUID());
           const rows = (siblingProducts ?? []) as ProductRecord[];
           const existingProduct = rows.find((product) => product.id === legacyProductId) ?? null;
           const usedOrders = rows
@@ -721,25 +918,43 @@ const MenuNodesCrud = ({
             ? nextAvailableOrder(usedOrders, Number(existingProduct.display_order) || displayOrder)
             : nextAvailableOrder(usedOrders, displayOrder > 0 ? displayOrder : 1);
 
-           const { error: productError } = await supabase.from("products").upsert({
+          // En TAKEOUT, si el sync reutilizó el product de mesa, no pisar su descripción operativa.
+          const productDescription =
+            isTableScope || isBulkScope
+              ? name
+              : (existingLegacyProduct.description?.trim() || name);
+
+          const { error: productError } = await supabase.from("products").upsert({
             id: legacyProductId,
             subcategory_id: legacySubcategoryId,
-            description: name,
+            description: productDescription,
             unit_price: price,
             price_mode: isBulkScope ? "MANUAL" : "FIXED",
             display_order: productDisplayOrder,
             is_active: formData.is_active,
             force_servir_module: formData.force_servir_module,
           });
-          if (productError) throw productError;
+          if (productError) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw productError;
+          }
 
           const { error: syncLegacyRefError } = await supabase
             .from("menu_nodes" as any)
             .update({ legacy_product_id: legacyProductId } as any)
             .eq("id", id);
-          if (syncLegacyRefError) throw syncLegacyRefError;
+          if (syncLegacyRefError) {
+            if (isNewMenuNode) {
+              await supabase.from("menu_nodes" as any).delete().eq("id", id);
+            }
+            throw syncLegacyRefError;
+          }
 
-          savedMenuNode.legacy_product_id = legacyProductId;
+          if (savedMenuNode) {
+            savedMenuNode.legacy_product_id = legacyProductId;
+          }
         }
 
         const nextManagedImagePath = uploadedImagePath ?? extractManagedImagePath(imageUrlToPersist);
@@ -785,7 +1000,13 @@ const MenuNodesCrud = ({
       resetForm();
     },
     onError: (error: Error) => {
-      toast.error(error.message);
+      const msg = error.message || "No se pudo guardar";
+      toast.error(
+        msg.includes("uq_menu_nodes_scope_producto_global")
+          || msg.includes("uq_menu_nodes_parent_producto_global")
+          ? "Ese producto ya está en este menú. No se puede repetir en el mismo menú."
+          : msg,
+      );
     },
   });
 
@@ -845,13 +1066,16 @@ const MenuNodesCrud = ({
 
       // 1. Delete from legacy tables first to fail fast if there is history
       if (node.node_type === "product") {
-        const legacyProductId = node.legacy_product_id ?? node.id;
-        const { error: productError } = await supabase.from("products").delete().eq("id", legacyProductId);
-        if (productError) {
-          if (productError.code === "23503") {
-            throw new Error("No se puede eliminar: Este producto tiene historial de ventas. Desactivalo en su lugar.");
+        // En catálogo global el product es compartido: no borrarlo al quitar un nodo de menú.
+        if (!usaCatalogoGlobal) {
+          const legacyProductId = node.legacy_product_id ?? node.id;
+          const { error: productError } = await supabase.from("products").delete().eq("id", legacyProductId);
+          if (productError) {
+            if (productError.code === "23503") {
+              throw new Error("No se puede eliminar: Este producto tiene historial de ventas. Desactivalo en su lugar.");
+            }
+            throw productError;
           }
-          throw productError;
         }
       } else if (isTableScope || menuScope === "BULK") {
         // Enforce legacy cleanup for table and bulk scopes
@@ -1118,6 +1342,49 @@ const MenuNodesCrud = ({
                 <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} className="rounded-xl" />
               </div>
 
+              {form.node_type === "product" && usaCatalogoGlobal ? (
+                <div className="space-y-1.5">
+                  <Label>Producto del catálogo</Label>
+                  <Select
+                    value={form.producto_global_id ?? ""}
+                    onValueChange={(value) => {
+                      const producto = productosParaMenuById.get(value);
+                      setForm((prev) => ({
+                        ...prev,
+                        producto_global_id: value,
+                        name: producto?.nombre_principal || prev.name,
+                        qr_name: producto?.nombre_qr_default || prev.qr_name,
+                        price:
+                          producto?.precio_default != null
+                            ? String(producto.precio_default)
+                            : prev.price,
+                        description: producto?.descripcion_default || prev.description,
+                        image_url: normalizeImageUrl(producto?.imagen_default_url) || prev.image_url,
+                        force_servir_module: Boolean(producto?.force_servir_default),
+                      }));
+                      setRemoveImage(false);
+                      setSelectedImageFile(null);
+                    }}
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Selecciona producto del catálogo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {productosParaMenu
+                        .filter((p) => !productosYaEnEsteMenu.has(p.id) || p.id === form.producto_global_id)
+                        .map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.nombre_principal}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Solo productos del catálogo que aún no están en este menú. Un producto puede repetirse en otro menú (mesa / para llevar).
+                  </p>
+                </div>
+              ) : null}
+
               {form.node_type === "product" ? (
                 <div className="space-y-1.5">
                   <Label>Nombre QR</Label>
@@ -1247,6 +1514,7 @@ const MenuNodesCrud = ({
                     type="checkbox"
                     id="force_servir_module"
                     checked={form.force_servir_module}
+                    disabled={formLoading}
                     onChange={(e) => {
                       const val = e.target.checked;
                       setForm((prev) => ({ ...prev, force_servir_module: val }));
@@ -1301,9 +1569,9 @@ const MenuNodesCrud = ({
 
               <div className="grid gap-3 pt-2 sm:grid-cols-1">
                 <div className="rounded-2xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-                  La imagen del nodo se gestiona solo por archivo subido. Acepta JPG, PNG, WEBP o GIF hasta 2 MB.
+                  Por defecto usa la imagen del producto global. Podés reemplazarla subiendo un archivo (JPG, PNG, WEBP o GIF hasta 2 MB).
                   {hasCurrentImage ? (
-                    <div className="mt-2 text-foreground">Este nodo ya tiene una imagen guardada.</div>
+                    <div className="mt-2 text-foreground">Este nodo ya tiene una imagen.</div>
                   ) : null}
                   {selectedImageFile ? (
                     <div className="mt-2 text-foreground">Archivo nuevo: {selectedImageFile.name}</div>
@@ -1353,7 +1621,7 @@ const MenuNodesCrud = ({
               onClick={() => {
                 saveMutation.mutate(form);
               }}
-              disabled={saveMutation.isPending}
+              disabled={saveMutation.isPending || formLoading}
             >
               <Save className="mr-1.5 h-4 w-4" />
               Guardar nodo

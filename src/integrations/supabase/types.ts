@@ -123,6 +123,7 @@ export type Database = {
           printer_port: number | null
           reference_table_count: number
           updated_at: string
+          usa_catalogo_global: boolean
           workflow_mode: string
         }
         Insert: {
@@ -137,6 +138,7 @@ export type Database = {
           printer_port?: number | null
           reference_table_count?: number
           updated_at?: string
+          usa_catalogo_global?: boolean
           workflow_mode?: string
         }
         Update: {
@@ -151,6 +153,7 @@ export type Database = {
           printer_port?: number | null
           reference_table_count?: number
           updated_at?: string
+          usa_catalogo_global?: boolean
           workflow_mode?: string
         }
         Relationships: []

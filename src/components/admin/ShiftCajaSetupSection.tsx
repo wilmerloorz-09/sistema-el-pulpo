@@ -1,4 +1,4 @@
-import { Banknote, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Banknote, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,6 +31,8 @@ interface Props {
   value: ShiftCajaSetupState;
   onChange: (next: ShiftCajaSetupState) => void;
   disabled?: boolean;
+  replaceEligibleUserIds?: ReadonlySet<string>;
+  onReplaceCashier?: (userId: string) => void;
 }
 
 function nextCashierRowId() {
@@ -48,6 +50,8 @@ export default function ShiftCajaSetupSection({
   value,
   onChange,
   disabled = false,
+  replaceEligibleUserIds,
+  onReplaceCashier,
 }: Props) {
   const assignedUserIds = new Set(value.cashiers.map((row) => row.user_id).filter(Boolean));
 
@@ -182,6 +186,22 @@ export default function ShiftCajaSetupSection({
                   />
                   Principal
                 </label>
+
+                {row.user_id &&
+                replaceEligibleUserIds?.has(row.user_id) &&
+                onReplaceCashier ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={disabled}
+                    className="h-10 shrink-0 gap-1.5 rounded-xl border-amber-300 text-amber-900 hover:bg-amber-50"
+                    onClick={() => onReplaceCashier(row.user_id)}
+                  >
+                    <ArrowRightLeft className="h-4 w-4" />
+                    Reemplazar
+                  </Button>
+                ) : null}
 
                 <Button
                   type="button"

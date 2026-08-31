@@ -5,7 +5,7 @@ import { useBranch } from "@/contexts/BranchContext";
 
 export type MenuScope = "TABLE" | "TAKEOUT" | "BULK" | "EXTRA";
 const MENU_TREE_SELECT =
-  "id, branch_id, menu_scope, parent_id, name, qr_name, node_type, depth, display_order, is_active, manual_price_enabled, icon, price, description, image_url, legacy_product_id, is_tray_category";
+  "id, branch_id, menu_scope, parent_id, name, qr_name, node_type, depth, display_order, is_active, manual_price_enabled, icon, price, description, image_url, legacy_product_id, producto_global_id, is_tray_category";
 
 export interface MenuNode {
   id: string;
@@ -24,6 +24,7 @@ export interface MenuNode {
   description?: string | null;
   image_url?: string | null;
   legacy_product_id?: string | null;
+  producto_global_id?: string | null;
   is_tray_category?: boolean;
   ancestor_ids?: string[];
   manual_price_inherited?: boolean;

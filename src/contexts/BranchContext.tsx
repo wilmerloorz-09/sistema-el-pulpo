@@ -12,6 +12,8 @@ interface Branch {
   workflow_mode?: 'CASH_THEN_DISPATCH' | 'DISPATCH_THEN_CASH';
   printer_ip?: string | null;
   printer_port?: number | null;
+  /** Piloto: catálogo global de productos (solo sucursales marcadas, ej. El Pulpo 4). */
+  usa_catalogo_global?: boolean;
 }
 
 interface AccessContextPayload {

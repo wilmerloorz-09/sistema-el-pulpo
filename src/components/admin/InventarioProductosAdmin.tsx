@@ -82,7 +82,7 @@ const InventarioProductosAdmin = () => {
           <Package className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="font-display text-lg font-bold text-foreground">Productos</h2>
+          <h2 className="font-display text-lg font-bold text-foreground">Productos de la sucursal</h2>
           <p className="text-xs text-muted-foreground">
             Sucursal: <span className="font-semibold text-foreground">{activeBranch?.name ?? activeBranchId}</span>
             {" · "}Menú mesa

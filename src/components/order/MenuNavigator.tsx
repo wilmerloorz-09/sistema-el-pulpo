@@ -25,9 +25,22 @@ interface MenuNavigatorProps {
 const RECENT_SEARCHES_KEY = "menu-navigator-recent-searches";
 const MAX_RECENT_SEARCHES = 6;
 
+const MenuNodeImage = ({ src, alt }: { src: string; alt: string }) => (
+  <img
+    src={src}
+    alt={alt}
+    className="block h-full w-full object-fill"
+    style={{ objectPosition: "center" }}
+  />
+);
+
 const renderNodeVisual = (node: MenuNode) => {
   if (node.image_url) {
-    return <img src={node.image_url} alt={node.name} className="h-14 w-14 rounded-[1.1rem] object-cover md:h-16 md:w-16 md:rounded-2xl" />;
+    return (
+      <div className="h-[4.25rem] w-[4.25rem] overflow-hidden rounded-[1.1rem] bg-white/90 md:h-20 md:w-20 md:rounded-2xl">
+        <MenuNodeImage src={node.image_url} alt={node.name} />
+      </div>
+    );
   }
 
   if (node.icon) {
@@ -39,7 +52,11 @@ const renderNodeVisual = (node: MenuNode) => {
 
 const renderCompactNodeVisual = (node: MenuNode) => {
   if (node.image_url) {
-    return <img src={node.image_url} alt={node.name} className="h-7 w-7 rounded-xl object-cover md:h-6 md:w-6 md:rounded-lg" />;
+    return (
+      <div className="h-7 w-7 overflow-hidden rounded-xl bg-white/90 md:h-6 md:w-6 md:rounded-lg">
+        <MenuNodeImage src={node.image_url} alt={node.name} />
+      </div>
+    );
   }
 
   if (node.icon) {
@@ -87,8 +104,14 @@ const NodeCard = ({
           isDisabledNode && "cursor-not-allowed",
         )}
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-emerald-50 ring-1 ring-emerald-200/70 md:h-12 md:w-12">
-          {renderNodeVisual(node)}
+        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-emerald-50 ring-1 ring-emerald-200/70 md:h-14 md:w-14">
+          {node.image_url ? (
+            <MenuNodeImage src={node.image_url} alt={node.name} />
+          ) : node.icon ? (
+            <span className="text-xl leading-none md:text-2xl">{node.icon}</span>
+          ) : (
+            <ImageIcon className="h-5 w-5 text-muted-foreground/60 md:h-6 md:w-6" />
+          )}
         </div>
 
         <div className={cn(

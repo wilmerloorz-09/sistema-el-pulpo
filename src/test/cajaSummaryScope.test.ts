@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_CASHIERS, scopeCajaSummary, type CajaRegisterDenomRow } from "@/lib/cajaSummaryScope";
+import { ALL_CASHIERS, scopeCajaSummary, belongsToCashierRegisterActivity, resolveCashierOpening, type CajaRegisterDenomRow } from "@/lib/cajaSummaryScope";
 import type { CashRegisterMovement, CashRegisterOpeningHistoryEntry } from "@/hooks/useCaja";
 
 function denom(partial: Partial<CajaRegisterDenomRow> & Pick<CajaRegisterDenomRow, "id" | "denomination_id" | "cashier_id" | "opening_id">): CajaRegisterDenomRow {
@@ -135,5 +135,89 @@ describe("scopeCajaSummary", () => {
 
     expect(scoped.cashierGroups).toHaveLength(2);
     expect(scoped.cashierGroups.map((group) => group.cashierId).sort()).toEqual(["cashier-a", "cashier-b"]);
+  });
+
+  it("incluye movimientos del cajero anterior tras reemplazo en la misma apertura", () => {
+    const transferredOpening = opening({
+      id: "open-b",
+      cashier_id: "cashier-b",
+      status: "abierta",
+      opened_at: "2026-08-12T11:00:00.000Z",
+      initial_total: 20,
+    });
+    const scoped = scopeCajaSummary({
+      denoms: [denoms[0]],
+      openingHistory: [transferredOpening],
+      movements: [
+        movement({ id: "m-will", recordedBy: "cashier-a", createdAt: "2026-08-12T11:10:00.000Z" }),
+        movement({ id: "m-ketty", recordedBy: "cashier-b", createdAt: "2026-08-12T11:20:00.000Z" }),
+      ],
+      cashierId: "cashier-b",
+    });
+
+    expect(scoped.movements.map((entry) => entry.id).sort()).toEqual(["m-ketty", "m-will"]);
+  });
+});
+
+describe("belongsToCashierRegisterActivity", () => {
+  const transferredOpening = opening({
+    id: "open-b",
+    cashier_id: "cashier-b",
+    status: "abierta",
+    opened_at: "2026-08-12T11:00:00.000Z",
+  });
+
+  it("incluye cobros del cajero saliente cuando ya no tiene caja abierta", () => {
+    expect(
+      belongsToCashierRegisterActivity({
+        actorId: "cashier-a",
+        activityAt: "2026-08-12T11:10:00.000Z",
+        cashierId: "cashier-b",
+        opening: transferredOpening,
+        openingHistory: [transferredOpening],
+      }),
+    ).toBe(true);
+  });
+
+  it("excluye cobros de otro cajero que sigue con caja abierta distinta", () => {
+    const openings = [
+      transferredOpening,
+      opening({
+        id: "open-a",
+        cashier_id: "cashier-a",
+        status: "abierta",
+        opened_at: "2026-08-12T11:05:00.000Z",
+      }),
+    ];
+    expect(
+      belongsToCashierRegisterActivity({
+        actorId: "cashier-a",
+        activityAt: "2026-08-12T11:10:00.000Z",
+        cashierId: "cashier-b",
+        opening: transferredOpening,
+        openingHistory: openings,
+      }),
+    ).toBe(false);
+  });
+
+  it("incluye cobros del cajero saliente anteriores a su nueva caja abierta", () => {
+    const openings = [
+      transferredOpening,
+      opening({
+        id: "open-a",
+        cashier_id: "cashier-a",
+        status: "abierta",
+        opened_at: "2026-08-12T11:15:00.000Z",
+      }),
+    ];
+    expect(
+      belongsToCashierRegisterActivity({
+        actorId: "cashier-a",
+        activityAt: "2026-08-12T11:10:00.000Z",
+        cashierId: "cashier-b",
+        opening: transferredOpening,
+        openingHistory: openings,
+      }),
+    ).toBe(true);
   });
 });

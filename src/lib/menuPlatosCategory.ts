@@ -103,16 +103,31 @@ async function loadPlatosProductIds(branchId: string): Promise<string[]> {
     ),
   );
 
-  const productIds = buildPlatosProductIdSet(scopeNodes.flat());
+  const fromCategory = buildPlatosProductIdSet(scopeNodes.flat());
+  const productIds = new Set(fromCategory);
 
   const { data: forcedProducts } = await supabase
     .from("products")
     .select("id")
     .eq("force_servir_module", true);
 
-  if (forcedProducts) {
-    for (const p of forcedProducts) {
-      productIds.add(p.id);
+  for (const row of forcedProducts ?? []) {
+    const id = String(row.id ?? "").trim();
+    if (id) productIds.add(id);
+  }
+
+  if (productIds.size > 0) {
+    const { data: explicitDispatch } = await supabase
+      .from("products")
+      .select("id")
+      .eq("force_servir_module", false)
+      .in("id", Array.from(productIds));
+
+    for (const row of explicitDispatch ?? []) {
+      const id = String(row.id ?? "").trim();
+      if (id && !fromCategory.has(id)) {
+        productIds.delete(id);
+      }
     }
   }
 

@@ -27,6 +27,15 @@ import {
   operationalMapsFromBundleItems,
   paidQtyMapFromBundleItems,
 } from "@/lib/dispatchServirQueueBundle";
+import {
+  fetchOperationalQueue,
+  invalidateOperationalQueueCache,
+  mapServerQueueItemToDispatchLine,
+} from "@/lib/operationalQueue";
+import {
+  isServerOperationalQueueEnabled,
+  type OperationalQueueModule,
+} from "@/lib/operationalQueueConfig";
 import { qk } from "@/lib/queryKeys";
 import {
   OPERATIONAL_STALE_MS,
@@ -453,6 +462,7 @@ function refreshDispatchQueue(
   shiftId?: string | null,
 ) {
   invalidateDispatchServirQueueBundleCache(branchId ?? undefined, shiftId ?? undefined);
+  invalidateOperationalQueueCache(branchId ?? undefined, shiftId ?? undefined);
   void qc.invalidateQueries({ queryKey, exact: true });
 }
 
@@ -477,6 +487,7 @@ function groupItemsIntoDispatchCards(
   platosProductIds?: Set<string>,
   filterOutPlatos?: boolean,
   workflowMode?: string,
+  trustServerDispatchable?: boolean,
 ): DispatchOrder[] {
   const isExpressOrder = order.order_type === "EXPRESS";
   const isExtraOrder = order.order_type === "EXTRA";
@@ -495,23 +506,27 @@ function groupItemsIntoDispatchCards(
       const sent = isExtraOrder || !!(item.sent_to_kitchen_at ?? order.sent_to_kitchen_at);
       if (!sent) return false;
 
-      const line = buildDispatchLineQuantities(
-        item,
-        order,
-        operationalMaps,
-        clientPaidQtyByItemId,
-        isDispatchFirst,
-      );
+      const line = trustServerDispatchable
+        ? mapServerQueueItemToDispatchLine(item, order, isDispatchFirst)
+        : buildDispatchLineQuantities(
+            item,
+            order,
+            operationalMaps,
+            clientPaidQtyByItemId,
+            isDispatchFirst,
+          );
       return line.quantityDispatchable > 0;
     })
     .map((item) => {
-      const line = buildDispatchLineQuantities(
-        item,
-        order,
-        operationalMaps,
-        clientPaidQtyByItemId,
-        isDispatchFirst,
-      );
+      const line = trustServerDispatchable
+        ? mapServerQueueItemToDispatchLine(item, order, isDispatchFirst)
+        : buildDispatchLineQuantities(
+            item,
+            order,
+            operationalMaps,
+            clientPaidQtyByItemId,
+            isDispatchFirst,
+          );
       const {
         quantityOrdered,
         quantities,
@@ -663,9 +678,11 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       // Cambio de turno: tirar caches (no solo invalidar) para no reusar un bundle vacío en vuelo.
       if (lastBranchIdRef.current) {
         invalidateDispatchServirQueueBundleCache(lastBranchIdRef.current);
+        invalidateOperationalQueueCache(lastBranchIdRef.current);
       }
       if (activeBranchId) {
         invalidateDispatchServirQueueBundleCache(activeBranchId);
+        invalidateOperationalQueueCache(activeBranchId);
         resetRepairOpenShiftThrottle(activeBranchId);
       }
       qc.removeQueries({ queryKey: qk.dispatchServirQueueBundle });
@@ -721,15 +738,30 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
       let splitsMap: Record<string, string> = {};
       let hasPlateServersFromBundle: boolean | null = null;
       let usedQueueBundle = false;
+      const useServerQueue = isServerOperationalQueueEnabled();
+      const queueModule: OperationalQueueModule = isPackingModule
+        ? "packing"
+        : isServirModule
+          ? "servir"
+          : "dispatch";
 
       try {
-        // Red directa: sin React Query del bundle (prefetch vacío + dedupe envenenaba la cola).
-        let bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
-
-        // Cola vacía: repair forzado + 1 reintento (cubre tags del turno cerrado y carreras post-apertura).
-        if ((bundle.orders?.length ?? 0) === 0) {
-          await repairOpenShiftOrderCashShiftIds(activeBranchId, { force: true });
-          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id, { force: true });
+        let bundle;
+        if (useServerQueue) {
+          bundle = await fetchOperationalQueue(activeBranchId, openShift.id, queueModule);
+          if ((bundle.orders?.length ?? 0) === 0) {
+            await repairOpenShiftOrderCashShiftIds(activeBranchId, { force: true });
+            bundle = await fetchOperationalQueue(activeBranchId, openShift.id, queueModule, {
+              force: true,
+              runRepair: true,
+            });
+          }
+        } else {
+          bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id);
+          if ((bundle.orders?.length ?? 0) === 0) {
+            await repairOpenShiftOrderCashShiftIds(activeBranchId, { force: true });
+            bundle = await fetchDispatchServirQueueBundle(activeBranchId, openShift.id, { force: true });
+          }
         }
 
         const [bootstrap] = await Promise.all([bootstrapPromise]);
@@ -750,24 +782,26 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           if (flags.has_paid_line) ordersWithPaidLine.add(orderId);
         }
 
-        const activeOrders = ordersMerged.filter((o) => {
-          if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
-          const isExpress = o.order_type === "EXPRESS";
-          const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && o.order_type !== "TAKEOUT");
-          if (isDispatchFirst) {
-            return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";
-          }
-          const hasAnyPay = ordersWithAnyPayment.has(o.id);
-          const hasActivePay = ordersWithActivePayment.has(o.id);
-          const hasPaidLine = ordersWithPaidLine.has(o.id);
-          if (o.status === "PAID") {
-            return !!o.paid_at || !hasAnyPay || hasActivePay;
-          }
-          if (o.status === "READY" || o.status === "SENT_TO_KITCHEN") {
-            return hasActivePay || !!o.paid_at || hasPaidLine;
-          }
-          return false;
-        });
+        const activeOrders = useServerQueue
+          ? ordersMerged
+          : ordersMerged.filter((o) => {
+              if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
+              const isExpress = o.order_type === "EXPRESS";
+              const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && o.order_type !== "TAKEOUT");
+              if (isDispatchFirst) {
+                return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";
+              }
+              const hasAnyPay = ordersWithAnyPayment.has(o.id);
+              const hasActivePay = ordersWithActivePayment.has(o.id);
+              const hasPaidLine = ordersWithPaidLine.has(o.id);
+              if (o.status === "PAID") {
+                return !!o.paid_at || !hasAnyPay || hasActivePay;
+              }
+              if (o.status === "READY" || o.status === "SENT_TO_KITCHEN") {
+                return hasActivePay || !!o.paid_at || hasPaidLine;
+              }
+              return false;
+            });
 
         if (activeOrders.length === 0) {
           return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
@@ -872,6 +906,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
             platosProductIds,
             filterOutPlatos,
             workflowMode,
+            useServerQueue,
           );
         }).filter((card) => dispatchCardHasWork(card));
 

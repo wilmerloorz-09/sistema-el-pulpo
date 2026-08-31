@@ -3,6 +3,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
+import { invalidateOperationalQueueCache } from "@/lib/operationalQueue";
 import { OPERATIONAL_ORDER_LIST_KEYS, qk } from "@/lib/queryKeys";
 
 /** Defaults para catálogos casi estáticos (métodos de pago, denominaciones, plantillas). */
@@ -324,6 +325,8 @@ type BranchRealtimeHub = {
   /** Eventos RT llegados con la app/pestaña oculta; se vacían al volver a visible. */
   pendingSources: Set<HubInvalidateSource>;
   status: HubRealtimeStatus;
+  retryTimer: number | null;
+  retryAttempt: number;
 };
 
 const hubsByBranch = new Map<string, BranchRealtimeHub>();
@@ -356,6 +359,12 @@ function setPageVisible(next: boolean) {
   if (!next) return;
   for (const hub of hubsByBranch.values()) {
     flushPendingHubInvalidates(hub);
+    if (
+      hub.consumers.size > 0
+      && (hub.status === "error" || hub.status === "closed")
+    ) {
+      rebuildHubChannel(hub);
+    }
   }
 }
 
@@ -488,6 +497,7 @@ function runHubInvalidateNow(hub: BranchRealtimeHub, source: HubInvalidateSource
   // cache local antes de que las colas activas se rehidraten.
   if (source !== "shift") {
     invalidateDispatchServirQueueBundleCache(hub.branchId);
+    invalidateOperationalQueueCache(hub.branchId);
   }
   // Eventos de órdenes/ítems/listo/despacho NO deben refetch el gate
   // (antes cada plato listo re-disparaba 4–5 RPCs de turno en cada tablet).
@@ -548,7 +558,30 @@ function scheduleHubInvalidate(hub: BranchRealtimeHub, source: HubInvalidateSour
   }, hub.debounceMs + hub.jitterMs);
 }
 
+function clearHubRetry(hub: BranchRealtimeHub) {
+  if (hub.retryTimer != null) {
+    window.clearTimeout(hub.retryTimer);
+    hub.retryTimer = null;
+  }
+}
+
+function scheduleHubReconnect(hub: BranchRealtimeHub) {
+  if (hub.consumers.size === 0) return;
+  if (hub.retryTimer != null) return;
+
+  const delay = Math.min(30_000, 2_000 * 2 ** Math.min(hub.retryAttempt, 4));
+  hub.retryTimer = window.setTimeout(() => {
+    hub.retryTimer = null;
+    hub.retryAttempt += 1;
+    if (hub.consumers.size > 0) {
+      rebuildHubChannel(hub);
+    }
+  }, delay);
+}
+
 function rebuildHubChannel(hub: BranchRealtimeHub) {
+  clearHubRetry(hub);
+
   if (hub.channel) {
     void supabase.removeChannel(hub.channel);
     hub.channel = null;
@@ -663,11 +696,15 @@ function rebuildHubChannel(hub: BranchRealtimeHub) {
 
   hub.channel = channel.subscribe((status) => {
     if (status === "SUBSCRIBED") {
+      hub.retryAttempt = 0;
+      clearHubRetry(hub);
       setHubStatus(hub, "subscribed");
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       setHubStatus(hub, "error");
+      scheduleHubReconnect(hub);
     } else if (status === "CLOSED") {
       setHubStatus(hub, "closed");
+      scheduleHubReconnect(hub);
     }
   });
 }
@@ -686,6 +723,8 @@ function getOrCreateHub(branchId: string, queryClient: QueryClient): BranchRealt
       jitterMs: Math.floor(Math.random() * (HUB_DEBOUNCE_JITTER_MS + 1)),
       pendingSources: new Set(),
       status: "idle",
+      retryTimer: null,
+      retryAttempt: 0,
     };
     hubsByBranch.set(branchId, hub);
   } else {
@@ -748,6 +787,7 @@ function removeHubConsumer(branchId: string, consumerId: string) {
       window.clearTimeout(hub.debounceTimer);
       hub.debounceTimer = null;
     }
+    clearHubRetry(hub);
     if (hub.channel) {
       void supabase.removeChannel(hub.channel);
       hub.channel = null;

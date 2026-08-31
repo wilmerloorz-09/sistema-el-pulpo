@@ -1,0 +1,152 @@
+import { supabase } from "@/integrations/supabase/client";
+import {
+  normalizeDispatchServirQueueBundle,
+  type DispatchServirQueueBundle,
+} from "@/lib/dispatchServirQueueBundle";
+import { computeOperationalQuantities, orderTreatAsFullyPaidForDispatch } from "@/lib/orderOperational";
+import type { OperationalQueueModule } from "@/lib/operationalQueueConfig";
+
+export type OperationalQueueBundle = DispatchServirQueueBundle;
+
+/** Misma ventana que el bundle legacy para compartir cadencia de invalidación RT. */
+export const OPERATIONAL_QUEUE_CACHE_TTL_MS = 8_000;
+
+type OperationalQueueCacheEntry = {
+  bundle: OperationalQueueBundle;
+  storedAt: number;
+};
+
+const queueCache = new Map<string, OperationalQueueCacheEntry>();
+const queueInflight = new Map<string, Promise<OperationalQueueBundle>>();
+const queueRequestVersions = new Map<string, number>();
+
+function operationalQueueCacheKey(branchId: string, shiftId: string, module: OperationalQueueModule) {
+  return `${branchId}:${shiftId}:${module}`;
+}
+
+function nextQueueRequestVersion(key: string) {
+  const next = (queueRequestVersions.get(key) ?? 0) + 1;
+  queueRequestVersions.set(key, next);
+  return next;
+}
+
+export function invalidateOperationalQueueCache(
+  branchId?: string,
+  shiftId?: string,
+  module?: OperationalQueueModule,
+) {
+  const keys = new Set([
+    ...queueCache.keys(),
+    ...queueInflight.keys(),
+    ...queueRequestVersions.keys(),
+  ]);
+
+  for (const key of keys) {
+    const [entryBranchId, entryShiftId, entryModule] = key.split(":");
+    if (branchId && entryBranchId !== branchId) continue;
+    if (shiftId && entryShiftId !== shiftId) continue;
+    if (module && entryModule !== module) continue;
+
+    queueCache.delete(key);
+    queueInflight.delete(key);
+    nextQueueRequestVersion(key);
+  }
+}
+
+function asInt(value: unknown) {
+  return Math.max(0, Math.floor(Number(value ?? 0)));
+}
+
+/** Mapeo de ítem RPC servidor → línea de tarjeta Despacho/Servir/Empaquetador. */
+export function mapServerQueueItemToDispatchLine(
+  item: Record<string, unknown>,
+  order: Record<string, unknown>,
+  isDispatchFirst: boolean,
+) {
+  const quantityOrdered = asInt(item.quantity);
+  const snapshotCancelledTotal = asInt(item.quantity_cancelled_total);
+  const snapshotDispatchedTotal = asInt(item.quantity_dispatched_total);
+  const snapshotCancelledDispatched = asInt(item.quantity_cancelled_dispatched);
+  const snapshotPaid = asInt(item.quantity_paid);
+
+  const quantities = computeOperationalQuantities({
+    quantityOrdered,
+    quantityReadyTotal: asInt(item.quantity_ready_total),
+    quantityDispatchedTotal: snapshotDispatchedTotal,
+    quantityCancelledPending: asInt(item.quantity_cancelled_pending),
+    quantityCancelledReady: asInt(item.quantity_cancelled_ready),
+    quantityCancelledDispatched: snapshotCancelledDispatched,
+  });
+
+  const quantityPaid = isDispatchFirst
+    ? Math.max(0, quantityOrdered - snapshotCancelledTotal)
+    : snapshotPaid > 0
+      ? Math.min(quantityOrdered, snapshotPaid)
+      : orderTreatAsFullyPaidForDispatch(order)
+        ? Math.max(0, quantityOrdered - snapshotCancelledTotal)
+        : 0;
+
+  const quantityDispatchedNet = Math.max(0, snapshotDispatchedTotal - snapshotCancelledDispatched);
+
+  return {
+    quantityOrdered,
+    quantities,
+    quantityPaid,
+    quantityDispatchedNet,
+    quantityPendingPrepare: asInt(item.quantity_pending_prepare),
+    quantityReadyAvailable: asInt(item.quantity_ready_available),
+    quantityDispatchable: asInt(item.quantity_dispatchable),
+  };
+}
+
+/** 1 RTT: cola operativa con quantity_dispatchable calculado en SQL. */
+export async function fetchOperationalQueue(
+  branchId: string,
+  shiftId: string,
+  module: OperationalQueueModule,
+  options?: { force?: boolean; runRepair?: boolean },
+): Promise<OperationalQueueBundle> {
+  const key = operationalQueueCacheKey(branchId, shiftId, module);
+  const force = Boolean(options?.force);
+  const now = Date.now();
+  const cached = queueCache.get(key);
+
+  if (!force && cached && now - cached.storedAt < OPERATIONAL_QUEUE_CACHE_TTL_MS) {
+    return cached.bundle;
+  }
+
+  if (!force) {
+    const inflight = queueInflight.get(key);
+    if (inflight) return inflight;
+  }
+
+  const version = nextQueueRequestVersion(key);
+  const request = (async () => {
+    const { data, error } = await (supabase as any).rpc("get_operational_queue", {
+      p_branch_id: branchId,
+      p_shift_id: shiftId,
+      p_module: module,
+      p_run_repair: Boolean(options?.runRepair),
+    });
+    if (error) throw error;
+
+    const bundle = normalizeDispatchServirQueueBundle(data);
+    if (queueRequestVersions.get(key) === version) {
+      if (bundle.orders.length > 0) {
+        queueCache.set(key, { bundle, storedAt: Date.now() });
+      } else {
+        queueCache.delete(key);
+      }
+    }
+    return bundle;
+  })();
+
+  queueInflight.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (queueInflight.get(key) === request) {
+      queueInflight.delete(key);
+    }
+  }
+}

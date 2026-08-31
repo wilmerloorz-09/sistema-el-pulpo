@@ -244,7 +244,7 @@ const NAV_ITEMS: AppNavItem[] = [
   },
   {
     to: "/inventario/productos",
-    label: "Productos",
+    label: "Productos de la sucursal",
     icon: <Package className="h-5 w-5" />,
     group: "INVENTARIO",
     tone: {

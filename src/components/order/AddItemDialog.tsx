@@ -117,6 +117,7 @@ const AddItemDialog = ({
   const [specialPriceEditing, setSpecialPriceEditing] = useState(false);
   const [ensuringProduct, setEnsuringProduct] = useState(false);
   const specialPriceInputRef = useRef<HTMLInputElement>(null);
+  const openedAtRef = useRef<number>(0);
 
   const dialogOpen = Boolean(open && displayProduct);
 
@@ -131,6 +132,7 @@ const AddItemDialog = ({
 
   useEffect(() => {
     if (!dialogOpen) return;
+    openedAtRef.current = Date.now();
     const initial = stockCap != null ? Math.min(1, stockCap) : 1;
     setQuantity(initial);
     setQuantityInput(String(initial));
@@ -197,7 +199,9 @@ const AddItemDialog = ({
         setEnsuringProduct(false);
       }
     }
-    if (!readyProduct) return;
+    if (!readyProduct) {
+      return;
+    }
 
     onConfirm({
       product_id: readyProduct.id,
@@ -213,6 +217,13 @@ const AddItemDialog = ({
     setManualPrice("");
     setSpecialPriceEditing(false);
     setSelectedMods([]);
+  };
+
+  const suppressAccidentalDismiss = (event: Event) => {
+    // Evita que el mismo tap que abrió el modal lo cierre al soltar sobre el overlay.
+    if (Date.now() - openedAtRef.current < 450) {
+      event.preventDefault();
+    }
   };
 
   const handleStartSpecialPriceEdit = () => {
@@ -251,7 +262,11 @@ const AddItemDialog = ({
   return (
     <Dialog open={dialogOpen} onOpenChange={(value) => !value && onClose()}>
       {displayProduct ? (
-      <DialogContent className="max-w-sm rounded-[24px] p-5 shadow-xl sm:rounded-[28px] border-orange-200/40 bg-background">
+      <DialogContent
+        className="max-w-sm rounded-[24px] p-5 shadow-xl sm:rounded-[28px] border-orange-200/40 bg-background"
+        onPointerDownOutside={suppressAccidentalDismiss}
+        onInteractOutside={suppressAccidentalDismiss}
+      >
         <DialogHeader className="mb-1 text-left">
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-100 text-primary shadow-sm">

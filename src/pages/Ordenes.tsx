@@ -71,6 +71,7 @@ import {
   computeKitchenSendMoneyDeltaForSend,
   formatKitchenSendMoneyDelta,
   hasKitchenPendingSendChanges,
+  mergeMissingKitchenTempItems,
   reconcileKitchenStagedItems,
 } from "@/lib/kitchenPendingChanges";
 import type { TrayItemType } from "@/hooks/useTrayOrder";
@@ -98,7 +99,7 @@ const MESA_PICKER_CARD_STATUS_LABEL: Record<string, string> = {
 
 interface SelectedProduct {
   id: string;
-  menu_node_id: string;
+  menu_node_id: string | null;
   description: string;
   subcategory_id: string;
   unit_price: number | null;
@@ -363,14 +364,9 @@ function buildOptimisticSelectedProduct(
   isTrayOrder: boolean,
   trayType: TrayItemType,
 ): SelectedProduct | null {
-  const legacyId =
-    typeof node.legacy_product_id === "string" && node.legacy_product_id.trim().length > 0
-      ? node.legacy_product_id.trim()
-      : null;
-  const productId =
-    node.menu_scope === "TABLE"
-      ? (node.id || legacyId)
-      : (legacyId || node.id);
+  // Siempre el id de `products` (legacy / global), nunca el id del nodo de menú
+  // si son distintos: el RPC add_dine_in_order_item busca en public.products.
+  const productId = resolveMenuNodeProductId(node);
   if (!productId) return null;
 
   const shell = buildProductLoadingShell(node, isTrayOrder, trayType);
@@ -422,13 +418,12 @@ async function fetchMenuProductLookup(params: {
     }
   }
 
+  const preferredProductId = resolveMenuNodeProductId(params.node);
   const candidateProductIds = Array.from(
     new Set(
-      (
-        params.node.menu_scope === "TABLE"
-          ? [params.node.id, resolvedLegacyProductId]
-          : [resolvedLegacyProductId, params.node.id]
-      ).filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+      [preferredProductId, resolvedLegacyProductId, params.node.id].filter(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      ),
     ),
   );
 
@@ -527,9 +522,90 @@ async function fetchMenuProductLookup(params: {
       price_mode: "FIXED" | "MANUAL";
     }>).map((row) => [row.id, row]),
   );
-  const productRow = candidateProductIds
+  let productRow = candidateProductIds
     .map((productId) => productRowsById.get(productId))
     .find((row): row is NonNullable<typeof row> => Boolean(row));
+
+  /** Nodo de menú que debe enviarse al RPC junto al product_id (deben coincidir). */
+  let resolvedMenuNodeId: string | null = params.node.id;
+
+  // TAKEOUT/BULK/TABLE: legacy huérfano o nodo sin fila en products → reparar enlace y reintentar.
+  if (!productRow) {
+    const { data: repairedId, error: repairError } = await supabase.rpc(
+      "sync_menu_node_to_legacy_product" as any,
+      { p_menu_node_id: params.node.id },
+    );
+    if (!repairError && repairedId) {
+      const repairedProductId = String(repairedId);
+      const { data: repairedRows, error: repairedLookupError } = await supabase
+        .from("products")
+        .select("id, description, subcategory_id, unit_price, price_mode")
+        .eq("id", repairedProductId)
+        .maybeSingle();
+      if (!repairedLookupError && repairedRows) {
+        productRow = repairedRows as {
+          id: string;
+          description: string | null;
+          subcategory_id: string;
+          unit_price: number | null;
+          price_mode: "FIXED" | "MANUAL";
+        };
+        resolvedMenuNodeId = params.node.id;
+      }
+    }
+
+    // Fallback: mismo nombre en menú de mesa. Usar ese nodo+producto para que el RPC no rechace el par.
+    if (!productRow) {
+      const { data: tableNodes } = await supabase
+        .from("menu_nodes" as any)
+        .select("id, legacy_product_id")
+        .eq("branch_id", params.branchId)
+        .eq("menu_scope", "TABLE")
+        .eq("node_type", "product")
+        .eq("name", params.node.name)
+        .limit(8);
+
+      const tableNodeRows = (tableNodes ?? []) as Array<{ id: string; legacy_product_id?: string | null }>;
+      const tableCandidateIds = Array.from(
+        new Set(
+          tableNodeRows
+            .flatMap((row) => [row.legacy_product_id, row.id])
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+        ),
+      );
+
+      if (tableCandidateIds.length > 0) {
+        const { data: tableProducts } = await supabase
+          .from("products")
+          .select("id, description, subcategory_id, unit_price, price_mode")
+          .in("id", tableCandidateIds);
+
+        const tableProductRows = (tableProducts ?? []) as Array<{
+          id: string;
+          description: string | null;
+          subcategory_id: string;
+          unit_price: number | null;
+          price_mode: "FIXED" | "MANUAL";
+        }>;
+
+        for (const tableNode of tableNodeRows) {
+          const matchId = tableNode.legacy_product_id?.trim() || tableNode.id;
+          const matched = tableProductRows.find((row) => row.id === matchId)
+            ?? tableProductRows.find((row) => row.id === tableNode.id);
+          if (!matched) continue;
+          productRow = matched;
+          resolvedMenuNodeId = tableNode.id;
+          break;
+        }
+
+        if (!productRow && tableProductRows[0]) {
+          productRow = tableProductRows[0];
+          // Sin nodo mesa confiable: el RPC validará solo por product_id.
+          resolvedMenuNodeId = null;
+        }
+      }
+    }
+  }
 
   if (!productRow) {
     throw new Error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
@@ -551,7 +627,7 @@ async function fetchMenuProductLookup(params: {
   return {
     product: {
       id: productRow.id,
-      menu_node_id: params.node.id,
+      menu_node_id: resolvedMenuNodeId,
       description: resolvedDescription,
       subcategory_id: productRow.subcategory_id,
       unit_price: resolvedUnitPrice,
@@ -989,6 +1065,8 @@ const OrdenesContent = () => {
   const productSelectSeqRef = useRef(0);
   /** Lookup en curso: el dialog abre al instante y confirma espera este promise si hace falta. */
   const productLookupPromiseRef = useRef<Promise<SelectedProduct | null> | null>(null);
+  /** Evita que onClose del dialog aborte el lookup mientras confirmamos Agregar. */
+  const confirmingAddRef = useRef(false);
   const syncedOrderBranchRef = useRef<string | null>(null);
   const tableOrdersTabsRef = useRef<HTMLDivElement>(null);
   const [tableOrdersTabsOverflow, setTableOrdersTabsOverflow] = useState({
@@ -1179,7 +1257,10 @@ const OrdenesContent = () => {
   useEffect(() => {
     if (!useKitchenStaging || fromEditar || isLoading) return;
 
-    setStagedItems((prev) => reconcileKitchenStagedItems(prev, orderItems));
+    setStagedItems((prev) => {
+      const reconciled = reconcileKitchenStagedItems(prev, orderItems);
+      return mergeMissingKitchenTempItems(reconciled, orderItems);
+    });
   }, [useKitchenStaging, fromEditar, isLoading, orderItems]);
 
   useEffect(() => {
@@ -1731,25 +1812,48 @@ const OrdenesContent = () => {
   useEffect(() => {
     if (!order || !isTakeoutOrder) return;
     if (paymentDialogOpenForOrderId === order.id) return;
+    // Evitar expulsar de la orden mientras el usuario agrega un producto.
+    if (selectedProduct || productLoadingShell) return;
+
+    const orderIdSnapshot = order.id;
+    const branchIdSnapshot = order.branch_id;
+    const statusSnapshot = order.status;
 
     let cancelled = false;
-    void fetchTakeoutSiblingOrders(order.branch_id)
+    void fetchTakeoutSiblingOrders(branchIdSnapshot)
       .then((orders) => {
         if (cancelled) return;
-        const currentOrderIsStillActive = orders.some((takeoutOrder) => takeoutOrder.id === order.id);
+        const currentOrderIsStillActive = orders.some((takeoutOrder) => takeoutOrder.id === orderIdSnapshot);
         if (currentOrderIsStillActive) return;
 
-        const nextOrderId = orders.find((takeoutOrder) => takeoutOrder.id !== order.id)?.id ?? null;
+        // Lista vacía / sin turno: no navegar (falso negativo). Solo salir si la orden
+        // ya no debería permanecer abierta en Para Llevar.
+        if (orders.length === 0) return;
+        if (statusSnapshot === "DRAFT" || statusSnapshot === "SENT_TO_KITCHEN" || statusSnapshot === "READY") {
+          return;
+        }
+
+        const nextOrderId = orders.find((takeoutOrder) => takeoutOrder.id !== orderIdSnapshot)?.id ?? null;
         navigate(nextOrderId ? `/ordenes?order=${nextOrderId}${sourceParams}` : "/para-llevar", { replace: true });
       })
       .catch(() => {
-        if (!cancelled) navigate("/para-llevar", { replace: true });
+        // No navegar por errores transitorios de red/turno.
       });
 
     return () => {
       cancelled = true;
     };
-  }, [isTakeoutOrder, navigate, order, paymentDialogOpenForOrderId, sourceParams]);
+  }, [
+    isTakeoutOrder,
+    navigate,
+    order?.id,
+    order?.branch_id,
+    order?.status,
+    paymentDialogOpenForOrderId,
+    productLoadingShell,
+    selectedProduct,
+    sourceParams,
+  ]);
 
   useEffect(() => {
     if (!order || !isExpressOrder) return;
@@ -2395,10 +2499,8 @@ const OrdenesContent = () => {
       } catch (error: any) {
         if (selectSeq !== productSelectSeqRef.current) return null;
         toast.error(error?.message || "No se pudo cargar el producto seleccionado.");
-        setSelectedProduct(null);
-        setSelectedProductRootName(null);
-        setSelectedProductModifiers([]);
-        setProductLoadingShell(null);
+        // No cerrar el diálogo: el usuario ya lo ve; el lookup falló en background.
+        // Dejamos el producto optimistic para reintentar al confirmar (ensureProduct).
         return null;
       } finally {
         if (productLookupPromiseRef.current === lookupPromise) {
@@ -4744,9 +4846,11 @@ const OrdenesContent = () => {
         ensureProduct={async () => {
           const pending = productLookupPromiseRef.current;
           if (pending) {
-            return await pending;
+            const resolved = await pending;
+            if (resolved) return resolved;
           }
-          return selectedProduct;
+          if (selectedProduct) return selectedProduct;
+          return null;
         }}
         modifiers={
           (selectedProduct || productLoadingShell) && (!isTrayOrder || effectiveTrayType !== "A")
@@ -4756,8 +4860,11 @@ const OrdenesContent = () => {
         open={Boolean(selectedProduct || productLoadingShell)}
         maxStock={addItemMaxStock}
         onClose={() => {
-          productSelectSeqRef.current += 1;
-          productLookupPromiseRef.current = null;
+          // No abortar el lookup si el cierre es el cierre optimista de Agregar.
+          if (!confirmingAddRef.current) {
+            productSelectSeqRef.current += 1;
+            productLookupPromiseRef.current = null;
+          }
           setSelectedProduct(null);
           setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
@@ -4806,6 +4913,7 @@ const OrdenesContent = () => {
             modifier_id: id,
             description: modifierDescriptionById.get(id) ?? "",
           }));
+          const productSnapshot = selectedProduct;
 
           if (fromEditar) {
             setStagedDirty(true);
@@ -4814,7 +4922,7 @@ const OrdenesContent = () => {
               {
                 id: `staged-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
                 product_id: data.product_id,
-                menu_node_id: selectedProduct?.menu_node_id ?? null,
+                menu_node_id: productSnapshot?.menu_node_id ?? null,
                 description_snapshot: data.description_snapshot,
                 item_note: data.item_note ?? null,
                 quantity: data.quantity,
@@ -4845,19 +4953,52 @@ const OrdenesContent = () => {
           }
 
           // Cierre optimista para que la interfaz móvil responda instantáneamente
+          confirmingAddRef.current = true;
           setSelectedProduct(null);
           setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
           setProductLoadingShell(null);
+          // En móvil, mostrar la orden de inmediato para que el ítem optimista sea visible.
+          setShowCart(true);
 
-          addItem.mutate({
-            ...data,
-            menu_node_id: selectedProduct?.menu_node_id ?? null,
-            modifier_ids: selectedModifierIds,
-            modifier_snapshots: selectedModifierSnapshots,
-            tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : undefined,
-            tray_container_cost: 0,
-          });
+          void (async () => {
+            try {
+              // Esperar lookup/reparación para no enviar un product_id huérfano que el RPC rechaza.
+              let productId = data.product_id;
+              let menuNodeId = productSnapshot?.menu_node_id ?? null;
+              const pendingLookup = productLookupPromiseRef.current;
+              if (pendingLookup) {
+                try {
+                  const resolved = await pendingLookup;
+                  if (resolved?.id) {
+                    productId = resolved.id;
+                    menuNodeId = resolved.menu_node_id ?? null;
+                  }
+                } catch {
+                  // El mutate fallará con mensaje claro si el id sigue inválido.
+                }
+              }
+
+              addItem.mutate(
+                {
+                  ...data,
+                  product_id: productId,
+                  menu_node_id: menuNodeId,
+                  modifier_ids: selectedModifierIds,
+                  modifier_snapshots: selectedModifierSnapshots,
+                  tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : undefined,
+                  tray_container_cost: 0,
+                },
+                {
+                  onSettled: () => {
+                    confirmingAddRef.current = false;
+                  },
+                },
+              );
+            } catch {
+              confirmingAddRef.current = false;
+            }
+          })();
         }}
         adding={addItem.isPending}
       />

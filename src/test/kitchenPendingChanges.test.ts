@@ -5,6 +5,7 @@ import {
   formatKitchenSendMoneyDelta,
   hasKitchenPendingChanges,
   hasKitchenPendingSendChanges,
+  mergeMissingKitchenTempItems,
   reconcileKitchenStagedItems,
 } from "@/lib/kitchenPendingChanges";
 
@@ -142,5 +143,17 @@ describe("kitchenPendingChanges", () => {
     ];
 
     expect(reconcileKitchenStagedItems(staged, server)).toEqual(staged);
+  });
+
+  it("mergeMissingKitchenTempItems recupera temps del servidor ausentes en staging", () => {
+    const staged = [{ id: "line-1", quantity: 1 }];
+    const server = [
+      { id: "line-1", quantity: 1 },
+      { id: "temp-abc", quantity: 2 },
+    ];
+    expect(mergeMissingKitchenTempItems(staged, server)).toEqual([
+      { id: "line-1", quantity: 1 },
+      { id: "temp-abc", quantity: 2 },
+    ]);
   });
 });

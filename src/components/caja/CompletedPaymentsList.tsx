@@ -512,13 +512,7 @@ export default function CompletedPaymentsList({
     return map;
   }, [payments]);
 
-  const visiblePayments = useMemo(() => {
-    if (filters.cashierName === "ALL") return groupedPayments;
-    return groupedPayments.filter((payment) => {
-      const matchingRow = payments.find((r) => r.id === payment.paymentId);
-      return matchingRow?.cashier_id === filters.cashierName;
-    });
-  }, [filters.cashierName, groupedPayments, payments]);
+  const visiblePayments = groupedPayments;
 
   const visibleTotal = visiblePayments.filter((p) => {
     const normalizedStatus = (p.status?.toString() || "").toUpperCase();
