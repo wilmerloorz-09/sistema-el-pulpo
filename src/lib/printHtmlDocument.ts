@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 
 export type CashReportPrintResult = "print-dialog" | "opened-tab" | "shared" | "failed";
+export type CashReportPdfResult = "downloaded" | "shared" | "failed";
 
 /** Móvil, tablet o app nativa. */
 export const prefersDedicatedPrintWindow = (): boolean => {
@@ -174,20 +175,106 @@ function printFromIframe(frame: HTMLIFrameElement | null): boolean {
   }
 }
 
-/** Móvil: no usar overlay in-app; abrir pestaña o compartir. */
-export function printCashReportMobile(
+function defaultCashReportFilename(ext: "pdf" | "html" = "pdf"): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `reporte-caja-${stamp}.${ext}`;
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function buildCashReportRenderElement(html: string): { element: HTMLElement; cleanup: () => void } {
+  const { styles, bodyHtml } = parseReportHtml(html);
+  const wrapper = document.createElement("div");
+  wrapper.style.cssText = "position:fixed;left:-10000px;top:0;width:210mm;background:#fff;";
+  wrapper.innerHTML = `<style>${styles}</style><div class="cash-report-print-document">${bodyHtml}</div>`;
+  document.body.appendChild(wrapper);
+  return {
+    element: wrapper,
+    cleanup: () => wrapper.remove(),
+  };
+}
+
+/** Genera PDF del reporte (funciona en Android; window.print no). */
+export async function generateCashReportPdfBlob(html: string): Promise<Blob | null> {
+  if (typeof document === "undefined") return null;
+
+  const { element, cleanup } = buildCashReportRenderElement(html);
+  try {
+    const html2pdf = (await import("html2pdf.js")).default;
+    return await html2pdf()
+      .set({
+        margin: [10, 10, 10, 10],
+        image: { type: "jpeg", quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"] },
+      })
+      .from(element)
+      .outputPdf("blob");
+  } catch {
+    return null;
+  } finally {
+    cleanup();
+  }
+}
+
+export function downloadCashReportHtml(html: string): void {
+  if (typeof document === "undefined") return;
+  const docHtml = normalizeFullHtml(html);
+  downloadBlob(new Blob([docHtml], { type: "text/html;charset=utf-8" }), defaultCashReportFilename("html"));
+}
+
+/** Guarda PDF en descargas del dispositivo. */
+export async function downloadCashReportPdf(html: string): Promise<CashReportPdfResult> {
+  const blob = await generateCashReportPdfBlob(html);
+  if (!blob) {
+    downloadCashReportHtml(html);
+    return "downloaded";
+  }
+
+  downloadBlob(blob, defaultCashReportFilename("pdf"));
+  return "downloaded";
+}
+
+/** Comparte PDF; si no hay menú nativo, descarga el archivo. */
+export async function shareCashReportPdf(
   html: string,
-  iframe: HTMLIFrameElement | null,
-): CashReportPrintResult {
-  if (openCashReportInNewTab(html)) {
-    return "opened-tab";
+  title = "Reporte de caja",
+): Promise<CashReportPdfResult> {
+  const blob = await generateCashReportPdfBlob(html);
+  if (!blob) return "failed";
+
+  const filename = defaultCashReportFilename("pdf");
+  const file = new File([blob], filename, { type: "application/pdf" });
+
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      const payload = { files: [file], title, text: title };
+      if (typeof navigator.canShare !== "function" || navigator.canShare(payload)) {
+        await navigator.share(payload);
+        return "shared";
+      }
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return "shared";
+      }
+    }
   }
 
-  if (printFromIframe(iframe)) {
-    return "print-dialog";
-  }
-
-  return "failed";
+  downloadBlob(blob, filename);
+  return "downloaded";
 }
 
 export function printCashReportDesktop(iframe: HTMLIFrameElement | null, html: string): CashReportPrintResult {

@@ -4,10 +4,10 @@ import { Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
 import {
+  downloadCashReportPdf,
   prefersDedicatedPrintWindow,
   printCashReportDesktop,
-  printCashReportMobile,
-  shareCashReportHtml,
+  shareCashReportPdf,
 } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
 
@@ -17,14 +17,22 @@ type CashReportViewState = {
 } | null;
 
 const PRINT_TOAST = {
-  "opened-tab": {
-    title: "Reporte abierto en otra pestaña",
-    description: "Ahí use Imprimir o Compartir. Vuelva a esta pestaña y pulse Cerrar cuando termine.",
-  },
   "print-dialog": null,
   failed: {
     title: "No se pudo imprimir",
-    description: "Pruebe el botón Compartir o abra la app en Chrome/Safari (no solo el acceso directo).",
+    description: "En este equipo use Guardar PDF y ábralo desde Descargas.",
+  },
+} as const;
+
+const PDF_TOAST = {
+  downloaded: {
+    title: "PDF guardado",
+    description: "Ábralo desde Descargas y use Imprimir o Compartir desde el visor de PDF.",
+  },
+  shared: null,
+  failed: {
+    title: "No se pudo generar el PDF",
+    description: "Intente de nuevo en unos segundos.",
   },
 } as const;
 
@@ -33,7 +41,7 @@ const PRINT_TOAST = {
  */
 export function CashReportViewer() {
   const [state, setState] = useState<CashReportViewState>(null);
-  const [sharing, setSharing] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoPrintDoneRef = useRef(false);
   const isMobileLike = prefersDedicatedPrintWindow();
@@ -72,27 +80,40 @@ export function CashReportViewer() {
     toast.message(message.title, { description: message.description });
   };
 
+  const notifyPdfResult = (result: keyof typeof PDF_TOAST) => {
+    const message = PDF_TOAST[result];
+    if (!message) return;
+    if (result === "failed") {
+      toast.error(message.title, { description: message.description });
+      return;
+    }
+    toast.message(message.title, { description: message.description });
+  };
+
   const handlePrint = () => {
     if (!state?.html) return;
 
-    const result = isMobileLike
-      ? printCashReportMobile(state.html, iframeRef.current)
-      : printCashReportDesktop(iframeRef.current, state.html);
-
+    const result = printCashReportDesktop(iframeRef.current, state.html);
     notifyPrintResult(result === "print-dialog" ? "print-dialog" : result);
   };
 
-  const handleShare = async () => {
-    if (!state?.html || sharing) return;
-    setSharing(true);
+  const handleSavePdf = async () => {
+    if (!state?.html || exportingPdf) return;
+    setExportingPdf(true);
     try {
-      const shared = await shareCashReportHtml(state.html);
-      if (shared) return;
-      toast.error("Compartir no disponible", {
-        description: "Use Imprimir para abrir el reporte en otra pestaña.",
-      });
+      notifyPdfResult(await downloadCashReportPdf(state.html));
     } finally {
-      setSharing(false);
+      setExportingPdf(false);
+    }
+  };
+
+  const handleSharePdf = async () => {
+    if (!state?.html || exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      notifyPdfResult(await shareCashReportPdf(state.html));
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -116,25 +137,36 @@ export function CashReportViewer() {
       aria-label="Reporte de caja"
     >
       <div className="no-print flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] shadow-sm">
-        <Button
-          type="button"
-          className="min-h-11 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
-          onClick={handlePrint}
-        >
-          Imprimir
-        </Button>
         {isMobileLike ? (
+          <>
+            <Button
+              type="button"
+              className="min-h-11 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
+              onClick={() => void handleSavePdf()}
+              disabled={exportingPdf}
+            >
+              {exportingPdf ? "Generando…" : "Guardar PDF"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 gap-1.5 rounded-full px-4 font-bold"
+              onClick={() => void handleSharePdf()}
+              disabled={exportingPdf}
+            >
+              <Share2 className="h-4 w-4" />
+              Compartir PDF
+            </Button>
+          </>
+        ) : (
           <Button
             type="button"
-            variant="outline"
-            className="min-h-11 gap-1.5 rounded-full px-4 font-bold"
-            onClick={() => void handleShare()}
-            disabled={sharing}
+            className="min-h-11 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
+            onClick={handlePrint}
           >
-            <Share2 className="h-4 w-4" />
-            Compartir
+            Imprimir
           </Button>
-        ) : null}
+        )}
         <Button
           type="button"
           variant="outline"
