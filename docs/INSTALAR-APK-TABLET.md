@@ -4,7 +4,7 @@ La app de la tablet debe reinstalarse para poder imprimir reportes (plugin Compa
 
 ## Opcion A: Descargar desde GitHub (recomendado)
 
-1. Abra https://github.com/wilmerloorz-09/sistema-el-pulpo/actions
+1. Abra https://github.com/wilmerloorz-09/sistema-el-pulpo/actions/workflows/android-apk.yml
 2. Entre al workflow **Build Android APK** (ultima ejecucion en verde)
 3. Baje el artefacto **sistema-el-pulpo-debug-apk**
 4. Descomprima el ZIP: dentro esta `app-debug.apk`
@@ -13,7 +13,7 @@ La app de la tablet debe reinstalarse para poder imprimir reportes (plugin Compa
 
 Si no hay ejecucion reciente, en Actions pulse **Run workflow** → **Run workflow**.
 
-Si falla en rojo, abra el job **build-apk** y revise el log. La causa mas comun es SDK de Android (ya corregido en el workflow).
+La ultima ejecucion exitosa del workflow genera el APK con el plugin **Compartir** incluido.
 
 ## Opcion B: Compilar en esta PC
 
