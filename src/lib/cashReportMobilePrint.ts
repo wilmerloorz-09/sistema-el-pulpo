@@ -1,6 +1,10 @@
 import { Capacitor } from "@capacitor/core";
 import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 import { formatDateTime, formatMoney } from "@/lib/cashReportUtils";
+import {
+  buildCashReportPrintPageUrl,
+  textToBase64,
+} from "@/lib/cashReportPrintSession";
 
 export type MobilePrintStage = {
   ready: boolean;
@@ -14,13 +18,10 @@ export type MobilePrintStage = {
   needsApkUpdate: boolean;
 };
 
-function textToBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
+function normalizeReportHtml(html: string): string {
+  const trimmed = html.trim();
+  if (/^<!doctype/i.test(trimmed) || /^<html/i.test(trimmed)) return trimmed;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`;
 }
 
 export function buildCashReportTextSummary(params: CashClosureReportParams): string {
@@ -42,12 +43,6 @@ export function buildCashReportTextSummary(params: CashClosureReportParams): str
     params.closureNotes ? `Notas: ${params.closureNotes}` : "",
   ];
   return lines.filter(Boolean).join("\n");
-}
-
-function normalizeReportHtml(html: string): string {
-  const trimmed = html.trim();
-  if (/^<!doctype/i.test(trimmed) || /^<html/i.test(trimmed)) return trimmed;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`;
 }
 
 export function getMobilePrintStage(): Omit<MobilePrintStage, "ready" | "shareUri" | "error" | "needsApkUpdate"> {
@@ -130,7 +125,7 @@ export async function stageCashReportForShare(html: string): Promise<MobilePrint
   }
 }
 
-/** Abre menu nativo de Android (requiere app actualizada). */
+/** Abre el menu Compartir para enviar el HTML a Epson iPrint u otra app. */
 export async function openCashReportShareMenu(stage: MobilePrintStage): Promise<{ ok: true } | { ok: false; message: string }> {
   if (stage.needsApkUpdate || !stage.sharePlugin) {
     return {
@@ -149,7 +144,7 @@ export async function openCashReportShareMenu(stage: MobilePrintStage): Promise<
       title: "Reporte de caja",
       text: "Reporte de caja",
       url: stage.shareUri,
-      dialogTitle: "Imprimir reporte",
+      dialogTitle: "Elija Epson iPrint",
     });
     return { ok: true };
   } catch (error: unknown) {
@@ -177,20 +172,51 @@ export function openCashReportByEmail(printParams: CashClosureReportParams): boo
   return true;
 }
 
-export async function openCashReportInExternalBrowser(html: string): Promise<boolean> {
-  const encoded = encodeURIComponent(textToBase64(normalizeReportHtml(html)));
-  const url = `${window.location.origin}/imprimir-reporte-caja?d=${encoded}`;
+function openUrlInAndroidChrome(url: string): boolean {
+  try {
+    const withoutScheme = url.replace(/^https:\/\//i, "");
+    const intent = `intent://${withoutScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+    window.location.assign(intent);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Abre el reporte en Chrome/navegador del sistema para usar menu Imprimir.
+ * Ahi debe aparecer la Epson L395 si esta en la misma red WiFi.
+ */
+export async function openCashReportInExternalBrowser(html: string): Promise<{ ok: boolean; message?: string }> {
+  const url = buildCashReportPrintPageUrl(html, { autoPrint: true, preferStash: false });
+  if (!url) {
+    return {
+      ok: false,
+      message: "El reporte es muy largo para abrirlo en el navegador. Use Copiar resumen o imprima desde PC.",
+    };
+  }
+
+  if (Capacitor.getPlatform() === "android") {
+    if (openUrlInAndroidChrome(url)) {
+      return { ok: true };
+    }
+  }
 
   if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("Browser")) {
     try {
       const { Browser } = await import("@capacitor/browser");
       await Browser.open({ url, presentationStyle: "fullscreen" });
-      return true;
+      return { ok: true };
     } catch {
       /* fallback below */
     }
   }
 
   const popup = window.open(url, "_blank", "noopener,noreferrer");
-  return Boolean(popup);
+  if (popup) {
+    return { ok: true };
+  }
+
+  window.location.assign(url);
+  return { ok: true };
 }

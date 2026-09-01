@@ -125,11 +125,32 @@ export function CashReportViewer() {
     try {
       const outcome = await openCashReportShareMenu(shareStage);
       if (outcome.ok) {
-        setPrintDialogOpen(false);
-        toast.message("Elija Epson iPrint o Impresion");
+        toast.message("Elija la app Epson iPrint", {
+          description: "La impresora no sale en esta lista; se elige dentro de Epson iPrint.",
+          duration: 12000,
+        });
         return;
       }
       toast.error("No se pudo abrir el menu", { description: outcome.message, duration: 10000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpenBrowser = async () => {
+    if (!state?.html || openingGuard()) return;
+    setBusy(true);
+    try {
+      const outcome = await openCashReportInExternalBrowser(state.html);
+      if (outcome.ok) {
+        setPrintDialogOpen(false);
+        toast.message("Abriendo Chrome para imprimir", {
+          description: "Menu ⋮ → Imprimir → Epson L395. Si no sale, instale Epson iPrint y use la misma WiFi.",
+          duration: 12000,
+        });
+        return;
+      }
+      toast.error("No se pudo abrir el navegador", { description: outcome.message, duration: 10000 });
     } finally {
       setBusy(false);
     }
@@ -153,23 +174,6 @@ export function CashReportViewer() {
     if (!state?.printParams) return;
     openCashReportByEmail(state.printParams);
     toast.message("Abriendo correo con el resumen del reporte");
-  };
-
-  const handleOpenBrowser = async () => {
-    if (!state?.html || openingGuard()) return;
-    setBusy(true);
-    try {
-      const opened = await openCashReportInExternalBrowser(state.html);
-      if (opened) {
-        toast.message("Reporte abierto", {
-          description: "Use el menu del navegador (⋮) → Imprimir → Epson L395",
-        });
-        return;
-      }
-      toast.error("No se pudo abrir el navegador");
-    } finally {
-      setBusy(false);
-    }
   };
 
   function openingGuard() {
@@ -214,26 +218,34 @@ export function CashReportViewer() {
                     La app instalada es antigua y <strong>no puede abrir el menu de impresion</strong>. Hay que reinstalar el APK nuevo en la tablet.
                   </span>
                   <span className="block text-xs text-slate-500">
-                    Mientras tanto use una de estas opciones, o imprima desde una PC con la Epson conectada.
+                    Mientras tanto use Chrome o imprima desde una PC con la Epson conectada.
                   </span>
                 </>
               ) : (
-                <span className="block">
-                  Pulse «Abrir menu de impresion» y elija Epson iPrint o la app de su impresora.
-                </span>
+                <>
+                  <span className="block">
+                    El menu <strong>Compartir no muestra impresoras</strong>. Para la Epson L395 use Chrome o Epson iPrint.
+                  </span>
+                  <span className="block text-xs text-slate-500">
+                    La impresora debe estar en la <strong>misma WiFi</strong> que la tablet. Si no aparece, instale Epson iPrint desde Play Store.
+                  </span>
+                </>
               )}
               {shareStage.error ? <span className="block text-red-600">{shareStage.error}</span> : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button
+              type="button"
+              className="min-h-11 w-full bg-orange-600 hover:bg-orange-700"
+              disabled={busy}
+              onClick={() => void handleOpenBrowser()}
+            >
+              {busy ? "Abriendo…" : "Imprimir con Chrome"}
+            </Button>
             {!needsUpdate && shareStage.ready ? (
-              <Button type="button" className="min-h-11 w-full bg-orange-600 hover:bg-orange-700" disabled={busy} onClick={() => void handleOpenShareMenu()}>
-                {busy ? "Abriendo…" : "Abrir menu de impresion"}
-              </Button>
-            ) : null}
-            {needsUpdate ? (
-              <Button type="button" variant="outline" className="min-h-11 w-full" disabled={busy} onClick={() => void handleOpenBrowser()}>
-                Abrir en navegador (menu ⋮ → Imprimir)
+              <Button type="button" variant="outline" className="min-h-11 w-full" disabled={busy} onClick={() => void handleOpenShareMenu()}>
+                Enviar a Epson iPrint
               </Button>
             ) : null}
             {state.printParams ? (
