@@ -1,123 +1,123 @@
 import { Capacitor } from "@capacitor/core";
-import { parseReportHtml } from "@/lib/printHtmlDocument";
+import { Directory, Filesystem } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
+import type { CashClosureReportParams } from "@/lib/cashReportUtils";
+import { formatDateTime, formatMoney } from "@/lib/cashReportUtils";
 
-export type MobileCashReportPrintResult = "shared" | "failed";
+export type MobileCashReportPrintResult =
+  | { ok: true }
+  | { ok: false; message: string };
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("No se pudo leer el PDF."));
-        return;
-      }
-      const commaIndex = result.indexOf(",");
-      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el PDF."));
-    reader.readAsDataURL(blob);
+function textToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function buildTextSummary(params: CashClosureReportParams): string {
+  const title = params.reportMode === "opening" ? "Reporte apertura caja" : "Reporte cierre caja";
+  const opening = params.shift.openingHistory[0];
+  const lines = [
+    title,
+    params.branchName,
+    `Generado: ${formatDateTime(new Date().toISOString())}`,
+    opening ? `Apertura: ${formatDateTime(opening.opened_at)}` : "",
+    opening?.closed_at ? `Cierre: ${formatDateTime(opening.closed_at)}` : "",
+    "",
+    "Cobro por metodo:",
+    ...params.methodSummary.map(
+      (row) => `- ${row.methodName}: ${formatMoney(row.amount)} (${row.paymentCount} cobros)`,
+    ),
+    "",
+    `Pagos registrados: ${params.completedPayments.length}`,
+    params.closureNotes ? `Notas: ${params.closureNotes}` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+async function shareHtmlFile(html: string): Promise<void> {
+  const filename = `reporte-caja-${Date.now()}.html`;
+  const docHtml = html.trim().startsWith("<!doctype") ? html : `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
+
+  await Filesystem.writeFile({
+    path: filename,
+    data: textToBase64(docHtml),
+    directory: Directory.Cache,
+    recursive: true,
+  });
+
+  const { uri } = await Filesystem.getUri({
+    directory: Directory.Cache,
+    path: filename,
+  });
+
+  await Share.share({
+    title: "Reporte de caja",
+    text: "Reporte de caja",
+    url: uri,
+    dialogTitle: "Imprimir reporte",
   });
 }
 
-function buildPdfSourceElement(html: string): { element: HTMLElement; cleanup: () => void } {
-  const { styles, bodyHtml } = parseReportHtml(html);
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = [
-    "position:fixed",
-    "left:0",
-    "top:0",
-    "width:794px",
-    "background:#fff",
-    "z-index:-9999",
-    "opacity:0.01",
-    "pointer-events:none",
-  ].join(";");
-  wrapper.innerHTML = `<style>${styles}</style><div class="cash-report-print-document">${bodyHtml}</div>`;
-  document.body.appendChild(wrapper);
-  return {
-    element: wrapper,
-    cleanup: () => wrapper.remove(),
-  };
-}
-
-async function generateCashReportPdfBlob(html: string): Promise<Blob> {
-  const { element, cleanup } = buildPdfSourceElement(html);
-  try {
-    const html2pdf = (await import("html2pdf.js")).default;
-    const blob = await html2pdf()
-      .set({
-        margin: [10, 10, 10, 10],
-        image: { type: "jpeg", quality: 0.92 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff" },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"] },
-      })
-      .from(element)
-      .outputPdf("blob");
-
-    if (!(blob instanceof Blob)) {
-      throw new Error("No se pudo crear el PDF.");
-    }
-    return blob;
-  } finally {
-    cleanup();
-  }
-}
-
 /**
- * Tablet/móvil: genera PDF y abre el menú nativo de Android
- * (Epson iPrint, Drive, Gmail, etc.). Un solo paso, sin pantallas extra.
+ * Tablet: abre el menu nativo de Android al instante (sin generar PDF).
+ * Android cancela acciones si tardan mucho despues del clic.
  */
-export async function printCashReportOnMobile(html: string): Promise<MobileCashReportPrintResult> {
-  const filename = `reporte-caja-${Date.now()}.pdf`;
-
+export async function printCashReportOnMobile(
+  html: string,
+  printParams?: CashClosureReportParams | null,
+): Promise<MobileCashReportPrintResult> {
   try {
-    const blob = await generateCashReportPdfBlob(html);
-
     if (Capacitor.isNativePlatform()) {
-      const [{ Filesystem, Directory }, { Share }] = await Promise.all([
-        import("@capacitor/filesystem"),
-        import("@capacitor/share"),
-      ]);
+      try {
+        await shareHtmlFile(html);
+        return { ok: true };
+      } catch (nativeError: unknown) {
+        const nativeMessage =
+          nativeError instanceof Error ? nativeError.message : "Error al compartir archivo";
 
-      const base64 = await blobToBase64(blob);
-      await Filesystem.writeFile({
-        path: filename,
-        data: base64,
-        directory: Directory.Cache,
-        recursive: true,
-      });
+        if (printParams) {
+          try {
+            await Share.share({
+              title: "Reporte de caja",
+              text: buildTextSummary(printParams),
+              dialogTitle: "Enviar reporte",
+            });
+            return { ok: true };
+          } catch {
+            return {
+              ok: false,
+              message: `${nativeMessage}. Reinstale la app de la tablet.`,
+            };
+          }
+        }
 
-      const { uri } = await Filesystem.getUri({
-        directory: Directory.Cache,
-        path: filename,
-      });
-
-      await Share.share({
-        title: "Reporte de caja",
-        text: "Reporte de caja",
-        url: uri,
-        dialogTitle: "Imprimir reporte",
-      });
-      return "shared";
-    }
-
-    const file = new File([blob], filename, { type: "application/pdf" });
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-      const payload = { files: [file], title: "Reporte de caja", text: "Reporte de caja" };
-      if (typeof navigator.canShare !== "function" || navigator.canShare(payload)) {
-        await navigator.share(payload);
-        return "shared";
+        return {
+          ok: false,
+          message: `${nativeMessage}. Reinstale la app de la tablet.`,
+        };
       }
     }
 
-    return "failed";
-  } catch (error: unknown) {
-    if (error instanceof Error && /cancel/i.test(error.message)) {
-      return "shared";
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      const text = printParams ? buildTextSummary(printParams) : "Reporte de caja";
+      await navigator.share({ title: "Reporte de caja", text });
+      return { ok: true };
     }
+
+    return {
+      ok: false,
+      message: "Impresion no disponible aqui. Use una PC con la Epson L395 conectada.",
+    };
+  } catch (error: unknown) {
+    if (error instanceof Error && /cancel|abort/i.test(error.message)) {
+      return { ok: true };
+    }
+    const message = error instanceof Error ? error.message : "Error desconocido";
     console.error("[cash-report-mobile-print]", error);
-    return "failed";
+    return { ok: false, message };
   }
 }

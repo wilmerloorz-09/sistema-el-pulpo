@@ -10,10 +10,12 @@ import {
 } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
 
+import type { CashClosureReportParams } from "@/lib/cashReportUtils";
+
 type CashReportViewState = {
   html: string;
   autoPrint: boolean;
-  printParams: unknown;
+  printParams: CashClosureReportParams | null;
 } | null;
 
 /**
@@ -55,17 +57,25 @@ export function CashReportViewer() {
 
     if (isMobileLike) {
       setPrinting(true);
+      toast.loading("Abriendo menu de impresion…", { id: "cash-report-print" });
       try {
-        const result = await printCashReportOnMobile(state.html);
-        if (result === "shared") {
-          toast.message("Elija cómo imprimir", {
-            description: "Seleccione Epson iPrint, Impresión o la app de su impresora.",
+        const outcome = await printCashReportOnMobile(state.html, state.printParams);
+        toast.dismiss("cash-report-print");
+        if (outcome.ok) {
+          toast.message("Elija Epson iPrint o Impresion", {
+            description: "En el menu que se abrio, seleccione la app de su impresora.",
           });
           return;
         }
-        toast.error("No se pudo preparar la impresión", {
-          description:
-            "Imprima este reporte desde una PC con la Epson conectada, o reinstale la app en la tablet.",
+        toast.error("No se pudo imprimir", {
+          description: outcome.message,
+          duration: 8000,
+        });
+      } catch (error: unknown) {
+        toast.dismiss("cash-report-print");
+        toast.error("No se pudo imprimir", {
+          description: error instanceof Error ? error.message : "Error inesperado",
+          duration: 8000,
         });
       } finally {
         setPrinting(false);
