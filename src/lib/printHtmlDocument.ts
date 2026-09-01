@@ -14,6 +14,18 @@ export const prefersDedicatedPrintWindow = (): boolean => {
 const PRINT_ROOT_ID = "print-cash-report";
 const PRINT_BODY_CLASS = "printing-cash-report";
 
+/** Fuera de pantalla: no tapa botones Cerrar/Imprimir. Solo visible al imprimir (@media print). */
+const PRINT_ROOT_OFFSCREEN_STYLE = [
+  "position:fixed",
+  "left:-9999px",
+  "top:0",
+  "width:1px",
+  "height:1px",
+  "overflow:hidden",
+  "opacity:0",
+  "pointer-events:none",
+].join(";");
+
 export function parseReportHtml(html: string): { styles: string; bodyHtml: string } {
   if (typeof DOMParser === "undefined") {
     return { styles: "", bodyHtml: html };
@@ -33,6 +45,22 @@ function normalizeFullHtml(html: string): string {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`;
 }
 
+/** HTML con barra para volver (pestaña / visor aparte). */
+function htmlWithMobileToolbar(html: string): string {
+  const docHtml = normalizeFullHtml(html);
+  const toolbar = `
+<style>@media print{#el-pulpo-report-toolbar{display:none!important;}}</style>
+<div id="el-pulpo-report-toolbar" style="position:sticky;top:0;z-index:9999;display:flex;gap:8px;justify-content:flex-end;padding:12px;background:#fff;border-bottom:1px solid #e5e7eb;">
+  <button type="button" onclick="window.print()" style="appearance:none;border:0;border-radius:999px;background:#ea580c;color:#fff;font-weight:700;padding:10px 16px;min-height:44px;">Imprimir</button>
+  <button type="button" onclick="window.close(); if(!window.closed && window.history.length>1) window.history.back();" style="appearance:none;border:1px solid #fecaca;border-radius:999px;background:#fff;color:#b91c1c;font-weight:700;padding:10px 16px;min-height:44px;">Cerrar</button>
+</div>`;
+
+  if (/<body[^>]*>/i.test(docHtml)) {
+    return docHtml.replace(/<body([^>]*)>/i, `<body$1>${toolbar}`);
+  }
+  return `${toolbar}${docHtml}`;
+}
+
 function getPrintRoot(): HTMLElement {
   let root = document.getElementById(PRINT_ROOT_ID);
   if (!root) {
@@ -43,20 +71,6 @@ function getPrintRoot(): HTMLElement {
   return root;
 }
 
-function preparePrintRoot(root: HTMLElement, html: string): void {
-  const { styles, bodyHtml } = parseReportHtml(html);
-  root.innerHTML = `<style>${styles}</style><div class="cash-report-print-document">${bodyHtml}</div>`;
-  root.removeAttribute("aria-hidden");
-  root.style.cssText = [
-    "position:fixed",
-    "inset:0",
-    "z-index:2147483647",
-    "background:#fff",
-    "overflow:auto",
-    "-webkit-overflow-scrolling:touch",
-  ].join(";");
-}
-
 function resetPrintRoot(root: HTMLElement): void {
   root.innerHTML = "";
   root.style.cssText = "display:none;";
@@ -64,15 +78,18 @@ function resetPrintRoot(root: HTMLElement): void {
 }
 
 /**
- * window.print() en el documento principal (Safari/Chrome móvil → diálogo o Compartir > Imprimir).
+ * Impresión en el mismo documento (escritorio). No bloquea la UI.
  */
 export function printCashReportInPlace(html: string): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return false;
   }
 
+  const { styles, bodyHtml } = parseReportHtml(html);
   const root = getPrintRoot();
-  preparePrintRoot(root, html);
+  root.innerHTML = `<style>${styles}</style><div class="cash-report-print-document">${bodyHtml}</div>`;
+  root.removeAttribute("aria-hidden");
+  root.style.cssText = PRINT_ROOT_OFFSCREEN_STYLE;
 
   const cleanup = () => {
     document.body.classList.remove(PRINT_BODY_CLASS);
@@ -80,7 +97,7 @@ export function printCashReportInPlace(html: string): boolean {
   };
 
   window.addEventListener("afterprint", cleanup, { once: true });
-  window.setTimeout(cleanup, 120_000);
+  window.setTimeout(cleanup, 1500);
 
   document.body.classList.add(PRINT_BODY_CLASS);
 
@@ -94,24 +111,22 @@ export function printCashReportInPlace(html: string): boolean {
   }
 }
 
-/** Abre el reporte en pestaña nueva (blob). Desde ahí: menú → Imprimir. */
+/** Nueva pestaña con el reporte (no reemplaza la app). */
 export function openCashReportInNewTab(html: string): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return false;
   }
 
   try {
-    const docHtml = normalizeFullHtml(html);
+    const docHtml = htmlWithMobileToolbar(html);
     const blob = new Blob([docHtml], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
+    const popup = window.open(url, "_blank", "noopener,noreferrer");
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    if (!popup) {
+      URL.revokeObjectURL(url);
+      return false;
+    }
 
     window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
     return true;
@@ -120,7 +135,6 @@ export function openCashReportInNewTab(html: string): boolean {
   }
 }
 
-/** Compartir archivo HTML (iOS: hoja Compartir → Imprimir o Guardar en Archivos). */
 export async function shareCashReportHtml(
   html: string,
   title = "Reporte de caja",
@@ -130,7 +144,7 @@ export async function shareCashReportHtml(
   }
 
   try {
-    const docHtml = normalizeFullHtml(html);
+    const docHtml = htmlWithMobileToolbar(html);
     const file = new File([docHtml], "reporte-caja.html", { type: "text/html;charset=utf-8" });
     const payload = { files: [file], title, text: title };
 
@@ -160,27 +174,20 @@ function printFromIframe(frame: HTMLIFrameElement | null): boolean {
   }
 }
 
-/**
- * Flujo móvil/tablet: iframe visible → print in-app → pestaña blob.
- * App nativa Capacitor: pestaña blob (window.print no existe en WebView).
- */
+/** Móvil: no usar overlay in-app; abrir pestaña o compartir. */
 export function printCashReportMobile(
   html: string,
   iframe: HTMLIFrameElement | null,
 ): CashReportPrintResult {
-  if (Capacitor.isNativePlatform()) {
-    return openCashReportInNewTab(html) ? "opened-tab" : "failed";
-  }
-
-  if (printCashReportInPlace(html)) {
-    return "print-dialog";
+  if (openCashReportInNewTab(html)) {
+    return "opened-tab";
   }
 
   if (printFromIframe(iframe)) {
     return "print-dialog";
   }
 
-  return openCashReportInNewTab(html) ? "opened-tab" : "failed";
+  return "failed";
 }
 
 export function printCashReportDesktop(iframe: HTMLIFrameElement | null, html: string): CashReportPrintResult {

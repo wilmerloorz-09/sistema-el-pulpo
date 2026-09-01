@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
 import {
   prefersDedicatedPrintWindow,
-  openCashReportInNewTab,
   printCashReportDesktop,
   printCashReportMobile,
   shareCashReportHtml,
@@ -20,7 +19,7 @@ type CashReportViewState = {
 const PRINT_TOAST = {
   "opened-tab": {
     title: "Reporte abierto en otra pestaña",
-    description: "Use el menú del navegador (⋮ o Compartir) y elija Imprimir o Guardar como PDF.",
+    description: "Ahí use Imprimir o Compartir. Vuelva a esta pestaña y pulse Cerrar cuando termine.",
   },
   "print-dialog": null,
   failed: {
@@ -89,12 +88,9 @@ export function CashReportViewer() {
     try {
       const shared = await shareCashReportHtml(state.html);
       if (shared) return;
-
-      if (openCashReportInNewTab(state.html)) {
-        notifyPrintResult("opened-tab");
-        return;
-      }
-      notifyPrintResult("failed");
+      toast.error("Compartir no disponible", {
+        description: "Use Imprimir para abrir el reporte en otra pestaña.",
+      });
     } finally {
       setSharing(false);
     }
