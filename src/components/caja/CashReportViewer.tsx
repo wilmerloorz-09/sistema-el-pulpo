@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
-import { printCashReportInPlace, prefersDedicatedPrintWindow } from "@/lib/printHtmlDocument";
+import {
+  prefersDedicatedPrintWindow,
+  openCashReportInNewTab,
+  printCashReportDesktop,
+  printCashReportMobile,
+  shareCashReportHtml,
+} from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
 
 type CashReportViewState = {
@@ -10,14 +17,27 @@ type CashReportViewState = {
   autoPrint: boolean;
 } | null;
 
+const PRINT_TOAST = {
+  "opened-tab": {
+    title: "Reporte abierto en otra pestaña",
+    description: "Use el menú del navegador (⋮ o Compartir) y elija Imprimir o Guardar como PDF.",
+  },
+  "print-dialog": null,
+  failed: {
+    title: "No se pudo imprimir",
+    description: "Pruebe el botón Compartir o abra la app en Chrome/Safari (no solo el acceso directo).",
+  },
+} as const;
+
 /**
  * Visor a pantalla completa del reporte de caja.
- * Evita window.open / onclick inline, que en tablet Capacitor no responden.
  */
 export function CashReportViewer() {
   const [state, setState] = useState<CashReportViewState>(null);
+  const [sharing, setSharing] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoPrintDoneRef = useRef(false);
+  const isMobileLike = prefersDedicatedPrintWindow();
 
   useEffect(() => subscribeCashReport(setState), []);
 
@@ -43,32 +63,45 @@ export function CashReportViewer() {
     };
   }, [state]);
 
+  const notifyPrintResult = (result: keyof typeof PRINT_TOAST) => {
+    const message = PRINT_TOAST[result];
+    if (!message) return;
+    if (result === "failed") {
+      toast.error(message.title, { description: message.description });
+      return;
+    }
+    toast.message(message.title, { description: message.description });
+  };
+
   const handlePrint = () => {
     if (!state?.html) return;
 
-    if (!prefersDedicatedPrintWindow()) {
-      const frameWindow = iframeRef.current?.contentWindow;
-      if (frameWindow) {
-        try {
-          frameWindow.focus();
-          frameWindow.print();
-          return;
-        } catch {
-          // Sigue con impresión in-app.
-        }
-      }
-    }
+    const result = isMobileLike
+      ? printCashReportMobile(state.html, iframeRef.current)
+      : printCashReportDesktop(iframeRef.current, state.html);
 
-    const ok = printCashReportInPlace(state.html);
-    if (!ok) {
-      toast.error(
-        "No se pudo abrir la impresión. En Safari use Compartir y elija Imprimir.",
-      );
+    notifyPrintResult(result === "print-dialog" ? "print-dialog" : result);
+  };
+
+  const handleShare = async () => {
+    if (!state?.html || sharing) return;
+    setSharing(true);
+    try {
+      const shared = await shareCashReportHtml(state.html);
+      if (shared) return;
+
+      if (openCashReportInNewTab(state.html)) {
+        notifyPrintResult("opened-tab");
+        return;
+      }
+      notifyPrintResult("failed");
+    } finally {
+      setSharing(false);
     }
   };
 
   const handleIframeLoad = () => {
-    if (!state?.autoPrint || autoPrintDoneRef.current) return;
+    if (!state?.autoPrint || autoPrintDoneRef.current || isMobileLike) return;
     autoPrintDoneRef.current = true;
     window.setTimeout(() => {
       handlePrint();
@@ -81,7 +114,7 @@ export function CashReportViewer() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex flex-col bg-white"
+      className="cash-report-viewer-overlay fixed inset-0 z-[200] flex flex-col bg-white"
       role="dialog"
       aria-modal="true"
       aria-label="Reporte de caja"
@@ -94,6 +127,18 @@ export function CashReportViewer() {
         >
           Imprimir
         </Button>
+        {isMobileLike ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 gap-1.5 rounded-full px-4 font-bold"
+            onClick={() => void handleShare()}
+            disabled={sharing}
+          >
+            <Share2 className="h-4 w-4" />
+            Compartir
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="outline"

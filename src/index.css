@@ -357,4 +357,8 @@
   body.printing-cash-report #print-cash-report .cash-report-print-document {
     padding: 12px !important;
   }
+
+  body.printing-cash-report .cash-report-viewer-overlay {
+    display: none !important;
+  }
 }
