@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Share2 } from "lucide-react";
+import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
 import {
-  downloadCashReportPdf,
+  openCashReportPdf,
   prefersDedicatedPrintWindow,
   printCashReportDesktop,
-  shareCashReportPdf,
 } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
+import { PdfInlineViewer } from "@/components/caja/PdfInlineViewer";
 
 type CashReportViewState = {
   html: string;
@@ -20,19 +20,7 @@ const PRINT_TOAST = {
   "print-dialog": null,
   failed: {
     title: "No se pudo imprimir",
-    description: "En este equipo use Guardar PDF y ábralo desde Descargas.",
-  },
-} as const;
-
-const PDF_TOAST = {
-  downloaded: {
-    title: "PDF guardado",
-    description: "Ábralo desde Descargas y use Imprimir o Compartir desde el visor de PDF.",
-  },
-  shared: null,
-  failed: {
-    title: "No se pudo generar el PDF",
-    description: "Intente de nuevo en unos segundos.",
+    description: "Use Abrir PDF en móvil o imprima desde una PC.",
   },
 } as const;
 
@@ -41,7 +29,8 @@ const PDF_TOAST = {
  */
 export function CashReportViewer() {
   const [state, setState] = useState<CashReportViewState>(null);
-  const [exportingPdf, setExportingPdf] = useState(false);
+  const [openingPdf, setOpeningPdf] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoPrintDoneRef = useRef(false);
   const isMobileLike = prefersDedicatedPrintWindow();
@@ -51,11 +40,16 @@ export function CashReportViewer() {
   useEffect(() => {
     if (!state) {
       autoPrintDoneRef.current = false;
+      setPdfBlob(null);
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (pdfBlob) {
+          setPdfBlob(null);
+          return;
+        }
         hideCashReport();
       }
     };
@@ -68,26 +62,12 @@ export function CashReportViewer() {
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [state]);
+  }, [state, pdfBlob]);
 
   const notifyPrintResult = (result: keyof typeof PRINT_TOAST) => {
     const message = PRINT_TOAST[result];
     if (!message) return;
-    if (result === "failed") {
-      toast.error(message.title, { description: message.description });
-      return;
-    }
-    toast.message(message.title, { description: message.description });
-  };
-
-  const notifyPdfResult = (result: keyof typeof PDF_TOAST) => {
-    const message = PDF_TOAST[result];
-    if (!message) return;
-    if (result === "failed") {
-      toast.error(message.title, { description: message.description });
-      return;
-    }
-    toast.message(message.title, { description: message.description });
+    toast.error(message.title, { description: message.description });
   };
 
   const handlePrint = () => {
@@ -97,23 +77,23 @@ export function CashReportViewer() {
     notifyPrintResult(result === "print-dialog" ? "print-dialog" : result);
   };
 
-  const handleSavePdf = async () => {
-    if (!state?.html || exportingPdf) return;
-    setExportingPdf(true);
+  const handleOpenPdf = async () => {
+    if (!state?.html || openingPdf) return;
+    setOpeningPdf(true);
     try {
-      notifyPdfResult(await downloadCashReportPdf(state.html));
-    } finally {
-      setExportingPdf(false);
-    }
-  };
+      const { result, blob } = await openCashReportPdf(state.html, iframeRef.current);
+      if (result === "failed") {
+        toast.error("No se pudo abrir el PDF", {
+          description: "Intente de nuevo en unos segundos.",
+        });
+        return;
+      }
 
-  const handleSharePdf = async () => {
-    if (!state?.html || exportingPdf) return;
-    setExportingPdf(true);
-    try {
-      notifyPdfResult(await shareCashReportPdf(state.html));
+      if (blob && isMobileLike) {
+        setPdfBlob(blob);
+      }
     } finally {
-      setExportingPdf(false);
+      setOpeningPdf(false);
     }
   };
 
@@ -130,61 +110,56 @@ export function CashReportViewer() {
   }
 
   return createPortal(
-    <div
-      className="cash-report-viewer-overlay fixed inset-0 z-[200] flex flex-col bg-white"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Reporte de caja"
-    >
-      <div className="no-print flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] shadow-sm">
-        {isMobileLike ? (
-          <>
+    <>
+      <div
+        className="cash-report-viewer-overlay fixed inset-0 z-[200] flex flex-col bg-white"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Reporte de caja"
+      >
+        <div className="no-print flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] shadow-sm">
+          {isMobileLike ? (
+            <Button
+              type="button"
+              className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
+              onClick={() => void handleOpenPdf()}
+              disabled={openingPdf}
+            >
+              <FileText className="h-4 w-4" />
+              {openingPdf ? "Generando PDF…" : "Abrir PDF"}
+            </Button>
+          ) : (
             <Button
               type="button"
               className="min-h-11 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
-              onClick={() => void handleSavePdf()}
-              disabled={exportingPdf}
+              onClick={handlePrint}
             >
-              {exportingPdf ? "Generando…" : "Guardar PDF"}
+              Imprimir
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11 gap-1.5 rounded-full px-4 font-bold"
-              onClick={() => void handleSharePdf()}
-              disabled={exportingPdf}
-            >
-              <Share2 className="h-4 w-4" />
-              Compartir PDF
-            </Button>
-          </>
-        ) : (
+          )}
           <Button
             type="button"
-            className="min-h-11 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
-            onClick={handlePrint}
+            variant="outline"
+            className="min-h-11 rounded-full border-red-300 px-5 font-bold text-red-700 hover:bg-red-50"
+            onClick={() => hideCashReport()}
           >
-            Imprimir
+            Cerrar
           </Button>
-        )}
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11 rounded-full border-red-300 px-5 font-bold text-red-700 hover:bg-red-50"
-          onClick={() => hideCashReport()}
-        >
-          Cerrar
-        </Button>
+        </div>
+
+        <iframe
+          ref={iframeRef}
+          title="Reporte de caja"
+          srcDoc={state.html}
+          onLoad={handleIframeLoad}
+          className="min-h-0 w-full flex-1 border-0 bg-white"
+        />
       </div>
 
-      <iframe
-        ref={iframeRef}
-        title="Reporte de caja"
-        srcDoc={state.html}
-        onLoad={handleIframeLoad}
-        className="min-h-0 w-full flex-1 border-0 bg-white"
-      />
-    </div>,
+      {pdfBlob ? (
+        <PdfInlineViewer blob={pdfBlob} onClose={() => setPdfBlob(null)} />
+      ) : null}
+    </>,
     document.body,
   );
 }
