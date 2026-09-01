@@ -1,49 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Share2 } from "lucide-react";
+import { Printer } from "lucide-react";
 import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
 import {
   prefersDedicatedPrintWindow,
   printCashReportDesktop,
-  shareCashReportMobile,
 } from "@/lib/printHtmlDocument";
+import { printCashReportReceipt } from "@/lib/thermalPrint";
 import { Button } from "@/components/ui/button";
+
+import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 
 type CashReportViewState = {
   html: string;
   autoPrint: boolean;
+  printParams: CashClosureReportParams | null;
 } | null;
-
-const PRINT_TOAST = {
-  "print-dialog": null,
-  failed: {
-    title: "No se pudo imprimir",
-    description: "En móvil use Compartir o abra el reporte aparte.",
-  },
-} as const;
-
-const SHARE_TOAST = {
-  shared: {
-    title: "Listo para compartir",
-    description: "Elija WhatsApp, Drive, Gmail u otra app.",
-  },
-  "opened-tab": {
-    title: "Reporte abierto aparte",
-    description: "Use el menú ⋮ del navegador para compartir o imprimir.",
-  },
-  failed: {
-    title: "No se pudo compartir",
-    description: "El reporte sigue visible aquí. Puede cerrar y volver a intentar.",
-  },
-} as const;
 
 /**
  * Visor a pantalla completa del reporte de caja.
  */
 export function CashReportViewer() {
   const [state, setState] = useState<CashReportViewState>(null);
-  const [sharing, setSharing] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoPrintDoneRef = useRef(false);
   const isMobileLike = prefersDedicatedPrintWindow();
@@ -72,43 +52,41 @@ export function CashReportViewer() {
     };
   }, [state]);
 
-  const notifyPrintResult = (result: keyof typeof PRINT_TOAST) => {
-    const message = PRINT_TOAST[result];
-    if (!message) return;
-    toast.error(message.title, { description: message.description });
-  };
+  const handlePrint = async () => {
+    if (!state?.html || printing) return;
 
-  const notifyShareResult = (result: keyof typeof SHARE_TOAST) => {
-    const message = SHARE_TOAST[result];
-    if (result === "failed") {
-      toast.error(message.title, { description: message.description });
+    if (state.printParams) {
+      setPrinting(true);
+      try {
+        const result = await printCashReportReceipt(state.printParams);
+        if (result.mode === "escpos") {
+          toast.success("Reporte enviado a la impresora");
+          return;
+        }
+
+        if (result.error) {
+          toast.error("No se pudo imprimir en termica", {
+            description: result.error,
+          });
+        }
+
+        if (!isMobileLike) {
+          printCashReportDesktop(iframeRef.current, state.html);
+        }
+      } finally {
+        setPrinting(false);
+      }
       return;
     }
-    toast.message(message.title, { description: message.description });
-  };
 
-  const handlePrint = () => {
-    if (!state?.html) return;
-
-    const result = printCashReportDesktop(iframeRef.current, state.html);
-    notifyPrintResult(result === "print-dialog" ? "print-dialog" : result);
-  };
-
-  const handleShare = async () => {
-    if (!state?.html || sharing) return;
-    setSharing(true);
-    try {
-      notifyShareResult(await shareCashReportMobile(state.html));
-    } finally {
-      setSharing(false);
-    }
+    printCashReportDesktop(iframeRef.current, state.html);
   };
 
   const handleIframeLoad = () => {
-    if (!state?.autoPrint || autoPrintDoneRef.current || isMobileLike) return;
+    if (!state?.autoPrint || autoPrintDoneRef.current || isMobileLike || !state.printParams) return;
     autoPrintDoneRef.current = true;
     window.setTimeout(() => {
-      handlePrint();
+      void handlePrint();
     }, 350);
   };
 
@@ -124,25 +102,17 @@ export function CashReportViewer() {
       aria-label="Reporte de caja"
     >
       <div className="no-print flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] shadow-sm">
-        {isMobileLike ? (
+        {state.printParams ? (
           <Button
             type="button"
             className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
-            onClick={() => void handleShare()}
-            disabled={sharing}
+            onClick={() => void handlePrint()}
+            disabled={printing}
           >
-            <Share2 className="h-4 w-4" />
-            {sharing ? "Preparando…" : "Compartir"}
+            <Printer className="h-4 w-4" />
+            {printing ? "Imprimiendo…" : "Imprimir"}
           </Button>
-        ) : (
-          <Button
-            type="button"
-            className="min-h-11 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
-            onClick={handlePrint}
-          >
-            Imprimir
-          </Button>
-        )}
+        ) : null}
         <Button
           type="button"
           variant="outline"

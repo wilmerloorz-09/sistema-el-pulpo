@@ -211,7 +211,7 @@ export const scopeReportToOpening = (params: {
   };
 };
 
-export const buildCashClosureReportHtml = (params: {
+export type CashClosureReportParams = {
   branchName: string;
   shift: CashShiftSnapshot;
   completedPayments: CompletedPayment[];
@@ -227,7 +227,9 @@ export const buildCashClosureReportHtml = (params: {
   transferCashChangeTotal?: number;
   /** Toolbar HTML (Imprimir/Cerrar). En visor in-app debe ser false. */
   includeToolbar?: boolean;
-}) => {
+};
+
+export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
   const includeToolbar = params.includeToolbar !== false;
   const sortedDenoms = [...params.shift.denoms]
     .filter((denomination) => denomination.value > 0)
@@ -617,29 +619,19 @@ export const attachCashReportCloseBridge = (_reportWindow: Window) => {
  * Abre el reporte de cierre de caja en un visor in-app (pantalla completa).
  * Evita window.open en tablet/Capacitor, donde Imprimir/Cerrar no responden.
  */
-export const openCashClosureReportWindow = (params: {
-  branchName: string;
-  shift: CashShiftSnapshot;
-  completedPayments: CompletedPayment[];
-  methodSummary: MethodSummaryEntry[];
-  movements: CashMovement[];
-  closureNotes?: string;
-  reportMode?: "shift" | "opening";
-  openingCashTotals?: {
-    initial: number;
-    current: number;
-  };
-  transferCashChangeTotal?: number;
-  /** Por defecto: solo en escritorio. En móvil el usuario usa el botón Imprimir del reporte. */
-  autoPrint?: boolean;
-}) => {
+export const openCashClosureReportWindow = (
+  params: CashClosureReportParams & {
+    /** Por defecto: solo en escritorio. En móvil el usuario usa el botón Imprimir del reporte. */
+    autoPrint?: boolean;
+  },
+) => {
   const { autoPrint = shouldAutoPrintCashReport(), ...reportParams } = params;
   const html = buildCashClosureReportHtml({
     ...reportParams,
     includeToolbar: false,
   });
 
-  showCashReport(html, { autoPrint });
+  showCashReport(html, { autoPrint, printParams: reportParams });
 
   return {
     closed: false,

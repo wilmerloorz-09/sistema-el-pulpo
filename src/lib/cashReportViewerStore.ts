@@ -1,6 +1,9 @@
+import type { CashClosureReportParams } from "@/lib/cashReportUtils";
+
 type CashReportState = {
   html: string;
   autoPrint: boolean;
+  printParams: CashClosureReportParams | null;
 } | null;
 
 type CashReportListener = (state: CashReportState) => void;
@@ -10,10 +13,17 @@ const listeners = new Set<CashReportListener>();
 
 export const getCashReportState = () => currentState;
 
-export const showCashReport = (html: string, options?: { autoPrint?: boolean }) => {
+export const showCashReport = (
+  html: string,
+  options?: {
+    autoPrint?: boolean;
+    printParams?: CashClosureReportParams | null;
+  },
+) => {
   currentState = {
     html,
     autoPrint: Boolean(options?.autoPrint),
+    printParams: options?.printParams ?? null,
   };
   listeners.forEach((listener) => listener(currentState));
 };

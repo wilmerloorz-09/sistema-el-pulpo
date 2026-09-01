@@ -1,5 +1,7 @@
+import { buildCashReportEscPos } from "@/lib/escpos/buildCashReportEscPos";
 import { buildPaymentReceiptEscPos, type PaymentReceiptEscPosInput } from "@/lib/escpos/buildPaymentReceipt";
 import { buildOrderReceiptEscPos, type OrderReceiptEscPosInput } from "@/lib/escpos/buildOrderReceipt";
+import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 import { sanitizarPromocionReciboData } from "@/lib/promocionesRecibo";
 import { DEFAULT_THERMAL_PRINT_BRIDGE_URL } from "@/lib/escpos/constants";
 import { Capacitor } from "@capacitor/core";
@@ -147,6 +149,37 @@ export async function printPaymentReceipt(input: PaymentReceiptEscPosInput): Pro
       window.print();
       return { mode: "html", error: message };
     }
+  }
+
+  window.print();
+  return { mode: "html" };
+}
+
+/** Imprime reporte de caja en impresora termica (80mm). */
+export async function printCashReportReceipt(input: CashClosureReportParams): Promise<ThermalPrintResult> {
+  if (isThermalBridgeEnabled()) {
+    try {
+      const bytes = buildCashReportEscPos(input);
+      await sendEscPosToBridge(bytes);
+      return { mode: "escpos" };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error de impresion ESC/POS";
+      console.warn("[thermalPrint] ESC/POS reporte caja fallo:", message);
+
+      if (Capacitor.isNativePlatform()) {
+        return { mode: "html", error: message };
+      }
+
+      window.print();
+      return { mode: "html", error: message };
+    }
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    return {
+      mode: "html",
+      error: "Impresion termica desactivada. Configure VITE_THERMAL_PRINT_ENABLED.",
+    };
   }
 
   window.print();

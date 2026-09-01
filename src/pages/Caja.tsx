@@ -1216,28 +1216,31 @@ const Caja = () => {
     try {
       await closeCashRegister.mutateAsync(notes);
 
-      const reportHtml = buildCashClosureReportHtml(
-        closedOpening
-          ? {
-              ...scopeReportToOpening({
-                ...reportSnapshot,
-                opening: closedOpening,
-                denominationSnapshot: shift.denoms,
-                transferCashChangeTotal: shiftSummaryTransferCashChange,
-              }),
-              reportMode: "opening",
-              includeToolbar: false,
-            }
-          : {
+      const reportParams = closedOpening
+        ? {
+            ...scopeReportToOpening({
               ...reportSnapshot,
-              methodSummary: completedPaymentsMethodSummary,
+              opening: closedOpening,
+              denominationSnapshot: shift.denoms,
               transferCashChangeTotal: shiftSummaryTransferCashChange,
-              reportMode: "shift",
-              includeToolbar: false,
-            },
-      );
+            }),
+            reportMode: "opening" as const,
+            includeToolbar: false,
+          }
+        : {
+            ...reportSnapshot,
+            methodSummary: completedPaymentsMethodSummary,
+            transferCashChangeTotal: shiftSummaryTransferCashChange,
+            reportMode: "shift" as const,
+            includeToolbar: false,
+          };
 
-      showCashReport(reportHtml, { autoPrint: shouldAutoPrintCashReport() });
+      const reportHtml = buildCashClosureReportHtml(reportParams);
+
+      showCashReport(reportHtml, {
+        autoPrint: shouldAutoPrintCashReport(),
+        printParams: reportParams,
+      });
     } catch (error) {
       hideCashReport();
       throw error;
