@@ -13,6 +13,8 @@ La app de la tablet debe reinstalarse para poder imprimir reportes (plugin Compa
 
 Si no hay ejecucion reciente, en Actions pulse **Run workflow** → **Run workflow**.
 
+Si falla en rojo, abra el job **build-apk** y revise el log. La causa mas comun es SDK de Android (ya corregido en el workflow).
+
 ## Opcion B: Compilar en esta PC
 
 Requiere [Android Studio](https://developer.android.com/studio) instalado.
