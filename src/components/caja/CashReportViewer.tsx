@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Printer } from "lucide-react";
 import { toast } from "sonner";
-import { openCashReportForInkjetPrint } from "@/lib/cashReportInkjetPrint";
+import { printCashReportOnMobile } from "@/lib/cashReportMobilePrint";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
 import {
   prefersDedicatedPrintWindow,
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 type CashReportViewState = {
   html: string;
   autoPrint: boolean;
-  printParams: import("@/lib/cashReportUtils").CashClosureReportParams | null;
+  printParams: unknown;
 } | null;
 
 /**
@@ -56,15 +56,16 @@ export function CashReportViewer() {
     if (isMobileLike) {
       setPrinting(true);
       try {
-        const result = await openCashReportForInkjetPrint(state.html);
-        if (result === "opened") {
-          toast.message("Reporte abierto para imprimir", {
-            description: "Pulse Imprimir y elija su Epson L395 (u otra impresora).",
+        const result = await printCashReportOnMobile(state.html);
+        if (result === "shared") {
+          toast.message("Elija cómo imprimir", {
+            description: "Seleccione Epson iPrint, Impresión o la app de su impresora.",
           });
           return;
         }
-        toast.error("No se pudo abrir la impresión", {
-          description: "Intente de nuevo o use una PC con la impresora conectada.",
+        toast.error("No se pudo preparar la impresión", {
+          description:
+            "Imprima este reporte desde una PC con la Epson conectada, o reinstale la app en la tablet.",
         });
       } finally {
         setPrinting(false);
@@ -102,7 +103,7 @@ export function CashReportViewer() {
           disabled={printing}
         >
           <Printer className="h-4 w-4" />
-          {printing ? "Abriendo…" : "Imprimir"}
+          {printing ? "Preparando…" : "Imprimir"}
         </Button>
         <Button
           type="button"
