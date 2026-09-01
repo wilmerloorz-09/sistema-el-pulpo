@@ -9,7 +9,9 @@ export type MobilePrintStage = {
   native: boolean;
   sharePlugin: boolean;
   filesystemPlugin: boolean;
+  browserPlugin: boolean;
   platform: string;
+  needsApkUpdate: boolean;
 };
 
 function textToBase64(text: string): string {
@@ -48,18 +50,30 @@ function normalizeReportHtml(html: string): string {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`;
 }
 
-export function getMobilePrintStage(): Omit<MobilePrintStage, "ready" | "shareUri" | "error"> {
+export function getMobilePrintStage(): Omit<MobilePrintStage, "ready" | "shareUri" | "error" | "needsApkUpdate"> {
   return {
     native: Capacitor.isNativePlatform(),
     sharePlugin: Capacitor.isPluginAvailable("Share"),
     filesystemPlugin: Capacitor.isPluginAvailable("Filesystem"),
+    browserPlugin: Capacitor.isPluginAvailable("Browser"),
     platform: Capacitor.getPlatform(),
   };
 }
 
-/** Prepara el archivo mientras el usuario ve el reporte (antes del clic en compartir). */
+/** Prepara el archivo mientras el usuario ve el reporte. */
 export async function stageCashReportForShare(html: string): Promise<MobilePrintStage> {
   const base = getMobilePrintStage();
+  const needsApkUpdate = base.native && !base.sharePlugin;
+
+  if (needsApkUpdate) {
+    return {
+      ...base,
+      ready: true,
+      shareUri: null,
+      error: null,
+      needsApkUpdate: true,
+    };
+  }
 
   if (!base.native) {
     return {
@@ -67,15 +81,7 @@ export async function stageCashReportForShare(html: string): Promise<MobilePrint
       ready: true,
       shareUri: null,
       error: null,
-    };
-  }
-
-  if (!base.sharePlugin) {
-    return {
-      ...base,
-      ready: true,
-      shareUri: null,
-      error: "La app instalada no tiene soporte para compartir. Reinstale la app de la tablet.",
+      needsApkUpdate: false,
     };
   }
 
@@ -84,7 +90,8 @@ export async function stageCashReportForShare(html: string): Promise<MobilePrint
       ...base,
       ready: true,
       shareUri: null,
-      error: "La app instalada no puede guardar el reporte. Reinstale la app de la tablet.",
+      error: "Falta el plugin de archivos en la app. Reinstale la app de la tablet.",
+      needsApkUpdate: true,
     };
   }
 
@@ -109,6 +116,7 @@ export async function stageCashReportForShare(html: string): Promise<MobilePrint
       ready: true,
       shareUri: uri,
       error: null,
+      needsApkUpdate: false,
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "No se pudo preparar el reporte";
@@ -117,51 +125,33 @@ export async function stageCashReportForShare(html: string): Promise<MobilePrint
       ready: true,
       shareUri: null,
       error: message,
+      needsApkUpdate: false,
     };
   }
 }
 
-/** Debe llamarse directamente desde un boton (gesto del usuario). */
-export async function openCashReportShareMenu(
-  stage: MobilePrintStage,
-  printParams?: CashClosureReportParams | null,
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  try {
-    if (stage.native && stage.shareUri) {
-      const { Share } = await import("@capacitor/share");
-      await Share.share({
-        title: "Reporte de caja",
-        text: "Reporte de caja",
-        url: stage.shareUri,
-        dialogTitle: "Imprimir reporte",
-      });
-      return { ok: true };
-    }
-
-    if (stage.native && printParams) {
-      const { Share } = await import("@capacitor/share");
-      await Share.share({
-        title: "Reporte de caja",
-        text: buildCashReportTextSummary(printParams),
-        dialogTitle: "Enviar reporte",
-      });
-      return { ok: true };
-    }
-
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function" && printParams) {
-      await navigator.share({
-        title: "Reporte de caja",
-        text: buildCashReportTextSummary(printParams),
-      });
-      return { ok: true };
-    }
-
+/** Abre menu nativo de Android (requiere app actualizada). */
+export async function openCashReportShareMenu(stage: MobilePrintStage): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (stage.needsApkUpdate || !stage.sharePlugin) {
     return {
       ok: false,
-      message:
-        stage.error ??
-        "En esta tablet no se puede imprimir directo. Use una PC con la Epson L395 conectada.",
+      message: "Actualice la app de la tablet (reinstale el APK nuevo).",
     };
+  }
+
+  if (!stage.shareUri) {
+    return { ok: false, message: "El reporte no esta listo. Espere un momento e intente de nuevo." };
+  }
+
+  try {
+    const { Share } = await import("@capacitor/share");
+    await Share.share({
+      title: "Reporte de caja",
+      text: "Reporte de caja",
+      url: stage.shareUri,
+      dialogTitle: "Imprimir reporte",
+    });
+    return { ok: true };
   } catch (error: unknown) {
     if (error instanceof Error && /cancel|abort/i.test(error.message)) {
       return { ok: true };
@@ -178,4 +168,29 @@ export async function copyCashReportSummary(printParams: CashClosureReportParams
     return true;
   }
   return false;
+}
+
+export function openCashReportByEmail(printParams: CashClosureReportParams): boolean {
+  const subject = encodeURIComponent("Reporte de caja");
+  const body = encodeURIComponent(buildCashReportTextSummary(printParams));
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  return true;
+}
+
+export async function openCashReportInExternalBrowser(html: string): Promise<boolean> {
+  const encoded = encodeURIComponent(textToBase64(normalizeReportHtml(html)));
+  const url = `${window.location.origin}/imprimir-reporte-caja?d=${encoded}`;
+
+  if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("Browser")) {
+    try {
+      const { Browser } = await import("@capacitor/browser");
+      await Browser.open({ url, presentationStyle: "fullscreen" });
+      return true;
+    } catch {
+      /* fallback below */
+    }
+  }
+
+  const popup = window.open(url, "_blank", "noopener,noreferrer");
+  return Boolean(popup);
 }
