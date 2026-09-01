@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
+import { printHtmlDocumentSync, prefersDedicatedPrintWindow } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
 
 type CashReportViewState = {
@@ -42,18 +44,32 @@ export function CashReportViewer() {
   }, [state]);
 
   const handlePrint = () => {
-    const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow) return;
+    if (!state?.html) return;
 
-    try {
-      frameWindow.focus();
-      frameWindow.print();
-    } catch {
-      try {
-        window.print();
-      } catch {
-        // En algunos WebView no hay diálogo de impresión.
+    if (!prefersDedicatedPrintWindow()) {
+      const frameWindow = iframeRef.current?.contentWindow;
+      if (frameWindow) {
+        try {
+          frameWindow.focus();
+          frameWindow.print();
+          return;
+        } catch {
+          // Continúa con ventana dedicada.
+        }
       }
+    }
+
+    const result = printHtmlDocumentSync(state.html);
+    if (result === "failed") {
+      toast.error(
+        "No se pudo abrir la impresión. Permita ventanas emergentes o use Compartir > Imprimir en el navegador.",
+      );
+      return;
+    }
+    if (result === "opened-window") {
+      toast.message("Reporte listo para imprimir", {
+        description: "Si no aparece el diálogo, use el menú del navegador (Compartir o Imprimir).",
+      });
     }
   };
 
