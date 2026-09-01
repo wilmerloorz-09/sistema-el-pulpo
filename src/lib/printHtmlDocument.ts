@@ -1,8 +1,7 @@
 import { Capacitor } from "@capacitor/core";
-import { toast } from "sonner";
 
 export type CashReportPrintResult = "print-dialog" | "opened-tab" | "shared" | "failed";
-export type CashReportPdfResult = "opened" | "shared" | "downloaded" | "failed";
+export type CashReportShareResult = "shared" | "opened-tab" | "failed";
 
 /** Móvil, tablet o app nativa. */
 export const prefersDedicatedPrintWindow = (): boolean => {
@@ -47,15 +46,45 @@ function normalizeFullHtml(html: string): string {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${trimmed}</body></html>`;
 }
 
-/** HTML con barra para volver (pestaña / visor aparte). */
+/** HTML con barra móvil para compartir o volver. */
 function htmlWithMobileToolbar(html: string): string {
   const docHtml = normalizeFullHtml(html);
   const toolbar = `
 <style>@media print{#el-pulpo-report-toolbar{display:none!important;}}</style>
 <div id="el-pulpo-report-toolbar" style="position:sticky;top:0;z-index:9999;display:flex;gap:8px;justify-content:flex-end;padding:12px;background:#fff;border-bottom:1px solid #e5e7eb;">
-  <button type="button" onclick="window.print()" style="appearance:none;border:0;border-radius:999px;background:#ea580c;color:#fff;font-weight:700;padding:10px 16px;min-height:44px;">Imprimir</button>
-  <button type="button" onclick="window.close(); if(!window.closed && window.history.length>1) window.history.back();" style="appearance:none;border:1px solid #fecaca;border-radius:999px;background:#fff;color:#b91c1c;font-weight:700;padding:10px 16px;min-height:44px;">Cerrar</button>
-</div>`;
+  <button type="button" id="el-pulpo-share-report" style="appearance:none;border:0;border-radius:999px;background:#ea580c;color:#fff;font-weight:700;padding:10px 16px;min-height:44px;">Compartir</button>
+  <button type="button" id="el-pulpo-close-report" style="appearance:none;border:1px solid #fecaca;border-radius:999px;background:#fff;color:#b91c1c;font-weight:700;padding:10px 16px;min-height:44px;">Cerrar</button>
+</div>
+<script>
+(function () {
+  var shareButton = document.getElementById("el-pulpo-share-report");
+  var closeButton = document.getElementById("el-pulpo-close-report");
+
+  if (shareButton) {
+    shareButton.addEventListener("click", function () {
+      var title = document.title || "Reporte de caja";
+      if (navigator.share) {
+        navigator.share({ title: title, text: title, url: location.href }).catch(function () {});
+        return;
+      }
+      alert("Use el menú ⋮ del navegador para compartir o imprimir este reporte.");
+    });
+  }
+
+  if (closeButton) {
+    closeButton.addEventListener("click", function () {
+      try { window.close(); } catch (_error) {}
+      window.setTimeout(function () {
+        try {
+          if (window.history.length > 1) {
+            window.history.back();
+          }
+        } catch (_error) {}
+      }, 120);
+    });
+  }
+})();
+</script>`;
 
   if (/<body[^>]*>/i.test(docHtml)) {
     return docHtml.replace(/<body([^>]*)>/i, `<body$1>${toolbar}`);
@@ -176,117 +205,23 @@ function printFromIframe(frame: HTMLIFrameElement | null): boolean {
   }
 }
 
-function defaultCashReportFilename(ext: "pdf" | "html" = "pdf"): string {
+function defaultCashReportFilename(ext: "html" = "html"): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
   return `reporte-caja-${stamp}.${ext}`;
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("No se pudo leer el PDF."));
-        return;
-      }
-      const commaIndex = result.indexOf(",");
-      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el PDF."));
-    reader.readAsDataURL(blob);
-  });
+function textToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
-function resolvePdfSourceElement(
-  html: string,
-  iframe?: HTMLIFrameElement | null,
-): { element: HTMLElement; cleanup: () => void; html2canvasWindow?: Window } {
-  const iframeBody = iframe?.contentDocument?.body;
-  if (iframeBody) {
-    return {
-      element: iframeBody,
-      cleanup: () => {},
-      html2canvasWindow: iframe.contentWindow ?? undefined,
-    };
-  }
-
-  const { styles, bodyHtml } = parseReportHtml(html);
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = [
-    "position:fixed",
-    "left:0",
-    "top:0",
-    "width:794px",
-    "max-width:100vw",
-    "background:#fff",
-    "z-index:-1",
-    "opacity:0.01",
-    "pointer-events:none",
-    "overflow:hidden",
-  ].join(";");
-  wrapper.innerHTML = `<style>${styles}</style><div class="cash-report-print-document">${bodyHtml}</div>`;
-  document.body.appendChild(wrapper);
-
-  const element = wrapper.querySelector(".cash-report-print-document") as HTMLElement | null;
-  if (!element) {
-    wrapper.remove();
-    throw new Error("No se pudo preparar el reporte para PDF.");
-  }
-
-  return {
-    element,
-    cleanup: () => wrapper.remove(),
-  };
-}
-
-/** Genera PDF del reporte usando el iframe ya renderizado cuando exista. */
-export async function generateCashReportPdfBlob(
-  html: string,
-  iframe?: HTMLIFrameElement | null,
-): Promise<Blob | null> {
-  if (typeof document === "undefined") return null;
-
-  let source: ReturnType<typeof resolvePdfSourceElement> | null = null;
-
-  try {
-    source = resolvePdfSourceElement(html, iframe);
-    const html2pdf = (await import("html2pdf.js")).default;
-    const html2canvasOptions: Record<string, unknown> = {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-    };
-
-    if (source.html2canvasWindow) {
-      html2canvasOptions.windowWidth = source.html2canvasWindow.document.documentElement.scrollWidth;
-      html2canvasOptions.windowHeight = source.html2canvasWindow.document.documentElement.scrollHeight;
-    }
-
-    const blob = await html2pdf()
-      .set({
-        margin: [10, 10, 10, 10],
-        image: { type: "jpeg", quality: 0.95 },
-        html2canvas: html2canvasOptions,
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"] },
-      })
-      .from(source.element)
-      .outputPdf("blob");
-
-    return blob instanceof Blob ? blob : null;
-  } catch (error: unknown) {
-    console.error("[cash-report-pdf]", error);
-    return null;
-  } finally {
-    source?.cleanup();
-  }
-}
-
-async function sharePdfWithCapacitor(blob: Blob, filename: string, title: string): Promise<boolean> {
+async function shareHtmlWithCapacitor(html: string, title: string): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
 
   try {
@@ -295,10 +230,12 @@ async function sharePdfWithCapacitor(blob: Blob, filename: string, title: string
       import("@capacitor/share"),
     ]);
 
-    const base64 = await blobToBase64(blob);
+    const filename = defaultCashReportFilename("html");
+    const docHtml = htmlWithMobileToolbar(html);
+
     await Filesystem.writeFile({
       path: filename,
-      data: base64,
+      data: textToBase64(docHtml),
       directory: Directory.Cache,
       recursive: true,
     });
@@ -312,7 +249,7 @@ async function sharePdfWithCapacitor(blob: Blob, filename: string, title: string
       title,
       text: title,
       url: uri,
-      dialogTitle: "Compartir reporte",
+      dialogTitle: "Compartir o imprimir reporte",
     });
     return true;
   } catch (error: unknown) {
@@ -324,103 +261,27 @@ async function sharePdfWithCapacitor(blob: Blob, filename: string, title: string
   }
 }
 
-async function openPdfWithCapacitorBrowser(blob: Blob, filename: string): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
-
-  try {
-    const [{ Filesystem, Directory }, { Browser }] = await Promise.all([
-      import("@capacitor/filesystem"),
-      import("@capacitor/browser"),
-    ]);
-
-    const base64 = await blobToBase64(blob);
-    await Filesystem.writeFile({
-      path: filename,
-      data: base64,
-      directory: Directory.Cache,
-      recursive: true,
-    });
-
-    const { uri } = await Filesystem.getUri({
-      directory: Directory.Cache,
-      path: filename,
-    });
-
-    await Browser.open({ url: uri, presentationStyle: "fullscreen" });
-    return true;
-  } catch (error: unknown) {
-    console.error("[cash-report-open-native]", error);
-    return false;
-  }
-}
-
-/** Comparte un PDF ya generado. */
-export async function shareCashReportPdfBlob(
-  blob: Blob,
+/**
+ * Comparte el reporte en móvil sin convertir a PDF.
+ * El reporte ya está visible en pantalla; esto no debe bloquear ni tapar la UI.
+ */
+export async function shareCashReportMobile(
+  html: string,
   title = "Reporte de caja",
-  filename = defaultCashReportFilename("pdf"),
-): Promise<CashReportPdfResult> {
-  if (await sharePdfWithCapacitor(blob, filename, title)) {
-    toast.message("Listo para compartir", {
-      description: "Elija WhatsApp, Drive u otra app.",
-    });
+): Promise<CashReportShareResult> {
+  if (await shareHtmlWithCapacitor(html, title)) {
     return "shared";
   }
 
-  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-    try {
-      const file = new File([blob], filename, { type: "application/pdf" });
-      const payload = { files: [file], title, text: title };
-      if (typeof navigator.canShare !== "function" || navigator.canShare(payload)) {
-        await navigator.share(payload);
-        return "shared";
-      }
-    } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return "shared";
-      }
-    }
+  if (await shareCashReportHtml(html, title)) {
+    return "shared";
   }
 
-  toast.error("Compartir no disponible", {
-    description: "Use el botón Compartir del visor o abra el PDF en otra app.",
-  });
+  if (openCashReportInNewTab(html)) {
+    return "opened-tab";
+  }
+
   return "failed";
-}
-
-/** Genera y abre el PDF. En móvil devuelve el blob para visor inline. */
-export async function openCashReportPdf(
-  html: string,
-  iframe?: HTMLIFrameElement | null,
-): Promise<{ result: CashReportPdfResult; blob: Blob | null }> {
-  const blob = await generateCashReportPdfBlob(html, iframe);
-  if (!blob) {
-    if (openCashReportInNewTab(html)) {
-      toast.message("Reporte abierto", {
-        description: "No se pudo crear PDF; se abrió el reporte en pantalla.",
-      });
-      return { result: "opened", blob: null };
-    }
-    return { result: "failed", blob: null };
-  }
-
-  const filename = defaultCashReportFilename("pdf");
-
-  if (await openPdfWithCapacitorBrowser(blob, filename)) {
-    return { result: "opened", blob };
-  }
-
-  if (!prefersDedicatedPrintWindow()) {
-    const url = URL.createObjectURL(blob);
-    const popup = window.open(url, "_blank", "noopener,noreferrer");
-    if (popup) {
-      window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
-      return { result: "opened", blob };
-    }
-    URL.revokeObjectURL(url);
-  }
-
-  return { result: "opened", blob };
 }
 
 export function printCashReportDesktop(iframe: HTMLIFrameElement | null, html: string): CashReportPrintResult {
