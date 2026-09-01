@@ -2,20 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Printer } from "lucide-react";
 import { toast } from "sonner";
+import { openCashReportForInkjetPrint } from "@/lib/cashReportInkjetPrint";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
 import {
   prefersDedicatedPrintWindow,
   printCashReportDesktop,
 } from "@/lib/printHtmlDocument";
-import { printCashReportReceipt } from "@/lib/thermalPrint";
 import { Button } from "@/components/ui/button";
-
-import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 
 type CashReportViewState = {
   html: string;
   autoPrint: boolean;
-  printParams: CashClosureReportParams | null;
+  printParams: import("@/lib/cashReportUtils").CashClosureReportParams | null;
 } | null;
 
 /**
@@ -55,24 +53,19 @@ export function CashReportViewer() {
   const handlePrint = async () => {
     if (!state?.html || printing) return;
 
-    if (state.printParams) {
+    if (isMobileLike) {
       setPrinting(true);
       try {
-        const result = await printCashReportReceipt(state.printParams);
-        if (result.mode === "escpos") {
-          toast.success("Reporte enviado a la impresora");
+        const result = await openCashReportForInkjetPrint(state.html);
+        if (result === "opened") {
+          toast.message("Reporte abierto para imprimir", {
+            description: "Pulse Imprimir y elija su Epson L395 (u otra impresora).",
+          });
           return;
         }
-
-        if (result.error) {
-          toast.error("No se pudo imprimir en termica", {
-            description: result.error,
-          });
-        }
-
-        if (!isMobileLike) {
-          printCashReportDesktop(iframeRef.current, state.html);
-        }
+        toast.error("No se pudo abrir la impresión", {
+          description: "Intente de nuevo o use una PC con la impresora conectada.",
+        });
       } finally {
         setPrinting(false);
       }
@@ -83,7 +76,7 @@ export function CashReportViewer() {
   };
 
   const handleIframeLoad = () => {
-    if (!state?.autoPrint || autoPrintDoneRef.current || isMobileLike || !state.printParams) return;
+    if (!state?.autoPrint || autoPrintDoneRef.current || isMobileLike) return;
     autoPrintDoneRef.current = true;
     window.setTimeout(() => {
       void handlePrint();
@@ -102,17 +95,15 @@ export function CashReportViewer() {
       aria-label="Reporte de caja"
     >
       <div className="no-print flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] shadow-sm">
-        {state.printParams ? (
-          <Button
-            type="button"
-            className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
-            onClick={() => void handlePrint()}
-            disabled={printing}
-          >
-            <Printer className="h-4 w-4" />
-            {printing ? "Imprimiendo…" : "Imprimir"}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
+          onClick={() => void handlePrint()}
+          disabled={printing}
+        >
+          <Printer className="h-4 w-4" />
+          {printing ? "Abriendo…" : "Imprimir"}
+        </Button>
         <Button
           type="button"
           variant="outline"

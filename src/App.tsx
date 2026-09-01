@@ -54,6 +54,7 @@ import InventarioMovimientos from "./pages/InventarioMovimientos";
 import InventarioHistorial from "./pages/InventarioHistorial";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
+import PrintCashReport from "./pages/PrintCashReport";
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -391,6 +392,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/promociones/registro" element={<PromocionRegistro />} />
               <Route path="/qr-pedido/:token" element={<QrPedido />} />
+              <Route path="/imprimir-reporte-caja" element={<PrintCashReport />} />
               <Route
                 element={
                   <AuthGate>
