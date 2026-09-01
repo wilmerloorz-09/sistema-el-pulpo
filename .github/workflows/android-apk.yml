@@ -7,11 +7,14 @@ on:
       - main
     paths:
       - "android/**"
-      - "capacitor.config.ts"
+      - "capacitor.config.json"
       - "package.json"
       - "package-lock.json"
       - "src/**"
       - ".github/workflows/android-apk.yml"
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
 
 jobs:
   build-apk:
@@ -23,7 +26,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Setup Java
@@ -34,21 +37,30 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;35.0.0"
-          yes | sdkmanager --licenses
+        with:
+          packages: platform-tools platforms;android-36 build-tools;35.0.0
+          accept-android-sdk-licenses: true
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
-      - name: Build web app and sync Capacitor
-        run: npm run cap:sync
+      - name: Build web app
+        run: npm run build
+
+      - name: Verify web build output
+        run: |
+          test -f dist/index.html
+          ls -la dist/
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Verify Capacitor Share plugin in native project
+        run: grep -q "capacitor-share" android/capacitor.settings.gradle
 
       - name: Build debug APK
         working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleDebug --stacktrace --no-daemon
+        run: chmod +x gradlew && ./gradlew assembleDebug --stacktrace --no-daemon -x lint
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
