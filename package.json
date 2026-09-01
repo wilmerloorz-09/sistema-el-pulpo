@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cap:sync": "npm run build && npx cap sync android",
-    "android:apk": "npm run cap:sync && cd android && gradlew.bat assembleDebug"
+    "android:apk": "npm run cap:sync && cd android && .\\gradlew.bat assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
