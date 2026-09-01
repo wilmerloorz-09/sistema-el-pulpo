@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { hideCashReport, subscribeCashReport } from "@/lib/cashReportViewerStore";
-import { printHtmlDocumentSync, prefersDedicatedPrintWindow } from "@/lib/printHtmlDocument";
+import { printCashReportInPlace, prefersDedicatedPrintWindow } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
 
 type CashReportViewState = {
@@ -54,22 +54,16 @@ export function CashReportViewer() {
           frameWindow.print();
           return;
         } catch {
-          // Continúa con ventana dedicada.
+          // Sigue con impresión in-app.
         }
       }
     }
 
-    const result = printHtmlDocumentSync(state.html);
-    if (result === "failed") {
+    const ok = printCashReportInPlace(state.html);
+    if (!ok) {
       toast.error(
-        "No se pudo abrir la impresión. Permita ventanas emergentes o use Compartir > Imprimir en el navegador.",
+        "No se pudo abrir la impresión. En Safari use Compartir y elija Imprimir.",
       );
-      return;
-    }
-    if (result === "opened-window") {
-      toast.message("Reporte listo para imprimir", {
-        description: "Si no aparece el diálogo, use el menú del navegador (Compartir o Imprimir).",
-      });
     }
   };
 

@@ -1,8 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 
-export type PrintHtmlResult = "printed" | "opened-window" | "failed";
-
-/** Móvil, tablet o app nativa: el print() sobre iframe anidado suele no abrir diálogo. */
+/** Móvil, tablet o app nativa. */
 export const prefersDedicatedPrintWindow = (): boolean => {
   if (typeof window === "undefined") return false;
   if (Capacitor.isNativePlatform()) return true;
@@ -11,75 +9,68 @@ export const prefersDedicatedPrintWindow = (): boolean => {
   return false;
 };
 
-function normalizeHtml(html: string): string {
-  const trimmed = html.trim();
-  if (!trimmed) return "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>";
-  if (/^<!doctype/i.test(trimmed) || /^<html/i.test(trimmed)) return trimmed;
-  return `<!doctype html><html><head><meta charset="utf-8"></head><body>${trimmed}</body></html>`;
+const PRINT_ROOT_ID = "print-cash-report";
+const PRINT_BODY_CLASS = "printing-cash-report";
+
+export function parseReportHtml(html: string): { styles: string; bodyHtml: string } {
+  if (typeof DOMParser === "undefined") {
+    return { styles: "", bodyHtml: html };
+  }
+
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const styles = Array.from(doc.querySelectorAll("style"))
+    .map((node) => node.textContent ?? "")
+    .join("\n");
+  const bodyHtml = doc.body?.innerHTML?.trim() || html;
+  return { styles, bodyHtml };
 }
 
-function printFromWindow(target: Window): boolean {
+function getPrintRoot(): HTMLElement {
+  let root = document.getElementById(PRINT_ROOT_ID);
+  if (!root) {
+    root = document.createElement("div");
+    root.id = PRINT_ROOT_ID;
+    root.setAttribute("aria-hidden", "true");
+    root.style.display = "none";
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
+/**
+ * Imprime reporte HTML desde el documento principal (sin window.open).
+ * En iOS/Android abre la hoja Compartir / Imprimir del navegador.
+ */
+export function printCashReportInPlace(html: string): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false;
+  }
+
+  const { styles, bodyHtml } = parseReportHtml(html);
+  const root = getPrintRoot();
+  root.innerHTML = `<style>${styles}</style><div class="cash-report-print-document">${bodyHtml}</div>`;
+
+  const cleanup = () => {
+    document.body.classList.remove(PRINT_BODY_CLASS);
+    root.innerHTML = "";
+  };
+
+  window.addEventListener("afterprint", cleanup, { once: true });
+  window.setTimeout(cleanup, 120_000);
+
+  document.body.classList.add(PRINT_BODY_CLASS);
+
   try {
-    target.focus();
-    target.print();
+    window.focus();
+    window.print();
     return true;
   } catch {
+    cleanup();
     return false;
   }
 }
 
-function printFromIframe(frame: HTMLIFrameElement): boolean {
-  const win = frame.contentWindow;
-  if (!win) return false;
-  return printFromWindow(win);
-}
-
-/**
- * Debe llamarse de forma síncrona dentro del onClick (iOS pierde el gesto del usuario con await).
- */
-export function printHtmlDocumentSync(html: string): PrintHtmlResult {
-  const docHtml = normalizeHtml(html);
-
-  const popup = window.open("", "_blank");
-  if (popup) {
-    try {
-      popup.document.open();
-      popup.document.write(docHtml);
-      popup.document.close();
-      if (printFromWindow(popup)) {
-        return "opened-window";
-      }
-    } catch {
-      try {
-        popup.close();
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  const frame = document.createElement("iframe");
-  frame.setAttribute("title", "Impresión");
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText =
-    "position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483646;background:#fff;";
-  document.body.appendChild(frame);
-
-  const doc = frame.contentWindow?.document;
-  if (!doc) {
-    frame.remove();
-    return "failed";
-  }
-
-  try {
-    doc.open();
-    doc.write(docHtml);
-    doc.close();
-    const ok = printFromIframe(frame);
-    window.setTimeout(() => frame.remove(), 1000);
-    return ok ? "printed" : "failed";
-  } catch {
-    frame.remove();
-    return "failed";
-  }
+/** @deprecated Usar printCashReportInPlace en móvil. */
+export function printHtmlDocumentSync(html: string): "printed" | "failed" {
+  return printCashReportInPlace(html) ? "printed" : "failed";
 }

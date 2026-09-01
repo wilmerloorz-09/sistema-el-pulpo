@@ -261,9 +261,14 @@
 
 /* Estilos de Impresión — ticket 80mm (fallback HTML cuando no hay puente ESC/POS) */
 @media print {
-  @page {
+  @page receipt {
     size: 80mm auto;
     margin: 0;
+  }
+
+  @page cash-report {
+    size: auto;
+    margin: 10mm;
   }
 
   html,
@@ -287,6 +292,7 @@
 
   /* Posicionar el recibo sin márgenes que congelen el buffer */
   #print-receipt {
+    page: receipt;
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
@@ -314,5 +320,41 @@
   .no-print,
   button {
     display: none !important;
+  }
+
+  /* Reporte de caja (apertura / cierre) — hoja completa, no ticket 80mm */
+  body.printing-cash-report,
+  body.printing-cash-report html {
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  body.printing-cash-report * {
+    visibility: hidden !important;
+  }
+
+  body.printing-cash-report #print-cash-report,
+  body.printing-cash-report #print-cash-report * {
+    visibility: visible !important;
+  }
+
+  body.printing-cash-report #print-cash-report {
+    page: cash-report;
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: #1f2937 !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  body.printing-cash-report #print-cash-report .cash-report-print-document {
+    padding: 12px !important;
   }
 }
