@@ -63,8 +63,8 @@ export default function PrintCashReport() {
           </Button>
         </div>
         <p className="text-xs leading-relaxed text-slate-600">
-          Menu del navegador (tres puntos) → <strong>Imprimir</strong> → elija <strong>Epson L395</strong>. Si no aparece, instale{" "}
-          <strong>Epson iPrint</strong> y conecte la impresora a la misma WiFi.
+          Pulse <strong>Imprimir</strong> o use el menu del sistema (tres puntos) → <strong>Imprimir</strong> → elija la impresora.
+          Si no aparece la Epson, vuelva a Caja y use <strong>Impresora de red</strong> o configure la IP en Administracion de sucursal.
         </p>
       </div>
       <iframe ref={iframeRef} title="Reporte" srcDoc={html} className="min-h-0 w-full flex-1 border-0" />

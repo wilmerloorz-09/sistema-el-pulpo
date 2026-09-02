@@ -3,6 +3,7 @@ import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 import { formatDateTime, formatMoney } from "@/lib/cashReportUtils";
 import {
   buildCashReportPrintPageUrl,
+  openCashReportInAppPrintPage,
   textToBase64,
 } from "@/lib/cashReportPrintSession";
 
@@ -172,34 +173,21 @@ export function openCashReportByEmail(printParams: CashClosureReportParams): boo
   return true;
 }
 
-function openUrlInAndroidChrome(url: string): boolean {
-  try {
-    const withoutScheme = url.replace(/^https:\/\//i, "");
-    const intent = `intent://${withoutScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-    window.location.assign(intent);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Abre el reporte en Chrome/navegador del sistema para usar menu Imprimir.
- * Ahi debe aparecer la Epson L395 si esta en la misma red WiFi.
+ * Abre la vista de impresion dentro de la app (misma WebView).
+ * En tablet evita intents de Chrome con URL demasiado larga (reporte no disponible).
  */
-export async function openCashReportInExternalBrowser(html: string): Promise<{ ok: boolean; message?: string }> {
-  const url = buildCashReportPrintPageUrl(html, { autoPrint: true, preferStash: false });
+export async function openCashReportPrintView(html: string): Promise<{ ok: boolean; message?: string }> {
+  if (openCashReportInAppPrintPage(html, true)) {
+    return { ok: true };
+  }
+
+  const url = buildCashReportPrintPageUrl(html, { autoPrint: true, preferStash: true });
   if (!url) {
     return {
       ok: false,
-      message: "El reporte es muy largo para abrirlo en el navegador. Use Copiar resumen o imprima desde PC.",
+      message: "El reporte es muy largo. Use Impresora de red o Copiar resumen.",
     };
-  }
-
-  if (Capacitor.getPlatform() === "android") {
-    if (openUrlInAndroidChrome(url)) {
-      return { ok: true };
-    }
   }
 
   if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("Browser")) {
@@ -208,7 +196,7 @@ export async function openCashReportInExternalBrowser(html: string): Promise<{ o
       await Browser.open({ url, presentationStyle: "fullscreen" });
       return { ok: true };
     } catch {
-      /* fallback below */
+      /* fallback */
     }
   }
 
@@ -220,3 +208,6 @@ export async function openCashReportInExternalBrowser(html: string): Promise<{ o
   window.location.assign(url);
   return { ok: true };
 }
+
+/** @deprecated Use openCashReportPrintView */
+export const openCashReportInExternalBrowser = openCashReportPrintView;

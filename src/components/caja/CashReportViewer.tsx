@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   copyCashReportSummary,
   openCashReportByEmail,
-  openCashReportInExternalBrowser,
+  openCashReportPrintView,
   openCashReportShareMenu,
   stageCashReportForShare,
   type MobilePrintStage,
@@ -15,6 +15,7 @@ import {
   prefersDedicatedPrintWindow,
   printCashReportDesktop,
 } from "@/lib/printHtmlDocument";
+import { isThermalBridgeEnabled, printCashReportReceipt } from "@/lib/thermalPrint";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -137,20 +138,42 @@ export function CashReportViewer() {
     }
   };
 
-  const handleOpenBrowser = async () => {
+  const handleOpenPrintView = async () => {
     if (!state?.html || openingGuard()) return;
     setBusy(true);
     try {
-      const outcome = await openCashReportInExternalBrowser(state.html);
+      const outcome = await openCashReportPrintView(state.html);
       if (outcome.ok) {
         setPrintDialogOpen(false);
-        toast.message("Abriendo Chrome para imprimir", {
-          description: "Menu ⋮ → Imprimir → Epson L395. Si no sale, instale Epson iPrint y use la misma WiFi.",
+        hideCashReport();
+        toast.message("Vista de impresion", {
+          description: "Use el boton Imprimir o el menu del sistema. Si no aparece la Epson, pruebe Impresora de red.",
           duration: 12000,
         });
         return;
       }
-      toast.error("No se pudo abrir el navegador", { description: outcome.message, duration: 10000 });
+      toast.error("No se pudo abrir la vista de impresion", { description: outcome.message, duration: 10000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleThermalPrint = async () => {
+    if (!state?.printParams || openingGuard()) return;
+    setBusy(true);
+    try {
+      const result = await printCashReportReceipt(state.printParams);
+      if (result.mode === "escpos") {
+        setPrintDialogOpen(false);
+        toast.success("Reporte enviado a la impresora de red");
+        return;
+      }
+      toast.error("No se pudo imprimir en la impresora", {
+        description:
+          result.error
+          || "Revise IP/puerto de la impresora en Administracion de sucursal y que este en la misma WiFi.",
+        duration: 12000,
+      });
     } finally {
       setBusy(false);
     }
@@ -191,6 +214,7 @@ export function CashReportViewer() {
   }
 
   const needsUpdate = shareStage.needsApkUpdate;
+  const canThermalPrint = Boolean(state.printParams) && isThermalBridgeEnabled();
 
   return createPortal(
     <>
@@ -210,7 +234,7 @@ export function CashReportViewer() {
       <AlertDialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
         <AlertDialogContent className="z-[300] max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>{needsUpdate ? "Actualice la app de la tablet" : "Imprimir en Epson L395"}</AlertDialogTitle>
+            <AlertDialogTitle>{needsUpdate ? "Actualice la app de la tablet" : "Imprimir reporte de caja"}</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2 text-sm leading-relaxed text-slate-700">
               {needsUpdate ? (
                 <>
@@ -218,16 +242,18 @@ export function CashReportViewer() {
                     La app instalada es antigua y <strong>no puede abrir el menu de impresion</strong>. Hay que reinstalar el APK nuevo en la tablet.
                   </span>
                   <span className="block text-xs text-slate-500">
-                    Mientras tanto use Chrome o imprima desde una PC con la Epson conectada.
+                    Mientras tanto use Vista de impresion o imprima desde una PC con la Epson conectada.
                   </span>
                 </>
               ) : (
                 <>
                   <span className="block">
-                    El menu <strong>Compartir no muestra impresoras</strong>. Para la Epson L395 use Chrome o Epson iPrint.
+                    {canThermalPrint
+                      ? "Si la sucursal tiene IP de impresora configurada, use Impresora de red (igual que los comprobantes)."
+                      : "Use Vista de impresion y el menu Imprimir del sistema."}
                   </span>
                   <span className="block text-xs text-slate-500">
-                    La impresora debe estar en la <strong>misma WiFi</strong> que la tablet. Si no aparece, instale Epson iPrint desde Play Store.
+                    Epson L395: misma WiFi que la tablet. Si no aparece, instale Epson iPrint o configure la IP en Administracion.
                   </span>
                 </>
               )}
@@ -235,13 +261,24 @@ export function CashReportViewer() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            {canThermalPrint ? (
+              <Button
+                type="button"
+                className="min-h-11 w-full bg-orange-600 hover:bg-orange-700"
+                disabled={busy}
+                onClick={() => void handleThermalPrint()}
+              >
+                {busy ? "Enviando…" : "Impresora de red"}
+              </Button>
+            ) : null}
             <Button
               type="button"
-              className="min-h-11 w-full bg-orange-600 hover:bg-orange-700"
+              className={canThermalPrint ? "min-h-11 w-full" : "min-h-11 w-full bg-orange-600 hover:bg-orange-700"}
+              variant={canThermalPrint ? "outline" : "default"}
               disabled={busy}
-              onClick={() => void handleOpenBrowser()}
+              onClick={() => void handleOpenPrintView()}
             >
-              {busy ? "Abriendo…" : "Imprimir con Chrome"}
+              {busy ? "Abriendo…" : "Vista de impresion"}
             </Button>
             {!needsUpdate && shareStage.ready ? (
               <Button type="button" variant="outline" className="min-h-11 w-full" disabled={busy} onClick={() => void handleOpenShareMenu()}>
