@@ -49,13 +49,29 @@ export function isPureTakeoutOrder(order: {
   );
 }
 
+/** Orden especial creada desde Orden Especial → Para llevar (cobro manual, sin mesa). */
+export function isSpecialTakeoutOrder(order: {
+  order_type?: string | null;
+  is_tray_order?: boolean | null;
+  is_special?: boolean | null;
+} | null | undefined): boolean {
+  return (
+    order?.order_type === "TAKEOUT"
+    && Boolean(order?.is_special)
+    && !order?.is_tray_order
+  );
+}
+
 /**
  * Para llevar / Express: si hay ítems DRAFT (agregados y no enviados a caja),
  * recaudación debe bloquear el cobro (botón rojo), igual que mesa con pendientes de despacho.
+ * Las órdenes especiales (incl. para llevar) usan total manual y no aplican este bloqueo.
  */
 export function orderBlocksCollectForUnsentDrafts(order: {
   order_type?: string | null;
+  is_special?: boolean | null;
 } | null | undefined): boolean {
+  if (order?.is_special) return false;
   const type = String(order?.order_type ?? "");
   return type === "TAKEOUT" || type === "EXPRESS";
 }
@@ -257,6 +273,7 @@ export function isDispatchFirstOrder(
   } | null | undefined,
   workflowMode: string,
 ): boolean {
+  if (isSpecialTakeoutOrder(order)) return false;
   return isExpressOrder(order)
     || (workflowMode === "DISPATCH_THEN_CASH" && !isPureTakeoutOrder(order));
 }

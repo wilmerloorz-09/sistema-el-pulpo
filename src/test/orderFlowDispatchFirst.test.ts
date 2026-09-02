@@ -32,6 +32,10 @@ describe("orderBlocksCollectForUnsentDrafts", () => {
     expect(orderBlocksCollectForUnsentDrafts({ order_type: "DINE_IN" })).toBe(false);
   });
 
+  it("no bloquea orden especial para llevar (cobro manual)", () => {
+    expect(orderBlocksCollectForUnsentDrafts({ order_type: "TAKEOUT", is_special: true })).toBe(false);
+  });
+
   it("counts draft units only", () => {
     expect(
       countUnsentDraftUnits([
@@ -50,9 +54,15 @@ describe("isDispatchFirstOrder", () => {
     expect(isDispatchFirstOrder({ order_type: "DINE_IN" }, dispatchFirstWorkflow)).toBe(true);
   });
 
-  it("blocks orden especial until dispatch like mesa", () => {
+  it("allows special takeout to collect without dispatch (cobro manual)", () => {
     expect(
       isDispatchFirstOrder({ order_type: "TAKEOUT", is_special: true }, dispatchFirstWorkflow),
+    ).toBe(false);
+  });
+
+  it("blocks orden especial de mesa until dispatch like mesa", () => {
+    expect(
+      isDispatchFirstOrder({ order_type: "DINE_IN", is_special: true }, dispatchFirstWorkflow),
     ).toBe(true);
   });
 
