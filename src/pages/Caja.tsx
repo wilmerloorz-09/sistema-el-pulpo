@@ -177,8 +177,8 @@ const Caja = () => {
   const userCajaStatus = shiftGateQuery.data?.cajaStatus ?? "UNOPENED";
   const userCajaIsOpen = userCajaStatus === "OPEN";
   const summaryCashierId = completedFilters.cashierName || ALL_CASHIERS;
-  const registerSummaryCashierId =
-    userCajaIsOpen && user?.id ? user.id : summaryCashierId;
+  /** Mismo alcance que Pagos del turno (filtro de cajero), no forzar siempre la caja del usuario logueado. */
+  const registerSummaryCashierId = summaryCashierId;
 
   const registerSummaryOpening = useMemo(() => {
     const openingHistory =
