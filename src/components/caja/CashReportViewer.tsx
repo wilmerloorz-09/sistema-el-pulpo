@@ -15,6 +15,7 @@ import {
   prefersDedicatedPrintWindow,
   printCashReportDesktop,
 } from "@/lib/printHtmlDocument";
+import { needsNativePrintApkForAndroid } from "@/lib/pulpoNativePrint";
 import { isThermalBridgeEnabled, printCashReportReceipt } from "@/lib/thermalPrint";
 import { Button } from "@/components/ui/button";
 import {
@@ -126,10 +127,17 @@ export function CashReportViewer() {
     try {
       const outcome = await openCashReportShareMenu(shareStage);
       if (outcome.ok) {
-        toast.message("Elija la app Epson iPrint", {
-          description: "La impresora no sale en esta lista; se elige dentro de Epson iPrint.",
-          duration: 12000,
-        });
+        if (outcome.usedChooser) {
+          toast.message("Epson iPrint no detectada", {
+            description: "Instale Epson iPrint desde Play Store o elija otra app en la lista.",
+            duration: 12000,
+          });
+        } else {
+          toast.message("Abriendo Epson iPrint", {
+            description: "Dentro de iPrint elija la Epson L395 y confirme la impresion.",
+            duration: 12000,
+          });
+        }
         return;
       }
       toast.error("No se pudo abrir el menu", { description: outcome.message, duration: 10000 });
@@ -147,7 +155,9 @@ export function CashReportViewer() {
         setPrintDialogOpen(false);
         hideCashReport();
         toast.message("Vista de impresion", {
-          description: "Use el boton Imprimir o el menu del sistema. Si no aparece la Epson, pruebe Impresora de red.",
+          description: needsNativePrintApkForAndroid()
+            ? "Instale el APK nuevo en la tablet para que abra el dialogo de impresion de Android."
+            : "Pulse Imprimir y elija la Epson L395. Si no aparece, use Epson iPrint.",
           duration: 12000,
         });
         return;
@@ -165,13 +175,13 @@ export function CashReportViewer() {
       const result = await printCashReportReceipt(state.printParams);
       if (result.mode === "escpos") {
         setPrintDialogOpen(false);
-        toast.success("Reporte enviado a la impresora de red");
+        toast.success("Resumen enviado a la impresora de tickets (80 mm)");
         return;
       }
-      toast.error("No se pudo imprimir en la impresora", {
+      toast.error("No se pudo imprimir el resumen en ticket", {
         description:
           result.error
-          || "Revise IP/puerto de la impresora en Administracion de sucursal y que este en la misma WiFi.",
+          || "Solo aplica a impresora termica de comprobantes (ESC/POS), no a la Epson L395 de reportes.",
         duration: 12000,
       });
     } finally {
@@ -248,12 +258,12 @@ export function CashReportViewer() {
               ) : (
                 <>
                   <span className="block">
-                    {canThermalPrint
-                      ? "Si la sucursal tiene IP de impresora configurada, use Impresora de red (igual que los comprobantes)."
-                      : "Use Vista de impresion y el menu Imprimir del sistema."}
+                    El <strong>reporte completo</strong> (como en pantalla) va a la <strong>Epson L395</strong> con{" "}
+                    <strong>Vista de impresion</strong> o <strong>Epson iPrint</strong>.
                   </span>
                   <span className="block text-xs text-slate-500">
-                    Epson L395: misma WiFi que la tablet. Si no aparece, instale Epson iPrint o configure la IP en Administracion.
+                    En tablet hace falta el APK actualizado para que Android muestre el dialogo de impresoras.
+                    La impresora de tickets solo sirve para un resumen corto en papel de 80 mm.
                   </span>
                 </>
               )}
@@ -261,28 +271,28 @@ export function CashReportViewer() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
-            {canThermalPrint ? (
-              <Button
-                type="button"
-                className="min-h-11 w-full bg-orange-600 hover:bg-orange-700"
-                disabled={busy}
-                onClick={() => void handleThermalPrint()}
-              >
-                {busy ? "Enviando…" : "Impresora de red"}
-              </Button>
-            ) : null}
             <Button
               type="button"
-              className={canThermalPrint ? "min-h-11 w-full" : "min-h-11 w-full bg-orange-600 hover:bg-orange-700"}
-              variant={canThermalPrint ? "outline" : "default"}
+              className="min-h-11 w-full bg-orange-600 hover:bg-orange-700"
               disabled={busy}
               onClick={() => void handleOpenPrintView()}
             >
-              {busy ? "Abriendo…" : "Vista de impresion"}
+              {busy ? "Abriendo…" : "Vista de impresion (Epson L395)"}
             </Button>
             {!needsUpdate && shareStage.ready ? (
               <Button type="button" variant="outline" className="min-h-11 w-full" disabled={busy} onClick={() => void handleOpenShareMenu()}>
-                Enviar a Epson iPrint
+                Abrir en Epson iPrint
+              </Button>
+            ) : null}
+            {canThermalPrint ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 w-full text-xs"
+                disabled={busy}
+                onClick={() => void handleThermalPrint()}
+              >
+                {busy ? "Enviando…" : "Solo resumen en ticket 80 mm (termica)"}
               </Button>
             ) : null}
             {state.printParams ? (

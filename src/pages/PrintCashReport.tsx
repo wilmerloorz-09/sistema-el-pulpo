@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Printer, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   decodeCashReportPayloadFromUrl,
   readStashedCashReportHtml,
 } from "@/lib/cashReportPrintSession";
+import { parseReportHtml } from "@/lib/printHtmlDocument";
+import { needsNativePrintApkForAndroid, printNativeWebView } from "@/lib/pulpoNativePrint";
 
 export default function PrintCashReport() {
   const [searchParams] = useSearchParams();
   const [html, setHtml] = useState<string | null>(null);
   const [autoPrintDone, setAutoPrintDone] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     const stashed = readStashedCashReportHtml(searchParams.get("id"));
@@ -22,26 +25,48 @@ export default function PrintCashReport() {
     setHtml(decodeCashReportPayloadFromUrl(searchParams.get("d")));
   }, [searchParams]);
 
-  const handlePrint = () => {
-    const frameWindow = iframeRef.current?.contentWindow;
-    if (frameWindow) {
-      frameWindow.focus();
-      frameWindow.print();
-      return;
+  useEffect(() => {
+    document.body.classList.add("printing-cash-report");
+    return () => {
+      document.body.classList.remove("printing-cash-report");
+    };
+  }, []);
+
+  const parsed = useMemo(() => (html ? parseReportHtml(html) : null), [html]);
+
+  const handlePrint = useCallback(async () => {
+    if (printing) return;
+    setPrinting(true);
+    try {
+      if (needsNativePrintApkForAndroid()) {
+        toast.error("Actualice la app de la tablet", {
+          description: "Instale el APK nuevo para abrir el dialogo de impresion de Android.",
+          duration: 12000,
+        });
+        return;
+      }
+
+      const outcome = await printNativeWebView("Reporte de caja");
+      if (!outcome.ok) {
+        toast.error("No se abrio el dialogo de impresion", {
+          description: outcome.error ?? "Intente Enviar a Epson iPrint desde el reporte.",
+          duration: 10000,
+        });
+      }
+    } finally {
+      setPrinting(false);
     }
-    window.print();
-  };
+  }, [printing]);
 
   useEffect(() => {
-    if (!html || autoPrintDone || searchParams.get("print") !== "1") return;
+    if (!html || !parsed || autoPrintDone || searchParams.get("print") !== "1") return;
     const timer = window.setTimeout(() => {
-      handlePrint();
-      setAutoPrintDone(true);
-    }, 700);
+      void handlePrint().finally(() => setAutoPrintDone(true));
+    }, 900);
     return () => window.clearTimeout(timer);
-  }, [html, autoPrintDone, searchParams]);
+  }, [html, parsed, autoPrintDone, searchParams, handlePrint]);
 
-  if (!html) {
+  if (!html || !parsed) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white p-6 text-center">
         <p className="text-sm text-slate-600">Reporte no disponible. Vuelva a Caja e intente Imprimir de nuevo.</p>
@@ -53,9 +78,14 @@ export default function PrintCashReport() {
     <div className="flex min-h-screen flex-col bg-white">
       <div className="no-print flex shrink-0 flex-col gap-2 border-b border-slate-200 px-4 py-3">
         <div className="flex items-center justify-end gap-2">
-          <Button type="button" className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white" onClick={handlePrint}>
+          <Button
+            type="button"
+            className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white"
+            disabled={printing}
+            onClick={() => void handlePrint()}
+          >
             <Printer className="h-4 w-4" />
-            Imprimir
+            {printing ? "Abriendo…" : "Imprimir"}
           </Button>
           <Button type="button" variant="outline" className="min-h-11 rounded-full px-4" onClick={() => window.history.back()}>
             <X className="h-4 w-4" />
@@ -63,11 +93,14 @@ export default function PrintCashReport() {
           </Button>
         </div>
         <p className="text-xs leading-relaxed text-slate-600">
-          Pulse <strong>Imprimir</strong> o use el menu del sistema (tres puntos) → <strong>Imprimir</strong> → elija la impresora.
-          Si no aparece la Epson, vuelva a Caja y use <strong>Impresora de red</strong> o configure la IP en Administracion de sucursal.
+          Pulse <strong>Imprimir</strong> para abrir el menu de impresion de Android y elija la <strong>Epson L395</strong>.
+          Si no aparece, use <strong>Epson iPrint</strong> desde el reporte en Caja.
         </p>
       </div>
-      <iframe ref={iframeRef} title="Reporte" srcDoc={html} className="min-h-0 w-full flex-1 border-0" />
+      <div id="print-cash-report" className="min-h-0 flex-1 overflow-auto bg-white">
+        <style>{parsed.styles}</style>
+        <div className="cash-report-print-document" dangerouslySetInnerHTML={{ __html: parsed.bodyHtml }} />
+      </div>
     </div>
   );
 }

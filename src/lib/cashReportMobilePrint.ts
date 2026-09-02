@@ -6,6 +6,7 @@ import {
   openCashReportInAppPrintPage,
   textToBase64,
 } from "@/lib/cashReportPrintSession";
+import { openHtmlInEpsonIPrint } from "@/lib/pulpoNativePrint";
 
 export type MobilePrintStage = {
   ready: boolean;
@@ -126,9 +127,9 @@ export async function stageCashReportForShare(html: string): Promise<MobilePrint
   }
 }
 
-/** Abre el menu Compartir para enviar el HTML a Epson iPrint u otra app. */
-export async function openCashReportShareMenu(stage: MobilePrintStage): Promise<{ ok: true } | { ok: false; message: string }> {
-  if (stage.needsApkUpdate || !stage.sharePlugin) {
+/** Abre el HTML en Epson iPrint; si no esta instalada, muestra apps compatibles. */
+export async function openCashReportShareMenu(stage: MobilePrintStage): Promise<{ ok: true; usedChooser?: boolean } | { ok: false; message: string }> {
+  if (stage.needsApkUpdate || !stage.filesystemPlugin) {
     return {
       ok: false,
       message: "Actualice la app de la tablet (reinstale el APK nuevo).",
@@ -139,15 +140,30 @@ export async function openCashReportShareMenu(stage: MobilePrintStage): Promise<
     return { ok: false, message: "El reporte no esta listo. Espere un momento e intente de nuevo." };
   }
 
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android") {
+    const outcome = await openHtmlInEpsonIPrint(stage.shareUri);
+    if (outcome.ok) {
+      return { ok: true, usedChooser: outcome.usedChooser };
+    }
+    return { ok: false, message: outcome.error ?? "No se pudo abrir Epson iPrint" };
+  }
+
+  if (!stage.sharePlugin) {
+    return {
+      ok: false,
+      message: "Compartir no esta disponible en este dispositivo.",
+    };
+  }
+
   try {
     const { Share } = await import("@capacitor/share");
     await Share.share({
       title: "Reporte de caja",
       text: "Reporte de caja",
       url: stage.shareUri,
-      dialogTitle: "Elija Epson iPrint",
+      dialogTitle: "Abrir reporte con",
     });
-    return { ok: true };
+    return { ok: true, usedChooser: true };
   } catch (error: unknown) {
     if (error instanceof Error && /cancel|abort/i.test(error.message)) {
       return { ok: true };
