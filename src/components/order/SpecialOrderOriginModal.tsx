@@ -32,7 +32,7 @@ export function SpecialOrderOriginModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="footer-safe-bottom flex-1 overflow-y-auto bg-slate-50 px-4 py-4 sm:px-6">
+        <div className="footer-safe-bottom flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-500">
               <Loader2 className="mb-4 h-8 w-8 animate-spin" />
@@ -44,62 +44,74 @@ export function SpecialOrderOriginModal({
               <p>No se pudieron cargar las mesas.</p>
             </div>
           ) : (
-            <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="space-y-4">
               <button
                 type="button"
                 disabled={isCreating}
                 onClick={onSelectTakeout}
                 className={cn(
-                  "flex min-h-[108px] min-w-[132px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border-2 px-4 py-3 shadow-sm transition-all active:scale-95",
-                  "border-emerald-300 bg-gradient-to-b from-emerald-50 to-white text-emerald-900 hover:border-emerald-400 hover:shadow-md",
+                  "flex w-full min-h-[88px] items-center gap-4 rounded-2xl border-2 px-4 py-3 shadow-sm transition-all active:scale-[0.99]",
+                  "border-emerald-300 bg-gradient-to-r from-emerald-50 to-white text-emerald-900 hover:border-emerald-400 hover:shadow-md",
                   isCreating && "cursor-not-allowed opacity-50",
                 )}
               >
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-sm">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-sm">
                   <ShoppingBag className="h-5 w-5" />
                 </span>
-                <span className="text-sm font-black tracking-tight">Para llevar</span>
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block text-base font-black tracking-tight">Para llevar</span>
+                  <span className="mt-0.5 block text-xs font-medium text-emerald-700">Orden especial sin mesa</span>
+                </span>
+                <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold text-emerald-800">
                   Especial
                 </span>
               </button>
 
-              {tables.map((table) => {
-                const isOccupied = table.status === "occupied" || table.status === "to_pay";
-                const label = formatTableNameLabel(table.name);
-                return (
-                  <button
-                    key={table.id}
-                    type="button"
-                    disabled={isCreating}
-                    onClick={() => onSelectTable(table.id)}
-                    className={cn(
-                      "flex min-h-[108px] min-w-[132px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border-2 px-4 py-3 shadow-sm transition-all active:scale-95",
-                      isOccupied
-                        ? "border-amber-200 bg-gradient-to-b from-amber-50 to-orange-50/50 text-amber-900 hover:border-amber-300 hover:shadow-md"
-                        : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:shadow-md",
-                      isCreating && "cursor-not-allowed opacity-50",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "text-sm font-black tracking-tight",
-                        isOccupied ? "text-amber-800" : "text-slate-800",
-                      )}
-                    >
-                      {label}
-                    </span>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                        isOccupied ? "bg-amber-200/60 text-amber-800" : "bg-slate-100 text-slate-500",
-                      )}
-                    >
-                      {isOccupied ? "Ocupada" : "Libre"}
-                    </span>
-                  </button>
-                );
-              })}
+              {tables.length === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-500">No hay mesas configuradas en esta sucursal.</p>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mesas</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                    {tables.map((table) => {
+                      const isOccupied = table.status === "occupied" || table.status === "to_pay";
+                      const label = formatTableNameLabel(table.name);
+                      return (
+                        <button
+                          key={table.id}
+                          type="button"
+                          disabled={isCreating}
+                          onClick={() => onSelectTable(table.id)}
+                          className={cn(
+                            "relative flex min-h-[110px] flex-col items-center justify-center rounded-2xl border-2 p-4 shadow-sm transition-all active:scale-95",
+                            isOccupied
+                              ? "border-amber-200 bg-gradient-to-b from-amber-50 to-orange-50/50 text-amber-900 hover:border-amber-300 hover:shadow-md"
+                              : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:shadow-md",
+                            isCreating && "cursor-not-allowed opacity-50",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "text-lg font-black tracking-tight",
+                              isOccupied ? "text-amber-800" : "text-slate-800",
+                            )}
+                          >
+                            {label}
+                          </span>
+                          <span
+                            className={cn(
+                              "mt-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                              isOccupied ? "bg-amber-200/50 text-amber-800" : "bg-slate-100 text-slate-500",
+                            )}
+                          >
+                            {isOccupied ? "Ocupada" : "Libre"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
