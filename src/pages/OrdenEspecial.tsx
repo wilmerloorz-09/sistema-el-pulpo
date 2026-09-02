@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { formatTableNameLabel, getOrderRef } from "@/lib/orderPresentation";
 import { fetchOrderDetail, getOrderQueryKey } from "@/hooks/useOrder";
 import { OPERATIONAL_STALE_MS, OPERATIONAL_LIST_BACKUP_POLL_MS, useAdaptiveRefetchInterval, useOperationalOrdersRealtime, invalidateOperationalOrderQueries } from "@/lib/queryEgress";
-import { ExtraTableSelectorModal } from "@/components/order/ExtraTableSelectorModal";
+import { SpecialOrderOriginModal } from "@/components/order/SpecialOrderOriginModal";
 
 type SpecialOrderCard = {
   id: string;
@@ -29,7 +29,10 @@ type SpecialOrderCard = {
   special_total_manual: number | null;
   item_count: number;
   table_name: string | null;
+  order_type: string;
 };
+
+const TAKEOUT_SPECIAL_LABEL = "Para llevar";
 
 const seedSpecialDraftOrderCache = (
   qc: ReturnType<typeof useQueryClient>,
@@ -39,11 +42,15 @@ const seedSpecialDraftOrderCache = (
     createdAt,
     tableId,
     tableName,
+    orderType = "DINE_IN",
+    menuScope = "TABLE",
   }: {
     branchId: string;
     createdAt: string;
-    tableId: string;
+    tableId?: string | null;
     tableName: string;
+    orderType?: "DINE_IN" | "TAKEOUT";
+    menuScope?: "TABLE" | "TAKEOUT";
   },
 ) => {
   qc.setQueryData(getOrderQueryKey(orderId), {
@@ -51,8 +58,8 @@ const seedSpecialDraftOrderCache = (
     order_number: null,
     order_code: null,
     status: "DRAFT",
-    order_type: "DINE_IN",
-    menu_scope: "TABLE",
+    order_type: orderType,
+    menu_scope: menuScope,
     is_special: true,
     is_tray_order: false,
     special_total_manual: null,
@@ -61,7 +68,7 @@ const seedSpecialDraftOrderCache = (
     split_id: null,
     table_name: tableName,
     table_name_snapshot: tableName,
-    special_origin_table_id: tableId,
+    special_origin_table_id: tableId ?? null,
     created_at: createdAt,
     items: [],
     siblings: [],
@@ -73,7 +80,7 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
   if (!openShiftId) return [];
 
   const specialOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, special_origin_table_id, table_name_snapshot, order_items(id)",
+    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, special_origin_table_id, table_name_snapshot, order_type, order_items(id)",
     filters: [
       { column: "branch_id", op: "eq", value: branchId },
       { column: "is_special", op: "eq", value: true },
@@ -134,10 +141,13 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
       special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
       item_count: Array.isArray(order.order_items) ? order.order_items.length : 0,
       table_name: String(order.table_name_snapshot ?? "").trim()
-        || (order.special_origin_table_id
-          ? String(originTableNameMap[order.special_origin_table_id] ?? "").trim()
-          : "")
+        || (order.order_type === "TAKEOUT"
+          ? TAKEOUT_SPECIAL_LABEL
+          : order.special_origin_table_id
+            ? String(originTableNameMap[order.special_origin_table_id] ?? "").trim()
+            : "")
         || null,
+      order_type: String(order.order_type ?? "DINE_IN"),
     }));
 };
 
@@ -248,12 +258,8 @@ const OrdenEspecial = () => {
     return String(tables?.[0]?.name ?? "").trim() || "Mesa";
   };
 
-  const handleCreateOrderWithTable = async (tableId: string | null) => {
+  const handleCreateOrderWithTable = async (tableId: string) => {
     if (!user || !activeBranchId || creating || !canOperateSpecial) return;
-    if (!tableId) {
-      toast.error("Selecciona una mesa.");
-      return;
-    }
 
     setIsTableModalOpen(false);
     setCreating(true);
@@ -283,35 +289,89 @@ const OrdenEspecial = () => {
         tableName,
       });
 
-      const specialListKey = ["special-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"] as const;
-      qc.setQueryData(specialListKey, [
-        ...orders,
-        {
-          id: orderId,
-          order_number: null,
-          order_code: null,
-          status: "DRAFT",
-          created_at: now,
-          special_total_manual: null,
-          created_by_name: null,
-          item_count: 0,
-          table_name: tableName,
-        },
-      ] satisfies SpecialOrderCard[]);
-
+      appendSpecialOrderCard(orderId, now, tableName);
       toast.success(`Abriendo orden especial (${tableName})...`);
-      navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
-      invalidateOperationalOrderQueries(qc, {
-        branchId: activeBranchId,
-        orderId,
-        includeTables: true,
-      });
-      warmSpecialOrder(orderId);
+      openCreatedOrder(orderId);
     } catch (err: any) {
       toast.error(err?.message || "Error al abrir orden especial");
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleCreateTakeoutSpecial = async () => {
+    if (!user || !activeBranchId || creating || !canOperateSpecial) return;
+
+    setIsTableModalOpen(false);
+    setCreating(true);
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase.rpc("create_takeout_order" as any, {
+        p_branch_id: activeBranchId,
+        p_created_by: user.id,
+      } as any);
+
+      if (error) throw error;
+
+      const orderId = String(data);
+      await dbUpdate("orders", orderId, {
+        is_special: true,
+        table_name_snapshot: TAKEOUT_SPECIAL_LABEL,
+        special_marked_at: now,
+        special_marked_by: user.id,
+        updated_at: now,
+      });
+
+      seedSpecialDraftOrderCache(qc, orderId, {
+        branchId: activeBranchId,
+        createdAt: now,
+        tableName: TAKEOUT_SPECIAL_LABEL,
+        orderType: "TAKEOUT",
+        menuScope: "TAKEOUT",
+      });
+
+      appendSpecialOrderCard(orderId, now, TAKEOUT_SPECIAL_LABEL, "TAKEOUT");
+      toast.success("Abriendo orden especial para llevar...");
+      openCreatedOrder(orderId);
+    } catch (err: any) {
+      toast.error(err?.message || "Error al abrir orden especial para llevar");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const appendSpecialOrderCard = (
+    orderId: string,
+    createdAt: string,
+    tableName: string,
+    orderType = "DINE_IN",
+  ) => {
+    const specialListKey = ["special-orders", activeBranchId, shiftGateQuery.data?.shiftId ?? "_"] as const;
+    qc.setQueryData(specialListKey, [
+      ...orders,
+      {
+        id: orderId,
+        order_number: null,
+        order_code: null,
+        status: "DRAFT",
+        created_at: createdAt,
+        special_total_manual: null,
+        created_by_name: null,
+        item_count: 0,
+        table_name: tableName,
+        order_type: orderType,
+      },
+    ] satisfies SpecialOrderCard[]);
+  };
+
+  const openCreatedOrder = (orderId: string) => {
+    navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
+    invalidateOperationalOrderQueries(qc, {
+      branchId: activeBranchId!,
+      orderId,
+      includeTables: true,
+    });
+    warmSpecialOrder(orderId);
   };
 
   if (specialOrdersQuery.isError) {
@@ -394,8 +454,15 @@ const OrdenEspecial = () => {
                   <span className="min-w-0 break-all text-center">{orderRef}</span>
                 </div>
                 {order.table_name ? (
-                  <div className="max-w-[85%] rounded-full border border-orange-200 bg-white/85 px-2 py-1 text-[9px] font-semibold text-orange-700 shadow-sm sm:text-[10px] dark:border-primary/30 dark:bg-card/85 dark:text-orange-300">
-                    {formatTableNameLabel(order.table_name)}
+                  <div
+                    className={cn(
+                      "max-w-[85%] rounded-full border px-2 py-1 text-[9px] font-semibold shadow-sm sm:text-[10px]",
+                      order.order_type === "TAKEOUT"
+                        ? "border-emerald-200 bg-white/85 text-emerald-800 dark:border-emerald-800 dark:bg-card/85 dark:text-emerald-300"
+                        : "border-orange-200 bg-white/85 text-orange-700 dark:border-primary/30 dark:bg-card/85 dark:text-orange-300",
+                    )}
+                  >
+                    {order.order_type === "TAKEOUT" ? order.table_name : formatTableNameLabel(order.table_name)}
                   </div>
                 ) : null}
                 {order.created_by_name && (
@@ -443,13 +510,12 @@ const OrdenEspecial = () => {
         </div>
       </div>
 
-      <ExtraTableSelectorModal
+      <SpecialOrderOriginModal
         open={isTableModalOpen}
         onOpenChange={setIsTableModalOpen}
-        onSelectTable={handleCreateOrderWithTable}
+        onSelectTakeout={() => void handleCreateTakeoutSpecial()}
+        onSelectTable={(tableId) => void handleCreateOrderWithTable(tableId)}
         isCreating={creating}
-        title="Seleccionar mesa"
-        description="Indica a qué mesa pertenece esta orden especial antes de continuar."
       />
     </div>
   );
