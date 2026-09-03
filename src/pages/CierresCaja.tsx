@@ -261,49 +261,55 @@ const CierresCaja = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <table className="w-full min-w-[900px] text-left text-[11px] leading-tight">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Apertura</th>
-                  <th className="px-4 py-3 font-semibold">Cierre</th>
-                  <th className="px-4 py-3 font-semibold">Turno</th>
-                  <th className="px-4 py-3 font-semibold">Cajero</th>
-                  <th className="px-4 py-3 font-semibold text-right">Inicial</th>
-                  <th className="px-4 py-3 font-semibold text-right">Monto final</th>
-                  <th className="px-4 py-3 font-semibold text-right">Acción</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Apertura</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Cierre</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Turno</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Cajero</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Inicial</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Monto final</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Acción</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id} className="border-t border-slate-100">
-                    <td className="px-4 py-3 tabular-nums">{formatDateTime(row.opened_at)}</td>
-                    <td className="px-4 py-3 tabular-nums">{formatDateTime(row.closed_at)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-600">{shiftLabel(row)}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-slate-700">
+                      {formatDateTime(row.opened_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-slate-700">
+                      {formatDateTime(row.closed_at)}
+                    </td>
+                    <td className="max-w-[220px] truncate px-2.5 py-2 text-slate-600" title={shiftLabel(row)}>
+                      {shiftLabel(row)}
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-2">
                       <div className="font-medium text-slate-900">{row.cashier_username || row.cashier_name}</div>
                       {row.cashier_username && row.cashier_name !== row.cashier_username ? (
-                        <div className="text-xs text-muted-foreground">{row.cashier_name}</div>
+                        <div className="text-[10px] text-muted-foreground">{row.cashier_name}</div>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800">
                       {formatMoney(row.initial_total)}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800">
                       {formatMoney(row.final_total)}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-8 rounded-lg gap-1.5"
+                        className="h-7 rounded-md gap-1 px-2 text-[11px]"
                         disabled={printingId === row.id}
                         onClick={() => handleReprint(row)}
                       >
                         {printingId === row.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
-                          <Printer className="h-3.5 w-3.5" />
+                          <Printer className="h-3 w-3" />
                         )}
                         Ver reporte
                       </Button>
