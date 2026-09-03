@@ -379,48 +379,67 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
     <title>Reporte de cierre de caja</title>
     <style>
       html, body { margin: 0; padding: 0; background: #fff; color: #1f2937; }
-      body { font-family: Arial, sans-serif; padding: 16px; padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+      body {
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        line-height: 1.25;
+        padding: 12px;
+        padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
       h1, h2, h3, p { margin: 0; }
       .toolbar {
         position: sticky; top: 0; z-index: 40;
         display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center;
-        margin: -16px -16px 16px; padding: 12px 16px;
-        padding-top: max(12px, env(safe-area-inset-top, 0px));
+        margin: -12px -12px 12px; padding: 10px 12px;
+        padding-top: max(10px, env(safe-area-inset-top, 0px));
         background: rgba(255,255,255,0.97); border-bottom: 1px solid #e5e7eb;
         box-shadow: 0 8px 20px -18px rgba(15,23,42,0.45);
       }
       .toolbar button {
         appearance: none; border-radius: 999px; border: 1px solid #fdba74;
-        background: #fff7ed; color: #9a3412; font-weight: 700; font-size: 14px;
-        padding: 10px 16px; min-height: 44px; cursor: pointer;
+        background: #fff7ed; color: #9a3412; font-weight: 700; font-size: 13px;
+        padding: 8px 14px; min-height: 40px; cursor: pointer;
       }
       .toolbar button.primary { background: #ea580c; border-color: #ea580c; color: #fff; }
-      .header { display:flex; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap: wrap; }
-      .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; margin:16px 0; }
+      .header { display:flex; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap: wrap; }
+      .header h1 { font-size: 15px; font-weight: 700; }
+      .header p { font-size: 10px; color: #374151; line-height: 1.3; }
+      .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; margin:8px 0; }
       @media (min-width: 900px) {
-        .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       }
-      .card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fafafa; }
+      .card { border:1px solid #e5e7eb; border-radius:8px; padding:6px 8px; background:#fafafa; }
       .card.warn { border-color:#fecaca; background:#fef2f2; }
       .card.warn .value { color:#991b1b; }
-      .label { font-size:12px; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
-      .value { font-size:24px; font-weight:700; }
-      .sub { font-size:12px; color:#4b5563; margin-top:6px; line-height:1.35; }
-      .section { margin-top:24px; }
+      .label { font-size:9px; text-transform:uppercase; letter-spacing:0.02em; color:#6b7280; margin-bottom:2px; }
+      .value { font-size:14px; font-weight:700; line-height:1.15; }
+      .sub { font-size:9px; color:#4b5563; margin-top:2px; line-height:1.25; }
+      .section { margin-top:10px; }
+      .section h2 { font-size:12px; font-weight:700; margin-bottom:4px; }
       .table-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling: touch; }
-      table { width:100%; min-width: 520px; border-collapse:collapse; margin-top:10px; font-size:12px; }
-      th, td { border:1px solid #e5e7eb; padding:8px; text-align:left; vertical-align:top; }
-      th { background:#f3f4f6; }
+      table { width:100%; min-width: 0; border-collapse:collapse; margin-top:4px; font-size:10px; }
+      th, td { border:1px solid #e5e7eb; padding:3px 5px; text-align:left; vertical-align:top; }
+      th { background:#f3f4f6; font-size:9px; text-transform:uppercase; letter-spacing:0.02em; }
       tbody tr:nth-child(odd) { background:#ffffff; }
       tbody tr:nth-child(even) { background:#f8fafc; }
       .num { text-align:right; white-space:nowrap; }
       .muted { color:#6b7280; text-align:center; }
-      .notes { white-space:pre-wrap; margin-top:8px; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fafafa; }
+      .notes { white-space:pre-wrap; margin-top:6px; padding:8px; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; font-size:10px; }
       .page-break { page-break-before: always; break-before: page; }
+      .page-detail table { font-size:9px; }
+      .page-detail th, .page-detail td { padding:2px 4px; }
+      .page-detail th { font-size:8px; }
+      .page-detail .section { margin-top:8px; }
+      .page-detail .section h2 { font-size:11px; }
       @media print {
-        body { margin: 12px; padding: 12px; }
+        body { margin: 8px; padding: 8px; font-size: 10px; }
         .toolbar { display: none !important; }
         .page-break { page-break-before: always; break-before: page; }
+        .page-summary { page-break-after: avoid; }
+        .page-detail table { font-size: 8.5px; }
+        .page-detail th, .page-detail td { padding: 1.5px 3px; }
       }
     </style>
     ${includeToolbar ? `
@@ -465,6 +484,7 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       <button type="button" onclick="cerrarReporteCaja()">Cerrar</button>
     </div>
     ` : ""}
+    <div class="page-summary">
     <div class="header">
       <div>
         <h1>${escapeHtml(reportTitle)}</h1>
@@ -520,6 +540,38 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       </div>
     </div>
 
+    ${isOpeningReport ? `
+      <div class="section">
+        <h2>Detalle de monedas y billetes al cierre</h2>
+        ${currentOpening ? `
+          <p style="font-size:10px;color:#4b5563;margin-bottom:4px;">
+            Total en caja al cierre: <strong>${escapeHtml(formatMoney(totalCurrent))}</strong>
+            · Cajero: ${escapeHtml(currentOpening.cashier_username || currentOpening.cashier_name || "Sin nombre")}
+          </p>
+        ` : ""}
+        ${hasDenominationSnapshot ? `
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Denominación</th><th>Tipo</th><th class="num">Valor</th><th class="num">Cantidad</th><th class="num">Subtotal</th></tr>
+          </thead>
+          <tbody>${closingDenominationRows ? `${closingDenominationRows}
+            <tr>
+              <td colspan="3"><strong>Total</strong></td>
+              <td class="num"></td>
+              <td class="num"><strong>${escapeHtml(formatMoney(totalCurrent))}</strong></td>
+            </tr>` : '<tr><td colspan="5" class="muted">Sin denominaciones registradas al cierre.</td></tr>'}</tbody>
+        </table>
+        </div>
+        ` : `
+        <div class="notes">Esta apertura historica no tiene un desglose de billetes y monedas guardado. Se muestran los totales y cobros de su rango para evitar reutilizar el conteo de otra apertura.</div>
+        `}
+      </div>
+    ` : ""}
+    </div>
+
+    <div class="page-break"></div>
+    <div class="page-detail">
     <div class="section">
       <h2>${escapeHtml(paymentsSectionTitle)}</h2>
       <div class="table-wrap">
@@ -561,49 +613,7 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
     ${params.closureNotes?.trim()
       ? `<div class="section"><h2>Notas de cierre</h2><div class="notes">${escapeHtml(params.closureNotes.trim())}</div></div>`
       : ""}
-
-    ${isOpeningReport ? `
-      <div class="page-break"></div>
-      <div class="header">
-        <div>
-          <h1>Detalle de monedas y billetes al cierre</h1>
-          <p>${escapeHtml(params.branchName)}</p>
-          ${currentOpening ? `
-            <p>Apertura: ${escapeHtml(formatDateTime(currentOpening.opened_at))}</p>
-            <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
-            <p>Cajero: ${escapeHtml(currentOpening.cashier_username || currentOpening.cashier_name || "Sin nombre")}</p>
-          ` : ""}
-        </div>
-        <div>
-          <p>Total en caja al cierre: ${escapeHtml(formatMoney(totalCurrent))}</p>
-          <p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p>
-        </div>
-      </div>
-
-      ${hasDenominationSnapshot ? `
-      <div class="section">
-        <h2>Detalle de denominaciones</h2>
-        <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Denominación</th><th>Tipo</th><th class="num">Valor</th><th class="num">Cantidad</th><th class="num">Subtotal</th></tr>
-          </thead>
-          <tbody>${closingDenominationRows ? `${closingDenominationRows}
-            <tr>
-              <td colspan="3"><strong>Total</strong></td>
-              <td class="num"></td>
-              <td class="num"><strong>${escapeHtml(formatMoney(totalCurrent))}</strong></td>
-            </tr>` : '<tr><td colspan="5" class="muted">Sin denominaciones registradas al cierre.</td></tr>'}</tbody>
-        </table>
-        </div>
-      </div>
-    ` : `
-      <div class="section">
-        <h2>Detalle de denominaciones</h2>
-        <div class="notes">Esta apertura historica no tiene un desglose de billetes y monedas guardado. Se muestran los totales y cobros de su rango para evitar reutilizar el conteo de otra apertura.</div>
-      </div>
-    `}
-    ` : ""}
+    </div>
   </body>
 </html>`;
 };
