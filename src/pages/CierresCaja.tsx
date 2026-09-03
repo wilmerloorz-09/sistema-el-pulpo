@@ -261,7 +261,7 @@ const CierresCaja = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[820px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Apertura</th>
@@ -269,6 +269,7 @@ const CierresCaja = () => {
                   <th className="px-4 py-3 font-semibold">Turno</th>
                   <th className="px-4 py-3 font-semibold">Cajero</th>
                   <th className="px-4 py-3 font-semibold text-right">Inicial</th>
+                  <th className="px-4 py-3 font-semibold text-right">Monto final</th>
                   <th className="px-4 py-3 font-semibold text-right">Acción</th>
                 </tr>
               </thead>
@@ -286,6 +287,9 @@ const CierresCaja = () => {
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums font-medium">
                       {formatMoney(row.initial_total)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium">
+                      {formatMoney(row.final_total)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button

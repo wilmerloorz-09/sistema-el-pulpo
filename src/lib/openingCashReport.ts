@@ -21,6 +21,8 @@ export type ClosedOpeningListRow = {
   opened_at: string;
   closed_at: string;
   initial_total: number;
+  final_total: number;
+  collected_total: number;
   notes: string | null;
   shift_number: number | null;
   shift_code: string | null;
@@ -65,6 +67,8 @@ export async function listClosedCashOpenings(params: {
     opened_at: row.opened_at as string,
     closed_at: (row.closed_at ?? row.opened_at) as string,
     initial_total: Number(row.initial_total ?? 0),
+    final_total: Number(row.final_total ?? row.initial_total ?? 0),
+    collected_total: Number(row.collected_total ?? 0),
     notes: row.notes ?? null,
     shift_number: row.shift_number ?? null,
     shift_code: row.shift_code ?? null,

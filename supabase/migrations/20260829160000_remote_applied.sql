@@ -1,0 +1,1 @@
+-- Ya aplicada en remoto antes de commitear el archivo. Placeholder de sincronización.
