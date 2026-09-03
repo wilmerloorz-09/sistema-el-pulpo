@@ -60,14 +60,18 @@ export function belongsToCashierRegisterActivity(params: {
     if (activityAt > closedAt) return false;
   }
 
-  const actorHasOtherOpenRegister = params.openingHistory.some(
+  const actorHadOwnRegisterAtActivity = params.openingHistory.some(
     (entry) =>
-      entry.status === "abierta"
-      && entry.cashier_id === params.actorId
+      entry.cashier_id === params.actorId
       && entry.id !== params.opening.id
-      && activityAt >= new Date(entry.opened_at).getTime(),
+      && entry.status !== "anulada"
+      && activityAt >= new Date(entry.opened_at).getTime()
+      && (
+        !entry.closed_at
+        || activityAt <= new Date(entry.closed_at).getTime()
+      ),
   );
-  if (actorHasOtherOpenRegister) return false;
+  if (actorHadOwnRegisterAtActivity) return false;
   return true;
 }
 

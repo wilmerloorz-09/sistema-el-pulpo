@@ -200,6 +200,56 @@ describe("belongsToCashierRegisterActivity", () => {
     ).toBe(false);
   });
 
+  it("excluye cobros de un cajero cuya caja ya cerró pero cubría ese momento", () => {
+    const elyOpening = opening({
+      id: "open-ely",
+      cashier_id: "ely",
+      status: "abierta",
+      opened_at: "2026-09-02T11:48:00.000Z",
+    });
+    const jhonOpening = opening({
+      id: "open-jhon",
+      cashier_id: "jhon",
+      status: "cerrada",
+      opened_at: "2026-09-02T11:48:00.000Z",
+      closed_at: "2026-09-02T18:51:00.000Z",
+    });
+    expect(
+      belongsToCashierRegisterActivity({
+        actorId: "jhon",
+        activityAt: "2026-09-02T15:00:00.000Z",
+        cashierId: "ely",
+        opening: elyOpening,
+        openingHistory: [elyOpening, jhonOpening],
+      }),
+    ).toBe(false);
+  });
+
+  it("incluye cobros del cajero saliente posteriores al cierre de su propia caja", () => {
+    const bOpening = opening({
+      id: "open-b",
+      cashier_id: "cashier-b",
+      status: "abierta",
+      opened_at: "2026-08-12T11:00:00.000Z",
+    });
+    const aClosed = opening({
+      id: "open-a",
+      cashier_id: "cashier-a",
+      status: "cerrada",
+      opened_at: "2026-08-12T10:00:00.000Z",
+      closed_at: "2026-08-12T11:05:00.000Z",
+    });
+    expect(
+      belongsToCashierRegisterActivity({
+        actorId: "cashier-a",
+        activityAt: "2026-08-12T11:10:00.000Z",
+        cashierId: "cashier-b",
+        opening: bOpening,
+        openingHistory: [bOpening, aClosed],
+      }),
+    ).toBe(true);
+  });
+
   it("incluye cobros del cajero saliente anteriores a su nueva caja abierta", () => {
     const openings = [
       transferredOpening,
