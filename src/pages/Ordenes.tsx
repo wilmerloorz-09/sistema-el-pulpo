@@ -346,7 +346,7 @@ function buildProductLoadingShell(node: MenuNode, isTrayOrder: boolean, trayType
     ? trayType === "C"
       ? "MANUAL"
       : "FIXED"
-    : node.manual_price_inherited
+    : node.menu_scope === "BULK" || node.manual_price_inherited
       ? "MANUAL"
       : "FIXED";
   return {
@@ -614,7 +614,7 @@ async function fetchMenuProductLookup(params: {
   const priceMode =
     params.isTrayOrder
       ? (params.trayType === "C" ? "MANUAL" : "FIXED")
-      : params.node.manual_price_inherited
+      : params.node.menu_scope === "BULK" || params.node.manual_price_inherited
         ? "MANUAL"
         : productRow.price_mode;
 
