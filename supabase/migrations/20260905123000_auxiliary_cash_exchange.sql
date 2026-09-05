@@ -1,0 +1,3 @@
+-- Esta versión ya fue aplicada fuera del historial Git.
+-- La definición final e idempotente está en:
+-- 20260905132300_auxiliary_cash_exchange_final.sql

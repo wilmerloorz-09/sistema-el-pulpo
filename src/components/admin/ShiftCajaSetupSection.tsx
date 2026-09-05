@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Banknote, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Banknote, Coins, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -53,7 +53,9 @@ export default function ShiftCajaSetupSection({
   replaceEligibleUserIds,
   onReplaceCashier,
 }: Props) {
-  const assignedUserIds = new Set(value.cashiers.map((row) => row.user_id).filter(Boolean));
+  const assignedUserIds = new Set(
+    [...value.cashiers.map((row) => row.user_id), value.auxiliary?.user_id].filter(Boolean),
+  );
 
   const availableForNewRow = (currentUserId?: string) =>
     enabledUsers.filter(
@@ -77,12 +79,14 @@ export default function ShiftCajaSetupSection({
           is_primary: value.cashiers.length === 0,
         },
       ],
+      auxiliary: value.auxiliary,
     });
   };
 
   const updateCashier = (rowId: string, patch: Partial<ShiftCashierRow>) => {
     onChange({
       cashiers: value.cashiers.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+      auxiliary: value.auxiliary,
     });
   };
 
@@ -94,14 +98,22 @@ export default function ShiftCajaSetupSection({
         }
         return checked ? { ...row, is_primary: false } : row;
       }),
+      auxiliary: value.auxiliary,
     });
   };
 
   const removeCashier = (rowId: string) => {
     onChange({
       cashiers: value.cashiers.filter((row) => row.id !== rowId),
+      auxiliary: value.auxiliary,
     });
   };
+
+  const auxiliaryUserOptions = enabledUsers.filter(
+    (user) =>
+      user.user_id === value.auxiliary?.user_id
+      || !value.cashiers.some((row) => row.user_id === user.user_id),
+  );
 
   return (
     <section className="rounded-[22px] border border-orange-200 bg-white/88 p-4 shadow-sm sm:rounded-[26px] sm:p-5">
@@ -228,6 +240,71 @@ export default function ShiftCajaSetupSection({
           <Plus className="h-4 w-4" />
           Agregar cajero
         </Button>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/50 p-3.5">
+        <div className="mb-3 flex items-start gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-700">
+            <Coins className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-sky-950">Caja auxiliar de cambio (opcional)</p>
+            <p className="text-xs text-sky-800/80">
+              Si la configuras, se abre automáticamente. Su responsable no podrá cobrar ni estar asignado como cajero.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-2 md:grid-cols-2">
+          <Select
+            value={value.auxiliary?.user_id || undefined}
+            onValueChange={(userId) =>
+              onChange({
+                cashiers: value.cashiers,
+                auxiliary: {
+                  user_id: userId,
+                  template_id: value.auxiliary?.template_id ?? defaultTemplateId,
+                },
+              })
+            }
+            disabled={disabled || auxiliaryUserOptions.length === 0}
+          >
+            <SelectTrigger className="h-10 w-full rounded-xl bg-white">
+              <SelectValue placeholder="Responsable de caja auxiliar..." />
+            </SelectTrigger>
+            <SelectContent>
+              {auxiliaryUserOptions.map((user) => (
+                <SelectItem key={user.user_id} value={user.user_id}>
+                  {getUserAlias(user)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={value.auxiliary?.template_id || undefined}
+            onValueChange={(templateId) =>
+              onChange({
+                cashiers: value.cashiers,
+                auxiliary: value.auxiliary
+                  ? { ...value.auxiliary, template_id: templateId }
+                  : { user_id: "", template_id: templateId },
+              })
+            }
+            disabled={disabled || templates.length === 0}
+          >
+            <SelectTrigger className="h-10 w-full rounded-xl bg-white">
+              <SelectValue placeholder={templates.length === 0 ? "Sin plantillas..." : "Plantilla de apertura..."} />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
     </section>
   );

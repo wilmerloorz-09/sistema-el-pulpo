@@ -18,6 +18,7 @@ import { setAppOnline } from "@/lib/networkStatus";
 import { useEffect, useState, useRef } from "react";
 import { initSyncListeners } from "@/services/SyncService";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { useOpenCashRegister } from "@/hooks/useOpenCashRegister";
 import { Download, Share2, X, AlertTriangle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -43,6 +44,7 @@ import Servir from "./pages/Servir";
 import Empaquetador from "./pages/Empaquetador";
 import Productos from "./pages/Productos";
 import Caja from "./pages/Caja";
+import CambioMonedasBilletes from "./pages/CambioMonedasBilletes";
 import CierresCaja from "./pages/CierresCaja";
 import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
@@ -135,6 +137,8 @@ const LoadingScreen = () => (
 
 const CajaAutoOpener = () => {
   const { data: shiftGate } = useBranchShiftGate();
+  const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
+  const auxiliaryAssignment = auxiliaryAssignmentQuery.data;
   // Hook liviano: no monta payable-orders ni Realtime de cobros en toda la app.
   const openCashRegister = useOpenCashRegister({ silent: true });
   const openingRef = useRef(false);
@@ -144,6 +148,8 @@ const CajaAutoOpener = () => {
       shiftGate?.shiftOpen &&
       shiftGate?.userEnabled &&
       shiftGate?.canUseCaja &&
+      auxiliaryAssignmentQuery.isFetched &&
+      !auxiliaryAssignment?.isAssigned &&
       shiftGate?.cajaStatus === "UNOPENED" &&
       !openingRef.current &&
       !openCashRegister.isPending
@@ -165,6 +171,8 @@ const CajaAutoOpener = () => {
     shiftGate?.shiftOpen,
     shiftGate?.userEnabled,
     shiftGate?.canUseCaja,
+    auxiliaryAssignmentQuery.isFetched,
+    auxiliaryAssignment?.isAssigned,
     shiftGate?.cajaStatus,
     openCashRegister.isPending,
     openCashRegister.mutateAsync,
@@ -527,6 +535,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredPermission={{ module: "caja", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canUseCaja"]}>
                       <Caja />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cambio-monedas"
+                  element={
+                    <ProtectedRoute requiresOpenShift>
+                      <CambioMonedasBilletes />
                     </ProtectedRoute>
                   }
                 />

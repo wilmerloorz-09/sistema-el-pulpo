@@ -7,9 +7,13 @@ export interface ShiftCashierRow {
 
 export interface ShiftCajaSetupState {
   cashiers: ShiftCashierRow[];
+  auxiliary: {
+    user_id: string;
+    template_id?: string;
+  } | null;
 }
 
-export const EMPTY_CAJA_SETUP: ShiftCajaSetupState = { cashiers: [] };
+export const EMPTY_CAJA_SETUP: ShiftCajaSetupState = { cashiers: [], auxiliary: null };
 
 export function getPrimaryCashierIdFromSetup(state: ShiftCajaSetupState): string {
   return state.cashiers.find((row) => row.is_primary && row.user_id)?.user_id ?? "";
@@ -60,6 +64,13 @@ export function buildCajaRpcPayload(state: ShiftCajaSetupState) {
   };
 }
 
+export function buildAuxiliaryCajaRpcPayload(state: ShiftCajaSetupState) {
+  return {
+    p_auxiliary_cashier_id: state.auxiliary?.user_id || null,
+    p_auxiliary_template_id: state.auxiliary?.template_id || null,
+  };
+}
+
 export function cajaSetupSignature(state: ShiftCajaSetupState) {
   const cashiers = state.cashiers
     .filter((row) => row.user_id)
@@ -70,7 +81,15 @@ export function cajaSetupSignature(state: ShiftCajaSetupState) {
     }))
     .sort((a, b) => a.user_id.localeCompare(b.user_id));
 
-  return JSON.stringify({ cashiers });
+  return JSON.stringify({
+    cashiers,
+    auxiliary: state.auxiliary
+      ? {
+          user_id: state.auxiliary.user_id,
+          template_id: state.auxiliary.template_id ?? null,
+        }
+      : null,
+  });
 }
 
 export function buildCajaSetupIssues(
@@ -93,6 +112,18 @@ export function buildCajaSetupIssues(
     issues.push("No puede repetir el mismo cajero en la lista.");
   }
 
+  if (state.auxiliary?.user_id) {
+    if (!enabledUserIds.includes(state.auxiliary.user_id)) {
+      issues.push("El responsable de la caja auxiliar debe estar habilitado en el turno.");
+    } else if (configuredIds.includes(state.auxiliary.user_id)) {
+      issues.push("El responsable de la caja auxiliar no puede ser cajero del turno.");
+    }
+  }
+
+  if (state.auxiliary?.user_id && !state.auxiliary.template_id) {
+    issues.push("Debe asignar una plantilla de arqueo a la caja auxiliar.");
+  }
+
   for (const row of state.cashiers) {
     if (!row.user_id) continue;
     if (!enabledUserIds.includes(row.user_id)) {
@@ -113,14 +144,17 @@ export function formatCajaSetupSummary(
   setup: ShiftCajaSetupState,
 ) {
   const rows = setup.cashiers.filter((row) => row.user_id);
-  if (rows.length === 0) return "Sin cajeros configurados";
-
-  return rows
+  const cashierLabels = rows
     .map((row) => {
       const suffix = row.is_primary ? " (principal)" : "";
       return `${labelFor(row.user_id)}${suffix}`;
-    })
-    .join("; ");
+    });
+  const auxiliaryLabel = setup.auxiliary?.user_id
+    ? `${labelFor(setup.auxiliary.user_id)} (caja auxiliar)`
+    : null;
+  const labels = [...cashierLabels, ...(auxiliaryLabel ? [auxiliaryLabel] : [])];
+
+  return labels.length > 0 ? labels.join("; ") : "Sin cajas configuradas";
 }
 
 export function mapPersistedCajaSetup(params: {
@@ -128,6 +162,8 @@ export function mapPersistedCajaSetup(params: {
   primaryCashierId: string | null;
   fallbackTemplateId: string | null;
   templateByUserId: Map<string, string | null | undefined>;
+  auxiliaryCashierId?: string | null;
+  auxiliaryTemplateId?: string | null;
 }): ShiftCajaSetupState {
   const primaryCashierId = params.primaryCashierId ?? "";
 
@@ -141,6 +177,12 @@ export function mapPersistedCajaSetup(params: {
         || undefined,
       is_primary: Boolean(primaryCashierId) && userId === primaryCashierId,
     })),
+    auxiliary: params.auxiliaryCashierId
+      ? {
+          user_id: params.auxiliaryCashierId,
+          template_id: params.auxiliaryTemplateId ?? undefined,
+        }
+      : null,
   };
 }
 
@@ -150,6 +192,7 @@ export function removeCashierFromSetup(
 ): ShiftCajaSetupState {
   return {
     cashiers: state.cashiers.filter((row) => row.user_id !== userId),
+    auxiliary: state.auxiliary?.user_id === userId ? null : state.auxiliary,
   };
 }
 
@@ -162,5 +205,6 @@ export function replaceCashierInSetup(
     cashiers: state.cashiers.map((row) =>
       row.user_id === outgoingUserId ? { ...row, user_id: incomingUserId } : row,
     ),
+    auxiliary: state.auxiliary,
   };
 }

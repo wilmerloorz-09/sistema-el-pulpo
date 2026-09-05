@@ -4,6 +4,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
+import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { Button } from "@/components/ui/button";
 import { hasPermission, canManage, type AccessLevel } from "@/lib/permissions";
 
@@ -76,6 +77,7 @@ const ProtectedRoute = ({
   const { user, loading, signOut } = useAuth();
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
+  const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
   const location = useLocation();
   const { preferredPath, firstVisiblePath, canAccessAdmin: preferredCanAccessAdmin } = usePreferredHomePath();
   const { visibleItems } = useVisibleNavItems();
@@ -89,6 +91,13 @@ const ProtectedRoute = ({
   }
 
   if (!user) return <Navigate to="/login" replace />;
+
+  if (
+    auxiliaryAssignmentQuery.data?.isAssigned
+    && location.pathname.startsWith("/caja")
+  ) {
+    return <Navigate to="/cambio-monedas" replace />;
+  }
 
   /** Solo turno: no esperar `usePreferredHomePath` (incluye config despacho) para montar la pantalla. */
   const isBranchAdmin =

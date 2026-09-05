@@ -22,6 +22,7 @@ import { useBranch } from "@/contexts/BranchContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
+import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
 import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
 import MenuNavigator from "@/components/order/MenuNavigator";
@@ -734,6 +735,7 @@ const OrdenesContent = () => {
   const { user } = useAuth();
   const { activeBranchId, activeBranch, branches, permissions, setActiveBranch, isGlobalAdmin } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
+  const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
   const { isDesktop, isTablet10 } = useBreakpoint();
   const qc = useQueryClient();
   const orderId = searchParams.get("order");
@@ -1806,9 +1808,13 @@ const OrdenesContent = () => {
 
   const isTakeout = order?.order_type === "TAKEOUT";
   const canUseCaja = 
-    isGlobalAdmin || 
-    canManageOrders || 
-    Boolean(shiftGateQuery.data?.canUseCaja);
+    auxiliaryAssignmentQuery.isFetched
+    && !auxiliaryAssignmentQuery.data?.isAssigned
+    && (
+      isGlobalAdmin
+      || canManageOrders
+      || Boolean(shiftGateQuery.data?.canUseCaja)
+    );
   useEffect(() => {
     if (!order || !isTakeoutOrder) return;
     if (paymentDialogOpenForOrderId === order.id) return;

@@ -3,6 +3,7 @@ import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Monito
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
+import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
 import { canManage, canView, canOperate } from "@/lib/permissions";
 
@@ -193,6 +194,18 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "caja"),
   },
   {
+    to: "/cambio-monedas",
+    label: "Cambio de monedas/billetes",
+    icon: <ArrowLeftRight className="h-5 w-5" />,
+    group: "FINANZAS",
+    tone: {
+      active: "from-sky-500 to-cyan-400",
+      idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
+      iconIdle: "bg-sky-50 text-sky-600",
+    },
+    visible: () => false,
+  },
+  {
     to: "/cierres-caja",
     label: "Cierres de caja",
     icon: <FileText className="h-5 w-5" />,
@@ -361,9 +374,11 @@ export function useVisibleNavItems() {
   const { permissions, isGlobalAdmin, branches, activeBranch } = useBranch();
   const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
   const shiftGateQuery = useBranchShiftGate();
+  const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
 
   return useMemo(() => {
     const sg = shiftGateQuery.data;
+    const isAuxiliaryCashier = Boolean(auxiliaryAssignmentQuery.data?.isAssigned);
     const isDispatchFirstWorkflow = activeBranch?.workflow_mode === "DISPATCH_THEN_CASH";
 
     const navItemsResolved = NAV_ITEMS.flatMap((navItem) => {
@@ -407,6 +422,14 @@ export function useVisibleNavItems() {
         && (item.to.startsWith("/promociones") || item.to.startsWith("/campanas"))
       ) {
         return false;
+      }
+
+      if (item.group === "FINANZAS" && isAuxiliaryCashier) {
+        return item.to === "/cambio-monedas";
+      }
+
+      if (item.to === "/cambio-monedas") {
+        return isAuxiliaryCashier;
       }
 
       if (isGlobalAdminWithoutBranches) {
@@ -538,6 +561,7 @@ export function useVisibleNavItems() {
     };
   }, [
     activeBranch?.workflow_mode,
+    auxiliaryAssignmentQuery.data?.isAssigned,
     branches.length,
     dispatchAccessLoading,
     fallbackVisible,

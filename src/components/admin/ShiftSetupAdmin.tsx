@@ -67,6 +67,7 @@ import ShiftCajaSetupSection, {
 } from "@/components/admin/ShiftCajaSetupSection";
 import {
   EMPTY_CAJA_SETUP,
+  buildAuxiliaryCajaRpcPayload,
   buildCajaRpcPayload,
   buildCajaSetupIssues,
   cajaSetupSignature,
@@ -234,6 +235,7 @@ function sanitizeShiftUserCapability<
     isSupervisor: boolean;
     canPackOrders: boolean;
     canServePlates?: boolean;
+    canExchangeCash?: boolean;
   },
 >(user: T): T {
   const normalizedUser = {
@@ -249,7 +251,8 @@ function sanitizeShiftUserCapability<
     normalizedUser.canAuthorizeOrderCancel ||
     normalizedUser.isSupervisor ||
     normalizedUser.canPackOrders ||
-    normalizedUser.canServePlates;
+    normalizedUser.canServePlates ||
+    normalizedUser.canExchangeCash;
 
   if (!normalizedUser.isEnabled || hasOperationalRole) {
     return normalizedUser;
@@ -600,7 +603,7 @@ const ShiftSetupAdmin = () => {
       const { data, error } = await supabase
         .from("cash_shifts")
         .select(
-          "id, status, opened_at, active_tables_count, primary_cashier_id, secondary_cajas_enabled, secondary_caja_template_id",
+          "id, status, opened_at, active_tables_count, primary_cashier_id, secondary_cajas_enabled, secondary_caja_template_id, auxiliary_cashier_id, auxiliary_caja_template_id",
         )
         .eq("branch_id", activeBranchId)
         .eq("status", "OPEN")
@@ -627,6 +630,9 @@ const ShiftSetupAdmin = () => {
           ),
           secondary_caja_template_id:
             (data as any).secondary_caja_template_id ?? null,
+          auxiliary_cashier_id: (data as any).auxiliary_cashier_id ?? null,
+          auxiliary_caja_template_id:
+            (data as any).auxiliary_caja_template_id ?? null,
           is_stale: isStale,
         };
       }
@@ -984,6 +990,8 @@ const ShiftSetupAdmin = () => {
       primaryCashierId: shiftQuery.data.primary_cashier_id ?? null,
       fallbackTemplateId: shiftQuery.data.secondary_caja_template_id ?? null,
       templateByUserId,
+      auxiliaryCashierId: shiftQuery.data.auxiliary_cashier_id ?? null,
+      auxiliaryTemplateId: shiftQuery.data.auxiliary_caja_template_id ?? null,
     });
   }, [
     isOpen,
@@ -1299,7 +1307,11 @@ const ShiftSetupAdmin = () => {
     }
 
     const usersWithoutOperationalRole = shiftUsersState
-      .filter((userState) => !hasOperationalCapability(userState))
+      .filter(
+        (userState) =>
+          !hasOperationalCapability(userState)
+          && userState.user_id !== shiftCajaSetup.auxiliary?.user_id,
+      )
       .map(
         (userState) => userState.full_name || getUserAlias(userState) || "Usuario",
       );
@@ -2114,6 +2126,29 @@ const ShiftSetupAdmin = () => {
     if (error) throw error;
   };
 
+  const persistAuxiliaryCajaConfiguration = async (shiftId: string) => {
+    if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+    const auxiliaryPayload = buildAuxiliaryCajaRpcPayload(shiftCajaSetup);
+    if (
+      !auxiliaryPayload.p_auxiliary_cashier_id
+      || !auxiliaryPayload.p_auxiliary_template_id
+    ) {
+      return;
+    }
+
+    const { error } = await supabase.rpc(
+      "configure_auxiliary_cash_register" as any,
+      {
+        p_shift_id: shiftId,
+        p_branch_id: activeBranchId,
+        ...auxiliaryPayload,
+      } as any,
+    );
+
+    if (error) throw error;
+  };
+
   /** Reaplica Sesión doble tras apply_shift_caja_* (versiones antiguas podían ponerla en false). */
   const restoreDoubleSessionFlags = async (
     shiftId: string,
@@ -2170,6 +2205,7 @@ const ShiftSetupAdmin = () => {
           isSupervisor: u.is_supervisor,
           canPackOrders: u.can_pack_orders,
           canServePlates: u.can_serve_plates ?? false,
+          canExchangeCash: u.user_id === shiftCajaSetup.auxiliary?.user_id,
         }),
       )
       .filter((entry) => entry.isEnabled);
@@ -2264,6 +2300,7 @@ const ShiftSetupAdmin = () => {
       );
       // persistShiftUsersForShift fuerza can_use_caja=false; reaplicar cajero principal/secundarios.
       await persistShiftCajaConfiguration(shiftId);
+      await persistAuxiliaryCajaConfiguration(shiftId);
       await restoreDoubleSessionFlags(
         shiftId,
         sanitizedEnabledUsers.map((entry) => ({
@@ -2314,6 +2351,8 @@ const ShiftSetupAdmin = () => {
             isSupervisor: entry.is_supervisor,
             canPackOrders: entry.can_pack_orders,
             canServePlates: entry.can_serve_plates,
+            canExchangeCash:
+              entry.user_id === shiftCajaSetup.auxiliary?.user_id,
           }),
         )
         .filter((entry) => entry.isEnabled),
@@ -2322,6 +2361,7 @@ const ShiftSetupAdmin = () => {
     if (countConfiguredShiftCashiers(shiftCajaSetup) > 0) {
       await persistShiftCajaConfiguration(shiftId);
     }
+    await persistAuxiliaryCajaConfiguration(shiftId);
     await restoreDoubleSessionFlags(
       shiftId,
       sanitizedEnabledUsers.map((entry) => ({
@@ -2385,6 +2425,8 @@ const ShiftSetupAdmin = () => {
             isSupervisor: entry.is_supervisor,
             canPackOrders: entry.can_pack_orders,
             canServePlates: entry.can_serve_plates ?? false,
+            canExchangeCash:
+              entry.user_id === shiftCajaSetup.auxiliary?.user_id,
           }),
         )
         .filter((entry) => entry.isEnabled);
@@ -2400,6 +2442,7 @@ const ShiftSetupAdmin = () => {
         sanitizedEnabledUsers,
       );
       await persistShiftCajaConfiguration(shiftQuery.data.id);
+      await persistAuxiliaryCajaConfiguration(shiftQuery.data.id);
       await restoreDoubleSessionFlags(
         shiftQuery.data.id,
         sanitizedEnabledUsers.map((entry) => ({
