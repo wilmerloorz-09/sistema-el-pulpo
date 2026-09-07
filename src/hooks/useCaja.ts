@@ -44,6 +44,7 @@ import {
   esErrorTransferenciaDuplicada,
 } from "@/lib/transferenciaDuplicada";
 import {
+  archivarComprobantesPagoPendientesDeApertura,
   COMPROBANTES_PENDIENTES_QUERY_KEY,
   iniciarSubidaComprobanteEnSegundoPlano,
 } from "@/lib/comprobantePagoPendienteLocal";
@@ -3451,31 +3452,44 @@ export function useCaja(params?: {
       if (transferencia?.fotoArchivo && transferPaymentId && activeBranchId) {
         // No bloquear "Cobrando": encola localmente y sube en segundo plano.
         // Si falla, queda pendiente en esta tablet para reintentar.
+        const currentOpening = resolveCashierOpening(
+          registerSnapshotQuery.data?.openingHistory ?? shift.openingHistory,
+          user.id,
+        );
         const transferAmount =
           paymentSplits.find((split) => transferMethodIds.has(split.methodId))?.amount
           ?? transferencia.monto
           ?? null;
-        iniciarSubidaComprobanteEnSegundoPlano({
-          pagoId: transferPaymentId,
-          ordenId: orderId,
-          sucursalId: activeBranchId,
-          usuarioId: user.id,
-          ordenNumero: orderData.order_number ?? null,
-          ordenCodigo: orderData.order_code ?? null,
-          monto: transferAmount,
-          archivo: transferencia.fotoArchivo,
-          onResult: (ok, errorMessage) => {
-            qc.invalidateQueries({ queryKey: [COMPROBANTES_PENDIENTES_QUERY_KEY] });
-            qc.invalidateQueries({ queryKey: ["completed-payments"] });
-            if (ok) return;
-            toast.warning(
-              errorMessage
-                ? `Pago registrado. Falta subir la foto: ${errorMessage}`
-                : "Pago registrado. Falta subir la foto del comprobante. Revisa Pendientes en Recaudar.",
-              { duration: 8000 },
-            );
-          },
-        });
+        if (!currentOpening?.id || currentOpening.status !== "abierta") {
+          toast.warning(
+            "Pago registrado, pero no se pudo asociar la foto a una apertura de caja activa.",
+            { duration: 8000 },
+          );
+        } else {
+          iniciarSubidaComprobanteEnSegundoPlano({
+            pagoId: transferPaymentId,
+            ordenId: orderId,
+            sucursalId: activeBranchId,
+            usuarioId: user.id,
+            shiftId: shift.id,
+            openingId: currentOpening.id,
+            ordenNumero: orderData.order_number ?? null,
+            ordenCodigo: orderData.order_code ?? null,
+            monto: transferAmount,
+            archivo: transferencia.fotoArchivo,
+            onResult: (ok, errorMessage) => {
+              qc.invalidateQueries({ queryKey: [COMPROBANTES_PENDIENTES_QUERY_KEY] });
+              qc.invalidateQueries({ queryKey: ["completed-payments"] });
+              if (ok) return;
+              toast.warning(
+                errorMessage
+                  ? `Pago registrado. Falta subir la foto: ${errorMessage}`
+                  : "Pago registrado. Falta subir la foto del comprobante. Revisa Pendientes en Recaudar.",
+                { duration: 8000 },
+              );
+            },
+          });
+        }
       }
 
       /** No bloquear el cierre del cobro en snapshot de mesa (lecturas/updates en cadena). */
@@ -3624,6 +3638,10 @@ export function useCaja(params?: {
 
       if (!activeBranchId) throw new Error("No branch selected");
 
+      const opening = resolveCashierOpening(
+        registerSnapshotQuery.data?.openingHistory ?? shift.openingHistory,
+        user.id,
+      );
       const { error } = await supabase.rpc("close_cash_register" as any, {
         p_shift_id: shift.id,
         p_cashier_id: user.id,
@@ -3631,8 +3649,27 @@ export function useCaja(params?: {
         p_notes: notes ?? null,
       });
       if (error) throw error;
+      return {
+        sucursalId: activeBranchId,
+        shiftId: shift.id,
+        openingId: opening?.id ?? null,
+        usuarioId: user.id,
+      };
     },
-    onSuccess: () => {
+    onSuccess: async (contextoCerrado) => {
+      if (contextoCerrado.openingId) {
+        try {
+          await archivarComprobantesPagoPendientesDeApertura({
+            sucursalId: contextoCerrado.sucursalId,
+            shiftId: contextoCerrado.shiftId,
+            openingId: contextoCerrado.openingId,
+            usuarioId: contextoCerrado.usuarioId,
+          });
+        } catch (error) {
+          console.warn("[useCaja] No se pudieron archivar comprobantes pendientes:", error);
+        }
+      }
+      qc.invalidateQueries({ queryKey: [COMPROBANTES_PENDIENTES_QUERY_KEY] });
       qc.invalidateQueries({ queryKey: ["current-shift"] });
       qc.invalidateQueries({ queryKey: ["branch-shift-gate"] });
       toast.success("Caja cerrada");

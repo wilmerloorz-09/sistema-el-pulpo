@@ -11,15 +11,39 @@ import {
 } from "@/lib/comprobantePagoPendienteLocal";
 import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 
-export function useComprobantesPagoPendientes() {
+export function useComprobantesPagoPendientes(params: {
+  shiftId: string | null;
+  openingId: string | null;
+  openingOpenedAt: string | null;
+}) {
   const { activeBranchId } = useBranch();
   const { user } = useAuth();
   const qc = useQueryClient();
 
   const pendientesQuery = useQuery({
-    queryKey: [COMPROBANTES_PENDIENTES_QUERY_KEY, activeBranchId ?? "_"],
-    queryFn: () => listarComprobantesPagoPendientes(activeBranchId),
-    enabled: Boolean(activeBranchId),
+    queryKey: [
+      COMPROBANTES_PENDIENTES_QUERY_KEY,
+      activeBranchId ?? "_",
+      params.shiftId ?? "_",
+      params.openingId ?? "_",
+      params.openingOpenedAt ?? "_",
+      user?.id ?? "_",
+    ],
+    queryFn: () =>
+      listarComprobantesPagoPendientes({
+        sucursalId: activeBranchId,
+        shiftId: params.shiftId,
+        openingId: params.openingId,
+        openingOpenedAt: params.openingOpenedAt,
+        usuarioId: user?.id,
+      }),
+    enabled: Boolean(
+      activeBranchId
+      && params.shiftId
+      && params.openingId
+      && params.openingOpenedAt
+      && user?.id,
+    ),
     staleTime: OPERATIONAL_STALE_MS,
     // Lista local + invalidación en mutaciones; sin polling 15s.
   });
@@ -52,6 +76,8 @@ export function useComprobantesPagoPendientes() {
         archivo: params.archivo,
         sucursalId: activeBranchId,
         usuarioId: user.id,
+        shiftId: params.pendiente.shiftId!,
+        openingId: params.pendiente.openingId!,
         ordenId: params.pendiente.ordenId,
         ordenNumero: params.pendiente.ordenNumero,
         ordenCodigo: params.pendiente.ordenCodigo,

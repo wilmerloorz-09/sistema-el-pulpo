@@ -5,8 +5,20 @@ import { getOrderRef } from "@/lib/orderPresentation";
 import type { ComprobantePagoPendienteLocal } from "@/lib/comprobantePagoPendienteLocal";
 import { useComprobantesPagoPendientes } from "@/hooks/useComprobantesPagoPendientes";
 
-export default function ComprobantesPagoPendientesPanel() {
-  const { pendientes, reintentar, adjuntarOtraFoto } = useComprobantesPagoPendientes();
+export default function ComprobantesPagoPendientesPanel({
+  shiftId,
+  openingId,
+  openingOpenedAt,
+}: {
+  shiftId: string;
+  openingId: string;
+  openingOpenedAt: string;
+}) {
+  const { pendientes, reintentar, adjuntarOtraFoto } = useComprobantesPagoPendientes({
+    shiftId,
+    openingId,
+    openingOpenedAt,
+  });
   const [busyPagoId, setBusyPagoId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<ComprobantePagoPendienteLocal | null>(null);

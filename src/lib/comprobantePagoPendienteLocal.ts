@@ -11,6 +11,9 @@ export interface ComprobantePagoPendienteLocal {
   ordenId: string;
   sucursalId: string;
   usuarioId: string;
+  /** Contexto operativo que originó el cobro. Ausente únicamente en registros legados. */
+  shiftId?: string;
+  openingId?: string;
   ordenNumero: number | null;
   ordenCodigo: string | null;
   monto: number | null;
@@ -19,6 +22,8 @@ export interface ComprobantePagoPendienteLocal {
   creadoEn: string;
   ultimoError: string | null;
   intentos: number;
+  archivadoEn?: string | null;
+  motivoArchivo?: "CAJA_CERRADA" | "LEGACY_SIN_CONTEXTO" | null;
 }
 
 class ComprobantesPendientesDB extends Dexie {
@@ -28,6 +33,9 @@ class ComprobantesPendientesDB extends Dexie {
     super("comprobantes_pago_pendientes_db");
     this.version(1).stores({
       pendientes: "pagoId, sucursalId, creadoEn",
+    });
+    this.version(2).stores({
+      pendientes: "pagoId, sucursalId, shiftId, openingId, usuarioId, creadoEn, archivadoEn",
     });
   }
 }
@@ -67,6 +75,8 @@ export async function encolarComprobantePagoPendiente(params: {
   ordenId: string;
   sucursalId: string;
   usuarioId: string;
+  shiftId: string;
+  openingId: string;
   ordenNumero?: number | null;
   ordenCodigo?: string | null;
   monto?: number | null;
@@ -77,6 +87,8 @@ export async function encolarComprobantePagoPendiente(params: {
     ordenId: params.ordenId,
     sucursalId: params.sucursalId,
     usuarioId: params.usuarioId,
+    shiftId: params.shiftId,
+    openingId: params.openingId,
     ordenNumero: params.ordenNumero ?? null,
     ordenCodigo: params.ordenCodigo ?? null,
     monto: params.monto ?? null,
@@ -85,16 +97,63 @@ export async function encolarComprobantePagoPendiente(params: {
     creadoEn: new Date().toISOString(),
     ultimoError: null,
     intentos: 0,
+    archivadoEn: null,
+    motivoArchivo: null,
   });
 }
 
 export async function listarComprobantesPagoPendientes(
-  sucursalId?: string | null,
+  contexto: {
+    sucursalId?: string | null;
+    shiftId?: string | null;
+    openingId?: string | null;
+    openingOpenedAt?: string | null;
+    usuarioId?: string | null;
+  },
 ): Promise<ComprobantePagoPendienteLocal[]> {
-  if (sucursalId) {
-    return db.pendientes.where("sucursalId").equals(sucursalId).reverse().sortBy("creadoEn");
+  const { sucursalId, shiftId, openingId, openingOpenedAt, usuarioId } = contexto;
+  if (!sucursalId || !shiftId || !openingId || !openingOpenedAt || !usuarioId) {
+    return [];
   }
-  return db.pendientes.orderBy("creadoEn").reverse().toArray();
+
+  const pendientesSucursal = await db.pendientes
+    .where("sucursalId")
+    .equals(sucursalId)
+    .toArray();
+  const openingStartedAt = new Date(openingOpenedAt).getTime();
+  const archivadoEn = new Date().toISOString();
+
+  for (const pendiente of pendientesSucursal) {
+    if (pendiente.shiftId && pendiente.openingId) continue;
+
+    const creadoEn = new Date(pendiente.creadoEn).getTime();
+    const perteneceAperturaActual =
+      pendiente.usuarioId === usuarioId
+      && Number.isFinite(creadoEn)
+      && Number.isFinite(openingStartedAt)
+      && creadoEn >= openingStartedAt;
+
+    if (perteneceAperturaActual) {
+      pendiente.shiftId = shiftId;
+      pendiente.openingId = openingId;
+      pendiente.archivadoEn = null;
+      pendiente.motivoArchivo = null;
+    } else {
+      pendiente.archivadoEn = pendiente.archivadoEn ?? archivadoEn;
+      pendiente.motivoArchivo = pendiente.motivoArchivo ?? "LEGACY_SIN_CONTEXTO";
+    }
+    await db.pendientes.put(pendiente);
+  }
+
+  return pendientesSucursal
+    .filter(
+      (pendiente) =>
+        !pendiente.archivadoEn
+        && pendiente.shiftId === shiftId
+        && pendiente.openingId === openingId
+        && pendiente.usuarioId === usuarioId,
+    )
+    .sort((a, b) => b.creadoEn.localeCompare(a.creadoEn));
 }
 
 export async function obtenerComprobantePagoPendiente(
@@ -105,6 +164,29 @@ export async function obtenerComprobantePagoPendiente(
 
 export async function eliminarComprobantePagoPendiente(pagoId: string): Promise<void> {
   await db.pendientes.delete(pagoId);
+}
+
+export async function archivarComprobantesPagoPendientesDeApertura(params: {
+  sucursalId: string;
+  shiftId: string;
+  openingId: string;
+  usuarioId: string;
+}): Promise<void> {
+  const archivadoEn = new Date().toISOString();
+  await db.pendientes
+    .where("sucursalId")
+    .equals(params.sucursalId)
+    .filter(
+      (pendiente) =>
+        !pendiente.archivadoEn
+        && pendiente.shiftId === params.shiftId
+        && pendiente.openingId === params.openingId
+        && pendiente.usuarioId === params.usuarioId,
+    )
+    .modify({
+      archivadoEn,
+      motivoArchivo: "CAJA_CERRADA",
+    });
 }
 
 export async function subirComprobantePagoPendiente(pagoId: string): Promise<void> {
@@ -144,6 +226,8 @@ export function iniciarSubidaComprobanteEnSegundoPlano(params: {
   ordenId: string;
   sucursalId: string;
   usuarioId: string;
+  shiftId: string;
+  openingId: string;
   ordenNumero?: number | null;
   ordenCodigo?: string | null;
   monto?: number | null;
@@ -167,6 +251,8 @@ export async function reemplazarFotoComprobantePendiente(params: {
   archivo: File | Blob;
   sucursalId: string;
   usuarioId: string;
+  shiftId: string;
+  openingId: string;
   ordenId: string;
   ordenNumero?: number | null;
   ordenCodigo?: string | null;
@@ -177,6 +263,8 @@ export async function reemplazarFotoComprobantePendiente(params: {
     ordenId: params.ordenId,
     sucursalId: params.sucursalId,
     usuarioId: params.usuarioId,
+    shiftId: params.shiftId,
+    openingId: params.openingId,
     ordenNumero: params.ordenNumero,
     ordenCodigo: params.ordenCodigo,
     monto: params.monto,

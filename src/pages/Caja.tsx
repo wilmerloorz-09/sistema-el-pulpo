@@ -437,6 +437,10 @@ const Caja = () => {
     () => (shift?.openingHistory ?? []).filter((entry) => entry.cashier_id === user?.id),
     [shift?.openingHistory, user?.id],
   );
+  const activeUserOpening = useMemo(
+    () => userOpeningHistory.find((entry) => entry.status === "abierta") ?? null,
+    [userOpeningHistory],
+  );
 
   const clearSelectedPhoto = () => {
     if (photoPreviewUrl) {
@@ -1304,7 +1308,13 @@ const Caja = () => {
         <div className={cn(!isDesktop && "space-y-4")}>
           {activeTab === "pending" ? (
             <div className="space-y-3 sm:space-y-4">
-              <ComprobantesPagoPendientesPanel />
+              {activeUserOpening ? (
+                <ComprobantesPagoPendientesPanel
+                  shiftId={shift.id}
+                  openingId={activeUserOpening.id}
+                  openingOpenedAt={activeUserOpening.opened_at}
+                />
+              ) : null}
               <PayableOrdersList
                 orders={payableOrders}
                 paymentMethods={paymentMethods}
@@ -1324,7 +1334,13 @@ const Caja = () => {
             </div>
           ) : activeTab === "completed" ? (
             <div className="space-y-3 sm:space-y-4">
-              <ComprobantesPagoPendientesPanel />
+              {activeUserOpening ? (
+                <ComprobantesPagoPendientesPanel
+                  shiftId={shift.id}
+                  openingId={activeUserOpening.id}
+                  openingOpenedAt={activeUserOpening.opened_at}
+                />
+              ) : null}
             <div className={cn(
               "rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.35)]",
               !isDesktop ? "p-4" : "p-5"
