@@ -47,6 +47,7 @@ import Caja from "./pages/Caja";
 import CambioMonedasBilletes from "./pages/CambioMonedasBilletes";
 import CierresCaja from "./pages/CierresCaja";
 import Reportes from "./pages/Reportes";
+import PersonalLaboral from "./pages/PersonalLaboral";
 import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
 import ForzarCierreTurno from "./pages/ForzarCierreTurno";
@@ -559,6 +560,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <Reportes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/personal"
+                  element={
+                    <ProtectedRoute allowedModules={["jornadas_personal"]}>
+                      <PersonalLaboral />
                     </ProtectedRoute>
                   }
                 />

@@ -49,6 +49,8 @@ const MODULE_FALLBACK_PATH: Record<string, string> = {
   caja: "/caja",
   reportes_sucursal: "/reportes",
   reportes_globales: "/reportes",
+  jornadas_personal: "/personal",
+  pagos_personal: "/personal",
   turno: "/turno",
   admin_sucursal: "/admin",
   admin_global: "/admin",
@@ -161,6 +163,7 @@ const ProtectedRoute = ({
     location.pathname.startsWith("/forzar-cierre-turno") ||
     location.pathname.startsWith("/admin") ||
     location.pathname.startsWith("/reportes") ||
+    location.pathname.startsWith("/personal") ||
     location.pathname.startsWith("/monitoreo-global") ||
     location.pathname.startsWith("/inventario") ||
     location.pathname.startsWith("/promociones") ||

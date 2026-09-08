@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, MonitorCheck, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, ClipboardList, FileText } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, ClipboardList, FileText, HandCoins } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -356,17 +356,16 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
-    to: "/monitoreo-global",
-    label: "Monitoreo Global",
-    icon: <MonitorCheck className="h-5 w-5" />,
+    to: "/personal",
+    label: "Pago del personal",
+    icon: <HandCoins className="h-5 w-5" />,
     group: "ADMINISTRACIÓN",
     tone: {
-      active: "from-indigo-600 to-violet-500",
-      idle: "hover:border-indigo-200 hover:bg-indigo-50/90 hover:text-indigo-700",
-      iconIdle: "bg-indigo-50 text-indigo-600",
+      active: "from-emerald-600 to-teal-500",
+      idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
+      iconIdle: "bg-emerald-50 text-emerald-600",
     },
-    // Visibility is handled manually in the useMemo below (isGlobalAdmin check)
-    visible: () => false,
+    visible: (permissions) => canView(permissions, "jornadas_personal"),
   },
 ];
 
@@ -450,6 +449,7 @@ export function useVisibleNavItems() {
           || (item.to === "/turno" && canAccessTurno)
           || (item.to === "/forzar-cierre-turno" && item.visible(permissions))
           || (item.to === "/reportes" && canAccessAdmin)
+          || (item.to === "/personal" && item.visible(permissions))
           || (item.to === "/cierres-caja" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );
