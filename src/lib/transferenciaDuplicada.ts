@@ -5,11 +5,14 @@ export const MENSAJE_TRANSFERENCIA_DUPLICADA =
 
 export function esErrorTransferenciaDuplicada(error: unknown): boolean {
   const message = String((error as { message?: string })?.message ?? "").toLowerCase();
+  const details = String((error as { details?: string })?.details ?? "").toLowerCase();
   const code = String((error as { code?: string })?.code ?? "");
+  const combined = `${message} ${details}`;
   return (
     code === "23505"
-    || message.includes("transferencia duplicada")
-    || message.includes("idx_payments_transferencia_unica")
+    || combined.includes("transferencia duplicada")
+    || combined.includes("idx_payments_transferencia_unica")
+    || combined.includes("payments_transferencia")
   );
 }
 
@@ -19,20 +22,31 @@ export function mensajeErrorPago(error: unknown, fallback = "No se pudo registra
   return fallback;
 }
 
+/**
+ * true = duplicada, false = libre, null = no se pudo comprobar (no bloquear el cobro).
+ * Usa RPC SECURITY DEFINER indexada; no escanea payments vía RLS.
+ */
 export async function existeTransferenciaDuplicada(
   bancoId: string,
   numeroTransferencia: string,
-): Promise<boolean> {
+): Promise<boolean | null> {
   const numero = numeroTransferencia.trim();
   if (!bancoId || !numero) return false;
 
-  const { data, error } = await supabase
-    .from("payments")
-    .select("id")
-    .eq("banco_id", bancoId)
-    .ilike("numero_transferencia", numero)
-    .limit(1);
+  try {
+    const { data, error } = await supabase.rpc("existe_transferencia_duplicada" as never, {
+      p_banco_id: bancoId,
+      p_numero: numero,
+    } as never);
 
-  if (error) throw error;
-  return (data?.length ?? 0) > 0;
+    if (error) {
+      console.warn("[transferencia-duplicada] RPC fallo; se continua y valida al registrar", error);
+      return null;
+    }
+
+    return Boolean(data);
+  } catch (error) {
+    console.warn("[transferencia-duplicada] error inesperado; se continua", error);
+    return null;
+  }
 }

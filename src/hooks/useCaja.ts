@@ -3078,7 +3078,9 @@ export function useCaja(params?: {
           transferencia.bancoId,
           transferencia.numeroTransferencia,
         );
-        if (duplicada) {
+        // Solo bloquear si la RPC confirma duplicado. Si falla la consulta (null),
+        // el registro en servidor / índice único sigue protegiendo.
+        if (duplicada === true) {
           throw new Error(MENSAJE_TRANSFERENCIA_DUPLICADA);
         }
       }

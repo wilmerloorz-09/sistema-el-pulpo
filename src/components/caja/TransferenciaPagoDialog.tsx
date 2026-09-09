@@ -36,10 +36,6 @@ import {
   parseTransferenciaMontoInput,
 } from "@/lib/transferenciaPago";
 import {
-  existeTransferenciaDuplicada,
-  MENSAJE_TRANSFERENCIA_DUPLICADA,
-} from "@/lib/transferenciaDuplicada";
-import {
   analizarComprobanteTransferencia,
   buscarBancoDetectado,
   type AnalisisComprobanteTransferencia,
@@ -76,7 +72,6 @@ export default function TransferenciaPagoDialog({
   const [bancoId, setBancoId] = useState("");
   const [numeroTransferencia, setNumeroTransferencia] = useState("");
   const [montoInput, setMontoInput] = useState("");
-  const [validando, setValidando] = useState(false);
   const [errorMensaje, setErrorMensaje] = useState<string | null>(null);
   const [fotoArchivo, setFotoArchivo] = useState<File | Blob | null>(null);
   const [fotoVistaPreviaUrl, setFotoVistaPreviaUrl] = useState<string | null>(null);
@@ -247,7 +242,7 @@ export default function TransferenciaPagoDialog({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleConfirm = async () => {
+  const handleConfirm = () => {
     const monto = parseTransferenciaMontoInput(montoInput);
     if (!bancoId) return;
     if (!numeroTransferencia.trim()) return;
@@ -261,33 +256,22 @@ export default function TransferenciaPagoDialog({
       return;
     }
 
-    setValidando(true);
     setErrorMensaje(null);
-    try {
-      const duplicada = await existeTransferenciaDuplicada(bancoId, numeroTransferencia);
-      if (duplicada) {
-        setErrorMensaje(MENSAJE_TRANSFERENCIA_DUPLICADA);
-        return;
-      }
-
-      // El padre conserva la URL; no revocar al confirmar.
-      localPreviewRef.current = null;
-      onConfirm({
-        bancoId,
-        numeroTransferencia: numeroTransferencia.trim(),
-        monto,
-        fotoArchivo: fotoArchivo ?? null,
-        fotoVistaPreviaUrl: fotoVistaPreviaUrl ?? null,
-        analisisIa,
-        validacionComprobante,
-        motivoAceptacion: requiereMotivo ? motivoAceptacion.trim() : null,
-      });
-      onOpenChange(false);
-    } catch {
-      setErrorMensaje("No se pudo validar el numero de transferencia. Intenta de nuevo.");
-    } finally {
-      setValidando(false);
-    }
+    // El padre conserva la URL; no revocar al confirmar.
+    // La unicidad banco+número se valida al registrar el cobro (RPC/índice),
+    // no con una consulta previa frágil que bloqueaba el diálogo.
+    localPreviewRef.current = null;
+    onConfirm({
+      bancoId,
+      numeroTransferencia: numeroTransferencia.trim(),
+      monto,
+      fotoArchivo: fotoArchivo ?? null,
+      fotoVistaPreviaUrl: fotoVistaPreviaUrl ?? null,
+      analisisIa,
+      validacionComprobante,
+      motivoAceptacion: requiereMotivo ? motivoAceptacion.trim() : null,
+    });
+    onOpenChange(false);
   };
 
   const montoActual = parseTransferenciaMontoInput(montoInput);
@@ -649,21 +633,18 @@ export default function TransferenciaPagoDialog({
                 type="button"
                 className="flex-1 sm:flex-none"
                 disabled={
-                  validando
-                  || analizandoFoto
+                  analizandoFoto
                   || readOnly
                   || !bancoId
                   || !numeroTransferencia.trim()
                   || parseTransferenciaMontoInput(montoInput) <= 0
                   || !motivoValido
                 }
-                onClick={() => void handleConfirm()}
+                onClick={handleConfirm}
               >
-                {validando
-                  ? "Validando..."
-                  : requiereMotivo
-                    ? "Aceptar con novedades"
-                    : "Aceptar"}
+                {requiereMotivo
+                  ? "Aceptar con novedades"
+                  : "Aceptar"}
               </Button>
             </DialogFooter>
           </>
