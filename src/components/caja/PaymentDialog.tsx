@@ -856,9 +856,15 @@ export default function PaymentDialog({
           await payPromise;
         }
 
-        const promocionExtras = willSettleOrder
-          ? await fetchPromocionReciboExtrasForOrder(order.id)
-          : { token_promocion: null, qrCodeDataUrl: null };
+        // Cobro ya registrado: no tumbar el éxito si falla la promo del recibo.
+        let promocionExtras = { token_promocion: null as string | null, qrCodeDataUrl: null as string | null };
+        if (willSettleOrder) {
+          try {
+            promocionExtras = await fetchPromocionReciboExtrasForOrder(order.id);
+          } catch (promoError) {
+            console.warn("[cobro] extras de promocion omitidos", promoError);
+          }
+        }
 
         const finalReceiptData = {
           ...receiptData,

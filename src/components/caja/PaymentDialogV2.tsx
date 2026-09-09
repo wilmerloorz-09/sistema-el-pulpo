@@ -645,22 +645,40 @@ export default function PaymentDialogV2({
         pendingPayPromiseRef.current = null;
       }
 
-      const promocionExtras = isFullyPaid
-        ? await fetchPromocionReciboExtrasForOrder(order.id)
-        : { token_promocion: null, qrCodeDataUrl: null };
-
+      // El cobro ya quedó registrado: mostrar éxito aunque falle la promo del recibo.
       const summary = {
         changeAmount,
         lines: changeLinesSnapshot,
         receipt: {
           ...receipt,
-          ...promocionExtras,
+          token_promocion: null as string | null,
+          qrCodeDataUrl: null as string | null,
         },
       };
 
       wasFullyPaidRef.current = isFullyPaid;
       setWasFullyPaid(isFullyPaid);
       setPostPaySummary(summary);
+
+      if (isFullyPaid) {
+        void fetchPromocionReciboExtrasForOrder(order.id)
+          .then((promocionExtras) => {
+            setPostPaySummary((current) =>
+              current
+                ? {
+                    ...current,
+                    receipt: {
+                      ...current.receipt,
+                      ...promocionExtras,
+                    },
+                  }
+                : current,
+            );
+          })
+          .catch((promoError) => {
+            console.warn("[cobro] extras de promocion omitidos", promoError);
+          });
+      }
     } catch (e) {
       console.error("Payment failed", e);
       suppressCloseOnceRef.current = true;
