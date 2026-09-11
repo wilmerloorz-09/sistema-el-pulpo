@@ -41,8 +41,11 @@ function BranchMultiSelect({
   onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const allSelected = selectedIds.length === 0;
-  const label = allSelected
+  const allBranchIds = useMemo(() => branches.map((branch) => branch.id), [branches]);
+  const allSelected =
+    allBranchIds.length > 0
+    && allBranchIds.every((id) => selectedIds.includes(id));
+  const label = allSelected || selectedIds.length === 0
     ? "Todas"
     : selectedIds.length === 1
       ? (branches.find((branch) => branch.id === selectedIds[0])?.name ?? "1 sucursal")
@@ -74,7 +77,7 @@ function BranchMultiSelect({
             <Checkbox
               checked={allSelected}
               onCheckedChange={(checked) => {
-                if (checked === true) onChange([]);
+                onChange(checked === true ? allBranchIds : []);
               }}
             />
             <span className="font-medium">Todas</span>
