@@ -1,35 +1,5 @@
--- Supervisor temporal = mismos privilegios de entrada/admin que supervisor permanente.
--- 1) can_manage_branch_admin / can_manage_shift_admin reconocen la delegacion activa.
--- 2) get_my_access_context inyecta admin_sucursal+turno MANAGE y prioriza la sucursal delegada.
-
-CREATE OR REPLACE FUNCTION public.can_manage_branch_admin(p_user_id uuid, p_branch_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT
-    public.is_global_admin(p_user_id)
-    OR public.has_branch_permission(p_user_id, p_branch_id, 'admin_sucursal', 'MANAGE'::public.access_level)
-    OR public.has_branch_permission(p_user_id, p_branch_id, 'admin_global', 'MANAGE'::public.access_level)
-    OR public.has_active_supervisor_delegation(p_user_id, p_branch_id);
-$$;
-
-CREATE OR REPLACE FUNCTION public.can_manage_shift_admin(p_user_id uuid, p_branch_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT
-    public.is_global_admin(p_user_id)
-    OR public.has_branch_permission(p_user_id, p_branch_id, 'turno', 'MANAGE'::public.access_level)
-    OR public.has_branch_permission(p_user_id, p_branch_id, 'admin_sucursal', 'MANAGE'::public.access_level)
-    OR public.has_branch_permission(p_user_id, p_branch_id, 'admin_global', 'MANAGE'::public.access_level)
-    OR public.has_active_supervisor_delegation(p_user_id, p_branch_id);
-$$;
+-- Fix: get_my_access_context fallaba por ORDER BY d.assigned_at (columna inexistente;
+-- la tabla usa created_at). Eso vaciaba branches y mostraba "Sin sucursales asignadas".
 
 CREATE OR REPLACE FUNCTION public.get_my_access_context()
 RETURNS jsonb
@@ -287,7 +257,5 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_my_access_context() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.can_manage_branch_admin(uuid, uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.can_manage_shift_admin(uuid, uuid) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
