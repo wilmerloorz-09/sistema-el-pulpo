@@ -15,7 +15,6 @@ import type { ReportesFilters } from '@/hooks/useReportesOnlineData';
 
 const Reportes = () => {
   const { permissions, isGlobalAdmin, activeBranchId, branches } = useBranch();
-  const { data: sg, isLoading: sgLoading } = useBranchShiftGate();
   
   const [activeTab, setActiveTab] = useState<string>('payments');
 
@@ -55,14 +54,6 @@ const Reportes = () => {
 
   const hasAccess = canAccessAdmin;
 
-  if (sgLoading) {
-    return (
-      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
   if (!activeBranchId) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
@@ -82,7 +73,7 @@ const Reportes = () => {
           <Lock className="w-10 h-10 text-destructive mx-auto mb-3" />
           <h2 className="font-display text-lg font-black text-destructive">Acceso Restringido</h2>
           <p className="text-xs text-muted-foreground mt-2">
-            El módulo de reportes históricos e informes dinámicos requiere privilegios de **Administrador**, **Supervisor** o credenciales autorizadas del turno operativo.
+            El módulo de reportes requiere privilegios de administración.
           </p>
         </Card>
       </div>
