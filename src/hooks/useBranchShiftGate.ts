@@ -186,11 +186,12 @@ function mapGateRow(
 }
 
 export function useBranchShiftGate() {
-  const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
+  const { activeBranchId, permissions, isGlobalAdmin, isTemporarySupervisor } = useBranch();
   const { user } = useAuth();
   const qc = useQueryClient();
   const isBranchAdmin =
     Boolean(isGlobalAdmin)
+    || Boolean(isTemporarySupervisor)
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
 
@@ -202,7 +203,7 @@ export function useBranchShiftGate() {
   );
 
   const query = useQuery({
-    queryKey: [qk.branchShiftGate[0], activeBranchId, user?.id ?? null, isBranchAdmin],
+    queryKey: [qk.branchShiftGate[0], activeBranchId, user?.id ?? null, isBranchAdmin, isTemporarySupervisor],
     queryFn: async (): Promise<BranchShiftGate> => {
       if (!activeBranchId || !user?.id) {
         return mapGateRow(null);

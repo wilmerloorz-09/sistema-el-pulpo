@@ -21,6 +21,7 @@ interface AccessContextPayload {
   branches: Branch[];
   permissions: PermissionMap;
   is_global_admin: boolean;
+  is_temporary_supervisor?: boolean;
 }
 
 interface BranchContextType {
@@ -30,6 +31,7 @@ interface BranchContextType {
   allowedModules: string[];
   permissions: PermissionMap;
   isGlobalAdmin: boolean;
+  isTemporarySupervisor: boolean;
   setActiveBranch: (branch: Branch | null) => Promise<void>;
   refreshAccess: () => Promise<void>;
   loading: boolean;
@@ -42,6 +44,7 @@ const emptyAccess: AccessContextPayload = {
   branches: [],
   permissions: {},
   is_global_admin: false,
+  is_temporary_supervisor: false,
 };
 
 export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -75,6 +78,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const branches = next.branches ?? [];
       const permissions = next.permissions ?? {};
       const isGlobalAdmin = Boolean(next.is_global_admin);
+      const isTemporarySupervisor = Boolean(next.is_temporary_supervisor);
       const activeBranchId = next.active_branch_id ?? null;
 
       // Respuesta "vacia" bajo saturacion no debe tumbar sucursal/permisos buenos.
@@ -95,6 +99,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         branches,
         permissions,
         is_global_admin: isGlobalAdmin,
+        is_temporary_supervisor: isTemporarySupervisor,
       });
 
       if (activeBranchId) {
@@ -186,6 +191,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       allowedModules,
       permissions: access.permissions,
       isGlobalAdmin: access.is_global_admin,
+      isTemporarySupervisor: Boolean(access.is_temporary_supervisor),
       setActiveBranch,
       refreshAccess: fetchAccess,
       loading,
@@ -195,6 +201,7 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       access.active_branch_id,
       access.permissions,
       access.is_global_admin,
+      access.is_temporary_supervisor,
       activeBranch,
       allowedModules,
       setActiveBranch,

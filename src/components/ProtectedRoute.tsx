@@ -77,7 +77,7 @@ const ProtectedRoute = ({
   blockedShiftRoles,
 }: Props) => {
   const { user, loading, signOut } = useAuth();
-  const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
+  const { permissions, allowedModules: currentModules, isGlobalAdmin, branches, isTemporarySupervisor } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
   const location = useLocation();
@@ -104,6 +104,7 @@ const ProtectedRoute = ({
   /** Solo turno: no esperar `usePreferredHomePath` (incluye config despacho) para montar la pantalla. */
   const isBranchAdmin =
     Boolean(isGlobalAdmin)
+    || Boolean(isTemporarySupervisor)
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
 
