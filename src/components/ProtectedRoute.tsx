@@ -77,7 +77,7 @@ const ProtectedRoute = ({
   blockedShiftRoles,
 }: Props) => {
   const { user, loading, signOut } = useAuth();
-  const { permissions, allowedModules: currentModules, isGlobalAdmin, branches, isTemporarySupervisor } = useBranch();
+  const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
   const location = useLocation();
@@ -101,10 +101,9 @@ const ProtectedRoute = ({
     return <Navigate to="/cambio-monedas" replace />;
   }
 
-  /** Solo turno: no esperar `usePreferredHomePath` (incluye config despacho) para montar la pantalla. */
+  /** Admin de sucursal/global. Supervisor temporal NO es admin. */
   const isBranchAdmin =
     Boolean(isGlobalAdmin)
-    || Boolean(isTemporarySupervisor)
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
 
