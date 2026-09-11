@@ -7,7 +7,8 @@ export type PersonalReportFilters = {
   hasta: string;
   /** Vacío = todas las sucursales. */
   sucursalIds: string[];
-  personaId: string;
+  /** Vacío = todas las personas. */
+  personaIds: string[];
 };
 
 export type PrecioDiaPersonal = PrecioSemanal;
@@ -67,6 +68,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       } else if (filters.sucursalIds.length > 1) {
         shiftsQuery = shiftsQuery.in("branch_id", filters.sucursalIds);
       }
+      // length 0 = sin filtro de sucursal (todas)
 
       const [
         { data: shifts, error: shiftsError },
@@ -99,7 +101,10 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       const shiftById = new Map(shiftRows.map((shift: any) => [shift.id, shift]));
       const weeklyByBranch = new Map((precios ?? []).map((price: PrecioDiaPersonal) => [price.branch_id, price]));
       const rows = (users ?? [])
-        .filter((user: any) => !filters.personaId || user.user_id === filters.personaId)
+        .filter((user: any) => {
+          if (filters.personaIds.length === 0) return true;
+          return filters.personaIds.includes(user.user_id);
+        })
         .map((user: any): PersonalReportRow | null => {
           const shift: any = shiftById.get(user.shift_id);
           if (!shift) return null;

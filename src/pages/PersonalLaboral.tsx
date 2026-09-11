@@ -31,32 +31,34 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
 }
 
-function BranchMultiSelect({
-  branches,
+function CheckMultiSelect({
+  items,
   selectedIds,
   onChange,
+  emptyLabel = "Todas",
 }: {
-  branches: { id: string; name: string }[];
+  items: { id: string; name: string }[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const allBranchIds = useMemo(() => branches.map((branch) => branch.id), [branches]);
+  const allIds = useMemo(() => items.map((item) => item.id), [items]);
   const allSelected =
-    allBranchIds.length > 0
-    && allBranchIds.every((id) => selectedIds.includes(id));
+    allIds.length > 0
+    && allIds.every((id) => selectedIds.includes(id));
   const label = allSelected || selectedIds.length === 0
-    ? "Todas"
+    ? emptyLabel
     : selectedIds.length === 1
-      ? (branches.find((branch) => branch.id === selectedIds[0])?.name ?? "1 sucursal")
-      : `${selectedIds.length} sucursales`;
+      ? (items.find((item) => item.id === selectedIds[0])?.name ?? "1 seleccionado")
+      : `${selectedIds.length} seleccionados`;
 
-  const toggleBranch = (branchId: string, checked: boolean) => {
+  const toggleItem = (itemId: string, checked: boolean) => {
     if (checked) {
-      onChange(Array.from(new Set([...selectedIds, branchId])));
+      onChange(Array.from(new Set([...selectedIds, itemId])));
       return;
     }
-    onChange(selectedIds.filter((id) => id !== branchId));
+    onChange(selectedIds.filter((id) => id !== itemId));
   };
 
   return (
@@ -77,23 +79,23 @@ function BranchMultiSelect({
             <Checkbox
               checked={allSelected}
               onCheckedChange={(checked) => {
-                onChange(checked === true ? allBranchIds : []);
+                onChange(checked === true ? allIds : []);
               }}
             />
-            <span className="font-medium">Todas</span>
+            <span className="font-medium">{emptyLabel}</span>
           </label>
-          {branches.map((branch) => {
-            const checked = selectedIds.includes(branch.id);
+          {items.map((item) => {
+            const checked = selectedIds.includes(item.id);
             return (
               <label
-                key={branch.id}
+                key={item.id}
                 className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-muted/60"
               >
                 <Checkbox
                   checked={checked}
-                  onCheckedChange={(value) => toggleBranch(branch.id, value === true)}
+                  onCheckedChange={(value) => toggleItem(item.id, value === true)}
                 />
-                <span>{branch.name}</span>
+                <span>{item.name}</span>
               </label>
             );
           })}
@@ -113,7 +115,7 @@ export default function PersonalLaboral() {
     desde: new Date(Date.now() - 6 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" }),
     hasta: today(),
     sucursalIds: activeBranchId ? [activeBranchId] : ([] as string[]),
-    personaId: "",
+    personaIds: [] as string[],
   };
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
@@ -158,7 +160,7 @@ export default function PersonalLaboral() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [appliedFilters.desde, appliedFilters.hasta, appliedFilters.sucursalIds, appliedFilters.personaId, pageSize]);
+  }, [appliedFilters.desde, appliedFilters.hasta, appliedFilters.sucursalIds, appliedFilters.personaIds, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -168,6 +170,7 @@ export default function PersonalLaboral() {
     setAppliedFilters({
       ...draftFilters,
       sucursalIds: [...draftFilters.sucursalIds],
+      personaIds: [...draftFilters.personaIds],
     });
     setCurrentPage(1);
   };
@@ -328,15 +331,19 @@ export default function PersonalLaboral() {
             <Field label="Desde"><Input type="date" value={draftFilters.desde} onChange={(e) => setDraftFilters({ ...draftFilters, desde: e.target.value })} /></Field>
             <Field label="Hasta"><Input type="date" value={draftFilters.hasta} onChange={(e) => setDraftFilters({ ...draftFilters, hasta: e.target.value })} /></Field>
             <Field label="Sucursal">
-              <BranchMultiSelect
-                branches={branches}
+              <CheckMultiSelect
+                items={branches}
                 selectedIds={draftFilters.sucursalIds}
                 onChange={(sucursalIds) => setDraftFilters({ ...draftFilters, sucursalIds })}
               />
             </Field>
-            <Field label="Persona"><select className={selectClass} value={draftFilters.personaId} onChange={(e) => setDraftFilters({ ...draftFilters, personaId: e.target.value })}>
-              <option value="">Todas</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-            </select></Field>
+            <Field label="Persona">
+              <CheckMultiSelect
+                items={people}
+                selectedIds={draftFilters.personaIds}
+                onChange={(personaIds) => setDraftFilters({ ...draftFilters, personaIds })}
+              />
+            </Field>
             <div className="flex items-end">
               <Button className="w-full" disabled={!filtersDirty || personal.isFetching} onClick={applyFilters}>
                 {personal.isFetching ? "Consultando…" : "Aplicar"}
