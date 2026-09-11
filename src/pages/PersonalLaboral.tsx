@@ -106,13 +106,15 @@ export default function PersonalLaboral() {
     || canManage(permissions, "jornadas_personal")
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
-  const [filters, setFilters] = useState({
+  const initialFilters = {
     desde: new Date(Date.now() - 6 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" }),
     hasta: today(),
     sucursalIds: activeBranchId ? [activeBranchId] : ([] as string[]),
     personaId: "",
-  });
-  const personal = usePersonalLaboral(filters);
+  };
+  const [draftFilters, setDraftFilters] = useState(initialFilters);
+  const [appliedFilters, setAppliedFilters] = useState(initialFilters);
+  const personal = usePersonalLaboral(appliedFilters);
   const [configBranchId, setConfigBranchId] = useState(activeBranchId ?? (isGlobalAdmin ? ALL_BRANCHES : ""));
   const [weekly, setWeekly] = useState({ lunesViernes: "", sabado: "", domingo: "" });
   const [special, setSpecial] = useState({ fecha: today(), nombre: "", valor: "" });
@@ -146,14 +148,26 @@ export default function PersonalLaboral() {
   const showingTo = Math.min(endIndex, personal.data.rows.length);
   const branchSpecials = personal.data.especiales.filter((item) =>
     configBranchId === ALL_BRANCHES ? item.branch_id === null : item.branch_id === configBranchId);
+  const filtersDirty = useMemo(
+    () => JSON.stringify(draftFilters) !== JSON.stringify(appliedFilters),
+    [draftFilters, appliedFilters],
+  );
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters.desde, filters.hasta, filters.sucursalIds, filters.personaId, pageSize]);
+  }, [appliedFilters.desde, appliedFilters.hasta, appliedFilters.sucursalIds, appliedFilters.personaId, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  const applyFilters = () => {
+    setAppliedFilters({
+      ...draftFilters,
+      sucursalIds: [...draftFilters.sucursalIds],
+    });
+    setCurrentPage(1);
+  };
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     try {
@@ -223,7 +237,7 @@ export default function PersonalLaboral() {
           decimal(item.total),
         ]),
       ];
-      downloadXlsx(`personal-${filters.desde}-${filters.hasta}.xlsx`, [
+      downloadXlsx(`personal-${appliedFilters.desde}-${appliedFilters.hasta}.xlsx`, [
         {
           rows: detailData,
           name: "Detalle",
@@ -307,19 +321,24 @@ export default function PersonalLaboral() {
 
       <TabsContent value="reporte" className="space-y-4">
         <Card><CardHeader><CardTitle>Filtros</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-5">
-            <Field label="Desde"><Input type="date" value={filters.desde} onChange={(e) => setFilters({ ...filters, desde: e.target.value })} /></Field>
-            <Field label="Hasta"><Input type="date" value={filters.hasta} onChange={(e) => setFilters({ ...filters, hasta: e.target.value })} /></Field>
+          <CardContent className="grid gap-3 md:grid-cols-6">
+            <Field label="Desde"><Input type="date" value={draftFilters.desde} onChange={(e) => setDraftFilters({ ...draftFilters, desde: e.target.value })} /></Field>
+            <Field label="Hasta"><Input type="date" value={draftFilters.hasta} onChange={(e) => setDraftFilters({ ...draftFilters, hasta: e.target.value })} /></Field>
             <Field label="Sucursal">
               <BranchMultiSelect
                 branches={branches}
-                selectedIds={filters.sucursalIds}
-                onChange={(sucursalIds) => setFilters({ ...filters, sucursalIds })}
+                selectedIds={draftFilters.sucursalIds}
+                onChange={(sucursalIds) => setDraftFilters({ ...draftFilters, sucursalIds })}
               />
             </Field>
-            <Field label="Persona"><select className={selectClass} value={filters.personaId} onChange={(e) => setFilters({ ...filters, personaId: e.target.value })}>
+            <Field label="Persona"><select className={selectClass} value={draftFilters.personaId} onChange={(e) => setDraftFilters({ ...draftFilters, personaId: e.target.value })}>
               <option value="">Todas</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
             </select></Field>
+            <div className="flex items-end">
+              <Button className="w-full" disabled={!filtersDirty || personal.isFetching} onClick={applyFilters}>
+                {personal.isFetching ? "Consultando…" : "Aplicar"}
+              </Button>
+            </div>
             <div className="flex items-end"><Button variant="outline" className="w-full" disabled={isExporting} onClick={() => void exportXlsx()}><FileSpreadsheet className="mr-2 h-4 w-4" />{isExporting ? "Generando…" : "Exportar Excel"}</Button></div>
           </CardContent>
         </Card>
