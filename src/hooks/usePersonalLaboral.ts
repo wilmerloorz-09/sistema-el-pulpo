@@ -36,6 +36,8 @@ export type PersonalReportRow = {
 
 type PersonalReportData = {
   rows: PersonalReportRow[];
+  /** Personas disponibles según fechas/sucursales (sin filtro de persona). */
+  peopleOptions: { id: string; name: string }[];
   precios: PrecioDiaPersonal[];
   precioGlobal: PrecioDiaPersonalGlobal | null;
   especiales: PrecioFechaEspecialPersonal[];
@@ -63,12 +65,21 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
         .gte("opened_at", fromIso)
         .lt("opened_at", until.toISOString())
         .order("opened_at", { ascending: false });
+
+      if (filters.sucursalIds.length === 1 && filters.sucursalIds[0] === "__NONE__") {
+        return {
+          rows: [],
+          peopleOptions: [],
+          precios: [],
+          precioGlobal: null,
+          especiales: [],
+        };
+      }
       if (filters.sucursalIds.length === 1) {
         shiftsQuery = shiftsQuery.eq("branch_id", filters.sucursalIds[0]);
       } else if (filters.sucursalIds.length > 1) {
         shiftsQuery = shiftsQuery.in("branch_id", filters.sucursalIds);
       }
-      // length 0 = sin filtro de sucursal (todas)
 
       const [
         { data: shifts, error: shiftsError },
@@ -89,7 +100,15 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
       const shiftRows = shifts ?? [];
       const precioGlobal = globalRows?.[0] ?? null;
-      if (shiftRows.length === 0) return { rows: [], precios: precios ?? [], precioGlobal, especiales: especiales ?? [] };
+      if (shiftRows.length === 0) {
+        return {
+          rows: [],
+          peopleOptions: [],
+          precios: precios ?? [],
+          precioGlobal,
+          especiales: especiales ?? [],
+        };
+      }
 
       const shiftIds = shiftRows.map((shift: any) => shift.id);
       const { data: users, error: usersError } = await (supabase as any)
@@ -100,11 +119,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
       const shiftById = new Map(shiftRows.map((shift: any) => [shift.id, shift]));
       const weeklyByBranch = new Map((precios ?? []).map((price: PrecioDiaPersonal) => [price.branch_id, price]));
-      const rows = (users ?? [])
-        .filter((user: any) => {
-          if (filters.personaIds.length === 0) return true;
-          return filters.personaIds.includes(user.user_id);
-        })
+      const allRows = (users ?? [])
         .map((user: any): PersonalReportRow | null => {
           const shift: any = shiftById.get(user.shift_id);
           if (!shift) return null;
@@ -130,6 +145,30 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
           };
         })
         .filter(Boolean) as PersonalReportRow[];
+
+      const peopleMap = new Map<string, string>();
+      for (const row of allRows) {
+        if (!peopleMap.has(row.userId)) peopleMap.set(row.userId, row.personName);
+      }
+      const peopleOptions = Array.from(peopleMap, ([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const selectedPeople = new Set(filters.personaIds.filter((id) => id !== "__NONE__"));
+      const nonePeople = filters.personaIds.length === 1 && filters.personaIds[0] === "__NONE__";
+      const filterByPerson =
+        !nonePeople
+        && filters.personaIds.length > 0
+        && !(
+          peopleOptions.length > 0
+          && peopleOptions.every((person) => selectedPeople.has(person.id))
+        );
+
+      const rows = nonePeople
+        ? []
+        : filterByPerson
+          ? allRows.filter((row) => selectedPeople.has(row.userId))
+          : allRows;
+
       rows.sort(
         (a, b) =>
           b.fecha.localeCompare(a.fecha)
@@ -137,7 +176,13 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
           || a.personName.localeCompare(b.personName),
       );
 
-      return { rows, precios: precios ?? [], precioGlobal, especiales: especiales ?? [] };
+      return {
+        rows,
+        peopleOptions,
+        precios: precios ?? [],
+        precioGlobal,
+        especiales: especiales ?? [],
+      };
     },
     enabled: Boolean(filters.desde && filters.hasta),
     staleTime: 15_000,
@@ -154,7 +199,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
   return {
     ...query,
-    data: query.data ?? { rows: [], precios: [], precioGlobal: null, especiales: [] },
+    data: query.data ?? { rows: [], peopleOptions: [], precios: [], precioGlobal: null, especiales: [] },
     runRpc: (name: string, args: Record<string, unknown>) => mutation.mutateAsync({ name, args }),
     isMutating: mutation.isPending,
   };

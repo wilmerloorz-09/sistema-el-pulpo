@@ -31,6 +31,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
 }
 
+const NONE_SELECTED = "__NONE__";
+
+function normalizeMultiSelectIds(selectedIds: string[], allIds: string[]) {
+  const cleaned = selectedIds.filter((id) => id !== NONE_SELECTED);
+  if (cleaned.length === 0) {
+    // "__NONE__" solo, o vacío explícito tras desmarcar Todas → sin filtro (todas)
+    if (selectedIds.includes(NONE_SELECTED)) return [NONE_SELECTED];
+    return [];
+  }
+  if (allIds.length > 0 && allIds.every((id) => cleaned.includes(id))) return [];
+  return cleaned;
+}
+
 function CheckMultiSelect({
   items,
   selectedIds,
@@ -44,21 +57,39 @@ function CheckMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const allIds = useMemo(() => items.map((item) => item.id), [items]);
+  const noneSelected = selectedIds.length === 1 && selectedIds[0] === NONE_SELECTED;
   const allSelected =
-    allIds.length > 0
-    && allIds.every((id) => selectedIds.includes(id));
-  const label = allSelected || selectedIds.length === 0
-    ? emptyLabel
-    : selectedIds.length === 1
-      ? (items.find((item) => item.id === selectedIds[0])?.name ?? "1 seleccionado")
-      : `${selectedIds.length} seleccionados`;
+    !noneSelected
+    && (
+      selectedIds.length === 0
+      || (allIds.length > 0 && allIds.every((id) => selectedIds.includes(id)))
+    );
+  const label = noneSelected
+    ? "Ninguna"
+    : allSelected
+      ? emptyLabel
+      : selectedIds.length === 1
+        ? (items.find((item) => item.id === selectedIds[0])?.name ?? "1 seleccionado")
+        : `${selectedIds.length} seleccionados`;
 
   const toggleItem = (itemId: string, checked: boolean) => {
     if (checked) {
-      onChange(Array.from(new Set([...selectedIds, itemId])));
+      const base = noneSelected || selectedIds.length === 0 ? [] : selectedIds.filter((id) => id !== NONE_SELECTED);
+      const next = Array.from(new Set([...base, itemId]));
+      if (allIds.length > 0 && allIds.every((id) => next.includes(id))) {
+        onChange([]);
+        return;
+      }
+      onChange(next);
       return;
     }
-    onChange(selectedIds.filter((id) => id !== itemId));
+
+    if (allSelected) {
+      onChange(allIds.filter((id) => id !== itemId));
+      return;
+    }
+    const next = selectedIds.filter((id) => id !== itemId && id !== NONE_SELECTED);
+    onChange(next.length === 0 ? [NONE_SELECTED] : next);
   };
 
   return (
@@ -79,13 +110,13 @@ function CheckMultiSelect({
             <Checkbox
               checked={allSelected}
               onCheckedChange={(checked) => {
-                onChange(checked === true ? allIds : []);
+                onChange(checked === true ? allIds : [NONE_SELECTED]);
               }}
             />
             <span className="font-medium">{emptyLabel}</span>
           </label>
           {items.map((item) => {
-            const checked = selectedIds.includes(item.id);
+            const checked = allSelected || selectedIds.includes(item.id);
             return (
               <label
                 key={item.id}
@@ -138,10 +169,7 @@ export default function PersonalLaboral() {
     });
   }, [configBranchId, personal.data.precios]);
 
-  const people = useMemo(() => {
-    const unique = new Map(personal.data.rows.map((row) => [row.userId, row.personName]));
-    return Array.from(unique, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [personal.data.rows]);
+  const people = personal.data.peopleOptions;
   const summaries = useMemo(() => resumirPersonal(personal.data.rows), [personal.data.rows]);
   const total = summaries.reduce((sum, item) => sum + item.total, 0);
   const totalPages = Math.max(1, Math.ceil(personal.data.rows.length / pageSize));
@@ -167,10 +195,19 @@ export default function PersonalLaboral() {
   }, [currentPage, totalPages]);
 
   const applyFilters = () => {
-    setAppliedFilters({
-      ...draftFilters,
-      sucursalIds: [...draftFilters.sucursalIds],
-      personaIds: [...draftFilters.personaIds],
+    const branchIds = branches.map((branch) => branch.id);
+    const personIds = people.map((person) => person.id);
+    const next = {
+      desde: draftFilters.desde,
+      hasta: draftFilters.hasta,
+      sucursalIds: normalizeMultiSelectIds(draftFilters.sucursalIds, branchIds),
+      personaIds: normalizeMultiSelectIds(draftFilters.personaIds, personIds),
+    };
+    setAppliedFilters(next);
+    setDraftFilters({
+      ...next,
+      sucursalIds: [...next.sucursalIds],
+      personaIds: [...next.personaIds],
     });
     setCurrentPage(1);
   };
