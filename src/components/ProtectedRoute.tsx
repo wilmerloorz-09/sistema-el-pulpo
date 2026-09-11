@@ -144,7 +144,10 @@ const ProtectedRoute = ({
   const canAccessTurno = canAccessAdmin || hasPermission(permissions, "turno", "VIEW");
   const shiftOpen = Boolean(shiftGateQuery.data?.shiftOpen);
   const userEnabled = Boolean(shiftGateQuery.data?.userEnabled);
-  const hasSupervisorBypass = Boolean(shiftGateQuery.data?.isSupervisor) || isBranchAdmin;
+  const isShiftSupervisor = Boolean(shiftGateQuery.data?.isSupervisor);
+  // Supervisor permanente (admin) o temporal/supervisor de turno: no exige "habilitado en turno".
+  const canBypassUserEnabledGate = isBranchAdmin || isShiftSupervisor;
+  const hasSupervisorBypass = isShiftSupervisor || isBranchAdmin;
   const isCaptureDeviceOnly = Boolean(shiftGateQuery.data?.isCaptureDeviceOnly);
   
   const hasBlockedShiftRole = !hasSupervisorBypass && blockedShiftRoles && blockedShiftRoles.length > 0
@@ -155,7 +158,10 @@ const ProtectedRoute = ({
     ? true
     : requiredShiftRoles.some((roleKey) => Boolean(shiftGateQuery.data?.[roleKey]));
     
-  const hasShiftAccess = requiresOpenShift && shiftOpen && userEnabled && (hasSupervisorBypass || (hasRequiredShiftRole && !hasBlockedShiftRole));
+  const hasShiftAccess = requiresOpenShift
+    && shiftOpen
+    && (userEnabled || canBypassUserEnabledGate)
+    && (hasSupervisorBypass || (hasRequiredShiftRole && !hasBlockedShiftRole));
 
   const isStaleShift = Boolean(shiftGateQuery.data?.isStaleShift);
   const isAllowedModulePath = 
@@ -216,7 +222,7 @@ const ProtectedRoute = ({
     );
   }
 
-  if (requiresOpenShift && !isBranchAdmin) {
+  if (requiresOpenShift && !canBypassUserEnabledGate) {
     if (!shiftOpen || !userEnabled) {
       if (canAccessTurno) {
         return <Navigate to={canAccessAdmin ? "/admin" : "/turno"} replace />;

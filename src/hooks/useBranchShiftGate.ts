@@ -332,8 +332,11 @@ export function useBranchShiftGate() {
         }
 
         return mapGateRow(enriched, {
-          forceAdminOpen: isBranchAdmin,
-          puedeRegistrarPromociones: isBranchAdmin ? true : puedeRegistrarPromociones,
+          forceAdminOpen: isBranchAdmin || Boolean(enriched?.is_supervisor),
+          puedeRegistrarPromociones:
+            isBranchAdmin || Boolean(enriched?.is_supervisor)
+              ? true
+              : puedeRegistrarPromociones,
         });
       };
 
