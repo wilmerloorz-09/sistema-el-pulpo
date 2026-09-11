@@ -5,7 +5,8 @@ import { fechaOperativaTurno, funcionesRealizadas, resolverPrecioDia, type Preci
 export type PersonalReportFilters = {
   desde: string;
   hasta: string;
-  sucursalId: string;
+  /** Vacío = todas las sucursales. */
+  sucursalIds: string[];
   personaId: string;
 };
 
@@ -61,7 +62,11 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
         .gte("opened_at", fromIso)
         .lt("opened_at", until.toISOString())
         .order("opened_at", { ascending: false });
-      if (filters.sucursalId) shiftsQuery = shiftsQuery.eq("branch_id", filters.sucursalId);
+      if (filters.sucursalIds.length === 1) {
+        shiftsQuery = shiftsQuery.eq("branch_id", filters.sucursalIds[0]);
+      } else if (filters.sucursalIds.length > 1) {
+        shiftsQuery = shiftsQuery.in("branch_id", filters.sucursalIds);
+      }
 
       const [
         { data: shifts, error: shiftsError },

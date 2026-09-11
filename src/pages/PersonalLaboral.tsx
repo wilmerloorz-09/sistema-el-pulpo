@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, FileSpreadsheet, Settings2, Users } from "lucide-react";
+import { CalendarDays, ChevronsUpDown, FileSpreadsheet, Settings2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
@@ -9,11 +9,14 @@ import { downloadXlsx } from "@/lib/exportXlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" });
 const ALL_BRANCHES = "__ALL__";
@@ -28,6 +31,75 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
 }
 
+function BranchMultiSelect({
+  branches,
+  selectedIds,
+  onChange,
+}: {
+  branches: { id: string; name: string }[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const allSelected = selectedIds.length === 0;
+  const label = allSelected
+    ? "Todas"
+    : selectedIds.length === 1
+      ? (branches.find((branch) => branch.id === selectedIds[0])?.name ?? "1 sucursal")
+      : `${selectedIds.length} sucursales`;
+
+  const toggleBranch = (branchId: string, checked: boolean) => {
+    if (checked) {
+      onChange(Array.from(new Set([...selectedIds, branchId])));
+      return;
+    }
+    onChange(selectedIds.filter((id) => id !== branchId));
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(selectClass, "items-center justify-between text-left font-medium")}
+          aria-expanded={open}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] rounded-2xl p-2" align="start">
+        <div className="max-h-64 space-y-1 overflow-y-auto">
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-muted/60">
+            <Checkbox
+              checked={allSelected}
+              onCheckedChange={(checked) => {
+                if (checked === true) onChange([]);
+              }}
+            />
+            <span className="font-medium">Todas</span>
+          </label>
+          {branches.map((branch) => {
+            const checked = selectedIds.includes(branch.id);
+            return (
+              <label
+                key={branch.id}
+                className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-muted/60"
+              >
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(value) => toggleBranch(branch.id, value === true)}
+                />
+                <span>{branch.name}</span>
+              </label>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function PersonalLaboral() {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const canConfigure = isGlobalAdmin
@@ -37,7 +109,7 @@ export default function PersonalLaboral() {
   const [filters, setFilters] = useState({
     desde: new Date(Date.now() - 6 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" }),
     hasta: today(),
-    sucursalId: activeBranchId ?? "",
+    sucursalIds: activeBranchId ? [activeBranchId] : ([] as string[]),
     personaId: "",
   });
   const personal = usePersonalLaboral(filters);
@@ -77,7 +149,7 @@ export default function PersonalLaboral() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters.desde, filters.hasta, filters.sucursalId, filters.personaId, pageSize]);
+  }, [filters.desde, filters.hasta, filters.sucursalIds, filters.personaId, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -238,9 +310,13 @@ export default function PersonalLaboral() {
           <CardContent className="grid gap-3 md:grid-cols-5">
             <Field label="Desde"><Input type="date" value={filters.desde} onChange={(e) => setFilters({ ...filters, desde: e.target.value })} /></Field>
             <Field label="Hasta"><Input type="date" value={filters.hasta} onChange={(e) => setFilters({ ...filters, hasta: e.target.value })} /></Field>
-            <Field label="Sucursal"><select className={selectClass} value={filters.sucursalId} onChange={(e) => setFilters({ ...filters, sucursalId: e.target.value })}>
-              <option value="">Todas</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select></Field>
+            <Field label="Sucursal">
+              <BranchMultiSelect
+                branches={branches}
+                selectedIds={filters.sucursalIds}
+                onChange={(sucursalIds) => setFilters({ ...filters, sucursalIds })}
+              />
+            </Field>
             <Field label="Persona"><select className={selectClass} value={filters.personaId} onChange={(e) => setFilters({ ...filters, personaId: e.target.value })}>
               <option value="">Todas</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
             </select></Field>
