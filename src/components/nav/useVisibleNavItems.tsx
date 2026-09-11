@@ -365,7 +365,7 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
       iconIdle: "bg-emerald-50 text-emerald-600",
     },
-    visible: (permissions) => canView(permissions, "jornadas_personal"),
+    visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
 ];
 
@@ -476,7 +476,7 @@ export function useVisibleNavItems() {
       }
 
       if (item.to === "/reportes") {
-        return canAccessAdmin || hasSupervisorBypass || Boolean(sg?.isSupervisor) || Boolean(sg?.canAuthorizeOrderCancel);
+        return canAccessAdmin;
       }
 
       if (item.to.startsWith("/campanas")) {

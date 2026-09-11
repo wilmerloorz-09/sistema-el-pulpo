@@ -30,7 +30,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function PersonalLaboral() {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
-  const canConfigure = isGlobalAdmin || canManage(permissions, "jornadas_personal");
+  const canConfigure = isGlobalAdmin
+    || canManage(permissions, "jornadas_personal")
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
   const [filters, setFilters] = useState({
     desde: new Date(Date.now() - 6 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" }),
     hasta: today(),

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useBranch } from '@/contexts/BranchContext';
-import { useBranchShiftGate } from '@/hooks/useBranchShiftGate';
 import { hasPermission } from '@/lib/permissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -49,16 +48,12 @@ const Reportes = () => {
     }
   }, [activeBranchId]);
 
-  // Validaciones de Acceso
+  // Validaciones de Acceso: solo administracion (no supervisores).
   const canAccessAdmin = isGlobalAdmin
     || hasPermission(permissions, "admin_sucursal", "VIEW")
     || hasPermission(permissions, "admin_global", "VIEW");
 
-  const isSupervisor = Boolean(sg?.isSupervisor);
-  const canAuthorizeOrderCancel = Boolean(sg?.canAuthorizeOrderCancel);
-
-  // Tiene acceso si es Administrador, Supervisor o si tiene capacidad de autorizar cancelaciones
-  const hasAccess = canAccessAdmin || isSupervisor || canAuthorizeOrderCancel;
+  const hasAccess = canAccessAdmin;
 
   if (sgLoading) {
     return (

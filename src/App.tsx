@@ -558,7 +558,7 @@ const App = () => (
                 <Route
                   path="/reportes"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
                       <Reportes />
                     </ProtectedRoute>
                   }
@@ -566,7 +566,7 @@ const App = () => (
                 <Route
                   path="/personal"
                   element={
-                    <ProtectedRoute allowedModules={["jornadas_personal"]}>
+                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
                       <PersonalLaboral />
                     </ProtectedRoute>
                   }
