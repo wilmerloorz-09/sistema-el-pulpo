@@ -1,4 +1,4 @@
-import { toast as uiToast } from "@/hooks/use-toast";
+import { toast as uiToast, dismissToast } from "@/hooks/use-toast";
 
 type ToastHandler = (...args: unknown[]) => string | number | void;
 
@@ -7,53 +7,77 @@ type ToastOptions = {
   duration?: number;
 };
 
-function resolveMessage(args: unknown[]): { title: string; description?: string } {
+const TOAST_DURATION_MS = 4500;
+
+function resolveMessage(args: unknown[]): {
+  title: string;
+  description?: string;
+  duration?: number;
+} {
   const [first, second] = args;
+  const options =
+    second && typeof second === "object" && second !== null
+      ? (second as ToastOptions)
+      : null;
+
   if (typeof first === "string") {
-    if (second && typeof second === "object" && second !== null && "description" in second) {
-      const description = (second as ToastOptions).description;
+    if (options && "description" in options) {
+      const description = options.description;
       return {
         title: first,
         description: description == null ? undefined : String(description),
+        duration: options.duration,
       };
     }
     if (typeof second === "string") {
       return { title: first, description: second };
     }
-    return { title: first };
+    return { title: first, duration: options?.duration };
   }
   if (first instanceof Error) {
-    return { title: first.message || "Error" };
+    return { title: first.message || "Error", duration: options?.duration };
   }
   if (first && typeof first === "object" && "message" in first) {
-    return { title: String((first as { message?: unknown }).message ?? "Aviso") };
+    return {
+      title: String((first as { message?: unknown }).message ?? "Aviso"),
+      duration: options?.duration,
+    };
   }
-  return { title: first == null ? "Aviso" : String(first) };
+  return {
+    title: first == null ? "Aviso" : String(first),
+    duration: options?.duration,
+  };
 }
 
-function show(variant: "default" | "destructive", ...args: unknown[]) {
-  const { title, description } = resolveMessage(args);
+function showError(...args: unknown[]) {
+  const { title, description, duration } = resolveMessage(args);
   uiToast({
     title,
     description,
-    variant,
+    variant: "destructive",
+    duration: duration ?? TOAST_DURATION_MS,
   });
 }
 
-const base: ToastHandler = (...args) => {
-  show("default", ...args);
-};
+const noop: ToastHandler = () => {};
 
-/** Reenvía Sonner al Toaster de shadcn (el de Sonner está deshabilitado a propósito). */
-export const toast = Object.assign(base, {
-  success: ((...args: unknown[]) => show("default", ...args)) as ToastHandler,
-  error: ((...args: unknown[]) => show("destructive", ...args)) as ToastHandler,
-  info: ((...args: unknown[]) => show("default", ...args)) as ToastHandler,
-  warning: ((...args: unknown[]) => show("default", ...args)) as ToastHandler,
-  message: ((...args: unknown[]) => show("default", ...args)) as ToastHandler,
-  loading: ((...args: unknown[]) => show("default", ...args)) as ToastHandler,
-  dismiss: () => {},
-  custom: ((...args: unknown[]) => show("default", ...args)) as ToastHandler,
+/**
+ * Sonner está aliasado aquí a propósito.
+ * - success / info / loading / message: silenciados (no deben aparecer en el sistema).
+ * - error: sí se muestra (fallos reales: cobro, stock, etc.).
+ */
+export const toast = Object.assign(noop, {
+  success: noop,
+  error: ((...args: unknown[]) => showError(...args)) as ToastHandler,
+  info: noop,
+  warning: noop,
+  message: noop,
+  loading: noop,
+  dismiss: ((...args: unknown[]) => {
+    const id = typeof args[0] === "string" || typeof args[0] === "number" ? String(args[0]) : undefined;
+    dismissToast(id);
+  }) as ToastHandler,
+  custom: noop,
   promise: <T,>(promise: Promise<T>) => promise,
 });
 

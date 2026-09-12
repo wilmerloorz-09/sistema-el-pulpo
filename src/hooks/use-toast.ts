@@ -3,7 +3,8 @@ import * as React from "react";
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
 const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+const TOAST_REMOVE_DELAY = 1000;
+const DEFAULT_TOAST_DURATION = 4500;
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -149,6 +150,7 @@ function toast({ ...props }: Toast) {
     toast: {
       ...props,
       id,
+      duration: props.duration ?? DEFAULT_TOAST_DURATION,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss();
@@ -161,6 +163,10 @@ function toast({ ...props }: Toast) {
     dismiss,
     update,
   };
+}
+
+function dismissToast(toastId?: string) {
+  dispatch({ type: "DISMISS_TOAST", toastId });
 }
 
 function useToast() {
@@ -179,8 +185,8 @@ function useToast() {
   return {
     ...state,
     toast,
-    dismiss: (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId }),
+    dismiss: dismissToast,
   };
 }
 
-export { useToast, toast };
+export { useToast, toast, dismissToast };

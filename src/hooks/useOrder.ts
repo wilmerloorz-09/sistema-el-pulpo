@@ -1350,15 +1350,8 @@ export function useOrder(orderId: string | null) {
       void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });
 
       if (row?.order_status === "PAID") {
-        toast.success("Orden especial de $0 marcada como pagada");
         return;
       }
-
-      const message = hadSentItems
-        ? "Nuevos items enviados correctamente"
-        : "Orden lista para cobrar en caja";
-
-      toast.success(message);
     },
     onError: (err: any) => toast.error(formatearMensajeStockInventario(err.message)),
   });
@@ -1424,12 +1417,6 @@ export function useOrder(orderId: string | null) {
       qc.removeQueries({ queryKey: ["dispatch-servir-queue-bundle"] });
       void qc.refetchQueries({ queryKey: ["dispatch-orders"], type: "active" });
       void qc.refetchQueries({ queryKey: ["servir-orders"], type: "active" });
-
-      const message = hadSentItems
-        ? "Nuevos items enviados a despacho"
-        : "Orden enviada a despacho";
-
-      toast.success(message);
     },
     onError: (err: any) => toast.error(formatearMensajeStockInventario(err.message)),
   });
