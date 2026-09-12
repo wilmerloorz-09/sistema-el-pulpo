@@ -1,5 +1,4 @@
 import { Capacitor } from "@capacitor/core";
-import { getOrderRef } from "@/lib/orderPresentation";
 import { Database } from "@/integrations/supabase/types";
 import { hideCashReport, showCashReport } from "@/lib/cashReportViewerStore";
 import { isCashPaymentMethodName } from "@/lib/paymentMethods";
@@ -261,28 +260,18 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
   const cashBalanceAbs = Math.abs(cashBalance);
   const cashBalanced = cashBalanceAbs < 0.01;
   
-  const openings = [...params.shift.openingHistory].sort(
-    (left, right) => new Date(left.opened_at).getTime() - new Date(right.opened_at).getTime(),
-  );
-  
   const uniquePayments = Array.from(
     new Map(
       params.completedPayments.map((payment) => [
         payment.id,
         {
           id: payment.id,
-          created_at: payment.created_at,
-          cashier_name: payment.cashier_name,
           amount: payment.amount,
-          method_name: payment.method_name,
-          order_ref: getOrderRef(payment.order_code, payment.order_number),
-          table_name: payment.table_name,
           status: translatePaymentStatus(payment.status),
-          notes: payment.notes,
         },
       ]),
     ).values(),
-  ).sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+  );
 
   const statusSummary = uniquePayments.reduce<Record<string, { count: number; amount: number }>>((acc, payment) => {
     const key = translatePaymentStatus(payment.status);
@@ -293,18 +282,6 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
     return acc;
   }, {});
 
-  const paymentRows = uniquePayments.map((payment) => `
-    <tr>
-      <td>${escapeHtml(formatDateTime(payment.created_at))}</td>
-      <td>${escapeHtml(payment.order_ref || "N/D")}</td>
-      <td>${escapeHtml(payment.table_name || "-")}</td>
-      <td>${escapeHtml(payment.method_name)}</td>
-      <td>${escapeHtml(payment.status)}</td>
-      <td>${escapeHtml(payment.cashier_name)}</td>
-      <td class="num">${escapeHtml(formatMoney(payment.amount))}</td>
-    </tr>
-  `).join("");
-
   const methodRows = params.methodSummary.map((method) => `
     <tr>
       <td>${escapeHtml(method.methodName)}</td>
@@ -312,18 +289,6 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       <td class="num">${escapeHtml(formatMoney(method.amount))}</td>
     </tr>
   `).join("");
-
-  const movementRows = params.movements.length > 0
-    ? params.movements.map((movement) => `
-        <tr>
-          <td>${escapeHtml(formatDateTime(movement.createdAt))}</td>
-          <td>${escapeHtml(movement.movementType)}</td>
-          <td>${escapeHtml(movement.recordedByName || movement.recordedByUsername || movement.recordedBy)}</td>
-          <td>${escapeHtml(movement.reason)}</td>
-          <td class="num">${escapeHtml(formatMoney(movement.amount))}</td>
-        </tr>
-      `).join("")
-    : '<tr><td colspan="5" class="muted">Sin movimientos registrados.</td></tr>';
 
   const closingDenominationRows = sortedDenoms
     .filter((denomination) => Number(denomination.qty_current ?? 0) > 0)
@@ -337,16 +302,6 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       </tr>
     `)
     .join("");
-
-  const openingRows = openings.map((opening) => `
-    <tr>
-      <td>${escapeHtml(formatDateTime(opening.opened_at))}</td>
-      <td>${escapeHtml(opening.status)}</td>
-      <td>${escapeHtml(opening.cashier_name)}</td>
-      <td>${escapeHtml(formatMoney(opening.initial_total))}</td>
-      <td>${escapeHtml(opening.closed_at ? formatDateTime(opening.closed_at) : "-")}</td>
-    </tr>
-  `).join("");
 
   const statusCards = [
     { label: "Aplicados", key: "Aplicado" },
@@ -367,8 +322,6 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
   const isOpeningReport = params.reportMode === "opening";
   const currentOpening = params.shift.openingHistory[0] ?? null;
   const hasDenominationSnapshot = sortedDenoms.length > 0;
-  const paymentsSectionTitle = isOpeningReport ? "Pagos de la apertura" : "Pagos del turno";
-  const movementsSectionTitle = isOpeningReport ? "Movimientos de la apertura" : "Movimientos del turno";
   const reportTitle = isOpeningReport ? "Reporte por apertura de caja" : "Reporte consolidado del turno";
 
   return `<!doctype html>
@@ -596,51 +549,6 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
         `}
       </div>
     ` : ""}
-    </div>
-
-    <div class="page-break"></div>
-    <div class="page-detail">
-    <div class="section">
-      <h2>${escapeHtml(paymentsSectionTitle)}</h2>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Fecha</th><th>Orden</th><th>Mesa</th><th>Método</th><th>Estado</th><th>Cajero</th><th class="num">Monto</th></tr>
-        </thead>
-        <tbody>${paymentRows || '<tr><td colspan="7" class="muted">Sin pagos registrados.</td></tr>'}</tbody>
-      </table>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>${escapeHtml(movementsSectionTitle)}</h2>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Fecha</th><th>Tipo</th><th>Registrado por</th><th>Motivo</th><th class="num">Monto</th></tr>
-        </thead>
-        <tbody>${movementRows}</tbody>
-      </table>
-      </div>
-    </div>
-
-    ${!isOpeningReport ? `
-      <div class="section">
-        <h2>Historial de aperturas</h2>
-        <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Apertura</th><th>Estado</th><th>Cajero</th><th>Monto inicial</th><th>Cierre</th></tr>
-          </thead>
-          <tbody>${openingRows || '<tr><td colspan="5" class="muted">Sin aperturas registradas.</td></tr>'}</tbody>
-        </table>
-        </div>
-      </div>
-    ` : ""}
-
-    ${params.closureNotes?.trim()
-      ? `<div class="section"><h2>Notas de cierre</h2><div class="notes">${escapeHtml(params.closureNotes.trim())}</div></div>`
-      : ""}
     </div>
   </body>
 </html>`;
