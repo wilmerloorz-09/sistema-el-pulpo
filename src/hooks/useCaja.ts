@@ -314,7 +314,7 @@ export async function fetchShiftSnapshot(shiftId: string): Promise<CashShiftSnap
   if (shiftError) throw shiftError;
 
   const { data: denomsData, error: denomsError } = await supabase
-    .from("cash_shift_denominations")
+    .from("cash_shift_denoms")
     .select(`
       qty_initial,
       qty_current,
