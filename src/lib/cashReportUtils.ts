@@ -380,13 +380,15 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
     <style>
       html, body { margin: 0; padding: 0; background: #fff; color: #1f2937; }
       body {
-        font-family: Arial, sans-serif;
-        font-size: 11px;
-        line-height: 1.25;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 12px;
+        line-height: 1.4;
         padding: 12px;
         padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
       }
       h1, h2, h3, p { margin: 0; }
       .toolbar {
@@ -419,27 +421,53 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       .section { margin-top:10px; }
       .section h2 { font-size:12px; font-weight:700; margin-bottom:4px; }
       .table-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling: touch; }
-      table { width:100%; min-width: 0; border-collapse:collapse; margin-top:4px; font-size:10px; }
-      th, td { border:1px solid #e5e7eb; padding:3px 5px; text-align:left; vertical-align:top; }
-      th { background:#f3f4f6; font-size:9px; text-transform:uppercase; letter-spacing:0.02em; }
-      tbody tr:nth-child(odd) { background:#ffffff; }
-      tbody tr:nth-child(even) { background:#f8fafc; }
-      .num { text-align:right; white-space:nowrap; }
-      .muted { color:#6b7280; text-align:center; }
-      .notes { white-space:pre-wrap; margin-top:6px; padding:8px; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; font-size:10px; }
+      /* separate: evita bordes cortando el texto (collapse + WebView/html2canvas). */
+      table {
+        width:100%;
+        min-width: 0;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-top: 6px;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      th, td {
+        border: 1px solid #d1d5db;
+        border-top-width: 0;
+        border-left-width: 0;
+        padding: 8px 7px;
+        text-align: left;
+        vertical-align: middle;
+        line-height: 1.4;
+        box-sizing: border-box;
+        background-clip: padding-box;
+      }
+      th:first-child, td:first-child { border-left-width: 1px; }
+      thead tr:first-child th, tbody tr:first-child td { border-top-width: 1px; }
+      th {
+        background: #f3f4f6;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      tbody tr:nth-child(odd) td { background: #ffffff; }
+      tbody tr:nth-child(even) td { background: #f8fafc; }
+      .num { text-align: right; white-space: nowrap; }
+      .muted { color: #6b7280; text-align: center; }
+      .notes { white-space: pre-wrap; margin-top: 6px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; font-size: 10px; }
       .page-break { page-break-before: always; break-before: page; }
-      .page-detail table { font-size:9px; }
-      .page-detail th, .page-detail td { padding:2px 4px; }
-      .page-detail th { font-size:8px; }
-      .page-detail .section { margin-top:8px; }
-      .page-detail .section h2 { font-size:11px; }
+      .page-detail table { font-size: 10px; }
+      .page-detail th, .page-detail td { padding: 7px 6px; }
+      .page-detail th { font-size: 9px; }
+      .page-detail .section { margin-top: 8px; }
+      .page-detail .section h2 { font-size: 11px; }
       @media print {
-        body { margin: 8px; padding: 8px; font-size: 10px; }
+        body { margin: 8px; padding: 8px; font-size: 11px; }
         .toolbar { display: none !important; }
         .page-break { page-break-before: always; break-before: page; }
         .page-summary { page-break-after: avoid; }
-        .page-detail table { font-size: 8.5px; }
-        .page-detail th, .page-detail td { padding: 1.5px 3px; }
+        .page-detail table { font-size: 9.5px; }
+        .page-detail th, .page-detail td { padding: 6px 5px; }
       }
     </style>
     ${includeToolbar ? `

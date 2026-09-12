@@ -32,6 +32,7 @@ async function renderHtmlToElement(html: string): Promise<{
 }> {
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
+  // Fuera de pantalla pero “visible” al motor de pintura (sin opacity/visibility hidden).
   host.style.cssText = [
     "position:fixed",
     "left:-10000px",
@@ -39,7 +40,6 @@ async function renderHtmlToElement(html: string): Promise<{
     "width:794px",
     "background:#fff",
     "pointer-events:none",
-    "opacity:0",
     "z-index:-1",
   ].join(";");
 
@@ -91,11 +91,26 @@ async function buildPdfFromHtml(html: string): Promise<{ blob: Blob; bytes: Uint
     if (!source) throw new Error("No se pudo leer el reporte para PDF");
 
     const canvas = await html2canvas(source, {
-      scale: 1.5,
+      scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
       logging: false,
       windowWidth: 794,
+      scrollX: 0,
+      scrollY: 0,
+      onclone: (clonedDoc) => {
+        const style = clonedDoc.createElement("style");
+        style.textContent = `
+          table { border-collapse: separate !important; border-spacing: 0 !important; }
+          th, td {
+            padding: 8px 7px !important;
+            line-height: 1.4 !important;
+            vertical-align: middle !important;
+            background-clip: padding-box !important;
+          }
+        `;
+        clonedDoc.head?.appendChild(style);
+      },
     });
 
     const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", compress: true });
