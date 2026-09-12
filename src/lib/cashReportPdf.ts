@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 
 export type CashReportPdfResult =
-  | { ok: true; filename: string; mode: "download" | "share" }
+  | { ok: true; filename: string; mode: "download" | "share" | "open" }
   | { ok: false; message: string };
 
 function defaultFilename(): string {
@@ -174,6 +174,54 @@ async function sharePdfNative(bytes: Uint8Array, filename: string): Promise<bool
   return true;
 }
 
+function isShareAbort(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return /abort/i.test(name) || /cancel/i.test(message);
+}
+
+/** Menú del sistema (Guardar / Drive / Archivos). Más fiable que <a download> en móvil. */
+async function sharePdfWeb(blob: Blob, filename: string): Promise<boolean> {
+  if (typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
+
+  const file = new File([blob], filename, { type: "application/pdf" });
+  if (typeof navigator.canShare === "function") {
+    try {
+      if (!navigator.canShare({ files: [file] })) return false;
+    } catch {
+      return false;
+    }
+  } else {
+    return false;
+  }
+
+  try {
+    await navigator.share({
+      files: [file],
+      title: "Reporte de caja",
+      text: "Reporte de cierre de caja",
+    });
+    return true;
+  } catch (error: unknown) {
+    if (isShareAbort(error)) return true;
+    console.error("[cash-report-pdf-web-share]", error);
+    return false;
+  }
+}
+
+/** Abre el PDF en otra pestaña para que el usuario use Guardar / Compartir del visor. */
+function openPdfInTab(blob: Blob): boolean {
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    return false;
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return true;
+}
+
 function downloadPdfWeb(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -188,7 +236,7 @@ function downloadPdfWeb(blob: Blob, filename: string) {
   }, 1_000);
 }
 
-/** En móvil/tablet: genera PDF y lo guarda (descarga o menú Compartir/Guardar). */
+/** En móvil/tablet: genera PDF y lo guarda (Compartir → abrir → descarga). */
 export async function saveCashReportPdf(html: string): Promise<CashReportPdfResult> {
   try {
     const { blob, bytes, filename } = await buildPdfFromHtml(html);
@@ -199,11 +247,19 @@ export async function saveCashReportPdf(html: string): Promise<CashReportPdfResu
           return { ok: true, filename, mode: "share" };
         }
       } catch (error: unknown) {
-        if (error instanceof Error && /cancel/i.test(error.message)) {
+        if (isShareAbort(error)) {
           return { ok: true, filename, mode: "share" };
         }
         console.error("[cash-report-pdf-share]", error);
       }
+    }
+
+    if (await sharePdfWeb(blob, filename)) {
+      return { ok: true, filename, mode: "share" };
+    }
+
+    if (openPdfInTab(blob)) {
+      return { ok: true, filename, mode: "open" };
     }
 
     downloadPdfWeb(blob, filename);
