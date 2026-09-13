@@ -1,14 +1,16 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageUp, Package, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast as uiToast } from "@/hooks/use-toast";
 import { canManage } from "@/lib/permissions";
 import { generateUUID } from "@/lib/uuid";
 import type { TipoProducto } from "@/lib/inventarioProductos";
@@ -39,6 +41,8 @@ type ProductoGlobal = {
   codigo: string | null;
   activo: boolean;
 };
+
+type LinkedBranch = { id: string; name: string };
 
 const emptyGlobal = (): Omit<ProductoGlobal, "id"> & { id?: string } => ({
   nombre_principal: "",
@@ -98,6 +102,83 @@ const extractManagedImagePath = (imageUrl: string | null | undefined) => {
 const getPublicImageUrl = (path: string) =>
   supabase.storage.from(PRODUCTO_GLOBAL_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
 
+async function fetchLinkedBranchesForProducto(productoGlobalId: string): Promise<LinkedBranch[]> {
+  const { data: links, error: linkError } = await supabase
+    .from("producto_sucursal" as any)
+    .select("sucursal_id")
+    .eq("producto_global_id", productoGlobalId);
+  if (linkError) throw linkError;
+
+  const fromLinks = [
+    ...new Set((links ?? []).map((row: { sucursal_id: string }) => row.sucursal_id).filter(Boolean)),
+  ];
+
+  const { data: menuRows, error: menuError } = await supabase
+    .from("menu_nodes" as any)
+    .select("branch_id")
+    .eq("producto_global_id", productoGlobalId)
+    .eq("node_type", "product");
+  if (menuError) throw menuError;
+
+  const fromMenu = [
+    ...new Set((menuRows ?? []).map((row: { branch_id: string }) => row.branch_id).filter(Boolean)),
+  ];
+  const branchIds = [...new Set([...fromLinks, ...fromMenu])];
+  if (branchIds.length === 0) return [];
+
+  const { data: branches, error: branchError } = await supabase
+    .from("branches")
+    .select("id, name")
+    .in("id", branchIds)
+    .order("name");
+  if (branchError) throw branchError;
+
+  return (branches ?? []).map((row) => ({ id: row.id, name: row.name }));
+}
+
+async function propagateProductoGlobalToBranches(params: {
+  productoGlobalId: string;
+  branchIds: string[];
+  nombre: string;
+  nombreQr: string | null;
+  precio: number;
+  descripcion: string | null;
+  imagenUrl: string;
+  activo: boolean;
+}) {
+  const { productoGlobalId, branchIds, nombre, nombreQr, precio, descripcion, imagenUrl, activo } = params;
+  if (branchIds.length === 0) return { menuUpdated: 0, linksUpdated: 0 };
+
+  const { data: updatedNodes, error: menuError } = await supabase
+    .from("menu_nodes" as any)
+    .update({
+      name: nombre,
+      qr_name: nombreQr,
+      price: precio,
+      description: descripcion,
+      image_url: imagenUrl || null,
+      is_active: activo,
+    } as any)
+    .eq("producto_global_id", productoGlobalId)
+    .eq("node_type", "product")
+    .in("branch_id", branchIds)
+    .select("id");
+  if (menuError) throw menuError;
+
+  const { data: updatedLinks, error: linkError } = await supabase
+    .from("producto_sucursal" as any)
+    .update({ activo } as any)
+    .eq("producto_global_id", productoGlobalId)
+    .in("sucursal_id", branchIds)
+    .select("id");
+  if (linkError) throw linkError;
+
+  return {
+    menuUpdated: updatedNodes?.length ?? 0,
+    linksUpdated: updatedLinks?.length ?? 0,
+  };
+}
+
 const ProductosGlobalesAdmin = () => {
   const qc = useQueryClient();
   const { activeBranch, isGlobalAdmin, permissions } = useBranch();
@@ -109,6 +190,7 @@ const ProductosGlobalesAdmin = () => {
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [propagateBranchIds, setPropagateBranchIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!selectedImageFile) {
@@ -138,6 +220,30 @@ const ProductosGlobalesAdmin = () => {
     },
   });
 
+  const {
+    data: linkedBranches = [],
+    isLoading: linkedBranchesLoading,
+    isFetching: linkedBranchesFetching,
+  } = useQuery({
+    queryKey: ["producto-global-linked-branches", editingId],
+    enabled: Boolean(editingId),
+    queryFn: async () => fetchLinkedBranchesForProducto(editingId!),
+  });
+
+  const allLinkedSelected =
+    linkedBranches.length > 0 && linkedBranches.every((branch) => propagateBranchIds.includes(branch.id));
+
+  const propagateSummary = useMemo(() => {
+    if (!editingId) return "";
+    if (propagateBranchIds.length === 0) {
+      return "Sin sucursales seleccionadas: solo se actualiza el catálogo global.";
+    }
+    if (allLinkedSelected) {
+      return `Se actualizará en todas las sucursales donde ya está colgado (${linkedBranches.length}).`;
+    }
+    return `Se actualizará en ${propagateBranchIds.length} sucursal(es) seleccionada(s).`;
+  }, [editingId, propagateBranchIds.length, allLinkedSelected, linkedBranches.length]);
+
   const resetImageState = () => {
     setSelectedImageFile(null);
     setRemoveImage(false);
@@ -147,7 +253,19 @@ const ProductosGlobalesAdmin = () => {
   const resetForm = () => {
     setEditingId(null);
     setForm(emptyGlobal());
+    setPropagateBranchIds([]);
     resetImageState();
+  };
+
+  const togglePropagateBranch = (branchId: string, checked: boolean) => {
+    setPropagateBranchIds((prev) => {
+      if (checked) return prev.includes(branchId) ? prev : [...prev, branchId];
+      return prev.filter((id) => id !== branchId);
+    });
+  };
+
+  const togglePropagateAll = (checked: boolean) => {
+    setPropagateBranchIds(checked ? linkedBranches.map((branch) => branch.id) : []);
   };
 
   const saveGlobalMutation = useMutation({
@@ -172,6 +290,9 @@ const ProductosGlobalesAdmin = () => {
       const previousManagedPath = extractManagedImagePath(previousImageUrl);
       let uploadedImagePath: string | null = null;
       let imageUrlToPersist = removeImage ? "" : previousImageUrl;
+      const nombreQr = form.nombre_qr_default?.trim() || null;
+      const descripcion = form.descripcion_default?.trim() || null;
+      const activo = Boolean(form.activo);
 
       if (!editingId && !selectedImageFile) {
         throw new Error("La imagen del producto es obligatoria");
@@ -179,6 +300,11 @@ const ProductosGlobalesAdmin = () => {
       if (editingId && removeImage && !selectedImageFile) {
         throw new Error("La imagen del producto es obligatoria");
       }
+
+      const allowedPropagateIds = new Set(linkedBranches.map((branch) => branch.id));
+      const branchIdsToPropagate = editingId
+        ? propagateBranchIds.filter((branchId) => allowedPropagateIds.has(branchId))
+        : [];
 
       try {
         if (selectedImageFile) {
@@ -202,18 +328,32 @@ const ProductosGlobalesAdmin = () => {
         const { error } = await supabase.from("productos_globales" as any).upsert({
           id,
           nombre_principal: nombre,
-          nombre_qr_default: form.nombre_qr_default?.trim() || null,
+          nombre_qr_default: nombreQr,
           precio_default: precio,
           price_mode: form.price_mode,
-          descripcion_default: form.descripcion_default?.trim() || null,
+          descripcion_default: descripcion,
           imagen_default_url: imageUrlToPersist,
           categoria: form.categoria,
           tipo_producto: form.tipo_producto,
           force_servir_default: Boolean(form.force_servir_default),
           codigo: form.codigo?.trim() || null,
-          activo: Boolean(form.activo),
+          activo,
         });
         if (error) throw error;
+
+        let propagateResult = { menuUpdated: 0, linksUpdated: 0 };
+        if (editingId && branchIdsToPropagate.length > 0) {
+          propagateResult = await propagateProductoGlobalToBranches({
+            productoGlobalId: id,
+            branchIds: branchIdsToPropagate,
+            nombre,
+            nombreQr,
+            precio,
+            descripcion,
+            imagenUrl: imageUrlToPersist,
+            activo,
+          });
+        }
 
         if (previousManagedPath && (removeImage || uploadedImagePath) && previousManagedPath !== uploadedImagePath) {
           const { error: removeStorageError } = await supabase.storage
@@ -223,6 +363,11 @@ const ProductosGlobalesAdmin = () => {
             console.warn("No se pudo eliminar la imagen anterior del producto global", removeStorageError);
           }
         }
+
+        return {
+          propagatedBranches: branchIdsToPropagate.length,
+          menuUpdated: propagateResult.menuUpdated,
+        };
       } catch (error) {
         if (uploadedImagePath) {
           await supabase.storage.from(PRODUCTO_GLOBAL_IMAGE_BUCKET).remove([uploadedImagePath]);
@@ -230,11 +375,23 @@ const ProductosGlobalesAdmin = () => {
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       void qc.invalidateQueries({ queryKey: ["productos-globales"] });
       void qc.invalidateQueries({ queryKey: ["productos-globales-menu"] });
+      void qc.invalidateQueries({ queryKey: ["menu-nodes"] });
+      void qc.invalidateQueries({ queryKey: ["producto-global-linked-branches"] });
       resetForm();
-      toast.success("Producto global guardado");
+      if (result?.propagatedBranches) {
+        uiToast({
+          title: `Producto actualizado en ${result.propagatedBranches} sucursal(es)`,
+          description: result.menuUpdated
+            ? `${result.menuUpdated} nodo(s) de menú sincronizado(s).`
+            : "Catálogo global guardado; revisá el menú de esas sucursales.",
+          duration: 6000,
+        });
+      } else {
+        uiToast({ title: "Producto global guardado", duration: 4000 });
+      }
     },
     onError: (e: Error & { code?: string; details?: string }) => {
       const msg = e.message || "No se pudo guardar";
@@ -293,6 +450,7 @@ const ProductosGlobalesAdmin = () => {
 
   const startEdit = (row: ProductoGlobal) => {
     setEditingId(row.id);
+    setPropagateBranchIds([]);
     setForm({
       ...row,
       categoria: row.categoria || "PLATOS",
@@ -336,12 +494,7 @@ const ProductosGlobalesAdmin = () => {
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-sm font-semibold">{editingId ? "Editar producto" : "Nuevo producto global"}</h4>
             {editingId ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={resetForm}
-              >
+              <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
                 Cancelar
               </Button>
             ) : null}
@@ -461,7 +614,8 @@ const ProductosGlobalesAdmin = () => {
               </div>
               <div className="grid gap-3 pt-2 sm:grid-cols-[1fr_9rem]">
                 <div className="rounded-2xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-                  Obligatoria. Se usa como imagen por defecto al colgar el producto en el menú. JPG, PNG, WEBP o GIF hasta 2 MB.
+                  Obligatoria. Se usa como imagen por defecto al colgar el producto en el menú. JPG, PNG, WEBP o GIF
+                  hasta 2 MB.
                   {hasCurrentImage ? (
                     <div className="mt-2 text-foreground">Este producto ya tiene una imagen guardada.</div>
                   ) : null}
@@ -496,6 +650,54 @@ const ProductosGlobalesAdmin = () => {
               <Label>Activo</Label>
             </div>
           </div>
+
+          {editingId ? (
+            <div className="space-y-2 rounded-2xl border border-border bg-muted/20 p-3">
+              <div className="space-y-1">
+                <Label className="text-sm font-semibold">Actualizar en sucursales</Label>
+                <p className="text-xs text-muted-foreground">
+                  Elegí dónde aplicar estos datos en el menú (nombre, precio, imagen, descripción, activo, etc.). Solo
+                  aparecen sucursales donde el producto ya está colgado.
+                </p>
+              </div>
+              {linkedBranchesLoading || linkedBranchesFetching ? (
+                <p className="text-xs text-muted-foreground">Cargando sucursales…</p>
+              ) : linkedBranches.length === 0 ? (
+                <p className="text-xs font-medium text-amber-700">
+                  Este producto aún no está colgado en ninguna sucursal. Solo se guardará en el catálogo global.
+                </p>
+              ) : (
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1.5 hover:bg-muted/50">
+                    <Checkbox
+                      checked={allLinkedSelected}
+                      onCheckedChange={(value) => togglePropagateAll(value === true)}
+                    />
+                    <span className="text-sm font-medium">Todas</span>
+                  </label>
+                  <div className="max-h-40 space-y-1 overflow-auto rounded-xl border border-border bg-background p-2">
+                    {linkedBranches.map((branch) => {
+                      const checked = propagateBranchIds.includes(branch.id);
+                      return (
+                        <label
+                          key={branch.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/40"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) => togglePropagateBranch(branch.id, value === true)}
+                          />
+                          <span className="text-sm">{branch.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{propagateSummary}</p>
+                </>
+              )}
+            </div>
+          ) : null}
+
           {!hasImageForSave && !editingId ? (
             <p className="text-xs font-medium text-amber-700">Falta seleccionar la imagen (obligatoria para crear).</p>
           ) : null}
