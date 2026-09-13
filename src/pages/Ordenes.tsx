@@ -4964,8 +4964,7 @@ const OrdenesContent = () => {
           setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
           setProductLoadingShell(null);
-          // En móvil, mostrar la orden de inmediato para que el ítem optimista sea visible.
-          setShowCart(true);
+          // En móvil permanecer en el menú de productos (no saltar al panel de la orden).
 
           void (async () => {
             try {
