@@ -31,6 +31,8 @@ interface Props {
   value: ShiftCajaSetupState;
   onChange: (next: ShiftCajaSetupState) => void;
   disabled?: boolean;
+  /** Cajeros/auxiliar cuya caja abierta ya tuvo cobros: plantilla bloqueada. */
+  templateLockedUserIds?: ReadonlySet<string>;
   replaceEligibleUserIds?: ReadonlySet<string>;
   onReplaceCashier?: (userId: string) => void;
 }
@@ -50,6 +52,7 @@ export default function ShiftCajaSetupSection({
   value,
   onChange,
   disabled = false,
+  templateLockedUserIds,
   replaceEligibleUserIds,
   onReplaceCashier,
 }: Props) {
@@ -124,7 +127,7 @@ export default function ShiftCajaSetupSection({
         <div>
           <h4 className="text-sm font-black text-foreground sm:text-base">Cajeros del turno</h4>
           <p className="text-xs text-muted-foreground">
-            Agrega cada cajero con su plantilla. Marca uno como principal (opcional). Arqueo al abrir turno.
+            Agrega cada cajero con su plantilla. Marca uno como principal (opcional). Tras el primer cobro la plantilla queda fija.
           </p>
         </div>
       </div>
@@ -146,6 +149,8 @@ export default function ShiftCajaSetupSection({
           {value.cashiers.map((row) => {
             const userOptions = availableForNewRow(row.user_id);
             const userSelectValue = resolveSelectUserId(row.user_id, userOptions);
+            const templateLocked =
+              Boolean(row.user_id) && Boolean(templateLockedUserIds?.has(row.user_id));
 
             return (
               <div
@@ -156,7 +161,7 @@ export default function ShiftCajaSetupSection({
                   <Select
                     value={userSelectValue}
                     onValueChange={(id) => updateCashier(row.id, { user_id: id })}
-                    disabled={disabled || enabledUsers.length === 0}
+                    disabled={disabled || enabledUsers.length === 0 || templateLocked}
                   >
                     <SelectTrigger className="h-10 w-full rounded-xl">
                       <SelectValue placeholder="Cajero..." />
@@ -171,11 +176,11 @@ export default function ShiftCajaSetupSection({
                   </Select>
                 </div>
 
-                <div className="min-w-[180px] flex-1">
+                <div className="min-w-[180px] flex-1 space-y-1">
                   <Select
                     value={row.template_id || undefined}
                     onValueChange={(templateId) => updateCashier(row.id, { template_id: templateId })}
-                    disabled={disabled || templates.length === 0}
+                    disabled={disabled || templates.length === 0 || templateLocked}
                   >
                     <SelectTrigger className="h-10 w-full rounded-xl">
                       <SelectValue placeholder={templates.length === 0 ? "Sin plantillas..." : "Plantilla..."} />
@@ -188,6 +193,11 @@ export default function ShiftCajaSetupSection({
                       ))}
                     </SelectContent>
                   </Select>
+                  {templateLocked ? (
+                    <p className="text-[11px] leading-tight text-amber-800">
+                      Plantilla fija: ya hubo cobros en esta caja.
+                    </p>
+                  ) : null}
                 </div>
 
                 <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
@@ -281,29 +291,44 @@ export default function ShiftCajaSetupSection({
             </SelectContent>
           </Select>
 
-          <Select
-            value={value.auxiliary?.template_id || undefined}
-            onValueChange={(templateId) =>
-              onChange({
-                cashiers: value.cashiers,
-                auxiliary: value.auxiliary
-                  ? { ...value.auxiliary, template_id: templateId }
-                  : { user_id: "", template_id: templateId },
-              })
-            }
-            disabled={disabled || templates.length === 0}
-          >
-            <SelectTrigger className="h-10 w-full rounded-xl bg-white">
-              <SelectValue placeholder={templates.length === 0 ? "Sin plantillas..." : "Plantilla de apertura..."} />
-            </SelectTrigger>
-            <SelectContent>
-              {templates.map((template) => (
-                <SelectItem key={template.id} value={template.id}>
-                  {template.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-1">
+            <Select
+              value={value.auxiliary?.template_id || undefined}
+              onValueChange={(templateId) =>
+                onChange({
+                  cashiers: value.cashiers,
+                  auxiliary: value.auxiliary
+                    ? { ...value.auxiliary, template_id: templateId }
+                    : { user_id: "", template_id: templateId },
+                })
+              }
+              disabled={
+                disabled
+                || templates.length === 0
+                || Boolean(
+                  value.auxiliary?.user_id
+                  && templateLockedUserIds?.has(value.auxiliary.user_id),
+                )
+              }
+            >
+              <SelectTrigger className="h-10 w-full rounded-xl bg-white">
+                <SelectValue placeholder={templates.length === 0 ? "Sin plantillas..." : "Plantilla de apertura..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {value.auxiliary?.user_id
+            && templateLockedUserIds?.has(value.auxiliary.user_id) ? (
+              <p className="text-[11px] leading-tight text-amber-800">
+                Plantilla fija: la caja auxiliar ya tuvo movimientos.
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

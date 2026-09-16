@@ -360,6 +360,18 @@ function showShiftSetupError(
   const rawMessage = String(error?.message ?? "").trim();
 
   if (
+    rawMessage.startsWith("No se puede cambiar la plantilla porque la caja")
+  ) {
+    setWarningDialog({
+      open: true,
+      title: "Plantilla bloqueada",
+      description:
+        "Esta caja ya tuvo cobros o movimientos. La plantilla queda fija con el desglose de la apertura actual.",
+    });
+    return;
+  }
+
+  if (
     rawMessage.startsWith("No puedes reducir a") &&
     rawMessage.includes("mesas sigan ocupadas:")
   ) {
@@ -1052,6 +1064,15 @@ const ShiftSetupAdmin = () => {
     }
     return ids;
   }, [cashierReplaceEligibilityQuery.data]);
+  const templateLockedUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of cashierReplaceEligibilityQuery.data ?? []) {
+      if (row.has_activity && row.cashier_id) {
+        ids.add(row.cashier_id);
+      }
+    }
+    return ids;
+  }, [cashierReplaceEligibilityQuery.data]);
   const cashierReplaceIncomingOptions = useMemo(
     () =>
       shiftUsersState.filter(
@@ -1182,7 +1203,35 @@ const ShiftSetupAdmin = () => {
 
   const handleShiftCajaSetupChange = (next: ShiftCajaSetupState) => {
     markShiftSetupDirty();
-    setShiftCajaSetup(next);
+    if (templateLockedUserIds.size === 0) {
+      setShiftCajaSetup(next);
+      return;
+    }
+
+    const lockedTemplateByUser = new Map(
+      persistedCajaSetup.cashiers
+        .filter((row) => row.user_id && templateLockedUserIds.has(row.user_id))
+        .map((row) => [row.user_id, row.template_id]),
+    );
+    const lockedAuxiliaryTemplate =
+      persistedCajaSetup.auxiliary?.user_id
+      && templateLockedUserIds.has(persistedCajaSetup.auxiliary.user_id)
+        ? persistedCajaSetup.auxiliary.template_id
+        : undefined;
+
+    setShiftCajaSetup({
+      cashiers: next.cashiers.map((row) => {
+        const lockedTemplate = row.user_id
+          ? lockedTemplateByUser.get(row.user_id)
+          : undefined;
+        if (!lockedTemplate) return row;
+        return { ...row, template_id: lockedTemplate };
+      }),
+      auxiliary:
+        next.auxiliary && lockedAuxiliaryTemplate
+          ? { ...next.auxiliary, template_id: lockedAuxiliaryTemplate }
+          : next.auxiliary,
+    });
   };
 
   useEffect(() => {
@@ -3164,6 +3213,7 @@ const ShiftSetupAdmin = () => {
             saveShiftMutation.isPending ||
             replaceCashierMutation.isPending
           }
+          templateLockedUserIds={templateLockedUserIds}
           replaceEligibleUserIds={
             hasCajaConfigChange ? undefined : replaceEligibleUserIds
           }
