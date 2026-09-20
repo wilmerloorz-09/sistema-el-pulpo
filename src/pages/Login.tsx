@@ -131,10 +131,7 @@ const Login = () => {
     setLoading(true);
     setError(null);
     try {
-      if (!branchId) {
-        throw new Error("Debes seleccionar la sucursal a la que vas a ingresar.");
-      }
-      await signIn(identifier, password, branchId);
+      await signIn(identifier, password, branchId || null);
     } catch (err: any) {
       const msg = getLoginErrorMessage(err.message || "Error al iniciar sesion");
       setError(msg);
@@ -211,7 +208,7 @@ const Login = () => {
                       ? "Cargando sucursales..."
                       : branchesError
                         ? "No se pudieron cargar"
-                        : "Selecciona una sucursal"
+                        : "Tu sucursal habilitada (opcional)"
                   }
                 />
               </SelectTrigger>
@@ -230,7 +227,7 @@ const Login = () => {
 
           <Button
             type="submit"
-            disabled={loading || branchesLoading || !branchId}
+            disabled={loading}
             className="h-12 w-full gap-2 font-display text-base font-semibold"
           >
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (

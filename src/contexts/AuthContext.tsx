@@ -37,7 +37,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  signIn: (identifier: string, password: string, branchId: string) => Promise<void>;
+  signIn: (identifier: string, password: string, branchId?: string | null) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -529,12 +529,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [clearSessionTracking, expireSession, state.user?.id, touchSessionActivity]);
 
-  const signIn = useCallback(async (identifier: string, password: string, branchId: string) => {
+  const signIn = useCallback(async (identifier: string, password: string, branchId?: string | null) => {
     const normalized = identifier.trim();
-    const selectedBranchId = branchId.trim();
-    if (!selectedBranchId) {
-      throw new Error("Debes seleccionar la sucursal a la que vas a ingresar.");
-    }
+    const selectedBranchId = String(branchId ?? "").trim();
     claimingSessionRef.current = true;
 
     try {
@@ -550,7 +547,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: {
           identifier: normalized,
           password,
-          branch_id: selectedBranchId,
+          ...(selectedBranchId ? { branch_id: selectedBranchId } : {}),
         },
         headers: {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
@@ -581,25 +578,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userId = sessionData.session?.user?.id;
       if (userId) {
-        const { error: branchError } = await supabase.rpc("set_my_active_branch" as any, {
-          p_branch_id: selectedBranchId,
-        } as any);
+        let resolvedBranchId = selectedBranchId;
 
-        if (branchError) {
-          try {
-            await supabase.auth.signOut({ scope: "local" });
-          } catch (error) {
-            logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+        if (resolvedBranchId) {
+          const { error: branchError } = await supabase.rpc("set_my_active_branch" as any, {
+            p_branch_id: resolvedBranchId,
+          } as any);
+
+          if (branchError) {
+            try {
+              await supabase.auth.signOut({ scope: "local" });
+            } catch (error) {
+              logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+            }
+            const branchMessage = String(branchError.message ?? "");
+            if (branchMessage.toLowerCase().includes("no disponible")) {
+              throw new Error("No tienes acceso a la sucursal seleccionada.");
+            }
+            throw new Error(branchMessage || "No se pudo asignar la sucursal seleccionada.");
           }
-          const branchMessage = String(branchError.message ?? "");
-          if (branchMessage.toLowerCase().includes("no disponible")) {
-            throw new Error("No tienes acceso a la sucursal seleccionada.");
+        } else {
+          // Sin seleccion: usar la sucursal habilitada / activa del usuario.
+          const { data: accessData, error: accessError } = await supabase.rpc(
+            "get_my_access_context" as any,
+          );
+          if (accessError) {
+            try {
+              await supabase.auth.signOut({ scope: "local" });
+            } catch (error) {
+              logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+            }
+            throw new Error(accessError.message || "No se pudo resolver la sucursal del usuario.");
           }
-          throw new Error(branchMessage || "No se pudo asignar la sucursal seleccionada.");
+
+          const access = accessData as {
+            active_branch_id?: string | null;
+            branches?: Array<{ id?: string | null }>;
+          } | null;
+          resolvedBranchId = String(
+            access?.active_branch_id
+            ?? access?.branches?.find((branch) => branch?.id)?.id
+            ?? "",
+          ).trim();
+
+          if (!resolvedBranchId) {
+            try {
+              await supabase.auth.signOut({ scope: "local" });
+            } catch (error) {
+              logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+            }
+            throw new Error("No tienes una sucursal habilitada para ingresar.");
+          }
         }
 
-        localStorage.setItem("activeBranchId", selectedBranchId);
-        localStorage.setItem("loginBranchId", selectedBranchId);
+        localStorage.setItem("activeBranchId", resolvedBranchId);
+        if (selectedBranchId) {
+          localStorage.setItem("loginBranchId", selectedBranchId);
+        }
 
         touchSessionActivity(userId);
         try {
