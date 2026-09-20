@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Banknote, Coins, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Banknote, Coins, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,7 +31,7 @@ interface Props {
   value: ShiftCajaSetupState;
   onChange: (next: ShiftCajaSetupState) => void;
   disabled?: boolean;
-  /** Cajeros/auxiliar cuya caja abierta ya tuvo cobros: plantilla bloqueada. */
+  /** Cajeros cuya caja abierta ya tuvo cobros: plantilla bloqueada. */
   templateLockedUserIds?: ReadonlySet<string>;
   replaceEligibleUserIds?: ReadonlySet<string>;
   onReplaceCashier?: (userId: string) => void;
@@ -258,77 +258,50 @@ export default function ShiftCajaSetupSection({
             <Coins className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-sm font-black text-sky-950">Caja auxiliar de cambio (opcional)</p>
+            <p className="text-sm font-black text-sky-950">Responsable de cambios (opcional)</p>
             <p className="text-xs text-sky-800/80">
-              Si la configuras, se abre automáticamente. Su responsable no podrá cobrar ni estar asignado como cajero.
+              La caja auxiliar es permanente en la sucursal. Aqui solo designas quien puede registrar cambios de monedas/billetes en este turno.
             </p>
           </div>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-2">
-          <Select
-            value={value.auxiliary?.user_id || undefined}
-            onValueChange={(userId) =>
-              onChange({
-                cashiers: value.cashiers,
-                auxiliary: {
-                  user_id: userId,
-                  template_id: value.auxiliary?.template_id ?? defaultTemplateId,
-                },
-              })
-            }
-            disabled={disabled || auxiliaryUserOptions.length === 0}
-          >
-            <SelectTrigger className="h-10 w-full rounded-xl bg-white">
-              <SelectValue placeholder="Responsable de caja auxiliar..." />
-            </SelectTrigger>
-            <SelectContent>
-              {auxiliaryUserOptions.map((user) => (
-                <SelectItem key={user.user_id} value={user.user_id}>
-                  {getUserAlias(user)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-[220px] flex-1">
             <Select
-              value={value.auxiliary?.template_id || undefined}
-              onValueChange={(templateId) =>
+              value={value.auxiliary?.user_id || undefined}
+              onValueChange={(userId) =>
                 onChange({
                   cashiers: value.cashiers,
-                  auxiliary: value.auxiliary
-                    ? { ...value.auxiliary, template_id: templateId }
-                    : { user_id: "", template_id: templateId },
+                  auxiliary: { user_id: userId },
                 })
               }
-              disabled={
-                disabled
-                || templates.length === 0
-                || Boolean(
-                  value.auxiliary?.user_id
-                  && templateLockedUserIds?.has(value.auxiliary.user_id),
-                )
-              }
+              disabled={disabled || auxiliaryUserOptions.length === 0}
             >
               <SelectTrigger className="h-10 w-full rounded-xl bg-white">
-                <SelectValue placeholder={templates.length === 0 ? "Sin plantillas..." : "Plantilla de apertura..."} />
+                <SelectValue placeholder="Responsable de cambios..." />
               </SelectTrigger>
               <SelectContent>
-                {templates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name}
+                {auxiliaryUserOptions.map((user) => (
+                  <SelectItem key={user.user_id} value={user.user_id}>
+                    {getUserAlias(user)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {value.auxiliary?.user_id
-            && templateLockedUserIds?.has(value.auxiliary.user_id) ? (
-              <p className="text-[11px] leading-tight text-amber-800">
-                Plantilla fija: la caja auxiliar ya tuvo movimientos.
-              </p>
-            ) : null}
           </div>
+          {value.auxiliary?.user_id ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              className="h-10 gap-1.5 rounded-xl"
+              onClick={() => onChange({ cashiers: value.cashiers, auxiliary: null })}
+            >
+              <X className="h-4 w-4" />
+              Quitar
+            </Button>
+          ) : null}
         </div>
       </div>
     </section>

@@ -2938,7 +2938,8 @@ export function useCaja(params?: {
         select: "id, name, is_active, cash_register_template_denoms(denomination_id, qty)",
         branchId: activeBranchId,
         filters: [
-          { column: "is_active", op: "eq", value: true }
+          { column: "is_active", op: "eq", value: true },
+          { column: "is_auxiliary", op: "eq", value: false },
         ],
         orderBy: { column: "name", ascending: true }
       });

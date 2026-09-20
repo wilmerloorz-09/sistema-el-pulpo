@@ -21,6 +21,7 @@ import {
   QrCode,
   UserCog,
   Package,
+  Wallet,
 } from "lucide-react";
 import BancosCrud from "@/components/admin/BancosCrud";
 import CuentasBancariasDestinoAdmin from "@/components/admin/CuentasBancariasDestinoAdmin";
@@ -28,6 +29,7 @@ import FeriadosAdmin from "@/components/admin/FeriadosAdmin";
 import ModifiersCrud from "@/components/admin/ModifiersCrud";
 import DenominationsCrud from "@/components/admin/DenominationsCrud";
 import CashRegisterTemplatesCrud from "@/components/admin/CashRegisterTemplatesCrud";
+import AuxiliaryCashTemplateCrud from "@/components/admin/AuxiliaryCashTemplateCrud";
 import UsersCrud from "@/components/admin/UsersCrud";
 import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
@@ -224,6 +226,13 @@ const TABS: AdminTab[] = [
     visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
   },
   {
+    value: "auxiliary-cash-template",
+    label: "Caja auxiliar",
+    icon: <Wallet className="h-4 w-4" />,
+    component: AuxiliaryCashTemplateCrud,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global"),
+  },
+  {
     value: "bancos",
     label: "Bancos de origen",
     icon: <Landmark className="h-4 w-4" />,
@@ -271,7 +280,7 @@ const ADMIN_CATEGORIES: AdminCategoryDef[] = [
     id: "cash-payments",
     label: "Caja y pagos",
     icon: <Coins className="h-4 w-4" />,
-    tabValues: ["denominations", "cash-register-templates", "bancos", "cuentas-bancarias"],
+    tabValues: ["denominations", "cash-register-templates", "auxiliary-cash-template", "bancos", "cuentas-bancarias"],
   },
   {
     id: "calendar",

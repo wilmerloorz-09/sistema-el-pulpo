@@ -37,7 +37,7 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  signIn: (identifier: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string, branchId: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -529,8 +529,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [clearSessionTracking, expireSession, state.user?.id, touchSessionActivity]);
 
-  const signIn = useCallback(async (identifier: string, password: string) => {
+  const signIn = useCallback(async (identifier: string, password: string, branchId: string) => {
     const normalized = identifier.trim();
+    const selectedBranchId = branchId.trim();
+    if (!selectedBranchId) {
+      throw new Error("Debes seleccionar la sucursal a la que vas a ingresar.");
+    }
     claimingSessionRef.current = true;
 
     try {
@@ -546,6 +550,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: {
           identifier: normalized,
           password,
+          branch_id: selectedBranchId,
         },
         headers: {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
@@ -576,6 +581,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userId = sessionData.session?.user?.id;
       if (userId) {
+        const { error: branchError } = await supabase.rpc("set_my_active_branch" as any, {
+          p_branch_id: selectedBranchId,
+        } as any);
+
+        if (branchError) {
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch (error) {
+            logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+          }
+          const branchMessage = String(branchError.message ?? "");
+          if (branchMessage.toLowerCase().includes("no disponible")) {
+            throw new Error("No tienes acceso a la sucursal seleccionada.");
+          }
+          throw new Error(branchMessage || "No se pudo asignar la sucursal seleccionada.");
+        }
+
+        localStorage.setItem("activeBranchId", selectedBranchId);
+        localStorage.setItem("loginBranchId", selectedBranchId);
+
         touchSessionActivity(userId);
         try {
           const ownedSession = readOwnedSingleSession();

@@ -414,7 +414,8 @@ export function useVisibleNavItems() {
     const puedeGestionarCampanas = isGlobalAdmin || canManage(permissions, "admin_global");
     const puedeRegistrarPromociones = Boolean(sg?.puedeRegistrarPromociones);
     const hasOperationalShift = Boolean(sg?.shiftOpen) && Boolean(sg?.userEnabled);
-    const hasSupervisorBypass = Boolean(sg?.isSupervisor);
+    // Admin de sucursal/global: mismas opciones operativas que un supervisor de turno.
+    const hasSupervisorBypass = Boolean(sg?.isSupervisor) || canAccessAdmin;
     const visibleItems = navItemsResolved.filter((item) => {
       if (
         !SHOW_PROMOCIONES_NAV
@@ -423,12 +424,14 @@ export function useVisibleNavItems() {
         return false;
       }
 
-      if (item.group === "FINANZAS" && isAuxiliaryCashier) {
-        return item.to === "/cambio-monedas";
-      }
-
+      // Auxiliar puro (no admin): en Finanzas solo ve Cambio.
+      // Admin asignado como auxiliar: menú completo + Cambio.
       if (item.to === "/cambio-monedas") {
         return isAuxiliaryCashier;
+      }
+
+      if (isAuxiliaryCashier && !canAccessAdmin && item.group === "FINANZAS") {
+        return false;
       }
 
       if (isGlobalAdminWithoutBranches) {
@@ -522,7 +525,7 @@ export function useVisibleNavItems() {
       }
 
       if (isCajaFinanceNavPath(item.to)) {
-        return canSeeCajaFinanceNav(sg);
+        return canSeeCajaFinanceNav(sg) || canAccessAdmin;
       }
 
       if (item.to === "/servir") {

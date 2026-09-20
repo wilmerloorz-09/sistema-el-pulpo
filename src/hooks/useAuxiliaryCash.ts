@@ -108,6 +108,14 @@ export function useAuxiliaryCash() {
     queryKey: contextKey(activeBranchId),
     queryFn: async (): Promise<AuxiliaryCashContext> => {
       if (!activeBranchId) throw new Error("No hay sucursal activa");
+
+      // Asegura inventario permanente en una RPC de escritura (separada de la de lectura).
+      const { error: ensureError } = await supabase.rpc(
+        "ensure_branch_auxiliary_cash" as any,
+        { p_branch_id: activeBranchId } as any,
+      );
+      if (ensureError) throw ensureError;
+
       const { data, error } = await supabase.rpc(
         "get_auxiliary_cash_context" as any,
         { p_branch_id: activeBranchId } as any,
@@ -192,30 +200,10 @@ export function useAuxiliaryCash() {
     onSuccess: invalidate,
   });
 
-  const closeAuxiliaryCash = useMutation({
-    mutationFn: async (notes?: string) => {
-      const context = contextQuery.data;
-      if (!context?.shift_id || !context.branch_id) {
-        throw new Error("No se pudo resolver el turno de la caja auxiliar");
-      }
-      const { error } = await supabase.rpc(
-        "close_auxiliary_cash_register" as any,
-        {
-          p_shift_id: context.shift_id,
-          p_branch_id: context.branch_id,
-          p_notes: notes ?? null,
-        } as any,
-      );
-      if (error) throw error;
-    },
-    onSuccess: invalidate,
-  });
-
   return {
     assignmentQuery,
     contextQuery,
     registerExchange,
     voidExchange,
-    closeAuxiliaryCash,
   };
 }

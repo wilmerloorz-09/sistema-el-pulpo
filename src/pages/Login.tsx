@@ -1,9 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { motion } from "framer-motion";
 import { AlertCircle, Loader2, LogIn } from "lucide-react";
 import {
@@ -16,7 +23,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
-// Removed WebAuthn imports
+
+type LoginBranch = {
+  id: string;
+  name: string;
+};
+
+const LOGIN_BRANCH_STORAGE_KEY = "loginBranchId";
 
 const getLoginErrorMessage = (rawMessage?: string) => {
   const message = rawMessage?.trim() || "No se pudo iniciar sesion.";
@@ -46,6 +59,10 @@ const getLoginErrorMessage = (rawMessage?: string) => {
     return "No se puede ingresar porque falta el correo/usuario/alias o la contrasena.";
   }
 
+  if (normalized.includes("sucursal")) {
+    return message;
+  }
+
   return message;
 };
 
@@ -53,8 +70,52 @@ const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [branchId, setBranchId] = useState(() => localStorage.getItem(LOGIN_BRANCH_STORAGE_KEY) ?? "");
+  const [branches, setBranches] = useState<LoginBranch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBranches = async () => {
+      setBranchesLoading(true);
+      setBranchesError(null);
+      try {
+        const { data, error: rpcError } = await supabase.rpc("list_login_branches" as any);
+        if (rpcError) throw rpcError;
+
+        const rows = ((data ?? []) as LoginBranch[])
+          .filter((row) => row?.id && row?.name)
+          .map((row) => ({ id: String(row.id), name: String(row.name) }));
+
+        if (cancelled) return;
+        setBranches(rows);
+
+        const remembered = localStorage.getItem(LOGIN_BRANCH_STORAGE_KEY);
+        if (remembered && rows.some((row) => row.id === remembered)) {
+          setBranchId(remembered);
+        } else if (rows.length === 1) {
+          setBranchId(rows[0].id);
+        } else if (remembered) {
+          setBranchId("");
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setBranches([]);
+        setBranchesError(err?.message || "No se pudieron cargar las sucursales.");
+      } finally {
+        if (!cancelled) setBranchesLoading(false);
+      }
+    };
+
+    void loadBranches();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (authLoading) {
     return (
@@ -70,7 +131,10 @@ const Login = () => {
     setLoading(true);
     setError(null);
     try {
-      await signIn(identifier, password);
+      if (!branchId) {
+        throw new Error("Debes seleccionar la sucursal a la que vas a ingresar.");
+      }
+      await signIn(identifier, password, branchId);
     } catch (err: any) {
       const msg = getLoginErrorMessage(err.message || "Error al iniciar sesion");
       setError(msg);
@@ -78,8 +142,6 @@ const Login = () => {
       setLoading(false);
     }
   };
-
-
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
@@ -103,8 +165,6 @@ const Login = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-
-
           <div className="space-y-2">
             <Label htmlFor="identifier" className="text-sm font-medium">
               Correo, usuario o alias
@@ -137,7 +197,42 @@ const Login = () => {
             />
           </div>
 
-          <Button type="submit" disabled={loading} className="h-12 w-full gap-2 font-display text-base font-semibold">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Sucursal</Label>
+            <Select
+              value={branchId || undefined}
+              onValueChange={setBranchId}
+              disabled={branchesLoading || branches.length === 0}
+            >
+              <SelectTrigger className="h-12 rounded-xl text-base">
+                <SelectValue
+                  placeholder={
+                    branchesLoading
+                      ? "Cargando sucursales..."
+                      : branchesError
+                        ? "No se pudieron cargar"
+                        : "Selecciona una sucursal"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {branchesError ? (
+              <p className="text-xs text-destructive">{branchesError}</p>
+            ) : null}
+          </div>
+
+          <Button
+            type="submit"
+            disabled={loading || branchesLoading || !branchId}
+            className="h-12 w-full gap-2 font-display text-base font-semibold"
+          >
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
               <>
                 <LogIn className="h-5 w-5" />
@@ -146,7 +241,6 @@ const Login = () => {
             )}
           </Button>
         </form>
-
       </motion.div>
 
       <AlertDialog open={Boolean(error)} onOpenChange={(open) => !open && setError(null)}>

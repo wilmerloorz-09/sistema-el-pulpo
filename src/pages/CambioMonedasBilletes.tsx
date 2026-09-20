@@ -136,7 +136,6 @@ export default function CambioMonedasBilletes() {
     contextQuery,
     registerExchange,
     voidExchange,
-    closeAuxiliaryCash,
   } = useAuxiliaryCash();
   const [targetOpeningId, setTargetOpeningId] = useState("");
   const [givenCounts, setGivenCounts] = useState<CountMap>({});
@@ -146,8 +145,6 @@ export default function CambioMonedasBilletes() {
   const [correctionReason, setCorrectionReason] = useState("");
   const [voidCandidate, setVoidCandidate] = useState<AuxiliaryExchange | null>(null);
   const [voidReason, setVoidReason] = useState("");
-  const [showClose, setShowClose] = useState(false);
-  const [closeNotes, setCloseNotes] = useState("");
 
   const context = contextQuery.data;
   const denominations = context?.denominations ?? [];
@@ -196,7 +193,6 @@ export default function CambioMonedasBilletes() {
   const totalGiven = totalFor(givenCounts, denominations);
   const totalReceived = totalFor(receivedCounts, denominations);
   const totalsMatch = totalGiven > 0 && Math.abs(totalGiven - totalReceived) <= 0.009;
-  const isOpen = context?.opening_status === "abierta";
   const isSaving = registerExchange.isPending;
   const correctionReady = !editingExchange || correctionReason.trim().length >= 5;
   const availabilityExceeded =
@@ -204,7 +200,6 @@ export default function CambioMonedasBilletes() {
     || Object.entries(receivedCounts).some(([id, qty]) => qty > (targetAvailable[id] ?? 0));
   const canSubmit = Boolean(
     selectedTarget
-    && isOpen
     && totalsMatch
     && correctionReady
     && !availabilityExceeded
@@ -289,9 +284,9 @@ export default function CambioMonedasBilletes() {
     return (
       <div className="mx-auto mt-12 max-w-lg rounded-3xl border border-amber-200 bg-white p-7 text-center">
         <Lock className="mx-auto h-9 w-9 text-amber-600" />
-        <h1 className="mt-3 font-display text-xl font-black">Sin caja auxiliar asignada</h1>
+        <h1 className="mt-3 font-display text-xl font-black">Sin responsable asignado</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Un administrador debe asignarte la caja auxiliar al configurar el turno.
+          Un administrador debe designarte como responsable de cambios al configurar el turno.
         </p>
       </div>
     );
@@ -320,119 +315,110 @@ export default function CambioMonedasBilletes() {
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{activeBranch?.name ?? "Sucursal"}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={isOpen ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-slate-100"}>
-              {isOpen ? "Caja auxiliar abierta" : "Caja auxiliar cerrada"}
-            </Badge>
-            {isOpen && (
-              <Button variant="outline" className="gap-2" onClick={() => setShowClose(true)}>
-                <Lock className="h-4 w-4" /> Cerrar caja
-              </Button>
-            )}
-          </div>
+          <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-800">
+            Caja auxiliar permanente
+          </Badge>
         </header>
 
-        {isOpen && (
-          <section className="rounded-3xl border border-orange-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="mb-4">
-              <label className="mb-1 block text-sm font-bold">Cajero que recibe el cambio</label>
-              <Select value={targetOpeningId || undefined} onValueChange={handleTargetChange}>
-                <SelectTrigger className="h-11 max-w-xl rounded-xl">
-                  <SelectValue placeholder="Selecciona una caja abierta..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {targets.map((target) => (
-                    <SelectItem key={target.opening_id} value={target.opening_id}>
-                      {target.cashier_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {targets.length === 0 && (
-                <p className="mt-2 text-xs text-amber-700">No hay cajas de cajero abiertas disponibles.</p>
-              )}
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <ExchangeDenominationEditor
-                title="La caja auxiliar entrega"
-                description="Dinero que sale de tu caja e ingresa a la caja seleccionada."
-                denominations={denominations}
-                counts={givenCounts}
-                available={auxiliaryAvailable}
-                disabled={!selectedTarget || isSaving}
-                onChange={(id, qty) => setCount(setGivenCounts, auxiliaryAvailable, id, qty)}
-              />
-              <ExchangeDenominationEditor
-                title="La caja auxiliar recibe"
-                description="Dinero que sale de la caja seleccionada e ingresa a tu caja."
-                denominations={denominations}
-                counts={receivedCounts}
-                available={targetAvailable}
-                disabled={!selectedTarget || isSaving}
-                onChange={(id, qty) => setCount(setReceivedCounts, targetAvailable, id, qty)}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
-                <p className="text-xs font-bold uppercase text-sky-700">Entregado</p>
-                <p className="text-2xl font-black">${totalGiven.toFixed(2)}</p>
-              </div>
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
-                <p className="text-xs font-bold uppercase text-emerald-700">Recibido</p>
-                <p className="text-2xl font-black">${totalReceived.toFixed(2)}</p>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                <p className="text-xs font-bold uppercase text-amber-700">Diferencia</p>
-                <p className="text-2xl font-black">${Math.abs(totalGiven - totalReceived).toFixed(2)}</p>
-              </div>
-            </div>
-
-            {!totalsMatch && (totalGiven > 0 || totalReceived > 0) && (
-              <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-amber-700">
-                <AlertCircle className="h-4 w-4" />
-                El valor entregado y recibido debe ser exactamente igual.
-              </p>
+        <section className="rounded-3xl border border-orange-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-4">
+            <label className="mb-1 block text-sm font-bold">Cajero que recibe el cambio</label>
+            <Select value={targetOpeningId || undefined} onValueChange={handleTargetChange}>
+              <SelectTrigger className="h-11 max-w-xl rounded-xl">
+                <SelectValue placeholder="Selecciona una caja abierta..." />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((target) => (
+                  <SelectItem key={target.opening_id} value={target.opening_id}>
+                    {target.cashier_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {targets.length === 0 && (
+              <p className="mt-2 text-xs text-amber-700">No hay cajas de cajero abiertas disponibles.</p>
             )}
+          </div>
 
-            {availabilityExceeded && (
-              <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-red-700">
-                <AlertCircle className="h-4 w-4" />
-                La selección supera las denominaciones disponibles en una de las cajas.
-              </p>
-            )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ExchangeDenominationEditor
+              title="La caja auxiliar entrega"
+              description="Dinero que sale de la caja auxiliar e ingresa a la caja seleccionada."
+              denominations={denominations}
+              counts={givenCounts}
+              available={auxiliaryAvailable}
+              disabled={!selectedTarget || isSaving}
+              onChange={(id, qty) => setCount(setGivenCounts, auxiliaryAvailable, id, qty)}
+            />
+            <ExchangeDenominationEditor
+              title="La caja auxiliar recibe"
+              description="Dinero que sale de la caja seleccionada e ingresa a la caja auxiliar."
+              denominations={denominations}
+              counts={receivedCounts}
+              available={targetAvailable}
+              disabled={!selectedTarget || isSaving}
+              onChange={(id, qty) => setCount(setReceivedCounts, targetAvailable, id, qty)}
+            />
+          </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+              <p className="text-xs font-bold uppercase text-sky-700">Entregado</p>
+              <p className="text-2xl font-black">${totalGiven.toFixed(2)}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-xs font-bold uppercase text-emerald-700">Recibido</p>
+              <p className="text-2xl font-black">${totalReceived.toFixed(2)}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-bold uppercase text-amber-700">Diferencia</p>
+              <p className="text-2xl font-black">${Math.abs(totalGiven - totalReceived).toFixed(2)}</p>
+            </div>
+          </div>
+
+          {!totalsMatch && (totalGiven > 0 || totalReceived > 0) && (
+            <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-amber-700">
+              <AlertCircle className="h-4 w-4" />
+              El valor entregado y recibido debe ser exactamente igual.
+            </p>
+          )}
+
+          {availabilityExceeded && (
+            <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-red-700">
+              <AlertCircle className="h-4 w-4" />
+              La selección supera las denominaciones disponibles en una de las cajas.
+            </p>
+          )}
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <Textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Motivo o referencia (opcional)"
+              className="resize-none rounded-xl"
+            />
+            {editingExchange && (
               <Textarea
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                placeholder="Motivo o referencia (opcional)"
+                value={correctionReason}
+                onChange={(event) => setCorrectionReason(event.target.value)}
+                placeholder="Motivo de la corrección (mínimo 5 caracteres)"
                 className="resize-none rounded-xl"
               />
-              {editingExchange && (
-                <Textarea
-                  value={correctionReason}
-                  onChange={(event) => setCorrectionReason(event.target.value)}
-                  placeholder="Motivo de la corrección (mínimo 5 caracteres)"
-                  className="resize-none rounded-xl"
-                />
-              )}
-            </div>
+            )}
+          </div>
 
-            <div className="mt-4 flex flex-col justify-end gap-2 sm:flex-row">
-              {editingExchange && (
-                <Button variant="outline" onClick={resetForm} disabled={isSaving}>
-                  Cancelar corrección
-                </Button>
-              )}
-              <Button onClick={() => void submitExchange()} disabled={!canSubmit} className="gap-2">
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingExchange ? <RotateCcw className="h-4 w-4" /> : <ArrowRightLeft className="h-4 w-4" />}
-                {editingExchange ? "Guardar corrección" : "Registrar cambio"}
+          <div className="mt-4 flex flex-col justify-end gap-2 sm:flex-row">
+            {editingExchange && (
+              <Button variant="outline" onClick={resetForm} disabled={isSaving}>
+                Cancelar corrección
               </Button>
-            </div>
-          </section>
-        )}
+            )}
+            <Button onClick={() => void submitExchange()} disabled={!canSubmit} className="gap-2">
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingExchange ? <RotateCcw className="h-4 w-4" /> : <ArrowRightLeft className="h-4 w-4" />}
+              {editingExchange ? "Guardar corrección" : "Registrar cambio"}
+            </Button>
+          </div>
+        </section>
 
         <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-center gap-2">
@@ -464,7 +450,7 @@ export default function CambioMonedasBilletes() {
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-black">${Number(exchange.amount).toFixed(2)}</p>
-                    {exchange.status === "active" && isOpen && (
+                    {exchange.status === "active" && (
                       <div className="mt-2 flex gap-2">
                         <Button size="sm" variant="outline" onClick={() => beginCorrection(exchange)}>Corregir</Button>
                         <Button size="sm" variant="destructive" onClick={() => setVoidCandidate(exchange)}>Anular</Button>
@@ -483,7 +469,7 @@ export default function CambioMonedasBilletes() {
           <AlertDialogHeader>
             <AlertDialogTitle>Anular cambio</AlertDialogTitle>
             <AlertDialogDescription>
-              Se revertirán inmediatamente las denominaciones en ambas cajas.
+              Se revertirán inmediatamente las denominaciones en la caja auxiliar y en la caja del cajero.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Textarea value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Motivo (mínimo 5 caracteres)" />
@@ -505,36 +491,6 @@ export default function CambioMonedasBilletes() {
               }}
             >
               Confirmar anulación
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={showClose} onOpenChange={setShowClose}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cerrar caja auxiliar</AlertDialogTitle>
-            <AlertDialogDescription>
-              Después del cierre ya no se podrán registrar, corregir ni anular cambios en este turno.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Textarea value={closeNotes} onChange={(event) => setCloseNotes(event.target.value)} placeholder="Notas de cierre (opcional)" />
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={closeAuxiliaryCash.isPending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={closeAuxiliaryCash.isPending}
-              onClick={async (event) => {
-                event.preventDefault();
-                try {
-                  await closeAuxiliaryCash.mutateAsync(closeNotes.trim() || undefined);
-                  toast.success("Caja auxiliar cerrada");
-                  setShowClose(false);
-                } catch (error: any) {
-                  toast.error(error?.message || "No se pudo cerrar la caja auxiliar");
-                }
-              }}
-            >
-              Cerrar caja
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

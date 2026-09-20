@@ -9,7 +9,6 @@ export interface ShiftCajaSetupState {
   cashiers: ShiftCashierRow[];
   auxiliary: {
     user_id: string;
-    template_id?: string;
   } | null;
 }
 
@@ -67,7 +66,6 @@ export function buildCajaRpcPayload(state: ShiftCajaSetupState) {
 export function buildAuxiliaryCajaRpcPayload(state: ShiftCajaSetupState) {
   return {
     p_auxiliary_cashier_id: state.auxiliary?.user_id || null,
-    p_auxiliary_template_id: state.auxiliary?.template_id || null,
   };
 }
 
@@ -86,7 +84,6 @@ export function cajaSetupSignature(state: ShiftCajaSetupState) {
     auxiliary: state.auxiliary
       ? {
           user_id: state.auxiliary.user_id,
-          template_id: state.auxiliary.template_id ?? null,
         }
       : null,
   });
@@ -118,10 +115,6 @@ export function buildCajaSetupIssues(
     } else if (configuredIds.includes(state.auxiliary.user_id)) {
       issues.push("El responsable de la caja auxiliar no puede ser cajero del turno.");
     }
-  }
-
-  if (state.auxiliary?.user_id && !state.auxiliary.template_id) {
-    issues.push("Debe asignar una plantilla de arqueo a la caja auxiliar.");
   }
 
   for (const row of state.cashiers) {
@@ -163,7 +156,6 @@ export function mapPersistedCajaSetup(params: {
   fallbackTemplateId: string | null;
   templateByUserId: Map<string, string | null | undefined>;
   auxiliaryCashierId?: string | null;
-  auxiliaryTemplateId?: string | null;
 }): ShiftCajaSetupState {
   const primaryCashierId = params.primaryCashierId ?? "";
 
@@ -180,7 +172,6 @@ export function mapPersistedCajaSetup(params: {
     auxiliary: params.auxiliaryCashierId
       ? {
           user_id: params.auxiliaryCashierId,
-          template_id: params.auxiliaryTemplateId ?? undefined,
         }
       : null,
   };

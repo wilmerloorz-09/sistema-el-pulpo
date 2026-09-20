@@ -80,6 +80,7 @@ export default function CashRegisterTemplatesCrud() {
           )
         `)
         .eq("branch_id", activeBranchId)
+        .eq("is_auxiliary", false)
         .order("name", { ascending: true });
       if (error) throw error;
       return ((data ?? []) as any[]).map((row) => ({
@@ -151,6 +152,7 @@ export default function CashRegisterTemplatesCrud() {
         branch_id: activeBranchId,
         name: trimmedName,
         is_active: isActive,
+        is_auxiliary: false,
       });
       if (templateError) throw templateError;
 

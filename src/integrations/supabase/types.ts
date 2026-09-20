@@ -530,6 +530,7 @@ export type Database = {
           created_at: string
           denomination_id: string
           id: string
+          is_enabled: boolean
           qty: number
           template_id: string
         }
@@ -537,6 +538,7 @@ export type Database = {
           created_at?: string
           denomination_id: string
           id?: string
+          is_enabled?: boolean
           qty?: number
           template_id: string
         }
@@ -544,6 +546,7 @@ export type Database = {
           created_at?: string
           denomination_id?: string
           id?: string
+          is_enabled?: boolean
           qty?: number
           template_id?: string
         }
@@ -571,6 +574,7 @@ export type Database = {
           created_by: string | null
           id: string
           is_active: boolean
+          is_auxiliary: boolean
           name: string
           updated_at: string
         }
@@ -580,6 +584,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_active?: boolean
+          is_auxiliary?: boolean
           name: string
           updated_at?: string
         }
@@ -589,6 +594,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_active?: boolean
+          is_auxiliary?: boolean
           name?: string
           updated_at?: string
         }

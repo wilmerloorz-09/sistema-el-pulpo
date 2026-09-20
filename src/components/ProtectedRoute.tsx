@@ -96,6 +96,9 @@ const ProtectedRoute = ({
 
   if (
     auxiliaryAssignmentQuery.data?.isAssigned
+    && !isGlobalAdmin
+    && !canManage(permissions, "admin_sucursal")
+    && !canManage(permissions, "admin_global")
     && location.pathname.startsWith("/caja")
   ) {
     return <Navigate to="/cambio-monedas" replace />;

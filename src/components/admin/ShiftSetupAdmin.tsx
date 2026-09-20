@@ -577,6 +577,7 @@ const ShiftSetupAdmin = () => {
         .from("cash_register_templates" as any)
         .select("id, name, is_active")
         .eq("branch_id", activeBranchId)
+        .eq("is_auxiliary", false)
         .order("name", { ascending: true });
         
       if (error) throw error;
@@ -1003,7 +1004,6 @@ const ShiftSetupAdmin = () => {
       fallbackTemplateId: shiftQuery.data.secondary_caja_template_id ?? null,
       templateByUserId,
       auxiliaryCashierId: shiftQuery.data.auxiliary_cashier_id ?? null,
-      auxiliaryTemplateId: shiftQuery.data.auxiliary_caja_template_id ?? null,
     });
   }, [
     isOpen,
@@ -1213,11 +1213,6 @@ const ShiftSetupAdmin = () => {
         .filter((row) => row.user_id && templateLockedUserIds.has(row.user_id))
         .map((row) => [row.user_id, row.template_id]),
     );
-    const lockedAuxiliaryTemplate =
-      persistedCajaSetup.auxiliary?.user_id
-      && templateLockedUserIds.has(persistedCajaSetup.auxiliary.user_id)
-        ? persistedCajaSetup.auxiliary.template_id
-        : undefined;
 
     setShiftCajaSetup({
       cashiers: next.cashiers.map((row) => {
@@ -1227,10 +1222,7 @@ const ShiftSetupAdmin = () => {
         if (!lockedTemplate) return row;
         return { ...row, template_id: lockedTemplate };
       }),
-      auxiliary:
-        next.auxiliary && lockedAuxiliaryTemplate
-          ? { ...next.auxiliary, template_id: lockedAuxiliaryTemplate }
-          : next.auxiliary,
+      auxiliary: next.auxiliary,
     });
   };
 
@@ -2179,19 +2171,12 @@ const ShiftSetupAdmin = () => {
     if (!activeBranchId) throw new Error("No hay sucursal activa");
 
     const auxiliaryPayload = buildAuxiliaryCajaRpcPayload(shiftCajaSetup);
-    if (
-      !auxiliaryPayload.p_auxiliary_cashier_id
-      || !auxiliaryPayload.p_auxiliary_template_id
-    ) {
-      return;
-    }
-
     const { error } = await supabase.rpc(
       "configure_auxiliary_cash_register" as any,
       {
         p_shift_id: shiftId,
         p_branch_id: activeBranchId,
-        ...auxiliaryPayload,
+        p_auxiliary_cashier_id: auxiliaryPayload.p_auxiliary_cashier_id,
       } as any,
     );
 

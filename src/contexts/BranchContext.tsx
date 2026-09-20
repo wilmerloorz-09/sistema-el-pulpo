@@ -75,7 +75,13 @@ export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (error) throw error;
 
       const next = (data ?? emptyAccess) as unknown as AccessContextPayload;
-      const branches = next.branches ?? [];
+      const rawBranches = next.branches ?? [];
+      const seenBranchIds = new Set<string>();
+      const branches = rawBranches.filter((branch) => {
+        if (!branch?.id || seenBranchIds.has(branch.id)) return false;
+        seenBranchIds.add(branch.id);
+        return true;
+      });
       const permissions = next.permissions ?? {};
       const isGlobalAdmin = Boolean(next.is_global_admin);
       const isTemporarySupervisor = Boolean(next.is_temporary_supervisor);
