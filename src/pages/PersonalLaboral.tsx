@@ -3,7 +3,7 @@ import { CalendarDays, ChevronsUpDown, FileSpreadsheet, Wallet, Users } from "lu
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
-import { usePersonalLaboral, useSueldosPersonal } from "@/hooks/usePersonalLaboral";
+import { usePersonalLaboral, useSueldosPersonal, useDiasEspecialesPersonal } from "@/hooks/usePersonalLaboral";
 import { resumirPersonal } from "@/lib/personalLaboral";
 import { downloadXlsx } from "@/lib/exportXlsx";
 import { Badge } from "@/components/ui/badge";
@@ -152,6 +152,7 @@ export default function PersonalLaboral() {
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const personal = usePersonalLaboral(appliedFilters);
   const sueldos = useSueldosPersonal();
+  const diasEspeciales = useDiasEspecialesPersonal();
   const [configBranchId, setConfigBranchId] = useState(activeBranchId ?? (isGlobalAdmin ? ALL_BRANCHES : ""));
   const [special, setSpecial] = useState({ fecha: today(), nombre: "", valor: "" });
   const [sueldoDrafts, setSueldoDrafts] = useState<Record<string, { lunesViernes: string; sabado: string; domingo: string; diaEspecial: string }>>({});
@@ -183,8 +184,11 @@ export default function PersonalLaboral() {
   const pageRows = personal.data.rows.slice(startIndex, endIndex);
   const showingFrom = personal.data.rows.length === 0 ? 0 : startIndex + 1;
   const showingTo = Math.min(endIndex, personal.data.rows.length);
-  const branchSpecials = personal.data.especiales.filter((item) =>
-    configBranchId === ALL_BRANCHES ? item.branch_id === null : item.branch_id === configBranchId);
+  const branchSpecials = diasEspeciales.data.filter((item) =>
+    configBranchId === ALL_BRANCHES
+      ? item.branch_id === null
+      : item.branch_id === configBranchId || item.branch_id === null,
+  );
   const filtersDirty = useMemo(
     () => JSON.stringify(draftFilters) !== JSON.stringify(appliedFilters),
     [draftFilters, appliedFilters],
@@ -266,11 +270,14 @@ export default function PersonalLaboral() {
       p_nombre: special.nombre,
       p_valor: Number(special.valor),
     }), "Día especial guardado");
+    await diasEspeciales.refetch();
     setSpecial((current) => ({ ...current, nombre: "", valor: "" }));
   };
 
-  const removeSpecial = (id: string) =>
-    run(() => personal.runRpc("eliminar_precio_fecha_especial_personal", { p_id: id }), "Día especial eliminado");
+  const removeSpecial = async (id: string) => {
+    await run(() => personal.runRpc("eliminar_precio_fecha_especial_personal", { p_id: id }), "Día especial eliminado");
+    await diasEspeciales.refetch();
+  };
 
   const exportXlsx = async () => {
     if (isExporting) return;
@@ -279,7 +286,7 @@ export default function PersonalLaboral() {
       const decimal = (value: number | null) =>
         value == null ? null : { value, style: "decimal" as const };
       const detailData = [
-        ["Fecha", "Sucursal", "Turno", "Persona", "Función / rol", "Precio", "Tipo"]
+        ["Fecha", "Sucursal", "Turno", "Persona", "Función / rol", "Sueldo", "Tipo"]
           .map((value) => ({ value, style: "header" as const })),
         ...personal.data.rows.map((row) => [
           row.fecha,
@@ -288,7 +295,7 @@ export default function PersonalLaboral() {
           row.personName,
           row.funciones.join(", ") || "Sin función asignada",
           decimal(row.valor),
-          row.tipoPrecio,
+          row.tipoPrecioLabel,
         ]),
       ];
       const summaryData = [
@@ -421,16 +428,21 @@ export default function PersonalLaboral() {
 
         <Card><CardHeader><CardTitle>Personal que trabajó</CardTitle></CardHeader><CardContent>
           <Table><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Sucursal</TableHead>
-            <TableHead>Turno</TableHead><TableHead>Persona</TableHead><TableHead>Función / rol</TableHead><TableHead>Precio del día</TableHead>
+            <TableHead>Turno</TableHead><TableHead>Persona</TableHead><TableHead>Función / rol</TableHead>
+            <TableHead>Tipo de sueldo</TableHead><TableHead>Sueldo</TableHead>
           </TableRow></TableHeader><TableBody>
             {personal.data.rows.length === 0
-              ? <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No hay personal en turnos para este rango.</TableCell></TableRow>
+              ? <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No hay personal en turnos para este rango.</TableCell></TableRow>
               : pageRows.map((row) => <TableRow key={row.rowId}>
                 <TableCell>{row.fecha}</TableCell><TableCell>{row.branchName}</TableCell>
                 <TableCell>{row.shiftCode}<div className="text-xs text-muted-foreground">{row.shiftStatus === "OPEN" ? "Abierto" : "Cerrado"}</div></TableCell>
                 <TableCell>{row.personName}</TableCell>
                 <TableCell>{row.funciones.join(", ") || "Sin función asignada"}</TableCell>
-                <TableCell>{money(row.valor)}{row.tipoPrecio === "ESPECIAL" && <Badge className="ml-2" variant="secondary">Especial</Badge>}</TableCell>
+                <TableCell>
+                  {row.tipoPrecioLabel}
+                  {row.tipoPrecio === "ESPECIAL" && <Badge className="ml-2" variant="secondary">Especial</Badge>}
+                </TableCell>
+                <TableCell>{money(row.valor)}</TableCell>
               </TableRow>)}
           </TableBody></Table>
         </CardContent></Card>
@@ -631,10 +643,13 @@ export default function PersonalLaboral() {
               <Field label="Nombre">
                 <Input placeholder="Ej. Feriado local" value={special.nombre} onChange={(e) => setSpecial({ ...special, nombre: e.target.value })} />
               </Field>
-              <Field label="Precio">
+              <Field label="Precio de respaldo">
                 <Input type="number" min="0" step="0.01" value={special.valor} onChange={(e) => setSpecial({ ...special, valor: e.target.value })} />
               </Field>
-              <div className="md:col-span-4 text-right">
+              <div className="md:col-span-4 space-y-2 text-right">
+                <p className="text-left text-xs text-muted-foreground">
+                  El reporte usa el sueldo “Día especial” de cada empleado. El precio de respaldo solo aplica si la persona aún no tiene sueldo configurado.
+                </p>
                 <Button disabled={personal.isMutating} onClick={() => void saveSpecial()}>
                   Guardar día especial
                 </Button>

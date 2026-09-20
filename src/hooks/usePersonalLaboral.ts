@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  etiquetaTipoSueldo,
   fechaOperativaTurno,
   funcionesRealizadas,
+  normalizeFechaLaboral,
   resolverSueldoPersonalDia,
   type PrecioEspecial,
   type PrecioSemanal,
   type SueldoPersona,
+  type TipoSueldoDia,
 } from "@/lib/personalLaboral";
 
 export type PersonalReportFilters = {
@@ -50,7 +53,8 @@ export type PersonalReportRow = {
   personName: string;
   funciones: string[];
   valor: number | null;
-  tipoPrecio: "ESPECIAL" | "SABADO" | "DOMINGO" | "LUNES_VIERNES" | "SIN_CONFIGURAR";
+  tipoPrecio: TipoSueldoDia;
+  tipoPrecioLabel: string;
 };
 
 type PersonalReportData = {
@@ -64,10 +68,21 @@ type PersonalReportData = {
 
 const QUERY_KEY = ["reporte-personal-turnos"] as const;
 const SUELDOS_QUERY_KEY = ["sueldos-personal"] as const;
+const ESPECIALES_QUERY_KEY = ["precios-fecha-especial-personal"] as const;
 
 function personName(profile: any) {
   const names = `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim();
   return names || profile?.full_name || profile?.alias || profile?.username || "Usuario";
+}
+
+function mapEspecialRow(row: any): PrecioFechaEspecialPersonal {
+  return {
+    id: row.id,
+    branch_id: row.branch_id ?? null,
+    fecha: normalizeFechaLaboral(row.fecha),
+    nombre: row.nombre ?? "",
+    valor: Number(row.valor ?? 0),
+  };
 }
 
 export function usePersonalLaboral(filters: PersonalReportFilters) {
@@ -112,8 +127,14 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
           shiftsQuery,
           (supabase as any).from("precios_dia_personal").select("*"),
           (supabase as any).from("precios_dia_personal_global").select("*").limit(1),
-          (supabase as any).from("precios_fecha_especial_personal").select("*").gte("fecha", filters.desde).lte("fecha", filters.hasta),
-          (supabase as any).from("sueldos_personal").select("user_id,lunes_viernes,sabado,domingo,dia_especial"),
+          (supabase as any)
+            .from("precios_fecha_especial_personal")
+            .select("*")
+            .gte("fecha", filters.desde)
+            .lte("fecha", filters.hasta),
+          (supabase as any)
+            .from("sueldos_personal")
+            .select("user_id,lunes_viernes,sabado,domingo,dia_especial"),
         ]);
       if (shiftsError) throw shiftsError;
       if (pricesError) throw pricesError;
@@ -123,6 +144,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
       const shiftRows = shifts ?? [];
       const precioGlobal = globalRows?.[0] ?? null;
+      const especialesNorm = (especiales ?? []).map(mapEspecialRow);
       const sueldoByUser = new Map<string, SueldoPersona>(
         (sueldos ?? []).map((row: any) => [
           row.user_id,
@@ -140,7 +162,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
           peopleOptions: [],
           precios: precios ?? [],
           precioGlobal,
-          especiales: especiales ?? [],
+          especiales: especialesNorm,
         };
       }
 
@@ -148,7 +170,8 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       const { data: users, error: usersError } = await (supabase as any)
         .from("cash_shift_users")
         .select("id,shift_id,user_id,is_enabled,can_serve_tables,can_dispatch_orders,can_serve_plates,can_pack_orders,can_use_caja,is_supervisor,is_operativo,profiles(id,first_name,last_name,full_name,alias,username)")
-        .in("shift_id", shiftIds);
+        .in("shift_id", shiftIds)
+        .eq("is_enabled", true);
       if (usersError) throw usersError;
 
       const shiftById = new Map(shiftRows.map((shift: any) => [shift.id, shift]));
@@ -166,7 +189,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
             shift.branch_id,
             sueldoByUser.get(user.user_id) ?? null,
             weekly,
-            especiales ?? [],
+            especialesNorm,
           );
           const branch = Array.isArray(shift.branches) ? shift.branches[0] : shift.branches;
           return {
@@ -182,6 +205,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
             funciones: funcionesRealizadas(user),
             valor: resolved.valor,
             tipoPrecio: resolved.tipo,
+            tipoPrecioLabel: etiquetaTipoSueldo(resolved.tipo),
           };
         })
         .filter(Boolean) as PersonalReportRow[];
@@ -221,11 +245,12 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
         peopleOptions,
         precios: precios ?? [],
         precioGlobal,
-        especiales: especiales ?? [],
+        especiales: especialesNorm,
       };
     },
     enabled: Boolean(filters.desde && filters.hasta),
-    staleTime: 15_000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const mutation = useMutation({
@@ -237,6 +262,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: SUELDOS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ESPECIALES_QUERY_KEY });
     },
   });
 
@@ -245,6 +271,29 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
     data: query.data ?? { rows: [], peopleOptions: [], precios: [], precioGlobal: null, especiales: [] },
     runRpc: (name: string, args: Record<string, unknown>) => mutation.mutateAsync({ name, args }),
     isMutating: mutation.isPending,
+  };
+}
+
+export function useDiasEspecialesPersonal() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ESPECIALES_QUERY_KEY,
+    queryFn: async (): Promise<PrecioFechaEspecialPersonal[]> => {
+      const { data, error } = await (supabase as any)
+        .from("precios_fecha_especial_personal")
+        .select("*")
+        .order("fecha", { ascending: false });
+      if (error) throw error;
+      return ((data ?? []) as any[]).map(mapEspecialRow);
+    },
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  return {
+    ...query,
+    data: query.data ?? [],
+    invalidate: () => queryClient.invalidateQueries({ queryKey: ESPECIALES_QUERY_KEY }),
   };
 }
 
@@ -277,7 +326,8 @@ export function useSueldosPersonal() {
         diaEspecial: Number(row.dia_especial ?? 0),
       }));
     },
-    staleTime: 15_000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const mutation = useMutation({

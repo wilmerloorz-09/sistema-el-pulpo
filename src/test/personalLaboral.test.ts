@@ -99,4 +99,14 @@ describe("reporte de personal por turnos", () => {
       [{ branch_id: "pulpo-1", fecha: "2026-09-12", valor: 99 }],
     )).toEqual({ valor: 40, tipo: "ESPECIAL" });
   });
+
+  it("reconoce dia especial aunque la fecha venga con hora", () => {
+    expect(resolverSueldoPersonalDia(
+      "2026-09-12",
+      "pulpo-1",
+      { lunes_viernes: 20, sabado: 22, domingo: 25, dia_especial: 40 },
+      weekly,
+      [{ branch_id: null, fecha: "2026-09-12T00:00:00+00:00", valor: 99 }],
+    )).toEqual({ valor: 40, tipo: "ESPECIAL" });
+  });
 });
