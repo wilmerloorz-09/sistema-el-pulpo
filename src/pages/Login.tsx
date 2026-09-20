@@ -29,7 +29,7 @@ type LoginBranch = {
   name: string;
 };
 
-const LOGIN_BRANCH_STORAGE_KEY = "loginBranchId";
+const LOGIN_BRANCH_DEFAULT = "__select_branch__";
 
 const getLoginErrorMessage = (rawMessage?: string) => {
   const message = rawMessage?.trim() || "No se pudo iniciar sesion.";
@@ -59,6 +59,14 @@ const getLoginErrorMessage = (rawMessage?: string) => {
     return "No se puede ingresar porque falta el correo/usuario/alias o la contrasena.";
   }
 
+  if (
+    normalized.includes("sucursal habilitada")
+    || normalized.includes("no tienes acceso")
+    || normalized.includes("no disponible")
+  ) {
+    return message;
+  }
+
   if (normalized.includes("sucursal")) {
     return message;
   }
@@ -70,7 +78,7 @@ const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [branchId, setBranchId] = useState(() => localStorage.getItem(LOGIN_BRANCH_STORAGE_KEY) ?? "");
+  const [branchId, setBranchId] = useState(LOGIN_BRANCH_DEFAULT);
   const [branches, setBranches] = useState<LoginBranch[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchesError, setBranchesError] = useState<string | null>(null);
@@ -93,19 +101,12 @@ const Login = () => {
 
         if (cancelled) return;
         setBranches(rows);
-
-        const remembered = localStorage.getItem(LOGIN_BRANCH_STORAGE_KEY);
-        if (remembered && rows.some((row) => row.id === remembered)) {
-          setBranchId(remembered);
-        } else if (rows.length === 1) {
-          setBranchId(rows[0].id);
-        } else if (remembered) {
-          setBranchId("");
-        }
+        setBranchId(LOGIN_BRANCH_DEFAULT);
       } catch (err: any) {
         if (cancelled) return;
         setBranches([]);
         setBranchesError(err?.message || "No se pudieron cargar las sucursales.");
+        setBranchId(LOGIN_BRANCH_DEFAULT);
       } finally {
         if (!cancelled) setBranchesLoading(false);
       }
@@ -131,7 +132,9 @@ const Login = () => {
     setLoading(true);
     setError(null);
     try {
-      await signIn(identifier, password, branchId || null);
+      const selectedBranchId =
+        branchId && branchId !== LOGIN_BRANCH_DEFAULT ? branchId : null;
+      await signIn(identifier, password, selectedBranchId);
     } catch (err: any) {
       const msg = getLoginErrorMessage(err.message || "Error al iniciar sesion");
       setError(msg);
@@ -197,9 +200,9 @@ const Login = () => {
           <div className="space-y-2">
             <Label className="text-sm font-medium">Sucursal</Label>
             <Select
-              value={branchId || undefined}
+              value={branchId}
               onValueChange={setBranchId}
-              disabled={branchesLoading || branches.length === 0}
+              disabled={branchesLoading}
             >
               <SelectTrigger className="h-12 rounded-xl text-base">
                 <SelectValue
@@ -208,11 +211,14 @@ const Login = () => {
                       ? "Cargando sucursales..."
                       : branchesError
                         ? "No se pudieron cargar"
-                        : "Tu sucursal habilitada (opcional)"
+                        : "Selecciona una sucursal"
                   }
                 />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={LOGIN_BRANCH_DEFAULT}>
+                  Selecciona una sucursal
+                </SelectItem>
                 {branches.map((branch) => (
                   <SelectItem key={branch.id} value={branch.id}>
                     {branch.name}

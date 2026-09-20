@@ -629,11 +629,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             throw new Error("No tienes una sucursal habilitada para ingresar.");
           }
+
+          const { error: defaultBranchError } = await supabase.rpc("set_my_active_branch" as any, {
+            p_branch_id: resolvedBranchId,
+          } as any);
+          if (defaultBranchError) {
+            try {
+              await supabase.auth.signOut({ scope: "local" });
+            } catch (error) {
+              logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+            }
+            const branchMessage = String(defaultBranchError.message ?? "");
+            if (branchMessage.toLowerCase().includes("no disponible")) {
+              throw new Error("No tienes una sucursal habilitada para ingresar.");
+            }
+            throw new Error(branchMessage || "No tienes una sucursal habilitada para ingresar.");
+          }
         }
 
         localStorage.setItem("activeBranchId", resolvedBranchId);
         if (selectedBranchId) {
           localStorage.setItem("loginBranchId", selectedBranchId);
+        } else {
+          localStorage.removeItem("loginBranchId");
         }
 
         touchSessionActivity(userId);
