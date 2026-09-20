@@ -5,6 +5,13 @@ export type PrecioSemanal = {
   domingo: number;
 };
 
+export type SueldoPersona = {
+  lunes_viernes: number;
+  sabado: number;
+  domingo: number;
+  dia_especial: number;
+};
+
 export type PrecioEspecial = {
   branch_id: string | null;
   fecha: string;
@@ -40,20 +47,37 @@ export function resolverPrecioDia(
   return { valor: Number(semanal.lunes_viernes), tipo: "LUNES_VIERNES" as const };
 }
 
-/** Preferencia: sueldo por persona; si no hay, precio semanal de sucursal/global. */
+/**
+ * Preferencia: sueldo por persona.
+ * Si la fecha es día especial configurado, usa dia_especial de la persona
+ * (o el precio del día especial como respaldo).
+ */
 export function resolverSueldoPersonalDia(
   fecha: string,
   branchId: string,
-  sueldoPersona: Omit<PrecioSemanal, "branch_id"> | null | undefined,
+  sueldoPersona: SueldoPersona | null | undefined,
   semanalSucursal: PrecioSemanal | undefined,
   especiales: PrecioEspecial[],
 ) {
-  return resolverPrecioDia(
-    fecha,
-    branchId,
-    sueldoPersona ? { branch_id: branchId, ...sueldoPersona } : semanalSucursal,
-    especiales,
-  );
+  const especial =
+    especiales.find((item) => item.branch_id === branchId && item.fecha === fecha)
+    ?? especiales.find((item) => item.branch_id === null && item.fecha === fecha);
+
+  if (especial) {
+    if (sueldoPersona) {
+      return { valor: Number(sueldoPersona.dia_especial), tipo: "ESPECIAL" as const };
+    }
+    return { valor: Number(especial.valor), tipo: "ESPECIAL" as const };
+  }
+
+  if (sueldoPersona) {
+    const day = new Date(`${fecha}T12:00:00-05:00`).getUTCDay();
+    if (day === 6) return { valor: Number(sueldoPersona.sabado), tipo: "SABADO" as const };
+    if (day === 0) return { valor: Number(sueldoPersona.domingo), tipo: "DOMINGO" as const };
+    return { valor: Number(sueldoPersona.lunes_viernes), tipo: "LUNES_VIERNES" as const };
+  }
+
+  return resolverPrecioDia(fecha, branchId, semanalSucursal, especiales);
 }
 
 export function resumirPersonal<T extends { userId: string; personName: string; valor: number | null }>(rows: T[]) {

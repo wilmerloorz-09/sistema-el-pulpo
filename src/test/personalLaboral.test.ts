@@ -84,9 +84,19 @@ describe("reporte de personal por turnos", () => {
     expect(resolverSueldoPersonalDia(
       "2026-09-07",
       "pulpo-1",
-      { lunes_viernes: 20, sabado: 22, domingo: 25 },
+      { lunes_viernes: 20, sabado: 22, domingo: 25, dia_especial: 30 },
       weekly,
       [],
     ).valor).toBe(20);
+  });
+
+  it("usa el sueldo de día especial de la persona cuando la fecha es especial", () => {
+    expect(resolverSueldoPersonalDia(
+      "2026-09-12",
+      "pulpo-1",
+      { lunes_viernes: 20, sabado: 22, domingo: 25, dia_especial: 40 },
+      weekly,
+      [{ branch_id: "pulpo-1", fecha: "2026-09-12", valor: 99 }],
+    )).toEqual({ valor: 40, tipo: "ESPECIAL" });
   });
 });

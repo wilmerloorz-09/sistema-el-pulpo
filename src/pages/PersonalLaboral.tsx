@@ -154,19 +154,20 @@ export default function PersonalLaboral() {
   const sueldos = useSueldosPersonal();
   const [configBranchId, setConfigBranchId] = useState(activeBranchId ?? (isGlobalAdmin ? ALL_BRANCHES : ""));
   const [special, setSpecial] = useState({ fecha: today(), nombre: "", valor: "" });
-  const [sueldoDrafts, setSueldoDrafts] = useState<Record<string, { lunesViernes: string; sabado: string; domingo: string }>>({});
+  const [sueldoDrafts, setSueldoDrafts] = useState<Record<string, { lunesViernes: string; sabado: string; domingo: string; diaEspecial: string }>>({});
   const [savingSueldoUserId, setSavingSueldoUserId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    const next: Record<string, { lunesViernes: string; sabado: string; domingo: string }> = {};
+    const next: Record<string, { lunesViernes: string; sabado: string; domingo: string; diaEspecial: string }> = {};
     for (const row of sueldos.data) {
       next[row.userId] = {
         lunesViernes: String(row.lunesViernes),
         sabado: String(row.sabado),
         domingo: String(row.domingo),
+        diaEspecial: String(row.diaEspecial),
       };
     }
     setSueldoDrafts(next);
@@ -226,8 +227,14 @@ export default function PersonalLaboral() {
 
   const saveSueldoRow = async (userId: string) => {
     const draft = sueldoDrafts[userId];
-    if (!draft || draft.lunesViernes === "" || draft.sabado === "" || draft.domingo === "") {
-      toast.error("Completa los tres sueldos de la persona");
+    if (
+      !draft
+      || draft.lunesViernes === ""
+      || draft.sabado === ""
+      || draft.domingo === ""
+      || draft.diaEspecial === ""
+    ) {
+      toast.error("Completa los cuatro sueldos de la persona");
       return;
     }
     setSavingSueldoUserId(userId);
@@ -237,6 +244,7 @@ export default function PersonalLaboral() {
         lunesViernes: Number(draft.lunesViernes),
         sabado: Number(draft.sabado),
         domingo: Number(draft.domingo),
+        diaEspecial: Number(draft.diaEspecial),
       });
       toast.success("Sueldo guardado");
     } catch (error) {
@@ -443,7 +451,7 @@ export default function PersonalLaboral() {
           <CardHeader>
             <CardTitle>Sueldo de Personal</CardTitle>
             <p className="text-sm font-normal text-muted-foreground">
-              Listado de todo el personal activo con sueldo de lunes a viernes, sábado y domingo.
+              Listado de todo el personal activo con sueldo de lunes a viernes, sábado, domingo y día especial.
             </p>
           </CardHeader>
           <CardContent>
@@ -462,13 +470,14 @@ export default function PersonalLaboral() {
                     <TableHead>Lunes a Viernes</TableHead>
                     <TableHead>Sábado</TableHead>
                     <TableHead>Domingo</TableHead>
+                    <TableHead>Día especial</TableHead>
                     {canConfigure && <TableHead className="w-[120px]">Acción</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sueldos.data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={canConfigure ? 5 : 4} className="py-10 text-center text-muted-foreground">
+                      <TableCell colSpan={canConfigure ? 6 : 5} className="py-10 text-center text-muted-foreground">
                         No hay personal activo para configurar.
                       </TableCell>
                     </TableRow>
@@ -478,11 +487,13 @@ export default function PersonalLaboral() {
                         lunesViernes: String(row.lunesViernes),
                         sabado: String(row.sabado),
                         domingo: String(row.domingo),
+                        diaEspecial: String(row.diaEspecial),
                       };
                       const dirty =
                         Number(draft.lunesViernes) !== row.lunesViernes
                         || Number(draft.sabado) !== row.sabado
-                        || Number(draft.domingo) !== row.domingo;
+                        || Number(draft.domingo) !== row.domingo
+                        || Number(draft.diaEspecial) !== row.diaEspecial;
                       return (
                         <TableRow key={row.userId}>
                           <TableCell>
@@ -546,6 +557,25 @@ export default function PersonalLaboral() {
                               />
                             ) : (
                               money(row.domingo)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {canConfigure ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="h-9 w-28"
+                                value={draft.diaEspecial}
+                                onChange={(e) =>
+                                  setSueldoDrafts((current) => ({
+                                    ...current,
+                                    [row.userId]: { ...draft, diaEspecial: e.target.value },
+                                  }))
+                                }
+                              />
+                            ) : (
+                              money(row.diaEspecial)
                             )}
                           </TableCell>
                           {canConfigure && (

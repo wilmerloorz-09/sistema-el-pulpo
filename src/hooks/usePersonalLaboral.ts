@@ -6,6 +6,7 @@ import {
   resolverSueldoPersonalDia,
   type PrecioEspecial,
   type PrecioSemanal,
+  type SueldoPersona,
 } from "@/lib/personalLaboral";
 
 export type PersonalReportFilters = {
@@ -34,6 +35,7 @@ export type SueldoPersonalRow = {
   lunesViernes: number;
   sabado: number;
   domingo: number;
+  diaEspecial: number;
 };
 
 export type PersonalReportRow = {
@@ -111,7 +113,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
           (supabase as any).from("precios_dia_personal").select("*"),
           (supabase as any).from("precios_dia_personal_global").select("*").limit(1),
           (supabase as any).from("precios_fecha_especial_personal").select("*").gte("fecha", filters.desde).lte("fecha", filters.hasta),
-          (supabase as any).from("sueldos_personal").select("user_id,lunes_viernes,sabado,domingo"),
+          (supabase as any).from("sueldos_personal").select("user_id,lunes_viernes,sabado,domingo,dia_especial"),
         ]);
       if (shiftsError) throw shiftsError;
       if (pricesError) throw pricesError;
@@ -121,13 +123,14 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
       const shiftRows = shifts ?? [];
       const precioGlobal = globalRows?.[0] ?? null;
-      const sueldoByUser = new Map<string, Omit<PrecioSemanal, "branch_id">>(
+      const sueldoByUser = new Map<string, SueldoPersona>(
         (sueldos ?? []).map((row: any) => [
           row.user_id,
           {
             lunes_viernes: Number(row.lunes_viernes),
             sabado: Number(row.sabado),
             domingo: Number(row.domingo),
+            dia_especial: Number(row.dia_especial ?? 0),
           },
         ]),
       );
@@ -261,6 +264,7 @@ export function useSueldosPersonal() {
         lunes_viernes: number | null;
         sabado: number | null;
         domingo: number | null;
+        dia_especial: number | null;
       }>).map((row) => ({
         userId: row.user_id,
         fullName: row.full_name || row.alias || row.username || "Usuario",
@@ -270,6 +274,7 @@ export function useSueldosPersonal() {
         lunesViernes: Number(row.lunes_viernes ?? 0),
         sabado: Number(row.sabado ?? 0),
         domingo: Number(row.domingo ?? 0),
+        diaEspecial: Number(row.dia_especial ?? 0),
       }));
     },
     staleTime: 15_000,
@@ -281,12 +286,14 @@ export function useSueldosPersonal() {
       lunesViernes: number;
       sabado: number;
       domingo: number;
+      diaEspecial: number;
     }) => {
       const { error } = await supabase.rpc("guardar_sueldo_personal" as any, {
         p_user_id: args.userId,
         p_lunes_viernes: args.lunesViernes,
         p_sabado: args.sabado,
         p_domingo: args.domingo,
+        p_dia_especial: args.diaEspecial,
       } as any);
       if (error) throw error;
     },
